@@ -1,0 +1,26 @@
+remote: error: GH013: Repository rule violations found for refs/heads/master.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현        
+remote:     Resolve the following violations before pushing again        
+remote: 
+remote:     - Push cannot contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how to resolve a blocked push        
+remote:      https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection/working-with-push-protection-from-the-command-line#resolving-a-blocked-push        
+remote:             
+remote:             
+remote:       G현G현 Shopify App Shared Secret G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현G현        
+remote:        locations:        
+remote:          - commit: d4d7f13d8b47618f9dc3db25422784a711026e00        
+remote:            path: .env.development:15        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to allow the secret.        
+remote:        https://github.com/AhmedHafez1/akeed-backend/security/secret-scanning/unblock-secret/38Ec5RnLmqlUHxjsgTRbtF66K1S        
+remote:             
+remote: 
+remote: 
+To https://github.com/AhmedHafez1/akeed-backend.git
+ ! [remote rejected] master -> master (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/AhmedHafez1/akeed-backend.git'

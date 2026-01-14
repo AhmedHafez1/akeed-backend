@@ -1,6 +1,10 @@
 import { defineConfig } from 'drizzle-kit';
 import * as dotenv from 'dotenv';
-dotenv.config();
+import * as path from 'path';
+
+// Load .env.development by default if NODE_ENV is not set, or specific enc file
+const envFile = process.env.NODE_ENV ? `.env.${process.env.NODE_ENV}` : '.env';
+dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 export default defineConfig({
   schema: './src/core/database/schema.ts',

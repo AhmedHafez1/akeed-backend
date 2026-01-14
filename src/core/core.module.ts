@@ -6,7 +6,9 @@ import { DatabaseModule } from './database';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: !process.env.NODE_ENV
+        ? '.env'
+        : `.env.${process.env.NODE_ENV}`,
     }),
     DatabaseModule,
   ],
