@@ -2,7 +2,7 @@ import { relations } from 'drizzle-orm/relations';
 import {
   organizations,
   memberships,
-  usersInAuth,
+  users,
   integrations,
   orders,
   verifications,
@@ -13,9 +13,9 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
     fields: [memberships.orgId],
     references: [organizations.id],
   }),
-  usersInAuth: one(usersInAuth, {
+  user: one(users, {
     fields: [memberships.userId],
-    references: [usersInAuth.id],
+    references: [users.id],
   }),
 }));
 
@@ -26,7 +26,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   verifications: many(verifications),
 }));
 
-export const usersInAuthRelations = relations(usersInAuth, ({ many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(memberships),
 }));
 
