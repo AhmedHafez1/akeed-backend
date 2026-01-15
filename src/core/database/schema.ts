@@ -13,6 +13,7 @@ import {
   numeric,
   integer,
   pgEnum,
+  pgSchema,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -27,8 +28,9 @@ export const verificationStatus = pgEnum('verification_status', [
 ]);
 
 // Reference to Supabase auth.users table (managed by Supabase Auth)
-export const users = pgTable('users', {
-  id: uuid().primaryKey().notNull(),
+export const authSchema = pgSchema('auth');
+export const users = authSchema.table('users', {
+  id: uuid('id').primaryKey(),
 });
 
 export const organizations = pgTable(
