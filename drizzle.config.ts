@@ -1,4 +1,3 @@
-import { defineConfig } from 'drizzle-kit';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
@@ -6,11 +5,11 @@ import * as path from 'path';
 const envFile = process.env.NODE_ENV ? `.env.${process.env.NODE_ENV}` : '.env';
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
-export default defineConfig({
-  schema: './src/core/database/schema.ts',
+export default {
+  schema: './src/infrastructure/database/schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL!,
   },
-});
+};

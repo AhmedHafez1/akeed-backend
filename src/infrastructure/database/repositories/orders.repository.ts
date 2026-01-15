@@ -1,0 +1,25 @@
+import { Injectable, Inject } from '@nestjs/common';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import * as schema from '../schema';
+import { eq, and } from 'drizzle-orm';
+import { DRIZZLE } from '../database.provider';
+import { orders } from '../schema';
+
+@Injectable()
+export class OrdersRepository {
+  constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+
+  async create(data: typeof orders.$inferInsert) {
+    const [result] = await this.db.insert(orders).values(data).returning();
+    return result;
+  }
+
+  async findByExternalId(externalId: string, orgId: string) {
+    return await this.db.query.orders.findFirst({
+      where: and(
+        eq(orders.externalOrderId, externalId),
+        eq(orders.orgId, orgId),
+      ),
+    });
+  }
+}

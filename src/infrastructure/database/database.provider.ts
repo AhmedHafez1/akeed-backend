@@ -9,7 +9,7 @@ export const DRIZZLE = Symbol('DRIZZLE');
 export const drizzleProvider: Provider = {
   provide: DRIZZLE,
   inject: [ConfigService],
-  useFactory: async (configService: ConfigService) => {
+  useFactory: (configService: ConfigService) => {
     const databaseUrl = configService.get<string>('DATABASE_URL');
 
     if (!databaseUrl) {
