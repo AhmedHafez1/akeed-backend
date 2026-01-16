@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { NormalizedOrder } from 'src/core/interfaces/order.interface';
 import { OrdersRepository } from 'src/infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from 'src/infrastructure/database/repositories/verifications.repository';
+import { WhatsAppService } from 'src/infrastructure/spokes/meta/whatsapp.service';
 
 @Injectable()
 export class VerificationHubService {
@@ -12,7 +13,7 @@ export class VerificationHubService {
   constructor(
     private ordersRepo: OrdersRepository,
     private verificationsRepo: VerificationsRepository,
-    // private waSpoke: WhatsAppSpoke, // We will build this in Step 3
+    private waSpoke: WhatsAppService,
   ) {}
 
   async handleNewOrder(orderData: NormalizedOrder) {
@@ -35,11 +36,14 @@ export class VerificationHubService {
       status: 'pending',
     });
 
-    // 3. Trigger WhatsApp Message (Placeholder for now)
+    // 3. Trigger WhatsApp Message
     this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
 
-    // In next steps, we call:
-    // await this.waSpoke.sendVerification(order, verification.id);
+    await this.waSpoke.sendVerificationTemplate(
+      order.customerPhone,
+      order.externalOrderId,
+      verification.id,
+    );
 
     return { orderId: order.id, verificationId: verification.id };
   }
