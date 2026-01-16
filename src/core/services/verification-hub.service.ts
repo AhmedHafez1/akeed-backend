@@ -47,4 +47,11 @@ export class VerificationHubService {
 
     return { orderId: order.id, verificationId: verification.id };
   }
+
+  async finalizeVerification(verificationId: string, status: string) {
+    this.logger.log(
+      `Finalizing verification ${verificationId} with status: ${status}`,
+    );
+    // TODO: Implement business logic for next steps
+  }
 }
