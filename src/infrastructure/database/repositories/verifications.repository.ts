@@ -17,6 +17,12 @@ export class VerificationsRepository {
     return result;
   }
 
+  async findById(verificationId: string) {
+    return await this.db.query.verifications.findFirst({
+      where: eq(verifications.id, verificationId),
+    });
+  }
+
   async updateStatus(id: string, status: any, waMessageId?: string) {
     return await this.db
       .update(verifications)

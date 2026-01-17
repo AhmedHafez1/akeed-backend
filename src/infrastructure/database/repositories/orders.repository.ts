@@ -14,6 +14,12 @@ export class OrdersRepository {
     return result;
   }
 
+  async findById(orderId: string) {
+    return await this.db.query.orders.findFirst({
+      where: eq(orders.id, orderId),
+    });
+  }
+
   async findByExternalId(externalId: string, orgId: string) {
     return await this.db.query.orders.findFirst({
       where: and(
