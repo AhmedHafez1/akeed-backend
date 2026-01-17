@@ -5,31 +5,56 @@ import {
   UseGuards,
   HttpCode,
   Logger,
+  Headers,
 } from '@nestjs/common';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { VerificationHubService } from '../../../core/services/verification-hub.service';
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
+import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
+import type { ShopifyOrderPayload } from './models/shopify-order-payload';
 
 @Controller('webhooks')
 @UseGuards(ShopifyHmacGuard)
 export class ShopifyController {
   private readonly logger = new Logger(ShopifyController.name);
 
-  constructor(private readonly verificationHub: VerificationHubService) {}
+  constructor(
+    private readonly verificationHub: VerificationHubService,
+    private readonly integrationsRepo: IntegrationsRepository,
+  ) {}
 
   @Post('orders-create')
   @HttpCode(200)
-  async handleOrderCreate(@Body() payload: any) {
-    this.logger.log(`Received Shopify Order Webhook: ${payload.id}`);
+  async handleOrderCreate(
+    @Body() payload: ShopifyOrderPayload,
+    @Headers('x-shopify-shop-domain') shopDomain: string,
+  ) {
+    this.logger.log(
+      `Received Shopify Order Webhook from ${shopDomain}: ${payload.id}`,
+    );
 
-    const normalizedOrder = this.mapToHubOrder(payload);
+    // Resolve orgId via domain integration mapping
+    const integration = await this.integrationsRepo.findByDomain(shopDomain);
+    const orgId = integration?.orgId;
+
+    if (!orgId) {
+      this.logger.warn(
+        `Skipping order ${payload.id}: No integration/org found for domain ${shopDomain}`,
+      );
+      return { received: true };
+    }
+
+    const normalizedOrder = this.mapToHubOrder(payload, orgId);
 
     await this.verificationHub.handleNewOrder(normalizedOrder);
 
     return { received: true };
   }
 
-  private mapToHubOrder(payload: any): NormalizedOrder {
+  private mapToHubOrder(
+    payload: ShopifyOrderPayload,
+    orgId: string,
+  ): NormalizedOrder {
     // Attempt to find a phone number from various fields
     const phone =
       payload.phone ||
@@ -39,7 +64,7 @@ export class ShopifyController {
       payload.shipping_address?.phone;
 
     return {
-      orgId: 'SHOPIFY_ORG',
+      orgId,
       externalOrderId: String(payload.id),
       orderNumber: String(payload.order_number),
       customerPhone: phone || '', // Ideally this should be validated/formatted but basic extraction for now
