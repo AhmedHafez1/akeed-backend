@@ -69,15 +69,22 @@ export class VerificationHubService {
 
       // 3. Trigger the Shopify Spoke (Adapter)
       // We'll pass the shop domain (stored in integrations) and the order ID
-      await this.shopifyApiService.addOrderTag(
-        order.orgId,
-        order.externalOrderId,
-        tag,
-      );
+      const integration = (order as any).integration;
+      if (integration?.platformStoreUrl) {
+        await this.shopifyApiService.addOrderTag(
+          integration.platformStoreUrl,
+          order.externalOrderId,
+          tag,
+        );
 
-      this.logger.log(
-        `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
-      );
+        this.logger.log(
+          `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
+        );
+      } else {
+        this.logger.warn(
+          `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
+        );
+      }
     }
   }
 }

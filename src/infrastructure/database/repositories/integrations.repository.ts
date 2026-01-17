@@ -17,4 +17,12 @@ export class IntegrationsRepository {
       ),
     });
   }
+
+  async create(data: typeof integrations.$inferInsert) {
+    const [result] = await this.db
+      .insert(integrations)
+      .values(data)
+      .returning();
+    return result;
+  }
 }

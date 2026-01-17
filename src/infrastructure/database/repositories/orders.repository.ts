@@ -17,6 +17,9 @@ export class OrdersRepository {
   async findById(orderId: string) {
     return await this.db.query.orders.findFirst({
       where: eq(orders.id, orderId),
+      with: {
+        integration: true,
+      },
     });
   }
 
