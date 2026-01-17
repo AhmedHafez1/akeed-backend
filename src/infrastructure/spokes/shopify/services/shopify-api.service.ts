@@ -1,14 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import axios, { AxiosResponse } from 'axios';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { firstValueFrom } from 'rxjs';
+// rxjs not needed when using axiosRef
+
+interface TagsAddResponse {
+  data?: {
+    tagsAdd?: {
+      node?: { id: string };
+      userErrors?: Array<{ field?: string[]; message: string }>;
+    };
+  };
+  errors?: Array<{ message: string; locations?: unknown; path?: string[] }>;
+}
 
 @Injectable()
 export class ShopifyApiService {
   private readonly logger = new Logger(ShopifyApiService.name);
 
   constructor(
-    private readonly httpService: HttpService,
+    private readonly _httpService: HttpService,
     private readonly integrationsRepo: IntegrationsRepository,
   ) {}
 
@@ -54,26 +65,24 @@ export class ShopifyApiService {
     `;
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          url,
-          {
-            query: mutation,
-            variables: {
-              id: gid,
-              tags: [tag],
-            },
+      const response: AxiosResponse<TagsAddResponse> = await axios.post(
+        url,
+        {
+          query: mutation,
+          variables: {
+            id: gid,
+            tags: [tag],
           },
-          {
-            headers: {
-              'X-Shopify-Access-Token': integration.accessToken,
-              'Content-Type': 'application/json',
-            },
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': integration.accessToken,
+            'Content-Type': 'application/json',
           },
-        ),
+        },
       );
 
-      const data = response.data;
+      const data: TagsAddResponse = response.data;
 
       if (data.errors) {
         this.logger.error(`GraphQL Errors: ${JSON.stringify(data.errors)}`);
@@ -91,11 +100,10 @@ export class ShopifyApiService {
       this.logger.log(
         `Successfully added tag '${tag}' to order ${gid} on ${shopDomain}`,
       );
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to add tag to order: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Failed to add tag to order: ${message}`, stack);
       throw error;
     }
   }

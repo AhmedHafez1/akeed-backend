@@ -25,4 +25,42 @@ export class IntegrationsRepository {
       .returning();
     return result;
   }
+
+  async upsertShopifyIntegration(
+    orgId: string,
+    shopDomain: string,
+    patformType: string,
+    accessToken: string,
+  ) {
+    const existing = await this.findByPlatformDomain(shopDomain, patformType);
+
+    if (existing) {
+      const [updated] = await this.db
+        .update(integrations)
+        .set({
+          orgId,
+          platformType: patformType,
+          platformStoreUrl: shopDomain,
+          accessToken,
+          isActive: true,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(integrations.id, existing.id))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await this.db
+      .insert(integrations)
+      .values({
+        orgId,
+        platformType: patformType,
+        platformStoreUrl: shopDomain,
+        accessToken,
+        isActive: true,
+      })
+      .returning();
+
+    return created;
+  }
 }
