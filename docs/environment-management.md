@@ -58,6 +58,6 @@ npm run db:push
 ## Shopify OAuth
 
 - Configure the following variables for Shopify OAuth:
-  - `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`
+  - `SHOPIFY_CLIENT_ID` and `SHOPIFY_API_SECRET`
   - `SHOPIFY_REDIRECT_URI` (e.g., `http://localhost:3000/auth/shopify/callback`)
   - `FRONTEND_DASHBOARD_URL` (e.g., your app dashboard URL used for post-auth redirect)

@@ -14,13 +14,13 @@ export class ShopifyAuthService {
   ) {}
 
   buildAuthorizationUrl(shop: string, orgId: string): string {
-    const apiKey = this.config.get<string>('SHOPIFY_API_KEY');
+    const clientId = this.config.get<string>('SHOPIFY_CLIENT_ID');
     const redirectUri =
       this.config.get<string>('SHOPIFY_REDIRECT_URI') ||
       `http://localhost:${this.config.get('PORT') || 3000}/auth/shopify/callback`;
 
-    if (!apiKey) {
-      throw new Error('SHOPIFY_API_KEY is not configured');
+    if (!clientId) {
+      throw new Error('SHOPIFY_CLIENT_ID is not configured');
     }
 
     const scopes = ['read_orders', 'write_orders'].join(',');
@@ -29,7 +29,7 @@ export class ShopifyAuthService {
     const state = Buffer.from(JSON.stringify(stateObj)).toString('base64url');
 
     const authorizeUrl = new URL(`https://${shop}/admin/oauth/authorize`);
-    authorizeUrl.searchParams.set('client_id', apiKey);
+    authorizeUrl.searchParams.set('client_id', clientId);
     authorizeUrl.searchParams.set('scope', scopes);
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('state', state);
@@ -79,11 +79,13 @@ export class ShopifyAuthService {
     shop: string,
     code: string,
   ): Promise<{ accessToken: string; expiresIn?: number }> {
-    const clientId = this.config.get<string>('SHOPIFY_API_KEY');
+    const clientId = this.config.get<string>('SHOPIFY_CLIENT_ID');
     const clientSecret = this.config.get<string>('SHOPIFY_API_SECRET');
 
     if (!clientId || !clientSecret) {
-      throw new Error('SHOPIFY_API_KEY/SHOPIFY_API_SECRET are not configured');
+      throw new Error(
+        'SHOPIFY_CLIENT_ID/SHOPIFY_API_SECRET are not configured',
+      );
     }
 
     const url = `https://${shop}/admin/oauth/access_token`;
@@ -135,8 +137,8 @@ export class ShopifyAuthService {
       return null;
     }
 
-    const currentToken = integration.accessToken;
-    const expiresAtStr = integration.expiresAt;
+    const currentToken = integration.accessToken as string;
+    const expiresAtStr = integration.expiresAt as string;
     if (!expiresAtStr || !currentToken) {
       // No expiry tracking or no token; nothing to refresh
       return currentToken ?? null;
@@ -150,11 +152,11 @@ export class ShopifyAuthService {
       return currentToken; // Still valid enough
     }
 
-    const clientId = this.config.get<string>('SHOPIFY_API_KEY');
+    const clientId = this.config.get<string>('SHOPIFY_CLIENT_ID');
     const clientSecret = this.config.get<string>('SHOPIFY_API_SECRET');
     if (!clientId || !clientSecret) {
       this.logger.error(
-        'SHOPIFY_API_KEY/SHOPIFY_API_SECRET are not configured',
+        'SHOPIFY_CLIENT_ID/SHOPIFY_API_SECRET are not configured',
       );
       return currentToken;
     }
