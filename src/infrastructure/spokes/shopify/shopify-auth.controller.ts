@@ -74,10 +74,16 @@ export class ShopifyAuthController {
     }
 
     // Exchange code for token
-    const accessToken = await this.authService.exchangeCodeForToken(shop, code);
+    const { accessToken, expiresIn } =
+      await this.authService.exchangeCodeForToken(shop, code);
 
-    // Persist integration
-    await this.authService.saveIntegration(orgId, shop, accessToken);
+    // Persist integration with expiry
+    await this.authService.saveIntegration(
+      orgId,
+      shop,
+      accessToken as string,
+      expiresIn,
+    );
 
     const dashboardUrl =
       this.config.get<string>('FRONTEND_DASHBOARD_URL') ||

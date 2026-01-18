@@ -35,6 +35,7 @@ export class IntegrationsRepository {
     shopDomain: string,
     patformType: string,
     accessToken: string,
+    expiresAt?: string,
   ) {
     const existing = await this.findByPlatformDomain(shopDomain, patformType);
 
@@ -46,6 +47,7 @@ export class IntegrationsRepository {
           platformType: patformType,
           platformStoreUrl: shopDomain,
           accessToken,
+          expiresAt,
           isActive: true,
           updatedAt: new Date().toISOString(),
         })
@@ -61,6 +63,7 @@ export class IntegrationsRepository {
         platformType: patformType,
         platformStoreUrl: shopDomain,
         accessToken,
+        expiresAt,
         isActive: true,
       })
       .returning();

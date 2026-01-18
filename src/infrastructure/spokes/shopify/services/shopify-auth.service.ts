@@ -75,7 +75,10 @@ export class ShopifyAuthService {
     return crypto.timingSafeEqual(a, b);
   }
 
-  async exchangeCodeForToken(shop: string, code: string): Promise<string> {
+  async exchangeCodeForToken(
+    shop: string,
+    code: string,
+  ): Promise<{ accessToken: string; expiresIn?: number }> {
     const clientId = this.config.get<string>('SHOPIFY_API_KEY');
     const clientSecret = this.config.get<string>('SHOPIFY_API_SECRET');
 
@@ -88,6 +91,7 @@ export class ShopifyAuthService {
     interface AccessTokenResponse {
       access_token: string;
       scope?: string;
+      expires_in?: number;
     }
 
     const response = await axios.post<AccessTokenResponse>(url, {
@@ -97,23 +101,99 @@ export class ShopifyAuthService {
     });
 
     const accessToken = response.data.access_token;
+    const expiresIn = response.data.expires_in;
     if (!accessToken) {
       this.logger.error(`No access_token in Shopify response for ${shop}`);
       throw new Error('Failed to retrieve Shopify access token');
     }
-    return accessToken;
+    return { accessToken, expiresIn };
   }
 
   async saveIntegration(
     orgId: string,
     shopDomain: string,
     accessToken: string,
+    expiresIn?: number,
   ) {
+    let expiresAt: string | undefined;
+    if (typeof expiresIn === 'number' && expiresIn > 0) {
+      expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    }
     return this.integrationsRepo.upsertShopifyIntegration(
       orgId,
       shopDomain,
       'shopify',
       accessToken,
+      expiresAt,
     );
+  }
+
+  async refreshAccessTokenIfNeeded(shopDomain: string): Promise<string | null> {
+    const integration = await this.integrationsRepo.findByDomain(shopDomain);
+    if (!integration) {
+      this.logger.warn(`No Shopify integration found for domain ${shopDomain}`);
+      return null;
+    }
+
+    const currentToken = integration.accessToken;
+    const expiresAtStr = integration.expiresAt;
+    if (!expiresAtStr || !currentToken) {
+      // No expiry tracking or no token; nothing to refresh
+      return currentToken ?? null;
+    }
+
+    const expiresAtMs = new Date(expiresAtStr).getTime();
+    const timeLeftMs = expiresAtMs - Date.now();
+    const thresholdMs = 5 * 60 * 1000; // 5 minutes
+
+    if (timeLeftMs > thresholdMs) {
+      return currentToken; // Still valid enough
+    }
+
+    const clientId = this.config.get<string>('SHOPIFY_API_KEY');
+    const clientSecret = this.config.get<string>('SHOPIFY_API_SECRET');
+    if (!clientId || !clientSecret) {
+      this.logger.error(
+        'SHOPIFY_API_KEY/SHOPIFY_API_SECRET are not configured',
+      );
+      return currentToken;
+    }
+
+    const url = `https://${shopDomain}/admin/oauth/access_token`;
+    interface ClientCredentialsResponse {
+      access_token: string;
+      expires_in?: number;
+      scope?: string;
+    }
+
+    try {
+      const response = await axios.post<ClientCredentialsResponse>(url, {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials',
+      });
+      const newToken = response.data.access_token;
+      const expiresIn = response.data.expires_in;
+      if (!newToken) {
+        this.logger.error('Failed to refresh Shopify access token');
+        return currentToken;
+      }
+      const newExpiresAt =
+        typeof expiresIn === 'number' && expiresIn > 0
+          ? new Date(Date.now() + expiresIn * 1000).toISOString()
+          : undefined;
+      await this.integrationsRepo.upsertShopifyIntegration(
+        integration.orgId,
+        shopDomain,
+        'shopify',
+        newToken,
+        newExpiresAt,
+      );
+      this.logger.log(`Refreshed Shopify token for ${shopDomain}`);
+      return newToken;
+    } catch (err) {
+      this.logger.error('Error refreshing Shopify token', err as any);
+      return currentToken;
+    }
   }
 }

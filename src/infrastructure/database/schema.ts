@@ -149,6 +149,10 @@ export const integrations = pgTable(
     platformType: text('platform_type').notNull(),
     platformStoreUrl: text('platform_store_url').notNull(),
     accessToken: text('access_token'),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     webhookSecret: text('webhook_secret'),
     isActive: boolean('is_active').default(true),
     lastSyncedAt: timestamp('last_synced_at', {
