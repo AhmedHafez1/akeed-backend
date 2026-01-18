@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import axios, { AxiosResponse } from 'axios';
+import { AxiosResponse } from 'axios';
+import { firstValueFrom } from 'rxjs';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 // rxjs not needed when using axiosRef
 
@@ -48,7 +49,7 @@ export class ShopifyApiService {
       ? orderId
       : `gid://shopify/Order/${orderId}`;
 
-    const url = `https://${shopDomain}/admin/api/2024-01/graphql.json`;
+    const url = `https://${shopDomain}/admin/api/2025-01/graphql.json`;
 
     const mutation = `
       mutation tagsAdd($id: ID!, $tags: [String!]!) {
@@ -65,46 +66,67 @@ export class ShopifyApiService {
     `;
 
     try {
-      const response: AxiosResponse<TagsAddResponse> = await axios.post(
-        url,
-        {
-          query: mutation,
-          variables: {
-            id: gid,
-            tags: [tag],
+      const response: AxiosResponse<TagsAddResponse> = await firstValueFrom(
+        this._httpService.post<TagsAddResponse>(
+          url,
+          {
+            query: mutation,
+            variables: {
+              id: gid,
+              tags: [tag],
+            },
           },
-        },
-        {
-          headers: {
-            'X-Shopify-Access-Token': integration.accessToken,
-            'Content-Type': 'application/json',
+          {
+            headers: {
+              'X-Shopify-Access-Token': integration.accessToken,
+              'Content-Type': 'application/json',
+            },
           },
-        },
+        ),
       );
 
-      const data: TagsAddResponse = response.data;
+      this.handleGraphQLErrors(response, 'tagsAdd');
 
-      if (data.errors) {
-        this.logger.error(`GraphQL Errors: ${JSON.stringify(data.errors)}`);
-        throw new Error(
-          `Shopify GraphQL Error: ${JSON.stringify(data.errors)}`,
-        );
-      }
-
-      const userErrors = data.data?.tagsAdd?.userErrors;
-      if (userErrors && userErrors.length > 0) {
-        this.logger.error(`User Errors: ${JSON.stringify(userErrors)}`);
-        throw new Error(`Shopify User Errors: ${JSON.stringify(userErrors)}`);
-      }
-
+      const reqId = (response.headers?.['x-request-id'] ??
+        response.headers?.['X-Request-Id']) as string | undefined;
       this.logger.log(
-        `Successfully added tag '${tag}' to order ${gid} on ${shopDomain}`,
+        `Successfully added tag '${tag}' to order ${gid} on ${shopDomain} (requestId=${reqId ?? 'n/a'})`,
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;
       this.logger.error(`Failed to add tag to order: ${message}`, stack);
       throw error;
+    }
+  }
+
+  private handleGraphQLErrors(
+    response: AxiosResponse<TagsAddResponse>,
+    operation: string,
+  ): void {
+    const reqId = (response.headers?.['x-request-id'] ??
+      response.headers?.['X-Request-Id']) as string | undefined;
+    const data: TagsAddResponse = response.data;
+
+    if (data.errors && data.errors.length > 0) {
+      this.logger.error(
+        `GraphQL Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(data.errors)}`,
+      );
+      throw new Error(
+        `Shopify GraphQL Error (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(
+          data.errors,
+        )}`,
+      );
+    }
+
+    const userErrors = data.data?.tagsAdd?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      this.logger.error(
+        `User Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(userErrors)}`,
+      );
+      throw new Error(
+        `Shopify User Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(userErrors)}`,
+      );
     }
   }
 }
