@@ -1,3 +1,4 @@
+import type { WhatsAppWebhookPayload } from './models/whatsapp-webhook.payload';
 import {
   Controller,
   Get,
@@ -36,7 +37,7 @@ export class WhatsAppWebhookController {
 
   @Post()
   @HttpCode(200)
-  async handleIncoming(@Body() payload: any) {
+  async handleIncoming(@Body() payload: WhatsAppWebhookPayload) {
     try {
       await this.service.handleIncoming(payload);
       return { status: 'success' };

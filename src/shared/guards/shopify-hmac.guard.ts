@@ -6,14 +6,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { Request } from 'express';
+import { RequestWithRawBody } from '../models/request-with-raw-body.interface';
 
 @Injectable()
 export class ShopifyHmacGuard implements CanActivate {
   private readonly logger = new Logger(ShopifyHmacGuard.name);
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<Request>();
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest<RequestWithRawBody>();
     const hmacHeader = req.headers['x-shopify-hmac-sha256'] as string;
 
     if (!hmacHeader) {
@@ -21,7 +21,7 @@ export class ShopifyHmacGuard implements CanActivate {
       throw new UnauthorizedException('Missing X-Shopify-Hmac-Sha256 header');
     }
 
-    const rawBody = (req as any).rawBody;
+    const { rawBody } = req;
     if (!rawBody) {
       this.logger.warn(
         'Missing rawBody on request. Ensure rawBody is enabled in main.ts',

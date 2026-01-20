@@ -6,6 +6,7 @@ import { OrdersRepository } from 'src/infrastructure/database/repositories/order
 import { VerificationsRepository } from 'src/infrastructure/database/repositories/verifications.repository';
 import { WhatsAppService } from 'src/infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from 'src/infrastructure/spokes/shopify/services/shopify-api.service';
+import { integrations } from '../../infrastructure/database/schema';
 
 @Injectable()
 export class VerificationHubService {
@@ -69,7 +70,7 @@ export class VerificationHubService {
 
       // 3. Trigger the Shopify Spoke (Adapter)
       // We'll pass the shop domain (stored in integrations) and the order ID
-      const integration = (order as any).integration;
+      const integration = order.integration as typeof integrations.$inferSelect;
       if (integration?.platformStoreUrl) {
         await this.shopifyApiService.addOrderTag(
           integration.platformStoreUrl,

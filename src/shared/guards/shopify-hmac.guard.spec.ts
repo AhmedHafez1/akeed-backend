@@ -19,7 +19,7 @@ describe('ShopifyHmacGuard', () => {
     expect(guard).toBeDefined();
   });
 
-  it('should return true for valid HMAC', async () => {
+  it('should return true for valid HMAC', () => {
     const rawBody = Buffer.from('{"test": "data"}');
     const hash = crypto
       .createHmac('sha256', mockSecret)
@@ -39,10 +39,10 @@ describe('ShopifyHmacGuard', () => {
       }),
     } as unknown as ExecutionContext;
 
-    expect(await guard.canActivate(context)).toBe(true);
+    expect(guard.canActivate(context)).toBe(true);
   });
 
-  it('should throw UnauthorizedException for invalid HMAC', async () => {
+  it('should throw UnauthorizedException for invalid HMAC', () => {
     const rawBody = Buffer.from('{"test": "data"}');
     const validHash = crypto
       .createHmac('sha256', mockSecret)
@@ -65,12 +65,10 @@ describe('ShopifyHmacGuard', () => {
       }),
     } as unknown as ExecutionContext;
 
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
   });
 
-  it('should throw UnauthorizedException if header is missing', async () => {
+  it('should throw UnauthorizedException if header is missing', () => {
     const mockRequest = {
       headers: {},
       rawBody: Buffer.from('data'),
@@ -82,12 +80,10 @@ describe('ShopifyHmacGuard', () => {
       }),
     } as unknown as ExecutionContext;
 
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
   });
 
-  it('should throw UnauthorizedException if rawBody is missing', async () => {
+  it('should throw UnauthorizedException if rawBody is missing', () => {
     const hash = crypto
       .createHmac('sha256', mockSecret)
       .update('data')
@@ -104,8 +100,6 @@ describe('ShopifyHmacGuard', () => {
       }),
     } as unknown as ExecutionContext;
 
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
   });
 });

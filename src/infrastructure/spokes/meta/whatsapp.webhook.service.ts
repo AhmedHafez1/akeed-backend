@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VerificationsRepository } from '../../database/repositories/verifications.repository';
 import { VerificationHubService } from 'src/core/services/verification-hub.service';
+import { WhatsAppWebhookPayload } from './models/whatsapp-webhook.payload';
+import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -11,7 +13,7 @@ export class WhatsAppWebhookService {
     private verificationHub: VerificationHubService,
   ) {}
 
-  async handleIncoming(payload: any) {
+  async handleIncoming(payload: WhatsAppWebhookPayload) {
     if (!payload?.entry?.[0]?.changes?.[0]?.value) {
       return;
     }
@@ -22,7 +24,6 @@ export class WhatsAppWebhookService {
     if (value.messages?.[0]?.type === 'interactive') {
       const message = value.messages[0];
       const buttonReplyId = message.interactive?.button_reply?.id;
-      const wamid = message.id; // Usually available, but we rely on buttonReplyId usually containing verificationId if designed so.
 
       // Assuming buttonReplyId IS the verificationId or contains it.
       // The prompt says: "extract the button_reply.id" and "Use VerificationsRepository.updateStatus()".
@@ -37,21 +38,26 @@ export class WhatsAppWebhookService {
 
       // Let's split: "CONFIRM:UUID"
 
-      const parts = buttonReplyId.split(':');
-      if (parts.length === 2) {
-        const action = parts[0].toLowerCase();
-        const verificationId = parts[1];
+      if (buttonReplyId) {
+        const parts = buttonReplyId.split(':');
+        if (parts.length === 2) {
+          const action = parts[0].toLowerCase();
+          const verificationId = parts[1];
 
-        let newStatus: 'confirmed' | 'canceled' | null = null;
-        if (action === 'confirm' || action === 'yes') newStatus = 'confirmed';
-        if (action === 'cancel' || action === 'no') newStatus = 'canceled';
+          let newStatus: 'confirmed' | 'canceled' | null = null;
+          if (action === 'confirm' || action === 'yes') newStatus = 'confirmed';
+          if (action === 'cancel' || action === 'no') newStatus = 'canceled';
 
-        if (newStatus) {
-          await this.verificationsRepo.updateStatus(verificationId, newStatus);
-          await this.verificationHub.finalizeVerification(
-            verificationId,
-            newStatus,
-          );
+          if (newStatus) {
+            await this.verificationsRepo.updateStatus(
+              verificationId,
+              newStatus,
+            );
+            await this.verificationHub.finalizeVerification(
+              verificationId,
+              newStatus,
+            );
+          }
         }
       }
     }
@@ -60,7 +66,7 @@ export class WhatsAppWebhookService {
     if (value.statuses?.[0]) {
       const statusObj = value.statuses[0];
       const wamid = statusObj.id;
-      const status = statusObj.status; // 'delivered', 'read', 'sent'
+      const status: VerificationStatus = statusObj.status; // 'delivered', 'read', 'sent'
 
       if (status === 'delivered' || status === 'read') {
         const result = await this.verificationsRepo.updateStatusByWamid(

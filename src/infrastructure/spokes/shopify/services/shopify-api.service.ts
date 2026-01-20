@@ -49,7 +49,7 @@ export class ShopifyApiService {
       ? orderId
       : `gid://shopify/Order/${orderId}`;
 
-    const url = `https://${shopDomain}/admin/api/2025-01/graphql.json`;
+    const url = `https://${shopDomain}/admin/api/2026-01/graphql.json`;
 
     const mutation = `
       mutation tagsAdd($id: ID!, $tags: [String!]!) {

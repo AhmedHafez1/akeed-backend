@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../schema';
 import { eq } from 'drizzle-orm';
+import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
 
@@ -23,18 +24,29 @@ export class VerificationsRepository {
     });
   }
 
-  async updateStatus(id: string, status: any, waMessageId?: string) {
+  async updateStatus(
+    id: string,
+    status: VerificationStatus,
+    waMessageId?: string,
+  ) {
     return await this.db
       .update(verifications)
-      .set({ status, waMessageId, updatedAt: new Date().toISOString() })
+      .set({
+        status: status as typeof verifications.$inferSelect.status,
+        waMessageId,
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(verifications.id, id))
       .returning();
   }
 
-  async updateStatusByWamid(wamid: string, status: any) {
+  async updateStatusByWamid(wamid: string, status: VerificationStatus) {
     return await this.db
       .update(verifications)
-      .set({ status, updatedAt: new Date().toISOString() })
+      .set({
+        status: status as typeof verifications.$inferSelect.status,
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(verifications.waMessageId, wamid))
       .returning();
   }
