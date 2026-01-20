@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ShopifyController } from './shopify.controller';
 import { CoreModule } from '../../../core/core.module';
 import { DatabaseModule } from '../../database/database.module';
@@ -8,7 +8,7 @@ import { ShopifyAuthService } from './services/shopify-auth.service.js';
 import { ShopifyAuthController } from './shopify-auth.controller.js';
 
 @Module({
-  imports: [CoreModule, DatabaseModule, HttpModule],
+  imports: [forwardRef(() => CoreModule), DatabaseModule, HttpModule],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [ShopifyApiService, ShopifyAuthService],
   exports: [ShopifyApiService, ShopifyAuthService],
