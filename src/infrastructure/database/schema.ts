@@ -21,6 +21,7 @@ export const verificationStatus = pgEnum('verification_status', [
   'pending',
   'sent',
   'delivered',
+  'read',
   'confirmed',
   'canceled',
   'expired',

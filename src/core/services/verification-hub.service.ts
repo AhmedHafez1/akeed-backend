@@ -1,5 +1,3 @@
-// import { WhatsAppSpoke } from '../infrastructure/spokes/meta/whatsapp.spoke';
-
 import { Injectable, Logger } from '@nestjs/common';
 import { NormalizedOrder } from 'src/core/interfaces/order.interface';
 import { OrdersRepository } from 'src/infrastructure/database/repositories/orders.repository';
@@ -32,19 +30,27 @@ export class VerificationHubService {
       order = await this.ordersRepo.create(orderData);
     }
 
-    // 2. Create Verification Record
-    const verification = await this.verificationsRepo.create({
+    // 2. Check if we already have a verification for this order
+    let verification = await this.verificationsRepo.findByOrderId(order.id);
+    if (verification) {
+      this.logger.log(`Verification already exists for Order ${order.id}`);
+      return { orderId: order.id, verificationId: verification.id };
+    }
+
+    // 3. Create Verification Record
+    verification = await this.verificationsRepo.create({
       orgId: order.orgId,
       orderId: order.id,
       status: 'pending',
     });
 
-    // 3. Trigger WhatsApp Message
+    // 4. Trigger WhatsApp Message
     this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
 
     await this.waSpoke.sendVerificationTemplate(
       order.customerPhone,
       order.externalOrderId,
+      order.totalPrice!,
       verification.id,
     );
 

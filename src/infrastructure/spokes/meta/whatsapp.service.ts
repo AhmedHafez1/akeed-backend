@@ -29,12 +29,13 @@ export class WhatsAppService {
       );
     }
 
-    this.apiUrl = `https://graph.facebook.com/v21.0/${this.phoneNumberId}/messages`;
+    this.apiUrl = `https://graph.facebook.com/v24.0/${this.phoneNumberId}/messages`;
   }
 
   async sendVerificationTemplate(
     to: string,
     orderNumber: string,
+    totalPrice: string,
     verificationId: string,
   ): Promise<any> {
     const payload = {
@@ -53,6 +54,10 @@ export class WhatsAppService {
               {
                 type: 'text',
                 text: orderNumber,
+              },
+              {
+                type: 'text',
+                text: totalPrice,
               },
             ],
           },

@@ -14,6 +14,8 @@ export class WhatsAppWebhookService {
   ) {}
 
   async handleIncoming(payload: WhatsAppWebhookPayload) {
+    this.logger.log('Received WhatsApp webhook payload:', payload);
+
     if (!payload?.entry?.[0]?.changes?.[0]?.value) {
       return;
     }
@@ -49,6 +51,9 @@ export class WhatsAppWebhookService {
           if (action === 'cancel' || action === 'no') newStatus = 'canceled';
 
           if (newStatus) {
+            this.logger.log(
+              `Updated verification status for verificationId: ${verificationId} to ${newStatus}`,
+            );
             await this.verificationsRepo.updateStatus(
               verificationId,
               newStatus,
@@ -69,6 +74,9 @@ export class WhatsAppWebhookService {
       const status: VerificationStatus = statusObj.status; // 'delivered', 'read', 'sent'
 
       if (status === 'delivered' || status === 'read') {
+        this.logger.log(
+          `Updating verification status for wamid: ${wamid} to ${status}`,
+        );
         const result = await this.verificationsRepo.updateStatusByWamid(
           wamid,
           status,

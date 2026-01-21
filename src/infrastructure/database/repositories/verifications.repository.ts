@@ -18,6 +18,12 @@ export class VerificationsRepository {
     return result;
   }
 
+  async findByOrderId(id: string) {
+    return await this.db.query.verifications.findFirst({
+      where: eq(verifications.orderId, id),
+    });
+  }
+
   async findById(verificationId: string) {
     return await this.db.query.verifications.findFirst({
       where: eq(verifications.id, verificationId),
