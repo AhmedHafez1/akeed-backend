@@ -2,19 +2,19 @@ import {
   Controller,
   Post,
   Body,
-  UseGuards,
+  // UseGuards,
   HttpCode,
   Logger,
   Headers,
 } from '@nestjs/common';
-import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
+// import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { VerificationHubService } from '../../../core/services/verification-hub.service';
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
 import type { ShopifyOrderPayload } from './models/shopify-order-payload';
 
 @Controller('webhooks')
-@UseGuards(ShopifyHmacGuard)
+// @UseGuards(ShopifyHmacGuard)
 export class ShopifyController {
   private readonly logger = new Logger(ShopifyController.name);
 

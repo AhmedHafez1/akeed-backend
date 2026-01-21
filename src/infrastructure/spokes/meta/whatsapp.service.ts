@@ -14,18 +14,18 @@ export class WhatsAppService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.accessToken = this.configService.get<string>('WHATSAPP_ACCESS_TOKEN')!;
-    this.phoneNumberId = this.configService.get<string>('PHONE_NUMBER_ID')!;
+    this.accessToken = this.configService.get<string>('WA_ACCESS_TOKEN')!;
+    this.phoneNumberId = this.configService.get<string>('WA_PHONE_NUMBER_ID')!;
 
     // Basic validation to ensure env vars are present
     if (!this.accessToken) {
       this.logger.warn(
-        'WHATSAPP_ACCESS_TOKEN is not defined in environment variables',
+        'WA_ACCESS_TOKEN is not defined in environment variables',
       );
     }
     if (!this.phoneNumberId) {
       this.logger.warn(
-        'PHONE_NUMBER_ID is not defined in environment variables',
+        'WA_PHONE_NUMBER_ID is not defined in environment variables',
       );
     }
 
