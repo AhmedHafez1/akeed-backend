@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { WhatsAppResponse } from './models/whatsapp-response.interface';
 
 @Injectable()
 export class WhatsAppService {
@@ -37,7 +38,7 @@ export class WhatsAppService {
     orderNumber: string,
     totalPrice: string,
     verificationId: string,
-  ): Promise<any> {
+  ): Promise<WhatsAppResponse> {
     const payload = {
       messaging_product: 'whatsapp',
       to: to,
@@ -96,7 +97,7 @@ export class WhatsAppService {
           },
         }),
       );
-      return response.data;
+      return response.data as WhatsAppResponse;
     } catch (error) {
       this.logger.error('Error sending WhatsApp message');
       throw error;

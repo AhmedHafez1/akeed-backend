@@ -1,4 +1,3 @@
-// Based on https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
 export interface WhatsAppMessage {
   id: string;
   type: 'button';

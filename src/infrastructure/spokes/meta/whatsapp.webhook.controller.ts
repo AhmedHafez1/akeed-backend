@@ -1,4 +1,4 @@
-import type { WhatsAppWebhookPayload } from './models/whatsapp-webhook.payload';
+import type { WhatsAppWebhookPayload } from './models/whatsapp-webhook-payload.interface';
 import {
   Controller,
   Get,

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VerificationsRepository } from '../../database/repositories/verifications.repository';
 import { VerificationHubService } from 'src/core/services/verification-hub.service';
-import { WhatsAppWebhookPayload } from './models/whatsapp-webhook.payload';
+import { WhatsAppWebhookPayload } from './models/whatsapp-webhook-payload.interface';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 
 @Injectable()
