@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import * as schema from '../schema';
+import * as schema from '../index';
 import { eq } from 'drizzle-orm';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
