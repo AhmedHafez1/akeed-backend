@@ -47,12 +47,23 @@ export class VerificationHubService {
     // 4. Trigger WhatsApp Message
     this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
 
-    await this.waSpoke.sendVerificationTemplate(
+    const response = await this.waSpoke.sendVerificationTemplate(
       order.customerPhone,
       order.externalOrderId,
       order.totalPrice!,
       verification.id,
     );
+
+    // 5. Update Verification Record with WhatsApp Message ID
+    if (response?.messages?.[0]?.id) {
+      const waMessageId = response.messages[0].id;
+      this.logger.log(`WhatsApp Message Sent with ID: ${waMessageId}`);
+      await this.verificationsRepo.updateStatus(
+        verification.id,
+        'sent',
+        waMessageId,
+      );
+    }
 
     return { orderId: order.id, verificationId: verification.id };
   }
