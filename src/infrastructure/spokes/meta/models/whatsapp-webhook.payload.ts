@@ -1,7 +1,7 @@
 // Based on https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
 export interface WhatsAppMessage {
   id: string;
-  type: 'interactive';
+  type: 'button' | 'interactive';
   interactive: {
     type: 'button_reply';
     button_reply: {

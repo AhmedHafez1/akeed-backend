@@ -23,7 +23,7 @@ export class WhatsAppWebhookService {
     const value = payload.entry[0].changes[0].value;
 
     // 1. Handle Button Replies (Interactive)
-    if (value.messages?.[0]?.type === 'interactive') {
+    if (value.messages?.[0]?.type === 'button') {
       const message = value.messages[0];
       const buttonReplyId = message.interactive?.button_reply?.id;
 
@@ -81,7 +81,7 @@ export class WhatsAppWebhookService {
           wamid,
           status,
         );
-        if (result && result.length > 0) {
+        if (result?.length > 0) {
           const verification = result[0];
           await this.verificationHub.finalizeVerification(
             verification.id,
