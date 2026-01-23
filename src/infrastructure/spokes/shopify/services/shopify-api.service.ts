@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
+import { integrations } from 'src/infrastructure/database';
 // rxjs not needed when using axiosRef
 
 interface TagsAddResponse {
@@ -25,21 +26,16 @@ export class ShopifyApiService {
   ) {}
 
   async addOrderTag(
-    shopDomain: string,
+    integration: typeof integrations.$inferSelect,
     orderId: string,
     tag: string,
   ): Promise<void> {
-    const integration = await this.integrationsRepo.findByPlatformDomain(
-      shopDomain,
-      'shopify',
-    );
-
-    if (!integration || !integration.accessToken) {
+    if (!integration.accessToken) {
       this.logger.error(
-        `Shopify integration not found or missing token for domain: ${shopDomain}`,
+        `Missing token for domain: ${integration.platformStoreUrl}`,
       );
       throw new Error(
-        `Shopify integration not found for domain: ${shopDomain}`,
+        `Missing token for domain: ${integration.platformStoreUrl}`,
       );
     }
 
@@ -49,7 +45,7 @@ export class ShopifyApiService {
       ? orderId
       : `gid://shopify/Order/${orderId}`;
 
-    const url = `https://${shopDomain}/admin/api/2026-01/graphql.json`;
+    const url = `https://${integration.platformStoreUrl}/admin/api/2026-01/graphql.json`;
 
     const mutation = `
       mutation tagsAdd($id: ID!, $tags: [String!]!) {
@@ -90,7 +86,7 @@ export class ShopifyApiService {
       const reqId = (response.headers?.['x-request-id'] ??
         response.headers?.['X-Request-Id']) as string | undefined;
       this.logger.log(
-        `Successfully added tag '${tag}' to order ${gid} on ${shopDomain} (requestId=${reqId ?? 'n/a'})`,
+        `Successfully added tag '${tag}' to order ${gid} on ${integration.platformStoreUrl} (requestId=${reqId ?? 'n/a'})`,
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

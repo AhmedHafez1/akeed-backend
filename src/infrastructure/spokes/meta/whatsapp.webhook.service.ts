@@ -66,18 +66,7 @@ export class WhatsAppWebhookService {
         `Updating verification status for wamid: ${wamid} to ${status}`,
       );
 
-      const result = await this.verificationsRepo.updateStatusByWamid(
-        wamid,
-        status,
-      );
-
-      if (result?.length > 0) {
-        const verification = result[0];
-        await this.verificationHub.finalizeVerification(
-          verification.id,
-          status,
-        );
-      }
+      await this.verificationsRepo.updateStatusByWamid(wamid, status);
     }
   }
 }

@@ -131,7 +131,10 @@ export class ShopifyAuthService {
   }
 
   async refreshAccessTokenIfNeeded(shopDomain: string): Promise<string | null> {
-    const integration = await this.integrationsRepo.findByDomain(shopDomain);
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shopDomain,
+      'shopify',
+    );
     if (!integration) {
       this.logger.warn(`No Shopify integration found for domain ${shopDomain}`);
       return null;

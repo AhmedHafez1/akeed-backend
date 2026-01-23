@@ -90,7 +90,7 @@ export class VerificationHubService {
       const integration = order.integration as typeof integrations.$inferSelect;
       if (integration?.platformStoreUrl) {
         await this.shopifyApiService.addOrderTag(
-          integration.platformStoreUrl,
+          integration,
           order.externalOrderId,
           tag,
         );

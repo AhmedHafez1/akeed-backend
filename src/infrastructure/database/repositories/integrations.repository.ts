@@ -18,10 +18,6 @@ export class IntegrationsRepository {
     });
   }
 
-  async findByDomain(domain: string) {
-    return this.findByPlatformDomain(domain, 'shopify');
-  }
-
   async create(data: typeof integrations.$inferInsert) {
     const [result] = await this.db
       .insert(integrations)

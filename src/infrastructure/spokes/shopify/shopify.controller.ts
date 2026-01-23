@@ -34,7 +34,10 @@ export class ShopifyController {
     );
 
     // Resolve orgId via domain integration mapping
-    const integration = await this.integrationsRepo.findByDomain(shopDomain);
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shopDomain,
+      'shopify',
+    );
     const orgId = integration?.orgId;
 
     if (!orgId) {
@@ -44,7 +47,7 @@ export class ShopifyController {
       return { received: true };
     }
 
-    const normalizedOrder = this.mapToHubOrder(payload, orgId);
+    const normalizedOrder = this.mapToHubOrder(payload, orgId, integration.id);
 
     await this.verificationHub.handleNewOrder(normalizedOrder);
 
@@ -54,6 +57,7 @@ export class ShopifyController {
   private mapToHubOrder(
     payload: ShopifyOrderPayload,
     orgId: string,
+    integrationId: string,
   ): NormalizedOrder {
     // Attempt to find a phone number from various fields
     const phone =
@@ -66,6 +70,7 @@ export class ShopifyController {
     return {
       orgId,
       externalOrderId: String(payload.id),
+      integrationId: integrationId,
       orderNumber: String(payload.order_number),
       customerPhone: phone || '', // Ideally this should be validated/formatted but basic extraction for now
       customerName: payload.customer

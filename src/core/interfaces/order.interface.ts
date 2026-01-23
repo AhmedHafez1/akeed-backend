@@ -1,5 +1,6 @@
 export interface NormalizedOrder {
   orgId: string;
+  integrationId: string;
   externalOrderId: string; // The ID from Shopify/Salla
   orderNumber?: string;
   customerPhone: string; // Must be E.164 format
