@@ -35,9 +35,7 @@ export class ShopifyAuthService {
     }
 
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
-    const scopes =
-      this.configService.get<string>('SHOPIFY_SCOPES') ||
-      'read_orders,write_orders,read_customers';
+    const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
     const appUrl = this.configService.getOrThrow<string>('APP_URL');
     const redirectUri = `${appUrl}/auth/shopify/callback`;
     const state = generateNonce();
