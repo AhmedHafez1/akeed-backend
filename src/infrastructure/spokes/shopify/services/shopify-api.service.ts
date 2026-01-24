@@ -108,20 +108,12 @@ export class ShopifyApiService {
       this.logger.error(
         `GraphQL Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(data.errors)}`,
       );
-      throw new Error(
-        `Shopify GraphQL Error (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(
-          data.errors,
-        )}`,
-      );
     }
 
     const userErrors = data.data?.tagsAdd?.userErrors;
     if (userErrors && userErrors.length > 0) {
       this.logger.error(
         `User Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(userErrors)}`,
-      );
-      throw new Error(
-        `Shopify User Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(userErrors)}`,
       );
     }
   }

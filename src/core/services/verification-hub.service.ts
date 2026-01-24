@@ -89,15 +89,21 @@ export class VerificationHubService {
       // We'll pass the shop domain (stored in integrations) and the order ID
       const integration = order.integration as typeof integrations.$inferSelect;
       if (integration?.platformStoreUrl) {
-        await this.shopifyApiService.addOrderTag(
-          integration,
-          order.externalOrderId,
-          tag,
-        );
+        try {
+          await this.shopifyApiService.addOrderTag(
+            integration,
+            order.externalOrderId,
+            tag,
+          );
 
-        this.logger.log(
-          `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
-        );
+          this.logger.log(
+            `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error}`,
+          );
+        }
       } else {
         this.logger.warn(
           `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
