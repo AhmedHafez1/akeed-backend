@@ -29,6 +29,10 @@ export class ShopifyAuthService {
     private readonly organizationsRepo: OrganizationsRepository,
   ) {}
 
+  async isInstalled(shop: string): Promise<boolean> {
+    return this.integrationsRepo.findByPlatformDomain(shop, 'shopify') !== null;
+  }
+
   async install(shop: string): Promise<string> {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
