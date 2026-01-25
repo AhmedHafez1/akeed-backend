@@ -85,10 +85,10 @@ export class ShopifyAuthService {
 
     // Redirect to app
     // TODO: Determine the correct post-install redirect.
-    // Usually it's the embedded app URL in Shopify Admin.
-    // We can assume standard embedded app behavior.
-    const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
-    return `https://${shop}/admin/apps/${apiKey}`;
+    // Usually it's the embedded app URL in Shopify Admin or external app URL
+    // We can assume external app URL for now.
+    const appUrl = this.configService.getOrThrow<string>('APP_URL');
+    return appUrl;
   }
 
   private verifyHmac(query: Record<string, string>): void {
