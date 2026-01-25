@@ -34,6 +34,8 @@ export class ShopifyAuthService {
       throw new BadRequestException('Invalid shop parameter');
     }
 
+    this.logger.log(`Installing Shopify app for shop: ${shop}`);
+
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
     const appUrl = this.configService.getOrThrow<string>('APP_URL');
@@ -57,6 +59,8 @@ export class ShopifyAuthService {
 
     const authUrl = `https://${shop}/admin/oauth/authorize?${queryParams.toString()}`;
 
+    this.logger.log(`Shopify app installation URL: ${authUrl}`);
+
     return authUrl;
   }
 
@@ -70,6 +74,8 @@ export class ShopifyAuthService {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
     }
+
+    this.logger.log(`Shopify app callback for shop: ${shop}`);
 
     this.verifyHmac(query);
     this.verifyState(state);
@@ -88,6 +94,8 @@ export class ShopifyAuthService {
     // Usually it's the embedded app URL in Shopify Admin or external app URL
     // We can assume external app URL for now.
     const appUrl = this.configService.getOrThrow<string>('APP_URL');
+
+    this.logger.log(`Shopify app callback redirect to: ${appUrl}`);
     return appUrl;
   }
 
