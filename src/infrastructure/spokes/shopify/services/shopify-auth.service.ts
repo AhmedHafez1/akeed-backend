@@ -30,7 +30,9 @@ export class ShopifyAuthService {
   ) {}
 
   async isInstalled(shop: string): Promise<boolean> {
-    return this.integrationsRepo.findByPlatformDomain(shop, 'shopify') !== null;
+    return Boolean(
+      await this.integrationsRepo.findByPlatformDomain(shop, 'shopify'),
+    );
   }
 
   async install(shop: string): Promise<string> {
