@@ -101,7 +101,7 @@ export class VerificationHubService {
           );
         } catch (error) {
           this.logger.error(
-            `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error}`,
+            `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error as Error}`,
           );
         }
       } else {
