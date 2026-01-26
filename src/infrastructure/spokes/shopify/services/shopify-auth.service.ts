@@ -35,7 +35,7 @@ export class ShopifyAuthService {
     );
   }
 
-  async install(shop: string): Promise<string> {
+  install(shop: string): string {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
     }
@@ -197,7 +197,7 @@ export class ShopifyAuthService {
 
     // NOTE: This should probably be in a queue or more robust, but inline is required for now.
 
-    const url = `https://${shop}/admin/api/2024-01/webhooks.json`;
+    const url = `https://${shop}/admin/api/2026-01/webhooks.json`;
 
     try {
       await firstValueFrom(
