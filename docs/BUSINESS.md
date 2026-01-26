@@ -35,6 +35,12 @@ Akeed automates the order verification process by:
 #### Shopify Integration
 
 - **OAuth Authentication**: Secure app installation flow for Shopify stores
+- **Webhook Registration**: Production-grade, idempotent registration of Shopify webhooks
+  - Topics: `orders/create` and `app/uninstalled`
+  - Uses configured Admin API version, includes `X-Shopify-Access-Token`
+  - Idempotent: treats HTTP 422 (already exists) as success; safe on reinstall
+  - Non-blocking OAuth callback: registration runs in background to avoid delaying redirect
+  - Reliability: retry with exponential backoff for transient failures; logs topic + shop
 - **Webhook Management**: Real-time order event processing
 - **Order Data Synchronization**: Automatic capture of order details including:
   - Order ID and order number
@@ -200,6 +206,10 @@ The platform uses a **Hub-and-Spoke** architecture where:
 - **Shopify Webhooks**:
   - `orders/create` - New order events
   - `app/uninstalled` - App removal events
+  - Registration characteristics:
+    - Idempotent and safe to re-run (HTTP 422 treated as success)
+    - Uses configured Admin API version with `X-Shopify-Access-Token`
+    - Runs non-blocking during OAuth callback; failures logged and retried with backoff
   - HMAC signature validation for security
 - **WhatsApp Webhooks**:
   - Message delivery status updates
@@ -462,6 +472,7 @@ SHOPIFY_API_KEY=...
 SHOPIFY_API_SECRET=...
 SHOPIFY_SCOPES=read_orders,write_orders
 SHOPIFY_REDIRECT_URI=https://yourdomain.com/auth/shopify/callback
+SHOPIFY_API_VERSION=2026-01
 ```
 
 ---
