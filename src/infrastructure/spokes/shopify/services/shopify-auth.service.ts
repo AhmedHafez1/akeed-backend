@@ -9,8 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import type { AxiosError } from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
+import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import {
   generateNonce,
   validateShop,
@@ -28,6 +30,7 @@ export class ShopifyAuthService {
     private readonly httpService: HttpService,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly organizationsRepo: OrganizationsRepository,
+    private readonly membershipsRepo: MembershipsRepository,
   ) {}
 
   async isInstalled(shop: string): Promise<boolean> {
@@ -170,6 +173,7 @@ export class ShopifyAuthService {
       await this.integrationsRepo.findByPlatformDomain(shop, 'shopify');
 
     let orgId: string;
+    let isNewOrganization = false;
 
     if (existingIntegration) {
       orgId = existingIntegration.orgId;
@@ -181,6 +185,7 @@ export class ShopifyAuthService {
         shop,
       );
       orgId = org.id;
+      isNewOrganization = true;
     }
 
     await this.integrationsRepo.upsertShopifyIntegration(
@@ -189,6 +194,95 @@ export class ShopifyAuthService {
       'shopify',
       accessToken,
     );
+
+    // Create or get user and membership (only for new organizations)
+    if (isNewOrganization) {
+      try {
+        const user = await this.createOrGetUser(shop);
+        await this.membershipsRepo.createOrUpdateMembership(
+          orgId,
+          user.id,
+          'owner',
+        );
+        this.logger.log(
+          `Created user and membership for shop: ${shop}, userId: ${user.id}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to create user/membership for shop: ${shop}`,
+          error,
+        );
+        // Don't throw - allow installation to continue even if user creation fails
+        // This can be retried later or handled manually
+      }
+    }
+  }
+
+  private async createOrGetUser(shop: string): Promise<{ id: string }> {
+    const supabaseUrl = this.configService.getOrThrow<string>('SUPABASE_URL');
+    const supabaseServiceKey = this.configService.getOrThrow<string>(
+      'SUPABASE_SERVICE_ROLE_KEY',
+    );
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    // Use shop domain as email identifier
+    const email = `${shop}@akeed-shopify.internal`;
+
+    // First, try to find existing user by email
+    const { data: existingUser } = await supabase.auth.admin.listUsers();
+    const user = existingUser?.users?.find((u) => u.email === email);
+
+    if (user) {
+      this.logger.log(
+        `Found existing user for shop: ${shop}, userId: ${user.id}`,
+      );
+      return { id: user.id };
+    }
+
+    // Create new user with random password (merchant won't use it)
+    const password = this.generateSecurePassword();
+    const { data: newUser, error } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // Auto-confirm email
+      user_metadata: {
+        shop_domain: shop,
+        platform: 'shopify',
+        created_via: 'oauth_installation',
+      },
+    });
+
+    if (error || !newUser?.user) {
+      this.logger.error(`Failed to create user for shop: ${shop}`, error);
+      throw new InternalServerErrorException(
+        `Failed to create user account: ${error?.message || 'Unknown error'}`,
+      );
+    }
+
+    this.logger.log(
+      `Created new user for shop: ${shop}, userId: ${newUser.user.id}`,
+    );
+    return { id: newUser.user.id };
+  }
+
+  private generateSecurePassword(): string {
+    // Generate a cryptographically secure random password
+    const chars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    const length = 32;
+    let password = '';
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      password += chars[array[i] % chars.length];
+    }
+    return password;
   }
 
   private async registerWebhooks(

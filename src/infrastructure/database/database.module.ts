@@ -6,6 +6,7 @@ import { OrdersRepository } from './repositories/orders.repository';
 import { VerificationsRepository } from './repositories/verifications.repository';
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
+import { MembershipsRepository } from './repositories/memberships.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -15,6 +16,7 @@ import { OrganizationsRepository } from './repositories/organizations.repository
     VerificationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
+    MembershipsRepository,
   ],
   exports: [
     drizzleProvider,
@@ -22,6 +24,7 @@ import { OrganizationsRepository } from './repositories/organizations.repository
     VerificationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
+    MembershipsRepository,
   ],
 })
 export class DatabaseModule {}
