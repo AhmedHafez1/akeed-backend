@@ -12,6 +12,7 @@ import { VerificationHubService } from '../../../core/services/verification-hub.
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
 import type { ShopifyOrderPayload } from './models/shopify-order-payload';
+import type { ShopifyAppUninstalledPayload } from './models/shopify-app-uninstalled-payload';
 
 @Controller('webhooks/shopify')
 // @UseGuards(ShopifyHmacGuard)
@@ -85,7 +86,7 @@ export class ShopifyController {
   @Post('uninstalled')
   @HttpCode(200)
   async handleAppUninstalled(
-    @Body() payload: any,
+    @Body() payload: ShopifyAppUninstalledPayload,
     @Headers('x-shopify-shop-domain') shopDomain: string,
   ) {
     this.logger.log(
