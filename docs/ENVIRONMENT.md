@@ -59,5 +59,15 @@ npm run db:push
 
 - Configure the following variables for Shopify OAuth:
   - `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`
-  - `SHOPIFY_REDIRECT_URI` (e.g., `http://localhost:3000/auth/shopify/callback`)
-  - `FRONTEND_DASHBOARD_URL` (e.g., your app dashboard URL used for post-auth redirect)
+  - `SHOPIFY_SCOPES` (e.g., `read_orders,write_orders`)
+  - `SHOPIFY_API_VERSION` (e.g., `2026-01`)
+  - `APP_URL` (base URL used for OAuth callback and webhook addresses)
+  - `SHOPIFY_REDIRECT_URI` (usually `${APP_URL}/auth/shopify/callback`)
+
+## WhatsApp (Meta) Configuration
+
+- Configure Meta Cloud API credentials:
+  - `WA_PHONE_NUMBER_ID`
+  - `WA_BUSINESS_ACCOUNT_ID`
+  - `WA_ACCESS_TOKEN`
+  - `WA_VERIFY_TOKEN`

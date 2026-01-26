@@ -22,7 +22,7 @@ DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com
 
 ### 2. Database Schema
 
-The schema is defined in `src/core/database/schema.ts` and includes:
+The schema is defined in `src/infrastructure/database/schema.ts` and includes:
 
 - **users** - Reference to Supabase auth.users
 - **organizations** - Multi-tenant organization management
@@ -47,7 +47,7 @@ The schema is defined in `src/core/database/schema.ts` and includes:
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
-import { DRIZZLE, DrizzleDB } from './core/database';
+import { DRIZZLE, DrizzleDB } from '../../src/infrastructure/database';
 
 @Injectable()
 export class MyService {
