@@ -1,4 +1,4 @@
-# Akeed - Business Capabilities Documentation
+# Akeed - Business Documentation
 
 ## Executive Summary
 
