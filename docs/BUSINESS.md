@@ -188,7 +188,10 @@ The platform uses a **Hub-and-Spoke** architecture where:
 - **Spokes (Platform Adapters)**:
   - **Meta Spoke**: WhatsApp Cloud API integration
   - **Shopify Spoke**: Shopify-specific authentication and API calls
-  - **WooCommerce Spoke**: (Future) WooCommerce integration
+  - **Costum(Order Excel Upload)**: (Future)
+  - **WooCommerce Spoke**: (Future)
+  - **Salla Spoke**: (Future)
+  - **EasyOrders**: (Future)
 
 #### Benefits
 
