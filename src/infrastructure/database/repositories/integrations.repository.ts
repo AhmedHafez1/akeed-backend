@@ -66,4 +66,8 @@ export class IntegrationsRepository {
 
     return created;
   }
+
+  async deleteByOrgId(orgId: string) {
+    await this.db.delete(integrations).where(eq(integrations.orgId, orgId));
+  }
 }
