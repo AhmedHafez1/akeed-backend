@@ -18,7 +18,7 @@ export class ShopifyAuthController {
       const appUrl = this.configService.getOrThrow<string>('APP_URL');
       return res.redirect(appUrl);
     }
-    const authUrl = await this.shopifyAuthService.install(shop);
+    const authUrl = this.shopifyAuthService.install(shop);
     return res.redirect(authUrl);
   }
 
