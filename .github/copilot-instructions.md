@@ -13,15 +13,10 @@ These instructions guide AI assistants working on this repository to produce saf
   - Environment configuration: [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)
   - Database setup: [docs/DATABASE.md](../docs/DATABASE.md)
 
-## Tech & Key Files
+## Tech Stack
 
 - Framework: NestJS (TypeScript).
 - Database: PostgreSQL via Drizzle ORM.
-- Shopify:
-  - OAuth controller: [src/infrastructure/spokes/shopify/shopify-auth.controller.ts](../src/infrastructure/spokes/shopify/shopify-auth.controller.ts)
-  - OAuth service: [src/infrastructure/spokes/shopify/services/shopify-auth.service.ts](../src/infrastructure/spokes/shopify/services/shopify-auth.service.ts)
-  - Webhooks controller: [src/infrastructure/spokes/shopify/shopify.controller.ts](../src/infrastructure/spokes/shopify/shopify.controller.ts)
-- WhatsApp (Meta): [src/infrastructure/spokes/meta](../src/infrastructure/spokes/meta)
 
 ## Development Workflow
 
@@ -62,12 +57,6 @@ These instructions guide AI assistants working on this repository to produce saf
 - Avoid one-letter variable names unless explicitly requested.
 - Update documentation when behavior or interfaces change.
 
-## Testing & Validation
-
-- After editing code, run targeted tests or compile to validate changes where feasible.
-- Start with the smallest scope (unit or specific module) before broader tests.
-- Only fix errors relevant to your changes.
-
 ## Response & Formatting Guidelines
 
 - Be concise, direct, and friendly; focus on actionable steps.
@@ -78,12 +67,26 @@ These instructions guide AI assistants working on this repository to produce saf
 - Wrap commands in fenced code blocks and keep them copyable.
 - Use KaTeX for math when needed.
 
-## Policies & Safety
+## Conventions:
 
-- Follow Microsoft content policies.
-- Avoid generating harmful, hateful, racist, sexist, lewd, or violent content. If asked, respond with: "Sorry, I can't assist with that."
-- Respect copyrights; do not include copyrighted materials without permission.
-- If asked about the model, state: "GPT-5".
+- Use async/await
+- Prefer services over controllers
+- Never put business logic in controllers
+- Use Shopify Admin REST API
+- Validate HMAC for all Shopify callbacks
+- Assume raw body is required for webhooks
+
+## Security:
+
+- Always verify Shopify HMAC
+- Use timing-safe comparisons
+- Never log secrets or tokens
+
+## Code style:
+
+- TypeScript strict
+- Clear method names
+- Production-grade error handling
 
 ## Helpful Links
 
