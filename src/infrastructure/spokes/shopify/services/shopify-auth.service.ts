@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import type { AxiosError } from 'axios';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import {
@@ -92,8 +93,10 @@ export class ShopifyAuthService {
     // Persist integration
     await this.handlePersistence(shop, accessToken);
 
-    // Register Webhooks
-    await this.registerWebhooks(shop, accessToken);
+    // Register Webhooks (non-blocking)
+    // Do not await to avoid delaying the OAuth callback redirect.
+    // Any errors are handled internally and logged.
+    void this.registerWebhooks(shop, accessToken);
 
     // Redirect to app
     // TODO: Determine the correct post-install redirect.
@@ -147,15 +150,15 @@ export class ShopifyAuthService {
 
     try {
       const { data } = await firstValueFrom(
-        this.httpService.post(url, {
+        this.httpService.post<{ access_token: string }>(url, {
           client_id: clientId,
           client_secret: clientSecret,
           code,
         }),
       );
       return data.access_token;
-    } catch (error) {
-      this.logger.error('Failed to exchange code for token', error);
+    } catch (error: unknown) {
+      this.logger.error('Failed to exchange code for token', error as Error);
       throw new InternalServerErrorException(
         'Failed to exchange authorization code',
       );
@@ -188,40 +191,118 @@ export class ShopifyAuthService {
     );
   }
 
-  private async registerWebhooks(shop: string, accessToken: string) {
-    // Register app/uninstalled
-    const webhookUrl = `${this.configService.getOrThrow<string>('APP_URL')}/webhooks/shopify/uninstalled`;
+  private async registerWebhooks(
+    shop: string,
+    accessToken: string,
+  ): Promise<void> {
+    const appUrl = this.configService.getOrThrow<string>('APP_URL');
+    const apiVersion = this.getShopifyApiVersion();
 
-    // Check if webhook exists or just try to create it. Shopify allows multiple webhooks but we want to avoid duplicates if possible.
-    // However, for the 'install' flow, standard practice is just to POST.
+    const definitions = this.getWebhookDefinitions(appUrl);
 
-    // NOTE: This should probably be in a queue or more robust, but inline is required for now.
-
-    const url = `https://${shop}/admin/api/2026-01/webhooks.json`;
-
-    try {
-      await firstValueFrom(
-        this.httpService.post(
-          url,
-          {
-            webhook: {
-              topic: 'app/uninstalled',
-              address: webhookUrl,
-              format: 'json',
-            },
-          },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-            },
-          },
-        ),
-      );
-    } catch (error: any) {
-      // Ignore if it says "address has already been taken" etc.
-      this.logger.warn(
-        `Webhook registration warning: ${error.response?.data ? JSON.stringify(error.response.data) : error.message}`,
+    for (const def of definitions) {
+      await this.registerWebhookWithRetry(
+        shop,
+        accessToken,
+        apiVersion,
+        def.topic,
+        def.address,
       );
     }
+  }
+
+  private getShopifyApiVersion(): string {
+    // Use configured version if present, fallback to the one previously used in the codebase
+    return this.configService.get<string>('SHOPIFY_API_VERSION') ?? '2026-01';
+  }
+
+  private getWebhookDefinitions(
+    appUrl: string,
+  ): Array<{ topic: string; address: string }> {
+    // Easy to extend: add/remove topics here.
+    return [
+      // Mandatory and highest priority
+      {
+        topic: 'app/uninstalled',
+        address: `${appUrl}/webhooks/shopify/uninstalled`,
+      },
+      // Business-related topics already used by the app
+      {
+        topic: 'orders/create',
+        address: `${appUrl}/webhooks/shopify/orders-create`,
+      },
+    ];
+  }
+
+  private async registerWebhookWithRetry(
+    shop: string,
+    accessToken: string,
+    apiVersion: string,
+    topic: string,
+    address: string,
+  ): Promise<void> {
+    const url = `https://${shop}/admin/api/${apiVersion}/webhooks.json`;
+
+    const payload = {
+      webhook: {
+        topic,
+        address,
+        format: 'json',
+      },
+    };
+
+    const headers = {
+      'X-Shopify-Access-Token': accessToken,
+    };
+
+    const maxAttempts = 3;
+    let attempt = 0;
+    let lastError: AxiosError<unknown> | null = null;
+
+    while (attempt < maxAttempts) {
+      attempt += 1;
+      try {
+        await firstValueFrom(this.httpService.post(url, payload, { headers }));
+        this.logger.log(`Webhook registered: topic=${topic} shop=${shop}`);
+        return;
+      } catch (error: unknown) {
+        // Idempotent success: Shopify returns 422 if address already exists
+        const axiosError = error as AxiosError<unknown>;
+        const status = axiosError.response?.status;
+        const errData = axiosError.response?.data;
+        const isAlreadyExists = status === 422;
+
+        if (isAlreadyExists) {
+          this.logger.log(
+            `Webhook already exists (treated as success): topic=${topic} shop=${shop}`,
+          );
+          return;
+        }
+
+        lastError = axiosError ?? null;
+        this.logger.warn(
+          `Webhook registration failed (attempt ${attempt}/${maxAttempts}): topic=${topic} shop=${shop} status=${status} details=${errData ? JSON.stringify(errData) : axiosError.message}`,
+        );
+
+        if (attempt < maxAttempts) {
+          // Exponential backoff: 500ms, 1000ms
+          const delayMs = 500 * Math.pow(2, attempt - 1);
+          await this.sleep(delayMs);
+        }
+      }
+    }
+
+    // Final failure (graceful): log and move on without throwing
+    if (lastError) {
+      const status = lastError.response?.status;
+      const errData = lastError.response?.data;
+      this.logger.error(
+        `Webhook registration ultimately failed: topic=${topic} shop=${shop} status=${status} details=${errData ? JSON.stringify(errData) : lastError.message}`,
+      );
+    }
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
