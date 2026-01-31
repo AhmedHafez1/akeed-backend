@@ -39,24 +39,21 @@ export class ShopifyHmacGuard implements CanActivate {
       );
     }
 
-    const hash = crypto
+    const generatedHash = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
       .digest('base64');
 
-    // crypto.timingSafeEqual requires buffers of the same length
-    // To safe guard against timing attacks, we can double HMAC ensuring we compare fixed length strings if we were doing string comparison
-    // But timingSafeEqual wants Buffers.
-    // Creating buffers from base64 strings
+    const hmacBuffer = Buffer.from(hmacHeader, 'base64');
+    const generatedHashBuffer = Buffer.from(generatedHash, 'base64');
 
-    const hashBuffer = Buffer.from(hash, 'base64');
-    const headerBuffer = Buffer.from(hmacHeader, 'base64');
-
-    if (hashBuffer.length !== headerBuffer.length) {
+    if (hmacBuffer.length !== generatedHashBuffer.length) {
+      this.logger.warn('HMAC length mismatch');
       throw new UnauthorizedException('Invalid HMAC signature');
     }
 
-    if (!crypto.timingSafeEqual(hashBuffer, headerBuffer)) {
+    if (!crypto.timingSafeEqual(hmacBuffer, generatedHashBuffer)) {
+      this.logger.warn('Invalid HMAC signature');
       throw new UnauthorizedException('Invalid HMAC signature');
     }
 
