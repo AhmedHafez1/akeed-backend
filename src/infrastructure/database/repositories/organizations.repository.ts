@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { eq } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { organizations } from '../schema';
@@ -21,5 +22,15 @@ export class OrganizationsRepository {
       })
       .returning();
     return result;
+  }
+
+  async findById(id: string) {
+    const org = await this.db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, id))
+      .limit(1)
+      .then((res) => res[0]);
+    return org;
   }
 }
