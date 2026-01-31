@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { TokenValidatorService } from '../services/token-validator.service';
+import { Request } from 'express';
 
 /**
  * Dual Authentication Guard
@@ -35,6 +36,10 @@ export interface AuthenticatedUser {
   shop?: string;
 }
 
+export interface RequestWithUser extends Request {
+  user: AuthenticatedUser;
+}
+
 @Injectable()
 export class DualAuthGuard implements CanActivate {
   private readonly logger = new Logger(DualAuthGuard.name);
@@ -42,7 +47,7 @@ export class DualAuthGuard implements CanActivate {
   constructor(private readonly tokenValidator: TokenValidatorService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
 
     // Extract Authorization header
     const authHeader = request.headers.authorization;
@@ -71,7 +76,8 @@ export class DualAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      this.logger.error(`Authentication failed: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Authentication failed: ${message}`);
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

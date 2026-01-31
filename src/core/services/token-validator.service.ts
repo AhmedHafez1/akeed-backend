@@ -28,18 +28,10 @@ interface ShopifySessionPayload {
   sid: string; // Session ID
 }
 
-interface SupabaseJWTPayload {
-  sub: string; // User ID
-  email?: string;
-  role?: string;
-  exp: number;
-  iat: number;
-}
-
 @Injectable()
 export class TokenValidatorService {
   private readonly logger = new Logger(TokenValidatorService.name);
-  private readonly supabase: SupabaseClient;
+  private readonly supabase: SupabaseClient<any, 'public', any>;
 
   constructor(
     private readonly configService: ConfigService,
@@ -52,12 +44,16 @@ export class TokenValidatorService {
       'SUPABASE_SERVICE_ROLE_KEY',
     );
 
-    this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+    this.supabase = createClient<any, 'public', any>(
+      supabaseUrl,
+      supabaseServiceKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       },
-    });
+    );
   }
 
   /**
@@ -90,7 +86,7 @@ export class TokenValidatorService {
 
       const payload = JSON.parse(
         Buffer.from(parts[1], 'base64url').toString('utf8'),
-      );
+      ) as { dest?: string; aud?: string; role?: string };
 
       // Shopify tokens have 'dest' field
       if (payload.dest && payload.dest.includes('myshopify.com')) {
@@ -117,7 +113,7 @@ export class TokenValidatorService {
   ): Promise<AuthenticatedUser> {
     try {
       // Decode and verify Shopify JWT
-      const payload = await this.verifyShopifyJWT(token);
+      const payload = this.verifyShopifyJWT(token);
 
       // Extract shop domain
       const shop = payload.dest;
@@ -137,7 +133,7 @@ export class TokenValidatorService {
 
       // Find user membership
       // For Shopify, we use the shop domain to identify the user
-      const membership = await this.membershipsRepo.findByOrgId(orgId);
+      const membership = await this.membershipsRepo.findByOrg(orgId);
 
       if (!membership || membership.length === 0) {
         this.logger.warn(`No membership found for org: ${orgId}`);
@@ -181,7 +177,7 @@ export class TokenValidatorService {
       const userId = user.id;
 
       // Find user's organization via membership
-      const memberships = await this.membershipsRepo.findByUserId(userId);
+      const memberships = await this.membershipsRepo.findByUser(userId);
 
       if (!memberships || memberships.length === 0) {
         this.logger.warn(`No organization found for user: ${userId}`);
@@ -208,9 +204,7 @@ export class TokenValidatorService {
    * Shopify session tokens are signed with HMAC SHA-256
    * using the app's client secret
    */
-  private async verifyShopifyJWT(
-    token: string,
-  ): Promise<ShopifySessionPayload> {
+  private verifyShopifyJWT(token: string): ShopifySessionPayload {
     const parts = token.split('.');
     if (parts.length !== 3) {
       throw new Error('Invalid JWT format');
@@ -219,9 +213,9 @@ export class TokenValidatorService {
     const [headerB64, payloadB64, signatureB64] = parts;
 
     // Decode payload
-    const payload: ShopifySessionPayload = JSON.parse(
+    const payload = JSON.parse(
       Buffer.from(payloadB64, 'base64url').toString('utf8'),
-    );
+    ) as ShopifySessionPayload;
 
     // Verify signature
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
