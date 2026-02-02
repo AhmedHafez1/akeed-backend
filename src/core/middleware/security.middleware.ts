@@ -27,6 +27,11 @@ export class SecurityMiddleware implements NestMiddleware {
     // Set other security headers
     this.setSecurityHeaders(res);
 
+    // Handle OPTIONS preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
     next();
   }
 
@@ -80,7 +85,7 @@ export class SecurityMiddleware implements NestMiddleware {
     // List of allowed origins
     const allowedOrigins = [
       'https://admin.shopify.com',
-      'https://app.akeed.com',
+      'https://akeed-eta.vercel.app',
       'http://localhost:3000', // Development
       'http://localhost:3001', // Development frontend
     ];
