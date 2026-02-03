@@ -4,6 +4,7 @@ import {
   memberships,
   users,
   integrations,
+  shopifyWebhookEvents,
   orders,
   verifications,
 } from './schema';
@@ -22,6 +23,7 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   integrations: many(integrations),
+  shopifyWebhookEvents: many(shopifyWebhookEvents),
   orders: many(orders),
   verifications: many(verifications),
 }));
@@ -38,6 +40,21 @@ export const integrationsRelations = relations(
       references: [organizations.id],
     }),
     orders: many(orders),
+    shopifyWebhookEvents: many(shopifyWebhookEvents),
+  }),
+);
+
+export const shopifyWebhookEventsRelations = relations(
+  shopifyWebhookEvents,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [shopifyWebhookEvents.orgId],
+      references: [organizations.id],
+    }),
+    integration: one(integrations, {
+      fields: [shopifyWebhookEvents.integrationId],
+      references: [integrations.id],
+    }),
   }),
 );
 

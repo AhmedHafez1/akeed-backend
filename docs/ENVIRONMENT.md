@@ -66,7 +66,7 @@ npm run db:push
 
 ## WhatsApp (Meta) Configuration
 
-- Configure Meta Cloud API credentials:
+- Use global Meta Cloud API credentials for sending and webhook verification:
   - `WA_PHONE_NUMBER_ID`
   - `WA_BUSINESS_ACCOUNT_ID`
   - `WA_ACCESS_TOKEN`

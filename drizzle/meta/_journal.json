@@ -15,6 +15,13 @@
       "when": 1768754842031,
       "tag": "0001_windy_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770076800000,
+      "tag": "0002_shopify_webhook_events",
+      "breakpoints": true
     }
   ]
 }

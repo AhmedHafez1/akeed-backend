@@ -7,6 +7,7 @@ import { VerificationsRepository } from './repositories/verifications.repository
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
 import { MembershipsRepository } from './repositories/memberships.repository';
+import { ShopifyWebhookEventsRepository } from './repositories/shopify-webhook-events.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -17,6 +18,7 @@ import { MembershipsRepository } from './repositories/memberships.repository';
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
+    ShopifyWebhookEventsRepository,
   ],
   exports: [
     drizzleProvider,
@@ -25,6 +27,7 @@ import { MembershipsRepository } from './repositories/memberships.repository';
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
+    ShopifyWebhookEventsRepository,
   ],
 })
 export class DatabaseModule {}

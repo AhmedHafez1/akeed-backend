@@ -6,11 +6,12 @@ import { HttpModule } from '@nestjs/axios';
 import { ShopifyApiService } from './services/shopify-api.service';
 import { ShopifyAuthService } from './services/shopify-auth.service.js';
 import { ShopifyAuthController } from './shopify-auth.controller.js';
+import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 
 @Module({
   imports: [forwardRef(() => CoreModule), DatabaseModule, HttpModule],
   controllers: [ShopifyController, ShopifyAuthController],
-  providers: [ShopifyApiService, ShopifyAuthService],
+  providers: [ShopifyApiService, ShopifyAuthService, ShopifyHmacGuard],
   exports: [ShopifyApiService, ShopifyAuthService],
 })
 export class ShopifyModule {}

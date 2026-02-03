@@ -203,6 +203,46 @@ export const integrations = pgTable(
   ],
 );
 
+export const shopifyWebhookEvents = pgTable(
+  'shopify_webhook_events',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id'),
+    integrationId: uuid('integration_id'),
+    webhookId: text('webhook_id').notNull(),
+    topic: text('topic'),
+    shopDomain: text('shop_domain'),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_shopify_webhook_events_org_id').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_shopify_webhook_events_integration_id').using(
+      'btree',
+      table.integrationId.asc().nullsLast().op('uuid_ops'),
+    ),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'shopify_webhook_events_org_id_fkey',
+    }).onDelete('set null'),
+    foreignKey({
+      columns: [table.integrationId],
+      foreignColumns: [integrations.id],
+      name: 'shopify_webhook_events_integration_id_fkey',
+    }).onDelete('set null'),
+    unique('shopify_webhook_events_webhook_id_key').on(table.webhookId),
+  ],
+);
+
 export const orders = pgTable(
   'orders',
   {

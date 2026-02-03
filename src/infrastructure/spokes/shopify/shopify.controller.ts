@@ -2,26 +2,28 @@ import {
   Controller,
   Post,
   Body,
-  // UseGuards,
+  UseGuards,
   HttpCode,
   Logger,
   Headers,
 } from '@nestjs/common';
-// import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
+import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { VerificationHubService } from '../../../core/services/verification-hub.service';
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
+import { ShopifyWebhookEventsRepository } from '../../database/repositories/shopify-webhook-events.repository';
 import type { ShopifyOrderPayload } from './models/shopify-order-payload';
 import type { ShopifyAppUninstalledPayload } from './models/shopify-app-uninstalled-payload';
 
 @Controller('webhooks/shopify')
-// @UseGuards(ShopifyHmacGuard)
+@UseGuards(ShopifyHmacGuard)
 export class ShopifyController {
   private readonly logger = new Logger(ShopifyController.name);
 
   constructor(
     private readonly verificationHub: VerificationHubService,
     private readonly integrationsRepo: IntegrationsRepository,
+    private readonly webhookEventsRepo: ShopifyWebhookEventsRepository,
   ) {}
 
   @Post('orders-create')
@@ -29,10 +31,18 @@ export class ShopifyController {
   async handleOrderCreate(
     @Body() payload: ShopifyOrderPayload,
     @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+    @Headers('x-shopify-topic') topic: string,
   ) {
     this.logger.log(
       `Received Shopify Order Webhook from ${shopDomain}: ${payload.id}`,
     );
+
+    if (!webhookId) {
+      this.logger.warn(
+        `Missing X-Shopify-Webhook-Id for order ${payload.id} from ${shopDomain}`,
+      );
+    }
 
     // Resolve orgId via domain integration mapping
     const integration = await this.integrationsRepo.findByPlatformDomain(
@@ -40,6 +50,23 @@ export class ShopifyController {
       'shopify',
     );
     const orgId = integration?.orgId;
+
+    if (webhookId) {
+      const isNew = await this.webhookEventsRepo.recordIfNew({
+        webhookId,
+        topic,
+        shopDomain,
+        orgId,
+        integrationId: integration?.id,
+      });
+
+      if (!isNew) {
+        this.logger.warn(
+          `Duplicate Shopify webhook ${webhookId} ignored for shop ${shopDomain}`,
+        );
+        return { received: true, duplicate: true };
+      }
+    }
 
     if (!orgId) {
       this.logger.warn(
@@ -88,10 +115,18 @@ export class ShopifyController {
   async handleAppUninstalled(
     @Body() payload: ShopifyAppUninstalledPayload,
     @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+    @Headers('x-shopify-topic') topic: string,
   ) {
     this.logger.log(
       `Received Shopify App Uninstalled Webhook from ${shopDomain}: ${payload.id}`,
     );
+
+    if (!webhookId) {
+      this.logger.warn(
+        `Missing X-Shopify-Webhook-Id for app uninstall from ${shopDomain}`,
+      );
+    }
 
     // Resolve orgId via domain integration mapping
     const integration = await this.integrationsRepo.findByPlatformDomain(
@@ -99,6 +134,23 @@ export class ShopifyController {
       'shopify',
     );
     const orgId = integration?.orgId;
+
+    if (webhookId) {
+      const isNew = await this.webhookEventsRepo.recordIfNew({
+        webhookId,
+        topic,
+        shopDomain,
+        orgId,
+        integrationId: integration?.id,
+      });
+
+      if (!isNew) {
+        this.logger.warn(
+          `Duplicate Shopify webhook ${webhookId} ignored for shop ${shopDomain}`,
+        );
+        return { received: true, duplicate: true };
+      }
+    }
 
     if (!orgId) {
       this.logger.warn(
