@@ -9,7 +9,10 @@ import { organizations } from '../schema';
 export class OrganizationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
-  async createOrUpdateBySlug(name: string, slug: string) {
+  async createOrUpdateBySlug(
+    name: string,
+    slug: string,
+  ): Promise<typeof organizations.$inferSelect> {
     const [result] = await this.db
       .insert(organizations)
       .values({
@@ -18,13 +21,30 @@ export class OrganizationsRepository {
       })
       .onConflictDoUpdate({
         target: organizations.slug,
-        set: { updatedAt: new Date().toISOString() },
+        set: { name, updatedAt: new Date().toISOString() },
       })
       .returning();
     return result;
   }
 
-  async findById(id: string) {
+  async updateById(
+    id: string,
+    updates: Partial<typeof organizations.$inferInsert>,
+  ): Promise<typeof organizations.$inferSelect | undefined> {
+    const [result] = await this.db
+      .update(organizations)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(organizations.id, id))
+      .returning();
+    return result;
+  }
+
+  async findById(
+    id: string,
+  ): Promise<typeof organizations.$inferSelect | undefined> {
     const org = await this.db
       .select()
       .from(organizations)

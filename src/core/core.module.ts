@@ -7,6 +7,8 @@ import { MetaModule } from 'src/infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from 'src/infrastructure/spokes/shopify/shopify.module';
 import { DualAuthGuard } from './guards/dual-auth.guard';
 import { TokenValidatorService } from './services/token-validator.service';
+import { OrganizationsController } from './controllers/organizations.controller';
+import { OrganizationsService } from './services/organizations.service';
 
 @Module({
   imports: [
@@ -20,7 +22,13 @@ import { TokenValidatorService } from './services/token-validator.service';
     forwardRef(() => MetaModule),
     forwardRef(() => ShopifyModule),
   ],
-  providers: [VerificationHubService, DualAuthGuard, TokenValidatorService],
+  controllers: [OrganizationsController],
+  providers: [
+    VerificationHubService,
+    DualAuthGuard,
+    TokenValidatorService,
+    OrganizationsService,
+  ],
   exports: [VerificationHubService, DualAuthGuard],
 })
 export class CoreModule {}
