@@ -9,6 +9,10 @@ import { DualAuthGuard } from './guards/dual-auth.guard';
 import { TokenValidatorService } from './services/token-validator.service';
 import { OrganizationsController } from './controllers/organizations.controller';
 import { OrganizationsService } from './services/organizations.service';
+import { VerificationsController } from './controllers/verifications.controller';
+import { OrdersController } from './controllers/orders.controller';
+import { VerificationsService } from './services/verifications.service';
+import { OrdersService } from './services/orders.service';
 
 @Module({
   imports: [
@@ -22,12 +26,18 @@ import { OrganizationsService } from './services/organizations.service';
     forwardRef(() => MetaModule),
     forwardRef(() => ShopifyModule),
   ],
-  controllers: [OrganizationsController],
+  controllers: [
+    OrganizationsController,
+    VerificationsController,
+    OrdersController,
+  ],
   providers: [
     VerificationHubService,
     DualAuthGuard,
     TokenValidatorService,
     OrganizationsService,
+    VerificationsService,
+    OrdersService,
   ],
   exports: [VerificationHubService, DualAuthGuard],
 })

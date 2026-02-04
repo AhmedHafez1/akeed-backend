@@ -31,4 +31,20 @@ export class OrdersRepository {
       ),
     });
   }
+
+  async findByOrg(orgId: string): Promise<
+    Array<
+      typeof orders.$inferSelect & {
+        verifications: Array<typeof schema.verifications.$inferSelect>;
+      }
+    >
+  > {
+    return await this.db.query.orders.findMany({
+      where: eq(orders.orgId, orgId),
+      with: {
+        verifications: true,
+      },
+      orderBy: (orders, { desc }) => [desc(orders.createdAt)],
+    });
+  }
 }

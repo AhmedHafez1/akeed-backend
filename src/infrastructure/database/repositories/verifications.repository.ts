@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
@@ -27,6 +27,30 @@ export class VerificationsRepository {
   async findById(verificationId: string) {
     return await this.db.query.verifications.findFirst({
       where: eq(verifications.id, verificationId),
+    });
+  }
+
+  async findByOrg(
+    orgId: string,
+    statuses?: VerificationStatus[],
+  ): Promise<
+    Array<
+      typeof verifications.$inferSelect & {
+        order: typeof schema.orders.$inferSelect | null;
+      }
+    >
+  > {
+    return await this.db.query.verifications.findMany({
+      where: and(
+        eq(verifications.orgId, orgId),
+        statuses && statuses.length > 0
+          ? inArray(verifications.status, statuses)
+          : undefined,
+      ),
+      with: {
+        order: true,
+      },
+      orderBy: (verifications, { desc }) => [desc(verifications.createdAt)],
     });
   }
 
