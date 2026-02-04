@@ -1,10 +1,11 @@
-import { Controller, Get, UseGuards, Request, Logger } from '@nestjs/common';
+import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import {
   DualAuthGuard,
   type AuthenticatedUser,
   type RequestWithUser,
 } from '../guards/dual-auth.guard';
-import { OrganizationsRepository } from 'src/infrastructure/database/repositories/organizations.repository';
+import { AuthService } from '../services/auth.service';
+import { AuthStatusResponseDto, MeResponseDto } from '../dto/auth.dto';
 
 /**
  * Auth Controller
@@ -16,24 +17,9 @@ import { OrganizationsRepository } from 'src/infrastructure/database/repositorie
  * It must return identical structure regardless of authentication source.
  */
 
-interface MeResponse {
-  user_id: string;
-  org_id: string;
-  source: 'shopify' | 'supabase';
-  shop?: string;
-  organization?: {
-    id: string;
-    name: string;
-    slug: string;
-    plan_type: string;
-  };
-}
-
 @Controller('auth')
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name);
-
-  constructor(private readonly organizationsRepo: OrganizationsRepository) {}
+  constructor(private readonly authService: AuthService) {}
 
   /**
    * GET /auth/me
@@ -48,46 +34,11 @@ export class AuthController {
    */
   @Get('me')
   @UseGuards(DualAuthGuard)
-  async getCurrentUser(@Request() req: RequestWithUser): Promise<MeResponse> {
+  async getCurrentUser(
+    @Request() req: RequestWithUser,
+  ): Promise<MeResponseDto> {
     const user: AuthenticatedUser = req.user;
-
-    this.logger.debug(
-      `GET /auth/me - user: ${user.userId}, org: ${user.orgId}, source: ${user.source}`,
-    );
-
-    // Fetch organization details
-    const organization = await this.organizationsRepo.findById(user.orgId);
-
-    if (!organization) {
-      this.logger.warn(`Organization not found: ${user.orgId}`);
-      // Return basic response even if org not found
-      return {
-        user_id: user.userId,
-        org_id: user.orgId,
-        source: user.source,
-        shop: user.shop,
-      };
-    }
-
-    // Build comprehensive response
-    const response: MeResponse = {
-      user_id: user.userId,
-      org_id: user.orgId,
-      source: user.source,
-      organization: {
-        id: organization.id,
-        name: organization.name,
-        slug: organization.slug,
-        plan_type: organization.planType || 'free',
-      },
-    };
-
-    // Include shop domain for Shopify users
-    if (user.shop) {
-      response.shop = user.shop;
-    }
-
-    return response;
+    return this.authService.getCurrentUser(user);
   }
 
   /**
@@ -98,15 +49,8 @@ export class AuthController {
    */
   @Get('status')
   @UseGuards(DualAuthGuard)
-  getAuthStatus(@Request() req: RequestWithUser): {
-    authenticated: boolean;
-    source: string;
-  } {
+  getAuthStatus(@Request() req: RequestWithUser): AuthStatusResponseDto {
     const user: AuthenticatedUser = req.user;
-
-    return {
-      authenticated: true,
-      source: user.source,
-    };
+    return this.authService.getAuthStatus(user);
   }
 }

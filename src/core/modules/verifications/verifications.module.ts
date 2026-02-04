@@ -1,0 +1,21 @@
+import { Module, forwardRef } from '@nestjs/common';
+import { DatabaseModule } from '../../../infrastructure/database/database.module';
+import { VerificationsController } from '../../controllers/verifications.controller';
+import { VerificationsService } from '../../services/verifications.service';
+import { VerificationHubService } from '../../services/verification-hub.service';
+import { AuthModule } from '../auth/auth.module';
+import { MetaModule } from '../../../infrastructure/spokes/meta/meta.module';
+import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.module';
+
+@Module({
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    forwardRef(() => MetaModule),
+    forwardRef(() => ShopifyModule),
+  ],
+  controllers: [VerificationsController],
+  providers: [VerificationsService, VerificationHubService],
+  exports: [VerificationsService, VerificationHubService],
+})
+export class VerificationsModule {}

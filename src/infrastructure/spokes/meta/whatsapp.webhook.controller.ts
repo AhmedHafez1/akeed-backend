@@ -1,4 +1,3 @@
-import type { WhatsAppWebhookPayload } from './models/whatsapp-webhook-payload.interface';
 import {
   Controller,
   Get,
@@ -9,11 +8,23 @@ import {
   HttpStatus,
   Logger,
   HttpCode,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
+import {
+  WhatsAppWebhookPayloadDto,
+  WhatsAppWebhookVerifyDto,
+} from './dto/whatsapp-webhook.dto';
 
 @Controller('webhooks/whatsapp')
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: false,
+  }),
+)
 export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
 
@@ -21,11 +32,11 @@ export class WhatsAppWebhookController {
 
   @Get()
   verifyWebhook(
-    @Query('hub.mode') mode: string,
-    @Query('hub.verify_token') token: string,
-    @Query('hub.challenge') challenge: string,
+    @Query() query: WhatsAppWebhookVerifyDto,
     @Res() res: Response,
-  ) {
+  ): Response {
+    const { mode, token, challenge } = query;
+
     if (mode === 'subscribe' && token === process.env.WA_VERIFY_TOKEN) {
       this.logger.log('Webhook verified successfully.');
       return res.status(HttpStatus.OK).send(challenge);
@@ -37,14 +48,9 @@ export class WhatsAppWebhookController {
 
   @Post()
   @HttpCode(200)
-  async handleIncoming(@Body() payload: WhatsAppWebhookPayload) {
-    try {
-      await this.service.handleIncoming(payload);
-      return { status: 'success' };
-    } catch (e) {
-      this.logger.error('Error handling webhook payload:', e);
-      // Always return 200 OK to prevent Meta from disabling the webhook
-      return { status: 'error', message: 'Internal Server Error' };
-    }
+  async handleIncoming(
+    @Body() payload: WhatsAppWebhookPayloadDto,
+  ): Promise<{ status: string; message?: string }> {
+    return this.service.processIncoming(payload);
   }
 }

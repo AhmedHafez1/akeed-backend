@@ -1,22 +1,32 @@
 import {
-  Controller,
-  Post,
   Body,
-  UseGuards,
+  Controller,
+  Headers,
   HttpCode,
   Logger,
-  Headers,
+  Post,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { VerificationHubService } from '../../../core/services/verification-hub.service';
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
 import { ShopifyWebhookEventsRepository } from '../../database/repositories/shopify-webhook-events.repository';
-import type { ShopifyOrderPayload } from './models/shopify-order-payload';
-import type { ShopifyAppUninstalledPayload } from './models/shopify-app-uninstalled-payload';
+import {
+  ShopifyAppUninstalledDto,
+  ShopifyOrderWebhookDto,
+} from './dto/shopify-webhooks.dto';
 
 @Controller('webhooks/shopify')
 @UseGuards(ShopifyHmacGuard)
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: false,
+  }),
+)
 export class ShopifyController {
   private readonly logger = new Logger(ShopifyController.name);
 
@@ -29,11 +39,11 @@ export class ShopifyController {
   @Post('orders-create')
   @HttpCode(200)
   async handleOrderCreate(
-    @Body() payload: ShopifyOrderPayload,
+    @Body() payload: ShopifyOrderWebhookDto,
     @Headers('x-shopify-shop-domain') shopDomain: string,
     @Headers('x-shopify-webhook-id') webhookId: string,
     @Headers('x-shopify-topic') topic: string,
-  ) {
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
     this.logger.log(
       `Received Shopify Order Webhook from ${shopDomain}: ${payload.id}`,
     );
@@ -83,7 +93,7 @@ export class ShopifyController {
   }
 
   private mapToHubOrder(
-    payload: ShopifyOrderPayload,
+    payload: ShopifyOrderWebhookDto,
     orgId: string,
     integrationId: string,
   ): NormalizedOrder {
@@ -104,8 +114,8 @@ export class ShopifyController {
       customerName: payload.customer
         ? `${payload.customer.first_name} ${payload.customer.last_name}`.trim()
         : 'Guest',
-      totalPrice: payload.total_price,
-      currency: payload.currency,
+      totalPrice: payload.total_price ?? '',
+      currency: payload.currency ?? '',
       rawPayload: payload,
     };
   }
@@ -113,11 +123,11 @@ export class ShopifyController {
   @Post('uninstalled')
   @HttpCode(200)
   async handleAppUninstalled(
-    @Body() payload: ShopifyAppUninstalledPayload,
+    @Body() payload: ShopifyAppUninstalledDto,
     @Headers('x-shopify-shop-domain') shopDomain: string,
     @Headers('x-shopify-webhook-id') webhookId: string,
     @Headers('x-shopify-topic') topic: string,
-  ) {
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
     this.logger.log(
       `Received Shopify App Uninstalled Webhook from ${shopDomain}: ${payload.id}`,
     );

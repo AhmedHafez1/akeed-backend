@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VerificationsRepository } from '../../database/repositories/verifications.repository';
 import { VerificationHubService } from 'src/core/services/verification-hub.service';
-import { WhatsAppWebhookPayload } from './models/whatsapp-webhook-payload.interface';
+import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 
 @Injectable()
@@ -13,18 +13,33 @@ export class WhatsAppWebhookService {
     private verificationHub: VerificationHubService,
   ) {}
 
-  async handleIncoming(payload: WhatsAppWebhookPayload) {
+  async processIncoming(
+    payload: WhatsAppWebhookPayloadDto,
+  ): Promise<{ status: string; message?: string }> {
+    try {
+      await this.handleIncoming(payload);
+      return { status: 'success' };
+    } catch (error) {
+      this.logger.error('Error handling webhook payload:', error);
+      // Always return 200 OK to prevent Meta from disabling the webhook
+      return { status: 'error', message: 'Internal Server Error' };
+    }
+  }
+
+  private async handleIncoming(payload: WhatsAppWebhookPayloadDto) {
     this.logger.log('Received WhatsApp webhook payload:', payload);
 
-    if (!payload?.entry?.[0]?.changes?.[0]?.value) {
+    const entry = payload.entry?.[0];
+    const change = entry?.changes?.[0];
+    const value = change?.value;
+
+    if (!value) {
       return;
     }
 
-    const value = payload.entry[0].changes[0].value;
-
     // Handle Button Replies
-    if (value.messages?.[0]?.type === 'button') {
-      const message = value.messages[0];
+    const message = value.messages?.[0];
+    if (message?.type === 'button') {
       const buttonReplyId = message.button?.payload;
 
       if (buttonReplyId) {
@@ -55,18 +70,24 @@ export class WhatsAppWebhookService {
     }
 
     // Handle Status Updates (Delivered / Read)
-    if (value.statuses?.[0]) {
-      const statusObj = value.statuses[0];
+    const statusObj = value.statuses?.[0];
+    if (statusObj) {
       const wamid = statusObj.id;
-      const status: VerificationStatus = statusObj.status;
+      const status = statusObj.status;
 
-      if (status === 'sent') return;
+      if (!wamid || !status) {
+        return;
+      }
+
+      const typedStatus = status as VerificationStatus;
+
+      if (typedStatus === 'sent') return;
 
       this.logger.log(
-        `Updating verification status for wamid: ${wamid} to ${status}`,
+        `Updating verification status for wamid: ${wamid} to ${typedStatus}`,
       );
 
-      await this.verificationsRepo.updateStatusByWamid(wamid, status);
+      await this.verificationsRepo.updateStatusByWamid(wamid, typedStatus);
     }
   }
 }

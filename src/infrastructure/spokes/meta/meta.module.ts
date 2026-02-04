@@ -6,14 +6,14 @@ import { ConfigModule } from '@nestjs/config';
 import { WhatsAppWebhookController } from './whatsapp.webhook.controller';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import { DatabaseModule } from '../../database/database.module';
-import { CoreModule } from 'src/core/core.module';
+import { VerificationsModule } from 'src/core/modules/verifications/verifications.module';
 
 @Module({
   imports: [
     HttpModule,
     ConfigModule,
     DatabaseModule,
-    forwardRef(() => CoreModule),
+    forwardRef(() => VerificationsModule),
   ],
   controllers: [WhatsAppWebhookController],
   providers: [WhatsAppService, WhatsAppWebhookService],

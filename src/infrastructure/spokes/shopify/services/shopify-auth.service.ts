@@ -18,6 +18,7 @@ import {
   validateShop,
   verifyShopifyHmac,
 } from '../shopify.utils';
+import { ShopifyCallbackQueryDto } from '../dto/shopify-auth.dto';
 
 @Injectable()
 export class ShopifyAuthService {
@@ -74,7 +75,7 @@ export class ShopifyAuthService {
     return authUrl;
   }
 
-  async callback(query: Record<string, string>): Promise<string> {
+  async callback(query: ShopifyCallbackQueryDto): Promise<string> {
     const { shop, code, state, hmac } = query;
 
     if (!shop || !code || !state || !hmac) {
@@ -111,9 +112,9 @@ export class ShopifyAuthService {
     return appUrl;
   }
 
-  private verifyHmac(query: Record<string, string>): void {
+  private verifyHmac(query: ShopifyCallbackQueryDto): void {
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-    if (!verifyShopifyHmac(query, secret)) {
+    if (!verifyShopifyHmac({ ...query }, secret)) {
       throw new UnauthorizedException('HMAC validation failed');
     }
   }
