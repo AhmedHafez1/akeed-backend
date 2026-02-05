@@ -1,35 +1,5 @@
 # Akeed – Copilot Instructions
 
-These instructions guide AI assistants working on this repository to produce safe, precise, and useful changes.
-
-## Project Overview
-
-- Multi-tenant NestJS backend that automates COD order verification for e-commerce (Shopify) using WhatsApp Cloud API.
-- Hub-and-Spoke architecture:
-  - Core: `VerificationHubService` orchestrates verification and messaging.
-  - Spokes: Platform adapters (Shopify, Meta/WhatsApp).
-- Key docs:
-  - Business overview: [docs/BUSINESS.md](../docs/BUSINESS.md)
-  - Environment configuration: [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)
-  - Database setup: [docs/DATABASE.md](../docs/DATABASE.md)
-
-## Tech Stack
-
-- Framework: NestJS (TypeScript).
-- Database: PostgreSQL via Drizzle ORM.
-
-## Development Workflow
-
-- Install & run:
-  - `npm install`
-  - Dev: `npm run start:dev`
-  - Prod: `npm run build` then `npm run start:prod`
-- Database workflows:
-  - `npm run db:push` (dev), `npm run db:generate`, `npm run db:migrate`, `npm run db:studio`
-- Testing & linting:
-  - Unit: `npm run test` | E2E: `npm run test:e2e` | Coverage: `npm run test:cov`
-  - Lint/format: `npm run lint` | `npm run format`
-
 ## Coding Standards
 
 - Keep changes minimal and focused; avoid unrelated refactors.
@@ -38,16 +8,6 @@ These instructions guide AI assistants working on this repository to produce saf
 - Avoid inline comments in code unless the user requests them.
 - Prefer strong typing; avoid `any`.
 - Handle errors gracefully; log context (e.g., topic+shop for Shopify).
-
-## Shopify Requirements (Important)
-
-- Webhook registration:
-  - Topics: `orders/create`, `app/uninstalled`.
-  - Use `POST https://{shop}/admin/api/{version}/webhooks.json` with `X-Shopify-Access-Token`.
-  - Idempotent: treat HTTP 422 "already exists" as success; safe on reinstall.
-  - Non-blocking: do not delay OAuth callback; run registration in background.
-  - Reliability: retry with backoff; log failures including topic + shop.
-- Order normalization fields include: `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `rawPayload`.
 
 ## Editing Rules (for file changes)
 
