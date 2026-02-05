@@ -15,6 +15,7 @@ import {
 } from '../dto/organizations.dto';
 import { OrganizationsService } from '../services/organizations.service';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
+import { AllowOrgless } from '../guards/orgless.decorator';
 import type { RequestWithUser } from '../guards/dual-auth.guard';
 
 @Controller('api/organizations')
@@ -29,6 +30,7 @@ export class OrganizationsController {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
   @Post()
+  @AllowOrgless()
   async createOrganization(
     @Request() req: RequestWithUser,
     @Body() payload: CreateOrganizationDto,

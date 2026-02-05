@@ -60,14 +60,17 @@ export class TokenValidatorService {
    * Main validation entry point
    * Detects token type and validates accordingly
    */
-  async validateToken(token: string): Promise<AuthenticatedUser> {
+  async validateToken(
+    token: string,
+    options?: { allowMissingOrg?: boolean },
+  ): Promise<AuthenticatedUser> {
     // Detect token type
     const tokenType = this.detectTokenType(token);
 
     if (tokenType === 'shopify') {
       return this.validateShopifyToken(token);
     } else if (tokenType === 'supabase') {
-      return this.validateSupabaseToken(token);
+      return this.validateSupabaseToken(token, options?.allowMissingOrg);
     } else {
       throw new UnauthorizedException('Unknown token type');
     }
@@ -161,6 +164,7 @@ export class TokenValidatorService {
    */
   private async validateSupabaseToken(
     token: string,
+    allowMissingOrg = false,
   ): Promise<AuthenticatedUser> {
     try {
       // Verify JWT with Supabase
@@ -181,6 +185,13 @@ export class TokenValidatorService {
 
       if (!memberships || memberships.length === 0) {
         this.logger.warn(`No organization found for user: ${userId}`);
+        if (allowMissingOrg) {
+          return {
+            userId,
+            orgId: '',
+            source: 'supabase',
+          };
+        }
         throw new UnauthorizedException('User has no organization');
       }
 

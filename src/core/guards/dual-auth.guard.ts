@@ -5,8 +5,10 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { TokenValidatorService } from '../services/token-validator.service';
 import { Request } from 'express';
+import { ALLOW_ORGLESS_KEY } from './orgless.decorator';
 
 /**
  * Dual Authentication Guard
@@ -44,7 +46,10 @@ export interface RequestWithUser extends Request {
 export class DualAuthGuard implements CanActivate {
   private readonly logger = new Logger(DualAuthGuard.name);
 
-  constructor(private readonly tokenValidator: TokenValidatorService) {}
+  constructor(
+    private readonly tokenValidator: TokenValidatorService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
@@ -63,15 +68,23 @@ export class DualAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
+    const allowOrgless = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_ORGLESS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
     try {
       // Validate token and get user context
-      const user = await this.tokenValidator.validateToken(token);
+      const user = await this.tokenValidator.validateToken(token, {
+        allowMissingOrg: Boolean(allowOrgless),
+      });
 
       // Attach user context to request
       request.user = user;
 
+      const orgLabel = user.orgId || 'none';
       this.logger.debug(
-        `Authenticated user: ${user.userId} (${user.source}) org: ${user.orgId}`,
+        `Authenticated user: ${user.userId} (${user.source}) org: ${orgLabel}`,
       );
 
       return true;
