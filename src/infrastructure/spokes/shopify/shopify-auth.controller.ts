@@ -33,16 +33,28 @@ export class ShopifyAuthController {
     @Query() query: ShopifyLoginQueryDto,
     @Res() res: Response,
   ): Promise<void> {
-    const { shop } = query;
+    const { shop, host } = query;
     // first check if the shop is already installed
     const isInstalled = await this.shopifyAuthService.isInstalled(shop);
     if (isInstalled) {
-      const appUrl = this.configService.getOrThrow<string>('APP_URL');
-      res.redirect(appUrl);
+      const redirectUrl = this.shopifyAuthService.getPostAuthRedirectUrl(
+        shop,
+        host,
+      );
+      res.redirect(redirectUrl);
       return;
     }
-    const authUrl = this.shopifyAuthService.install(shop);
+    const authUrl = this.shopifyAuthService.install(shop, host);
     res.redirect(authUrl);
+  }
+
+  @Get('/check')
+  async check(
+    @Query() query: ShopifyLoginQueryDto,
+  ): Promise<{ installed: boolean }> {
+    const { shop } = query;
+    const installed = await this.shopifyAuthService.isInstalled(shop);
+    return { installed };
   }
 
   @Get('/callback')

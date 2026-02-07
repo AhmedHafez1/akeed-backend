@@ -39,7 +39,7 @@ export class ShopifyAuthService {
     );
   }
 
-  install(shop: string): string {
+  install(shop: string, host?: string): string {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
     }
@@ -49,7 +49,11 @@ export class ShopifyAuthService {
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
-    const redirectUri = `${apiUrl}/auth/shopify/callback`;
+    const redirectUrl = new URL(`${apiUrl}/auth/shopify/callback`);
+    if (host) {
+      redirectUrl.searchParams.set('host', host);
+    }
+    const redirectUri = redirectUrl.toString();
     const state = generateNonce();
 
     // Store state with timestamp for expiration (10 mins)
@@ -77,7 +81,7 @@ export class ShopifyAuthService {
   async callback(
     rawQuery: Record<string, string | undefined>,
   ): Promise<string> {
-    const { shop, code, state, hmac } = rawQuery;
+    const { shop, code, state, hmac, host } = rawQuery;
 
     if (!shop || !code || !state || !hmac) {
       throw new BadRequestException('Missing required parameters');
@@ -103,10 +107,22 @@ export class ShopifyAuthService {
     void this.registerWebhooks(shop, accessToken);
 
     // Redirect to app dashboard after successful installation
-    const appUrl = this.configService.getOrThrow<string>('APP_URL');
+    const redirectUrl = this.getPostAuthRedirectUrl(shop, host);
 
-    this.logger.log(`Shopify app callback redirect to: ${appUrl}`);
-    return appUrl;
+    this.logger.log(`Shopify app callback redirect to: ${redirectUrl}`);
+    return redirectUrl;
+  }
+
+  getPostAuthRedirectUrl(shop: string, host?: string): string {
+    if (host) {
+      const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
+      const redirectUrl = new URL(`https://${shop}/admin/apps/${apiKey}`);
+      redirectUrl.searchParams.set('host', host);
+      redirectUrl.searchParams.set('shop', shop);
+      return redirectUrl.toString();
+    }
+
+    return this.configService.getOrThrow<string>('APP_URL');
   }
 
   private verifyHmac(query: Record<string, string | undefined>): void {
