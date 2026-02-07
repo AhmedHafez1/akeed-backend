@@ -11,29 +11,38 @@ export function generateNonce(): string {
 }
 
 export function verifyShopifyHmac(
-  query: Record<string, string>,
+  query: Record<string, string | undefined>,
   secret: string,
 ): boolean {
-  const { hmac, ...params } = query;
+  if (!query.hmac) return false;
 
-  // Sort params explicitly
-  const queryString = Object.keys(params)
-    .sort()
-    .map((key) => `${key}=${params[key]}`)
+  // Build message from all params except hmac/signature, preserving URL encoding
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(query)) {
+    if (key === 'hmac' || key === 'signature') continue;
+    if (value === undefined) continue;
+    entries.push([key, value]);
+  }
+
+  const queryString = entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    )
     .join('&');
 
   const calculatedHmac = crypto
     .createHmac('sha256', secret)
     .update(queryString)
-    .digest('hex');
+    .digest('hex')
+    .toLowerCase();
 
-  // Constant-time comparison
-  const hash1 = Buffer.from(calculatedHmac);
-  const hash2 = Buffer.from(hmac);
+  const receivedHmac = query.hmac.toLowerCase();
+  if (calculatedHmac.length !== receivedHmac.length) return false;
 
-  if (hash1.length !== hash2.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(hash1, hash2);
+  return crypto.timingSafeEqual(
+    Buffer.from(calculatedHmac, 'hex'),
+    Buffer.from(receivedHmac, 'hex'),
+  );
 }

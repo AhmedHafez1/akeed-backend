@@ -18,7 +18,6 @@ import {
   validateShop,
   verifyShopifyHmac,
 } from '../shopify.utils';
-import { ShopifyCallbackQueryDto } from '../dto/shopify-auth.dto';
 
 @Injectable()
 export class ShopifyAuthService {
@@ -49,8 +48,8 @@ export class ShopifyAuthService {
 
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
-    const appUrl = this.configService.getOrThrow<string>('APP_URL');
-    const redirectUri = `${appUrl}/auth/shopify/callback`;
+    const apiUrl = this.configService.getOrThrow<string>('API_URL');
+    const redirectUri = `${apiUrl}/auth/shopify/callback`;
     const state = generateNonce();
 
     // Store state with timestamp for expiration (10 mins)
@@ -75,8 +74,10 @@ export class ShopifyAuthService {
     return authUrl;
   }
 
-  async callback(query: ShopifyCallbackQueryDto): Promise<string> {
-    const { shop, code, state, hmac } = query;
+  async callback(
+    rawQuery: Record<string, string | undefined>,
+  ): Promise<string> {
+    const { shop, code, state, hmac } = rawQuery;
 
     if (!shop || !code || !state || !hmac) {
       throw new BadRequestException('Missing required parameters');
@@ -88,7 +89,7 @@ export class ShopifyAuthService {
 
     this.logger.log(`Shopify app callback for shop: ${shop}`);
 
-    this.verifyHmac(query);
+    this.verifyHmac(rawQuery);
     this.verifyState(state);
 
     // Exchange code for access token
@@ -99,22 +100,18 @@ export class ShopifyAuthService {
 
     // Register Webhooks (non-blocking)
     // Do not await to avoid delaying the OAuth callback redirect.
-    // Any errors are handled internally and logged.
     void this.registerWebhooks(shop, accessToken);
 
-    // Redirect to app
-    // TODO: Determine the correct post-install redirect.
-    // Usually it's the embedded app URL in Shopify Admin or external app URL
-    // We can assume external app URL for now.
+    // Redirect to app dashboard after successful installation
     const appUrl = this.configService.getOrThrow<string>('APP_URL');
 
     this.logger.log(`Shopify app callback redirect to: ${appUrl}`);
     return appUrl;
   }
 
-  private verifyHmac(query: ShopifyCallbackQueryDto): void {
+  private verifyHmac(query: Record<string, string | undefined>): void {
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-    if (!verifyShopifyHmac({ ...query }, secret)) {
+    if (!verifyShopifyHmac(query, secret)) {
       throw new UnauthorizedException('HMAC validation failed');
     }
   }
@@ -290,10 +287,10 @@ export class ShopifyAuthService {
     shop: string,
     accessToken: string,
   ): Promise<void> {
-    const appUrl = this.configService.getOrThrow<string>('APP_URL');
+    const apiUrl = this.configService.getOrThrow<string>('API_URL');
     const apiVersion = this.getShopifyApiVersion();
 
-    const definitions = this.getWebhookDefinitions(appUrl);
+    const definitions = this.getWebhookDefinitions(apiUrl);
 
     for (const def of definitions) {
       await this.registerWebhookWithRetry(

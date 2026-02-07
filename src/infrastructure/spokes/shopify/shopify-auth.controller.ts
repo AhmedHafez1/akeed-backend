@@ -3,11 +3,12 @@ import {
   Get,
   Query,
   Res,
+  Req,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import { ShopifyAuthService } from './services/shopify-auth.service';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import {
   ShopifyCallbackQueryDto,
@@ -47,9 +48,12 @@ export class ShopifyAuthController {
   @Get('/callback')
   async callback(
     @Query() query: ShopifyCallbackQueryDto,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const appUrl = await this.shopifyAuthService.callback(query);
+    const appUrl = await this.shopifyAuthService.callback(
+      req.query as Record<string, string | undefined>,
+    );
     res.redirect(appUrl);
   }
 }

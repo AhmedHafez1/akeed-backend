@@ -61,8 +61,8 @@ npm run db:push
   - `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`
   - `SHOPIFY_SCOPES` (e.g., `read_orders,write_orders`)
   - `SHOPIFY_API_VERSION` (e.g., `2026-01`)
-  - `APP_URL` (base URL used for OAuth callback and webhook addresses)
-  - `SHOPIFY_REDIRECT_URI` (usually `${APP_URL}/auth/shopify/callback`)
+  - `API_URL` (base URL used for OAuth callback and webhook addresses)
+  - `SHOPIFY_REDIRECT_URI` (usually `${API_URL}/auth/shopify/callback`)
 
 ## WhatsApp (Meta) Configuration
 
