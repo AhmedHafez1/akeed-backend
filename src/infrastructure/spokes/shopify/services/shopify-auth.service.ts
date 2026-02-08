@@ -39,7 +39,7 @@ export class ShopifyAuthService {
     );
   }
 
-  install(shop: string, host?: string): string {
+  install(shop: string): string {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
     }
@@ -50,9 +50,6 @@ export class ShopifyAuthService {
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
     const redirectUrl = new URL(`${apiUrl}/auth/shopify/callback`);
-    if (host) {
-      redirectUrl.searchParams.set('host', host);
-    }
     const redirectUri = redirectUrl.toString();
     const state = generateNonce();
 
