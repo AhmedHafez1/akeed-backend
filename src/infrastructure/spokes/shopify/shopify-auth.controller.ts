@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { ShopifyAuthService } from './services/shopify-auth.service';
 import type { Request, Response } from 'express';
-import { ConfigService } from '@nestjs/config';
 import {
   ShopifyCallbackQueryDto,
   ShopifyLoginQueryDto,
@@ -23,10 +22,7 @@ import {
   }),
 )
 export class ShopifyAuthController {
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly shopifyAuthService: ShopifyAuthService,
-  ) {}
+  constructor(private readonly shopifyAuthService: ShopifyAuthService) {}
 
   @Get('/')
   async login(
