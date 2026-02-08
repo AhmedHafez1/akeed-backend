@@ -116,6 +116,7 @@ export class ShopifyAuthService {
       const redirectUrl = new URL(`https://${shop}/admin/apps/${apiKey}`);
       redirectUrl.searchParams.set('host', host);
       redirectUrl.searchParams.set('shop', shop);
+      redirectUrl.searchParams.set('installed', 'true');
       return redirectUrl.toString();
     }
 
