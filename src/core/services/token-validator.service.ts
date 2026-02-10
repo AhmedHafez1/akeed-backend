@@ -119,7 +119,7 @@ export class TokenValidatorService {
       const payload = this.verifyShopifyJWT(token);
 
       // Extract shop domain
-      const shop = payload.dest;
+      const shop = payload.dest.replace('https://', '');
 
       // Find integration by shop domain
       const integration = await this.integrationsRepo.findByPlatformDomain(
@@ -228,6 +228,12 @@ export class TokenValidatorService {
       Buffer.from(payloadB64, 'base64url').toString('utf8'),
     ) as ShopifySessionPayload;
 
+    this.logger.debug(`Verifying Shopify JWT for shop: ${payload.dest}`);
+    this.logger.debug(`Token Audience: ${payload.aud}`);
+    this.logger.debug(
+      `Configured API Key: ${this.configService.getOrThrow<string>('SHOPIFY_API_KEY')}`,
+    );
+
     // Verify signature
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
     const data = `${headerB64}.${payloadB64}`;
@@ -237,23 +243,33 @@ export class TokenValidatorService {
       .digest('base64url');
 
     if (signatureB64 !== expectedSignature) {
+      this.logger.error(
+        `Signature mismatch. Expected: ${expectedSignature}, Got: ${signatureB64}`,
+      );
       throw new Error('Invalid JWT signature');
     }
 
     // Verify expiration
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
+      this.logger.error(`Token expired. Exp: ${payload.exp}, Now: ${now}`);
       throw new Error('JWT expired');
     }
 
     // Verify not before
     if (payload.nbf > now) {
+      this.logger.error(
+        `Token not yet valid. Nbf: ${payload.nbf}, Now: ${now}`,
+      );
       throw new Error('JWT not yet valid');
     }
 
     // Verify audience (API key)
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     if (payload.aud !== apiKey) {
+      this.logger.error(
+        `Audience mismatch. Expected: ${apiKey}, Got: ${payload.aud}`,
+      );
       throw new Error('Invalid JWT audience');
     }
 

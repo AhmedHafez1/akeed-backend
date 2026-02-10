@@ -86,8 +86,7 @@ export class SecurityMiddleware implements NestMiddleware {
     const allowedOrigins = [
       'https://admin.shopify.com',
       'https://akeed-eta.vercel.app',
-      'https://unmasticatory-dihydroxy-brittny.ngrok-free.dev',
-      'https://head-neural-breaks-shadow.trycloudflare.com',
+      'https://pledge-holland-legendary-resolved.trycloudflare.com',
       'http://localhost:3000', // Development
       'http://localhost:3001', // Development frontend
     ];
@@ -103,7 +102,7 @@ export class SecurityMiddleware implements NestMiddleware {
     );
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, X-Requested-With',
+      'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning, x-shopify-access-token',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
