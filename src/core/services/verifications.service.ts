@@ -38,6 +38,10 @@ export class VerificationsService {
       order_number: verification.order?.orderNumber ?? null,
       customer_name: verification.order?.customerName ?? null,
       customer_phone: verification.order?.customerPhone ?? null,
+      total_price: verification.order?.totalPrice
+        ? verification.order.totalPrice.toString()
+        : null,
+      currency: verification.order?.currency ?? null,
       created_at: verification.createdAt ?? null,
     }));
   }

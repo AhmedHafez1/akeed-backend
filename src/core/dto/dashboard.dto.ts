@@ -13,6 +13,8 @@ export interface VerificationListItemDto {
   order_number: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  total_price: string | null;
+  currency: string | null;
   created_at: string | null;
 }
 
