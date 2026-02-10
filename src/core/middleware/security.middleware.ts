@@ -87,6 +87,7 @@ export class SecurityMiddleware implements NestMiddleware {
       'https://admin.shopify.com',
       'https://akeed-eta.vercel.app',
       'https://unmasticatory-dihydroxy-brittny.ngrok-free.dev',
+      'https://head-neural-breaks-shadow.trycloudflare.com',
       'http://localhost:3000', // Development
       'http://localhost:3001', // Development frontend
     ];
