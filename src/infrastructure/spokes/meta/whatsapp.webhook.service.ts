@@ -48,6 +48,15 @@ export class WhatsAppWebhookService {
           const action = parts[0].toLowerCase();
           const verificationId = parts[1];
 
+          const verification =
+            await this.verificationsRepo.findById(verificationId);
+          if (
+            verification?.status === 'confirmed' ||
+            verification?.status === 'canceled'
+          ) {
+            return;
+          }
+
           let newStatus: 'confirmed' | 'canceled' | null = null;
           if (action === 'confirm' || action === 'yes') newStatus = 'confirmed';
           if (action === 'cancel' || action === 'no') newStatus = 'canceled';
