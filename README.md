@@ -30,7 +30,7 @@ npm run start:prod
   - `POST /webhooks/shopify/orders-create`
   - `POST /webhooks/shopify/uninstalled`
 - WhatsApp Webhooks:
-  - `POST /webhooks/meta` (see Meta spoke in codebase)
+  - `POST /webhooks/whatsapp`
 
 ## Shopify Webhook Registration
 
@@ -65,6 +65,7 @@ WA_VERIFY_TOKEN=...
 
 ## Documentation
 
+- Architecture and agent context: [docs/ARCHITECTURE_AGENT_CONTEXT.md](docs/ARCHITECTURE_AGENT_CONTEXT.md)
 - Business overview and capabilities: [docs/BUSINESS.md](docs/BUSINESS.md)
 - Database setup and schema: [docs/DATABASE.md](docs/DATABASE.md)
 - Environment management: [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
