@@ -47,6 +47,8 @@
 - TypeScript strict
 - Clear method names
 - Production-grade error handling
+- Consistent formatting (Prettier)
+- Avoid unnecessary dependencies
 
 ## Helpful Links
 
