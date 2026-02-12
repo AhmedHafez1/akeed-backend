@@ -5,6 +5,7 @@ import {
   check,
   uuid,
   text,
+  varchar,
   timestamp,
   index,
   foreignKey,
@@ -27,6 +28,16 @@ export const verificationStatus = pgEnum('verification_status', [
   'expired',
   'failed',
 ]);
+
+export const integrationDefaultLanguage = pgEnum(
+  'integration_default_language',
+  ['en', 'ar', 'auto'],
+);
+
+export const integrationOnboardingStatus = pgEnum(
+  'integration_onboarding_status',
+  ['pending', 'completed'],
+);
 
 // Reference to Supabase auth.users table (managed by Supabase Auth)
 export const authSchema = pgSchema('auth');
@@ -161,6 +172,16 @@ export const integrations = pgTable(
       mode: 'string',
     }),
     metadata: jsonb().default({}),
+    storeName: varchar('store_name', { length: 255 }),
+    defaultLanguage: integrationDefaultLanguage('default_language')
+      .default('auto')
+      .notNull(),
+    isAutoVerifyEnabled: boolean('is_auto_verify_enabled')
+      .default(true)
+      .notNull(),
+    onboardingStatus: integrationOnboardingStatus('onboarding_status')
+      .default('pending')
+      .notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',

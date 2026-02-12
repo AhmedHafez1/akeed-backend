@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { VerificationsModule } from './modules/verifications/verifications.module';
@@ -14,10 +15,17 @@ import { VerificationsModule } from './modules/verifications/verifications.modul
         : `.env.${process.env.NODE_ENV}`,
     }),
     AuthModule,
+    OnboardingModule,
     OrganizationsModule,
     OrdersModule,
     VerificationsModule,
   ],
-  exports: [AuthModule, OrganizationsModule, OrdersModule, VerificationsModule],
+  exports: [
+    AuthModule,
+    OnboardingModule,
+    OrganizationsModule,
+    OrdersModule,
+    VerificationsModule,
+  ],
 })
 export class CoreModule {}

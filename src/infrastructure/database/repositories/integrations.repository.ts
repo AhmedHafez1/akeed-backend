@@ -18,6 +18,30 @@ export class IntegrationsRepository {
     });
   }
 
+  async findByOrgAndPlatformDomain(
+    orgId: string,
+    domain: string,
+    platformType: string,
+  ) {
+    return await this.db.query.integrations.findFirst({
+      where: and(
+        eq(integrations.orgId, orgId),
+        eq(integrations.platformStoreUrl, domain),
+        eq(integrations.platformType, platformType),
+      ),
+    });
+  }
+
+  async findActiveByOrgAndPlatform(orgId: string, platformType: string) {
+    return await this.db.query.integrations.findFirst({
+      where: and(
+        eq(integrations.orgId, orgId),
+        eq(integrations.platformType, platformType),
+        eq(integrations.isActive, true),
+      ),
+    });
+  }
+
   async create(data: typeof integrations.$inferInsert) {
     const [result] = await this.db
       .insert(integrations)
@@ -69,5 +93,21 @@ export class IntegrationsRepository {
 
   async deleteByOrgId(orgId: string) {
     await this.db.delete(integrations).where(eq(integrations.orgId, orgId));
+  }
+
+  async updateById(
+    id: string,
+    updates: Partial<typeof integrations.$inferInsert>,
+  ) {
+    const [result] = await this.db
+      .update(integrations)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(integrations.id, id))
+      .returning();
+
+    return result;
   }
 }
