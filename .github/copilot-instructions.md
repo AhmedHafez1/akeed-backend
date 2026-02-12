@@ -54,3 +54,59 @@
 - Business docs: [docs/BUSINESS.md](../docs/BUSINESS.md)
 - Environment guide: [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)
 - Database guide: [docs/DATABASE.md](../docs/DATABASE.md)
+
+## Comment
+
+- Please generate md documet that explain app archeticture all features in the way that help agents understand app context.
+- You are building the onboarding flow for the Shopify Empedded App called:
+
+This app automatically verifies Cash on Delivery (COD) orders using a centralized WhatsApp Business API number owned by the platform (not the merchant).
+
+Merchants do NOT connect their own WhatsApp number.
+
+The onboarding must be extremely frictionless and take less than 2 minutes to complete.
+
+The goal is to:
+
+Secure billing before activation
+
+Prevent message abuse
+
+Keep configuration minimal
+
+Ensure clean UX
+
+1️⃣ OVERALL FLOW STRUCTURE
+
+After Shopify OAuth is completed:
+
+Redirect merchant to:
+
+/onboarding
+
+The onboarding flow must include the following steps:
+
+Welcome Screen
+
+Basic Configuration
+
+Billing Activation (Mandatory)
+
+Activation Confirmation
+
+The merchant must NOT be allowed to activate auto-verification without selecting a billing plan.
+
+2️⃣ STEP 1 — WELCOME SCREEN
+UI Content
+
+Title:
+"Reduce Fake COD Orders with WhatsApp Verification"
+
+Description:
+"Automatically send WhatsApp messages to customers to confirm Cash on Delivery orders and reduce returns."
+
+CTA Button:
+→ Start Setup
+
+Secondary option (if makes sense):
+Small text link: "Skip for now" (but this keeps verification disabled)
