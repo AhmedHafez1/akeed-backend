@@ -1,15 +1,18 @@
 # Akeed Backend Architecture Context (for Agents)
 
 ## Purpose
+
 This guide gives agents a practical map of the backend so changes can be made quickly without breaking multi-tenant auth, webhook integrity, or verification state transitions.
 
 ## What This Service Does
+
 - Exposes authenticated APIs for organizations, orders, and verifications.
 - Handles Shopify OAuth and Shopify webhooks.
 - Sends and receives WhatsApp verification events.
 - Persists all operational state in PostgreSQL via Drizzle ORM.
 
 ## High-Level Architecture
+
 - Framework: NestJS (`src/main.ts`, `src/app.module.ts`)
 - Data access: Drizzle + Postgres (`src/infrastructure/database`)
 - Main modules:
@@ -18,6 +21,7 @@ This guide gives agents a practical map of the backend so changes can be made qu
   - `MetaModule` -> WhatsApp webhook + sender
 
 ## Core Domain Modules
+
 - `AuthModule`
   - `GET /auth/me`
   - `GET /auth/status`
@@ -26,6 +30,12 @@ This guide gives agents a practical map of the backend so changes can be made qu
   - `POST /api/organizations`
   - `PATCH /api/organizations/current`
   - Creates/updates organization and membership context.
+- `OnboardingModule`
+  - `GET /api/onboarding/state`
+  - `PATCH /api/onboarding/settings`
+  - `POST /api/onboarding/billing`
+  - `GET /api/onboarding/billing/callback`
+  - Handles Shopify integration onboarding state, settings persistence, and billing activation/callback completion.
 - `OrdersModule`
   - `GET /api/orders`
   - Org-scoped list.
@@ -35,6 +45,7 @@ This guide gives agents a practical map of the backend so changes can be made qu
   - Hosts `VerificationHubService` (order -> verification workflow).
 
 ## Authentication Model
+
 - Single guard: `DualAuthGuard`.
 - Token validation service auto-detects token type:
   - Shopify session JWT -> validates HMAC signature/audience/expiry.
@@ -46,11 +57,13 @@ This guide gives agents a practical map of the backend so changes can be made qu
   - optional `shop`
 
 Important:
+
 - `POST /api/organizations` allows orgless auth via `AllowOrgless` decorator so first-time standalone users can bootstrap an org.
 
 ## Main Feature Flows
 
 ### 1. Shopify Installation Flow
+
 1. Frontend sends merchant to `GET /auth/shopify?shop=...`.
 2. Backend checks if shop is already installed.
 3. If not installed, backend generates state and redirects to Shopify OAuth.
@@ -59,6 +72,7 @@ Important:
 6. Backend registers webhooks in background (`orders/create`, `app/uninstalled`).
 
 ### 2. Order Verification Pipeline
+
 1. Shopify posts `POST /webhooks/shopify/orders-create`.
 2. `ShopifyHmacGuard` verifies webhook signature using raw body.
 3. Webhook ID is recorded for idempotency (`shopify_webhook_events`).
@@ -69,7 +83,19 @@ Important:
    - sends WhatsApp template
    - stores WhatsApp message ID and status `sent`
 
-### 3. WhatsApp Status/Reply Processing
+### 3. Embedded Onboarding + Billing Flow
+
+1. Frontend calls `GET /api/onboarding/state` to resolve current integration onboarding status and prefill settings.
+2. Frontend saves settings via `PATCH /api/onboarding/settings` (`storeName`, `defaultLanguage`, `isAutoVerifyEnabled`).
+3. Frontend starts billing via `POST /api/onboarding/billing`.
+4. Backend behavior:
+   - If billing is disabled by config, marks onboarding `completed` and returns app redirect URL.
+   - Otherwise creates Shopify recurring charge and returns Shopify `confirmationUrl`.
+5. Shopify returns to `GET /api/onboarding/billing/callback`.
+6. Backend verifies callback HMAC, checks subscription status, marks onboarding complete when active, then redirects to `APP_URL` with status query params.
+
+### 4. WhatsApp Status/Reply Processing
+
 1. Meta verifies webhook via `GET /webhooks/whatsapp`.
 2. Meta sends events to `POST /webhooks/whatsapp`.
 3. Service parses:
@@ -79,7 +105,9 @@ Important:
 5. Finalization tags Shopify order via GraphQL mutation (`Akeed: Verified` or `Akeed: Canceled`).
 
 ## Database Model (Operational View)
+
 Key tables:
+
 - `organizations`
 - `memberships`
 - `integrations`
@@ -88,19 +116,23 @@ Key tables:
 - `shopify_webhook_events`
 
 Key constraints used by logic:
+
 - Unique integration by `(platform_type, platform_store_url)`.
 - Unique order by `(integration_id, external_order_id)`.
 - Unique active verification per order (`order_id`).
 - Unique Shopify webhook ID for deduping.
 
 ## Integrations and External Dependencies
+
 - Shopify Admin OAuth and GraphQL Admin API.
 - Meta WhatsApp Cloud API.
 - Supabase Auth (JWT validation + user management for Shopify install path).
 - PostgreSQL (typically Supabase-hosted).
 
 ## Configuration Surfaces
+
 Main backend env vars:
+
 - `DATABASE_URL`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -116,6 +148,7 @@ Main backend env vars:
 - `WA_VERIFY_TOKEN`
 
 ## Agent Editing Guide
+
 - Add business logic in `src/core/services`, not controllers.
 - Keep controllers transport-focused.
 - If adding protected APIs, use `DualAuthGuard` and return org-scoped data.
@@ -129,5 +162,7 @@ Main backend env vars:
   - update repositories and DTOs together
 
 ## Known Caveats
+
 - README older references may mention `POST /webhooks/meta`; implemented path is `POST /webhooks/whatsapp`.
+- Standalone onboarding platform selection is not persisted as integrations; only org creation and optional WhatsApp credential patch are persisted.
 - Organization has WhatsApp credential fields, but outbound sender currently reads global env credentials.
