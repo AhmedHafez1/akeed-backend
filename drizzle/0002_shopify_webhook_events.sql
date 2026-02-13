@@ -8,8 +8,17 @@ CREATE TABLE IF NOT EXISTS "shopify_webhook_events" (
   "received_at" timestamp with time zone DEFAULT now()
 );
 
-ALTER TABLE "shopify_webhook_events"
-  ADD CONSTRAINT "shopify_webhook_events_webhook_id_key" UNIQUE ("webhook_id");
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'shopify_webhook_events_webhook_id_key'
+  ) THEN
+    ALTER TABLE "shopify_webhook_events"
+      ADD CONSTRAINT "shopify_webhook_events_webhook_id_key" UNIQUE ("webhook_id");
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_shopify_webhook_events_org_id"
   ON "shopify_webhook_events" USING btree ("org_id");
@@ -17,10 +26,28 @@ CREATE INDEX IF NOT EXISTS "idx_shopify_webhook_events_org_id"
 CREATE INDEX IF NOT EXISTS "idx_shopify_webhook_events_integration_id"
   ON "shopify_webhook_events" USING btree ("integration_id");
 
-ALTER TABLE "shopify_webhook_events"
-  ADD CONSTRAINT "shopify_webhook_events_org_id_fkey"
-  FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'shopify_webhook_events_org_id_fkey'
+  ) THEN
+    ALTER TABLE "shopify_webhook_events"
+      ADD CONSTRAINT "shopify_webhook_events_org_id_fkey"
+      FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE SET NULL;
+  END IF;
+END $$;
 
-ALTER TABLE "shopify_webhook_events"
-  ADD CONSTRAINT "shopify_webhook_events_integration_id_fkey"
-  FOREIGN KEY ("integration_id") REFERENCES "integrations"("id") ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'shopify_webhook_events_integration_id_fkey'
+  ) THEN
+    ALTER TABLE "shopify_webhook_events"
+      ADD CONSTRAINT "shopify_webhook_events_integration_id_fkey"
+      FOREIGN KEY ("integration_id") REFERENCES "integrations"("id") ON DELETE SET NULL;
+  END IF;
+END $$;
