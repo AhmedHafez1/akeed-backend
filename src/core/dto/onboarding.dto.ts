@@ -13,6 +13,15 @@ export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
 export const ONBOARDING_STATUSES = ['pending', 'completed'] as const;
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
+export const ONBOARDING_BILLING_PLAN_IDS = [
+  'starter',
+  'growth',
+  'pro',
+  'scale',
+] as const;
+export type OnboardingBillingPlanId =
+  (typeof ONBOARDING_BILLING_PLAN_IDS)[number];
+
 export class UpdateOnboardingSettingsDto {
   @IsString()
   @IsNotEmpty()
@@ -41,6 +50,10 @@ export interface OnboardingBillingResponseDto {
 }
 
 export class OnboardingBillingRequestDto {
+  @IsString()
+  @IsIn(ONBOARDING_BILLING_PLAN_IDS)
+  planId!: OnboardingBillingPlanId;
+
   @IsOptional()
   @IsString()
   @MaxLength(1024)

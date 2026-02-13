@@ -13,6 +13,7 @@ import { IntegrationsRepository } from '../../infrastructure/database/repositori
 import { integrations } from '../../infrastructure/database/schema';
 import {
   ONBOARDING_STATUSES,
+  type OnboardingBillingPlanId,
   OnboardingBillingResponseDto,
   OnboardingStateDto,
   UpdateOnboardingSettingsDto,
@@ -22,6 +23,21 @@ import {
   validateShop,
   verifyShopifyHmac,
 } from '../../infrastructure/spokes/shopify/shopify.utils';
+
+interface BillingPlanUsageConfig {
+  cappedAmount: number;
+  terms: string;
+}
+
+interface BillingPlanConfig {
+  id: OnboardingBillingPlanId;
+  name: string;
+  amount: number;
+  currencyCode: string;
+  testMode: boolean;
+  includedVerifications: number;
+  usage?: BillingPlanUsageConfig;
+}
 
 @Injectable()
 export class OnboardingService {
@@ -78,9 +94,11 @@ export class OnboardingService {
 
   async initiateBilling(
     user: AuthenticatedUser,
+    planId: OnboardingBillingPlanId,
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
     const integration = await this.resolveCurrentIntegration(user);
+    const billingPlan = this.getBillingPlan(planId);
 
     if (!this.isBillingRequired()) {
       await this.integrationsRepo.updateById(integration.id, {
@@ -88,7 +106,7 @@ export class OnboardingService {
       });
 
       this.logger.log(
-        `Shopify billing skipped by configuration for ${integration.platformStoreUrl}`,
+        `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
 
       return {
@@ -101,7 +119,25 @@ export class OnboardingService {
       };
     }
 
-    const billingPlan = this.getBillingPlan();
+    if (billingPlan.amount === 0) {
+      await this.integrationsRepo.updateById(integration.id, {
+        onboardingStatus: 'completed',
+      });
+
+      this.logger.log(
+        `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+      );
+
+      return {
+        confirmationUrl: this.buildPostBillingRedirectUrl({
+          shop: integration.platformStoreUrl,
+          host,
+          billingStatus: 'active',
+          onboardingCompleted: true,
+        }),
+      };
+    }
+
     const returnUrl = this.buildBillingReturnUrl(
       integration.platformStoreUrl,
       host,
@@ -116,6 +152,8 @@ export class OnboardingService {
             name: billingPlan.name,
             amount: billingPlan.amount,
             currencyCode: billingPlan.currencyCode,
+            cappedAmount: billingPlan.usage?.cappedAmount,
+            usageTerms: billingPlan.usage?.terms,
             returnUrl,
             test: billingPlan.testMode,
           },
@@ -266,35 +304,88 @@ export class OnboardingService {
     };
   }
 
-  private getBillingPlan(): {
-    name: string;
-    amount: number;
-    currencyCode: string;
-    testMode: boolean;
-  } {
-    const name =
-      this.configService.get<string>('SHOPIFY_BILLING_PLAN_NAME') ??
-      'Akeed Pro';
-    const rawAmount =
-      this.configService.get<string>('SHOPIFY_BILLING_PRICE') ?? '19';
-    const amount = Number(rawAmount);
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new InternalServerErrorException(
-        'Invalid SHOPIFY_BILLING_PRICE configuration',
-      );
-    }
-
+  private getBillingPlan(planId: OnboardingBillingPlanId): BillingPlanConfig {
     const currencyCode =
       this.configService.get<string>('SHOPIFY_BILLING_CURRENCY') ?? 'USD';
     const testMode = this.getBillingTestMode();
 
-    return {
-      name,
-      amount,
-      currencyCode,
-      testMode,
+    const planById: Record<OnboardingBillingPlanId, BillingPlanConfig> = {
+      starter: {
+        id: 'starter',
+        name: 'Akeed Starter',
+        amount: 0,
+        currencyCode,
+        testMode,
+        includedVerifications: 50,
+      },
+      growth: {
+        id: 'growth',
+        name: 'Akeed Growth',
+        amount: 9,
+        currencyCode,
+        testMode,
+        includedVerifications: 500,
+        usage: {
+          cappedAmount: 25,
+          terms: `Includes 500 successful verifications/month. Additional successful verifications are billed at 0.03 ${currencyCode} each.`,
+        },
+      },
+      pro: {
+        id: 'pro',
+        name: 'Akeed Pro',
+        amount: 16,
+        currencyCode,
+        testMode,
+        includedVerifications: 1000,
+        usage: {
+          cappedAmount: 45,
+          terms: `Includes 1000 successful verifications/month. Additional successful verifications are billed at 0.025 ${currencyCode} each.`,
+        },
+      },
+      scale: {
+        id: 'scale',
+        name: 'Akeed Scale',
+        amount: 29,
+        currencyCode,
+        testMode,
+        includedVerifications: 2500,
+        usage: {
+          cappedAmount: 90,
+          terms: `Includes 2500 successful verifications/month. Additional successful verifications are billed at 0.02 ${currencyCode} each.`,
+        },
+      },
     };
+
+    const billingPlan = planById[planId];
+
+    if (!billingPlan) {
+      throw new BadRequestException(`Unsupported billing plan: ${planId}`);
+    }
+
+    if (!Number.isFinite(billingPlan.amount) || billingPlan.amount < 0) {
+      throw new InternalServerErrorException(
+        `Invalid billing amount for plan: ${billingPlan.id}`,
+      );
+    }
+
+    if (billingPlan.usage) {
+      if (
+        !Number.isFinite(billingPlan.usage.cappedAmount) ||
+        billingPlan.usage.cappedAmount <= 0
+      ) {
+        throw new InternalServerErrorException(
+          `Invalid billing capped amount for plan: ${billingPlan.id}`,
+        );
+      }
+
+      if (!billingPlan.usage.terms.trim()) {
+        throw new InternalServerErrorException(
+          `Invalid billing usage terms for plan: ${billingPlan.id}`,
+        );
+      }
+    }
+
+    return billingPlan;
   }
 
   private getBillingTestMode(): boolean {

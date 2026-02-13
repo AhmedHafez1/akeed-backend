@@ -55,6 +55,10 @@ export class OnboardingController {
     @Request() req: RequestWithUser,
     @Body() payload: OnboardingBillingRequestDto,
   ): Promise<OnboardingBillingResponseDto> {
-    return await this.onboardingService.initiateBilling(req.user, payload.host);
+    return await this.onboardingService.initiateBilling(
+      req.user,
+      payload.planId,
+      payload.host,
+    );
   }
 }

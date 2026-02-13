@@ -73,12 +73,16 @@ npm run db:push
   - `SHOPIFY_BILLING_SKIP_CUSTOM_APP_ERROR`:
     - `true`: if Shopify returns `Custom apps cannot use the Billing API`, onboarding continues without billing.
     - `false`: the same condition returns an API error.
-  - `SHOPIFY_BILLING_PLAN_NAME` (e.g., `Akeed Pro`)
-  - `SHOPIFY_BILLING_PRICE` (e.g., `19`)
   - `SHOPIFY_BILLING_CURRENCY` (e.g., `USD`)
   - `SHOPIFY_BILLING_TEST_MODE`:
     - `true`: creates test subscriptions (recommended outside production billing tests).
     - `false`: creates real charges (only for production billing validation).
+  - `POST /api/onboarding/billing` now requires `planId` and maps to built-in plans:
+    - `starter`: free, up to 50 verifications/month (no Shopify charge, onboarding auto-completes).
+    - `growth`: `$9`, up to 500 verifications/month.
+    - `pro`: `$16`, up to 1000 verifications/month.
+    - `scale`: `$29`, up to 2500 verifications/month.
+  - Paid plans include an optional usage-cap line item (`cappedAmount`) so successful-verification overages can be billed via usage records.
 
 ## WhatsApp (Meta) Configuration
 

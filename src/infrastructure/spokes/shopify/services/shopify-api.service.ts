@@ -48,6 +48,8 @@ export interface CreateRecurringApplicationChargeInput {
   name: string;
   amount: number;
   currencyCode: string;
+  cappedAmount?: number;
+  usageTerms?: string;
   returnUrl: string;
   test: boolean;
 }
@@ -151,6 +153,43 @@ export class ShopifyApiService {
     integration: typeof integrations.$inferSelect,
     payload: CreateRecurringApplicationChargeInput,
   ): Promise<string> {
+    if (
+      (payload.cappedAmount !== undefined && !payload.usageTerms) ||
+      (payload.cappedAmount === undefined && payload.usageTerms)
+    ) {
+      throw new Error(
+        'Shopify usage billing configuration requires both cappedAmount and usageTerms',
+      );
+    }
+
+    const lineItems: Array<Record<string, unknown>> = [
+      {
+        plan: {
+          appRecurringPricingDetails: {
+            price: {
+              amount: payload.amount,
+              currencyCode: payload.currencyCode,
+            },
+            interval: 'EVERY_30_DAYS',
+          },
+        },
+      },
+    ];
+
+    if (payload.cappedAmount !== undefined && payload.usageTerms) {
+      lineItems.push({
+        plan: {
+          appUsagePricingDetails: {
+            terms: payload.usageTerms,
+            cappedAmount: {
+              amount: payload.cappedAmount,
+              currencyCode: payload.currencyCode,
+            },
+          },
+        },
+      });
+    }
+
     const mutation = `
       mutation CreateAppSubscription(
         $name: String!
@@ -180,19 +219,7 @@ export class ShopifyApiService {
         name: payload.name,
         returnUrl: payload.returnUrl,
         test: payload.test,
-        lineItems: [
-          {
-            plan: {
-              appRecurringPricingDetails: {
-                price: {
-                  amount: payload.amount,
-                  currencyCode: payload.currencyCode,
-                },
-                interval: 'EVERY_30_DAYS',
-              },
-            },
-          },
-        ],
+        lineItems,
       },
     );
 
