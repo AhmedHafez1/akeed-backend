@@ -80,6 +80,25 @@ export class OnboardingService {
     user: AuthenticatedUser,
   ): Promise<OnboardingBillingResponseDto> {
     const integration = await this.resolveCurrentIntegration(user);
+
+    if (!this.isBillingRequired()) {
+      await this.integrationsRepo.updateById(integration.id, {
+        onboardingStatus: 'completed',
+      });
+
+      this.logger.log(
+        `Shopify billing skipped by configuration for ${integration.platformStoreUrl}`,
+      );
+
+      return {
+        confirmationUrl: this.buildPostBillingRedirectUrl({
+          shop: integration.platformStoreUrl,
+          billingStatus: 'not_required',
+          onboardingCompleted: true,
+        }),
+      };
+    }
+
     const billingPlan = this.getBillingPlan();
     const returnUrl = this.buildBillingReturnUrl(integration.platformStoreUrl);
 
@@ -98,6 +117,28 @@ export class OnboardingService {
         );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+
+      if (
+        this.shouldSkipCustomAppBillingError() &&
+        this.isCustomAppBillingNotSupportedError(message)
+      ) {
+        await this.integrationsRepo.updateById(integration.id, {
+          onboardingStatus: 'completed',
+        });
+
+        this.logger.warn(
+          `Skipping Shopify billing for custom app ${integration.platformStoreUrl}: ${message}`,
+        );
+
+        return {
+          confirmationUrl: this.buildPostBillingRedirectUrl({
+            shop: integration.platformStoreUrl,
+            billingStatus: 'not_required',
+            onboardingCompleted: true,
+          }),
+        };
+      }
+
       this.logger.error(
         `Failed to initiate billing for ${integration.platformStoreUrl}: ${message}`,
       );
@@ -288,5 +329,29 @@ export class OnboardingService {
     );
 
     return url.toString();
+  }
+
+  private isCustomAppBillingNotSupportedError(message: string): boolean {
+    return message
+      .toLowerCase()
+      .includes('custom apps cannot use the billing api');
+  }
+
+  private isBillingRequired(): boolean {
+    return this.getBooleanConfig('SHOPIFY_BILLING_REQUIRED', true);
+  }
+
+  private shouldSkipCustomAppBillingError(): boolean {
+    return this.getBooleanConfig('SHOPIFY_BILLING_SKIP_CUSTOM_APP_ERROR', true);
+  }
+
+  private getBooleanConfig(key: string, defaultValue: boolean): boolean {
+    const raw = this.configService.get<string>(key);
+    if (raw === undefined) {
+      return defaultValue;
+    }
+
+    const normalized = raw.trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
   }
 }

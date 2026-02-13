@@ -16,8 +16,8 @@ We use a hierarchical approach to environment files:
 
 To run in development mode (which is the default if you don't set NODE_ENV, but explicit is better):
 
-1.  Ensure you have a `.env.development` file (copied from `.env` or created with proper secrets).
-2.  Set `NODE_ENV=development` in your shell or script.
+1. Ensure you have a `.env.development` file (copied from `.env` or created with proper secrets).
+2. Set `NODE_ENV=development` in your shell or script.
 
 **PowerShell:**
 
@@ -35,9 +35,9 @@ npm run start:dev
 
 ### Production
 
-1.  Create `.env.production` using `.env.production.example`.
-2.  Populate it with your production secrets.
-3.  Build and run:
+1. Create `.env.production` using `.env.production.example`.
+2. Populate it with your production secrets.
+3. Build and run:
 
 ```bash
 export NODE_ENV=production
@@ -63,6 +63,22 @@ npm run db:push
   - `SHOPIFY_API_VERSION` (e.g., `2026-01`)
   - `API_URL` (base URL used for OAuth callback and webhook addresses)
   - `SHOPIFY_REDIRECT_URI` (usually `${API_URL}/auth/shopify/callback`)
+
+## Shopify Billing
+
+- Configure billing behavior explicitly with:
+  - `SHOPIFY_BILLING_REQUIRED`:
+    - `true`: app must create a Shopify subscription during onboarding.
+    - `false`: billing step is skipped and onboarding is marked complete.
+  - `SHOPIFY_BILLING_SKIP_CUSTOM_APP_ERROR`:
+    - `true`: if Shopify returns `Custom apps cannot use the Billing API`, onboarding continues without billing.
+    - `false`: the same condition returns an API error.
+  - `SHOPIFY_BILLING_PLAN_NAME` (e.g., `Akeed Pro`)
+  - `SHOPIFY_BILLING_PRICE` (e.g., `19`)
+  - `SHOPIFY_BILLING_CURRENCY` (e.g., `USD`)
+  - `SHOPIFY_BILLING_TEST_MODE`:
+    - `true`: creates test subscriptions (recommended outside production billing tests).
+    - `false`: creates real charges (only for production billing validation).
 
 ## WhatsApp (Meta) Configuration
 
