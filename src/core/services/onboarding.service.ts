@@ -78,6 +78,7 @@ export class OnboardingService {
 
   async initiateBilling(
     user: AuthenticatedUser,
+    host?: string,
   ): Promise<OnboardingBillingResponseDto> {
     const integration = await this.resolveCurrentIntegration(user);
 
@@ -93,6 +94,7 @@ export class OnboardingService {
       return {
         confirmationUrl: this.buildPostBillingRedirectUrl({
           shop: integration.platformStoreUrl,
+          host,
           billingStatus: 'not_required',
           onboardingCompleted: true,
         }),
@@ -100,7 +102,10 @@ export class OnboardingService {
     }
 
     const billingPlan = this.getBillingPlan();
-    const returnUrl = this.buildBillingReturnUrl(integration.platformStoreUrl);
+    const returnUrl = this.buildBillingReturnUrl(
+      integration.platformStoreUrl,
+      host,
+    );
 
     let confirmationUrl: string;
     try {
@@ -133,6 +138,7 @@ export class OnboardingService {
         return {
           confirmationUrl: this.buildPostBillingRedirectUrl({
             shop: integration.platformStoreUrl,
+            host,
             billingStatus: 'not_required',
             onboardingCompleted: true,
           }),
@@ -301,10 +307,13 @@ export class OnboardingService {
     return normalized === '1' || normalized === 'true' || normalized === 'yes';
   }
 
-  private buildBillingReturnUrl(shopDomain: string): string {
+  private buildBillingReturnUrl(shopDomain: string, host?: string): string {
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
     const url = new URL('/api/onboarding/billing/callback', apiUrl);
     url.searchParams.set('shop', shopDomain);
+    if (host) {
+      url.searchParams.set('host', host);
+    }
     return url.toString();
   }
 

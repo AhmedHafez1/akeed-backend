@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
@@ -37,4 +38,11 @@ export interface OnboardingStateDto {
 
 export interface OnboardingBillingResponseDto {
   confirmationUrl: string;
+}
+
+export class OnboardingBillingRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  host?: string;
 }

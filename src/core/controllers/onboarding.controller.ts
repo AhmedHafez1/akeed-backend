@@ -12,6 +12,7 @@ import {
 import type { RequestWithUser } from '../guards/dual-auth.guard';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import {
+  OnboardingBillingRequestDto,
   OnboardingBillingResponseDto,
   OnboardingStateDto,
   UpdateOnboardingSettingsDto,
@@ -52,7 +53,8 @@ export class OnboardingController {
   @Post('billing')
   async initiateBilling(
     @Request() req: RequestWithUser,
+    @Body() payload: OnboardingBillingRequestDto,
   ): Promise<OnboardingBillingResponseDto> {
-    return await this.onboardingService.initiateBilling(req.user);
+    return await this.onboardingService.initiateBilling(req.user, payload.host);
   }
 }
