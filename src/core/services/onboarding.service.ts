@@ -11,6 +11,7 @@ import type { AuthenticatedUser } from '../guards/dual-auth.guard';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import {
+  ONBOARDING_LANGUAGES,
   ONBOARDING_STATUSES,
   type OnboardingBillingPlanId,
   OnboardingBillingResponseDto,
@@ -82,6 +83,10 @@ export class OnboardingService {
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
     const integration = await this.resolveCurrentIntegration(user);
+    const hydratedIntegration =
+      await this.prefillStoreNameIfMissing(integration);
+    this.ensureBillingPrerequisitesMet(hydratedIntegration);
+
     const billingPlan = resolveBillingPlan({
       planId,
       currencyCode: this.getBillingCurrencyCode(),
@@ -90,13 +95,13 @@ export class OnboardingService {
 
     if (!this.isBillingRequired()) {
       this.logger.log(
-        `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+        `Shopify billing skipped by configuration for ${hydratedIntegration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
 
       return {
         confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-          integrationId: integration.id,
-          shop: integration.platformStoreUrl,
+          integrationId: hydratedIntegration.id,
+          shop: hydratedIntegration.platformStoreUrl,
           host,
         }),
       };
@@ -104,13 +109,13 @@ export class OnboardingService {
 
     if (billingPlan.amount === 0) {
       this.logger.log(
-        `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+        `Free onboarding plan activated for ${hydratedIntegration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
 
       return {
         confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-          integrationId: integration.id,
-          shop: integration.platformStoreUrl,
+          integrationId: hydratedIntegration.id,
+          shop: hydratedIntegration.platformStoreUrl,
           host,
         }),
       };
@@ -118,7 +123,7 @@ export class OnboardingService {
 
     return {
       confirmationUrl: await this.createPaidPlanConfirmationUrl(
-        integration,
+        hydratedIntegration,
         billingPlan,
         host,
       ),
@@ -133,6 +138,18 @@ export class OnboardingService {
     const integration = await this.resolveIntegrationByShop(
       callbackParams.shop,
     );
+    const missingPrerequisites =
+      this.getMissingBillingPrerequisites(integration);
+    if (missingPrerequisites.length > 0) {
+      this.logger.warn(
+        `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
+      );
+      return this.createPostBillingRedirectUrl({
+        shop: callbackParams.shop,
+        host: callbackParams.host,
+      });
+    }
+
     const billingStatus = await this.resolveBillingStatusFromCharge({
       integration,
       shop: callbackParams.shop,
@@ -408,5 +425,35 @@ export class OnboardingService {
       this.configService.get<string>(key),
       defaultValue,
     );
+  }
+
+  private ensureBillingPrerequisitesMet(integration: IntegrationRecord): void {
+    const missingFields = this.getMissingBillingPrerequisites(integration);
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Onboarding settings must be completed before billing activation (${missingFields.join(', ')})`,
+      );
+    }
+  }
+
+  private getMissingBillingPrerequisites(
+    integration: IntegrationRecord,
+  ): string[] {
+    const missingFields: string[] = [];
+
+    if (!integration.storeName?.trim()) {
+      missingFields.push('storeName');
+    }
+
+    if (!ONBOARDING_LANGUAGES.includes(integration.defaultLanguage)) {
+      missingFields.push('defaultLanguage');
+    }
+
+    if (typeof integration.isAutoVerifyEnabled !== 'boolean') {
+      missingFields.push('isAutoVerifyEnabled');
+    }
+
+    return missingFields;
   }
 }
