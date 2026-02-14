@@ -34,8 +34,6 @@ export interface BillingPlanConfig {
 export interface BillingRedirectParams {
   shop: string;
   host?: string;
-  billingStatus: string;
-  onboardingCompleted: boolean;
 }
 
 const BILLING_PLAN_TEMPLATES: Record<
@@ -134,12 +132,6 @@ export function buildPostBillingRedirectUrl(
   if (params.host) {
     url.searchParams.set('host', params.host);
   }
-
-  url.searchParams.set('billing_status', params.billingStatus);
-  url.searchParams.set(
-    'onboarding',
-    params.onboardingCompleted ? 'completed' : 'pending',
-  );
 
   return url.toString();
 }

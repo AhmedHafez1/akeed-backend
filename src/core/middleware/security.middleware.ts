@@ -86,7 +86,7 @@ export class SecurityMiddleware implements NestMiddleware {
     const allowedOrigins = [
       'https://admin.shopify.com',
       'https://akeed-eta.vercel.app',
-      'https://cartoon-pet-compile-lawyers.trycloudflare.com',
+      'https://rider-seemed-statutory-effort.trycloudflare.com',
       'http://localhost:3000', // Development
       'http://localhost:3001', // Development frontend
     ];

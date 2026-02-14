@@ -98,7 +98,6 @@ export class OnboardingService {
           integrationId: integration.id,
           shop: integration.platformStoreUrl,
           host,
-          billingStatus: 'not_required',
         }),
       };
     }
@@ -113,7 +112,6 @@ export class OnboardingService {
           integrationId: integration.id,
           shop: integration.platformStoreUrl,
           host,
-          billingStatus: 'active',
         }),
       };
     }
@@ -146,15 +144,12 @@ export class OnboardingService {
         integrationId: integration.id,
         shop: callbackParams.shop,
         host: callbackParams.host,
-        billingStatus,
       });
     }
 
     return this.createPostBillingRedirectUrl({
       shop: callbackParams.shop,
       host: callbackParams.host,
-      billingStatus,
-      onboardingCompleted: false,
     });
   }
 
@@ -257,8 +252,6 @@ export class OnboardingService {
   private createPostBillingRedirectUrl(params: {
     shop: string;
     host?: string;
-    billingStatus: string;
-    onboardingCompleted: boolean;
   }): string {
     return buildPostBillingRedirectUrl(
       this.configService.getOrThrow<string>('APP_URL'),
@@ -316,7 +309,6 @@ export class OnboardingService {
           integrationId: integration.id,
           shop: integration.platformStoreUrl,
           host,
-          billingStatus: 'not_required',
         });
       }
 
@@ -331,14 +323,11 @@ export class OnboardingService {
     integrationId: string;
     shop: string;
     host?: string;
-    billingStatus: string;
   }): Promise<string> {
     await this.markOnboardingCompleted(params.integrationId);
     return this.createPostBillingRedirectUrl({
       shop: params.shop,
       host: params.host,
-      billingStatus: params.billingStatus,
-      onboardingCompleted: true,
     });
   }
 
