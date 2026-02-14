@@ -4,45 +4,25 @@ import { ConfigService } from '@nestjs/config';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { integrations } from 'src/infrastructure/database';
-
-interface TagsAddResponse {
-  data?: {
-    tagsAdd?: {
-      node?: { id: string };
-      userErrors?: Array<{ field?: string[]; message: string }>;
-    };
-  };
-  errors?: Array<{ message: string; locations?: unknown; path?: string[] }>;
-}
-
-interface ShopNameResponse {
-  data?: {
-    shop?: {
-      name?: string;
-    };
-  };
-  errors?: Array<{ message: string; locations?: unknown; path?: string[] }>;
-}
-
-interface AppSubscriptionCreateResponse {
-  data?: {
-    appSubscriptionCreate?: {
-      confirmationUrl?: string;
-      userErrors?: Array<{ field?: string[]; message: string }>;
-    };
-  };
-  errors?: Array<{ message: string; locations?: unknown; path?: string[] }>;
-}
-
-interface AppSubscriptionStatusResponse {
-  data?: {
-    node?: {
-      id?: string;
-      status?: string;
-    } | null;
-  };
-  errors?: Array<{ message: string; locations?: unknown; path?: string[] }>;
-}
+import {
+  type AppSubscriptionCreateResponse,
+  type AppSubscriptionStatusResponse,
+  buildSubscriptionLineItems,
+  CREATE_APP_SUBSCRIPTION_MUTATION,
+  GET_APP_SUBSCRIPTION_STATUS_QUERY,
+  getRequestId,
+  type GraphQLErrorItem,
+  type GraphQLUserError,
+  GET_SHOP_NAME_QUERY,
+  type ShopNameResponse,
+  TAGS_ADD_MUTATION,
+  type TagsAddResponse,
+  throwIfGraphQLErrors,
+  throwIfUserErrors,
+  toAppSubscriptionGid,
+  toOrderGid,
+  validateUsageBillingPayload,
+} from './shopify-api.service.helpers';
 
 export interface CreateRecurringApplicationChargeInput {
   name: string;
@@ -73,42 +53,28 @@ export class ShopifyApiService {
     orderId: string,
     tag: string,
   ): Promise<void> {
-    // Ensure orderId is not already a GID before wrapping it.
-    // If user passes raw ID "123", we make it "gid://shopify/Order/123".
-    const gid = orderId.startsWith('gid://')
-      ? orderId
-      : `gid://shopify/Order/${orderId}`;
-
-    const mutation = `
-      mutation tagsAdd($id: ID!, $tags: [String!]!) {
-        tagsAdd(id: $id, tags: $tags) {
-          node {
-            id
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
+    const orderGid = toOrderGid(orderId);
 
     try {
       const response = await this.executeGraphql<TagsAddResponse>(
         integration,
-        mutation,
+        TAGS_ADD_MUTATION,
         {
-          id: gid,
+          id: orderGid,
           tags: [tag],
         },
       );
 
-      this.handleGraphQLErrors(response, 'tagsAdd');
+      this.logGraphQLResponseIssues({
+        operation: 'tagsAdd',
+        graphQLErrors: response.data.errors,
+        userErrors: response.data.data?.tagsAdd?.userErrors,
+        headers: response.headers,
+      });
 
-      const reqId = (response.headers?.['x-request-id'] ??
-        response.headers?.['X-Request-Id']) as string | undefined;
+      const reqId = getRequestId(response.headers);
       this.logger.log(
-        `Successfully added tag '${tag}' to order ${gid} on ${integration.platformStoreUrl} (requestId=${reqId ?? 'n/a'})`,
+        `Successfully added tag '${tag}' to order ${orderGid} on ${integration.platformStoreUrl} (requestId=${reqId ?? 'n/a'})`,
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -121,25 +87,12 @@ export class ShopifyApiService {
   async getShopName(
     integration: typeof integrations.$inferSelect,
   ): Promise<string> {
-    const query = `
-      query GetShopName {
-        shop {
-          name
-        }
-      }
-    `;
-
     const response = await this.executeGraphql<ShopNameResponse>(
       integration,
-      query,
+      GET_SHOP_NAME_QUERY,
     );
 
-    const graphQLErrors = response.data.errors;
-    if (graphQLErrors && graphQLErrors.length > 0) {
-      throw new Error(
-        `Shopify GraphQL errors: ${graphQLErrors.map((error) => error.message).join('; ')}`,
-      );
-    }
+    throwIfGraphQLErrors(response.data.errors, 'Shopify GraphQL errors');
 
     const shopName = response.data.data?.shop?.name?.trim();
     if (!shopName) {
@@ -153,68 +106,12 @@ export class ShopifyApiService {
     integration: typeof integrations.$inferSelect,
     payload: CreateRecurringApplicationChargeInput,
   ): Promise<string> {
-    if (
-      (payload.cappedAmount !== undefined && !payload.usageTerms) ||
-      (payload.cappedAmount === undefined && payload.usageTerms)
-    ) {
-      throw new Error(
-        'Shopify usage billing configuration requires both cappedAmount and usageTerms',
-      );
-    }
-
-    const lineItems: Array<Record<string, unknown>> = [
-      {
-        plan: {
-          appRecurringPricingDetails: {
-            price: {
-              amount: payload.amount,
-              currencyCode: payload.currencyCode,
-            },
-            interval: 'EVERY_30_DAYS',
-          },
-        },
-      },
-    ];
-
-    if (payload.cappedAmount !== undefined && payload.usageTerms) {
-      lineItems.push({
-        plan: {
-          appUsagePricingDetails: {
-            terms: payload.usageTerms,
-            cappedAmount: {
-              amount: payload.cappedAmount,
-              currencyCode: payload.currencyCode,
-            },
-          },
-        },
-      });
-    }
-
-    const mutation = `
-      mutation CreateAppSubscription(
-        $name: String!
-        $lineItems: [AppSubscriptionLineItemInput!]!
-        $returnUrl: URL!
-        $test: Boolean
-      ) {
-        appSubscriptionCreate(
-          name: $name
-          lineItems: $lineItems
-          returnUrl: $returnUrl
-          test: $test
-        ) {
-          confirmationUrl
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
+    validateUsageBillingPayload(payload);
+    const lineItems = buildSubscriptionLineItems(payload);
 
     const response = await this.executeGraphql<AppSubscriptionCreateResponse>(
       integration,
-      mutation,
+      CREATE_APP_SUBSCRIPTION_MUTATION,
       {
         name: payload.name,
         returnUrl: payload.returnUrl,
@@ -223,20 +120,11 @@ export class ShopifyApiService {
       },
     );
 
-    const graphQLErrors = response.data.errors;
-    if (graphQLErrors && graphQLErrors.length > 0) {
-      throw new Error(
-        `Shopify billing errors: ${graphQLErrors.map((error) => error.message).join('; ')}`,
-      );
-    }
-
-    const userErrors =
-      response.data.data?.appSubscriptionCreate?.userErrors ?? [];
-    if (userErrors.length > 0) {
-      throw new Error(
-        `Shopify billing validation failed: ${userErrors.map((error) => error.message).join('; ')}`,
-      );
-    }
+    throwIfGraphQLErrors(response.data.errors, 'Shopify billing errors');
+    throwIfUserErrors(
+      response.data.data?.appSubscriptionCreate?.userErrors,
+      'Shopify billing validation failed',
+    );
 
     const confirmationUrl =
       response.data.data?.appSubscriptionCreate?.confirmationUrl;
@@ -251,33 +139,18 @@ export class ShopifyApiService {
     integration: typeof integrations.$inferSelect,
     chargeId: string,
   ): Promise<AppSubscriptionStatusResult> {
-    const mutation = `
-      query GetAppSubscriptionStatus($id: ID!) {
-        node(id: $id) {
-          ... on AppSubscription {
-            id
-            status
-          }
-        }
-      }
-    `;
-
-    const subscriptionId = chargeId.startsWith('gid://')
-      ? chargeId
-      : `gid://shopify/AppSubscription/${chargeId}`;
+    const subscriptionId = toAppSubscriptionGid(chargeId);
 
     const response = await this.executeGraphql<AppSubscriptionStatusResponse>(
       integration,
-      mutation,
+      GET_APP_SUBSCRIPTION_STATUS_QUERY,
       { id: subscriptionId },
     );
 
-    const graphQLErrors = response.data.errors;
-    if (graphQLErrors && graphQLErrors.length > 0) {
-      throw new Error(
-        `Shopify subscription status errors: ${graphQLErrors.map((error) => error.message).join('; ')}`,
-      );
-    }
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify subscription status errors',
+    );
 
     const node = response.data.data?.node;
     if (!node?.id || !node.status) {
@@ -295,14 +168,7 @@ export class ShopifyApiService {
     query: string,
     variables?: Record<string, unknown>,
   ): Promise<AxiosResponse<T>> {
-    if (!integration.accessToken) {
-      this.logger.error(
-        `Missing token for domain: ${integration.platformStoreUrl}`,
-      );
-      throw new Error(
-        `Missing token for domain: ${integration.platformStoreUrl}`,
-      );
-    }
+    const accessToken = this.getAccessTokenOrThrow(integration);
 
     return await firstValueFrom(
       this._httpService.post<T>(
@@ -313,7 +179,7 @@ export class ShopifyApiService {
         },
         {
           headers: {
-            'X-Shopify-Access-Token': integration.accessToken,
+            'X-Shopify-Access-Token': accessToken,
             'Content-Type': 'application/json',
           },
         },
@@ -321,31 +187,45 @@ export class ShopifyApiService {
     );
   }
 
+  private logGraphQLResponseIssues(params: {
+    operation: string;
+    graphQLErrors?: GraphQLErrorItem[];
+    userErrors?: GraphQLUserError[];
+    headers?: AxiosResponse['headers'];
+  }): void {
+    const requestId = getRequestId(params.headers);
+
+    if (params.graphQLErrors && params.graphQLErrors.length > 0) {
+      this.logger.error(
+        `GraphQL Errors (${params.operation}, requestId=${requestId ?? 'n/a'}): ${JSON.stringify(params.graphQLErrors)}`,
+      );
+    }
+
+    if (params.userErrors && params.userErrors.length > 0) {
+      this.logger.error(
+        `User Errors (${params.operation}, requestId=${requestId ?? 'n/a'}): ${JSON.stringify(params.userErrors)}`,
+      );
+    }
+  }
+
+  private getAccessTokenOrThrow(
+    integration: typeof integrations.$inferSelect,
+  ): string {
+    if (integration.accessToken) {
+      return integration.accessToken;
+    }
+
+    this.logger.error(
+      `Missing token for domain: ${integration.platformStoreUrl}`,
+    );
+    throw new Error(
+      `Missing token for domain: ${integration.platformStoreUrl}`,
+    );
+  }
+
   private getGraphqlUrl(shopDomain: string): string {
     const apiVersion =
       this.configService.get<string>('SHOPIFY_API_VERSION') ?? '2026-01';
     return `https://${shopDomain}/admin/api/${apiVersion}/graphql.json`;
-  }
-
-  private handleGraphQLErrors(
-    response: AxiosResponse<TagsAddResponse>,
-    operation: string,
-  ): void {
-    const reqId = (response.headers?.['x-request-id'] ??
-      response.headers?.['X-Request-Id']) as string | undefined;
-    const data: TagsAddResponse = response.data;
-
-    if (data.errors && data.errors.length > 0) {
-      this.logger.error(
-        `GraphQL Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(data.errors)}`,
-      );
-    }
-
-    const userErrors = data.data?.tagsAdd?.userErrors;
-    if (userErrors && userErrors.length > 0) {
-      this.logger.error(
-        `User Errors (${operation}, requestId=${reqId ?? 'n/a'}): ${JSON.stringify(userErrors)}`,
-      );
-    }
   }
 }

@@ -2,7 +2,6 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
-  InternalServerErrorException,
   Logger,
   NotFoundException,
   UnauthorizedException,
@@ -18,25 +17,28 @@ import {
   OnboardingStateDto,
   UpdateOnboardingSettingsDto,
 } from '../dto/onboarding.dto';
-import { ShopifyApiService } from '../../infrastructure/spokes/shopify/services/shopify-api.service';
+import {
+  type CreateRecurringApplicationChargeInput,
+  ShopifyApiService,
+} from '../../infrastructure/spokes/shopify/services/shopify-api.service';
+import {
+  type BillingPlanConfig,
+  buildBillingReturnUrl,
+  buildPostBillingRedirectUrl,
+  resolveBillingPlan,
+  resolveBooleanConfig,
+} from './onboarding.service.helpers';
 import {
   validateShop,
   verifyShopifyHmac,
 } from '../../infrastructure/spokes/shopify/shopify.utils';
 
-interface BillingPlanUsageConfig {
-  cappedAmount: number;
-  terms: string;
-}
+type IntegrationRecord = typeof integrations.$inferSelect;
 
-interface BillingPlanConfig {
-  id: OnboardingBillingPlanId;
-  name: string;
-  amount: number;
-  currencyCode: string;
-  testMode: boolean;
-  includedVerifications: number;
-  usage?: BillingPlanUsageConfig;
+interface BillingCallbackParams {
+  shop: string;
+  chargeId: string;
+  host?: string;
 }
 
 @Injectable()
@@ -51,27 +53,9 @@ export class OnboardingService {
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
     const integration = await this.resolveCurrentIntegration(user);
-    let currentIntegration = integration;
-
-    if (!integration.storeName) {
-      try {
-        const storeName = await this.shopifyApiService.getShopName(integration);
-        const updated = await this.integrationsRepo.updateById(integration.id, {
-          storeName,
-        });
-
-        if (updated) {
-          currentIntegration = updated;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `Failed to prefill store name for ${integration.platformStoreUrl}: ${message}`,
-        );
-      }
-    }
-
-    return this.toState(currentIntegration);
+    const hydratedIntegration =
+      await this.prefillStoreNameIfMissing(integration);
+    return this.toState(hydratedIntegration);
   }
 
   async updateSettings(
@@ -98,165 +82,107 @@ export class OnboardingService {
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
     const integration = await this.resolveCurrentIntegration(user);
-    const billingPlan = this.getBillingPlan(planId);
+    const billingPlan = resolveBillingPlan({
+      planId,
+      currencyCode: this.getBillingCurrencyCode(),
+      testMode: this.getBillingTestMode(),
+    });
 
     if (!this.isBillingRequired()) {
-      await this.integrationsRepo.updateById(integration.id, {
-        onboardingStatus: 'completed',
-      });
-
       this.logger.log(
         `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
 
       return {
-        confirmationUrl: this.buildPostBillingRedirectUrl({
+        confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+          integrationId: integration.id,
           shop: integration.platformStoreUrl,
           host,
           billingStatus: 'not_required',
-          onboardingCompleted: true,
         }),
       };
     }
 
     if (billingPlan.amount === 0) {
-      await this.integrationsRepo.updateById(integration.id, {
-        onboardingStatus: 'completed',
-      });
-
       this.logger.log(
         `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
 
       return {
-        confirmationUrl: this.buildPostBillingRedirectUrl({
+        confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+          integrationId: integration.id,
           shop: integration.platformStoreUrl,
           host,
           billingStatus: 'active',
-          onboardingCompleted: true,
         }),
       };
     }
 
-    const returnUrl = this.buildBillingReturnUrl(
-      integration.platformStoreUrl,
-      host,
-    );
-
-    let confirmationUrl: string;
-    try {
-      confirmationUrl =
-        await this.shopifyApiService.createRecurringApplicationCharge(
-          integration,
-          {
-            name: billingPlan.name,
-            amount: billingPlan.amount,
-            currencyCode: billingPlan.currencyCode,
-            cappedAmount: billingPlan.usage?.cappedAmount,
-            usageTerms: billingPlan.usage?.terms,
-            returnUrl,
-            test: billingPlan.testMode,
-          },
-        );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      if (
-        this.shouldSkipCustomAppBillingError() &&
-        this.isCustomAppBillingNotSupportedError(message)
-      ) {
-        await this.integrationsRepo.updateById(integration.id, {
-          onboardingStatus: 'completed',
-        });
-
-        this.logger.warn(
-          `Skipping Shopify billing for custom app ${integration.platformStoreUrl}: ${message}`,
-        );
-
-        return {
-          confirmationUrl: this.buildPostBillingRedirectUrl({
-            shop: integration.platformStoreUrl,
-            host,
-            billingStatus: 'not_required',
-            onboardingCompleted: true,
-          }),
-        };
-      }
-
-      this.logger.error(
-        `Failed to initiate billing for ${integration.platformStoreUrl}: ${message}`,
-      );
-      throw new BadGatewayException('Failed to initiate Shopify billing');
-    }
-
-    return { confirmationUrl };
+    return {
+      confirmationUrl: await this.createPaidPlanConfirmationUrl(
+        integration,
+        billingPlan,
+        host,
+      ),
+    };
   }
 
   async handleBillingCallback(
     rawQuery: Record<string, string | undefined>,
   ): Promise<string> {
-    const shop = rawQuery.shop;
-    const chargeId = rawQuery.charge_id;
-
-    if (!shop || !chargeId || !rawQuery.hmac) {
-      throw new BadRequestException(
-        'Missing required Shopify billing callback parameters',
-      );
-    }
-
-    if (!validateShop(shop)) {
-      throw new BadRequestException('Invalid shop parameter');
-    }
-
-    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-    if (!verifyShopifyHmac(rawQuery, secret)) {
-      throw new UnauthorizedException(
-        'Invalid Shopify billing callback signature',
-      );
-    }
-
-    const integration = await this.integrationsRepo.findByPlatformDomain(
-      shop,
-      'shopify',
+    const callbackParams =
+      this.validateAndExtractBillingCallbackParams(rawQuery);
+    const integration = await this.resolveIntegrationByShop(
+      callbackParams.shop,
     );
+    const billingStatus = await this.resolveBillingStatusFromCharge({
+      integration,
+      shop: callbackParams.shop,
+      chargeId: callbackParams.chargeId,
+    });
 
-    if (!integration) {
-      throw new NotFoundException('Shopify integration not found');
+    if (billingStatus === 'active') {
+      return await this.completeOnboardingAndBuildRedirect({
+        integrationId: integration.id,
+        shop: callbackParams.shop,
+        host: callbackParams.host,
+        billingStatus,
+      });
     }
 
-    let billingStatus = 'unknown';
-    try {
-      const subscription =
-        await this.shopifyApiService.getAppSubscriptionStatus(
-          integration,
-          chargeId,
-        );
-      billingStatus = subscription.status.toLowerCase();
+    return this.createPostBillingRedirectUrl({
+      shop: callbackParams.shop,
+      host: callbackParams.host,
+      billingStatus,
+      onboardingCompleted: false,
+    });
+  }
 
-      if (subscription.status === 'ACTIVE') {
-        await this.integrationsRepo.updateById(integration.id, {
-          onboardingStatus: 'completed',
-        });
-      }
+  private async prefillStoreNameIfMissing(
+    integration: IntegrationRecord,
+  ): Promise<IntegrationRecord> {
+    if (integration.storeName) {
+      return integration;
+    }
+
+    try {
+      const storeName = await this.shopifyApiService.getShopName(integration);
+      const updated = await this.integrationsRepo.updateById(integration.id, {
+        storeName,
+      });
+      return updated ?? integration;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `Failed Shopify billing callback processing for ${shop}: ${message}`,
+      this.logger.warn(
+        `Failed to prefill store name for ${integration.platformStoreUrl}: ${message}`,
       );
-      throw new BadGatewayException('Failed to verify Shopify billing status');
+      return integration;
     }
-
-    return this.buildPostBillingRedirectUrl({
-      shop,
-      host: rawQuery.host,
-      billingStatus,
-      onboardingCompleted: billingStatus === 'active',
-    });
   }
 
   private async resolveCurrentIntegration(
     user: AuthenticatedUser,
-  ): Promise<typeof integrations.$inferSelect> {
+  ): Promise<IntegrationRecord> {
     if (user.shop) {
       const byShop = await this.integrationsRepo.findByOrgAndPlatformDomain(
         user.orgId,
@@ -285,9 +211,22 @@ export class OnboardingService {
     return fallback;
   }
 
-  private toState(
-    integration: typeof integrations.$inferSelect,
-  ): OnboardingStateDto {
+  private async resolveIntegrationByShop(
+    shop: string,
+  ): Promise<IntegrationRecord> {
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shop,
+      'shopify',
+    );
+
+    if (!integration) {
+      throw new NotFoundException('Shopify integration not found');
+    }
+
+    return integration;
+  }
+
+  private toState(integration: IntegrationRecord): OnboardingStateDto {
     const onboardingStatus = ONBOARDING_STATUSES.includes(
       integration.onboardingStatus,
     )
@@ -304,131 +243,161 @@ export class OnboardingService {
     };
   }
 
-  private getBillingPlan(planId: OnboardingBillingPlanId): BillingPlanConfig {
-    const currencyCode =
-      this.configService.get<string>('SHOPIFY_BILLING_CURRENCY') ?? 'USD';
-    const testMode = this.getBillingTestMode();
-
-    const planById: Record<OnboardingBillingPlanId, BillingPlanConfig> = {
-      starter: {
-        id: 'starter',
-        name: 'Akeed Starter',
-        amount: 0,
-        currencyCode,
-        testMode,
-        includedVerifications: 50,
-      },
-      growth: {
-        id: 'growth',
-        name: 'Akeed Growth',
-        amount: 9,
-        currencyCode,
-        testMode,
-        includedVerifications: 500,
-        usage: {
-          cappedAmount: 25,
-          terms: `Includes 500 successful verifications/month. Additional successful verifications are billed at 0.03 ${currencyCode} each.`,
-        },
-      },
-      pro: {
-        id: 'pro',
-        name: 'Akeed Pro',
-        amount: 16,
-        currencyCode,
-        testMode,
-        includedVerifications: 1000,
-        usage: {
-          cappedAmount: 45,
-          terms: `Includes 1000 successful verifications/month. Additional successful verifications are billed at 0.025 ${currencyCode} each.`,
-        },
-      },
-      scale: {
-        id: 'scale',
-        name: 'Akeed Scale',
-        amount: 29,
-        currencyCode,
-        testMode,
-        includedVerifications: 2500,
-        usage: {
-          cappedAmount: 90,
-          terms: `Includes 2500 successful verifications/month. Additional successful verifications are billed at 0.02 ${currencyCode} each.`,
-        },
-      },
-    };
-
-    const billingPlan = planById[planId];
-
-    if (!billingPlan) {
-      throw new BadRequestException(`Unsupported billing plan: ${planId}`);
-    }
-
-    if (!Number.isFinite(billingPlan.amount) || billingPlan.amount < 0) {
-      throw new InternalServerErrorException(
-        `Invalid billing amount for plan: ${billingPlan.id}`,
-      );
-    }
-
-    if (billingPlan.usage) {
-      if (
-        !Number.isFinite(billingPlan.usage.cappedAmount) ||
-        billingPlan.usage.cappedAmount <= 0
-      ) {
-        throw new InternalServerErrorException(
-          `Invalid billing capped amount for plan: ${billingPlan.id}`,
-        );
-      }
-
-      if (!billingPlan.usage.terms.trim()) {
-        throw new InternalServerErrorException(
-          `Invalid billing usage terms for plan: ${billingPlan.id}`,
-        );
-      }
-    }
-
-    return billingPlan;
-  }
-
   private getBillingTestMode(): boolean {
-    const raw = this.configService.get<string>('SHOPIFY_BILLING_TEST_MODE');
-    if (raw === undefined) {
-      return this.configService.get<string>('NODE_ENV') !== 'production';
-    }
-
-    const normalized = raw.trim().toLowerCase();
-    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+    return this.getBooleanConfig(
+      'SHOPIFY_BILLING_TEST_MODE',
+      this.configService.get<string>('NODE_ENV') !== 'production',
+    );
   }
 
-  private buildBillingReturnUrl(shopDomain: string, host?: string): string {
-    const apiUrl = this.configService.getOrThrow<string>('API_URL');
-    const url = new URL('/api/onboarding/billing/callback', apiUrl);
-    url.searchParams.set('shop', shopDomain);
-    if (host) {
-      url.searchParams.set('host', host);
-    }
-    return url.toString();
+  private getBillingCurrencyCode(): string {
+    return this.configService.get<string>('SHOPIFY_BILLING_CURRENCY') ?? 'USD';
   }
 
-  private buildPostBillingRedirectUrl(params: {
+  private createPostBillingRedirectUrl(params: {
     shop: string;
     host?: string;
     billingStatus: string;
     onboardingCompleted: boolean;
   }): string {
-    const appUrl = this.configService.getOrThrow<string>('APP_URL');
-    const url = new URL(appUrl);
-    url.searchParams.set('shop', params.shop);
+    return buildPostBillingRedirectUrl(
+      this.configService.getOrThrow<string>('APP_URL'),
+      params,
+    );
+  }
 
-    if (params.host) {
-      url.searchParams.set('host', params.host);
+  private buildRecurringChargePayload(params: {
+    integration: IntegrationRecord;
+    plan: BillingPlanConfig;
+    host?: string;
+  }): CreateRecurringApplicationChargeInput {
+    return {
+      name: params.plan.name,
+      amount: params.plan.amount,
+      currencyCode: params.plan.currencyCode,
+      cappedAmount: params.plan.usage?.cappedAmount,
+      usageTerms: params.plan.usage?.terms,
+      returnUrl: buildBillingReturnUrl(
+        this.configService.getOrThrow<string>('API_URL'),
+        params.integration.platformStoreUrl,
+        params.host,
+      ),
+      test: params.plan.testMode,
+    };
+  }
+
+  private async createPaidPlanConfirmationUrl(
+    integration: IntegrationRecord,
+    plan: BillingPlanConfig,
+    host?: string,
+  ): Promise<string> {
+    const payload = this.buildRecurringChargePayload({
+      integration,
+      plan,
+      host,
+    });
+
+    try {
+      return await this.shopifyApiService.createRecurringApplicationCharge(
+        integration,
+        payload,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        this.shouldSkipCustomAppBillingError() &&
+        this.isCustomAppBillingNotSupportedError(message)
+      ) {
+        this.logger.warn(
+          `Skipping Shopify billing for custom app ${integration.platformStoreUrl}: ${message}`,
+        );
+
+        return await this.completeOnboardingAndBuildRedirect({
+          integrationId: integration.id,
+          shop: integration.platformStoreUrl,
+          host,
+          billingStatus: 'not_required',
+        });
+      }
+
+      this.logger.error(
+        `Failed to initiate billing for ${integration.platformStoreUrl}: ${message}`,
+      );
+      throw new BadGatewayException('Failed to initiate Shopify billing');
+    }
+  }
+
+  private async completeOnboardingAndBuildRedirect(params: {
+    integrationId: string;
+    shop: string;
+    host?: string;
+    billingStatus: string;
+  }): Promise<string> {
+    await this.markOnboardingCompleted(params.integrationId);
+    return this.createPostBillingRedirectUrl({
+      shop: params.shop,
+      host: params.host,
+      billingStatus: params.billingStatus,
+      onboardingCompleted: true,
+    });
+  }
+
+  private async markOnboardingCompleted(integrationId: string): Promise<void> {
+    await this.integrationsRepo.updateById(integrationId, {
+      onboardingStatus: 'completed',
+    });
+  }
+
+  private validateAndExtractBillingCallbackParams(
+    rawQuery: Record<string, string | undefined>,
+  ): BillingCallbackParams {
+    const shop = rawQuery.shop;
+    const chargeId = rawQuery.charge_id;
+    const hmac = rawQuery.hmac;
+
+    if (!shop || !chargeId || !hmac) {
+      throw new BadRequestException(
+        'Missing required Shopify billing callback parameters',
+      );
     }
 
-    url.searchParams.set('billing_status', params.billingStatus);
-    url.searchParams.set(
-      'onboarding',
-      params.onboardingCompleted ? 'completed' : 'pending',
-    );
+    if (!validateShop(shop)) {
+      throw new BadRequestException('Invalid shop parameter');
+    }
 
-    return url.toString();
+    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+    if (!verifyShopifyHmac(rawQuery, secret)) {
+      throw new UnauthorizedException(
+        'Invalid Shopify billing callback signature',
+      );
+    }
+
+    return {
+      shop,
+      chargeId,
+      host: rawQuery.host,
+    };
+  }
+
+  private async resolveBillingStatusFromCharge(params: {
+    integration: IntegrationRecord;
+    shop: string;
+    chargeId: string;
+  }): Promise<string> {
+    try {
+      const subscription =
+        await this.shopifyApiService.getAppSubscriptionStatus(
+          params.integration,
+          params.chargeId,
+        );
+      return subscription.status.toLowerCase();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Failed Shopify billing callback processing for ${params.shop}: ${message}`,
+      );
+      throw new BadGatewayException('Failed to verify Shopify billing status');
+    }
   }
 
   private isCustomAppBillingNotSupportedError(message: string): boolean {
@@ -446,12 +415,9 @@ export class OnboardingService {
   }
 
   private getBooleanConfig(key: string, defaultValue: boolean): boolean {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined) {
-      return defaultValue;
-    }
-
-    const normalized = raw.trim().toLowerCase();
-    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+    return resolveBooleanConfig(
+      this.configService.get<string>(key),
+      defaultValue,
+    );
   }
 }
