@@ -77,6 +77,25 @@ const BILLING_PLAN_TEMPLATES: Record<
   },
 };
 
+export const DEFAULT_BILLING_PLAN_ID: OnboardingBillingPlanId = 'starter';
+
+export function isOnboardingBillingPlanId(
+  value: string,
+): value is OnboardingBillingPlanId {
+  return ONBOARDING_BILLING_PLAN_IDS.includes(value as OnboardingBillingPlanId);
+}
+
+export function resolveIncludedVerificationsLimit(
+  planId: OnboardingBillingPlanId,
+): number {
+  const planTemplate = BILLING_PLAN_TEMPLATES[planId];
+  if (!planTemplate) {
+    throw new BadRequestException(`Unsupported billing plan: ${planId}`);
+  }
+
+  return planTemplate.includedVerifications;
+}
+
 export function resolveBillingPlan(params: {
   planId: OnboardingBillingPlanId;
   currencyCode: string;

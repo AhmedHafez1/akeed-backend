@@ -5,6 +5,7 @@ import { VerificationsRepository } from 'src/infrastructure/database/repositorie
 import { WhatsAppService } from 'src/infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from 'src/infrastructure/spokes/shopify/services/shopify-api.service';
 import { integrations } from '../../infrastructure/database/schema';
+import { BillingEntitlementService } from './billing-entitlement.service';
 
 @Injectable()
 export class VerificationHubService {
@@ -15,9 +16,13 @@ export class VerificationHubService {
     private verificationsRepo: VerificationsRepository,
     private waSpoke: WhatsAppService,
     private shopifyApiService: ShopifyApiService,
+    private billingEntitlementService: BillingEntitlementService,
   ) {}
 
-  async handleNewOrder(orderData: NormalizedOrder) {
+  async handleNewOrder(
+    orderData: NormalizedOrder,
+    integration: typeof integrations.$inferSelect,
+  ) {
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
 
     // 1. Check if order exists (Idempotency)
@@ -37,33 +42,85 @@ export class VerificationHubService {
       return { orderId: order.id, verificationId: verification.id };
     }
 
+    const reservation =
+      await this.billingEntitlementService.reserveVerificationSlot(integration);
+    if (!reservation.allowed) {
+      this.logger.warn(
+        `Plan limit reached for integration ${integration.id} (${reservation.consumedCount}/${reservation.includedLimit}) in period ${reservation.periodStart}; skipping WhatsApp send for order ${order.id}`,
+      );
+
+      verification = await this.verificationsRepo.create({
+        orgId: order.orgId,
+        orderId: order.id,
+        status: 'failed',
+        metadata: {
+          reason: 'plan_limit_reached',
+          planId: reservation.planId,
+          periodStart: reservation.periodStart,
+          consumedCount: reservation.consumedCount,
+          includedLimit: reservation.includedLimit,
+        },
+      });
+
+      return { orderId: order.id, verificationId: verification.id };
+    }
+
     // 3. Create Verification Record
-    verification = await this.verificationsRepo.create({
-      orgId: order.orgId,
-      orderId: order.id,
-      status: 'pending',
-    });
+    try {
+      verification = await this.verificationsRepo.create({
+        orgId: order.orgId,
+        orderId: order.id,
+        status: 'pending',
+      });
+    } catch (error) {
+      await this.safeReleaseUsageReservation({
+        integrationId: integration.id,
+        periodStart: reservation.periodStart,
+      });
+      throw error;
+    }
 
     // 4. Trigger WhatsApp Message
     this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
-
-    const response = await this.waSpoke.sendVerificationTemplate(
-      order.customerPhone,
-      order.externalOrderId,
-      order.totalPrice!,
-      verification.id,
-    );
+    let response: Awaited<
+      ReturnType<WhatsAppService['sendVerificationTemplate']>
+    > | null = null;
+    try {
+      response = await this.waSpoke.sendVerificationTemplate(
+        order.customerPhone,
+        order.externalOrderId,
+        order.totalPrice!,
+        verification.id,
+      );
+    } catch (error) {
+      await this.safeReleaseUsageReservation({
+        integrationId: integration.id,
+        periodStart: reservation.periodStart,
+      });
+      await this.safeMarkVerificationFailed(verification.id);
+      throw error;
+    }
 
     // 5. Update Verification Record with WhatsApp Message ID
-    if (response?.messages?.[0]?.id) {
-      const waMessageId = response.messages[0].id;
-      this.logger.log(`WhatsApp Message Sent with ID: ${waMessageId}`);
-      await this.verificationsRepo.updateStatus(
-        verification.id,
-        'sent',
-        waMessageId,
+    const waMessageId = response?.messages?.[0]?.id;
+    if (!waMessageId) {
+      this.logger.error(
+        `WhatsApp API response did not include a message id for verification ${verification.id}; releasing reserved usage slot`,
       );
+      await this.safeReleaseUsageReservation({
+        integrationId: integration.id,
+        periodStart: reservation.periodStart,
+      });
+      await this.safeMarkVerificationFailed(verification.id);
+      return { orderId: order.id, verificationId: verification.id };
     }
+
+    this.logger.log(`WhatsApp Message Sent with ID: ${waMessageId}`);
+    await this.verificationsRepo.updateStatus(
+      verification.id,
+      'sent',
+      waMessageId,
+    );
 
     return { orderId: order.id, verificationId: verification.id };
   }
@@ -109,6 +166,35 @@ export class VerificationHubService {
           `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
         );
       }
+    }
+  }
+
+  private async safeReleaseUsageReservation(params: {
+    integrationId: string;
+    periodStart: string;
+  }): Promise<void> {
+    try {
+      await this.billingEntitlementService.releaseVerificationSlot(params);
+    } catch (error) {
+      this.logger.error(
+        `Failed to release usage reservation for integration ${params.integrationId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private async safeMarkVerificationFailed(
+    verificationId: string,
+  ): Promise<void> {
+    try {
+      await this.verificationsRepo.updateStatus(verificationId, 'failed');
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark verification ${verificationId} as failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 }

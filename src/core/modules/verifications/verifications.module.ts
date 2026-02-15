@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../../infrastructure/database/database.module
 import { VerificationsController } from '../../controllers/verifications.controller';
 import { VerificationsService } from '../../services/verifications.service';
 import { VerificationHubService } from '../../services/verification-hub.service';
+import { BillingEntitlementService } from '../../services/billing-entitlement.service';
 import { AuthModule } from '../auth/auth.module';
 import { MetaModule } from '../../../infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.module';
@@ -15,7 +16,11 @@ import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.mo
     forwardRef(() => ShopifyModule),
   ],
   controllers: [VerificationsController],
-  providers: [VerificationsService, VerificationHubService],
+  providers: [
+    VerificationsService,
+    VerificationHubService,
+    BillingEntitlementService,
+  ],
   exports: [VerificationsService, VerificationHubService],
 })
 export class VerificationsModule {}

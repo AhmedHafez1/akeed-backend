@@ -95,7 +95,7 @@ export class ShopifyController {
 
     const normalizedOrder = this.mapToHubOrder(payload, orgId, integration.id);
 
-    await this.verificationHub.handleNewOrder(normalizedOrder);
+    await this.verificationHub.handleNewOrder(normalizedOrder, integration);
 
     return { received: true };
   }

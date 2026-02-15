@@ -13,6 +13,7 @@ import {
   jsonb,
   numeric,
   integer,
+  date,
   pgEnum,
   pgSchema,
 } from 'drizzle-orm/pg-core';
@@ -254,6 +255,84 @@ export const integrations = pgTable(
     check(
       'integrations_platform_type_check',
       sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])`,
+    ),
+  ],
+);
+
+export const integrationMonthlyUsage = pgTable(
+  'integration_monthly_usage',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    periodStart: date('period_start', { mode: 'string' }).notNull(),
+    includedLimit: integer('included_limit').notNull(),
+    consumedCount: integer('consumed_count').default(0).notNull(),
+    blockedCount: integer('blocked_count').default(0).notNull(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_integration_monthly_usage_org_id').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_integration_monthly_usage_integration_id').using(
+      'btree',
+      table.integrationId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_integration_monthly_usage_period_start').using(
+      'btree',
+      table.periodStart.asc().nullsLast().op('date_ops'),
+    ),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'integration_monthly_usage_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId],
+      foreignColumns: [integrations.id],
+      name: 'integration_monthly_usage_integration_id_fkey',
+    }).onDelete('cascade'),
+    unique('integration_monthly_usage_integration_id_period_start_key').on(
+      table.integrationId,
+      table.periodStart,
+    ),
+    pgPolicy('Service role updates integration monthly usage', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('Multi-tenant integration monthly usage', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+    check(
+      'integration_monthly_usage_included_limit_check',
+      sql`included_limit > 0`,
+    ),
+    check(
+      'integration_monthly_usage_consumed_count_check',
+      sql`consumed_count >= 0`,
+    ),
+    check(
+      'integration_monthly_usage_blocked_count_check',
+      sql`blocked_count >= 0`,
     ),
   ],
 );
