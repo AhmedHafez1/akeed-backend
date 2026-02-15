@@ -2,7 +2,10 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import type { OnboardingBillingPlanId } from '../dto/onboarding.dto';
+import {
+  ONBOARDING_BILLING_PLAN_IDS,
+  type OnboardingBillingPlanId,
+} from '../dto/onboarding.dto';
 
 interface BillingPlanUsageTemplate {
   cappedAmount: number;
@@ -107,6 +110,19 @@ export function resolveBillingPlan(params: {
 
   validateBillingPlan(billingPlan);
   return billingPlan;
+}
+
+export function resolveBillingPlans(params: {
+  currencyCode: string;
+  testMode: boolean;
+}): BillingPlanConfig[] {
+  return ONBOARDING_BILLING_PLAN_IDS.map((planId) =>
+    resolveBillingPlan({
+      planId,
+      currencyCode: params.currencyCode,
+      testMode: params.testMode,
+    }),
+  );
 }
 
 export function buildBillingReturnUrl(

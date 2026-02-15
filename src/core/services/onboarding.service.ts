@@ -14,7 +14,9 @@ import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_STATUSES,
   type OnboardingBillingPlanId,
+  type OnboardingBillingPlanDto,
   OnboardingBillingResponseDto,
+  OnboardingBillingPlansResponseDto,
   OnboardingStateDto,
   UpdateOnboardingSettingsDto,
 } from '../dto/onboarding.dto';
@@ -27,6 +29,7 @@ import {
   buildBillingReturnUrl,
   buildPostBillingRedirectUrl,
   resolveBillingPlan,
+  resolveBillingPlans,
   resolveBooleanConfig,
 } from './onboarding.service.helpers';
 import {
@@ -80,6 +83,29 @@ export class OnboardingService {
     }
 
     return this.toState(updated);
+  }
+
+  async getBillingPlans(
+    user: AuthenticatedUser,
+  ): Promise<OnboardingBillingPlansResponseDto> {
+    // Ensure the requester belongs to a valid Shopify integration context.
+    await this.resolveCurrentIntegration(user);
+
+    const plans = resolveBillingPlans({
+      currencyCode: this.getBillingCurrencyCode(),
+      testMode: this.getBillingTestMode(),
+    });
+
+    return {
+      plans: plans.map<OnboardingBillingPlanDto>((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        amount: plan.amount,
+        currencyCode: plan.currencyCode,
+        includedVerifications: plan.includedVerifications,
+        usage: plan.usage,
+      })),
+    };
   }
 
   async initiateBilling(

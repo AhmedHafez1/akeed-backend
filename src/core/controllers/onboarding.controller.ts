@@ -4,14 +4,15 @@ import {
   Get,
   Patch,
   Post,
-  Request,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import type { RequestWithUser } from '../guards/dual-auth.guard';
+import type { AuthenticatedUser } from '../guards/dual-auth.guard';
+import { CurrentUser } from '../guards/current-user.decorator';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import {
+  OnboardingBillingPlansResponseDto,
   OnboardingBillingRequestDto,
   OnboardingBillingResponseDto,
   OnboardingStateDto,
@@ -32,33 +33,41 @@ export class OnboardingController {
 
   @Get('state')
   async getState(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ state: OnboardingStateDto }> {
-    const state = await this.onboardingService.getState(req.user);
+    const state = await this.onboardingService.getState(user);
     return { state };
   }
 
   @Patch('settings')
   async updateSettings(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() payload: UpdateOnboardingSettingsDto,
   ): Promise<{ state: OnboardingStateDto }> {
-    const state = await this.onboardingService.updateSettings(
-      req.user,
-      payload,
-    );
+    const state = await this.onboardingService.updateSettings(user, payload);
     return { state };
   }
 
   @Post('billing')
   async initiateBilling(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() payload: OnboardingBillingRequestDto,
   ): Promise<OnboardingBillingResponseDto> {
-    return await this.onboardingService.initiateBilling(
-      req.user,
-      payload.planId,
-      payload.host,
-    );
+    const billingResponse: OnboardingBillingResponseDto =
+      await this.onboardingService.initiateBilling(
+        user,
+        payload.planId,
+        payload.host,
+      );
+    return billingResponse;
+  }
+
+  @Get('billing/plans')
+  async getBillingPlans(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<OnboardingBillingPlansResponseDto> {
+    const plansResponse: OnboardingBillingPlansResponseDto =
+      await this.onboardingService.getBillingPlans(user);
+    return plansResponse;
   }
 }

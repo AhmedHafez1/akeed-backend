@@ -49,6 +49,22 @@ export interface OnboardingBillingResponseDto {
   confirmationUrl: string;
 }
 
+export interface OnboardingBillingPlanDto {
+  id: OnboardingBillingPlanId;
+  name: string;
+  amount: number;
+  currencyCode: string;
+  includedVerifications: number;
+  usage?: {
+    cappedAmount: number;
+    terms: string;
+  };
+}
+
+export interface OnboardingBillingPlansResponseDto {
+  plans: OnboardingBillingPlanDto[];
+}
+
 export class OnboardingBillingRequestDto {
   @IsString()
   @IsIn(ONBOARDING_BILLING_PLAN_IDS)
