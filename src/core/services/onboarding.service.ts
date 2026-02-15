@@ -324,8 +324,32 @@ export class OnboardingService {
       storeName: integration.storeName ?? null,
       defaultLanguage: integration.defaultLanguage ?? 'auto',
       isAutoVerifyEnabled: integration.isAutoVerifyEnabled ?? true,
+      billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
+      billingManagementUrl: this.resolveBillingManagementUrl(integration),
     };
+  }
+
+  private resolveBillingManagementUrl(
+    integration: IntegrationRecord,
+  ): string | null {
+    const apiKey = this.configService.get<string>('SHOPIFY_API_KEY');
+    if (!apiKey) {
+      return null;
+    }
+
+    const shopDomain = integration.platformStoreUrl?.trim();
+    if (!shopDomain) {
+      return null;
+    }
+
+    try {
+      validateShop(shopDomain);
+    } catch {
+      return null;
+    }
+
+    return new URL(`https://${shopDomain}/admin/apps/${apiKey}`).toString();
   }
 
   private getBillingTestMode(): boolean {
