@@ -76,3 +76,20 @@ export class ShopifyAppUninstalledDto {
   @IsNotEmpty()
   id!: string;
 }
+
+export class ShopifyAppSubscriptionWebhookDto {
+  @Transform(({ value }) => String(value))
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+
+  @Transform(({ value }) => String(value))
+  @IsString()
+  @IsNotEmpty()
+  status!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => String(value))
+  @IsString()
+  admin_graphql_api_id?: string;
+}

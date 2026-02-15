@@ -332,6 +332,11 @@ export class ShopifyAuthService {
         topic: 'app/uninstalled',
         address: `${appUrl}/webhooks/shopify/uninstalled`,
       },
+      // Subscription lifecycle updates (active/canceled/frozen/expired...)
+      {
+        topic: 'app_subscriptions/update',
+        address: `${appUrl}/webhooks/shopify/app-subscriptions/update`,
+      },
       // Business-related topics already used by the app
       {
         topic: 'orders/create',
