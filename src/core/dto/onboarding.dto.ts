@@ -43,6 +43,7 @@ export interface OnboardingStateDto {
   storeName: string | null;
   defaultLanguage: OnboardingLanguage;
   isAutoVerifyEnabled: boolean;
+  billingStatus: string | null;
 }
 
 export interface OnboardingBillingResponseDto {

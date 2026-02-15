@@ -324,6 +324,7 @@ export class OnboardingService {
       storeName: integration.storeName ?? null,
       defaultLanguage: integration.defaultLanguage ?? 'auto',
       isAutoVerifyEnabled: integration.isAutoVerifyEnabled ?? true,
+      billingStatus: integration.billingStatus ?? null,
     };
   }
 
