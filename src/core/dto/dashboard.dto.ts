@@ -45,13 +45,6 @@ export interface OrderListItemDto {
   verification_status: string | null;
 }
 
-export interface VerificationStatsTrendDto {
-  current_month: number;
-  previous_month: number;
-  change: number;
-  change_percentage: number | null;
-}
-
 export interface VerificationStatsDto {
   date_range: DashboardDateRange;
   totals: {
@@ -62,15 +55,13 @@ export interface VerificationStatsDto {
     expired: number;
     verification_rate: number;
   };
-  monthly_trends: {
-    total: VerificationStatsTrendDto;
-    pending: VerificationStatsTrendDto;
-    confirmed: VerificationStatsTrendDto;
-    canceled: VerificationStatsTrendDto;
-    expired: VerificationStatsTrendDto;
-  };
   usage: {
     used: number;
     limit: number;
+  };
+  savings: {
+    avg_shipping_cost: number;
+    currency: string;
+    money_saved: number;
   };
 }

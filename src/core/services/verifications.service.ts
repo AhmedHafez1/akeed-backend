@@ -8,7 +8,6 @@ import {
   GetVerificationsQueryDto,
   VerificationListItemDto,
   VerificationStatsDto,
-  VerificationStatsTrendDto,
 } from '../dto/dashboard.dto';
 import { VerificationStatus } from '../interfaces/verification.interface';
 import {
@@ -29,6 +28,8 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
 ];
 
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
+const DEFAULT_AVG_SHIPPING_COST = 25;
+const DEFAULT_SHIPPING_CURRENCY = 'SAR';
 
 interface VerificationStatusCounts {
   total: number;
@@ -79,38 +80,29 @@ export class VerificationsService {
     const now = new Date();
 
     const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
-    const currentMonthPeriod = this.resolveCurrentMonthBounds(now);
-    const previousMonthPeriod = this.resolvePreviousMonthBounds(now);
-    const periodStart = currentMonthPeriod.startAt.slice(0, 10);
+    const periodStart = this.getCurrentMonthStartDate(now);
 
-    const [filteredCounts, currentMonthCounts, previousMonthCounts, usage] =
-      await Promise.all([
-        this.verificationsRepo.getStatusCountsByOrgAndPeriod(
-          orgId,
-          filterPeriod.startAt,
-          filterPeriod.endAt,
-        ),
-        this.verificationsRepo.getStatusCountsByOrgAndPeriod(
-          orgId,
-          currentMonthPeriod.startAt,
-          currentMonthPeriod.endAt,
-        ),
-        this.verificationsRepo.getStatusCountsByOrgAndPeriod(
-          orgId,
-          previousMonthPeriod.startAt,
-          previousMonthPeriod.endAt,
-        ),
-        this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
-          orgId,
-          periodStart,
-        }),
-      ]);
+    const [filteredCounts, usage] = await Promise.all([
+      this.verificationsRepo.getStatusCountsByOrgAndPeriod(
+        orgId,
+        filterPeriod.startAt,
+        filterPeriod.endAt,
+      ),
+      this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
+        orgId,
+        periodStart,
+      }),
+    ]);
 
     const verificationRate = this.calculateVerificationRate(filteredCounts);
     const usageLimit =
       usage.includedLimit > 0
         ? usage.includedLimit
         : await this.resolveFallbackUsageLimit(orgId);
+    const averageShippingCost = this.resolveAverageShippingCost();
+    const moneySaved = Number(
+      (filteredCounts.canceled * averageShippingCost).toFixed(2),
+    );
 
     return {
       date_range: dateRange,
@@ -122,31 +114,14 @@ export class VerificationsService {
         expired: filteredCounts.expired,
         verification_rate: verificationRate,
       },
-      monthly_trends: {
-        total: this.buildTrend(
-          currentMonthCounts.total,
-          previousMonthCounts.total,
-        ),
-        pending: this.buildTrend(
-          currentMonthCounts.pending,
-          previousMonthCounts.pending,
-        ),
-        confirmed: this.buildTrend(
-          currentMonthCounts.confirmed,
-          previousMonthCounts.confirmed,
-        ),
-        canceled: this.buildTrend(
-          currentMonthCounts.canceled,
-          previousMonthCounts.canceled,
-        ),
-        expired: this.buildTrend(
-          currentMonthCounts.expired,
-          previousMonthCounts.expired,
-        ),
-      },
       usage: {
         used: usage.consumedCount,
         limit: usageLimit,
+      },
+      savings: {
+        avg_shipping_cost: averageShippingCost,
+        currency: this.resolveShippingCurrency(),
+        money_saved: moneySaved,
       },
     };
   }
@@ -182,24 +157,6 @@ export class VerificationsService {
     return Number(((counts.confirmed / counts.total) * 100).toFixed(1));
   }
 
-  private buildTrend(
-    currentMonth: number,
-    previousMonth: number,
-  ): VerificationStatsTrendDto {
-    const change = currentMonth - previousMonth;
-    const changePercentage =
-      previousMonth === 0
-        ? null
-        : Number(((change / previousMonth) * 100).toFixed(1));
-
-    return {
-      current_month: currentMonth,
-      previous_month: previousMonth,
-      change,
-      change_percentage: changePercentage,
-    };
-  }
-
   private resolveDateRangeBounds(
     dateRange: DashboardDateRange,
     now: Date,
@@ -213,38 +170,6 @@ export class VerificationsService {
     } else if (dateRange === 'last_30_days') {
       start.setUTCDate(start.getUTCDate() - 29);
     }
-
-    return {
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
-    };
-  }
-
-  private resolveCurrentMonthBounds(now: Date): {
-    startAt: string;
-    endAt: string;
-  } {
-    const start = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const end = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-    );
-
-    return {
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
-    };
-  }
-
-  private resolvePreviousMonthBounds(now: Date): {
-    startAt: string;
-    endAt: string;
-  } {
-    const start = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
-    );
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
     return {
       startAt: start.toISOString(),
@@ -266,6 +191,37 @@ export class VerificationsService {
         date.getUTCDate() + 1,
       ),
     );
+  }
+
+  private getCurrentMonthStartDate(now: Date): string {
+    const periodStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+
+    return periodStart.toISOString().slice(0, 10);
+  }
+
+  private resolveAverageShippingCost(): number {
+    const value = process.env.DASHBOARD_AVG_SHIPPING_COST;
+    if (!value) {
+      return DEFAULT_AVG_SHIPPING_COST;
+    }
+
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return DEFAULT_AVG_SHIPPING_COST;
+    }
+
+    return parsed;
+  }
+
+  private resolveShippingCurrency(): string {
+    const currency = process.env.DASHBOARD_SHIPPING_CURRENCY?.trim();
+    if (!currency) {
+      return DEFAULT_SHIPPING_CURRENCY;
+    }
+
+    return currency.toUpperCase();
   }
 
   private async resolveFallbackUsageLimit(orgId: string): Promise<number> {
