@@ -22,6 +22,29 @@ export interface MonthlyVerificationSlotReservation {
 export class IntegrationMonthlyUsageRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
+  async getOrgUsageTotalsForPeriod(params: {
+    orgId: string;
+    periodStart: string;
+  }): Promise<{ consumedCount: number; includedLimit: number }> {
+    const [usage] = await this.db
+      .select({
+        consumedCount: sql<number>`COALESCE(SUM(${integrationMonthlyUsage.consumedCount}), 0)::int`,
+        includedLimit: sql<number>`COALESCE(SUM(${integrationMonthlyUsage.includedLimit}), 0)::int`,
+      })
+      .from(integrationMonthlyUsage)
+      .where(
+        and(
+          eq(integrationMonthlyUsage.orgId, params.orgId),
+          eq(integrationMonthlyUsage.periodStart, params.periodStart),
+        ),
+      );
+
+    return {
+      consumedCount: usage?.consumedCount ?? 0,
+      includedLimit: usage?.includedLimit ?? 0,
+    };
+  }
+
   async reserveMonthlyVerificationSlot(
     params: ReserveMonthlyVerificationSlotParams,
   ): Promise<MonthlyVerificationSlotReservation> {

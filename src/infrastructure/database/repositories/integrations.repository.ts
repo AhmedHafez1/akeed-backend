@@ -9,6 +9,15 @@ import { integrations } from '../schema';
 export class IntegrationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
+  async findActiveByOrg(orgId: string) {
+    return await this.db.query.integrations.findMany({
+      where: and(
+        eq(integrations.orgId, orgId),
+        eq(integrations.isActive, true),
+      ),
+    });
+  }
+
   async findByPlatformDomain(domain: string, platformType: string) {
     return await this.db.query.integrations.findFirst({
       where: and(

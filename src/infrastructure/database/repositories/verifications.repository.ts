@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
@@ -9,6 +9,58 @@ import { verifications } from '../schema';
 @Injectable()
 export class VerificationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+
+  async getStatusCountsByOrgAndPeriod(
+    orgId: string,
+    startAt: string,
+    endAt: string,
+  ): Promise<{
+    total: number;
+    pending: number;
+    confirmed: number;
+    canceled: number;
+    expired: number;
+  }> {
+    const rows = await this.db
+      .select({
+        status: verifications.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          gte(verifications.createdAt, startAt),
+          lt(verifications.createdAt, endAt),
+        ),
+      )
+      .groupBy(verifications.status);
+
+    const counts = {
+      total: 0,
+      pending: 0,
+      confirmed: 0,
+      canceled: 0,
+      expired: 0,
+    };
+
+    for (const row of rows) {
+      const count = Number(row.count ?? 0);
+      counts.total += count;
+
+      if (row.status === 'pending') {
+        counts.pending += count;
+      } else if (row.status === 'confirmed') {
+        counts.confirmed += count;
+      } else if (row.status === 'canceled') {
+        counts.canceled += count;
+      } else if (row.status === 'expired') {
+        counts.expired += count;
+      }
+    }
+
+    return counts;
+  }
 
   async create(data: typeof verifications.$inferInsert) {
     const [result] = await this.db

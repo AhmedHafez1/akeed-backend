@@ -81,19 +81,12 @@ export class SecurityMiddleware implements NestMiddleware {
    */
   private setCORSHeaders(res: Response, req: Request) {
     const origin = req.headers.origin;
-
-    // List of allowed origins
-    const allowedOrigins = [
-      'https://admin.shopify.com',
-      'https://akeed-eta.vercel.app',
-      'https://pierce-airlines-products-workout.trycloudflare.com',
-      'http://localhost:3000', // Development
-      'http://localhost:3001', // Development frontend
-    ];
+    const allowedOrigins = this.getAllowedOrigins();
 
     // Check if origin is allowed
     if (origin && this.isOriginAllowed(origin, allowedOrigins)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
     }
 
     res.setHeader(
@@ -106,6 +99,33 @@ export class SecurityMiddleware implements NestMiddleware {
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+  }
+
+  /**
+   * Resolve allowed origins from env with safe defaults.
+   *
+   * - `CORS_ALLOWED_ORIGINS`: comma-separated list, supports `*`
+   * - falls back to sensible dev/prod defaults
+   */
+  private getAllowedOrigins(): string[] {
+    const envOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    if (envOrigins && envOrigins.length > 0) {
+      return envOrigins;
+    }
+
+    const defaults =
+      process.env.NODE_ENV === 'production'
+        ? ['https://admin.shopify.com', 'https://akeed-eta.vercel.app']
+        : ['*'];
+
+    if (process.env.APP_URL) {
+      defaults.push(process.env.APP_URL.trim());
+    }
+
+    return [...new Set(defaults)];
   }
 
   /**
@@ -145,6 +165,10 @@ export class SecurityMiddleware implements NestMiddleware {
    * Check if origin is allowed
    */
   private isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+    if (allowedOrigins.includes('*')) {
+      return true;
+    }
+
     // Exact match
     if (allowedOrigins.includes(origin)) {
       return true;

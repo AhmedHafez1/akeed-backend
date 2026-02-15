@@ -11,8 +11,10 @@ import type { RequestWithUser } from '../guards/dual-auth.guard';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import { VerificationsService } from '../services/verifications.service';
 import {
+  GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
   VerificationListItemDto,
+  VerificationStatsDto,
 } from '../dto/dashboard.dto';
 
 @Controller('api/verifications')
@@ -25,6 +27,19 @@ import {
 )
 export class VerificationsController {
   constructor(private readonly verificationsService: VerificationsService) {}
+
+  @Get('stats')
+  async getVerificationStats(
+    @Request() req: RequestWithUser,
+    @Query() query: GetVerificationStatsQueryDto,
+  ): Promise<{ stats: VerificationStatsDto }> {
+    const stats = await this.verificationsService.getStatsByOrg(
+      req.user.orgId,
+      query,
+    );
+
+    return { stats };
+  }
 
   @Get()
   async listVerifications(
