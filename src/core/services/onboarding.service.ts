@@ -42,6 +42,11 @@ interface BillingCallbackParams {
   host?: string;
 }
 
+interface BillingChargeResolution {
+  status: string;
+  subscriptionId: string;
+}
+
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
@@ -94,6 +99,16 @@ export class OnboardingService {
     });
 
     if (!this.isBillingRequired()) {
+      await this.persistBillingState({
+        integrationId: hydratedIntegration.id,
+        planId: billingPlan.id,
+        status: 'not_required',
+        markInitiatedAt: true,
+        markActivatedAt: true,
+        clearCanceledAt: true,
+        shopifySubscriptionId: null,
+      });
+
       this.logger.log(
         `Shopify billing skipped by configuration for ${hydratedIntegration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
@@ -108,6 +123,16 @@ export class OnboardingService {
     }
 
     if (billingPlan.amount === 0) {
+      await this.persistBillingState({
+        integrationId: hydratedIntegration.id,
+        planId: billingPlan.id,
+        status: 'active',
+        markInitiatedAt: true,
+        markActivatedAt: true,
+        clearCanceledAt: true,
+        shopifySubscriptionId: null,
+      });
+
       this.logger.log(
         `Free onboarding plan activated for ${hydratedIntegration.platformStoreUrl} (plan=${billingPlan.id})`,
       );
@@ -120,6 +145,15 @@ export class OnboardingService {
         }),
       };
     }
+
+    await this.persistBillingState({
+      integrationId: hydratedIntegration.id,
+      planId: billingPlan.id,
+      status: 'pending',
+      markInitiatedAt: true,
+      clearCanceledAt: true,
+      shopifySubscriptionId: null,
+    });
 
     return {
       confirmationUrl: await this.createPaidPlanConfirmationUrl(
@@ -138,25 +172,37 @@ export class OnboardingService {
     const integration = await this.resolveIntegrationByShop(
       callbackParams.shop,
     );
-    const missingPrerequisites =
-      this.getMissingBillingPrerequisites(integration);
-    if (missingPrerequisites.length > 0) {
-      this.logger.warn(
-        `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
-      );
-      return this.createPostBillingRedirectUrl({
-        shop: callbackParams.shop,
-        host: callbackParams.host,
-      });
-    }
-
-    const billingStatus = await this.resolveBillingStatusFromCharge({
+    const billingResolution = await this.resolveBillingStatusFromCharge({
       integration,
       shop: callbackParams.shop,
       chargeId: callbackParams.chargeId,
     });
 
-    if (billingStatus === 'active') {
+    const isCanceledStatus = this.isCanceledBillingStatus(
+      billingResolution.status,
+    );
+    await this.persistBillingState({
+      integrationId: integration.id,
+      status: billingResolution.status,
+      shopifySubscriptionId: billingResolution.subscriptionId,
+      markActivatedAt: billingResolution.status === 'active',
+      markCanceledAt: isCanceledStatus,
+      clearCanceledAt: !isCanceledStatus,
+    });
+
+    if (billingResolution.status === 'active') {
+      const missingPrerequisites =
+        this.getMissingBillingPrerequisites(integration);
+      if (missingPrerequisites.length > 0) {
+        this.logger.warn(
+          `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
+        );
+        return this.createPostBillingRedirectUrl({
+          shop: callbackParams.shop,
+          host: callbackParams.host,
+        });
+      }
+
       return await this.completeOnboardingAndBuildRedirect({
         integrationId: integration.id,
         shop: callbackParams.shop,
@@ -318,6 +364,15 @@ export class OnboardingService {
         this.shouldSkipCustomAppBillingError() &&
         this.isCustomAppBillingNotSupportedError(message)
       ) {
+        await this.persistBillingState({
+          integrationId: integration.id,
+          planId: plan.id,
+          status: 'not_required',
+          markActivatedAt: true,
+          clearCanceledAt: true,
+          shopifySubscriptionId: null,
+        });
+
         this.logger.warn(
           `Skipping Shopify billing for custom app ${integration.platformStoreUrl}: ${message}`,
         );
@@ -332,6 +387,13 @@ export class OnboardingService {
       this.logger.error(
         `Failed to initiate billing for ${integration.platformStoreUrl}: ${message}`,
       );
+
+      await this.persistBillingState({
+        integrationId: integration.id,
+        planId: plan.id,
+        status: 'error',
+      });
+
       throw new BadGatewayException('Failed to initiate Shopify billing');
     }
   }
@@ -389,14 +451,17 @@ export class OnboardingService {
     integration: IntegrationRecord;
     shop: string;
     chargeId: string;
-  }): Promise<string> {
+  }): Promise<BillingChargeResolution> {
     try {
       const subscription =
         await this.shopifyApiService.getAppSubscriptionStatus(
           params.integration,
           params.chargeId,
         );
-      return subscription.status.toLowerCase();
+      return {
+        status: subscription.status.toLowerCase(),
+        subscriptionId: subscription.id,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
@@ -455,5 +520,60 @@ export class OnboardingService {
     }
 
     return missingFields;
+  }
+
+  private isCanceledBillingStatus(status: string): boolean {
+    return ['cancelled', 'canceled', 'declined', 'expired', 'frozen'].includes(
+      status,
+    );
+  }
+
+  private async persistBillingState(params: {
+    integrationId: string;
+    planId?: OnboardingBillingPlanId;
+    status?: string;
+    shopifySubscriptionId?: string | null;
+    markInitiatedAt?: boolean;
+    markActivatedAt?: boolean;
+    markCanceledAt?: boolean;
+    clearCanceledAt?: boolean;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const updates: Partial<typeof integrations.$inferInsert> = {};
+
+    if (params.planId !== undefined) {
+      updates.billingPlanId = params.planId;
+    }
+
+    if (params.status !== undefined) {
+      updates.billingStatus = params.status;
+      updates.billingStatusUpdatedAt = now;
+    }
+
+    if (params.shopifySubscriptionId !== undefined) {
+      updates.shopifySubscriptionId = params.shopifySubscriptionId;
+    }
+
+    if (params.markInitiatedAt) {
+      updates.billingInitiatedAt = now;
+    }
+
+    if (params.markActivatedAt) {
+      updates.billingActivatedAt = now;
+    }
+
+    if (params.markCanceledAt) {
+      updates.billingCanceledAt = now;
+    }
+
+    if (params.clearCanceledAt) {
+      updates.billingCanceledAt = null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return;
+    }
+
+    await this.integrationsRepo.updateById(params.integrationId, updates);
   }
 }

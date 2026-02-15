@@ -29,6 +29,13 @@
       "when": 1770910064302,
       "tag": "0003_workable_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771128444862,
+      "tag": "0004_faithful_shadowcat",
+      "breakpoints": true
     }
   ]
 }

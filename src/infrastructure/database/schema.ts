@@ -39,6 +39,13 @@ export const integrationOnboardingStatus = pgEnum(
   ['pending', 'completed'],
 );
 
+export const integrationBillingPlanId = pgEnum('integration_billing_plan_id', [
+  'starter',
+  'growth',
+  'pro',
+  'scale',
+]);
+
 // Reference to Supabase auth.users table (managed by Supabase Auth)
 export const authSchema = pgSchema('auth');
 export const users = authSchema.table('users', {
@@ -182,6 +189,25 @@ export const integrations = pgTable(
     onboardingStatus: integrationOnboardingStatus('onboarding_status')
       .default('pending')
       .notNull(),
+    billingPlanId: integrationBillingPlanId('billing_plan_id'),
+    shopifySubscriptionId: text('shopify_subscription_id'),
+    billingStatus: text('billing_status'),
+    billingInitiatedAt: timestamp('billing_initiated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    billingActivatedAt: timestamp('billing_activated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    billingCanceledAt: timestamp('billing_canceled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    billingStatusUpdatedAt: timestamp('billing_status_updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -200,6 +226,14 @@ export const integrations = pgTable(
       'btree',
       table.platformType.asc().nullsLast().op('bool_ops'),
       table.isActive.asc().nullsLast().op('bool_ops'),
+    ),
+    index('idx_integrations_billing_status').using(
+      'btree',
+      table.billingStatus.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_integrations_shopify_subscription_id').using(
+      'btree',
+      table.shopifySubscriptionId.asc().nullsLast().op('text_ops'),
     ),
     foreignKey({
       columns: [table.orgId],
