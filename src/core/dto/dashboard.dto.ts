@@ -53,7 +53,7 @@ export interface VerificationStatsDto {
     confirmed: number;
     canceled: number;
     expired: number;
-    verification_rate: number;
+    reply_rate: number;
   };
   usage: {
     used: number;

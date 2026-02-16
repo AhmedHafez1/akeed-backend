@@ -94,7 +94,7 @@ export class VerificationsService {
       }),
     ]);
 
-    const verificationRate = this.calculateVerificationRate(filteredCounts);
+    const replyRate = this.calculateReplyRate(filteredCounts);
     const usageLimit =
       usage.includedLimit > 0
         ? usage.includedLimit
@@ -112,7 +112,7 @@ export class VerificationsService {
         confirmed: filteredCounts.confirmed,
         canceled: filteredCounts.canceled,
         expired: filteredCounts.expired,
-        verification_rate: verificationRate,
+        reply_rate: replyRate,
       },
       usage: {
         used: usage.consumedCount,
@@ -149,12 +149,14 @@ export class VerificationsService {
     return statuses;
   }
 
-  private calculateVerificationRate(counts: VerificationStatusCounts): number {
+  private calculateReplyRate(counts: VerificationStatusCounts): number {
     if (counts.total === 0) {
       return 0;
     }
 
-    return Number(((counts.confirmed / counts.total) * 100).toFixed(1));
+    return Number(
+      (((counts.confirmed + counts.canceled) / counts.total) * 100).toFixed(1),
+    );
   }
 
   private resolveDateRangeBounds(
