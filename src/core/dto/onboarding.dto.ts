@@ -2,13 +2,31 @@ import {
   IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
+export const ONBOARDING_SHIPPING_CURRENCIES = [
+  'USD',
+  'EUR',
+  'EGP',
+  'SAR',
+  'AED',
+  'QAR',
+  'KWD',
+  'BHD',
+  'OMR',
+  'JOD',
+  'MAD',
+] as const;
+export type OnboardingShippingCurrency =
+  (typeof ONBOARDING_SHIPPING_CURRENCIES)[number];
 
 export const ONBOARDING_STATUSES = ['pending', 'completed'] as const;
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
@@ -34,6 +52,17 @@ export class UpdateOnboardingSettingsDto {
 
   @IsBoolean()
   isAutoVerifyEnabled!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(ONBOARDING_SHIPPING_CURRENCIES)
+  shippingCurrency?: OnboardingShippingCurrency;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  avgShippingCost?: number;
 }
 
 export interface OnboardingStateDto {
@@ -43,6 +72,8 @@ export interface OnboardingStateDto {
   storeName: string | null;
   defaultLanguage: OnboardingLanguage;
   isAutoVerifyEnabled: boolean;
+  shippingCurrency: OnboardingShippingCurrency;
+  avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
   billingStatus: string | null;
   billingManagementUrl: string | null;

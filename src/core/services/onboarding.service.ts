@@ -12,9 +12,11 @@ import { IntegrationsRepository } from '../../infrastructure/database/repositori
 import { integrations } from '../../infrastructure/database/schema';
 import {
   ONBOARDING_LANGUAGES,
+  ONBOARDING_SHIPPING_CURRENCIES,
   ONBOARDING_STATUSES,
   type OnboardingBillingPlanId,
   type OnboardingBillingPlanDto,
+  type OnboardingShippingCurrency,
   OnboardingBillingResponseDto,
   OnboardingBillingPlansResponseDto,
   OnboardingStateDto,
@@ -38,6 +40,8 @@ import {
 } from '../../infrastructure/spokes/shopify/shopify.utils';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
+const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
+const DEFAULT_AVG_SHIPPING_COST = 3;
 
 interface BillingCallbackParams {
   shop: string;
@@ -72,10 +76,22 @@ export class OnboardingService {
     payload: UpdateOnboardingSettingsDto,
   ): Promise<OnboardingStateDto> {
     const integration = await this.resolveCurrentIntegration(user);
-    const updated = await this.integrationsRepo.updateById(integration.id, {
+    const updates: Partial<typeof integrations.$inferInsert> = {
       storeName: payload.storeName.trim(),
       defaultLanguage: payload.defaultLanguage,
       isAutoVerifyEnabled: payload.isAutoVerifyEnabled,
+    };
+
+    if (payload.shippingCurrency !== undefined) {
+      updates.shippingCurrency = payload.shippingCurrency;
+    }
+
+    if (payload.avgShippingCost !== undefined) {
+      updates.avgShippingCost = payload.avgShippingCost.toFixed(2);
+    }
+
+    const updated = await this.integrationsRepo.updateById(integration.id, {
+      ...updates,
     });
 
     if (!updated) {
@@ -324,6 +340,8 @@ export class OnboardingService {
       storeName: integration.storeName ?? null,
       defaultLanguage: integration.defaultLanguage ?? 'auto',
       isAutoVerifyEnabled: integration.isAutoVerifyEnabled ?? true,
+      shippingCurrency: this.resolveShippingCurrency(integration),
+      avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
       billingManagementUrl: this.resolveBillingManagementUrl(integration),
@@ -361,6 +379,41 @@ export class OnboardingService {
 
   private getBillingCurrencyCode(): string {
     return this.configService.get<string>('SHOPIFY_BILLING_CURRENCY') ?? 'USD';
+  }
+
+  private resolveShippingCurrency(
+    integration: IntegrationRecord,
+  ): OnboardingShippingCurrency {
+    const currency = integration.shippingCurrency?.trim().toUpperCase();
+    if (!currency) {
+      return DEFAULT_SHIPPING_CURRENCY;
+    }
+
+    if (
+      ONBOARDING_SHIPPING_CURRENCIES.includes(
+        currency as OnboardingShippingCurrency,
+      )
+    ) {
+      return currency as OnboardingShippingCurrency;
+    }
+
+    return DEFAULT_SHIPPING_CURRENCY;
+  }
+
+  private resolveAverageShippingCost(integration: IntegrationRecord): number {
+    const raw = integration.avgShippingCost;
+    const parsed =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string'
+          ? Number.parseFloat(raw)
+          : Number.NaN;
+
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return DEFAULT_AVG_SHIPPING_COST;
+    }
+
+    return Number(parsed.toFixed(2));
   }
 
   private createPostBillingRedirectUrl(params: {

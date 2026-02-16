@@ -184,6 +184,10 @@ export const integrations = pgTable(
     defaultLanguage: integrationDefaultLanguage('default_language')
       .default('auto')
       .notNull(),
+    shippingCurrency: text('shipping_currency').default('USD').notNull(),
+    avgShippingCost: numeric('avg_shipping_cost', { precision: 10, scale: 2 })
+      .default('3')
+      .notNull(),
     isAutoVerifyEnabled: boolean('is_auto_verify_enabled')
       .default(true)
       .notNull(),

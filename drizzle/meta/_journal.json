@@ -43,6 +43,13 @@
       "when": 1771150051580,
       "tag": "0005_chemical_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771236458000,
+      "tag": "0006_solid_shipping_preferences",
+      "breakpoints": true
     }
   ]
 }
