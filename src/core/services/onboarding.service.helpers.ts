@@ -59,7 +59,7 @@ const BILLING_PLAN_TEMPLATES: Record<
   },
   pro: {
     name: 'Akeed Pro',
-    amount: 16,
+    amount: 15,
     includedVerifications: 1000,
     usage: {
       cappedAmount: 45,

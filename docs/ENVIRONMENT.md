@@ -80,7 +80,7 @@ npm run db:push
   - `POST /api/onboarding/billing` now requires `planId` and maps to built-in plans:
     - `starter`: free, up to 50 verifications/month (no Shopify charge, onboarding auto-completes).
     - `growth`: `$9`, up to 500 verifications/month.
-    - `pro`: `$16`, up to 1000 verifications/month.
+    - `pro`: `$15`, up to 1000 verifications/month.
     - `scale`: `$29`, up to 2500 verifications/month.
   - Paid plans include an optional usage-cap line item (`cappedAmount`) so successful-verification overages can be billed via usage records.
 
