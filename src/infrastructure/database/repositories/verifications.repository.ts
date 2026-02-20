@@ -16,10 +16,11 @@ export class VerificationsRepository {
     endAt: string,
   ): Promise<{
     total: number;
-    pending: number;
     confirmed: number;
     canceled: number;
-    expired: number;
+    sent: number;
+    delivered: number;
+    read: number;
   }> {
     const rows = await this.db
       .select({
@@ -38,24 +39,27 @@ export class VerificationsRepository {
 
     const counts = {
       total: 0,
-      pending: 0,
       confirmed: 0,
       canceled: 0,
-      expired: 0,
+      sent: 0,
+      delivered: 0,
+      read: 0,
     };
 
     for (const row of rows) {
       const count = Number(row.count ?? 0);
       counts.total += count;
 
-      if (row.status === 'pending') {
-        counts.pending += count;
-      } else if (row.status === 'confirmed') {
+      if (row.status === 'confirmed') {
         counts.confirmed += count;
       } else if (row.status === 'canceled') {
         counts.canceled += count;
-      } else if (row.status === 'expired') {
-        counts.expired += count;
+      } else if (row.status === 'sent') {
+        counts.sent += count;
+      } else if (row.status === 'delivered') {
+        counts.delivered += count;
+      } else if (row.status === 'read') {
+        counts.read += count;
       }
     }
 

@@ -35,10 +35,11 @@ type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {
   total: number;
-  pending: number;
   confirmed: number;
   canceled: number;
-  expired: number;
+  sent: number;
+  delivered: number;
+  read: number;
 }
 
 @Injectable()
@@ -111,11 +112,11 @@ export class VerificationsService {
     return {
       date_range: dateRange,
       totals: {
-        total: filteredCounts.total,
-        pending: filteredCounts.pending,
         confirmed: filteredCounts.confirmed,
         canceled: filteredCounts.canceled,
-        expired: filteredCounts.expired,
+        sent: filteredCounts.sent,
+        delivered: filteredCounts.delivered,
+        read: filteredCounts.read,
         reply_rate: replyRate,
       },
       usage: {

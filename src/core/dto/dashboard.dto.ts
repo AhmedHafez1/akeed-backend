@@ -48,11 +48,11 @@ export interface OrderListItemDto {
 export interface VerificationStatsDto {
   date_range: DashboardDateRange;
   totals: {
-    total: number;
-    pending: number;
     confirmed: number;
     canceled: number;
-    expired: number;
+    sent: number;
+    delivered: number;
+    read: number;
     reply_rate: number;
   };
   usage: {
