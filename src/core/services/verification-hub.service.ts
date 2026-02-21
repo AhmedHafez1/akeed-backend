@@ -4,8 +4,9 @@ import { OrdersRepository } from 'src/infrastructure/database/repositories/order
 import { VerificationsRepository } from 'src/infrastructure/database/repositories/verifications.repository';
 import { WhatsAppService } from 'src/infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from 'src/infrastructure/spokes/shopify/services/shopify-api.service';
-import { integrations } from '../../infrastructure/database/schema';
+import { integrations, orders } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import { OrderEligibilityService } from './order-eligibility.service';
 
 @Injectable()
 export class VerificationHubService {
@@ -17,12 +18,29 @@ export class VerificationHubService {
     private waSpoke: WhatsAppService,
     private shopifyApiService: ShopifyApiService,
     private billingEntitlementService: BillingEntitlementService,
+    private orderEligibilityService: OrderEligibilityService,
   ) {}
 
   async handleNewOrder(
     orderData: NormalizedOrder,
     integration: typeof integrations.$inferSelect,
   ) {
+    const eligibility =
+      this.orderEligibilityService.evaluateOrderForVerification({
+        order: orderData,
+        integration,
+      });
+    if (!eligibility.eligible) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: verification is only sent for COD orders (reason=${eligibility.reason}${
+          eligibility.matchedSignal
+            ? `, signal=${eligibility.matchedSignal}`
+            : ''
+        })`,
+      );
+      return { skipped: true, reason: eligibility.reason };
+    }
+
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
 
     // 1. Check if order exists (Idempotency)
@@ -32,7 +50,9 @@ export class VerificationHubService {
     );
 
     if (!order) {
-      order = await this.ordersRepo.create(orderData);
+      order = await this.ordersRepo.create(
+        this.toOrderInsertPayload(orderData),
+      );
     }
 
     // 2. Check if we already have a verification for this order
@@ -196,5 +216,22 @@ export class VerificationHubService {
         }`,
       );
     }
+  }
+
+  private toOrderInsertPayload(
+    orderData: NormalizedOrder,
+  ): typeof orders.$inferInsert {
+    return {
+      orgId: orderData.orgId,
+      integrationId: orderData.integrationId,
+      externalOrderId: orderData.externalOrderId,
+      orderNumber: orderData.orderNumber,
+      customerPhone: orderData.customerPhone,
+      customerName: orderData.customerName,
+      totalPrice: orderData.totalPrice,
+      currency: orderData.currency,
+      paymentMethod: orderData.paymentMethod,
+      rawPayload: orderData.rawPayload,
+    };
   }
 }

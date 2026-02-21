@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -68,6 +69,15 @@ export class ShopifyOrderWebhookDto {
   @IsOptional()
   @IsString()
   currency?: string;
+
+  @IsOptional()
+  @IsString()
+  gateway?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  payment_gateway_names?: string[];
 }
 
 export class ShopifyAppUninstalledDto {

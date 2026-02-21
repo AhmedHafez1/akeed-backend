@@ -7,5 +7,6 @@ export interface NormalizedOrder {
   customerName?: string;
   totalPrice: string;
   currency: string;
+  paymentMethod?: string;
   rawPayload?: any; // Original webhook JSON
 }

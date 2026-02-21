@@ -4,6 +4,8 @@ import { VerificationsController } from '../../controllers/verifications.control
 import { VerificationsService } from '../../services/verifications.service';
 import { VerificationHubService } from '../../services/verification-hub.service';
 import { BillingEntitlementService } from '../../services/billing-entitlement.service';
+import { OrderEligibilityService } from '../../services/order-eligibility.service';
+import { ShopifyOrderEligibilityStrategy } from '../../services/order-eligibility/strategies/shopify-order-eligibility.strategy';
 import { AuthModule } from '../auth/auth.module';
 import { MetaModule } from '../../../infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.module';
@@ -20,6 +22,8 @@ import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.mo
     VerificationsService,
     VerificationHubService,
     BillingEntitlementService,
+    OrderEligibilityService,
+    ShopifyOrderEligibilityStrategy,
   ],
   exports: [VerificationsService, VerificationHubService],
 })

@@ -16,6 +16,8 @@ export interface ShopifyOrderPayload {
   id: number;
   order_number?: number;
   phone?: string;
+  gateway?: string;
+  payment_gateway_names?: string[];
   customer?: ShopifyCustomer | null;
   billing_address?: ShopifyAddress | null;
   shipping_address?: ShopifyAddress | null;

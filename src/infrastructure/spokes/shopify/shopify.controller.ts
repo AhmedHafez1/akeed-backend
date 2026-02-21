@@ -112,6 +112,7 @@ export class ShopifyController {
       payload.customer?.default_address?.phone ||
       payload.billing_address?.phone ||
       payload.shipping_address?.phone;
+    const paymentMethod = this.resolvePaymentMethod(payload);
 
     return {
       orgId,
@@ -124,8 +125,21 @@ export class ShopifyController {
         : 'Guest',
       totalPrice: payload.total_price ?? '',
       currency: payload.currency ?? '',
+      paymentMethod,
       rawPayload: payload,
     };
+  }
+
+  private resolvePaymentMethod(payload: ShopifyOrderWebhookDto): string {
+    const gatewayNames =
+      payload.payment_gateway_names
+        ?.map((gatewayName) => gatewayName.trim())
+        .filter(Boolean) ?? [];
+    if (gatewayNames.length > 0) {
+      return gatewayNames.join(', ');
+    }
+
+    return payload.gateway?.trim() ?? '';
   }
 
   @Post('uninstalled')
