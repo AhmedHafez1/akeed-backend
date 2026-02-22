@@ -1,5 +1,6 @@
 export interface ShopifyAddress {
   phone?: string;
+  country_code?: string;
   first_name?: string;
   last_name?: string;
 }
@@ -16,6 +17,7 @@ export interface ShopifyOrderPayload {
   id: number;
   order_number?: number;
   phone?: string;
+  countryCode?: string;
   gateway?: string;
   payment_gateway_names?: string[];
   customer?: ShopifyCustomer | null;

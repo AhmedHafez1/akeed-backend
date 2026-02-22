@@ -14,6 +14,7 @@ import { VerificationHubService } from '../../../core/services/verification-hub.
 import { NormalizedOrder } from '../../../core/interfaces/order.interface';
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
 import { ShopifyWebhookEventsRepository } from '../../database/repositories/shopify-webhook-events.repository';
+import { PhoneService } from '../../../core/services/phone.service';
 import {
   ShopifyAppSubscriptionWebhookDto,
   ShopifyAppUninstalledDto,
@@ -35,6 +36,7 @@ export class ShopifyController {
     private readonly verificationHub: VerificationHubService,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: ShopifyWebhookEventsRepository,
+    private readonly phoneService: PhoneService,
   ) {}
 
   @Post('orders-create')
@@ -105,13 +107,10 @@ export class ShopifyController {
     orgId: string,
     integrationId: string,
   ): NormalizedOrder {
-    // Attempt to find a phone number from various fields
-    const phone =
-      payload.phone ||
-      payload.customer?.phone ||
-      payload.customer?.default_address?.phone ||
-      payload.billing_address?.phone ||
-      payload.shipping_address?.phone;
+    const { phone, countryCode } = this.resolvePhoneDetails(payload);
+    const standardizedPhone = phone
+      ? this.phoneService.standardize(phone, countryCode)
+      : '';
     const paymentMethod = this.resolvePaymentMethod(payload);
 
     return {
@@ -119,7 +118,7 @@ export class ShopifyController {
       externalOrderId: String(payload.id),
       integrationId: integrationId,
       orderNumber: String(payload.order_number),
-      customerPhone: phone || '', // Ideally this should be validated/formatted but basic extraction for now
+      customerPhone: standardizedPhone,
       customerName: payload.customer
         ? `${payload.customer.first_name} ${payload.customer.last_name}`.trim()
         : 'Guest',
@@ -128,6 +127,31 @@ export class ShopifyController {
       paymentMethod,
       rawPayload: payload,
     };
+  }
+
+  private resolvePhoneDetails(payload: ShopifyOrderWebhookDto): {
+    phone?: string;
+    countryCode?: string;
+  } {
+    const { phone, countryCode, customer, billing_address, shipping_address } =
+      payload;
+    const { phone: customerPhone, default_address } = customer ?? {};
+    const { phone: defaultPhone, country_code: defaultCountryCode } =
+      default_address ?? {};
+    const { phone: billingPhone, country_code: billingCountryCode } =
+      billing_address ?? {};
+    const { phone: shippingPhone, country_code: shippingCountryCode } =
+      shipping_address ?? {};
+
+    const candidates = [
+      { phone, countryCode },
+      { phone: customerPhone, countryCode: defaultCountryCode },
+      { phone: defaultPhone, countryCode: defaultCountryCode },
+      { phone: billingPhone, countryCode: billingCountryCode },
+      { phone: shippingPhone, countryCode: shippingCountryCode },
+    ];
+
+    return candidates.find((candidate) => candidate.phone) ?? {};
   }
 
   private resolvePaymentMethod(payload: ShopifyOrderWebhookDto): string {

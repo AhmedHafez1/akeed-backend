@@ -11,6 +11,10 @@ export class ShopifyAddressDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  country_code?: string;
 }
 
 export class ShopifyCustomerDto {
@@ -46,6 +50,10 @@ export class ShopifyOrderWebhookDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  countryCode?: string;
 
   @IsOptional()
   @ValidateNested()
