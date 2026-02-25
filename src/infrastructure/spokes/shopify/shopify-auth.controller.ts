@@ -40,7 +40,7 @@ export class ShopifyAuthController {
       res.redirect(redirectUrl);
       return;
     }
-    const authUrl = this.shopifyAuthService.install(shop);
+    const authUrl = this.shopifyAuthService.install(shop, host);
     res.redirect(authUrl);
   }
 

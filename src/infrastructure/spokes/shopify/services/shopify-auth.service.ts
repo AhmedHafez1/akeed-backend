@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import type { AxiosError } from 'axios';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
@@ -19,11 +20,17 @@ import {
   verifyShopifyHmac,
 } from '../shopify.utils';
 
+interface ShopifyOAuthStatePayload {
+  shop: string;
+  host?: string;
+  nonce: string;
+  issuedAt: number;
+}
+
 @Injectable()
 export class ShopifyAuthService {
   private readonly logger = new Logger(ShopifyAuthService.name);
-  // In-memory state store (replace with Redis in production)
-  private readonly stateStore = new Map<string, number>();
+  private readonly stateTtlMs = 10 * 60 * 1000;
 
   constructor(
     private readonly configService: ConfigService,
@@ -34,16 +41,14 @@ export class ShopifyAuthService {
   ) {}
 
   async isInstalled(shop: string): Promise<boolean> {
+    this.assertValidShop(shop);
     return Boolean(
       await this.integrationsRepo.findByPlatformDomain(shop, 'shopify'),
     );
   }
 
-  install(shop: string): string {
-    if (!validateShop(shop)) {
-      throw new BadRequestException('Invalid shop parameter');
-    }
-
+  install(shop: string, host?: string): string {
+    this.assertValidShop(shop);
     this.logger.log(`Installing Shopify app for shop: ${shop}`);
 
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
@@ -51,15 +56,7 @@ export class ShopifyAuthService {
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
     const redirectUrl = new URL(`${apiUrl}/auth/shopify/callback`);
     const redirectUri = redirectUrl.toString();
-    const state = generateNonce();
-
-    // Store state with timestamp for expiration (10 mins)
-    this.stateStore.set(state, Date.now());
-
-    // Clean up old states roughly occasionally
-    if (this.stateStore.size > 100) {
-      this.cleanupStates();
-    }
+    const state = this.createSignedState(shop, host);
 
     const queryParams = new URLSearchParams({
       client_id: apiKey,
@@ -84,14 +81,11 @@ export class ShopifyAuthService {
       throw new BadRequestException('Missing required parameters');
     }
 
-    if (!validateShop(shop)) {
-      throw new BadRequestException('Invalid shop parameter');
-    }
-
+    this.assertValidShop(shop);
     this.logger.log(`Shopify app callback for shop: ${shop}`);
 
     this.verifyHmac(rawQuery);
-    this.verifyState(state);
+    const statePayload = this.verifyState(state, shop, host);
 
     // Exchange code for access token
     const accessToken = await this.exchangeCodeForToken(shop, code);
@@ -104,7 +98,8 @@ export class ShopifyAuthService {
     void this.registerWebhooks(shop, accessToken);
 
     // Redirect to app dashboard after successful installation
-    const redirectUrl = this.getPostAuthRedirectUrl(shop, host);
+    const resolvedHost = host ?? statePayload.host ?? undefined;
+    const redirectUrl = this.getPostAuthRedirectUrl(shop, resolvedHost);
 
     this.logger.log(`Shopify app callback redirect to: ${redirectUrl}`);
     return redirectUrl;
@@ -130,27 +125,89 @@ export class ShopifyAuthService {
     }
   }
 
-  private verifyState(state: string): void {
-    const timestamp = this.stateStore.get(state);
-    if (!timestamp) {
-      throw new UnauthorizedException('Invalid or expired state');
+  private verifyState(
+    state: string,
+    expectedShop: string,
+    expectedHost?: string,
+  ): ShopifyOAuthStatePayload {
+    return this.verifySignedState(state, expectedShop, expectedHost);
+  }
+
+  private createSignedState(shop: string, host?: string): string {
+    const payload: ShopifyOAuthStatePayload = {
+      shop,
+      host: host ?? undefined,
+      nonce: generateNonce(),
+      issuedAt: Date.now(),
+    };
+
+    const payloadBase64 = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+      'base64url',
+    );
+
+    const signature = this.signStatePayload(payloadBase64);
+    return `${payloadBase64}.${signature}`;
+  }
+
+  private verifySignedState(
+    state: string,
+    expectedShop: string,
+    expectedHost?: string,
+  ): ShopifyOAuthStatePayload {
+    const [payloadBase64, signature, extra] = state.split('.');
+    if (!payloadBase64 || !signature || extra) {
+      throw new UnauthorizedException('Invalid OAuth state');
     }
 
-    // Check expiration (10 mins)
-    if (Date.now() - timestamp > 10 * 60 * 1000) {
-      this.stateStore.delete(state);
+    const expectedSignature = this.signStatePayload(payloadBase64);
+    if (
+      expectedSignature.length !== signature.length ||
+      !timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(signature))
+    ) {
+      throw new UnauthorizedException('Invalid OAuth state');
+    }
+
+    let payload: ShopifyOAuthStatePayload;
+    try {
+      payload = JSON.parse(
+        Buffer.from(payloadBase64, 'base64url').toString('utf8'),
+      ) as ShopifyOAuthStatePayload;
+    } catch {
+      throw new UnauthorizedException('Invalid OAuth state');
+    }
+
+    if (payload.shop !== expectedShop) {
+      throw new UnauthorizedException('State does not match shop');
+    }
+
+    if (
+      typeof payload.issuedAt !== 'number' ||
+      Number.isNaN(payload.issuedAt)
+    ) {
+      throw new UnauthorizedException('Invalid OAuth state');
+    }
+
+    if (payload.host && expectedHost && payload.host !== expectedHost) {
+      throw new UnauthorizedException('State does not match host');
+    }
+
+    if (Date.now() - payload.issuedAt > this.stateTtlMs) {
       throw new UnauthorizedException('State expired');
     }
 
-    this.stateStore.delete(state);
+    return payload;
   }
 
-  private cleanupStates() {
-    const now = Date.now();
-    for (const [state, timestamp] of this.stateStore.entries()) {
-      if (now - timestamp > 10 * 60 * 1000) {
-        this.stateStore.delete(state);
-      }
+  private signStatePayload(payloadBase64: string): string {
+    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+    return createHmac('sha256', secret)
+      .update(payloadBase64)
+      .digest('base64url');
+  }
+
+  private assertValidShop(shop: string): void {
+    if (!validateShop(shop)) {
+      throw new BadRequestException('Invalid shop parameter');
     }
   }
 
