@@ -18,7 +18,10 @@ import { PhoneService } from '../../../core/services/phone.service';
 import {
   ShopifyAppSubscriptionWebhookDto,
   ShopifyAppUninstalledDto,
+  ShopifyCustomersDataRequestDto,
+  ShopifyCustomersRedactDto,
   ShopifyOrderWebhookDto,
+  ShopifyShopRedactDto,
 } from './dto/shopify-webhooks.dto';
 
 @Controller('webhooks/shopify')
@@ -292,6 +295,164 @@ export class ShopifyController {
         `Shop ${shopDomain} subscription became non-billable (${normalizedStatus}). Verification processing will be blocked.`,
       );
     }
+
+    return { received: true };
+  }
+
+  @Post('customers/data_request')
+  @HttpCode(200)
+  async handleCustomerDataRequest(
+    @Body() payload: ShopifyCustomersDataRequestDto,
+    @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+    @Headers('x-shopify-topic') topic: string,
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
+    const customerId = payload.customer?.id ?? 'unknown';
+    this.logger.log(
+      `Received Shopify GDPR Data Request from ${shopDomain}: customer=${customerId}`,
+    );
+
+    if (!webhookId) {
+      this.logger.warn(
+        `Missing X-Shopify-Webhook-Id for GDPR data request from ${shopDomain}`,
+      );
+    }
+
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shopDomain,
+      'shopify',
+    );
+    const orgId = integration?.orgId;
+
+    if (webhookId) {
+      const isNew = await this.webhookEventsRepo.recordIfNew({
+        webhookId,
+        topic,
+        shopDomain,
+        orgId,
+        integrationId: integration?.id,
+      });
+
+      if (!isNew) {
+        this.logger.warn(
+          `Duplicate Shopify GDPR data request ${webhookId} ignored for shop ${shopDomain}`,
+        );
+        return { received: true, duplicate: true };
+      }
+    }
+
+    if (!integration) {
+      this.logger.warn(
+        `GDPR data request received but no integration found for ${shopDomain}`,
+      );
+    }
+
+    return { received: true };
+  }
+
+  @Post('customers/redact')
+  @HttpCode(200)
+  async handleCustomerRedact(
+    @Body() payload: ShopifyCustomersRedactDto,
+    @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+    @Headers('x-shopify-topic') topic: string,
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
+    const customerId = payload.customer?.id ?? 'unknown';
+    this.logger.log(
+      `Received Shopify GDPR Customer Redact from ${shopDomain}: customer=${customerId}`,
+    );
+
+    if (!webhookId) {
+      this.logger.warn(
+        `Missing X-Shopify-Webhook-Id for GDPR customer redact from ${shopDomain}`,
+      );
+    }
+
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shopDomain,
+      'shopify',
+    );
+    const orgId = integration?.orgId;
+
+    if (webhookId) {
+      const isNew = await this.webhookEventsRepo.recordIfNew({
+        webhookId,
+        topic,
+        shopDomain,
+        orgId,
+        integrationId: integration?.id,
+      });
+
+      if (!isNew) {
+        this.logger.warn(
+          `Duplicate Shopify GDPR customer redact ${webhookId} ignored for shop ${shopDomain}`,
+        );
+        return { received: true, duplicate: true };
+      }
+    }
+
+    if (!integration) {
+      this.logger.warn(
+        `GDPR customer redact received but no integration found for ${shopDomain}`,
+      );
+    }
+
+    return { received: true };
+  }
+
+  @Post('shop/redact')
+  @HttpCode(200)
+  async handleShopRedact(
+    @Body() payload: ShopifyShopRedactDto,
+    @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+    @Headers('x-shopify-topic') topic: string,
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
+    const resolvedShopDomain = payload.shop_domain ?? shopDomain;
+    this.logger.log(
+      `Received Shopify GDPR Shop Redact from ${resolvedShopDomain}`,
+    );
+
+    if (!webhookId) {
+      this.logger.warn(
+        `Missing X-Shopify-Webhook-Id for GDPR shop redact from ${shopDomain}`,
+      );
+    }
+
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shopDomain,
+      'shopify',
+    );
+    const orgId = integration?.orgId;
+
+    if (webhookId) {
+      const isNew = await this.webhookEventsRepo.recordIfNew({
+        webhookId,
+        topic,
+        shopDomain,
+        orgId,
+        integrationId: integration?.id,
+      });
+
+      if (!isNew) {
+        this.logger.warn(
+          `Duplicate Shopify GDPR shop redact ${webhookId} ignored for shop ${shopDomain}`,
+        );
+        return { received: true, duplicate: true };
+      }
+    }
+
+    if (!orgId) {
+      this.logger.warn(
+        `GDPR shop redact received but no integration/org found for ${shopDomain}`,
+      );
+      return { received: true };
+    }
+
+    await this.integrationsRepo.deleteByOrgId(orgId);
+
+    this.logger.log(`Removed Shopify integration data for org ${orgId}`);
 
     return { received: true };
   }

@@ -382,7 +382,7 @@ export class ShopifyAuthService {
   private getWebhookDefinitions(
     appUrl: string,
   ): Array<{ topic: string; address: string }> {
-    // Easy to extend: add/remove topics here.
+    // Add/remove topics here.
     return [
       // Mandatory and highest priority
       {
@@ -398,6 +398,19 @@ export class ShopifyAuthService {
       {
         topic: 'orders/create',
         address: `${appUrl}/webhooks/shopify/orders-create`,
+      },
+      // GDPR required topics
+      {
+        topic: 'customers/data_request',
+        address: `${appUrl}/webhooks/shopify/customers/data_request`,
+      },
+      {
+        topic: 'customers/redact',
+        address: `${appUrl}/webhooks/shopify/customers/redact`,
+      },
+      {
+        topic: 'shop/redact',
+        address: `${appUrl}/webhooks/shopify/shop/redact`,
       },
     ];
   }

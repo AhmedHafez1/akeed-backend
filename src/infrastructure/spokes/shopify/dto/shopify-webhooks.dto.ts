@@ -111,3 +111,61 @@ export class ShopifyAppSubscriptionWebhookDto {
   @IsString()
   admin_graphql_api_id?: string;
 }
+
+export class ShopifyGdprCustomerDto {
+  @IsOptional()
+  @Transform(({ value }) => String(value))
+  @IsString()
+  id?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
+export class ShopifyGdprBaseWebhookDto {
+  @IsOptional()
+  @Transform(({ value }) => String(value))
+  @IsString()
+  shop_id?: string;
+
+  @IsOptional()
+  @IsString()
+  shop_domain?: string;
+}
+
+export class ShopifyCustomersDataRequestDto extends ShopifyGdprBaseWebhookDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ShopifyGdprCustomerDto)
+  customer?: ShopifyGdprCustomerDto;
+
+  @IsOptional()
+  @IsArray()
+  @Transform(({ value }): string[] | undefined => {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry));
+    }
+
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    return [String(value)];
+  })
+  @IsString({ each: true })
+  orders_requested?: string[];
+}
+
+export class ShopifyCustomersRedactDto extends ShopifyGdprBaseWebhookDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ShopifyGdprCustomerDto)
+  customer?: ShopifyGdprCustomerDto;
+}
+
+export class ShopifyShopRedactDto extends ShopifyGdprBaseWebhookDto {}
