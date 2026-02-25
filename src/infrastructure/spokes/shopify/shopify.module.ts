@@ -5,7 +5,10 @@ import { DatabaseModule } from '../../database/database.module';
 import { HttpModule } from '@nestjs/axios';
 import { ShopifyApiService } from './services/shopify-api.service';
 import { ShopifyAuthService } from './services/shopify-auth.service.js';
+import { ShopifyBillingWebhookService } from './services/shopify-billing-webhook.service';
+import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.service';
 import { ShopifyAuthController } from './shopify-auth.controller.js';
+import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { PhoneService } from '../../../core/services/phone.service';
 
@@ -15,6 +18,9 @@ import { PhoneService } from '../../../core/services/phone.service';
   providers: [
     ShopifyApiService,
     ShopifyAuthService,
+    ShopifyBillingWebhookService,
+    ShopifyOrderWebhookService,
+    ShopifyGdprWebhookService,
     ShopifyHmacGuard,
     PhoneService,
   ],
