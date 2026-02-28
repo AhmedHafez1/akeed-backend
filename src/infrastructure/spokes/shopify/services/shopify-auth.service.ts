@@ -27,6 +27,23 @@ interface ShopifyOAuthStatePayload {
   issuedAt: number;
 }
 
+interface ShopifySessionTokenPayload {
+  iss: string;
+  dest: string;
+  aud: string;
+  sub: string;
+  exp: number;
+  nbf: number;
+  iat: number;
+  jti: string;
+  sid: string;
+}
+
+export interface TokenExchangeResult {
+  installed: boolean;
+  shop: string;
+}
+
 @Injectable()
 export class ShopifyAuthService {
   private readonly logger = new Logger(ShopifyAuthService.name);
@@ -116,6 +133,56 @@ export class ShopifyAuthService {
     }
 
     return this.configService.getOrThrow<string>('APP_URL');
+  }
+
+  // ─── Token Exchange (App Bridge v4 — seamless install) ──────────────
+
+  /**
+   * Exchange a Shopify session token for an offline access token.
+   *
+   * This is the primary install path for embedded apps running App Bridge v4.
+   * The frontend obtains a session token via `window.shopify.idToken()` and
+   * sends it here. The backend:
+   *   1. Verifies the JWT (signature, exp, nbf, aud).
+   *   2. Extracts the shop domain from the `dest` claim.
+   *   3. If the shop is already installed → returns immediately.
+   *   4. Otherwise exchanges the token with Shopify's OAuth endpoint using
+   *      the `urn:ietf:params:oauth:grant-type:token-exchange` grant type.
+   *   5. Persists the resulting offline access token and provisions the org.
+   *
+   * This avoids the full-page redirect of the legacy OAuth handshake.
+   */
+  async tokenExchange(sessionToken: string): Promise<TokenExchangeResult> {
+    const payload = this.decodeAndVerifySessionToken(sessionToken);
+
+    const shop = payload.dest.replace('https://', '');
+    this.assertValidShop(shop);
+
+    this.logger.log(`Token exchange requested for shop: ${shop}`);
+
+    // Already installed — short-circuit
+    const alreadyInstalled = await this.isInstalled(shop);
+    if (alreadyInstalled) {
+      this.logger.log(
+        `Shop ${shop} already installed — token exchange not needed`,
+      );
+      return { installed: true, shop };
+    }
+
+    // Exchange session token → offline access token
+    const accessToken = await this.exchangeSessionTokenForOfflineToken(
+      shop,
+      sessionToken,
+    );
+
+    // Persist integration + organisation + user (reuses existing logic)
+    await this.handlePersistence(shop, accessToken);
+
+    // Register webhooks (fire-and-forget)
+    void this.registerWebhooks(shop, accessToken);
+
+    this.logger.log(`Token exchange completed successfully for shop: ${shop}`);
+    return { installed: true, shop };
   }
 
   private verifyHmac(query: Record<string, string | undefined>): void {
@@ -208,6 +275,123 @@ export class ShopifyAuthService {
   private assertValidShop(shop: string): void {
     if (!validateShop(shop)) {
       throw new BadRequestException('Invalid shop parameter');
+    }
+  }
+
+  // ─── Token exchange helpers ─────────────────────────────────────────
+
+  /**
+   * Decode and cryptographically verify a Shopify session token (JWT).
+   * Validates HMAC-SHA256 signature, exp, nbf, and aud claims.
+   */
+  private decodeAndVerifySessionToken(
+    token: string,
+  ): ShopifySessionTokenPayload {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      throw new UnauthorizedException('Invalid session token format');
+    }
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+
+    // Verify HMAC-SHA256 signature
+    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+    const data = `${headerB64}.${payloadB64}`;
+    const expectedSignature = createHmac('sha256', secret)
+      .update(data)
+      .digest('base64url');
+
+    if (
+      expectedSignature.length !== signatureB64.length ||
+      !timingSafeEqual(
+        Buffer.from(expectedSignature),
+        Buffer.from(signatureB64),
+      )
+    ) {
+      throw new UnauthorizedException('Invalid session token signature');
+    }
+
+    // Decode payload
+    let payload: ShopifySessionTokenPayload;
+    try {
+      payload = JSON.parse(
+        Buffer.from(payloadB64, 'base64url').toString('utf8'),
+      ) as ShopifySessionTokenPayload;
+    } catch {
+      throw new UnauthorizedException('Invalid session token payload');
+    }
+
+    // Verify expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp < now) {
+      throw new UnauthorizedException('Session token expired');
+    }
+
+    // Verify not-before
+    if (payload.nbf > now) {
+      throw new UnauthorizedException('Session token not yet valid');
+    }
+
+    // Verify audience matches our API key
+    const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
+    if (payload.aud !== apiKey) {
+      throw new UnauthorizedException('Session token audience mismatch');
+    }
+
+    return payload;
+  }
+
+  /**
+   * Exchange a session token for an offline access token via Shopify's
+   * token-exchange grant type.
+   *
+   * POST https://{shop}/admin/oauth/access_token
+   *   grant_type              = urn:ietf:params:oauth:grant-type:token-exchange
+   *   subject_token           = <session_token>
+   *   subject_token_type      = urn:ietf:params:oauth:token-type:id_token
+   *   requested_token_type    = urn:shopify:params:oauth:token-type:offline-access-token
+   *   client_id               = <api_key>
+   *   client_secret           = <api_secret>
+   */
+  private async exchangeSessionTokenForOfflineToken(
+    shop: string,
+    sessionToken: string,
+  ): Promise<string> {
+    const url = `https://${shop}/admin/oauth/access_token`;
+    const clientId = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
+    const clientSecret =
+      this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post<{ access_token: string; scope: string }>(url, {
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+          subject_token: sessionToken,
+          subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
+          requested_token_type:
+            'urn:shopify:params:oauth:token-type:offline-access-token',
+        }),
+      );
+
+      this.logger.log(
+        `Offline token obtained via token exchange for shop: ${shop}, scopes: ${data.scope}`,
+      );
+      return data.access_token;
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<unknown>;
+      const status = axiosError.response?.status;
+      const errData = axiosError.response?.data;
+
+      this.logger.error(
+        `Token exchange failed for shop: ${shop}, status: ${status}, ` +
+          `details: ${errData ? JSON.stringify(errData) : axiosError.message}`,
+      );
+
+      throw new InternalServerErrorException(
+        'Failed to exchange session token for access token',
+      );
     }
   }
 

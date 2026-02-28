@@ -31,3 +31,9 @@ export class ShopifyCallbackQueryDto {
   @IsOptional()
   host?: string;
 }
+
+export class ShopifyTokenExchangeDto {
+  @IsString()
+  @IsNotEmpty()
+  sessionToken!: string;
+}
