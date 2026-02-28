@@ -538,133 +538,195 @@ export class ShopifyAuthService {
     return password;
   }
 
+  // ─── GraphQL webhook registration ──────────────────────────────────
+
+  /**
+   * Register all webhook subscriptions via the Shopify Admin GraphQL API
+   * using the `webhookSubscriptionCreate` mutation.
+   *
+   * GDPR-mandated topics (customers/data_request, customers/redact,
+   * shop/redact) are declared in shopify.app.toml and auto-managed
+   * by Shopify, so they are NOT registered here.
+   */
   private async registerWebhooks(
     shop: string,
     accessToken: string,
   ): Promise<void> {
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
-    const apiVersion = this.getShopifyApiVersion();
 
     const definitions = this.getWebhookDefinitions(apiUrl);
 
     for (const def of definitions) {
-      await this.registerWebhookWithRetry(
+      await this.registerWebhookViaGraphQL(
         shop,
         accessToken,
-        apiVersion,
         def.topic,
-        def.address,
+        def.callbackUrl,
       );
     }
   }
 
   private getShopifyApiVersion(): string {
-    // Use configured version if present, fallback to the one previously used in the codebase
     return this.configService.get<string>('SHOPIFY_API_VERSION') ?? '2026-01';
   }
 
+  /**
+   * Webhook definitions.
+   *
+   * `topic` uses the GraphQL enum value (e.g. APP_UNINSTALLED).
+   * `callbackUrl` is the HTTPS endpoint Shopify will POST to.
+   *
+   * NOTE: GDPR topics are handled declaratively in shopify.app.toml
+   * and do not need programmatic registration.
+   */
   private getWebhookDefinitions(
     appUrl: string,
-  ): Array<{ topic: string; address: string }> {
-    // Add/remove topics here.
+  ): Array<{ topic: string; callbackUrl: string }> {
     return [
-      // Mandatory and highest priority
       {
-        topic: 'app/uninstalled',
-        address: `${appUrl}/webhooks/shopify/uninstalled`,
-      },
-      // Subscription lifecycle updates (active/canceled/frozen/expired...)
-      {
-        topic: 'app_subscriptions/update',
-        address: `${appUrl}/webhooks/shopify/app-subscriptions/update`,
-      },
-      // Business-related topics already used by the app
-      {
-        topic: 'orders/create',
-        address: `${appUrl}/webhooks/shopify/orders-create`,
-      },
-      // GDPR required topics
-      {
-        topic: 'customers/data_request',
-        address: `${appUrl}/webhooks/shopify/customers/data_request`,
+        topic: 'APP_UNINSTALLED',
+        callbackUrl: `${appUrl}/webhooks/shopify/uninstalled`,
       },
       {
-        topic: 'customers/redact',
-        address: `${appUrl}/webhooks/shopify/customers/redact`,
+        topic: 'APP_SUBSCRIPTIONS_UPDATE',
+        callbackUrl: `${appUrl}/webhooks/shopify/app-subscriptions/update`,
       },
       {
-        topic: 'shop/redact',
-        address: `${appUrl}/webhooks/shopify/shop/redact`,
+        topic: 'ORDERS_CREATE',
+        callbackUrl: `${appUrl}/webhooks/shopify/orders-create`,
       },
     ];
   }
 
-  private async registerWebhookWithRetry(
+  /**
+   * Register a single webhook subscription via GraphQL with retry.
+   *
+   * Uses the `webhookSubscriptionCreate` mutation which is idempotent —
+   * if the subscription already exists for the same topic + callbackUrl,
+   * Shopify returns `userErrors` that we treat as success.
+   */
+  private async registerWebhookViaGraphQL(
     shop: string,
     accessToken: string,
-    apiVersion: string,
     topic: string,
-    address: string,
+    callbackUrl: string,
   ): Promise<void> {
-    const url = `https://${shop}/admin/api/${apiVersion}/webhooks.json`;
+    const apiVersion = this.getShopifyApiVersion();
+    const graphqlUrl = `https://${shop}/admin/api/${apiVersion}/graphql.json`;
 
-    const payload = {
-      webhook: {
-        topic,
-        address,
-        format: 'json',
+    const mutation = `
+      mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+        webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+          webhookSubscription {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      topic,
+      webhookSubscription: {
+        callbackUrl,
+        format: 'JSON',
       },
-    };
-
-    const headers = {
-      'X-Shopify-Access-Token': accessToken,
     };
 
     const maxAttempts = 3;
     let attempt = 0;
-    let lastError: AxiosError<unknown> | null = null;
+    let lastError: unknown = null;
 
     while (attempt < maxAttempts) {
       attempt += 1;
-      try {
-        await firstValueFrom(this.httpService.post(url, payload, { headers }));
-        this.logger.log(`Webhook registered: topic=${topic} shop=${shop}`);
-        return;
-      } catch (error: unknown) {
-        // Idempotent success: Shopify returns 422 if address already exists
-        const axiosError = error as AxiosError<unknown>;
-        const status = axiosError.response?.status;
-        const errData = axiosError.response?.data;
-        const isAlreadyExists = status === 422;
 
-        if (isAlreadyExists) {
+      try {
+        const { data: responseData } = await firstValueFrom(
+          this.httpService.post<{
+            data?: {
+              webhookSubscriptionCreate?: {
+                webhookSubscription?: { id: string } | null;
+                userErrors?: Array<{ field: string[]; message: string }>;
+              };
+            };
+            errors?: Array<{ message: string }>;
+          }>(
+            graphqlUrl,
+            { query: mutation, variables },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': accessToken,
+              },
+            },
+          ),
+        );
+
+        // Top-level GraphQL errors (auth issues, throttled, etc.)
+        if (responseData.errors?.length) {
+          const msgs = responseData.errors.map((e) => e.message).join('; ');
+          throw new Error(`GraphQL errors: ${msgs}`);
+        }
+
+        const result = responseData.data?.webhookSubscriptionCreate;
+        const userErrors = result?.userErrors ?? [];
+
+        // An empty userErrors list + a valid id means success
+        if (result?.webhookSubscription?.id) {
           this.logger.log(
-            `Webhook already exists (treated as success): topic=${topic} shop=${shop}`,
+            `Webhook registered via GraphQL: topic=${topic} shop=${shop} id=${result.webhookSubscription.id}`,
           );
           return;
         }
 
-        lastError = axiosError ?? null;
+        // Treat "already exists" user errors as idempotent success
+        const alreadyExists = userErrors.some(
+          (e) =>
+            e.message.toLowerCase().includes('already exists') ||
+            e.message.toLowerCase().includes('has already been taken'),
+        );
+
+        if (alreadyExists) {
+          this.logger.log(
+            `Webhook already exists (GraphQL, treated as success): topic=${topic} shop=${shop}`,
+          );
+          return;
+        }
+
+        // Other user errors are unexpected — treat as failure
+        if (userErrors.length > 0) {
+          const errMsgs = userErrors.map((e) => e.message).join('; ');
+          throw new Error(`userErrors: ${errMsgs}`);
+        }
+
+        // Fallback: no subscription id and no errors — shouldn't happen
+        throw new Error(
+          'Unexpected empty response from webhookSubscriptionCreate',
+        );
+      } catch (error: unknown) {
+        lastError = error;
+
+        const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Webhook registration failed (attempt ${attempt}/${maxAttempts}): topic=${topic} shop=${shop} status=${status} details=${errData ? JSON.stringify(errData) : axiosError.message}`,
+          `Webhook GraphQL registration failed (attempt ${attempt}/${maxAttempts}): topic=${topic} shop=${shop} error=${message}`,
         );
 
         if (attempt < maxAttempts) {
-          // Exponential backoff: 500ms, 1000ms
           const delayMs = 500 * Math.pow(2, attempt - 1);
           await this.sleep(delayMs);
         }
       }
     }
 
-    // Final failure (graceful): log and move on without throwing
-    if (lastError) {
-      const status = lastError.response?.status;
-      const errData = lastError.response?.data;
-      this.logger.error(
-        `Webhook registration ultimately failed: topic=${topic} shop=${shop} status=${status} details=${errData ? JSON.stringify(errData) : lastError.message}`,
-      );
-    }
+    // Final failure — log and continue without throwing
+    const message =
+      lastError instanceof Error ? lastError.message : String(lastError);
+    this.logger.error(
+      `Webhook registration ultimately failed: topic=${topic} shop=${shop} error=${message}`,
+    );
   }
 
   private async sleep(ms: number): Promise<void> {
