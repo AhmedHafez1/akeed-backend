@@ -51,4 +51,13 @@ export class MembershipsRepository {
       .from(memberships)
       .where(eq(memberships.userId, userId));
   }
+
+  async deleteByOrgId(orgId: string): Promise<number> {
+    const results = await this.db
+      .delete(memberships)
+      .where(eq(memberships.orgId, orgId))
+      .returning({ id: memberships.id });
+
+    return results.length;
+  }
 }

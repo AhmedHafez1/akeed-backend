@@ -101,7 +101,12 @@ export class IntegrationsRepository {
   }
 
   async deleteByOrgId(orgId: string) {
-    await this.db.delete(integrations).where(eq(integrations.orgId, orgId));
+    const results = await this.db
+      .delete(integrations)
+      .where(eq(integrations.orgId, orgId))
+      .returning({ id: integrations.id });
+
+    return results.length;
   }
 
   async updateById(

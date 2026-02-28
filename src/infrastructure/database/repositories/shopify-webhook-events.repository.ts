@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { eq } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { shopifyWebhookEvents } from '../schema';
@@ -30,5 +31,14 @@ export class ShopifyWebhookEventsRepository {
       .returning({ id: shopifyWebhookEvents.id });
 
     return Boolean(result);
+  }
+
+  async deleteByOrgId(orgId: string): Promise<number> {
+    const results = await this.db
+      .delete(shopifyWebhookEvents)
+      .where(eq(shopifyWebhookEvents.orgId, orgId))
+      .returning({ id: shopifyWebhookEvents.id });
+
+    return results.length;
   }
 }
