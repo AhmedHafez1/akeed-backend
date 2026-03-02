@@ -486,15 +486,35 @@ export class ShopifyAuthService {
     // Use shop domain as email identifier
     const email = `${shop}@akeed-shopify.internal`;
 
-    // First, try to find existing user by email
-    const { data: existingUser } = await supabase.auth.admin.listUsers();
-    const user = existingUser?.users?.find((u) => u.email === email);
+    // First, try to find existing user by email via server-side filter
+    const listUsersParams = {
+      page: 1,
+      perPage: 1,
+      filter: `email.eq.${email}`,
+    } as unknown as {
+      page?: number;
+      perPage?: number;
+    };
 
-    if (user) {
-      this.logger.log(
-        `Found existing user for shop: ${shop}, userId: ${user.id}`,
+    const { data: existingUsersData, error: existingUsersError } =
+      await supabase.auth.admin.listUsers(listUsersParams);
+
+    if (existingUsersError) {
+      this.logger.error(
+        `Failed lookup via listUsers filter for ${email}: ${existingUsersError.message}`,
       );
-      return { id: user.id };
+      throw new InternalServerErrorException('Failed to lookup existing user');
+    }
+
+    const existingUser = existingUsersData?.users?.find(
+      (candidate) => candidate.email === email,
+    );
+
+    if (existingUser?.id) {
+      this.logger.log(
+        `Found existing user for shop: ${shop}, userId: ${existingUser.id}`,
+      );
+      return { id: existingUser.id };
     }
 
     // Create new user with random password (merchant won't use it)
