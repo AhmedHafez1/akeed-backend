@@ -63,6 +63,7 @@ npm run db:push
   - `SHOPIFY_API_VERSION` (e.g., `2026-01`)
   - `API_URL` (base URL used for OAuth callback and webhook addresses)
   - `SHOPIFY_REDIRECT_URI` (usually `${API_URL}/auth/shopify/callback`)
+  - `SHOPIFY_TOKEN_ENCRYPTION_KEY` (required, AES-256-GCM key used to encrypt `integrations.access_token` at rest; supported formats: 32-byte UTF-8, 64-char hex, or base64-encoded 32-byte key)
 
 ## Shopify Billing
 

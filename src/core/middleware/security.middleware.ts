@@ -42,6 +42,8 @@ export class SecurityMiddleware implements NestMiddleware {
    * while maintaining security for other resources
    */
   private setCSPHeaders(res: Response) {
+    const connectSources = this.getConnectSrcDirectives();
+
     const cspDirectives = [
       // Allow embedding in Shopify Admin
       "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
@@ -62,8 +64,8 @@ export class SecurityMiddleware implements NestMiddleware {
       // Fonts
       "font-src 'self' data: https://fonts.gstatic.com",
 
-      // Connect (API calls): self + your API domain
-      "connect-src 'self' https://api.shopify.com wss://cdn.shopify.com",
+      // Connect (API calls)
+      `connect-src ${connectSources.join(' ')}`,
 
       // Frames: self + Shopify (for OAuth redirects)
       "frame-src 'self' https://admin.shopify.com https://*.myshopify.com",
@@ -72,6 +74,45 @@ export class SecurityMiddleware implements NestMiddleware {
     res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
 
     this.logger.debug('CSP headers set for Shopify embedding');
+  }
+
+  private getConnectSrcDirectives(): string[] {
+    const connectSrc = new Set<string>([
+      "'self'",
+      'https://api.shopify.com',
+      'wss://cdn.shopify.com',
+      'https://graph.facebook.com',
+    ]);
+
+    const envUrls = [
+      process.env.APP_URL,
+      process.env.API_URL,
+      process.env.SUPABASE_URL,
+      process.env.WA_API_BASE_URL,
+      process.env.WHATSAPP_API_BASE_URL,
+    ];
+
+    for (const rawUrl of envUrls) {
+      const origin = this.extractOrigin(rawUrl);
+      if (origin) {
+        connectSrc.add(origin);
+      }
+    }
+
+    return Array.from(connectSrc);
+  }
+
+  private extractOrigin(rawUrl?: string): string | null {
+    if (!rawUrl) {
+      return null;
+    }
+
+    try {
+      return new URL(rawUrl).origin;
+    } catch {
+      this.logger.warn(`Invalid URL configured for CSP connect-src: ${rawUrl}`);
+      return null;
+    }
   }
 
   /**

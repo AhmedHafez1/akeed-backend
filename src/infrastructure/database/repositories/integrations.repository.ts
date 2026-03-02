@@ -1,13 +1,18 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { eq, and } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import { integrations } from '../schema';
+import { encryptToken } from 'src/shared/utils/token-encryption.util';
 
 @Injectable()
 export class IntegrationsRepository {
-  constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>,
+    private readonly configService: ConfigService,
+  ) {}
 
   async findActiveByOrg(orgId: string) {
     return await this.db.query.integrations.findMany({
@@ -67,6 +72,7 @@ export class IntegrationsRepository {
     expiresAt?: string,
   ) {
     const existing = await this.findByPlatformDomain(shopDomain, patformType);
+    const encryptedAccessToken = this.encryptAccessToken(accessToken);
 
     if (existing) {
       const [updated] = await this.db
@@ -75,7 +81,7 @@ export class IntegrationsRepository {
           orgId,
           platformType: patformType,
           platformStoreUrl: shopDomain,
-          accessToken,
+          accessToken: encryptedAccessToken,
           expiresAt,
           isActive: true,
           updatedAt: new Date().toISOString(),
@@ -91,7 +97,7 @@ export class IntegrationsRepository {
         orgId,
         platformType: patformType,
         platformStoreUrl: shopDomain,
-        accessToken,
+        accessToken: encryptedAccessToken,
         expiresAt,
         isActive: true,
       })
@@ -113,15 +119,29 @@ export class IntegrationsRepository {
     id: string,
     updates: Partial<typeof integrations.$inferInsert>,
   ) {
+    const nextUpdates = { ...updates };
+    if (typeof nextUpdates.accessToken === 'string') {
+      nextUpdates.accessToken = this.encryptAccessToken(
+        nextUpdates.accessToken,
+      );
+    }
+
     const [result] = await this.db
       .update(integrations)
       .set({
-        ...updates,
+        ...nextUpdates,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(integrations.id, id))
       .returning();
 
     return result;
+  }
+
+  private encryptAccessToken(accessToken: string): string {
+    const encryptionKey = this.configService.getOrThrow<string>(
+      'SHOPIFY_TOKEN_ENCRYPTION_KEY',
+    );
+    return encryptToken(accessToken, encryptionKey);
   }
 }

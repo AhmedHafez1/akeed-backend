@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { integrations } from 'src/infrastructure/database';
+import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
   type AppSubscriptionCreateResponse,
   type AppSubscriptionStatusResponse,
@@ -212,7 +213,15 @@ export class ShopifyApiService {
     integration: typeof integrations.$inferSelect,
   ): string {
     if (integration.accessToken) {
-      return integration.accessToken;
+      const encryptionKey = this.configService.get<string>(
+        'SHOPIFY_TOKEN_ENCRYPTION_KEY',
+      );
+
+      if (!encryptionKey) {
+        throw new Error('Missing SHOPIFY_TOKEN_ENCRYPTION_KEY');
+      }
+
+      return decryptToken(integration.accessToken, encryptionKey);
     }
 
     this.logger.error(
