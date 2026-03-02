@@ -110,9 +110,8 @@ export class ShopifyAuthService {
     // Persist integration
     await this.handlePersistence(shop, accessToken);
 
-    // Register Webhooks (non-blocking)
-    // Do not await to avoid delaying the OAuth callback redirect.
-    void this.registerWebhooks(shop, accessToken);
+    // Register webhooks and ensure critical topics are active
+    await this.registerWebhooks(shop, accessToken);
 
     // Redirect to app dashboard after successful installation
     const resolvedHost = host ?? statePayload.host ?? undefined;
@@ -178,8 +177,8 @@ export class ShopifyAuthService {
     // Persist integration + organisation + user (reuses existing logic)
     await this.handlePersistence(shop, accessToken);
 
-    // Register webhooks (fire-and-forget)
-    void this.registerWebhooks(shop, accessToken);
+    // Register webhooks and ensure critical topics are active
+    await this.registerWebhooks(shop, accessToken);
 
     this.logger.log(`Token exchange completed successfully for shop: ${shop}`);
     return { installed: true, shop };
@@ -555,13 +554,25 @@ export class ShopifyAuthService {
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
 
     const definitions = this.getWebhookDefinitions(apiUrl);
+    const criticalTopics = new Set(['APP_UNINSTALLED', 'ORDERS_CREATE']);
+    const failedCriticalTopics: string[] = [];
 
     for (const def of definitions) {
-      await this.registerWebhookViaGraphQL(
+      const registered = await this.registerWebhookViaGraphQL(
         shop,
         accessToken,
         def.topic,
         def.callbackUrl,
+      );
+
+      if (!registered && criticalTopics.has(def.topic)) {
+        failedCriticalTopics.push(def.topic);
+      }
+    }
+
+    if (failedCriticalTopics.length > 0) {
+      throw new InternalServerErrorException(
+        `Critical webhook registration failed: ${failedCriticalTopics.join(', ')}`,
       );
     }
   }
@@ -610,7 +621,7 @@ export class ShopifyAuthService {
     accessToken: string,
     topic: string,
     callbackUrl: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const apiVersion = this.getShopifyApiVersion();
     const graphqlUrl = `https://${shop}/admin/api/${apiVersion}/graphql.json`;
 
@@ -679,7 +690,7 @@ export class ShopifyAuthService {
           this.logger.log(
             `Webhook registered via GraphQL: topic=${topic} shop=${shop} id=${result.webhookSubscription.id}`,
           );
-          return;
+          return true;
         }
 
         // Treat "already exists" user errors as idempotent success
@@ -693,7 +704,7 @@ export class ShopifyAuthService {
           this.logger.log(
             `Webhook already exists (GraphQL, treated as success): topic=${topic} shop=${shop}`,
           );
-          return;
+          return true;
         }
 
         // Other user errors are unexpected — treat as failure
@@ -727,6 +738,7 @@ export class ShopifyAuthService {
     this.logger.error(
       `Webhook registration ultimately failed: topic=${topic} shop=${shop} error=${message}`,
     );
+    return false;
   }
 
   private async sleep(ms: number): Promise<void> {
