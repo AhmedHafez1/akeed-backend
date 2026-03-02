@@ -1,11 +1,13 @@
-import { Controller, Get, Req, Res } from '@nestjs/common';
+import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { OnboardingService } from '../services/onboarding.service';
+import { BillingCallbackRateLimitGuard } from '../../shared/guards/billing-callback-rate-limit.guard';
 
 @Controller('api/onboarding/billing')
 export class OnboardingBillingCallbackController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
+  @UseGuards(BillingCallbackRateLimitGuard)
   @Get('callback')
   async billingCallback(
     @Req() req: Request,

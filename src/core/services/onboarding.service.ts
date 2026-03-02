@@ -214,6 +214,7 @@ export class OnboardingService {
     const integration = await this.resolveIntegrationByShop(
       callbackParams.shop,
     );
+    // Always resolve billing status via Shopify API; never trust query string data.
     const billingResolution = await this.resolveBillingStatusFromCharge({
       integration,
       shop: callbackParams.shop,

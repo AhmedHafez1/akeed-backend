@@ -228,12 +228,6 @@ export class TokenValidatorService {
       Buffer.from(payloadB64, 'base64url').toString('utf8'),
     ) as ShopifySessionPayload;
 
-    this.logger.debug(`Verifying Shopify JWT for shop: ${payload.dest}`);
-    this.logger.debug(`Token Audience: ${payload.aud}`);
-    this.logger.debug(
-      `Configured API Key: ${this.configService.getOrThrow<string>('SHOPIFY_API_KEY')}`,
-    );
-
     // Verify signature
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
     const data = `${headerB64}.${payloadB64}`;

@@ -7,10 +7,13 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { RequestWithRawBody } from '../models/request-with-raw-body.interface';
+import { ConfigService } from '@nestjs/config/dist/config.service';
 
 @Injectable()
 export class ShopifyHmacGuard implements CanActivate {
   private readonly logger = new Logger(ShopifyHmacGuard.name);
+
+  constructor(private configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithRawBody>();
@@ -29,7 +32,7 @@ export class ShopifyHmacGuard implements CanActivate {
       throw new UnauthorizedException('Internal Server Error: rawBody missing');
     }
 
-    const secret = process.env.SHOPIFY_API_SECRET;
+    const secret = this.configService.get<string>('SHOPIFY_API_SECRET');
     if (!secret) {
       this.logger.error(
         'SHOPIFY_API_SECRET is not defined in environment variables',

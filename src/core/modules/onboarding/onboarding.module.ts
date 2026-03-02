@@ -4,12 +4,13 @@ import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.mo
 import { OnboardingBillingCallbackController } from '../../controllers/onboarding-billing-callback.controller';
 import { OnboardingController } from '../../controllers/onboarding.controller';
 import { OnboardingService } from '../../services/onboarding.service';
+import { BillingCallbackRateLimitGuard } from '../../../shared/guards/billing-callback-rate-limit.guard';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [DatabaseModule, AuthModule, forwardRef(() => ShopifyModule)],
   controllers: [OnboardingController, OnboardingBillingCallbackController],
-  providers: [OnboardingService],
+  providers: [OnboardingService, BillingCallbackRateLimitGuard],
   exports: [OnboardingService],
 })
 export class OnboardingModule {}

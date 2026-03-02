@@ -26,10 +26,7 @@ export function verifyShopifyHmac(
 
   const queryString = entries
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(
-      ([key, value]) =>
-        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
-    )
+    .map(([key, value]) => `${key}=${value}`)
     .join('&');
 
   const calculatedHmac = crypto
