@@ -1,13 +1,20 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   Get,
+  Post,
   Query,
   Request,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import type { RequestWithUser } from '../guards/dual-auth.guard';
+import type {
+  AuthenticatedUser,
+  RequestWithUser,
+} from '../guards/dual-auth.guard';
+import { CurrentUser } from '../guards/current-user.decorator';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import { VerificationsService } from '../services/verifications.service';
 import {
@@ -52,5 +59,40 @@ export class VerificationsController {
     );
 
     return { verifications };
+  }
+
+  @Post('test')
+  async sendTestVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { customerPhone?: string },
+  ): Promise<{
+    success: boolean;
+    skipped?: boolean;
+    reason?: string;
+    orderId?: string;
+    verificationId?: string;
+  }> {
+    if (!body.customerPhone) {
+      throw new BadRequestException('customerPhone is required.');
+    }
+
+    const result = await this.verificationsService.sendTestVerification(
+      user.orgId,
+      body.customerPhone,
+    );
+
+    if (result.skipped) {
+      return {
+        success: true,
+        skipped: true,
+        reason: result.reason,
+      };
+    }
+
+    return {
+      success: true,
+      orderId: result.orderId,
+      verificationId: result.verificationId,
+    };
   }
 }
