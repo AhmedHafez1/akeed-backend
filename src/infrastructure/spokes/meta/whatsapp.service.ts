@@ -4,12 +4,39 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
 
+type VerificationTemplateLanguage = 'ar' | 'en';
+type VerificationTemplatePreference = 'auto' | VerificationTemplateLanguage;
+
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
   private readonly apiUrl: string;
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
+  private readonly arabicCountryCallingCodes = [
+    '966', // Saudi Arabia
+    '971', // UAE
+    '973', // Bahrain
+    '974', // Qatar
+    '965', // Kuwait
+    '968', // Oman
+    '20', // Egypt
+    '962', // Jordan
+    '964', // Iraq
+    '963', // Syria
+    '961', // Lebanon
+    '970', // Palestine
+    '212', // Morocco
+    '213', // Algeria
+    '216', // Tunisia
+    '218', // Libya
+    '222', // Mauritania
+    '249', // Sudan
+    '252', // Somalia
+    '253', // Djibouti
+    '269', // Comoros
+    '967', // Yemen
+  ] as const;
 
   constructor(
     private readonly httpService: HttpService,
@@ -38,7 +65,13 @@ export class WhatsAppService {
     orderNumber: string,
     totalPrice: string,
     verificationId: string,
+    preferredLanguage: VerificationTemplatePreference = 'auto',
   ): Promise<WhatsAppResponse> {
+    const resolvedLanguage = this.resolveTemplateLanguage(
+      preferredLanguage,
+      to,
+    );
+
     const payload = {
       messaging_product: 'whatsapp',
       to: to,
@@ -46,7 +79,7 @@ export class WhatsAppService {
       template: {
         name: 'akeed_cod_verification',
         language: {
-          code: 'ar',
+          code: resolvedLanguage,
         },
         components: [
           {
@@ -102,5 +135,29 @@ export class WhatsAppService {
       this.logger.error('Error sending WhatsApp message');
       throw error;
     }
+  }
+
+  private resolveTemplateLanguage(
+    preferredLanguage: VerificationTemplatePreference,
+    phoneNumber: string,
+  ): VerificationTemplateLanguage {
+    if (preferredLanguage === 'ar' || preferredLanguage === 'en') {
+      return preferredLanguage;
+    }
+
+    return this.isArabicPhoneNumber(phoneNumber) ? 'ar' : 'en';
+  }
+
+  private isArabicPhoneNumber(phoneNumber: string): boolean {
+    const normalizedNumber = phoneNumber.replace(/[^\d+]/g, '');
+    const internationalDigits = normalizedNumber.startsWith('+')
+      ? normalizedNumber.slice(1)
+      : normalizedNumber.startsWith('00')
+        ? normalizedNumber.slice(2)
+        : normalizedNumber;
+
+    return this.arabicCountryCallingCodes.some((dialCode) =>
+      internationalDigits.startsWith(dialCode),
+    );
   }
 }

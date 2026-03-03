@@ -111,6 +111,7 @@ export class VerificationHubService {
         order.externalOrderId,
         order.totalPrice!,
         verification.id,
+        integration.defaultLanguage,
       );
     } catch (error) {
       await this.safeReleaseUsageReservation({
