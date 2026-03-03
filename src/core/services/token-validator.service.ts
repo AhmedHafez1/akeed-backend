@@ -236,7 +236,15 @@ export class TokenValidatorService {
       .update(data)
       .digest('base64url');
 
-    if (signatureB64 !== expectedSignature) {
+    const signatureBuffer = Buffer.from(signatureB64, 'base64url');
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'base64url');
+
+    if (signatureBuffer.length !== expectedSignatureBuffer.length) {
+      this.logger.error('JWT signature verification failed');
+      throw new Error('Invalid JWT signature');
+    }
+
+    if (!crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)) {
       this.logger.error('JWT signature verification failed');
       throw new Error('Invalid JWT signature');
     }

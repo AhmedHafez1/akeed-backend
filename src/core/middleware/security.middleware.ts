@@ -1,4 +1,5 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
 
 /**
@@ -15,6 +16,8 @@ import { Request, Response, NextFunction } from 'express';
 @Injectable()
 export class SecurityMiddleware implements NestMiddleware {
   private readonly logger = new Logger(SecurityMiddleware.name);
+
+  constructor(private readonly configService: ConfigService) {}
 
   use(req: Request, res: Response, next: NextFunction) {
     // Set Content Security Policy
@@ -85,11 +88,11 @@ export class SecurityMiddleware implements NestMiddleware {
     ]);
 
     const envUrls = [
-      process.env.APP_URL,
-      process.env.API_URL,
-      process.env.SUPABASE_URL,
-      process.env.WA_API_BASE_URL,
-      process.env.WHATSAPP_API_BASE_URL,
+      this.configService.get<string>('APP_URL'),
+      this.configService.get<string>('API_URL'),
+      this.configService.get<string>('SUPABASE_URL'),
+      this.configService.get<string>('WA_API_BASE_URL'),
+      this.configService.get<string>('WHATSAPP_API_BASE_URL'),
     ];
 
     for (const rawUrl of envUrls) {
@@ -149,7 +152,9 @@ export class SecurityMiddleware implements NestMiddleware {
    * - falls back to sensible dev/prod defaults
    */
   private getAllowedOrigins(): string[] {
-    const envOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(',')
+    const envOrigins = this.configService
+      .get<string>('CORS_ALLOWED_ORIGINS')
+      ?.split(',')
       .map((entry) => entry.trim())
       .filter(Boolean);
 
@@ -158,12 +163,13 @@ export class SecurityMiddleware implements NestMiddleware {
     }
 
     const defaults =
-      process.env.NODE_ENV === 'production'
+      this.configService.get<string>('NODE_ENV') === 'production'
         ? ['https://admin.shopify.com', 'https://akeed-eta.vercel.app']
         : ['*'];
 
-    if (process.env.APP_URL) {
-      defaults.push(process.env.APP_URL.trim());
+    const appUrl = this.configService.get<string>('APP_URL');
+    if (appUrl) {
+      defaults.push(appUrl.trim());
     }
 
     return [...new Set(defaults)];
@@ -194,7 +200,7 @@ export class SecurityMiddleware implements NestMiddleware {
 
     // HSTS (HTTP Strict Transport Security)
     // Only enable in production with HTTPS
-    if (process.env.NODE_ENV === 'production') {
+    if (this.configService.get<string>('NODE_ENV') === 'production') {
       res.setHeader(
         'Strict-Transport-Security',
         'max-age=31536000; includeSubDomains',

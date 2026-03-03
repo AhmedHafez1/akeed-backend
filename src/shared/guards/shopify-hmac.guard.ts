@@ -5,9 +5,9 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { RequestWithRawBody } from '../models/request-with-raw-body.interface';
-import { ConfigService } from '@nestjs/config/dist/config.service';
 
 @Injectable()
 export class ShopifyHmacGuard implements CanActivate {
@@ -32,15 +32,7 @@ export class ShopifyHmacGuard implements CanActivate {
       throw new UnauthorizedException('Internal Server Error: rawBody missing');
     }
 
-    const secret = this.configService.get<string>('SHOPIFY_API_SECRET');
-    if (!secret) {
-      this.logger.error(
-        'SHOPIFY_API_SECRET is not defined in environment variables',
-      );
-      throw new UnauthorizedException(
-        'Internal Server Error: Configuration missing',
-      );
-    }
+    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
 
     const generatedHash = crypto
       .createHmac('sha256', secret)
