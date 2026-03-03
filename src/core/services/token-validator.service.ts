@@ -237,9 +237,7 @@ export class TokenValidatorService {
       .digest('base64url');
 
     if (signatureB64 !== expectedSignature) {
-      this.logger.error(
-        `Signature mismatch. Expected: ${expectedSignature}, Got: ${signatureB64}`,
-      );
+      this.logger.error('JWT signature verification failed');
       throw new Error('Invalid JWT signature');
     }
 
@@ -262,7 +260,7 @@ export class TokenValidatorService {
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     if (payload.aud !== apiKey) {
       this.logger.error(
-        `Audience mismatch. Expected: ${apiKey}, Got: ${payload.aud}`,
+        `JWT audience mismatch for shop: ${payload.dest ?? 'unknown'}`,
       );
       throw new Error('Invalid JWT audience');
     }
