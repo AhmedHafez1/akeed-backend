@@ -1,18 +1,23 @@
 import { ShopifyHmacGuard } from './shopify-hmac.guard';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 
 describe('ShopifyHmacGuard', () => {
   let guard: ShopifyHmacGuard;
+  let configService: Pick<ConfigService, 'getOrThrow'>;
   const mockSecret = 'test_secret';
 
   beforeEach(() => {
-    process.env.SHOPIFY_API_SECRET = mockSecret;
-    guard = new ShopifyHmacGuard();
-  });
-
-  afterEach(() => {
-    delete process.env.SHOPIFY_API_SECRET;
+    configService = {
+      getOrThrow: jest.fn().mockImplementation((key: string) => {
+        if (key === 'SHOPIFY_API_SECRET') {
+          return mockSecret;
+        }
+        throw new Error(`Unexpected config key: ${key}`);
+      }),
+    };
+    guard = new ShopifyHmacGuard(configService as ConfigService);
   });
 
   it('should be defined', () => {

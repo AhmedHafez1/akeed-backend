@@ -7,8 +7,8 @@ export class PhoneService {
   private readonly phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
 
   standardize(phone: string, countryCode?: string): string {
-    const normalizedPhone = phone?.trim();
-    const normalizedCountryCode = countryCode?.trim().toUpperCase();
+    const normalizedPhone = phone.trim();
+    const normalizedCountryCode = countryCode?.trim()?.toUpperCase();
 
     if (!normalizedPhone) {
       throw new InvalidPhoneNumberError('Phone number is required.');
@@ -18,7 +18,7 @@ export class PhoneService {
     try {
       parsedNumber = this.phoneUtil.parse(
         normalizedPhone,
-        normalizedCountryCode || undefined,
+        normalizedCountryCode,
       );
     } catch {
       throw new InvalidPhoneNumberError('Invalid phone number format.');
