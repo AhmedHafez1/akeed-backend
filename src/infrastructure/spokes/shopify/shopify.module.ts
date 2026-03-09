@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ShopifyController } from './shopify.controller';
 import { VerificationsModule } from '../../../core/modules/verifications/verifications.module';
+import { WebhookQueueModule } from '../../../core/modules/webhook-queue/webhook-queue.module';
 import { DatabaseModule } from '../../database/database.module';
 import { HttpModule } from '@nestjs/axios';
 import { ShopifyApiService } from './services/shopify-api.service';
@@ -10,10 +11,14 @@ import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.servi
 import { ShopifyAuthController } from './shopify-auth.controller.js';
 import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
-import { PhoneService } from '../../../core/services/phone.service';
 
 @Module({
-  imports: [forwardRef(() => VerificationsModule), DatabaseModule, HttpModule],
+  imports: [
+    forwardRef(() => VerificationsModule),
+    WebhookQueueModule,
+    DatabaseModule,
+    HttpModule,
+  ],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [
     ShopifyApiService,
@@ -22,7 +27,6 @@ import { PhoneService } from '../../../core/services/phone.service';
     ShopifyOrderWebhookService,
     ShopifyGdprWebhookService,
     ShopifyHmacGuard,
-    PhoneService,
   ],
   exports: [ShopifyApiService, ShopifyAuthService],
 })

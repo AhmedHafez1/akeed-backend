@@ -92,3 +92,11 @@ npm run db:push
   - `WA_BUSINESS_ACCOUNT_ID`
   - `WA_ACCESS_TOKEN`
   - `WA_VERIFY_TOKEN`
+
+## Redis (Job Queue)
+
+The webhook processing job queue uses BullMQ backed by Redis.
+
+- `REDIS_URL`: Redis connection string (default: `redis://localhost:6379`).
+  - Production: use a managed Redis instance (e.g. Upstash, ElastiCache, Redis Cloud).
+  - Example: `redis://:password@host:6379/0`

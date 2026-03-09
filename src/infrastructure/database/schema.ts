@@ -537,3 +537,87 @@ export const verifications = pgTable(
     }),
   ],
 );
+
+export const webhookEventStatus = pgEnum('webhook_event_status', [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+  'skipped',
+]);
+
+export const webhookEvents = pgTable(
+  'webhook_events',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    platform: text('platform').notNull(),
+    jobType: text('job_type').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    storeDomain: text('store_domain').notNull(),
+    orgId: uuid('org_id'),
+    integrationId: uuid('integration_id'),
+    status: webhookEventStatus('status').default('pending').notNull(),
+    rawPayload: jsonb('raw_payload').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    lastError: text('last_error'),
+    processedAt: timestamp('processed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_webhook_events_platform_idempotency').using(
+      'btree',
+      table.platform.asc().nullsLast().op('text_ops'),
+      table.idempotencyKey.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_webhook_events_status').using(
+      'btree',
+      table.status.asc().nullsLast().op('enum_ops'),
+    ),
+    index('idx_webhook_events_org_id').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_webhook_events_store_domain').using(
+      'btree',
+      table.storeDomain.asc().nullsLast().op('text_ops'),
+    ),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'webhook_events_org_id_fkey',
+    }).onDelete('set null'),
+    foreignKey({
+      columns: [table.integrationId],
+      foreignColumns: [integrations.id],
+      name: 'webhook_events_integration_id_fkey',
+    }).onDelete('set null'),
+    unique('webhook_events_platform_idempotency_key').on(
+      table.platform,
+      table.idempotencyKey,
+    ),
+    pgPolicy('Service role manages webhook events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+);

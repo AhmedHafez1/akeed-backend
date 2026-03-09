@@ -5,6 +5,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { VerificationsModule } from './modules/verifications/verifications.module';
+import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { VerificationsModule } from './modules/verifications/verifications.modul
     OrganizationsModule,
     OrdersModule,
     VerificationsModule,
+    WebhookQueueModule,
   ],
   exports: [
     AuthModule,
@@ -26,6 +28,7 @@ import { VerificationsModule } from './modules/verifications/verifications.modul
     OrganizationsModule,
     OrdersModule,
     VerificationsModule,
+    WebhookQueueModule,
   ],
 })
 export class CoreModule {}
