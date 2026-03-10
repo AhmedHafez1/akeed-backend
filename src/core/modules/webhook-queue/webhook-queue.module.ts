@@ -1,8 +1,7 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DatabaseModule } from '../../../infrastructure/database/database.module';
-import { VerificationsModule } from '../verifications/verifications.module';
 import { WEBHOOK_QUEUE_NAME } from './webhook-queue.constants';
 import { WebhookQueueProducer } from './webhook-queue.producer';
 import { WebhookQueueProcessor } from './webhook-queue.processor';
@@ -14,7 +13,6 @@ import { PhoneService } from '../../services/phone.service';
   imports: [
     ConfigModule,
     DatabaseModule,
-    forwardRef(() => VerificationsModule),
 
     BullModule.forRootAsync({
       imports: [ConfigModule],

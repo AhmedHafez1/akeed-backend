@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { NormalizedOrder } from 'src/core/interfaces/order.interface';
 import { OrdersRepository } from 'src/infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from 'src/infrastructure/database/repositories/verifications.repository';
-import { WhatsAppService } from 'src/infrastructure/spokes/meta/whatsapp.service';
-import { ShopifyApiService } from 'src/infrastructure/spokes/shopify/services/shopify-api.service';
+import { MESSAGING_PORT, type MessagingPort } from '../ports/messaging.port';
+import {
+  ORDER_TAGGING_PORT,
+  type OrderTaggingPort,
+} from '../ports/order-tagging.port';
 import { integrations, orders } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
@@ -15,8 +18,8 @@ export class VerificationHubService {
   constructor(
     private ordersRepo: OrdersRepository,
     private verificationsRepo: VerificationsRepository,
-    private waSpoke: WhatsAppService,
-    private shopifyApiService: ShopifyApiService,
+    @Inject(MESSAGING_PORT) private messagingPort: MessagingPort,
+    @Inject(ORDER_TAGGING_PORT) private orderTaggingPort: OrderTaggingPort,
     private billingEntitlementService: BillingEntitlementService,
     private orderEligibilityService: OrderEligibilityService,
   ) {}
@@ -103,10 +106,10 @@ export class VerificationHubService {
     // 4. Trigger WhatsApp Message
     this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
     let response: Awaited<
-      ReturnType<WhatsAppService['sendVerificationTemplate']>
+      ReturnType<MessagingPort['sendVerificationTemplate']>
     > | null = null;
     try {
-      response = await this.waSpoke.sendVerificationTemplate(
+      response = await this.messagingPort.sendVerificationTemplate(
         order.customerPhone,
         order.externalOrderId,
         order.totalPrice!,
@@ -168,7 +171,7 @@ export class VerificationHubService {
       const integration = order.integration as typeof integrations.$inferSelect;
       if (integration?.platformStoreUrl) {
         try {
-          await this.shopifyApiService.addOrderTag(
+          await this.orderTaggingPort.addOrderTag(
             integration,
             order.externalOrderId,
             tag,

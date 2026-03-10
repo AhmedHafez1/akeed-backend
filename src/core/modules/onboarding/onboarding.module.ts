@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../infrastructure/database/database.module';
 import { ShopifyModule } from '../../../infrastructure/spokes/shopify/shopify.module';
 import { OnboardingBillingCallbackController } from '../../controllers/onboarding-billing-callback.controller';
@@ -8,7 +8,7 @@ import { BillingCallbackRateLimitGuard } from '../../../shared/guards/billing-ca
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, forwardRef(() => ShopifyModule)],
+  imports: [DatabaseModule, AuthModule, ShopifyModule],
   controllers: [OnboardingController, OnboardingBillingCallbackController],
   providers: [OnboardingService, BillingCallbackRateLimitGuard],
   exports: [OnboardingService],

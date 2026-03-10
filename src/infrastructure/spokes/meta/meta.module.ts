@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { WhatsAppService } from './whatsapp.service';
 import { ConfigModule } from '@nestjs/config';
@@ -6,15 +6,9 @@ import { ConfigModule } from '@nestjs/config';
 import { WhatsAppWebhookController } from './whatsapp.webhook.controller';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import { DatabaseModule } from '../../database/database.module';
-import { VerificationsModule } from 'src/core/modules/verifications/verifications.module';
 
 @Module({
-  imports: [
-    HttpModule,
-    ConfigModule,
-    DatabaseModule,
-    forwardRef(() => VerificationsModule),
-  ],
+  imports: [HttpModule, ConfigModule, DatabaseModule],
   controllers: [WhatsAppWebhookController],
   providers: [WhatsAppService, WhatsAppWebhookService],
   exports: [WhatsAppService],
