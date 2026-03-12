@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,7 +16,10 @@ import {
   type OnboardingStateDto,
   type UpdateOnboardingSettingsDto,
 } from '../dto/onboarding.dto';
-import { ShopifyApiService } from '../../infrastructure/spokes/shopify/services/shopify-api.service';
+import {
+  STORE_PLATFORM_PORT,
+  type StorePlatformPort,
+} from '../ports/store-platform.port';
 import { validateShop } from '../../infrastructure/spokes/shopify/shopify.utils';
 import { BillingConfigService } from './billing-config.service';
 
@@ -29,7 +33,8 @@ export class OnboardingStateService {
 
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
-    private readonly shopifyApiService: ShopifyApiService,
+    @Inject(STORE_PLATFORM_PORT)
+    private readonly storePlatform: StorePlatformPort,
     private readonly billingConfig: BillingConfigService,
   ) {}
 
@@ -109,7 +114,7 @@ export class OnboardingStateService {
     }
 
     try {
-      const storeName = await this.shopifyApiService.getShopName(integration);
+      const storeName = await this.storePlatform.getShopName(integration);
       const updated = await this.integrationsRepo.updateById(integration.id, {
         storeName,
       });

@@ -9,6 +9,8 @@ import { BillingService } from '../../services/billing.service';
 import { BillingConfigService } from '../../services/billing-config.service';
 import { BillingCallbackRateLimitGuard } from '../../../shared/guards/billing-callback-rate-limit.guard';
 import { ShopifyBillingCallbackValidationGuard } from '../../../shared/guards/shopify-billing-callback-validation.guard';
+import { STORE_PLATFORM_PORT } from '../../ports/store-platform.port';
+import { ShopifyApiService } from '../../../infrastructure/spokes/shopify/services/shopify-api.service';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -21,6 +23,7 @@ import { AuthModule } from '../auth/auth.module';
     BillingConfigService,
     BillingCallbackRateLimitGuard,
     ShopifyBillingCallbackValidationGuard,
+    { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
   ],
   exports: [
     OnboardingService,

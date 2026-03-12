@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,9 +15,10 @@ import {
   type OnboardingBillingPlansResponseDto,
 } from '../dto/onboarding.dto';
 import {
-  type CreateRecurringApplicationChargeInput,
-  ShopifyApiService,
-} from '../../infrastructure/spokes/shopify/services/shopify-api.service';
+  STORE_PLATFORM_PORT,
+  type StorePlatformPort,
+  type CreateSubscriptionInput,
+} from '../ports/store-platform.port';
 import {
   type BillingPlanConfig,
   buildBillingReturnUrl,
@@ -43,7 +45,8 @@ export class BillingService {
 
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
-    private readonly shopifyApiService: ShopifyApiService,
+    @Inject(STORE_PLATFORM_PORT)
+    private readonly storePlatform: StorePlatformPort,
     private readonly billingConfig: BillingConfigService,
   ) {}
 
@@ -224,11 +227,10 @@ export class BillingService {
     chargeId: string;
   }): Promise<BillingChargeResolution> {
     try {
-      const subscription =
-        await this.shopifyApiService.getAppSubscriptionStatus(
-          params.integration,
-          params.chargeId,
-        );
+      const subscription = await this.storePlatform.getAppSubscriptionStatus(
+        params.integration,
+        params.chargeId,
+      );
       return {
         status: subscription.status.toLowerCase(),
         subscriptionId: subscription.id,
@@ -253,7 +255,7 @@ export class BillingService {
     integration: IntegrationRecord;
     plan: BillingPlanConfig;
     host?: string;
-  }): CreateRecurringApplicationChargeInput {
+  }): CreateSubscriptionInput {
     return {
       name: params.plan.name,
       amount: params.plan.amount,
@@ -281,7 +283,7 @@ export class BillingService {
     });
 
     try {
-      return await this.shopifyApiService.createRecurringApplicationCharge(
+      return await this.storePlatform.createRecurringApplicationCharge(
         integration,
         payload,
       );
