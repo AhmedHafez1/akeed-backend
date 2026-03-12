@@ -17,11 +17,11 @@ Akeed is a **multi-tenant COD (Cash On Delivery) order verification SaaS** built
 
 The codebase follows a **modular monolith** with partial hexagonal (ports & adapters) patterns:
 
-| Layer | Location | Purpose |
-|---|---|---|
-| **Core Domain** | `src/core/` | Business logic, services, ports, DTOs, controllers |
+| Layer              | Location              | Purpose                                                       |
+| ------------------ | --------------------- | ------------------------------------------------------------- |
+| **Core Domain**    | `src/core/`           | Business logic, services, ports, DTOs, controllers            |
 | **Infrastructure** | `src/infrastructure/` | Database (Drizzle ORM), external integrations (Shopify, Meta) |
-| **Shared** | `src/shared/` | Cross-cutting concerns: guards, filters, utils |
+| **Shared**         | `src/shared/`         | Cross-cutting concerns: guards, filters, utils                |
 
 ### Key Patterns Identified
 
@@ -48,6 +48,7 @@ Shopify Webhook → HMAC Guard → Webhook Controller → BullMQ Queue
 **File:** `src/core/services/onboarding.service.ts`
 
 This service handles:
+
 - Onboarding state management
 - Settings updates
 - Billing plan resolution
@@ -62,6 +63,7 @@ This service handles:
 **Impact:** With 8+ developers, merge conflicts will be frequent. Billing changes risk breaking onboarding flows and vice versa.
 
 **Recommendation:** Extract into:
+
 - `OnboardingStateService` — state read/update
 - `BillingService` — billing lifecycle (initiate, callback, persist state)
 - `BillingConfigService` — plan resolution, currency, test mode (already partially done in helpers)
@@ -71,7 +73,10 @@ This service handles:
 **File:** `src/core/services/onboarding.service.ts`
 
 ```typescript
-import { validateShop, verifyShopifyHmac } from '../../infrastructure/spokes/shopify/shopify.utils';
+import {
+  validateShop,
+  verifyShopifyHmac,
+} from '../../infrastructure/spokes/shopify/shopify.utils';
 ```
 
 The core domain layer directly depends on infrastructure (Shopify spoke). This breaks the dependency inversion principle established elsewhere with ports.
@@ -145,6 +150,7 @@ This bypasses NestJS's `ConfigService`, making the controller harder to test and
 ### 2.9 — LOW: Inconsistent Use of `@Request()` vs `@CurrentUser()` Decorators
 
 Controllers mix two patterns for accessing the authenticated user:
+
 - `@CurrentUser() user: AuthenticatedUser` (clean, typed)
 - `@Request() req: RequestWithUser` then `req.user` (verbose, couples to Request)
 
@@ -278,6 +284,7 @@ src/
 ```
 
 **Benefits:**
+
 - Each module is self-contained with its own controllers, services, DTOs
 - Developers can own modules without stepping on each other
 - Clear import boundaries enforce encapsulation
@@ -289,33 +296,33 @@ src/
 
 ### Priority 1 — High Impact, Low Risk
 
-| # | Suggestion | Effort | Impact |
-|---|---|---|---|
-| 1 | **Split `OnboardingService`** into `OnboardingStateService`, `BillingService`, `BillingConfigService` | Medium | Reduces complexity, enables parallel development |
-| 2 | **Add pagination** to `GET /api/orders` and `GET /api/verifications` (cursor-based) | Low | Prevents performance degradation at scale |
-| 3 | **Replace `@Res()` in billing callback** controller with `@Redirect()` or return a redirect response DTO | Low | Restores NestJS interceptor/filter chain |
-| 4 | **Use `ConfigService` in `WhatsAppWebhookController`** instead of `process.env` | Trivial | Consistency, testability |
-| 5 | **Standardize on `@CurrentUser()` decorator** across all controllers; remove `@Request()` pattern | Low | Code consistency for 8+ developers |
+| #   | Suggestion                                                                                               | Effort  | Impact                                           |
+| --- | -------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------ |
+| 1   | **Split `OnboardingService`** into `OnboardingStateService`, `BillingService`, `BillingConfigService`    | Medium  | Reduces complexity, enables parallel development |
+| 2   | **Add pagination** to `GET /api/orders` and `GET /api/verifications` (cursor-based)                      | Low     | Prevents performance degradation at scale        |
+| 3   | **Replace `@Res()` in billing callback** controller with `@Redirect()` or return a redirect response DTO | Low     | Restores NestJS interceptor/filter chain         |
+| 4   | **Use `ConfigService` in `WhatsAppWebhookController`** instead of `process.env`                          | Trivial | Consistency, testability                         |
+| 5   | **Standardize on `@CurrentUser()` decorator** across all controllers; remove `@Request()` pattern        | Low     | Code consistency for 8+ developers               |
 
 ### Priority 2 — Medium Impact, Medium Risk
 
-| # | Suggestion | Effort | Impact |
-|---|---|---|---|
-| 6 | **Abstract `ShopifyApiService` behind a `BillingPort`** in `OnboardingService` | Medium | Enables multi-platform billing |
-| 7 | **Extract `sendTestVerification()` out of `VerificationsService`** | Low | Decouples read service from write orchestration |
-| 8 | **Make `DatabaseModule` global** and remove redundant imports | Low | Reduces boilerplate, simplifies module graph |
-| 9 | **Add structured health check endpoint** (`/health`) with DB and Redis checks | Low | Production readiness |
-| 10 | **Configure connection pooling** in database provider | Low | Prevents connection exhaustion under load |
+| #   | Suggestion                                                                     | Effort | Impact                                          |
+| --- | ------------------------------------------------------------------------------ | ------ | ----------------------------------------------- |
+| 6   | **Abstract `ShopifyApiService` behind a `BillingPort`** in `OnboardingService` | Medium | Enables multi-platform billing                  |
+| 7   | **Extract `sendTestVerification()` out of `VerificationsService`**             | Low    | Decouples read service from write orchestration |
+| 8   | **Make `DatabaseModule` global** and remove redundant imports                  | Low    | Reduces boilerplate, simplifies module graph    |
+| 9   | **Add structured health check endpoint** (`/health`) with DB and Redis checks  | Low    | Production readiness                            |
+| 10  | **Configure connection pooling** in database provider                          | Low    | Prevents connection exhaustion under load       |
 
 ### Priority 3 — Strategic Investments
 
-| # | Suggestion | Effort | Impact |
-|---|---|---|---|
-| 11 | **Restructure into domain-aligned module folders** (see Section 4) | High | Long-term maintainability at team scale |
-| 12 | **Introduce separate queues** per webhook type/platform | Medium | Independent scaling and monitoring |
-| 13 | **Move rate limiting to Redis** (replace in-memory Map) | Medium | Correct behavior in multi-instance deployments |
-| 14 | **Add integration/e2e test coverage** for webhook processing pipeline | High | Safety net for core business flow |
-| 15 | **Introduce a Billing abstraction port** (like `MessagingPort`) for multi-platform billing support | Medium | Future-proofing for Salla/WooCommerce |
+| #   | Suggestion                                                                                         | Effort | Impact                                         |
+| --- | -------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------- |
+| 11  | **Restructure into domain-aligned module folders** (see Section 4)                                 | High   | Long-term maintainability at team scale        |
+| 12  | **Introduce separate queues** per webhook type/platform                                            | Medium | Independent scaling and monitoring             |
+| 13  | **Move rate limiting to Redis** (replace in-memory Map)                                            | Medium | Correct behavior in multi-instance deployments |
+| 14  | **Add integration/e2e test coverage** for webhook processing pipeline                              | High   | Safety net for core business flow              |
+| 15  | **Introduce a Billing abstraction port** (like `MessagingPort`) for multi-platform billing support | Medium | Future-proofing for Salla/WooCommerce          |
 
 ---
 
@@ -323,101 +330,102 @@ src/
 
 ### 6.1 Module Architecture
 
-| Criterion | Assessment |
-|---|---|
-| Domain separation | **Good** — Clear split between core, infrastructure, and shared |
-| Module isolation | **Partial** — Modules are defined but controllers/services are in shared folders |
-| Infrastructure abstraction | **Good** — Ports pattern for messaging and order tagging |
-| Circular dependencies | **None detected** — Clean dependency graph |
-| Module size | **OnboardingModule is too large** — service handles 5+ concerns |
+| Criterion                  | Assessment                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------- |
+| Domain separation          | **Good** — Clear split between core, infrastructure, and shared                  |
+| Module isolation           | **Partial** — Modules are defined but controllers/services are in shared folders |
+| Infrastructure abstraction | **Good** — Ports pattern for messaging and order tagging                         |
+| Circular dependencies      | **None detected** — Clean dependency graph                                       |
+| Module size                | **OnboardingModule is too large** — service handles 5+ concerns                  |
 
 ### 6.2 Controller Design
 
-| Criterion | Assessment |
-|---|---|
-| HTTP-only logic | **Good** — Controllers delegate to services consistently |
-| Business logic in controllers | **Clean** — No business logic detected in controllers |
-| Request validation | **Good** — `ValidationPipe` with `whitelist: true` applied consistently |
-| Inconsistency | **Minor** — Mixed `@Request()` vs `@CurrentUser()` usage |
-| Anti-pattern | `@Res()` usage in billing callback bypasses NestJS pipeline |
-| Missing | No pagination support on list endpoints |
+| Criterion                     | Assessment                                                              |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| HTTP-only logic               | **Good** — Controllers delegate to services consistently                |
+| Business logic in controllers | **Clean** — No business logic detected in controllers                   |
+| Request validation            | **Good** — `ValidationPipe` with `whitelist: true` applied consistently |
+| Inconsistency                 | **Minor** — Mixed `@Request()` vs `@CurrentUser()` usage                |
+| Anti-pattern                  | `@Res()` usage in billing callback bypasses NestJS pipeline             |
+| Missing                       | No pagination support on list endpoints                                 |
 
 ### 6.3 Service Layer
 
-| Criterion | Assessment |
-|---|---|
-| Business logic placement | **Good** — All business logic resides in services |
-| Service responsibilities | **Issue** — `OnboardingService` violates SRP significantly |
-| Duplicated logic | **Minor** — `getCurrentMonthStartDate()` duplicated between `BillingEntitlementService` and `VerificationsService` |
-| Helper extraction | **Good** — `onboarding.service.helpers.ts` extracts pure functions |
-| Dependency injection | **Good** — Proper constructor injection throughout |
+| Criterion                | Assessment                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Business logic placement | **Good** — All business logic resides in services                                                                  |
+| Service responsibilities | **Issue** — `OnboardingService` violates SRP significantly                                                         |
+| Duplicated logic         | **Minor** — `getCurrentMonthStartDate()` duplicated between `BillingEntitlementService` and `VerificationsService` |
+| Helper extraction        | **Good** — `onboarding.service.helpers.ts` extracts pure functions                                                 |
+| Dependency injection     | **Good** — Proper constructor injection throughout                                                                 |
 
 ### 6.4 Data Layer
 
-| Criterion | Assessment |
-|---|---|
-| Repository separation | **Excellent** — One repository per aggregate, clean separation |
-| No DB queries in controllers | **Clean** — All data access through repositories |
-| Reusable access patterns | **Good** — Common query patterns encapsulated in repositories |
-| Transaction support | **Good** — `integration-monthly-usage.repository.ts` uses transactions with row locking |
-| Token encryption | **Good** — AES-256-GCM encryption for access tokens in repositories |
-| Missing concerns | No pagination in `findByOrg()` queries; no soft-delete pattern |
+| Criterion                    | Assessment                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| Repository separation        | **Excellent** — One repository per aggregate, clean separation                          |
+| No DB queries in controllers | **Clean** — All data access through repositories                                        |
+| Reusable access patterns     | **Good** — Common query patterns encapsulated in repositories                           |
+| Transaction support          | **Good** — `integration-monthly-usage.repository.ts` uses transactions with row locking |
+| Token encryption             | **Good** — AES-256-GCM encryption for access tokens in repositories                     |
+| Missing concerns             | No pagination in `findByOrg()` queries; no soft-delete pattern                          |
 
 ### 6.5 Dependency Injection
 
-| Criterion | Assessment |
-|---|---|
-| NestJS DI usage | **Good** — Standard constructor injection, `@Inject()` for tokens |
-| Port binding | **Excellent** — `VerificationCoreModule.register()` with dynamic port wiring |
-| Tight coupling | **Issue** — `OnboardingService` ↔ `ShopifyApiService` direct dependency |
-| Global modules | **Appropriate** — `ConfigModule` global, `VerificationCoreModule` global |
+| Criterion             | Assessment                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| NestJS DI usage       | **Good** — Standard constructor injection, `@Inject()` for tokens                         |
+| Port binding          | **Excellent** — `VerificationCoreModule.register()` with dynamic port wiring              |
+| Tight coupling        | **Issue** — `OnboardingService` ↔ `ShopifyApiService` direct dependency                   |
+| Global modules        | **Appropriate** — `ConfigModule` global, `VerificationCoreModule` global                  |
 | Token-based injection | **Good** — `DRIZZLE`, `MESSAGING_PORT`, `ORDER_TAGGING_PORT`, `WEBHOOK_ORDER_NORMALIZERS` |
 
 ### 6.6 Error Handling
 
-| Criterion | Assessment |
-|---|---|
-| Exception filters | **Good** — `GlobalExceptionFilter` extends `BaseExceptionFilter` |
-| Custom exceptions | **Partial** — Only `InvalidPhoneNumberError`; other domain errors use NestJS HTTP exceptions directly |
-| Consistent error responses | **Good** — Standard NestJS exception format |
-| Webhook resilience | **Good** — WhatsApp webhook always returns 200 to prevent Meta from disabling |
-| BullMQ error handling | **Good** — Retry with exponential backoff, failed handler persists errors |
-| Missing | No structured error codes for API consumers; no error logging correlation IDs |
+| Criterion                  | Assessment                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Exception filters          | **Good** — `GlobalExceptionFilter` extends `BaseExceptionFilter`                                      |
+| Custom exceptions          | **Partial** — Only `InvalidPhoneNumberError`; other domain errors use NestJS HTTP exceptions directly |
+| Consistent error responses | **Good** — Standard NestJS exception format                                                           |
+| Webhook resilience         | **Good** — WhatsApp webhook always returns 200 to prevent Meta from disabling                         |
+| BullMQ error handling      | **Good** — Retry with exponential backoff, failed handler persists errors                             |
+| Missing                    | No structured error codes for API consumers; no error logging correlation IDs                         |
 
 ---
 
 ## 7. Security Observations
 
-| Area | Status |
-|---|---|
-| HMAC validation (Shopify) | **Secure** — Timing-safe comparison in `ShopifyHmacGuard` |
-| Token encryption | **Secure** — AES-256-GCM with IV and auth tag |
-| JWT validation | **Secure** — Proper signature verification for Shopify session tokens |
-| Supabase auth | **Secure** — Service role key validation via Supabase SDK |
-| GDPR compliance | **Implemented** — Customer data request/redact/shop redact handlers |
-| CSP headers | **Configured** — SecurityMiddleware sets frame-ancestors for Shopify |
-| Input validation | **Good** — `ValidationPipe` with `whitelist: true` on most controllers |
-| Raw query param trust | **Mitigated** — Billing callback verifies charge via Shopify API, not query params |
+| Area                      | Status                                                                             |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| HMAC validation (Shopify) | **Secure** — Timing-safe comparison in `ShopifyHmacGuard`                          |
+| Token encryption          | **Secure** — AES-256-GCM with IV and auth tag                                      |
+| JWT validation            | **Secure** — Proper signature verification for Shopify session tokens              |
+| Supabase auth             | **Secure** — Service role key validation via Supabase SDK                          |
+| GDPR compliance           | **Implemented** — Customer data request/redact/shop redact handlers                |
+| CSP headers               | **Configured** — SecurityMiddleware sets frame-ancestors for Shopify               |
+| Input validation          | **Good** — `ValidationPipe` with `whitelist: true` on most controllers             |
+| Raw query param trust     | **Mitigated** — Billing callback verifies charge via Shopify API, not query params |
 
 ---
 
 ## 8. Code Quality Score
 
-| Area | Score (1–10) | Weight | Weighted |
-|---|---|---|---|
-| Module Architecture | 7 | 20% | 1.40 |
-| Controller Design | 8 | 15% | 1.20 |
-| Service Layer | 6 | 20% | 1.20 |
-| Data Layer | 8 | 15% | 1.20 |
-| Dependency Injection | 7 | 10% | 0.70 |
-| Error Handling | 6 | 10% | 0.60 |
-| Security | 9 | 10% | 0.90 |
+| Area                 | Score (1–10) | Weight | Weighted |
+| -------------------- | ------------ | ------ | -------- |
+| Module Architecture  | 7            | 20%    | 1.40     |
+| Controller Design    | 8            | 15%    | 1.20     |
+| Service Layer        | 6            | 20%    | 1.20     |
+| Data Layer           | 8            | 15%    | 1.20     |
+| Dependency Injection | 7            | 10%    | 0.70     |
+| Error Handling       | 6            | 10%    | 0.60     |
+| Security             | 9            | 10%    | 0.90     |
 
 ### **Overall Score: 7.2 / 10**
 
 ### Score Justification
 
 **Strengths:**
+
 - Clean ports & adapters pattern for external integrations
 - Solid repository layer with proper separation
 - Production-grade security (HMAC, encryption, timing-safe)
@@ -426,6 +434,7 @@ src/
 - Well-structured webhook pipeline with normalizers
 
 **Weaknesses:**
+
 - `OnboardingService` is a god service that will hinder parallel development
 - Core domain directly imports infrastructure (Shopify utils, ShopifyApiService)
 - No pagination on critical list endpoints
