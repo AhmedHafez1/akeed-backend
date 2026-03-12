@@ -17,6 +17,7 @@ import type {
 import { CurrentUser } from '../guards/current-user.decorator';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import { VerificationsService } from '../services/verifications.service';
+import { TestVerificationService } from '../services/test-verification.service';
 import {
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
@@ -33,7 +34,10 @@ import {
   }),
 )
 export class VerificationsController {
-  constructor(private readonly verificationsService: VerificationsService) {}
+  constructor(
+    private readonly verificationsService: VerificationsService,
+    private readonly testVerificationService: TestVerificationService,
+  ) {}
 
   @Get('stats')
   async getVerificationStats(
@@ -76,7 +80,7 @@ export class VerificationsController {
       throw new BadRequestException('customerPhone is required.');
     }
 
-    const result = await this.verificationsService.sendTestVerification(
+    const result = await this.testVerificationService.sendTestVerification(
       user.orgId,
       body.customerPhone,
     );
