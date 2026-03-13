@@ -7,6 +7,7 @@ import {
   DashboardDateRange,
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
+  PaginatedResponse,
   VerificationListItemDto,
   VerificationStatsDto,
 } from '../dto/dashboard.dto';
@@ -16,6 +17,7 @@ import {
   isOnboardingBillingPlanId,
   resolveIncludedVerificationsLimit,
 } from './onboarding.service.helpers';
+import { decodeCursor, encodeCursor } from './pagination.helpers';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
   'pending',
@@ -53,26 +55,41 @@ export class VerificationsService {
   async listByOrg(
     orgId: string,
     query: GetVerificationsQueryDto,
-  ): Promise<VerificationListItemDto[]> {
+  ): Promise<PaginatedResponse<VerificationListItemDto>> {
     const statuses = this.parseStatuses(query.status);
+    const limit = query.limit ?? 50;
+    const cursor = decodeCursor(query.cursor);
+
     const verifications = await this.verificationsRepo.findByOrg(
       orgId,
       statuses,
+      { cursor, limit: limit + 1 },
     );
 
-    return verifications.map((verification) => ({
-      id: verification.id,
-      status: verification.status ?? 'pending',
-      order_id: verification.orderId,
-      order_number: verification.order?.orderNumber ?? null,
-      customer_name: verification.order?.customerName ?? null,
-      customer_phone: verification.order?.customerPhone ?? null,
-      total_price: verification.order?.totalPrice
-        ? verification.order.totalPrice.toString()
-        : null,
-      currency: verification.order?.currency ?? null,
-      created_at: verification.createdAt ?? null,
-    }));
+    const hasMore = verifications.length > limit;
+    const items = hasMore ? verifications.slice(0, limit) : verifications;
+
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeCursor(items[items.length - 1])
+        : null;
+
+    return {
+      data: items.map((verification) => ({
+        id: verification.id,
+        status: verification.status ?? 'pending',
+        order_id: verification.orderId,
+        order_number: verification.order?.orderNumber ?? null,
+        customer_name: verification.order?.customerName ?? null,
+        customer_phone: verification.order?.customerPhone ?? null,
+        total_price: verification.order?.totalPrice
+          ? verification.order.totalPrice.toString()
+          : null,
+        currency: verification.order?.currency ?? null,
+        created_at: verification.createdAt ?? null,
+      })),
+      next_cursor: nextCursor,
+    };
   }
 
   async getStatsByOrg(

@@ -3,7 +3,6 @@ import {
   Controller,
   Patch,
   Post,
-  Request,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -16,7 +15,8 @@ import {
 import { OrganizationsService } from '../services/organizations.service';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import { AllowOrgless } from '../guards/orgless.decorator';
-import type { RequestWithUser } from '../guards/dual-auth.guard';
+import type { AuthenticatedUser } from '../guards/dual-auth.guard';
+import { CurrentUser } from '../guards/current-user.decorator';
 
 @Controller('api/organizations')
 @UseGuards(DualAuthGuard)
@@ -32,11 +32,11 @@ export class OrganizationsController {
   @Post()
   @AllowOrgless()
   async createOrganization(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() payload: CreateOrganizationDto,
   ): Promise<{ organization: OrganizationResponseDto }> {
     const organization = await this.organizationsService.createOrganization(
-      req.user.userId,
+      user.userId,
       payload,
     );
 
@@ -45,12 +45,12 @@ export class OrganizationsController {
 
   @Patch('current')
   async updateCurrentOrganization(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() payload: UpdateOrganizationDto,
   ): Promise<{ organization: OrganizationResponseDto }> {
     const organization =
       await this.organizationsService.updateCurrentOrganization(
-        req.user.orgId,
+        user.orgId,
         payload,
       );
 

@@ -5,15 +5,11 @@ import {
   Get,
   Post,
   Query,
-  Request,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import type {
-  AuthenticatedUser,
-  RequestWithUser,
-} from '../guards/dual-auth.guard';
+import type { AuthenticatedUser } from '../guards/dual-auth.guard';
 import { CurrentUser } from '../guards/current-user.decorator';
 import { DualAuthGuard } from '../guards/dual-auth.guard';
 import { VerificationsService } from '../services/verifications.service';
@@ -21,6 +17,7 @@ import { TestVerificationService } from '../services/test-verification.service';
 import {
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
+  PaginatedResponse,
   VerificationListItemDto,
   VerificationStatsDto,
 } from '../dto/dashboard.dto';
@@ -41,11 +38,11 @@ export class VerificationsController {
 
   @Get('stats')
   async getVerificationStats(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetVerificationStatsQueryDto,
   ): Promise<{ stats: VerificationStatsDto }> {
     const stats = await this.verificationsService.getStatsByOrg(
-      req.user.orgId,
+      user.orgId,
       query,
     );
 
@@ -54,15 +51,10 @@ export class VerificationsController {
 
   @Get()
   async listVerifications(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetVerificationsQueryDto,
-  ): Promise<{ verifications: VerificationListItemDto[] }> {
-    const verifications = await this.verificationsService.listByOrg(
-      req.user.orgId,
-      query,
-    );
-
-    return { verifications };
+  ): Promise<PaginatedResponse<VerificationListItemDto>> {
+    return this.verificationsService.listByOrg(user.orgId, query);
   }
 
   @Post('test')

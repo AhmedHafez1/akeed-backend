@@ -1,9 +1,9 @@
-import { Controller, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import {
   DualAuthGuard,
   type AuthenticatedUser,
-  type RequestWithUser,
 } from '../guards/dual-auth.guard';
+import { CurrentUser } from '../guards/current-user.decorator';
 import { AuthService } from '../services/auth.service';
 import { AuthStatusResponseDto, MeResponseDto } from '../dto/auth.dto';
 
@@ -35,9 +35,8 @@ export class AuthController {
   @Get('me')
   @UseGuards(DualAuthGuard)
   async getCurrentUser(
-    @Request() req: RequestWithUser,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<MeResponseDto> {
-    const user: AuthenticatedUser = req.user;
     return this.authService.getCurrentUser(user);
   }
 
@@ -49,8 +48,7 @@ export class AuthController {
    */
   @Get('status')
   @UseGuards(DualAuthGuard)
-  getAuthStatus(@Request() req: RequestWithUser): AuthStatusResponseDto {
-    const user: AuthenticatedUser = req.user;
+  getAuthStatus(@CurrentUser() user: AuthenticatedUser): AuthStatusResponseDto {
     return this.authService.getAuthStatus(user);
   }
 }

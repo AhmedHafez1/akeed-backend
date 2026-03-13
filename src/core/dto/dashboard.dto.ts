@@ -1,4 +1,5 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export const DASHBOARD_DATE_RANGE_VALUES = [
   'today',
@@ -8,10 +9,34 @@ export const DASHBOARD_DATE_RANGE_VALUES = [
 
 export type DashboardDateRange = (typeof DASHBOARD_DATE_RANGE_VALUES)[number];
 
+export class GetOrdersQueryDto {
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
 export class GetVerificationsQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }
 
 export class GetVerificationStatsQueryDto {
@@ -43,6 +68,11 @@ export interface OrderListItemDto {
   currency: string | null;
   created_at: string | null;
   verification_status: string | null;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  next_cursor: string | null;
 }
 
 export interface VerificationStatsDto {

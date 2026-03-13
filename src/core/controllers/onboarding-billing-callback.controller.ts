@@ -2,11 +2,11 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Redirect,
   Req,
-  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import { OnboardingService } from '../services/onboarding.service';
 import { BillingCallbackRateLimitGuard } from '../../shared/guards/billing-callback-rate-limit.guard';
 import { ShopifyBillingCallbackValidationGuard } from 'src/shared/guards/shopify-billing-callback-validation.guard';
@@ -26,10 +26,10 @@ export class OnboardingBillingCallbackController {
     ShopifyBillingCallbackValidationGuard,
   )
   @Get('callback')
+  @Redirect()
   async billingCallback(
     @Req() req: Request,
-    @Res() res: Response,
-  ): Promise<void> {
+  ): Promise<{ url: string; statusCode: number }> {
     const query = req.query as unknown as BillingCallbackQuery;
     const shop = this.getSingleQueryParam(query.shop);
     const chargeId = this.getSingleQueryParam(query.charge_id);
@@ -45,7 +45,7 @@ export class OnboardingBillingCallbackController {
       chargeId,
       host,
     });
-    res.redirect(redirectUrl);
+    return { url: redirectUrl, statusCode: 302 };
   }
 
   private getSingleQueryParam(

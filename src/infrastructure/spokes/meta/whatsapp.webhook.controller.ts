@@ -4,14 +4,14 @@ import {
   Post,
   Query,
   Body,
-  Res,
   HttpStatus,
   Logger,
   HttpCode,
   UsePipes,
   ValidationPipe,
+  ForbiddenException,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import {
   WhatsAppWebhookPayloadDto,
@@ -28,22 +28,25 @@ import {
 export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
 
-  constructor(private readonly service: WhatsAppWebhookService) {}
+  constructor(
+    private readonly service: WhatsAppWebhookService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get()
-  verifyWebhook(
-    @Query() query: WhatsAppWebhookVerifyDto,
-    @Res() res: Response,
-  ): Response {
+  @HttpCode(HttpStatus.OK)
+  verifyWebhook(@Query() query: WhatsAppWebhookVerifyDto): string {
     const { mode, token, challenge } = query;
+    const verifyToken =
+      this.configService.getOrThrow<string>('WA_VERIFY_TOKEN');
 
-    if (mode === 'subscribe' && token === process.env.WA_VERIFY_TOKEN) {
+    if (mode === 'subscribe' && token === verifyToken) {
       this.logger.log('Webhook verified successfully.');
-      return res.status(HttpStatus.OK).send(challenge);
-    } else {
-      this.logger.error('Webhook verification failed.');
-      return res.sendStatus(HttpStatus.FORBIDDEN);
+      return challenge;
     }
+
+    this.logger.error('Webhook verification failed.');
+    throw new ForbiddenException('Webhook verification failed');
   }
 
   @Post()

@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, lt, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import { orders } from '../schema';
 
@@ -32,19 +32,39 @@ export class OrdersRepository {
     });
   }
 
-  async findByOrg(orgId: string): Promise<
+  async findByOrg(
+    orgId: string,
+    opts?: { cursor?: { createdAt: string; id: string }; limit?: number },
+  ): Promise<
     Array<
       typeof orders.$inferSelect & {
         verifications: Array<typeof schema.verifications.$inferSelect>;
       }
     >
   > {
+    const limit = opts?.limit ?? 50;
+
+    const conditions = [eq(orders.orgId, orgId)];
+
+    if (opts?.cursor) {
+      conditions.push(
+        or(
+          lt(orders.createdAt, opts.cursor.createdAt),
+          and(
+            sql`${orders.createdAt} = ${opts.cursor.createdAt}`,
+            lt(orders.id, opts.cursor.id),
+          ),
+        )!,
+      );
+    }
+
     return await this.db.query.orders.findMany({
-      where: eq(orders.orgId, orgId),
+      where: and(...conditions),
       with: {
         verifications: true,
       },
-      orderBy: (orders, { desc }) => [desc(orders.createdAt)],
+      orderBy: (orders, { desc }) => [desc(orders.createdAt), desc(orders.id)],
+      limit,
     });
   }
 

@@ -43,68 +43,6 @@ Shopify Webhook → HMAC Guard → Webhook Controller → BullMQ Queue
 
 ## 2. Major Structural Issues
 
-### 2.1 — CRITICAL: `OnboardingService` is a God Service (~500+ lines)
-
-**File:** `src/core/services/onboarding.service.ts`
-
-This service handles:
-
-- Onboarding state management
-- Settings updates
-- Billing plan resolution
-- Shopify billing charge creation
-- Billing callback validation (HMAC verification, param extraction)
-- Onboarding completion flow
-- Store name prefill via Shopify API
-- Configuration resolution (currency, test mode, boolean parsing)
-
-**Violation:** Single Responsibility Principle (SRP). This service conflates onboarding orchestration, billing lifecycle management, Shopify billing API interaction, and configuration resolution into a single class.
-
-**Impact:** With 8+ developers, merge conflicts will be frequent. Billing changes risk breaking onboarding flows and vice versa.
-
-**Recommendation:** Extract into:
-
-- `OnboardingStateService` — state read/update
-- `BillingService` — billing lifecycle (initiate, callback, persist state)
-- `BillingConfigService` — plan resolution, currency, test mode (already partially done in helpers)
-
-### 2.2 — CRITICAL: `OnboardingService` Directly Imports Shopify Utilities
-
-**File:** `src/core/services/onboarding.service.ts`
-
-```typescript
-import {
-  validateShop,
-  verifyShopifyHmac,
-} from '../../infrastructure/spokes/shopify/shopify.utils';
-```
-
-The core domain layer directly depends on infrastructure (Shopify spoke). This breaks the dependency inversion principle established elsewhere with ports.
-
-**Impact:** If a new platform (Salla, WooCommerce) is added for billing, this service becomes a platform switch statement.
-
-**Recommendation:** The billing callback HMAC validation should be performed at the controller/guard layer — before the service is invoked. The `validateShop()` call is already a guard-level concern.
-
-### 2.3 — HIGH: `OnboardingService` Also Depends on `ShopifyApiService` Directly
-
-```typescript
-constructor(
-    private readonly integrationsRepo: IntegrationsRepository,
-    private readonly shopifyApiService: ShopifyApiService,  // ← Direct infra dependency
-    private readonly configService: ConfigService,
-) {}
-```
-
-The service calls `shopifyApiService.getShopName()` and `shopifyApiService.createRecurringApplicationCharge()`. These should be abstracted behind a port (e.g., `BillingPort`, `StorePlatformPort`) for consistency with the pattern already used for `MessagingPort` and `OrderTaggingPort`.
-
-### 2.4 — HIGH: `VerificationsService` Depends on `VerificationHubService` (Circular Concern)
-
-**File:** `src/core/services/verifications.service.ts`
-
-`VerificationsService` (a read/query service for the dashboard) depends on `VerificationHubService` (the write/orchestration service) solely for `sendTestVerification()`. This tightly couples the read path to the write path.
-
-**Recommendation:** Move `sendTestVerification()` to `VerificationHubService` or a dedicated `TestVerificationService`, and inject only that into the controller.
-
 ### 2.5 — MEDIUM: `WhatsAppWebhookService` Lives in Infrastructure but Calls Core Domain Directly
 
 **File:** `src/infrastructure/spokes/meta/whatsapp.webhook.service.ts`

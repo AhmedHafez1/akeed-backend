@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
 import { VerificationStatus } from 'src/core/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
@@ -89,6 +89,7 @@ export class VerificationsRepository {
   async findByOrg(
     orgId: string,
     statuses?: VerificationStatus[],
+    opts?: { cursor?: { createdAt: string; id: string }; limit?: number },
   ): Promise<
     Array<
       typeof verifications.$inferSelect & {
@@ -96,17 +97,37 @@ export class VerificationsRepository {
       }
     >
   > {
+    const limit = opts?.limit ?? 50;
+
+    const conditions = [
+      eq(verifications.orgId, orgId),
+      statuses && statuses.length > 0
+        ? inArray(verifications.status, statuses)
+        : undefined,
+    ].filter(Boolean);
+
+    if (opts?.cursor) {
+      conditions.push(
+        or(
+          lt(verifications.createdAt, opts.cursor.createdAt),
+          and(
+            sql`${verifications.createdAt} = ${opts.cursor.createdAt}`,
+            lt(verifications.id, opts.cursor.id),
+          ),
+        ),
+      );
+    }
+
     return await this.db.query.verifications.findMany({
-      where: and(
-        eq(verifications.orgId, orgId),
-        statuses && statuses.length > 0
-          ? inArray(verifications.status, statuses)
-          : undefined,
-      ),
+      where: and(...conditions),
       with: {
         order: true,
       },
-      orderBy: (verifications, { desc }) => [desc(verifications.createdAt)],
+      orderBy: (verifications, { desc }) => [
+        desc(verifications.createdAt),
+        desc(verifications.id),
+      ],
+      limit,
     });
   }
 
