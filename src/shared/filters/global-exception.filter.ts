@@ -1,6 +1,6 @@
 import { ArgumentsHost, Catch } from '@nestjs/common';
 import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
-import { InvalidPhoneNumberError } from '../../core/errors/invalid-phone-number.error';
+import { InvalidPhoneNumberError } from '../errors/invalid-phone-number.error';
 
 @Catch()
 export class GlobalExceptionFilter extends BaseExceptionFilter {

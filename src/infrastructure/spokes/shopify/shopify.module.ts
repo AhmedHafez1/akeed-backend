@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ShopifyController } from './shopify.controller';
-import { WebhookQueueModule } from '../../../core/modules/webhook-queue/webhook-queue.module';
+import { WebhookQueueModule } from '../../../modules/webhook-queue/webhook-queue.module';
 import { DatabaseModule } from '../../database/database.module';
 import { HttpModule } from '@nestjs/axios';
 import { ShopifyApiService } from './services/shopify-api.service';
@@ -10,7 +10,7 @@ import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.servi
 import { ShopifyAuthController } from './shopify-auth.controller.js';
 import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
-import { PhoneService } from '../../../core/services/phone.service';
+import { PhoneService } from '../../../shared/services/phone.service';
 
 @Module({
   imports: [WebhookQueueModule, DatabaseModule, HttpModule],

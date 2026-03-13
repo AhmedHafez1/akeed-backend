@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { and, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
-import { VerificationStatus } from 'src/core/interfaces/verification.interface';
+import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
 

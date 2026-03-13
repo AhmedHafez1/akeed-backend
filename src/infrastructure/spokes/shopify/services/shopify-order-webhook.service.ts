@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WebhookQueueProducer } from '../../../../core/modules/webhook-queue/webhook-queue.producer';
-import { WebhookJobType } from '../../../../core/modules/webhook-queue/webhook-queue.constants';
+import { WebhookQueueProducer } from '../../../../modules/webhook-queue/webhook-queue.producer';
+import { WebhookJobType } from '../../../../modules/webhook-queue/webhook-queue.constants';
 import { ShopifyWebhookEventsRepository } from '../../../database/repositories/shopify-webhook-events.repository';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { ShopifyOrderWebhookDto } from '../dto/shopify-webhooks.dto';

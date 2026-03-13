@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PhoneService } from '../../../../core/services/phone.service';
+import { PhoneService } from '../../../../shared/services/phone.service';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { IntegrationMonthlyUsageRepository } from '../../../database/repositories/integration-monthly-usage.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
