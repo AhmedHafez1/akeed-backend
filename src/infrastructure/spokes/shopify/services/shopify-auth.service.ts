@@ -71,7 +71,7 @@ export class ShopifyAuthService {
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
-    const redirectUrl = new URL(`${apiUrl}/auth/shopify/callback`);
+    const redirectUrl = new URL(`${apiUrl}/api/auth/shopify/callback`);
     const redirectUri = redirectUrl.toString();
     const state = this.createSignedState(shop, host);
 

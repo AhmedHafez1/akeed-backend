@@ -17,12 +17,12 @@ import { AuthStatusResponseDto, MeResponseDto } from './dto/auth.dto';
  * It must return identical structure regardless of authentication source.
  */
 
-@Controller('auth')
+@Controller('api/auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * GET /auth/me
+   * GET /api/auth/me
    *
    * Returns current authenticated user context.
    * This endpoint is used by the frontend to:
@@ -41,7 +41,7 @@ export class AuthController {
   }
 
   /**
-   * GET /auth/status
+   * GET /api/auth/status
    *
    * Simple health check for authentication
    * Returns 200 if authenticated, 401 if not

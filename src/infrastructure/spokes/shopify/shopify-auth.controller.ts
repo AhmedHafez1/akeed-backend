@@ -20,7 +20,7 @@ import {
   ShopifyTokenExchangeDto,
 } from './dto/shopify-auth.dto';
 
-@Controller('auth/shopify')
+@Controller('api/auth/shopify')
 @UsePipes(
   new ValidationPipe({
     transform: true,

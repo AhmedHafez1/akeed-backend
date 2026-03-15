@@ -28,17 +28,17 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
   - Supabase JWT path (standalone)
 - Unified user context for protected APIs.
 - Current-user endpoints:
-  - `GET /auth/me`
-  - `GET /auth/status`
+  - `GET /api/auth/me`
+  - `GET /api/auth/status`
 
 ### Shopify Integration
 - OAuth install flow:
-  - `GET /auth/shopify`
-  - `GET /auth/shopify/callback`
+  - `GET /api/auth/shopify`
+  - `GET /api/auth/shopify/callback`
 - Install status check:
-  - `GET /auth/shopify/check`
+  - `GET /api/auth/shopify/check`
 - App Bridge token exchange flow:
-  - `POST /auth/shopify/token-exchange`
+  - `POST /api/auth/shopify/token-exchange`
 - Webhook registration at install for:
   - `APP_UNINSTALLED`
   - `APP_SUBSCRIPTIONS_UPDATE`

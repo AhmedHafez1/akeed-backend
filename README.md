@@ -24,8 +24,8 @@ npm run start:prod
 ## Key Endpoints
 
 - Shopify OAuth:
-  - `GET /auth/shopify?shop={domain}`
-  - `GET /auth/shopify/callback`
+  - `GET /api/auth/shopify?shop={domain}`
+  - `GET /api/auth/shopify/callback`
 - Shopify Webhooks:
   - `POST /webhooks/shopify/orders-create`
   - `POST /webhooks/shopify/uninstalled`

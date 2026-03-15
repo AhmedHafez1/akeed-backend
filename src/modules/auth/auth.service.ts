@@ -11,7 +11,7 @@ export class AuthService {
 
   async getCurrentUser(user: AuthenticatedUser): Promise<MeResponseDto> {
     this.logger.debug(
-      `GET /auth/me - user: ${user.userId}, org: ${user.orgId}, source: ${user.source}`,
+      `GET /api/auth/me - user: ${user.userId}, org: ${user.orgId}, source: ${user.source}`,
     );
 
     const organization = await this.organizationsRepo.findById(user.orgId);
