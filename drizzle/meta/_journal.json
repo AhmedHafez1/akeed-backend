@@ -50,6 +50,13 @@
       "when": 1771236458000,
       "tag": "0006_solid_shipping_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773861872901,
+      "tag": "0007_crazy_violations",
+      "breakpoints": true
     }
   ]
 }
