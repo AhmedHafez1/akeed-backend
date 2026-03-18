@@ -81,7 +81,7 @@ export class WebhookQueueProducer {
     };
 
     await this.queue.add(params.jobType, jobPayload, {
-      jobId: `${params.platform}:${params.idempotencyKey}`,
+      jobId: `${params.platform}-${params.idempotencyKey}`,
       attempts: 5,
       backoff: { type: 'exponential', delay: 3_000 },
       removeOnComplete: { age: 7 * 24 * 3_600, count: 10_000 },
