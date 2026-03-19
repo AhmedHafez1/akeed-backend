@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
+import { PhoneService } from '../../shared/services/phone.service';
+import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 
@@ -11,6 +13,7 @@ export class TestVerificationService {
     private readonly configService: ConfigService,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHubService: VerificationHubService,
+    private readonly phoneService: PhoneService,
   ) {}
 
   async sendTestVerification(
@@ -28,11 +31,16 @@ export class TestVerificationService {
       );
     }
 
-    const normalizedPhone = customerPhone.trim();
-    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
-      throw new BadRequestException(
-        'customerPhone must be in E.164 format (example: +201234567890).',
-      );
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = this.phoneService.standardize(customerPhone);
+    } catch (error) {
+      if (error instanceof InvalidPhoneNumberError) {
+        throw new BadRequestException(
+          'customerPhone must be a valid phone number (example: +201234567890).',
+        );
+      }
+      throw error;
     }
 
     const integration = await this.integrationsRepo.findActiveByOrgAndPlatform(

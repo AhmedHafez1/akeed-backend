@@ -4,11 +4,12 @@ import { VerificationsController } from './verifications.controller';
 import { VerificationsService } from './verifications.service';
 import { TestVerificationService } from './test-verification.service';
 import { AuthModule } from '../auth/auth.module';
+import { PhoneService } from '../../shared/services/phone.service';
 
 @Module({
   imports: [DatabaseModule, AuthModule],
   controllers: [VerificationsController],
-  providers: [VerificationsService, TestVerificationService],
+  providers: [VerificationsService, TestVerificationService, PhoneService],
   exports: [VerificationsService, TestVerificationService],
 })
 export class VerificationsModule {}
