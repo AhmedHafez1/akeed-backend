@@ -10,10 +10,12 @@ interface ReserveMonthlyVerificationSlotParams {
   integrationId: string;
   periodStart: string;
   includedLimit: number;
+  overageAllowed?: boolean;
 }
 
 export interface MonthlyVerificationSlotReservation {
   allowed: boolean;
+  isOverage: boolean;
   consumedCount: number;
   includedLimit: number;
 }
@@ -84,6 +86,35 @@ export class IntegrationMonthlyUsageRepository {
       }
 
       if (usageRow.consumedCount >= params.includedLimit) {
+        if (params.overageAllowed) {
+          // Plan supports overages — allow consumption beyond the included limit
+          const [overageRow] = await tx
+            .update(integrationMonthlyUsage)
+            .set({
+              includedLimit: params.includedLimit,
+              consumedCount: sql`${integrationMonthlyUsage.consumedCount} + 1`,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(integrationMonthlyUsage.integrationId, params.integrationId),
+                eq(integrationMonthlyUsage.periodStart, params.periodStart),
+              ),
+            )
+            .returning({
+              consumedCount: integrationMonthlyUsage.consumedCount,
+              includedLimit: integrationMonthlyUsage.includedLimit,
+            });
+
+          return {
+            allowed: true,
+            isOverage: true,
+            consumedCount:
+              overageRow?.consumedCount ?? usageRow.consumedCount + 1,
+            includedLimit: overageRow?.includedLimit ?? params.includedLimit,
+          };
+        }
+
         const [blockedRow] = await tx
           .update(integrationMonthlyUsage)
           .set({
@@ -104,6 +135,7 @@ export class IntegrationMonthlyUsageRepository {
 
         return {
           allowed: false,
+          isOverage: false,
           consumedCount: blockedRow?.consumedCount ?? usageRow.consumedCount,
           includedLimit: blockedRow?.includedLimit ?? params.includedLimit,
         };
@@ -135,6 +167,7 @@ export class IntegrationMonthlyUsageRepository {
 
       return {
         allowed: true,
+        isOverage: false,
         consumedCount: updatedRow.consumedCount,
         includedLimit: updatedRow.includedLimit,
       };

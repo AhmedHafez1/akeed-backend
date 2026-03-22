@@ -96,6 +96,25 @@ export function resolveIncludedVerificationsLimit(
   return planTemplate.includedVerifications;
 }
 
+export interface OverageConfig {
+  overageRate: number;
+  cappedAmount: number;
+}
+
+export function resolveOverageConfig(
+  planId: OnboardingBillingPlanId,
+): OverageConfig | null {
+  const planTemplate = BILLING_PLAN_TEMPLATES[planId];
+  if (!planTemplate?.usage) {
+    return null;
+  }
+
+  return {
+    overageRate: planTemplate.usage.overageRate,
+    cappedAmount: planTemplate.usage.cappedAmount,
+  };
+}
+
 export function resolveBillingPlan(params: {
   planId: OnboardingBillingPlanId;
   currencyCode: string;

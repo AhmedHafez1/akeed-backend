@@ -7,10 +7,14 @@ import { integrations } from 'src/infrastructure/database';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
   type AppSubscriptionCreateResponse,
+  type AppSubscriptionLineItemsResponse,
   type AppSubscriptionStatusResponse,
+  type AppUsageRecordCreateResponse,
   buildSubscriptionLineItems,
   CREATE_APP_SUBSCRIPTION_MUTATION,
+  CREATE_USAGE_RECORD_MUTATION,
   GET_APP_SUBSCRIPTION_STATUS_QUERY,
+  GET_SUBSCRIPTION_LINE_ITEMS_QUERY,
   getRequestId,
   type GraphQLErrorItem,
   type GraphQLUserError,
@@ -162,6 +166,64 @@ export class ShopifyApiService {
       id: node.id,
       status: node.status,
     };
+  }
+
+  async reportUsageCharge(
+    integration: typeof integrations.$inferSelect,
+    subscriptionId: string,
+    amount: number,
+    currencyCode: string,
+    description: string,
+  ): Promise<void> {
+    const gid = toAppSubscriptionGid(subscriptionId);
+
+    // 1. Query subscription for the usage pricing line item ID
+    const lineItemsResponse =
+      await this.executeGraphql<AppSubscriptionLineItemsResponse>(
+        integration,
+        GET_SUBSCRIPTION_LINE_ITEMS_QUERY,
+        { id: gid },
+      );
+
+    throwIfGraphQLErrors(
+      lineItemsResponse.data.errors,
+      'Shopify subscription line items query errors',
+    );
+
+    const lineItems = lineItemsResponse.data.data?.node?.lineItems ?? [];
+    const usageLineItem = lineItems.find(
+      (li) => li.plan.pricingDetails.__typename === 'AppUsagePricing',
+    );
+
+    if (!usageLineItem) {
+      throw new Error(
+        `No usage pricing line item found on subscription ${gid}`,
+      );
+    }
+
+    // 2. Create the usage record
+    const response = await this.executeGraphql<AppUsageRecordCreateResponse>(
+      integration,
+      CREATE_USAGE_RECORD_MUTATION,
+      {
+        subscriptionLineItemId: usageLineItem.id,
+        price: { amount, currencyCode },
+        description,
+      },
+    );
+
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify usage record creation errors',
+    );
+    throwIfUserErrors(
+      response.data.data?.appUsageRecordCreate?.userErrors,
+      'Shopify usage record validation failed',
+    );
+
+    this.logger.log(
+      `Usage record created for subscription ${gid}: ${amount} ${currencyCode}`,
+    );
   }
 
   private async executeGraphql<T>(

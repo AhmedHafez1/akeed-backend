@@ -43,6 +43,29 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   } | null;
 }>;
 
+export interface AppSubscriptionLineItemNode {
+  id: string;
+  plan: {
+    pricingDetails: {
+      __typename: string;
+    };
+  };
+}
+
+export type AppSubscriptionLineItemsResponse = GraphQLResponse<{
+  node?: {
+    id?: string;
+    lineItems?: AppSubscriptionLineItemNode[];
+  } | null;
+}>;
+
+export type AppUsageRecordCreateResponse = GraphQLResponse<{
+  appUsageRecordCreate?: {
+    appUsageRecord?: { id: string };
+    userErrors?: GraphQLUserError[];
+  };
+}>;
+
 interface AppSubscriptionRecurringLineItem {
   plan: {
     appRecurringPricingDetails: {
@@ -121,6 +144,46 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
       ... on AppSubscription {
         id
         status
+      }
+    }
+  }
+`;
+
+export const GET_SUBSCRIPTION_LINE_ITEMS_QUERY = `
+  query GetSubscriptionLineItems($id: ID!) {
+    node(id: $id) {
+      ... on AppSubscription {
+        id
+        lineItems {
+          id
+          plan {
+            pricingDetails {
+              __typename
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const CREATE_USAGE_RECORD_MUTATION = `
+  mutation AppUsageRecordCreate(
+    $subscriptionLineItemId: ID!
+    $price: MoneyInput!
+    $description: String!
+  ) {
+    appUsageRecordCreate(
+      subscriptionLineItemId: $subscriptionLineItemId
+      price: $price
+      description: $description
+    ) {
+      appUsageRecord {
+        id
+      }
+      userErrors {
+        field
+        message
       }
     }
   }

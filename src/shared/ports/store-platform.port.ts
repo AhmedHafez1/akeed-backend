@@ -25,4 +25,11 @@ export interface StorePlatformPort {
     integration: any,
     chargeId: string,
   ): Promise<SubscriptionStatusResult>;
+  reportUsageCharge(
+    integration: any,
+    subscriptionId: string,
+    amount: number,
+    currencyCode: string,
+    description: string,
+  ): Promise<void>;
 }
