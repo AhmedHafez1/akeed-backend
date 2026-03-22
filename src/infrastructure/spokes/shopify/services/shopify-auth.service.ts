@@ -574,7 +574,11 @@ export class ShopifyAuthService {
     const apiUrl = this.configService.getOrThrow<string>('API_URL');
 
     const definitions = this.getWebhookDefinitions(apiUrl);
-    const criticalTopics = new Set(['APP_UNINSTALLED', 'ORDERS_CREATE']);
+    const criticalTopics = new Set([
+      'APP_UNINSTALLED',
+      'ORDERS_CREATE',
+      'APP_SUBSCRIPTIONS_UPDATE',
+    ]);
     const failedCriticalTopics: string[] = [];
 
     for (const def of definitions) {

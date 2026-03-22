@@ -357,10 +357,7 @@ This allows development stores and custom installs to bypass billing gracefully.
 - [x] **Configurable test mode** — auto-enabled outside production, env-overridable
 - [x] **GraphQL error handling** — both top-level `errors` and `userErrors` are checked and surfaced
 - [x] **Subscription GID normalization** — handles both raw IDs and `gid://` format from webhooks
-
-### Recommendations for Hardening
-
 - [x] **Usage record creation** — `appUsageRecordCreate` is called via `StorePlatformPort.reportUsageCharge()` when `consumed_count > included_limit` for plans with overage config. Shopify enforces the `cappedAmount` ceiling; if the cap is exceeded the verification is blocked.
 - [x] **Plan upgrade/downgrade proration** — changing plans creates a new subscription and explicitly cancels the old one via `appSubscriptionCancel` (with proration). The old subscription is cancelled after the new confirmation URL is generated for paid plans, or before activation for free plan downgrades.
 - [x] **Usage reset at period boundary** — the monthly usage table is keyed by `period_start` computed as a 30-day rolling cycle from `billingActivatedAt`, matching Shopify's billing cycle. Falls back to the 1st of the current UTC month when no activation date is available (e.g. free plans).
-- [ ] **Webhook registration** — ensure the `APP_SUBSCRIPTIONS_UPDATE` webhook topic is registered in the Shopify app configuration (shopify.app.toml or via API). If this webhook is not registered, status changes will not propagate.
+- [x] **Webhook registration** — `APP_SUBSCRIPTIONS_UPDATE`, `ORDERS_CREATE`, and `APP_UNINSTALLED` are registered both declaratively in `shopify.app.toml` and programmatically via `webhookSubscriptionCreate` during OAuth. All three topics are marked as critical — registration failure during OAuth aborts the install flow.
