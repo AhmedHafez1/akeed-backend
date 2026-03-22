@@ -103,20 +103,21 @@ export class VerificationsService {
     const now = new Date();
 
     const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
-    const periodStart = this.getCurrentMonthStartDate(now);
 
-    const [filteredCounts, usage, activeIntegrations] = await Promise.all([
+    const [filteredCounts, activeIntegrations] = await Promise.all([
       this.verificationsRepo.getStatusCountsByOrgAndPeriod(
         orgId,
         filterPeriod.startAt,
         filterPeriod.endAt,
       ),
-      this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
-        orgId,
-        periodStart,
-      }),
       this.integrationsRepo.findActiveByOrg(orgId),
     ]);
+
+    const periodStart = this.getBillingPeriodStart(activeIntegrations, now);
+    const usage = await this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
+      orgId,
+      periodStart,
+    });
 
     const replyRate = this.calculateReplyRate(filteredCounts);
     const usageLimit =
@@ -220,11 +221,40 @@ export class VerificationsService {
     );
   }
 
-  private getCurrentMonthStartDate(now: Date): string {
-    const periodStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
+  /**
+   * Derives the current 30-day billing period start from the earliest active
+   * integration's activation date, matching Shopify's rolling 30-day cycle.
+   * Falls back to the 1st of the current UTC calendar month when no
+   * activation date is available.
+   */
+  private getBillingPeriodStart(
+    activeIntegrations: IntegrationRecord[],
+    now: Date,
+  ): string {
+    const activatedAt = activeIntegrations
+      .map((i) => i.billingActivatedAt)
+      .filter(Boolean)
+      .sort()[0];
 
+    if (!activatedAt) {
+      const fallback = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+      );
+      return fallback.toISOString().slice(0, 10);
+    }
+
+    const activation = new Date(activatedAt);
+    const msPerDay = 86_400_000;
+    const elapsedMs = now.getTime() - activation.getTime();
+    if (elapsedMs < 0) {
+      return activation.toISOString().slice(0, 10);
+    }
+
+    const elapsedDays = Math.floor(elapsedMs / msPerDay);
+    const completedCycles = Math.floor(elapsedDays / 30);
+    const periodStart = new Date(
+      activation.getTime() + completedCycles * 30 * msPerDay,
+    );
     return periodStart.toISOString().slice(0, 10);
   }
 
