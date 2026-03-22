@@ -43,6 +43,16 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   } | null;
 }>;
 
+export type AppSubscriptionCancelResponse = GraphQLResponse<{
+  appSubscriptionCancel?: {
+    appSubscription?: {
+      id: string;
+      status: string;
+    };
+    userErrors?: GraphQLUserError[];
+  };
+}>;
+
 export interface AppSubscriptionLineItemNode {
   id: string;
   plan: {
@@ -144,6 +154,21 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
       ... on AppSubscription {
         id
         status
+      }
+    }
+  }
+`;
+
+export const CANCEL_APP_SUBSCRIPTION_MUTATION = `
+  mutation AppSubscriptionCancel($id: ID!, $prorate: Boolean) {
+    appSubscriptionCancel(id: $id, prorate: $prorate) {
+      appSubscription {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
       }
     }
   }

@@ -6,11 +6,13 @@ import { firstValueFrom } from 'rxjs';
 import { integrations } from 'src/infrastructure/database';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
+  type AppSubscriptionCancelResponse,
   type AppSubscriptionCreateResponse,
   type AppSubscriptionLineItemsResponse,
   type AppSubscriptionStatusResponse,
   type AppUsageRecordCreateResponse,
   buildSubscriptionLineItems,
+  CANCEL_APP_SUBSCRIPTION_MUTATION,
   CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_USAGE_RECORD_MUTATION,
   GET_APP_SUBSCRIPTION_STATUS_QUERY,
@@ -166,6 +168,35 @@ export class ShopifyApiService {
       id: node.id,
       status: node.status,
     };
+  }
+
+  async cancelAppSubscription(
+    integration: typeof integrations.$inferSelect,
+    subscriptionId: string,
+    prorate = true,
+  ): Promise<void> {
+    const gid = toAppSubscriptionGid(subscriptionId);
+
+    const response = await this.executeGraphql<AppSubscriptionCancelResponse>(
+      integration,
+      CANCEL_APP_SUBSCRIPTION_MUTATION,
+      { id: gid, prorate },
+    );
+
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify subscription cancellation errors',
+    );
+    throwIfUserErrors(
+      response.data.data?.appSubscriptionCancel?.userErrors,
+      'Shopify subscription cancellation validation failed',
+    );
+
+    const cancelledStatus =
+      response.data.data?.appSubscriptionCancel?.appSubscription?.status;
+    this.logger.log(
+      `Cancelled subscription ${gid} (status=${cancelledStatus ?? 'unknown'}, prorate=${prorate})`,
+    );
   }
 
   async reportUsageCharge(

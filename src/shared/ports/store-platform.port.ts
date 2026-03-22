@@ -25,6 +25,11 @@ export interface StorePlatformPort {
     integration: any,
     chargeId: string,
   ): Promise<SubscriptionStatusResult>;
+  cancelAppSubscription(
+    integration: any,
+    subscriptionId: string,
+    prorate?: boolean,
+  ): Promise<void>;
   reportUsageCharge(
     integration: any,
     subscriptionId: string,

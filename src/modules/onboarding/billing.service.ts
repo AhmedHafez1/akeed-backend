@@ -97,6 +97,8 @@ export class BillingService {
     }
 
     if (billingPlan.amount === 0) {
+      await this.cancelExistingSubscriptionIfAny(integration);
+
       await this.persistBillingState({
         integrationId: integration.id,
         planId: billingPlan.id,
@@ -129,13 +131,15 @@ export class BillingService {
       shopifySubscriptionId: null,
     });
 
-    return {
-      confirmationUrl: await this.createPaidPlanConfirmationUrl(
-        integration,
-        billingPlan,
-        host,
-      ),
-    };
+    const confirmationUrl = await this.createPaidPlanConfirmationUrl(
+      integration,
+      billingPlan,
+      host,
+    );
+
+    await this.cancelExistingSubscriptionIfAny(integration);
+
+    return { confirmationUrl };
   }
 
   async handleBillingCallback(
@@ -331,6 +335,33 @@ export class BillingService {
     return message
       .toLowerCase()
       .includes('custom apps cannot use the billing api');
+  }
+
+  private async cancelExistingSubscriptionIfAny(
+    integration: IntegrationRecord,
+  ): Promise<void> {
+    const existingSubscriptionId = integration.shopifySubscriptionId;
+    if (
+      !existingSubscriptionId ||
+      this.isCanceledBillingStatus(integration.billingStatus ?? '')
+    ) {
+      return;
+    }
+
+    try {
+      await this.storePlatform.cancelAppSubscription(
+        integration,
+        existingSubscriptionId,
+      );
+      this.logger.log(
+        `Cancelled previous subscription ${existingSubscriptionId} for ${integration.platformStoreUrl} during plan change`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to cancel previous subscription ${existingSubscriptionId} for ${integration.platformStoreUrl}: ${message}`,
+      );
+    }
   }
 
   private isCanceledBillingStatus(status: string): boolean {

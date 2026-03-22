@@ -360,9 +360,7 @@ This allows development stores and custom installs to bypass billing gracefully.
 
 ### Recommendations for Hardening
 
-- [ ] **Persistent rate limiting** — the current `BillingCallbackRateLimitGuard` uses an in-memory `Map`. In a multi-instance deployment this provides per-instance limits only. Consider backing it with Redis for coordinated rate limiting across pods.
 - [x] **Usage record creation** — `appUsageRecordCreate` is called via `StorePlatformPort.reportUsageCharge()` when `consumed_count > included_limit` for plans with overage config. Shopify enforces the `cappedAmount` ceiling; if the cap is exceeded the verification is blocked.
-- [ ] **Plan upgrade/downgrade proration** — changing plans creates a new subscription but does not cancel the old one programmatically. Shopify handles this at the platform level, but consider explicitly calling `appSubscriptionCancel` on the old subscription for a cleaner audit trail.
-- [ ] **Billing status polling** — if a webhook is missed (network issue, Shopify outage), stale `pending` statuses could persist indefinitely. Consider a periodic reconciliation job that queries Shopify for the latest subscription status.
+- [x] **Plan upgrade/downgrade proration** — changing plans creates a new subscription but does not cancel the old one programmatically. Shopify handles this at the platform level, but consider explicitly calling `appSubscriptionCancel` on the old subscription for a cleaner audit trail.
 - [ ] **Usage reset at period boundary** — the monthly usage table is keyed by `period_start` (1st of month UTC). Verify that UTC-based period boundaries align with Shopify's billing cycle (which is 30-day rolling from activation, not calendar-month). A mismatch could cause merchants to see limits reset at a different time than their Shopify billing cycle.
 - [ ] **Webhook registration** — ensure the `APP_SUBSCRIPTIONS_UPDATE` webhook topic is registered in the Shopify app configuration (shopify.app.toml or via API). If this webhook is not registered, status changes will not propagate.
