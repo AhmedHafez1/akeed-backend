@@ -17,10 +17,3 @@ export enum WebhookJobType {
 
 /** Supported e-commerce platforms. Must match `integrations.platform_type`. */
 export type PlatformType = 'shopify' | 'salla' | 'woocommerce' | 'zid';
-
-export const ALL_PLATFORMS: readonly PlatformType[] = [
-  'shopify',
-  'salla',
-  'woocommerce',
-  'zid',
-] as const;

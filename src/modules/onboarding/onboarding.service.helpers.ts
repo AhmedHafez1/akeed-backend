@@ -34,7 +34,7 @@ export interface BillingPlanConfig {
   usage?: BillingPlanUsageConfig;
 }
 
-export interface BillingRedirectParams {
+interface BillingRedirectParams {
   shop: string;
   host?: string;
 }
@@ -96,7 +96,7 @@ export function resolveIncludedVerificationsLimit(
   return planTemplate.includedVerifications;
 }
 
-export interface OverageConfig {
+interface OverageConfig {
   overageRate: number;
   cappedAmount: number;
 }

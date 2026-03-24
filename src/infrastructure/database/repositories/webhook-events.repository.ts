@@ -5,7 +5,7 @@ import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { webhookEvents } from '../schema';
 
-export interface WebhookEventInsert {
+interface WebhookEventInsert {
   platform: string;
   jobType: string;
   idempotencyKey: string;

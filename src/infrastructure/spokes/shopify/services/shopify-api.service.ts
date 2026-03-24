@@ -31,7 +31,7 @@ import {
   validateUsageBillingPayload,
 } from './shopify-api.service.helpers';
 
-export interface CreateRecurringApplicationChargeInput {
+interface CreateRecurringApplicationChargeInput {
   name: string;
   amount: number;
   currencyCode: string;
@@ -41,7 +41,7 @@ export interface CreateRecurringApplicationChargeInput {
   test: boolean;
 }
 
-export interface AppSubscriptionStatusResult {
+interface AppSubscriptionStatusResult {
   id: string;
   status: string;
 }

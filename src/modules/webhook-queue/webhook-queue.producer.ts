@@ -13,7 +13,7 @@ import {
 } from './webhook-queue.constants';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 
-export interface WebhookIngestionParams {
+interface WebhookIngestionParams {
   platform: PlatformType;
   jobType: WebhookJobType;
   idempotencyKey: string;
