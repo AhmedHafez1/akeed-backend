@@ -94,7 +94,14 @@ export class VerificationsRepository {
   ): Promise<
     Array<
       typeof verifications.$inferSelect & {
-        order: typeof schema.orders.$inferSelect | null;
+        order: Pick<
+          typeof schema.orders.$inferSelect,
+          | 'orderNumber'
+          | 'customerName'
+          | 'customerPhone'
+          | 'totalPrice'
+          | 'currency'
+        > | null;
       }
     >
   > {
@@ -124,7 +131,15 @@ export class VerificationsRepository {
     return await this.db.query.verifications.findMany({
       where: and(...conditions),
       with: {
-        order: true,
+        order: {
+          columns: {
+            orderNumber: true,
+            customerName: true,
+            customerPhone: true,
+            totalPrice: true,
+            currency: true,
+          },
+        },
       },
       orderBy: (verifications, { desc }) => [
         desc(verifications.createdAt),
