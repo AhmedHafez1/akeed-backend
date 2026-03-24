@@ -57,6 +57,13 @@
       "when": 1773861872901,
       "tag": "0007_crazy_violations",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774588800000,
+      "tag": "0008_composite_indexes",
+      "breakpoints": true
     }
   ]
 }

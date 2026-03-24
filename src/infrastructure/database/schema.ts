@@ -409,17 +409,15 @@ export const orders = pgTable(
     }).defaultNow(),
   },
   (table) => [
-    index('idx_orders_created_at').using(
+    index('idx_orders_org_created_id').using(
       'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
       table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+      table.id.desc().nullsFirst().op('uuid_ops'),
     ),
     index('idx_orders_external_id').using(
       'btree',
       table.externalOrderId.asc().nullsLast().op('text_ops'),
-    ),
-    index('idx_orders_org_id').using(
-      'btree',
-      table.orgId.asc().nullsLast().op('uuid_ops'),
     ),
     index('idx_orders_phone').using(
       'btree',
@@ -500,12 +498,16 @@ export const verifications = pgTable(
       .where(
         sql`(status = ANY (ARRAY['pending'::verification_status, 'sent'::verification_status]))`,
       ),
-    index('idx_verifications_org_id').using(
+    index('idx_verifications_org_created_id').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+      table.id.desc().nullsFirst().op('uuid_ops'),
     ),
-    index('idx_verifications_status').using(
+    index('idx_verifications_org_created_status').using(
       'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.asc().nullsLast().op('timestamptz_ops'),
       table.status.asc().nullsLast().op('enum_ops'),
     ),
     index('idx_verifications_wa_id').using(
