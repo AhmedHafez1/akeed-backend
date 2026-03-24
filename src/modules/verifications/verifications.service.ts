@@ -23,7 +23,6 @@ import {
 } from '../orders/services/pagination.helpers';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
-  'pending',
   'sent',
   'delivered',
   'read',
@@ -60,12 +59,19 @@ export class VerificationsService {
     query: GetVerificationsQueryDto,
   ): Promise<PaginatedResponse<VerificationListItemDto>> {
     const statuses = this.parseStatuses(query.status);
+    const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
+    const now = new Date();
+    const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
     const limit = query.limit ?? 50;
     const cursor = decodeCursor(query.cursor);
 
     const verifications = await this.verificationsRepo.findByOrg(
       orgId,
       statuses,
+      {
+        startAt: filterPeriod.startAt,
+        endAt: filterPeriod.endAt,
+      },
       { cursor, limit: limit + 1 },
     );
 
@@ -197,6 +203,8 @@ export class VerificationsService {
       start.setUTCDate(start.getUTCDate() - 6);
     } else if (dateRange === 'last_30_days') {
       start.setUTCDate(start.getUTCDate() - 29);
+    } else if (dateRange === 'last_3_months') {
+      start.setUTCDate(start.getUTCDate() - 89);
     }
 
     return {

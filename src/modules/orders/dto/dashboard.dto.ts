@@ -5,6 +5,7 @@ export const DASHBOARD_DATE_RANGE_VALUES = [
   'today',
   'last_7_days',
   'last_30_days',
+  'last_3_months',
 ] as const;
 
 export type DashboardDateRange = (typeof DASHBOARD_DATE_RANGE_VALUES)[number];
@@ -26,6 +27,10 @@ export class GetVerificationsQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsIn(DASHBOARD_DATE_RANGE_VALUES)
+  date_range?: DashboardDateRange;
 
   @IsOptional()
   @IsString()

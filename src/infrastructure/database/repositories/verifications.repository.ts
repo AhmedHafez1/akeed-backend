@@ -89,6 +89,7 @@ export class VerificationsRepository {
   async findByOrg(
     orgId: string,
     statuses?: VerificationStatus[],
+    period?: { startAt: string; endAt: string },
     opts?: { cursor?: { createdAt: string; id: string }; limit?: number },
   ): Promise<
     Array<
@@ -101,6 +102,8 @@ export class VerificationsRepository {
 
     const conditions = [
       eq(verifications.orgId, orgId),
+      period ? gte(verifications.createdAt, period.startAt) : undefined,
+      period ? lt(verifications.createdAt, period.endAt) : undefined,
       statuses && statuses.length > 0
         ? inArray(verifications.status, statuses)
         : undefined,
