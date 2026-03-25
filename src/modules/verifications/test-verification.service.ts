@@ -7,8 +7,18 @@ import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-numbe
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const TEST_LIMIT_COUNT = 3;
+const TEST_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class TestVerificationService {
+  private readonly rateLimits = new Map<string, RateLimitEntry>();
+
   constructor(
     private readonly configService: ConfigService,
     private readonly integrationsRepo: IntegrationsRepository,
@@ -25,11 +35,7 @@ export class TestVerificationService {
     orderId?: string;
     verificationId?: string;
   }> {
-    if (!this.getBillingTestMode()) {
-      throw new BadRequestException(
-        'Test verification is available only in billing test mode.',
-      );
-    }
+    this.checkAndIncrementRateLimit(orgId);
 
     let normalizedPhone: string;
     try {
@@ -92,11 +98,22 @@ export class TestVerificationService {
     };
   }
 
-  private getBillingTestMode(): boolean {
-    return (
-      this.configService
-        .get<string>('SHOPIFY_BILLING_TEST_MODE', 'false')
-        ?.toLowerCase() === 'true'
-    );
+  private checkAndIncrementRateLimit(orgId: string) {
+    const now = Date.now();
+    const current = this.rateLimits.get(orgId);
+
+    if (current && current.resetAt > now) {
+      if (current.count >= TEST_LIMIT_COUNT) {
+        throw new BadRequestException(
+          'You have reached the limit of 3 test verifications per 24 hours. Please try again later.',
+        );
+      }
+      current.count++;
+    } else {
+      this.rateLimits.set(orgId, {
+        count: 1,
+        resetAt: now + TEST_LIMIT_WINDOW_MS,
+      });
+    }
   }
 }
