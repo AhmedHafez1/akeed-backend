@@ -12,7 +12,7 @@ interface RateLimitEntry {
   resetAt: number;
 }
 
-const TEST_LIMIT_COUNT = 3;
+const TEST_LIMIT_COUNT = 10;
 const TEST_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -20,7 +20,6 @@ export class TestVerificationService {
   private readonly rateLimits = new Map<string, RateLimitEntry>();
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHubService: VerificationHubService,
     private readonly phoneService: PhoneService,
@@ -105,7 +104,7 @@ export class TestVerificationService {
     if (current && current.resetAt > now) {
       if (current.count >= TEST_LIMIT_COUNT) {
         throw new BadRequestException(
-          'You have reached the limit of 3 test verifications per 24 hours. Please try again later.',
+          `You have reached the limit of ${TEST_LIMIT_COUNT} test verifications per 24 hours. Please try again later.`,
         );
       }
       current.count++;
