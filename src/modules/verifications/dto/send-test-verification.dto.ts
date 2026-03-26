@@ -6,12 +6,10 @@ export class SendTestVerificationDto {
   @IsNotEmpty({ message: 'customerPhone is required.' })
   @Transform(({ value }: { value: string }) => value.trim())
   @MinLength(7, {
-    message:
-      'customerPhone must be a valid phone number (example: +201234567890).',
+    message: 'Phone must be a valid phone number (example: +201234567890).',
   })
   @MaxLength(20, {
-    message:
-      'customerPhone must be a valid phone number (example: +201234567890).',
+    message: 'Phone must be a valid phone number (example: +201234567890).',
   })
   customerPhone!: string;
 }
