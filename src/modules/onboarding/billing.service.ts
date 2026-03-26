@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   BadGatewayException,
   Inject,
   Injectable,
@@ -6,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { BillingFreePlanClaimsRepository } from '../../infrastructure/database/repositories/billing-free-plan-claims.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import {
   ONBOARDING_LANGUAGES,
@@ -45,13 +47,21 @@ export class BillingService {
 
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
+    private readonly freePlanClaimsRepo: BillingFreePlanClaimsRepository,
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
     private readonly billingConfig: BillingConfigService,
   ) {}
 
-  getBillingPlans(): OnboardingBillingPlansResponseDto {
+  async getBillingPlans(
+    integration: IntegrationRecord,
+  ): Promise<OnboardingBillingPlansResponseDto> {
     const plans = this.billingConfig.resolveAllPlans();
+
+    const isFreePlanClaimed = await this.freePlanClaimsRepo.hasClaim({
+      platformType: integration.platformType,
+      shopDomain: integration.platformStoreUrl,
+    });
 
     return {
       plans: plans.map<OnboardingBillingPlanDto>((plan) => ({
@@ -62,6 +72,7 @@ export class BillingService {
         includedVerifications: plan.includedVerifications,
         usage: plan.usage,
       })),
+      isFreePlanClaimed,
     };
   }
 
@@ -97,17 +108,53 @@ export class BillingService {
     }
 
     if (billingPlan.amount === 0) {
-      await this.cancelExistingSubscriptionIfAny(integration);
+      if (this.isPlanAlreadyActive(integration, billingPlan.id)) {
+        await this.freePlanClaimsRepo.createIfNew({
+          orgId: integration.orgId,
+          platformType: integration.platformType,
+          shopDomain: integration.platformStoreUrl,
+        });
 
-      await this.persistBillingState({
-        integrationId: integration.id,
-        planId: billingPlan.id,
-        status: 'active',
-        markInitiatedAt: true,
-        markActivatedAt: true,
-        clearCanceledAt: true,
-        shopifySubscriptionId: null,
+        return {
+          confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+            integrationId: integration.id,
+            shop: integration.platformStoreUrl,
+            host,
+          }),
+        };
+      }
+
+      const claimCreated = await this.freePlanClaimsRepo.createIfNew({
+        orgId: integration.orgId,
+        platformType: integration.platformType,
+        shopDomain: integration.platformStoreUrl,
       });
+
+      if (!claimCreated) {
+        throw new BadRequestException(
+          'Starter plan can only be activated once per store. Please choose a paid plan.',
+        );
+      }
+
+      try {
+        await this.cancelExistingSubscriptionIfAny(integration);
+
+        await this.persistBillingState({
+          integrationId: integration.id,
+          planId: billingPlan.id,
+          status: 'active',
+          markInitiatedAt: true,
+          markActivatedAt: true,
+          clearCanceledAt: true,
+          shopifySubscriptionId: null,
+        });
+      } catch (error) {
+        await this.safeRollbackFreePlanClaim({
+          platformType: integration.platformType,
+          shopDomain: integration.platformStoreUrl,
+        });
+        throw error;
+      }
 
       this.logger.log(
         `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
@@ -368,6 +415,31 @@ export class BillingService {
     return ['cancelled', 'canceled', 'declined', 'expired', 'frozen'].includes(
       status,
     );
+  }
+
+  private isPlanAlreadyActive(
+    integration: IntegrationRecord,
+    planId: OnboardingBillingPlanId,
+  ): boolean {
+    return (
+      integration.billingPlanId === planId &&
+      integration.billingStatus?.trim().toLowerCase() === 'active'
+    );
+  }
+
+  private async safeRollbackFreePlanClaim(params: {
+    platformType: string;
+    shopDomain: string;
+  }): Promise<void> {
+    try {
+      await this.freePlanClaimsRepo.deleteByPlatformAndShop(params);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to rollback free plan claim for ${params.platformType}:${params.shopDomain}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   getMissingBillingPrerequisites(integration: IntegrationRecord): string[] {

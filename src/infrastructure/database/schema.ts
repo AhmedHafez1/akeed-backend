@@ -341,6 +341,68 @@ export const integrationMonthlyUsage = pgTable(
   ],
 );
 
+export const billingFreePlanClaims = pgTable(
+  'billing_free_plan_claims',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    platformType: text('platform_type').notNull(),
+    shopDomain: text('shop_domain').notNull(),
+    claimedAt: timestamp('claimed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_billing_free_plan_claims_org_id').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_billing_free_plan_claims_shop_domain').using(
+      'btree',
+      table.shopDomain.asc().nullsLast().op('text_ops'),
+    ),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'billing_free_plan_claims_org_id_fkey',
+    }).onDelete('cascade'),
+    unique('billing_free_plan_claims_platform_shop_key').on(
+      table.platformType,
+      table.shopDomain,
+    ),
+    pgPolicy('Service role manages free plan claims', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('Multi-tenant free plan claims', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+    check(
+      'billing_free_plan_claims_platform_type_check',
+      sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])`,
+    ),
+  ],
+);
+
 export const shopifyWebhookEvents = pgTable(
   'shopify_webhook_events',
   {

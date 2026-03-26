@@ -31,9 +31,9 @@ export class OnboardingService {
   async getBillingPlans(
     user: AuthenticatedUser,
   ): Promise<OnboardingBillingPlansResponseDto> {
-    // Ensure the requester belongs to a valid Shopify integration context.
-    await this.onboardingState.resolveCurrentIntegration(user);
-    return this.billingService.getBillingPlans();
+    const integration =
+      await this.onboardingState.resolveCurrentIntegration(user);
+    return this.billingService.getBillingPlans(integration);
   }
 
   async initiateBilling(

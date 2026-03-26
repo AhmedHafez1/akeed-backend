@@ -10,6 +10,7 @@ import { MembershipsRepository } from './repositories/memberships.repository';
 import { ShopifyWebhookEventsRepository } from './repositories/shopify-webhook-events.repository';
 import { IntegrationMonthlyUsageRepository } from './repositories/integration-monthly-usage.repository';
 import { WebhookEventsRepository } from './repositories/webhook-events.repository';
+import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -23,6 +24,7 @@ import { WebhookEventsRepository } from './repositories/webhook-events.repositor
     ShopifyWebhookEventsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
+    BillingFreePlanClaimsRepository,
   ],
   exports: [
     drizzleProvider,
@@ -34,6 +36,7 @@ import { WebhookEventsRepository } from './repositories/webhook-events.repositor
     ShopifyWebhookEventsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
+    BillingFreePlanClaimsRepository,
   ],
 })
 export class DatabaseModule {}

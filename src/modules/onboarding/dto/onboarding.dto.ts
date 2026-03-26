@@ -97,6 +97,7 @@ export interface OnboardingBillingPlanDto {
 
 export interface OnboardingBillingPlansResponseDto {
   plans: OnboardingBillingPlanDto[];
+  isFreePlanClaimed: boolean;
 }
 
 export class OnboardingBillingRequestDto {
