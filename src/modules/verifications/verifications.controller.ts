@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -14,6 +13,7 @@ import { CurrentUser } from '../auth/guards/current-user.decorator';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import { VerificationsService } from './verifications.service';
 import { TestVerificationService } from './test-verification.service';
+import { SendTestVerificationDto } from './dto/send-test-verification.dto';
 import {
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
@@ -60,7 +60,7 @@ export class VerificationsController {
   @Post('test')
   async sendTestVerification(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { customerPhone?: string },
+    @Body() body: SendTestVerificationDto,
   ): Promise<{
     success: boolean;
     skipped?: boolean;
@@ -68,10 +68,6 @@ export class VerificationsController {
     orderId?: string;
     verificationId?: string;
   }> {
-    if (!body.customerPhone) {
-      throw new BadRequestException('customerPhone is required.');
-    }
-
     const result = await this.testVerificationService.sendTestVerification(
       user.orgId,
       body.customerPhone,

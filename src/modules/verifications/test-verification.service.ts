@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import { PhoneService } from '../../shared/services/phone.service';
@@ -7,18 +6,8 @@ import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-numbe
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-const TEST_LIMIT_COUNT = 10;
-const TEST_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 @Injectable()
 export class TestVerificationService {
-  private readonly rateLimits = new Map<string, RateLimitEntry>();
-
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHubService: VerificationHubService,
@@ -34,8 +23,6 @@ export class TestVerificationService {
     orderId?: string;
     verificationId?: string;
   }> {
-    this.checkAndIncrementRateLimit(orgId);
-
     let normalizedPhone: string;
     try {
       normalizedPhone = this.phoneService.standardize(customerPhone);
@@ -95,24 +82,5 @@ export class TestVerificationService {
       orderId: result.orderId,
       verificationId: result.verificationId,
     };
-  }
-
-  private checkAndIncrementRateLimit(orgId: string) {
-    const now = Date.now();
-    const current = this.rateLimits.get(orgId);
-
-    if (current && current.resetAt > now) {
-      if (current.count >= TEST_LIMIT_COUNT) {
-        throw new BadRequestException(
-          `You have reached the limit of ${TEST_LIMIT_COUNT} test verifications per 24 hours. Please try again later.`,
-        );
-      }
-      current.count++;
-    } else {
-      this.rateLimits.set(orgId, {
-        count: 1,
-        resetAt: now + TEST_LIMIT_WINDOW_MS,
-      });
-    }
   }
 }
