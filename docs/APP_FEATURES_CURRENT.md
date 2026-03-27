@@ -1,13 +1,16 @@
 # Akeed MVP - Current Implemented Features (Final Review As Of 2026-03-27)
 
 ## Product Scope
+
 Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cloud API.
 
 ## Review Basis
+
 - This document was refreshed from source code (backend controllers/services, queue processor, billing domain, and frontend route/features).
 - Intended as a pre-Shopify-submission feature inventory and readiness snapshot.
 
 ## Implemented User Flows
+
 - Shopify embedded app install and authentication.
 - Embedded onboarding flow with:
   - Welcome step
@@ -28,6 +31,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 ## Backend Features
 
 ### Authentication and Identity
+
 - Dual authentication support:
   - Shopify session token path (embedded)
   - Supabase JWT path (standalone)
@@ -40,6 +44,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
   - Session token verification (`aud`, `exp`, `nbf`, signature) for App Bridge token exchange
 
 ### Shopify Integration
+
 - OAuth install flow:
   - `GET /api/auth/shopify`
   - `GET /api/auth/shopify/callback`
@@ -54,6 +59,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - GDPR topics are handled via webhook endpoints and app config declarations.
 
 ### Shopify Webhook Handling
+
 - HMAC validation guard using timing-safe compare.
 - Webhook endpoints:
   - `POST /webhooks/shopify/orders-create`
@@ -67,6 +73,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - GDPR handlers include customer export preparation, customer redaction, and full shop data deletion flow.
 
 ### Queue and Processing
+
 - BullMQ queue for webhook processing backed by Redis.
 - Async processing with retries and exponential backoff.
 - Current queue behavior:
@@ -76,6 +83,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - Platform normalizer architecture (Shopify normalizer currently wired).
 
 ### Verification Domain
+
 - Eligibility checks before verification trigger (COD-focused logic).
 - Order ingest and idempotent order creation.
 - Verification lifecycle support:
@@ -96,6 +104,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
   - `POST /api/verifications/test`
 
 ### Onboarding and Billing
+
 - Onboarding state APIs:
   - `GET /api/onboarding/state`
   - `PATCH /api/onboarding/settings`
@@ -117,6 +126,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
   - fallback to UTC calendar month start when activation date is not available
 
 ### Analytics and Operations APIs
+
 - Orders listing:
   - `GET /api/orders`
 - Verifications listing:
@@ -128,6 +138,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
   - `PATCH /api/organizations/current`
 
 ### Security and Platform Hardening
+
 - Global exception filter.
 - Raw body enabled for secure webhook signature verification.
 - Global security middleware:
@@ -138,6 +149,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - Shopify access token encryption at rest (AES-256-GCM).
 
 ## WhatsApp Integration Features
+
 - WhatsApp webhook verification:
   - `GET /webhooks/whatsapp`
 - Incoming webhook processing:
@@ -150,6 +162,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 ## Frontend Features
 
 ### Mode-Aware Runtime
+
 - Embedded detection using `shop` and `host` params.
 - Runtime branching:
   - Embedded mode uses Shopify App Bridge + Polaris
@@ -157,6 +170,7 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - App Bridge readiness handling with guarded loading state.
 
 ### Embedded Guards and Routing
+
 - Embedded auth gate that:
   - attempts token exchange
   - falls back to install check
@@ -164,39 +178,46 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 - Route-level onboarding gating for landing/dashboard/onboarding.
 
 ### Dashboard
+
 - Shared dashboard domain hooks.
 - Stats + usage presentation.
 - Verifications table (embedded and standalone skins).
 - Empty state with test verification trigger support.
 
 ### Onboarding UX
+
 - Multi-step embedded onboarding with step counter and validation.
 - Dynamic billing plans loaded from backend.
 - Billing confirmation redirect behavior compatible with iframe context.
 - Locale preference switching from onboarding.
 
 ### Settings UX
+
 - Persisted integration settings editing.
 - Billing status labeling and plan-change flow.
 - Usage overview and plan comparison components.
 
 ### Marketing and Waitlist
+
 - Multi-section marketing homepage (hero/problem/solution/how-it-works/pricing/ROI/FAQ/social proof).
 - Interactive demo chat components.
 - Waitlist API route persisting submissions to Google Sheets.
 - Waitlist form server-side validation (Zod + phone normalization) and in-memory IP rate limiting.
 
 ## Internationalization
+
 - Locale-prefixed routes.
 - Arabic and English message catalogs.
 - RTL/LTR support based on locale.
 
 ## Data Layer
+
 - Drizzle ORM schema and migrations under backend project.
 - Multi-tenant organization/integration/membership model.
 - Usage, free-plan-claims, and webhook event persistence.
 
 ## Deployment-Relevant Capabilities Already Present
+
 - Backend production build and lint scripts.
 - Frontend production build script.
 - Environment-driven configuration for API URLs, billing behavior, Shopify, Redis, and WhatsApp.
@@ -205,11 +226,13 @@ Akeed is a multi-tenant Shopify app for COD order verification using WhatsApp Cl
 ## Final Review Snapshot (Pre-Submission)
 
 ### Strengths
+
 - Core install -> onboarding -> billing -> webhook -> verification lifecycle is implemented end-to-end.
 - GDPR webhook endpoints and data redaction flows are present.
 - Billing enforcement and usage metering are wired into processing gates.
 
 ### Gaps To Address Before Shopify Submission
+
 - Automated test coverage is currently limited (few backend unit tests, minimal e2e, no frontend automated tests).
 - In-memory rate limiters are not distributed; behavior should be validated under production deployment topology.
 - A full production-mode billing rehearsal (approve/decline/cancel/frozen/expired paths) should be run and evidenced.
