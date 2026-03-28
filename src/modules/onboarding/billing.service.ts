@@ -83,92 +83,49 @@ export class BillingService {
   ): Promise<OnboardingBillingResponseDto> {
     const billingPlan = this.billingConfig.resolvePlan(planId);
 
-    if (!this.billingConfig.isBillingRequired()) {
-      await this.persistBillingState({
-        integrationId: integration.id,
-        planId: billingPlan.id,
-        status: 'not_required',
-        markInitiatedAt: true,
-        markActivatedAt: true,
-        clearCanceledAt: true,
-        shopifySubscriptionId: null,
-      });
-
-      this.logger.log(
-        `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
-      );
-
-      return {
-        confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-          integrationId: integration.id,
-          shop: integration.platformStoreUrl,
-          host,
-        }),
-      };
-    }
-
     if (billingPlan.amount === 0) {
-      if (this.isPlanAlreadyActive(integration, billingPlan.id)) {
-        await this.freePlanClaimsRepo.createIfNew({
-          orgId: integration.orgId,
-          platformType: integration.platformType,
-          shopDomain: integration.platformStoreUrl,
-        });
-
-        return {
-          confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-            integrationId: integration.id,
-            shop: integration.platformStoreUrl,
-            host,
-          }),
-        };
-      }
-
-      const claimCreated = await this.freePlanClaimsRepo.createIfNew({
-        orgId: integration.orgId,
-        platformType: integration.platformType,
-        shopDomain: integration.platformStoreUrl,
-      });
-
-      if (!claimCreated) {
-        throw new BadRequestException(
-          'Starter plan can only be activated once per store. Please choose a paid plan.',
-        );
-      }
-
-      try {
-        await this.cancelExistingSubscriptionIfAny(integration);
-
-        await this.persistBillingState({
-          integrationId: integration.id,
-          planId: billingPlan.id,
-          status: 'active',
-          markInitiatedAt: true,
-          markActivatedAt: true,
-          clearCanceledAt: true,
-          shopifySubscriptionId: null,
-        });
-      } catch (error) {
-        await this.safeRollbackFreePlanClaim({
-          platformType: integration.platformType,
-          shopDomain: integration.platformStoreUrl,
-        });
-        throw error;
-      }
-
-      this.logger.log(
-        `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
-      );
-
-      return {
-        confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-          integrationId: integration.id,
-          shop: integration.platformStoreUrl,
-          host,
-        }),
-      };
+      return await this.initiateFreePlan(integration, billingPlan, host);
     }
 
+    if (!this.billingConfig.isBillingRequired()) {
+      // Important: Only use this bypass in development
+      return await this.initiateWithoutBilling(integration, billingPlan, host);
+    }
+
+    return await this.initiatePaidPlan(integration, billingPlan, host);
+  }
+
+  private async initiatePaidPlan(
+    integration: {
+      id: string;
+      orgId: string;
+      platformType: string;
+      platformStoreUrl: string;
+      accessToken: string | null;
+      expiresAt: string | null;
+      webhookSecret: string | null;
+      isActive: boolean | null;
+      lastSyncedAt: string | null;
+      metadata: unknown;
+      storeName: string | null;
+      defaultLanguage: 'en' | 'ar' | 'auto';
+      shippingCurrency: string;
+      avgShippingCost: string;
+      isAutoVerifyEnabled: boolean;
+      onboardingStatus: 'pending' | 'completed';
+      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
+      shopifySubscriptionId: string | null;
+      billingStatus: string | null;
+      billingInitiatedAt: string | null;
+      billingActivatedAt: string | null;
+      billingCanceledAt: string | null;
+      billingStatusUpdatedAt: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    },
+    billingPlan: BillingPlanConfig,
+    host: string | undefined,
+  ) {
     await this.persistBillingState({
       integrationId: integration.id,
       planId: billingPlan.id,
@@ -187,6 +144,136 @@ export class BillingService {
     await this.cancelExistingSubscriptionIfAny(integration);
 
     return { confirmationUrl };
+  }
+
+  private async initiateWithoutBilling(
+    integration: {
+      id: string;
+      orgId: string;
+      platformType: string;
+      platformStoreUrl: string;
+      accessToken: string | null;
+      expiresAt: string | null;
+      webhookSecret: string | null;
+      isActive: boolean | null;
+      lastSyncedAt: string | null;
+      metadata: unknown;
+      storeName: string | null;
+      defaultLanguage: 'en' | 'ar' | 'auto';
+      shippingCurrency: string;
+      avgShippingCost: string;
+      isAutoVerifyEnabled: boolean;
+      onboardingStatus: 'pending' | 'completed';
+      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
+      shopifySubscriptionId: string | null;
+      billingStatus: string | null;
+      billingInitiatedAt: string | null;
+      billingActivatedAt: string | null;
+      billingCanceledAt: string | null;
+      billingStatusUpdatedAt: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    },
+    billingPlan: BillingPlanConfig,
+    host: string | undefined,
+  ) {
+    await this.persistBillingState({
+      integrationId: integration.id,
+      planId: billingPlan.id,
+      status: 'not_required',
+      markInitiatedAt: true,
+      markActivatedAt: true,
+      clearCanceledAt: true,
+      shopifySubscriptionId: null,
+    });
+
+    this.logger.log(
+      `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+    );
+
+    return {
+      confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+        integrationId: integration.id,
+        shop: integration.platformStoreUrl,
+        host,
+      }),
+    };
+  }
+
+  private async initiateFreePlan(
+    integration: {
+      id: string;
+      orgId: string;
+      platformType: string;
+      platformStoreUrl: string;
+      accessToken: string | null;
+      expiresAt: string | null;
+      webhookSecret: string | null;
+      isActive: boolean | null;
+      lastSyncedAt: string | null;
+      metadata: unknown;
+      storeName: string | null;
+      defaultLanguage: 'en' | 'ar' | 'auto';
+      shippingCurrency: string;
+      avgShippingCost: string;
+      isAutoVerifyEnabled: boolean;
+      onboardingStatus: 'pending' | 'completed';
+      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
+      shopifySubscriptionId: string | null;
+      billingStatus: string | null;
+      billingInitiatedAt: string | null;
+      billingActivatedAt: string | null;
+      billingCanceledAt: string | null;
+      billingStatusUpdatedAt: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    },
+    billingPlan: BillingPlanConfig,
+    host: string | undefined,
+  ) {
+    const claimCreated = await this.freePlanClaimsRepo.createIfNew({
+      orgId: integration.orgId,
+      platformType: integration.platformType,
+      shopDomain: integration.platformStoreUrl,
+    });
+
+    if (!claimCreated) {
+      throw new BadRequestException(
+        'Starter plan can only be activated once per store. Please choose a paid plan.',
+      );
+    }
+
+    try {
+      await this.cancelExistingSubscriptionIfAny(integration);
+
+      await this.persistBillingState({
+        integrationId: integration.id,
+        planId: billingPlan.id,
+        status: 'active',
+        markInitiatedAt: true,
+        markActivatedAt: true,
+        clearCanceledAt: true,
+        shopifySubscriptionId: null,
+      });
+    } catch (error) {
+      await this.safeRollbackFreePlanClaim({
+        platformType: integration.platformType,
+        shopDomain: integration.platformStoreUrl,
+      });
+      throw error;
+    }
+
+    this.logger.log(
+      `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+    );
+
+    return {
+      confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+        integrationId: integration.id,
+        shop: integration.platformStoreUrl,
+        host,
+      }),
+    };
   }
 
   async handleBillingCallback(
