@@ -40,7 +40,7 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 | ---- | -------- | ------------------------------------- | ---------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
 | B-01 | P0       | Onboarding progression                | Welcome -> configuration -> billing works with validation              |          | [P]  | [ ]  |       |
 | B-02 | P0       | Starter plan first-time claim         | Starter activates and onboarding completes                             |          | [P]  | [ ]  |       |
-| B-03 | P0       | Starter plan second claim attempt     | Starter cannot be reclaimed for same store and user gets clear error   |          | [ ]  | [ ]  |       |
+| B-03 | P0       | Starter plan second claim attempt     | Starter cannot be reclaimed for same store and user gets clear error   |          | [P]  | [ ]  |       |
 | B-04 | P0       | Paid plan approval                    | Shopify approval returns to callback and billing status becomes active |          | [ ]  | [ ]  |       |
 | B-05 | P0       | Paid plan decline                     | Decline path returns safely and app reflects non-active billing        |          | [ ]  | [ ]  |       |
 | B-06 | P0       | Plan change flow                      | Existing subscription is handled and new plan is applied correctly     |          | [ ]  | [ ]  |       |
