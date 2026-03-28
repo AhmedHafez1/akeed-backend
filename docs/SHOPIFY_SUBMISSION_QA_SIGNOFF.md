@@ -1,9 +1,9 @@
 # Shopify Submission QA Sign-Off Sheet
 
 Last Updated: 2026-03-27
-Owner: ********\_\_\_\_********
-Build/Commit: ********\_\_\_\_********
-Environment: ********\_\_\_\_********
+Owner: **\*\*\*\***\_\_\_\_**\*\*\*\***
+Build/Commit: **\*\*\*\***\_\_\_\_**\*\*\*\***
+Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 
 ## Rules (Strict PASS/FAIL)
 
@@ -28,18 +28,18 @@ Environment: ********\_\_\_\_********
 
 | ID   | Priority | Test Case                            | Expected Result                                                                   | Evidence | PASS | FAIL | Notes |
 | ---- | -------- | ------------------------------------ | --------------------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| A-01 | P0       | Fresh install from Partner Dashboard | App installs and opens in embedded context without loop                           |          | [ ]  | [ ]  |       |
-| A-02 | P0       | OAuth callback integrity             | Callback succeeds with valid params and returns merchant to app                   |          | [ ]  | [ ]  |       |
-| A-03 | P0       | App Bridge token exchange path       | Embedded token exchange succeeds and protected API access works                   |          | [ ]  | [ ]  |       |
+| A-01 | P0       | Fresh install from Partner Dashboard | App installs and opens in embedded context without loop                           |          | [P]  | [ ]  |       |
+| A-02 | P0       | OAuth callback integrity             | Callback succeeds with valid params and returns merchant to app                   |          | [P]  | [ ]  |       |
+| A-03 | P0       | App Bridge token exchange path       | Embedded token exchange succeeds and protected API access works                   |          | [P]  | [ ]  |       |
 | A-04 | P1       | Legacy install fallback path         | Install check + auth redirect path still works when token exchange is unavailable |          | [ ]  | [ ]  |       |
-| A-05 | P1       | Reinstall after uninstall            | Reinstall completes and app remains operational                                   |          | [ ]  | [ ]  |       |
+| A-05 | P1       | Reinstall after uninstall            | Reinstall completes and app remains operational                                   |          | [P]  | [ ]  |       |
 
 ## B) Onboarding and Billing
 
 | ID   | Priority | Test Case                             | Expected Result                                                        | Evidence | PASS | FAIL | Notes |
 | ---- | -------- | ------------------------------------- | ---------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| B-01 | P0       | Onboarding progression                | Welcome -> configuration -> billing works with validation              |          | [ ]  | [ ]  |       |
-| B-02 | P0       | Starter plan first-time claim         | Starter activates and onboarding completes                             |          | [ ]  | [ ]  |       |
+| B-01 | P0       | Onboarding progression                | Welcome -> configuration -> billing works with validation              |          | [P]  | [ ]  |       |
+| B-02 | P0       | Starter plan first-time claim         | Starter activates and onboarding completes                             |          | [P]  | [ ]  |       |
 | B-03 | P0       | Starter plan second claim attempt     | Starter cannot be reclaimed for same store and user gets clear error   |          | [ ]  | [ ]  |       |
 | B-04 | P0       | Paid plan approval                    | Shopify approval returns to callback and billing status becomes active |          | [ ]  | [ ]  |       |
 | B-05 | P0       | Paid plan decline                     | Decline path returns safely and app reflects non-active billing        |          | [ ]  | [ ]  |       |
@@ -107,8 +107,8 @@ Environment: ********\_\_\_\_********
 
 ## Final Approvals
 
-- QA Lead: ********\_\_\_\_******** Date: ********\_\_\_\_********
-- Engineering Lead: ********\_\_\_\_******** Date: ********\_\_\_\_********
-- Product Owner: ********\_\_\_\_******** Date: ********\_\_\_\_********
+- QA Lead: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
+- Engineering Lead: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
+- Product Owner: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
 
 Submission is allowed only when Final Decision is PASS and all P0 tests are PASS.

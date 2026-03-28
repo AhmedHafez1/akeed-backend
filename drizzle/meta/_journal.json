@@ -71,6 +71,13 @@
       "when": 1774675200000,
       "tag": "0009_free_plan_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774686807318,
+      "tag": "0010_redundant_blink",
+      "breakpoints": true
     }
   ]
 }

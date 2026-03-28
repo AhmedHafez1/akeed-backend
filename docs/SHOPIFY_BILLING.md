@@ -202,7 +202,7 @@ CREATE TABLE "integration_monthly_usage" (
   id            uuid PRIMARY KEY,
   org_id        uuid REFERENCES organizations,
   integration_id uuid REFERENCES integrations,
-  period_start  date,           -- 1st of the month (UTC)
+  period_start  date,
   included_limit integer,
   consumed_count integer DEFAULT 0,
   blocked_count  integer DEFAULT 0,
