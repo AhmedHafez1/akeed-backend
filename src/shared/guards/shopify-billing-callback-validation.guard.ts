@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -16,12 +17,17 @@ interface BillingCallbackQuery {
   shop?: string | string[];
   charge_id?: string | string[];
   hmac?: string | string[];
+  signature?: string | string[];
   host?: string | string[];
   [key: string]: string | string[] | undefined;
 }
 
 @Injectable()
 export class ShopifyBillingCallbackValidationGuard implements CanActivate {
+  private readonly logger = new Logger(
+    ShopifyBillingCallbackValidationGuard.name,
+  );
+
   constructor(private readonly configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -32,7 +38,7 @@ export class ShopifyBillingCallbackValidationGuard implements CanActivate {
     const chargeId = this.getSingleQueryParam(query.charge_id);
     const hmac = this.getSingleQueryParam(query.hmac);
 
-    if (!shop || !chargeId || !hmac) {
+    if (!shop || !chargeId) {
       throw new BadRequestException(
         'Missing required Shopify billing callback parameters',
       );
@@ -42,11 +48,20 @@ export class ShopifyBillingCallbackValidationGuard implements CanActivate {
       throw new BadRequestException('Invalid shop parameter');
     }
 
-    const normalizedQuery = this.normalizeQuery(query);
-    const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-    if (!verifyShopifyHmac(normalizedQuery, secret)) {
-      throw new UnauthorizedException(
-        'Invalid Shopify billing callback signature',
+    // Shopify billing return URLs may omit hmac in some approval flows.
+    // When present, we always verify and reject invalid signatures.
+    if (hmac) {
+      const normalizedQuery = this.normalizeQuery(query);
+      const secret =
+        this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+      if (!verifyShopifyHmac(normalizedQuery, secret)) {
+        throw new UnauthorizedException(
+          'Invalid Shopify billing callback signature',
+        );
+      }
+    } else {
+      this.logger.warn(
+        `Shopify billing callback arrived without hmac (shop=${shop}, charge_id=${chargeId}); allowing and relying on charge status verification.`,
       );
     }
 
