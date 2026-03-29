@@ -89,7 +89,7 @@ export class BillingService {
 
     if (!this.billingConfig.isBillingRequired()) {
       // Important: Only use this bypass in development
-      return await this.initiateWithoutBilling(integration, billingPlan, host);
+      return await this.initiateWithoutPaying(integration, billingPlan, host);
     }
 
     return await this.initiatePaidPlan(integration, billingPlan, host);
@@ -146,7 +146,7 @@ export class BillingService {
     return { confirmationUrl };
   }
 
-  private async initiateWithoutBilling(
+  private async initiateWithoutPaying(
     integration: {
       id: string;
       orgId: string;
@@ -401,7 +401,7 @@ export class BillingService {
       cappedAmount: params.plan.usage?.cappedAmount,
       usageTerms: params.plan.usage?.terms,
       returnUrl: buildBillingReturnUrl(
-        this.billingConfig.getApiUrl(),
+        this.billingConfig.getAppUrl(),
         params.integration.platformStoreUrl,
         params.host,
       ),
