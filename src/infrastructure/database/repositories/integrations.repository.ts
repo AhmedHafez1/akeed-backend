@@ -115,6 +115,15 @@ export class IntegrationsRepository {
     return results.length;
   }
 
+  async deleteById(id: string) {
+    const results = await this.db
+      .delete(integrations)
+      .where(eq(integrations.id, id))
+      .returning({ id: integrations.id });
+
+    return results.length;
+  }
+
   async updateById(
     id: string,
     updates: Partial<typeof integrations.$inferInsert>,

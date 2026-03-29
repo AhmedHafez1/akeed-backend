@@ -5,7 +5,7 @@ import { IntegrationMonthlyUsageRepository } from '../../../database/repositorie
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import { OrdersRepository } from '../../../database/repositories/orders.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
-import { ShopifyWebhookEventsRepository } from '../../../database/repositories/shopify-webhook-events.repository';
+import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import { VerificationsRepository } from '../../../database/repositories/verifications.repository';
 import {
   ShopifyCustomersDataRequestDto,
@@ -29,7 +29,7 @@ export class ShopifyGdprWebhookService {
     private readonly integrationUsageRepo: IntegrationMonthlyUsageRepository,
     private readonly membershipsRepo: MembershipsRepository,
     private readonly organizationsRepo: OrganizationsRepository,
-    private readonly webhookEventsRepo: ShopifyWebhookEventsRepository,
+    private readonly webhookEventsRepo: WebhookEventsRepository,
     private readonly phoneService: PhoneService,
   ) {}
 
@@ -50,6 +50,7 @@ export class ShopifyGdprWebhookService {
         webhookId,
         topic,
         logLabel: 'GDPR data request',
+        rawPayload: payload as unknown as Record<string, unknown>,
       });
 
     if (isDuplicate) {
@@ -128,6 +129,7 @@ export class ShopifyGdprWebhookService {
         webhookId,
         topic,
         logLabel: 'GDPR customer redact',
+        rawPayload: payload as unknown as Record<string, unknown>,
       });
 
     if (isDuplicate) {
@@ -185,6 +187,7 @@ export class ShopifyGdprWebhookService {
       webhookId,
       topic,
       logLabel: 'GDPR shop redact',
+      rawPayload: payload as unknown as Record<string, unknown>,
     });
 
     if (isDuplicate) {
@@ -221,6 +224,7 @@ export class ShopifyGdprWebhookService {
     webhookId: string;
     topic: string;
     logLabel: string;
+    rawPayload: Record<string, unknown>;
   }): Promise<{
     integration?: Awaited<
       ReturnType<IntegrationsRepository['findByPlatformDomain']>
@@ -241,15 +245,17 @@ export class ShopifyGdprWebhookService {
     const orgId = integration?.orgId;
 
     if (params.webhookId) {
-      const isNew = await this.webhookEventsRepo.recordIfNew({
-        webhookId: params.webhookId,
-        topic: params.topic,
-        shopDomain: params.shopDomain,
-        orgId,
-        integrationId: integration?.id,
+      const insertedWebhookRecord = await this.webhookEventsRepo.insertIfNew({
+        platform: 'shopify',
+        jobType: params.topic || params.logLabel,
+        idempotencyKey: params.webhookId,
+        storeDomain: params.shopDomain,
+        orgId: integration?.orgId ?? null,
+        integrationId: integration?.id ?? null,
+        rawPayload: params.rawPayload,
       });
 
-      if (!isNew) {
+      if (!insertedWebhookRecord) {
         this.logger.warn(
           `Duplicate Shopify ${params.logLabel} ${params.webhookId} ignored for shop ${params.shopDomain}`,
         );

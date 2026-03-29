@@ -57,15 +57,8 @@ export class ShopifyController {
   async handleAppUninstalled(
     @Body() payload: ShopifyAppUninstalledDto,
     @Headers('x-shopify-shop-domain') shopDomain: string,
-    @Headers('x-shopify-webhook-id') webhookId: string,
-    @Headers('x-shopify-topic') topic: string,
   ): Promise<{ received: boolean; duplicate?: boolean }> {
-    return this.billingWebhookService.handleAppUninstalled(
-      payload,
-      shopDomain,
-      webhookId,
-      topic,
-    );
+    return this.billingWebhookService.handleAppUninstalled(payload, shopDomain);
   }
 
   @Post(['app-subscriptions-update', 'app-subscriptions/update'])

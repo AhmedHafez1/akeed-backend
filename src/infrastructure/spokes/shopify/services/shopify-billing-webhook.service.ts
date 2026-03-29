@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { ShopifyWebhookEventsRepository } from '../../../database/repositories/shopify-webhook-events.repository';
+import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
   ShopifyAppUninstalledDto,
@@ -17,56 +17,30 @@ export class ShopifyBillingWebhookService {
 
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
-    private readonly webhookEventsRepo: ShopifyWebhookEventsRepository,
+    private readonly webhookEventsRepo: WebhookEventsRepository,
   ) {}
 
   async handleAppUninstalled(
     payload: ShopifyAppUninstalledDto,
     shopDomain: string,
-    webhookId: string,
-    topic: string,
   ): Promise<WebhookAck> {
     this.logger.log(
       `Received Shopify App Uninstalled Webhook from ${shopDomain}: ${payload.id}`,
     );
 
-    if (!webhookId) {
-      this.logger.warn(
-        `Missing X-Shopify-Webhook-Id for app uninstall from ${shopDomain}`,
-      );
-    }
-
     const integration = await this.integrationsRepo.findByPlatformDomain(
       shopDomain,
       'shopify',
     );
-    const orgId = integration?.orgId;
 
-    if (webhookId) {
-      const isNew = await this.webhookEventsRepo.recordIfNew({
-        webhookId,
-        topic,
-        shopDomain,
-        orgId,
-        integrationId: integration?.id,
-      });
-
-      if (!isNew) {
-        this.logger.warn(
-          `Duplicate Shopify webhook ${webhookId} ignored for shop ${shopDomain}`,
-        );
-        return { received: true, duplicate: true };
-      }
-    }
-
-    if (!orgId) {
+    if (!integration) {
       this.logger.warn(
-        `Skipping app uninstalled: No integration/org found for domain ${shopDomain}`,
+        `Skipping app uninstalled: No integration found for domain ${shopDomain}`,
       );
       return { received: true };
     }
 
-    await this.integrationsRepo.deleteByOrgId(orgId);
+    await this.integrationsRepo.deleteById(integration.id);
     return { received: true };
   }
 
@@ -91,18 +65,19 @@ export class ShopifyBillingWebhookService {
       shopDomain,
       'shopify',
     );
-    const orgId = integration?.orgId;
 
     if (webhookId) {
-      const isNew = await this.webhookEventsRepo.recordIfNew({
-        webhookId,
-        topic,
-        shopDomain,
-        orgId,
-        integrationId: integration?.id,
+      const insertedWebhookRecord = await this.webhookEventsRepo.insertIfNew({
+        platform: 'shopify',
+        jobType: topic || 'app_subscriptions/update',
+        idempotencyKey: webhookId,
+        storeDomain: shopDomain,
+        orgId: integration?.orgId ?? null,
+        integrationId: integration?.id ?? null,
+        rawPayload: payload as unknown as Record<string, unknown>,
       });
 
-      if (!isNew) {
+      if (!insertedWebhookRecord) {
         this.logger.warn(
           `Duplicate Shopify webhook ${webhookId} ignored for shop ${shopDomain}`,
         );

@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { webhookEvents } from '../schema';
@@ -129,5 +129,14 @@ export class WebhookEventsRepository {
       .limit(1)) as { id: string }[];
 
     return rows.length > 0;
+  }
+
+  async deleteByOrgId(orgId: string): Promise<number> {
+    const results = await this.db
+      .delete(webhookEvents)
+      .where(eq(webhookEvents.orgId, orgId))
+      .returning({ id: webhookEvents.id });
+
+    return results.length;
   }
 }

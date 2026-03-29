@@ -7,7 +7,6 @@ import { VerificationsRepository } from './repositories/verifications.repository
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
 import { MembershipsRepository } from './repositories/memberships.repository';
-import { ShopifyWebhookEventsRepository } from './repositories/shopify-webhook-events.repository';
 import { IntegrationMonthlyUsageRepository } from './repositories/integration-monthly-usage.repository';
 import { WebhookEventsRepository } from './repositories/webhook-events.repository';
 import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
@@ -21,7 +20,6 @@ import { BillingFreePlanClaimsRepository } from './repositories/billing-free-pla
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
-    ShopifyWebhookEventsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
@@ -33,7 +31,6 @@ import { BillingFreePlanClaimsRepository } from './repositories/billing-free-pla
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
-    ShopifyWebhookEventsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
