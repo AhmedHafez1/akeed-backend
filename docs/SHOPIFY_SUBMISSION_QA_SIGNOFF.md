@@ -17,9 +17,6 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 - P0 Total: **\_\_**
 - P0 Passed: **\_\_**
 - P0 Failed: **\_\_**
-- P1 Total: **\_\_**
-- P1 Passed: **\_\_**
-- P1 Failed: **\_\_**
 - Final Decision: [ ] PASS (Ready to submit) [ ] FAIL (Not ready)
 
 ---
@@ -36,28 +33,25 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 
 ## B) Onboarding and Billing
 
-| ID   | Priority | Test Case                             | Expected Result                                                        | Evidence | PASS | FAIL | Notes |
-| ---- | -------- | ------------------------------------- | ---------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| B-01 | P0       | Onboarding progression                | Welcome -> configuration -> billing works with validation              |          | [P]  | [ ]  |       |
-| B-02 | P0       | Starter plan first-time claim         | Starter activates and onboarding completes                             |          | [P]  | [ ]  |       |
-| B-03 | P0       | Starter plan second claim attempt     | Starter cannot be reclaimed for same store and user gets clear error   |          | [P]  | [ ]  |       |
-| B-04 | P0       | Paid plan approval                    | Shopify approval returns to callback and billing status becomes active |          | [ ]  | [ ]  |       |
-| B-05 | P0       | Paid plan decline                     | Decline path returns safely and app reflects non-active billing        |          | [ ]  | [ ]  |       |
-| B-06 | P0       | Plan change flow                      | Existing subscription is handled and new plan is applied correctly     |          | [ ]  | [ ]  |       |
-| B-07 | P1       | Billing callback signature validation | Invalid callback HMAC is rejected                                      |          | [ ]  | [ ]  |       |
-| B-08 | P1       | Billing callback rate limiting        | Repeated callback attempts trigger rate limiting behavior              |          | [ ]  | [ ]  |       |
-| B-09 | P0       | Blocked billing statuses enforcement  | canceled/declined/expired/frozen statuses block order processing       |          | [ ]  | [ ]  |       |
+| ID   | Priority | Test Case                            | Expected Result                                                        | Evidence | PASS | FAIL | Notes |
+| ---- | -------- | ------------------------------------ | ---------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
+| B-01 | P0       | Onboarding progression               | Welcome -> configuration -> billing works with validation              |          | [P]  | [ ]  |       |
+| B-02 | P0       | Starter plan first-time claim        | Starter activates and onboarding completes                             |          | [P]  | [ ]  |       |
+| B-03 | P0       | Starter plan second claim attempt    | Starter cannot be reclaimed for same store and user gets clear error   |          | [P]  | [ ]  |       |
+| B-04 | P0       | Paid plan approval                   | Shopify approval returns to callback and billing status becomes active |          | [P]  | [ ]  |       |
+| B-05 | P0       | Paid plan decline                    | Decline path returns safely and app reflects non-active billing        |          | [ ]  | [ ]  |       |
+| B-06 | P0       | Plan change flow                     | Existing subscription is handled and new plan is applied correctly     |          | [ ]  | [ ]  |       |
+| B-09 | P0       | Blocked billing statuses enforcement | canceled/declined/expired/frozen statuses block order processing       |          | [ ]  | [ ]  |       |
 
 ## C) Shopify Webhooks and Queue Processing
 
 | ID   | Priority | Test Case                            | Expected Result                                                   | Evidence | PASS | FAIL | Notes |
 | ---- | -------- | ------------------------------------ | ----------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| C-01 | P0       | orders/create webhook (valid HMAC)   | Event accepted and enqueued for processing                        |          | [ ]  | [ ]  |       |
-| C-02 | P0       | orders/create webhook (invalid HMAC) | Request is rejected and no processing occurs                      |          | [ ]  | [ ]  |       |
-| C-03 | P0       | app/uninstalled webhook              | Integration and related state are deactivated/removed as designed |          | [ ]  | [ ]  |       |
-| C-04 | P0       | app_subscriptions_update webhook     | Billing status updates are persisted correctly                    |          | [ ]  | [ ]  |       |
-| C-05 | P0       | Webhook idempotency                  | Duplicate webhook ID does not create duplicate side effects       |          | [ ]  | [ ]  |       |
-| C-06 | P1       | Queue retry/backoff behavior         | Failed job retries according to configured attempts/backoff       |          | [ ]  | [ ]  |       |
+| C-01 | P0       | orders/create webhook (valid HMAC)   | Event accepted and enqueued for processing                        |          | [P]  | [ ]  |       |
+| C-02 | P0       | orders/create webhook (invalid HMAC) | Request is rejected and no processing occurs                      |          | [P]  | [ ]  |       |
+| C-03 | P0       | app/uninstalled webhook              | Integration and related state are deactivated/removed as designed |          | [P]  | [ ]  |       |
+| C-04 | P0       | app_subscriptions_update webhook     | Billing status updates are persisted correctly                    |          | [P]  | [ ]  |       |
+| C-05 | P0       | Webhook idempotency                  | Duplicate webhook ID does not create duplicate side effects       |          | [P]  | [ ]  |       |
 
 ## D) Verification and WhatsApp Flow
 
@@ -106,9 +100,5 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 ---
 
 ## Final Approvals
-
-- QA Lead: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
-- Engineering Lead: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
-- Product Owner: **\*\*\*\***\_\_\_\_**\*\*\*\*** Date: **\*\*\*\***\_\_\_\_**\*\*\*\***
 
 Submission is allowed only when Final Decision is PASS and all P0 tests are PASS.
