@@ -177,6 +177,7 @@ export class BillingService {
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
+    await this.cancelExistingSubscriptionIfAny(integration);
     await this.persistBillingState({
       integrationId: integration.id,
       planId: billingPlan.id,
@@ -501,16 +502,6 @@ export class BillingService {
   private isCanceledBillingStatus(status: string): boolean {
     return ['cancelled', 'canceled', 'declined', 'expired', 'frozen'].includes(
       status,
-    );
-  }
-
-  private isPlanAlreadyActive(
-    integration: IntegrationRecord,
-    planId: OnboardingBillingPlanId,
-  ): boolean {
-    return (
-      integration.billingPlanId === planId &&
-      integration.billingStatus?.trim().toLowerCase() === 'active'
     );
   }
 
