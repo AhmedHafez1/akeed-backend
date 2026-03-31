@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingFreePlanClaimsRepository } from '../../infrastructure/database/repositories/billing-free-plan-claims.repository';
+import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import {
   ONBOARDING_LANGUAGES,
@@ -48,6 +49,7 @@ export class BillingService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly freePlanClaimsRepo: BillingFreePlanClaimsRepository,
+    private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
     private readonly billingConfig: BillingConfigService,
@@ -126,22 +128,22 @@ export class BillingService {
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
-    await this.persistBillingState({
-      integrationId: integration.id,
-      planId: billingPlan.id,
-      status: 'pending',
-      markInitiatedAt: true,
-      clearCanceledAt: true,
-      shopifySubscriptionId: null,
-    });
-
+    // Create the new subscription on Shopify BEFORE modifying local state.
+    // The old subscription stays active until the merchant confirms the new one.
     const confirmationUrl = await this.createPaidPlanConfirmationUrl(
       integration,
       billingPlan,
       host,
     );
 
-    await this.cancelExistingSubscriptionIfAny(integration);
+    await this.persistBillingState({
+      integrationId: integration.id,
+      planId: billingPlan.id,
+      status: 'pending',
+      markInitiatedAt: true,
+      clearCanceledAt: true,
+      // Keep old shopifySubscriptionId so the callback can cancel it
+    });
 
     return { confirmationUrl };
   }
@@ -187,6 +189,11 @@ export class BillingService {
       clearCanceledAt: true,
       shopifySubscriptionId: null,
     });
+
+    await this.resetUsageForPlanChange(
+      integration.id,
+      billingPlan.includedVerifications,
+    );
 
     this.logger.log(
       `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
@@ -256,6 +263,11 @@ export class BillingService {
         clearCanceledAt: true,
         shopifySubscriptionId: null,
       });
+
+      await this.resetUsageForPlanChange(
+        integration.id,
+        billingPlan.includedVerifications,
+      );
     } catch (error) {
       await this.safeRollbackFreePlanClaim({
         platformType: integration.platformType,
@@ -289,39 +301,71 @@ export class BillingService {
       chargeId: callbackParams.chargeId,
     });
 
+    if (billingResolution.status === 'active') {
+      return this.activateNewSubscription(
+        integration,
+        billingResolution,
+        callbackParams,
+      );
+    }
+
+    // Merchant declined or subscription was not approved.
+    // Keep the old subscription intact so they stay on their current plan.
     const isCanceledStatus = this.isCanceledBillingStatus(
       billingResolution.status,
     );
     await this.persistBillingState({
       integrationId: integration.id,
       status: billingResolution.status,
-      shopifySubscriptionId: billingResolution.subscriptionId,
-      markActivatedAt: billingResolution.status === 'active',
       markCanceledAt: isCanceledStatus,
       clearCanceledAt: !isCanceledStatus,
     });
 
-    if (billingResolution.status === 'active') {
-      const missingPrerequisites =
-        this.getMissingBillingPrerequisites(integration);
-      if (missingPrerequisites.length > 0) {
-        this.logger.warn(
-          `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
-        );
-        return this.createPostBillingRedirectUrl({
-          shop: callbackParams.shop,
-          host: callbackParams.host,
-        });
-      }
+    return this.createPostBillingRedirectUrl({
+      shop: callbackParams.shop,
+      host: callbackParams.host,
+    });
+  }
 
-      return await this.completeOnboardingAndBuildRedirect({
-        integrationId: integration.id,
+  private async activateNewSubscription(
+    integration: IntegrationRecord,
+    billingResolution: BillingChargeResolution,
+    callbackParams: BillingCallbackParams,
+  ): Promise<string> {
+    // Cancel the previous subscription only after the new one is confirmed.
+    await this.cancelExistingSubscriptionIfAny(integration);
+
+    await this.persistBillingState({
+      integrationId: integration.id,
+      status: billingResolution.status,
+      shopifySubscriptionId: billingResolution.subscriptionId,
+      markActivatedAt: true,
+      clearCanceledAt: true,
+    });
+
+    // Reset usage counters so the new plan starts with a clean slate.
+    const activatedPlan = integration.billingPlanId
+      ? this.billingConfig.resolvePlan(integration.billingPlanId)
+      : null;
+    await this.resetUsageForPlanChange(
+      integration.id,
+      activatedPlan?.includedVerifications,
+    );
+
+    const missingPrerequisites =
+      this.getMissingBillingPrerequisites(integration);
+    if (missingPrerequisites.length > 0) {
+      this.logger.warn(
+        `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
+      );
+      return this.createPostBillingRedirectUrl({
         shop: callbackParams.shop,
         host: callbackParams.host,
       });
     }
 
-    return this.createPostBillingRedirectUrl({
+    return await this.completeOnboardingAndBuildRedirect({
+      integrationId: integration.id,
       shop: callbackParams.shop,
       host: callbackParams.host,
     });
@@ -505,6 +549,29 @@ export class BillingService {
     );
   }
 
+  /**
+   * Resets monthly usage counters for the integration's new billing period.
+   * Called when a plan change is activated so the merchant starts fresh.
+   */
+  private async resetUsageForPlanChange(
+    integrationId: string,
+    includedLimit?: number,
+  ): Promise<void> {
+    const newPeriodStart = new Date().toISOString().slice(0, 10);
+    try {
+      await this.monthlyUsageRepo.resetCountersForPeriod({
+        integrationId,
+        periodStart: newPeriodStart,
+        includedLimit,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to reset usage counters for integration ${integrationId}: ${message}`,
+      );
+    }
+  }
+
   private async safeRollbackFreePlanClaim(params: {
     platformType: string;
     shopDomain: string;
@@ -513,9 +580,8 @@ export class BillingService {
       await this.freePlanClaimsRepo.deleteByPlatformAndShop(params);
     } catch (error) {
       this.logger.warn(
-        `Failed to rollback free plan claim for ${params.platformType}:${params.shopDomain}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to rollback free plan claim for ${params.platformType}:${params.shopDomain}: 
+        ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
