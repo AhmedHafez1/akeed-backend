@@ -192,6 +192,32 @@ export class IntegrationMonthlyUsageRepository {
       );
   }
 
+  async resetCountersForPeriod(params: {
+    integrationId: string;
+    periodStart: string;
+    includedLimit?: number;
+  }): Promise<void> {
+    const updates: Record<string, unknown> = {
+      consumedCount: 0,
+      blockedCount: 0,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (params.includedLimit !== undefined) {
+      updates.includedLimit = params.includedLimit;
+    }
+
+    await this.db
+      .update(integrationMonthlyUsage)
+      .set(updates)
+      .where(
+        and(
+          eq(integrationMonthlyUsage.integrationId, params.integrationId),
+          eq(integrationMonthlyUsage.periodStart, params.periodStart),
+        ),
+      );
+  }
+
   async deleteByOrgId(orgId: string): Promise<number> {
     const results = await this.db
       .delete(integrationMonthlyUsage)
