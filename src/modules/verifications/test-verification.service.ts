@@ -29,7 +29,7 @@ export class TestVerificationService {
     } catch (error) {
       if (error instanceof InvalidPhoneNumberError) {
         throw new BadRequestException(
-          'customerPhone must be a valid phone number (example: +201234567890).',
+          'Phone must be a valid phone number (example: +201234567890).',
         );
       }
       throw error;
