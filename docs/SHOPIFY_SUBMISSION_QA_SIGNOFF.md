@@ -39,8 +39,8 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 | B-03 | P0       | Starter plan second claim attempt    | Starter cannot be reclaimed for same store and user gets clear error   |          | [P]  | [ ]  |       |
 | B-04 | P0       | Paid plan approval                   | Shopify approval returns to callback and billing status becomes active |          | [P]  | [ ]  |       |
 | B-05 | P0       | Paid plan decline                    | Decline path returns safely and app reflects non-active billing        |          | [P]  | [ ]  |       |
-| B-06 | P0       | Plan change flow                     | Existing subscription is handled and new plan is applied correctly     |          | [ ]  | [ ]  |       |
-| B-09 | P0       | Blocked billing statuses enforcement | canceled/declined/expired/frozen statuses block order processing       |          | [ ]  | [ ]  |       |
+| B-06 | P0       | Plan change flow                     | Existing subscription is handled and new plan is applied correctly     |          | [P]  | [ ]  |       |
+| B-09 | P0       | Blocked billing statuses enforcement | canceled/declined/expired/frozen statuses block order processing       |          | [P]  | [ ]  |       |
 
 ## C) Shopify Webhooks and Queue Processing
 
@@ -62,35 +62,34 @@ Environment: **\*\*\*\***\_\_\_\_**\*\*\*\***
 | D-04 | P0       | Delivery/read status callback     | Verification status updates to delivered/read from webhook events                    |          | [P]  | [ ]  |       |
 | D-05 | P0       | Confirm quick reply               | Verification finalizes confirmed and Shopify order gets tag Akeed: Verified          |          | [P]  | [ ]  |       |
 | D-06 | P0       | Cancel quick reply                | Verification finalizes canceled and Shopify order gets tag Akeed: Canceled           |          | [P]  | [ ]  |       |
-| D-07 | P0       | Plan limit exceeded path          | Verification is marked failed with plan_limit_reached and no outbound send           |          | [ ]  | [ ]  |       |
+| D-07 | P0       | Plan limit exceeded path          | Verification is marked failed with plan_limit_reached and no outbound send           |          | [P]  | [ ]  |       |
 | D-08 | P1       | Overage usage record path         | Overage charge is reported successfully (or reservation rollback works on rejection) |          | [ ]  | [ ]  |       |
 
 ## E) Privacy, Security, and Multi-Tenant Safety
 
 | ID   | Priority | Test Case                           | Expected Result                                                            | Evidence | PASS | FAIL | Notes |
 | ---- | -------- | ----------------------------------- | -------------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| E-01 | P0       | GDPR customers/data_request webhook | Data export payload generation succeeds for requested customer/order scope |          | [ ]  | [ ]  |       |
-| E-02 | P0       | GDPR customers/redact webhook       | Customer PII is redacted in persisted records                              |          | [ ]  | [ ]  |       |
-| E-03 | P0       | GDPR shop/redact webhook            | Org-level data is deleted according to policy                              |          | [ ]  | [ ]  |       |
-| E-04 | P0       | Tenant isolation check              | Shop A cannot read or mutate Shop B resources                              |          | [ ]  | [ ]  |       |
+| E-01 | P0       | GDPR customers/data_request webhook | Data export payload generation succeeds for requested customer/order scope |          | [P]  | [ ]  |       |
+| E-02 | P0       | GDPR customers/redact webhook       | Customer PII is redacted in persisted records                              |          | [P]  | [ ]  |       |
+| E-03 | P0       | GDPR shop/redact webhook            | Org-level data is deleted according to policy                              |          | [P]  | [ ]  |       |
+| E-04 | P0       | Tenant isolation check              | Shop A cannot read or mutate Shop B resources                              |          | [P]  | [ ]  |       |
 
 ## F) Frontend UX and Localization
 
-| ID   | Priority | Test Case                          | Expected Result                                                                   | Evidence | PASS | FAIL | Notes |
-| ---- | -------- | ---------------------------------- | --------------------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| F-01 | P0       | Embedded dashboard rendering       | Embedded skin loads with data and no auth gate dead-end                           |          | [P]  | [ ]  |       |
-| F-03 | P1       | Embedded onboarding guard behavior | Landing/dashboard routes redirect correctly by onboarding status                  |          | [P]  | [ ]  |       |
-| F-04 | P1       | Settings update flow               | Settings save and readback are consistent (store, language, shipping prefs)       |          | [P]  | [ ]  |       |
-| F-05 | P1       | Arabic/English localization        | Locale switching and RTL/LTR rendering work correctly                             |          | [P]  | [ ]  |       |
-| F-06 | P1       | Waitlist API safeguards            | Validation and rate limiting behave as expected under malformed and burst traffic |          | [ ]  | [ ]  |       |
+| ID   | Priority | Test Case                          | Expected Result                                                             | Evidence | PASS | FAIL | Notes |
+| ---- | -------- | ---------------------------------- | --------------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
+| F-01 | P0       | Embedded dashboard rendering       | Embedded skin loads with data and no auth gate dead-end                     |          | [P]  | [ ]  |       |
+| F-03 | P1       | Embedded onboarding guard behavior | Landing/dashboard routes redirect correctly by onboarding status            |          | [P]  | [ ]  |       |
+| F-04 | P1       | Settings update flow               | Settings save and readback are consistent (store, language, shipping prefs) |          | [P]  | [ ]  |       |
+| F-05 | P1       | Arabic/English localization        | Locale switching and RTL/LTR rendering work correctly                       |          | [P]  | [ ]  |       |
 
 ## G) Operational Readiness
 
 | ID   | Priority | Test Case                               | Expected Result                                                      | Evidence | PASS | FAIL | Notes |
 | ---- | -------- | --------------------------------------- | -------------------------------------------------------------------- | -------- | ---- | ---- | ----- |
-| G-01 | P0       | Backend production build                | Build succeeds without runtime-breaking errors                       |          | [ ]  | [ ]  |       |
-| G-02 | P0       | Frontend production build               | Build succeeds and app boots correctly                               |          | [ ]  | [ ]  |       |
-| G-03 | P1       | Key env validation                      | Required Shopify, billing, Redis, and WhatsApp env vars are verified |          | [ ]  | [ ]  |       |
+| G-01 | P0       | Backend production build                | Build succeeds without runtime-breaking errors                       |          | [P]  | [ ]  |       |
+| G-02 | P0       | Frontend production build               | Build succeeds and app boots correctly                               |          | [P]  | [ ]  |       |
+| G-03 | P1       | Key env validation                      | Required Shopify, billing, Redis, and WhatsApp env vars are verified |          | [P]  | [ ]  |       |
 | G-04 | P1       | App uninstall/reinstall lifecycle smoke | Lifecycle passes without orphaned broken state                       |          | [P]  | [ ]  |       |
 
 ---
