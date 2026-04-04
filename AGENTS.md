@@ -1,7 +1,6 @@
 # AGENTS.md — Akeed Backend
 
 Guidelines for AI coding agents operating in this repository.
-Read `docs/ARCHITECTURE_AGENT_CONTEXT.md` for full architectural detail.
 
 This file includes Copilot instructions from `.github/copilot-instructions.md`.
 
