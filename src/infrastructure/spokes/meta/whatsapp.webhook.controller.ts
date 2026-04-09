@@ -37,16 +37,27 @@ export class WhatsAppWebhookController {
   @HttpCode(HttpStatus.OK)
   verifyWebhook(@Query() query: WhatsAppWebhookVerifyDto): string {
     const { mode, token, challenge } = query;
-    const verifyToken =
-      this.configService.getOrThrow<string>('WA_VERIFY_TOKEN');
+    const verifyToken = this.normalizeToken(
+      this.configService.getOrThrow<string>('WA_VERIFY_TOKEN'),
+    );
+    const requestToken = this.normalizeToken(token);
+    const isTokenMatch =
+      requestToken === verifyToken ||
+      requestToken.replace(/ /g, '+') === verifyToken;
 
-    if (mode === 'subscribe' && token === verifyToken) {
+    if (mode === 'subscribe' && isTokenMatch) {
       this.logger.log('Webhook verified successfully.');
       return challenge;
     }
 
-    this.logger.error('Webhook verification failed.');
+    this.logger.error(
+      `Webhook verification failed. mode=${mode}, tokenLength=${token?.length ?? 0}, challengeLength=${challenge?.length ?? 0}`,
+    );
     throw new ForbiddenException('Webhook verification failed');
+  }
+
+  private normalizeToken(value: string): string {
+    return value.trim();
   }
 
   @Post()

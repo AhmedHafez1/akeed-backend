@@ -7,30 +7,57 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+type QuerySource = Record<string, unknown>;
+
+function readQueryString(
+  source: QuerySource,
+  dottedKey: string,
+  nestedKey: string,
+): string {
+  const dottedValue = source[dottedKey];
+  if (typeof dottedValue === 'string') {
+    return dottedValue;
+  }
+
+  if (Array.isArray(dottedValue) && typeof dottedValue[0] === 'string') {
+    return dottedValue[0];
+  }
+
+  const hub = source['hub'];
+  if (hub && typeof hub === 'object') {
+    const nestedValue = (hub as QuerySource)[nestedKey];
+    if (typeof nestedValue === 'string') {
+      return nestedValue;
+    }
+
+    if (Array.isArray(nestedValue) && typeof nestedValue[0] === 'string') {
+      return nestedValue[0];
+    }
+  }
+
+  return '';
+}
+
 export class WhatsAppWebhookVerifyDto {
   @Transform(({ obj }) => {
-    const source = obj as Record<string, unknown>;
-    return typeof source['hub.mode'] === 'string' ? source['hub.mode'] : '';
+    const source = obj as QuerySource;
+    return readQueryString(source, 'hub.mode', 'mode');
   })
   @IsString()
   @IsNotEmpty()
   mode!: string;
 
   @Transform(({ obj }) => {
-    const source = obj as Record<string, unknown>;
-    return typeof source['hub.verify_token'] === 'string'
-      ? source['hub.verify_token']
-      : '';
+    const source = obj as QuerySource;
+    return readQueryString(source, 'hub.verify_token', 'verify_token');
   })
   @IsString()
   @IsNotEmpty()
   token!: string;
 
   @Transform(({ obj }) => {
-    const source = obj as Record<string, unknown>;
-    return typeof source['hub.challenge'] === 'string'
-      ? source['hub.challenge']
-      : '';
+    const source = obj as QuerySource;
+    return readQueryString(source, 'hub.challenge', 'challenge');
   })
   @IsString()
   @IsNotEmpty()
