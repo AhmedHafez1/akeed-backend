@@ -13,10 +13,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
-import {
-  WhatsAppWebhookPayloadDto,
-  WhatsAppWebhookVerifyDto,
-} from './dto/whatsapp-webhook.dto';
+import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 
 @Controller('webhooks/whatsapp')
 @UsePipes(
@@ -35,15 +32,16 @@ export class WhatsAppWebhookController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  verifyWebhook(@Query() query: WhatsAppWebhookVerifyDto): string {
-    const { mode, token, challenge } = query;
+  verifyWebhook(
+    @Query('hub.mode') mode: string,
+    @Query('hub.verify_token') token: string,
+    @Query('hub.challenge') challenge: string,
+  ): string {
     const verifyToken = this.normalizeToken(
       this.configService.getOrThrow<string>('WA_VERIFY_TOKEN'),
     );
     const requestToken = this.normalizeToken(token);
-    const isTokenMatch =
-      requestToken === verifyToken ||
-      requestToken.replace(/ /g, '+') === verifyToken;
+    const isTokenMatch = requestToken === verifyToken;
 
     if (mode === 'subscribe' && isTokenMatch) {
       this.logger.log('Webhook verified successfully.');
