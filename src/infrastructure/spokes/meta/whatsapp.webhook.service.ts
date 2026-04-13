@@ -88,9 +88,14 @@ export class WhatsAppWebhookService {
         return;
       }
 
+      const allowedStatuses: VerificationStatus[] = [
+        'delivered',
+        'read',
+        'failed',
+      ];
       const typedStatus = status as VerificationStatus;
 
-      if (typedStatus === 'sent') return;
+      if (!allowedStatuses.includes(typedStatus)) return;
 
       this.logger.log(
         `Updating verification status for wamid: ${wamid} to ${typedStatus}`,

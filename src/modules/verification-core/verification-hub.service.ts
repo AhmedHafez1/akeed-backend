@@ -166,6 +166,14 @@ export class VerificationHubService {
 
     // 2. Only take action on terminal states (Confirmed/Canceled)
     if (status === 'confirmed' || status === 'canceled') {
+      // Skip Shopify tagging for test verifications (no real Shopify order)
+      if (order.externalOrderId.startsWith('akeed-test-')) {
+        this.logger.log(
+          `Skipping Shopify tag for test order ${order.externalOrderId}`,
+        );
+        return;
+      }
+
       const tag =
         status === 'confirmed' ? 'Akeed: Verified' : 'Akeed: Canceled';
 
