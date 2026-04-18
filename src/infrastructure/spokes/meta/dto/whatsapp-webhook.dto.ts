@@ -13,6 +13,10 @@ export class WhatsAppMessageDto {
   type?: string;
 
   @IsOptional()
+  @IsString()
+  timestamp?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => WhatsAppButtonDto)
   button?: WhatsAppButtonDto;
@@ -26,6 +30,10 @@ export class WhatsAppStatusDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  timestamp?: string;
 }
 
 export class WhatsAppChangeValueDto {

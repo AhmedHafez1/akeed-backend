@@ -37,7 +37,7 @@ export class WhatsAppWebhookService {
       return;
     }
 
-    // Handle Button Replies
+    // Handle Button Replies (Confirmed / Canceled)
     const message = value.messages?.[0];
     if (message?.type === 'button') {
       const buttonReplyId = message.button?.payload;
@@ -48,15 +48,6 @@ export class WhatsAppWebhookService {
           const action = parts[0].toLowerCase();
           const verificationId = parts[1];
 
-          const verification =
-            await this.verificationsRepo.findById(verificationId);
-          if (
-            verification?.status === 'confirmed' ||
-            verification?.status === 'canceled'
-          ) {
-            return;
-          }
-
           let newStatus: 'confirmed' | 'canceled' | null = null;
           if (action === 'confirm' || action === 'yes') newStatus = 'confirmed';
           if (action === 'cancel' || action === 'no') newStatus = 'canceled';
@@ -65,20 +56,26 @@ export class WhatsAppWebhookService {
             this.logger.log(
               `Updated verification status for verificationId: ${verificationId} to ${newStatus}`,
             );
-            await this.verificationsRepo.updateStatus(
+            const rows = await this.verificationsRepo.updateStatus(
               verificationId,
               newStatus,
+              undefined,
+              message.timestamp,
             );
-            await this.verificationHub.finalizeVerification(
-              verificationId,
-              newStatus,
-            );
+
+            // Only finalize when the row was actually updated (not already terminal)
+            if (rows.length > 0) {
+              await this.verificationHub.finalizeVerification(
+                verificationId,
+                newStatus,
+              );
+            }
           }
         }
       }
     }
 
-    // Handle Status Updates (Delivered / Read)
+    // Handle Status Updates (Delivered / Read / Failed)
     const statusObj = value.statuses?.[0];
     if (statusObj) {
       const wamid = statusObj.id;
@@ -101,7 +98,11 @@ export class WhatsAppWebhookService {
         `Updating verification status for wamid: ${wamid} to ${typedStatus}`,
       );
 
-      await this.verificationsRepo.updateStatusByWamid(wamid, typedStatus);
+      await this.verificationsRepo.updateStatusByWamid(
+        wamid,
+        typedStatus,
+        statusObj.timestamp,
+      );
     }
   }
 }

@@ -1,16 +1,35 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { and, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
+
+/**
+ * Terminal statuses that must never be overwritten by later webhook events.
+ */
+const TERMINAL_STATUSES: VerificationStatus[] = ['confirmed', 'canceled'];
+
+/**
+ * Converts a Meta webhook Unix-epoch string (seconds) to an ISO-8601 string.
+ * Falls back to the current server time when the input is missing or invalid.
+ */
+function toIsoTimestamp(epochSeconds?: string): string {
+  if (epochSeconds) {
+    const ms = Number(epochSeconds) * 1000;
+    if (Number.isFinite(ms) && ms > 0) {
+      return new Date(ms).toISOString();
+    }
+  }
+  return new Date().toISOString();
+}
 
 @Injectable()
 export class VerificationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
-  async getStatusCountsByOrgAndPeriod(
+  async getFunnelCountsByOrgAndPeriod(
     orgId: string,
     startAt: string,
     endAt: string,
@@ -22,10 +41,14 @@ export class VerificationsRepository {
     delivered: number;
     read: number;
   }> {
-    const rows = await this.db
+    const [row] = await this.db
       .select({
-        status: verifications.status,
-        count: sql<number>`count(*)::int`,
+        total: sql<number>`count(*)::int`,
+        sent: sql<number>`count(${verifications.lastSentAt})::int`,
+        delivered: sql<number>`count(${verifications.deliveredAt})::int`,
+        read: sql<number>`count(${verifications.readAt})::int`,
+        confirmed: sql<number>`count(${verifications.confirmedAt})::int`,
+        canceled: sql<number>`count(${verifications.canceledAt})::int`,
       })
       .from(verifications)
       .where(
@@ -34,36 +57,16 @@ export class VerificationsRepository {
           gte(verifications.createdAt, startAt),
           lt(verifications.createdAt, endAt),
         ),
-      )
-      .groupBy(verifications.status);
+      );
 
-    const counts = {
-      total: 0,
-      confirmed: 0,
-      canceled: 0,
-      sent: 0,
-      delivered: 0,
-      read: 0,
+    return {
+      total: row?.total ?? 0,
+      sent: row?.sent ?? 0,
+      delivered: row?.delivered ?? 0,
+      read: row?.read ?? 0,
+      confirmed: row?.confirmed ?? 0,
+      canceled: row?.canceled ?? 0,
     };
-
-    for (const row of rows) {
-      const count = Number(row.count ?? 0);
-      counts.total += count;
-
-      if (row.status === 'confirmed') {
-        counts.confirmed += count;
-      } else if (row.status === 'canceled') {
-        counts.canceled += count;
-      } else if (row.status === 'sent') {
-        counts.sent += count;
-      } else if (row.status === 'delivered') {
-        counts.delivered += count;
-      } else if (row.status === 'read') {
-        counts.read += count;
-      }
-    }
-
-    return counts;
   }
 
   async create(data: typeof verifications.$inferInsert) {
@@ -149,30 +152,65 @@ export class VerificationsRepository {
     });
   }
 
+  /**
+   * Update a verification by its primary key.
+   *
+   * - Sets the lifecycle timestamp column that corresponds to the target status.
+   * - Backfills earlier milestone timestamps when a later milestone arrives
+   *   (e.g. `read` implies `delivered`; `confirmed`/`canceled` imply both).
+   * - Refuses to overwrite terminal statuses (`confirmed` / `canceled`).
+   * - Writes `last_sent_at` and increments `attempts` when status is `sent`.
+   */
   async updateStatus(
     id: string,
     status: VerificationStatus,
     waMessageId?: string,
+    eventTimestamp?: string,
   ) {
+    const now = new Date().toISOString();
+    const eventTs = toIsoTimestamp(eventTimestamp);
+
+    const setPayload = this.buildLifecyclePayload(status, eventTs, now);
+    if (waMessageId !== undefined) {
+      setPayload.waMessageId = waMessageId;
+    }
+
     return await this.db
       .update(verifications)
-      .set({
-        status: status as typeof verifications.$inferSelect.status,
-        waMessageId,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(verifications.id, id))
+      .set(setPayload)
+      .where(
+        and(
+          eq(verifications.id, id),
+          notInArray(verifications.status, TERMINAL_STATUSES),
+        ),
+      )
       .returning();
   }
 
-  async updateStatusByWamid(wamid: string, status: VerificationStatus) {
+  /**
+   * Update a verification by its WhatsApp message id (wamid).
+   *
+   * Same lifecycle-aware semantics as `updateStatus`.
+   */
+  async updateStatusByWamid(
+    wamid: string,
+    status: VerificationStatus,
+    eventTimestamp?: string,
+  ) {
+    const now = new Date().toISOString();
+    const eventTs = toIsoTimestamp(eventTimestamp);
+
+    const setPayload = this.buildLifecyclePayload(status, eventTs, now);
+
     return await this.db
       .update(verifications)
-      .set({
-        status: status as typeof verifications.$inferSelect.status,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(verifications.waMessageId, wamid))
+      .set(setPayload)
+      .where(
+        and(
+          eq(verifications.waMessageId, wamid),
+          notInArray(verifications.status, TERMINAL_STATUSES),
+        ),
+      )
       .returning();
   }
 
@@ -200,5 +238,55 @@ export class VerificationsRepository {
       .returning({ id: verifications.id });
 
     return results.length;
+  }
+
+  /**
+   * Build the SET payload for a lifecycle-aware status update.
+   *
+   * Uses COALESCE in SQL so that earlier milestone timestamps are only
+   * written when they are still NULL, preserving the original event time.
+   */
+  private buildLifecyclePayload(
+    status: VerificationStatus,
+    eventTs: string,
+    now: string,
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      status: status as typeof verifications.$inferSelect.status,
+      updatedAt: now,
+    };
+
+    switch (status) {
+      case 'sent':
+        payload.lastSentAt = eventTs;
+        payload.attempts = sql`COALESCE(${verifications.attempts}, 0) + 1`;
+        break;
+
+      case 'delivered':
+        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+        break;
+
+      case 'read':
+        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+        break;
+
+      case 'confirmed':
+        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+        payload.confirmedAt = eventTs;
+        break;
+
+      case 'canceled':
+        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+        payload.canceledAt = eventTs;
+        break;
+
+      default:
+        break;
+    }
+
+    return payload;
   }
 }

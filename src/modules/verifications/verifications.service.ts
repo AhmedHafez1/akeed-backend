@@ -111,7 +111,7 @@ export class VerificationsService {
     const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
 
     const [filteredCounts, activeIntegrations] = await Promise.all([
-      this.verificationsRepo.getStatusCountsByOrgAndPeriod(
+      this.verificationsRepo.getFunnelCountsByOrgAndPeriod(
         orgId,
         filterPeriod.startAt,
         filterPeriod.endAt,

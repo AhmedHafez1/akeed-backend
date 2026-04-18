@@ -92,6 +92,13 @@
       "when": 1776278400000,
       "tag": "0012_add_verification_status_read",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776511077072,
+      "tag": "0013_add_verification_lifecycle_timestamps",
+      "breakpoints": true
     }
   ]
 }

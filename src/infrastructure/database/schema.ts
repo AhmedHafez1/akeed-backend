@@ -503,6 +503,14 @@ export const verifications = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    deliveredAt: timestamp('delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    readAt: timestamp('read_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     expiredAt: timestamp('expired_at', { withTimezone: true, mode: 'string' }),
     metadata: jsonb().default({}),
     createdAt: timestamp('created_at', {
