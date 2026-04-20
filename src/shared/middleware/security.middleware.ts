@@ -164,7 +164,7 @@ export class SecurityMiddleware implements NestMiddleware {
 
     const defaults =
       this.configService.get<string>('NODE_ENV') === 'production'
-        ? ['https://admin.shopify.com', 'https://akeed-eta.vercel.app']
+        ? ['https://admin.shopify.com', 'https://get-akeed.vercel.app']
         : ['*'];
 
     const appUrl = this.configService.get<string>('APP_URL');
