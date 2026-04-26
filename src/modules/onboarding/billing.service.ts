@@ -98,33 +98,7 @@ export class BillingService {
   }
 
   private async initiatePaidPlan(
-    integration: {
-      id: string;
-      orgId: string;
-      platformType: string;
-      platformStoreUrl: string;
-      accessToken: string | null;
-      expiresAt: string | null;
-      webhookSecret: string | null;
-      isActive: boolean | null;
-      lastSyncedAt: string | null;
-      metadata: unknown;
-      storeName: string | null;
-      defaultLanguage: 'en' | 'ar' | 'auto';
-      shippingCurrency: string;
-      avgShippingCost: string;
-      isAutoVerifyEnabled: boolean;
-      onboardingStatus: 'pending' | 'completed';
-      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
-      shopifySubscriptionId: string | null;
-      billingStatus: string | null;
-      billingInitiatedAt: string | null;
-      billingActivatedAt: string | null;
-      billingCanceledAt: string | null;
-      billingStatusUpdatedAt: string | null;
-      createdAt: string | null;
-      updatedAt: string | null;
-    },
+    integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
@@ -149,33 +123,7 @@ export class BillingService {
   }
 
   private async initiateWithoutPaying(
-    integration: {
-      id: string;
-      orgId: string;
-      platformType: string;
-      platformStoreUrl: string;
-      accessToken: string | null;
-      expiresAt: string | null;
-      webhookSecret: string | null;
-      isActive: boolean | null;
-      lastSyncedAt: string | null;
-      metadata: unknown;
-      storeName: string | null;
-      defaultLanguage: 'en' | 'ar' | 'auto';
-      shippingCurrency: string;
-      avgShippingCost: string;
-      isAutoVerifyEnabled: boolean;
-      onboardingStatus: 'pending' | 'completed';
-      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
-      shopifySubscriptionId: string | null;
-      billingStatus: string | null;
-      billingInitiatedAt: string | null;
-      billingActivatedAt: string | null;
-      billingCanceledAt: string | null;
-      billingStatusUpdatedAt: string | null;
-      createdAt: string | null;
-      updatedAt: string | null;
-    },
+    integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
@@ -209,33 +157,7 @@ export class BillingService {
   }
 
   private async initiateFreePlan(
-    integration: {
-      id: string;
-      orgId: string;
-      platformType: string;
-      platformStoreUrl: string;
-      accessToken: string | null;
-      expiresAt: string | null;
-      webhookSecret: string | null;
-      isActive: boolean | null;
-      lastSyncedAt: string | null;
-      metadata: unknown;
-      storeName: string | null;
-      defaultLanguage: 'en' | 'ar' | 'auto';
-      shippingCurrency: string;
-      avgShippingCost: string;
-      isAutoVerifyEnabled: boolean;
-      onboardingStatus: 'pending' | 'completed';
-      billingPlanId: 'scale' | 'starter' | 'growth' | 'pro' | null;
-      shopifySubscriptionId: string | null;
-      billingStatus: string | null;
-      billingInitiatedAt: string | null;
-      billingActivatedAt: string | null;
-      billingCanceledAt: string | null;
-      billingStatusUpdatedAt: string | null;
-      createdAt: string | null;
-      updatedAt: string | null;
-    },
+    integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {

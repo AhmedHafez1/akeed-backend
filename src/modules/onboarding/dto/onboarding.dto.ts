@@ -33,9 +33,8 @@ export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
 export const ONBOARDING_BILLING_PLAN_IDS = [
   'starter',
-  'growth',
   'pro',
-  'scale',
+  'business',
 ] as const;
 export type OnboardingBillingPlanId =
   (typeof ONBOARDING_BILLING_PLAN_IDS)[number];

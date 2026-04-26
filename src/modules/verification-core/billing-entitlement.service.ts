@@ -78,7 +78,7 @@ export class BillingEntitlementService {
           subscriptionId,
           overageConfig.overageRate,
           'USD',
-          `Overage verification (${reservation.consumedCount}/${includedLimit})`,
+          `Overage verification attempt (${reservation.consumedCount}/${includedLimit})`,
         );
         this.logger.log(
           `Overage usage record created for integration ${integration.id}: ${overageConfig.overageRate} USD (${reservation.consumedCount}/${includedLimit})`,
