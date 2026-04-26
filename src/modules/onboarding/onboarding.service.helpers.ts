@@ -197,7 +197,7 @@ function buildUsageTerms(params: {
   overageRate: number;
   currencyCode: string;
 }): string {
-  return `Includes ${params.includedVerifications} verification attempts/month. Additional verification attempts are billed at ${params.overageRate} ${params.currencyCode} each.`;
+  return `Includes ${params.includedVerifications} Verification Messages/month. Additional Verification Messages are billed at ${params.overageRate} ${params.currencyCode} each.`;
 }
 
 function validateBillingPlan(plan: BillingPlanConfig): void {
