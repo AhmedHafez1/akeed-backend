@@ -7,7 +7,13 @@ import postgres from 'postgres';
 const envFile = process.env.NODE_ENV ? `.env.${process.env.NODE_ENV}` : '.env';
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
-async function runMigrations() {
+const MIGRATION_LOCK_ID = 29160427;
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function runMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is not defined in environment variables');
@@ -17,16 +23,29 @@ async function runMigrations() {
 
   const sql = postgres(databaseUrl, { max: 1 });
   const db = drizzle(sql);
+  let lockAcquired = false;
 
-  await migrate(db, {
-    migrationsFolder: path.resolve(process.cwd(), 'drizzle'),
-  });
+  try {
+    await sql`select pg_advisory_lock(${MIGRATION_LOCK_ID})`;
+    lockAcquired = true;
 
-  console.log('[Migrate] All migrations applied successfully.');
-  await sql.end();
+    await migrate(db, {
+      migrationsFolder: path.resolve(process.cwd(), 'drizzle'),
+    });
+
+    console.log('[Migrate] All migrations applied successfully.');
+  } finally {
+    if (lockAcquired) {
+      await sql`select pg_advisory_unlock(${MIGRATION_LOCK_ID})`;
+    }
+
+    await sql.end();
+  }
 }
 
-runMigrations().catch((err) => {
-  console.error('[Migrate] Migration failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runMigrations().catch((err: unknown) => {
+    console.error(`[Migrate] Migration failed: ${getErrorMessage(err)}`);
+    process.exit(1);
+  });
+}

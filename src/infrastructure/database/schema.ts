@@ -42,9 +42,8 @@ export const integrationOnboardingStatus = pgEnum(
 
 export const integrationBillingPlanId = pgEnum('integration_billing_plan_id', [
   'starter',
-  'growth',
   'pro',
-  'scale',
+  'business',
 ]);
 
 // Reference to Supabase auth.users table (managed by Supabase Auth)

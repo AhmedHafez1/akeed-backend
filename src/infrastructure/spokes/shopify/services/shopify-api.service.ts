@@ -3,7 +3,6 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
-import { integrations } from 'src/infrastructure/database';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
   type AppSubscriptionCancelResponse,
@@ -30,6 +29,7 @@ import {
   toOrderGid,
   validateUsageBillingPayload,
 } from './shopify-api.service.helpers';
+import { integrations } from '../../../database';
 
 interface CreateRecurringApplicationChargeInput {
   name: string;

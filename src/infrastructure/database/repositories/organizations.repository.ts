@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { organizations } from '../schema';
-import { encryptToken } from 'src/shared/utils/token-encryption.util';
+import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 @Injectable()
 export class OrganizationsRepository {

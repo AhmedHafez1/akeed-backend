@@ -46,33 +46,24 @@ const BILLING_PLAN_TEMPLATES: Record<
   starter: {
     name: 'Akeed Starter',
     amount: 0,
-    includedVerifications: 50,
-  },
-  growth: {
-    name: 'Akeed Growth',
-    amount: 9,
-    includedVerifications: 500,
-    usage: {
-      cappedAmount: 25,
-      overageRate: 0.03,
-    },
+    includedVerifications: 30,
   },
   pro: {
     name: 'Akeed Pro',
-    amount: 15,
+    amount: 19,
     includedVerifications: 1000,
     usage: {
-      cappedAmount: 45,
-      overageRate: 0.025,
+      cappedAmount: 60,
+      overageRate: 0.03,
     },
   },
-  scale: {
-    name: 'Akeed Scale',
-    amount: 29,
-    includedVerifications: 2500,
+  business: {
+    name: 'Akeed Business',
+    amount: 49,
+    includedVerifications: 3000,
     usage: {
-      cappedAmount: 90,
-      overageRate: 0.02,
+      cappedAmount: 150,
+      overageRate: 0.025,
     },
   },
 };
@@ -206,7 +197,7 @@ function buildUsageTerms(params: {
   overageRate: number;
   currencyCode: string;
 }): string {
-  return `Includes ${params.includedVerifications} successful verifications/month. Additional successful verifications are billed at ${params.overageRate} ${params.currencyCode} each.`;
+  return `Includes ${params.includedVerifications} Verification Messages/month. Additional Verification Messages are billed at ${params.overageRate} ${params.currencyCode} each.`;
 }
 
 function validateBillingPlan(plan: BillingPlanConfig): void {

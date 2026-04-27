@@ -5,7 +5,7 @@ import * as schema from '../index';
 import { eq, and } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import { integrations } from '../schema';
-import { encryptToken } from 'src/shared/utils/token-encryption.util';
+import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 @Injectable()
 export class IntegrationsRepository {
