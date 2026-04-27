@@ -90,6 +90,7 @@ export interface OnboardingBillingPlanDto {
   includedVerifications: number;
   usage?: {
     cappedAmount: number;
+    overageRate: number;
     terms: string;
   };
 }

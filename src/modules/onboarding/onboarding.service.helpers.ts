@@ -21,6 +21,7 @@ interface BillingPlanTemplate {
 
 export interface BillingPlanUsageConfig {
   cappedAmount: number;
+  overageRate: number;
   terms: string;
 }
 
@@ -119,6 +120,7 @@ export function resolveBillingPlan(params: {
   const usage = planTemplate.usage
     ? {
         cappedAmount: planTemplate.usage.cappedAmount,
+        overageRate: planTemplate.usage.overageRate,
         terms: buildUsageTerms({
           includedVerifications: planTemplate.includedVerifications,
           overageRate: planTemplate.usage.overageRate,
