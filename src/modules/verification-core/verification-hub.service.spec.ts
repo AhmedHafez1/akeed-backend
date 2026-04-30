@@ -54,29 +54,16 @@ function buildIntegration(
     billingStatusUpdatedAt: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    followUpEnabled: true,
+    followUpDelayMinutes: 120,
+    escalationDelayMinutes: 360,
+    quietHoursEnabled: false,
+    quietHoursStart: null,
+    quietHoursEnd: null,
+    timezone: 'Asia/Riyadh',
+    sendDelayMinutes: 0,
     ...overrides,
   } as IntegrationRecord;
-}
-
-function buildMockReservation(
-  overrides: Partial<{
-    allowed: boolean;
-    isOverage: boolean;
-    consumedCount: number;
-    includedLimit: number;
-    periodStart: string;
-    planId: string;
-  }> = {},
-) {
-  return {
-    allowed: true,
-    isOverage: false,
-    consumedCount: 5,
-    includedLimit: 1000,
-    periodStart: '2026-01-01',
-    planId: 'pro',
-    ...overrides,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,42 +82,45 @@ function createMocks() {
     create: jest.fn(),
     updateStatus: jest.fn(),
     findById: jest.fn(),
-  };
-
-  const messagingPort = {
-    sendVerificationTemplate: jest.fn(),
+    updateByIdForOrg: jest.fn(),
   };
 
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
   };
 
-  const billingEntitlementService = {
-    reserveVerificationSlot: jest.fn(),
-    releaseVerificationSlot: jest.fn(),
-  };
-
   const orderEligibilityService = {
     evaluateOrderForVerification: jest.fn(),
+  };
+
+  const verificationSendService = {
+    sendInitial: jest.fn(),
+    sendFollowUp: jest.fn(),
+  };
+
+  const automationProducer = {
+    enqueueInitialSend: jest.fn(),
+    enqueueFollowUp: jest.fn(),
+    enqueueNoReplyEscalation: jest.fn(),
   };
 
   const service = new VerificationHubService(
     ordersRepo as any,
     verificationsRepo as any,
-    messagingPort as any,
     orderTaggingPort as any,
-    billingEntitlementService as any,
     orderEligibilityService as any,
+    verificationSendService as any,
+    automationProducer as any,
   );
 
   return {
     service,
     ordersRepo,
     verificationsRepo,
-    messagingPort,
     orderTaggingPort,
-    billingEntitlementService,
     orderEligibilityService,
+    verificationSendService,
+    automationProducer,
   };
 }
 
@@ -139,127 +129,62 @@ function createMocks() {
 // ---------------------------------------------------------------------------
 
 describe('VerificationHubService', () => {
-  describe('handleNewOrder — auto-verify disabled', () => {
-    it('should skip before order creation when isAutoVerifyEnabled=false', async () => {
-      const {
-        service,
-        ordersRepo,
-        verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
-        orderEligibilityService,
-      } = createMocks();
-
-      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
-        eligible: true,
-        reason: 'cod_match',
-      });
-
-      const order = buildOrder();
-      const integration = buildIntegration({ isAutoVerifyEnabled: false });
-
-      const result = await service.handleNewOrder(order, integration);
-
-      expect(result).toEqual({ skipped: true, reason: 'auto_verify_disabled' });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
-      expect(ordersRepo.create).not.toHaveBeenCalled();
-      expect(verificationsRepo.create).not.toHaveBeenCalled();
-      expect(
-        billingEntitlementService.reserveVerificationSlot,
-      ).not.toHaveBeenCalled();
-      expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
-    });
-
-    it('should process normally when isAutoVerifyEnabled=true', async () => {
-      const {
-        service,
-        ordersRepo,
-        verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
-        orderEligibilityService,
-      } = createMocks();
-
-      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
-        eligible: true,
-        reason: 'cod_match',
-      });
-
-      const dbOrder = {
-        id: 'order-db-1',
-        orgId: 'org-1',
-        externalOrderId: 'ext-order-1',
-      };
-      ordersRepo.findByExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue(dbOrder);
-      verificationsRepo.findByOrderId.mockResolvedValue(null);
-      billingEntitlementService.reserveVerificationSlot.mockResolvedValue(
-        buildMockReservation(),
-      );
-      verificationsRepo.create.mockResolvedValue({
-        id: 'ver-1',
-        orgId: 'org-1',
-      });
-      messagingPort.sendVerificationTemplate.mockResolvedValue({
-        messages: [{ id: 'wamid-123' }],
-      });
-      verificationsRepo.updateStatus.mockResolvedValue([{ id: 'ver-1' }]);
-
-      const order = buildOrder();
-      const integration = buildIntegration({ isAutoVerifyEnabled: true });
-
-      const result = await service.handleNewOrder(order, integration);
-
-      expect(result).toEqual({
-        orderId: 'order-db-1',
-        verificationId: 'ver-1',
-      });
-      expect(ordersRepo.create).toHaveBeenCalled();
-      expect(
-        billingEntitlementService.reserveVerificationSlot,
-      ).toHaveBeenCalled();
-      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalled();
-    });
-
-    it('should check COD eligibility before auto-verify', async () => {
-      const {
-        service,
-        ordersRepo,
-        billingEntitlementService,
-        orderEligibilityService,
-      } = createMocks();
+  describe('handleNewOrder — eligibility & auto-verify guards', () => {
+    it('skips before order creation when COD eligibility fails', async () => {
+      const { service, ordersRepo, orderEligibilityService } = createMocks();
 
       orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
         eligible: false,
         reason: 'non_cod_payment_method',
       });
 
-      const order = buildOrder();
-      const integration = buildIntegration({ isAutoVerifyEnabled: false });
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
 
-      const result = await service.handleNewOrder(order, integration);
-
-      // Non-COD should be the reason, not auto_verify_disabled
       expect(result).toEqual({
         skipped: true,
         reason: 'non_cod_payment_method',
       });
       expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
-      expect(
-        billingEntitlementService.reserveVerificationSlot,
-      ).not.toHaveBeenCalled();
+    });
+
+    it('skips before order creation when isAutoVerifyEnabled=false', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        verificationSendService,
+        orderEligibilityService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({ isAutoVerifyEnabled: false }),
+      );
+
+      expect(result).toEqual({ skipped: true, reason: 'auto_verify_disabled' });
+      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
     });
   });
 
-  describe('handleNewOrder — billing guardrails', () => {
-    it('should reserve quota before sending WhatsApp', async () => {
+  describe('handleNewOrder — immediate send (sendDelayMinutes=0)', () => {
+    it('creates pending verification, sends, and schedules follow-up + no-reply', async () => {
       const {
         service,
         ordersRepo,
         verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
         orderEligibilityService,
+        verificationSendService,
+        automationProducer,
       } = createMocks();
 
       orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
@@ -267,158 +192,54 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      const dbOrder = {
+      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
-      };
-      ordersRepo.findByExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue(dbOrder);
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
-
-      const callOrder: string[] = [];
-      billingEntitlementService.reserveVerificationSlot.mockImplementation(
-        () => {
-          callOrder.push('reserveSlot');
-          return Promise.resolve(buildMockReservation());
-        },
-      );
       verificationsRepo.create.mockResolvedValue({
         id: 'ver-1',
         orgId: 'org-1',
       });
-      messagingPort.sendVerificationTemplate.mockImplementation(() => {
-        callOrder.push('sendTemplate');
-        return Promise.resolve({ messages: [{ id: 'wamid-123' }] });
-      });
-      verificationsRepo.updateStatus.mockResolvedValue([{ id: 'ver-1' }]);
-
-      const order = buildOrder();
-      const integration = buildIntegration();
-
-      await service.handleNewOrder(order, integration);
-
-      expect(callOrder).toEqual(['reserveSlot', 'sendTemplate']);
-    });
-
-    it('should release quota when WhatsApp send throws', async () => {
-      const {
-        service,
-        ordersRepo,
-        verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
-        orderEligibilityService,
-      } = createMocks();
-
-      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
-        eligible: true,
-        reason: 'cod_match',
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent',
+        waMessageId: 'wamid-123',
       });
 
-      const dbOrder = {
-        id: 'order-db-1',
-        orgId: 'org-1',
-        externalOrderId: 'ext-order-1',
-      };
-      ordersRepo.findByExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue(dbOrder);
-      verificationsRepo.findByOrderId.mockResolvedValue(null);
-      billingEntitlementService.reserveVerificationSlot.mockResolvedValue(
-        buildMockReservation({ periodStart: '2026-01-01' }),
-      );
-      verificationsRepo.create.mockResolvedValue({
-        id: 'ver-1',
-        orgId: 'org-1',
-      });
-      messagingPort.sendVerificationTemplate.mockRejectedValue(
-        new Error('Meta API timeout'),
-      );
-      verificationsRepo.updateStatus.mockResolvedValue([]);
-
-      const order = buildOrder();
-      const integration = buildIntegration();
-
-      await expect(service.handleNewOrder(order, integration)).rejects.toThrow(
-        'Meta API timeout',
-      );
-
-      expect(
-        billingEntitlementService.releaseVerificationSlot,
-      ).toHaveBeenCalledWith({
-        integrationId: 'int-1',
-        periodStart: '2026-01-01',
-      });
-      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
-        'ver-1',
-        'failed',
-      );
-    });
-
-    it('should release quota when Meta returns no message ID', async () => {
-      const {
-        service,
-        ordersRepo,
-        verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
-        orderEligibilityService,
-      } = createMocks();
-
-      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
-        eligible: true,
-        reason: 'cod_match',
+      const integration = buildIntegration({
+        sendDelayMinutes: 0,
+        followUpEnabled: true,
+        followUpDelayMinutes: 120,
+        escalationDelayMinutes: 360,
       });
 
-      const dbOrder = {
-        id: 'order-db-1',
-        orgId: 'org-1',
-        externalOrderId: 'ext-order-1',
-      };
-      ordersRepo.findByExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue(dbOrder);
-      verificationsRepo.findByOrderId.mockResolvedValue(null);
-      billingEntitlementService.reserveVerificationSlot.mockResolvedValue(
-        buildMockReservation({ periodStart: '2026-01-01' }),
-      );
-      verificationsRepo.create.mockResolvedValue({
-        id: 'ver-1',
-        orgId: 'org-1',
-      });
-      messagingPort.sendVerificationTemplate.mockResolvedValue({
-        messages: [],
-      });
-      verificationsRepo.updateStatus.mockResolvedValue([]);
-
-      const order = buildOrder();
-      const integration = buildIntegration();
-
-      const result = await service.handleNewOrder(order, integration);
+      const result = await service.handleNewOrder(buildOrder(), integration);
 
       expect(result).toEqual({
         orderId: 'order-db-1',
         verificationId: 'ver-1',
       });
-      expect(
-        billingEntitlementService.releaseVerificationSlot,
-      ).toHaveBeenCalledWith({
-        integrationId: 'int-1',
-        periodStart: '2026-01-01',
-      });
-      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
-        'ver-1',
-        'failed',
+      expect(verificationsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending' }),
+      );
+      expect(verificationSendService.sendInitial).toHaveBeenCalledWith('ver-1');
+      expect(automationProducer.enqueueInitialSend).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueFollowUp).toHaveBeenCalledTimes(1);
+      expect(automationProducer.enqueueNoReplyEscalation).toHaveBeenCalledTimes(
+        1,
       );
     });
 
-    it('should not send when plan limit is reached', async () => {
+    it('does NOT schedule follow-up/escalation when initial send fails', async () => {
       const {
         service,
         ordersRepo,
         verificationsRepo,
-        messagingPort,
-        billingEntitlementService,
         orderEligibilityService,
+        verificationSendService,
+        automationProducer,
       } = createMocks();
 
       orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
@@ -426,46 +247,160 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      const dbOrder = {
+      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
-      };
-      ordersRepo.findByExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue(dbOrder);
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
-      billingEntitlementService.reserveVerificationSlot.mockResolvedValue(
-        buildMockReservation({
-          allowed: false,
-          consumedCount: 1000,
-          includedLimit: 1000,
+      verificationsRepo.create.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+      });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'failed',
+        reason: 'send_error',
+      });
+
+      await service.handleNewOrder(buildOrder(), buildIntegration());
+
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('marks failed with plan_limit_reached metadata when send service reports plan limit', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+        automationProducer,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+      });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'plan_limit_reached',
+        reason: 'plan_limit:1000/1000',
+      });
+
+      await service.handleNewOrder(buildOrder(), buildIntegration());
+
+      expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+        'ver-1',
+        'org-1',
+        expect.objectContaining({
+          status: 'failed',
+          metadata: expect.objectContaining({
+            reason: 'plan_limit_reached',
+          }) as Record<string, unknown>,
         }),
       );
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleNewOrder — delayed initial send (sendDelayMinutes>0)', () => {
+    it('creates pending verification and enqueues initial-send job without sending', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+        automationProducer,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
       verificationsRepo.create.mockResolvedValue({
         id: 'ver-1',
         orgId: 'org-1',
       });
 
-      const order = buildOrder();
-      const integration = buildIntegration();
+      await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({ sendDelayMinutes: 30 }),
+      );
 
-      const result = await service.handleNewOrder(order, integration);
+      expect(verificationsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending' }),
+      );
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueInitialSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          verificationId: 'ver-1',
+          orgId: 'org-1',
+          dueAt: expect.any(Date) as Date,
+        }),
+      );
+    });
+  });
+
+  describe('handleNewOrder — idempotency', () => {
+    it('returns existing verification when one already exists for the order', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      ordersRepo.findByExternalId.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue({
+        id: 'ver-existing',
+        orgId: 'org-1',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
 
       expect(result).toEqual({
         orderId: 'order-db-1',
-        verificationId: 'ver-1',
+        verificationId: 'ver-existing',
       });
-      expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
-      // Verification is created with status=failed metadata
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const createCall = verificationsRepo.create.mock.calls[0][0] as Record<
-        string,
-        unknown
-      >;
-      expect(createCall.status).toBe('failed');
-      expect(createCall.metadata).toEqual(
-        expect.objectContaining({ reason: 'plan_limit_reached' }),
-      );
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
     });
   });
 });

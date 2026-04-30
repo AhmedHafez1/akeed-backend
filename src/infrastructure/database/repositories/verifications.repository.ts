@@ -271,6 +271,50 @@ export class VerificationsRepository {
   }
 
   /**
+   * Mark a follow-up WhatsApp message as sent.
+   *
+   * - Updates `followUpSentAt` to the current time.
+   * - Increments `followUpAttempts` (preserving the existing count).
+   * - Replaces `waMessageId` with the latest follow-up wamid (so subsequent
+   *   delivery/read webhooks update this verification record).
+   * - Refuses to overwrite terminal statuses (confirmed/canceled).
+   */
+  async markFollowUpSent(id: string, waMessageId: string) {
+    const now = new Date().toISOString();
+    return await this.db
+      .update(verifications)
+      .set({
+        followUpSentAt: now,
+        followUpAttempts: sql`COALESCE(${verifications.followUpAttempts}, 0) + 1`,
+        waMessageId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(verifications.id, id),
+          notInArray(verifications.status, TERMINAL_STATUSES),
+        ),
+      )
+      .returning();
+  }
+
+  /**
+   * Merge additional keys into the JSONB `metadata` column without dropping
+   * existing keys. Performed in-database so concurrent updates do not clobber
+   * each other.
+   */
+  async mergeMetadata(id: string, patch: Record<string, unknown>) {
+    return await this.db
+      .update(verifications)
+      .set({
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(verifications.id, id))
+      .returning();
+  }
+
+  /**
    * Find a verification by its primary key, scoped to an organization.
    */
   async findByIdForOrg(verificationId: string, orgId: string) {

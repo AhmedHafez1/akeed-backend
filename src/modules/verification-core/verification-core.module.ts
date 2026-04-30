@@ -9,6 +9,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationHubService } from './verification-hub.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
+import { VerificationSendService } from './verification-send.service';
 import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
 
 @Module({})
@@ -25,6 +26,7 @@ export class VerificationCoreModule {
         VerificationHubService,
         BillingEntitlementService,
         OrderEligibilityService,
+        VerificationSendService,
         ShopifyOrderEligibilityStrategy,
         ...config.ports,
       ],
@@ -32,6 +34,7 @@ export class VerificationCoreModule {
         VerificationHubService,
         BillingEntitlementService,
         OrderEligibilityService,
+        VerificationSendService,
       ],
     };
   }
