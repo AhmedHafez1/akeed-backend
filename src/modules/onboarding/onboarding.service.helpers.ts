@@ -49,22 +49,31 @@ const BILLING_PLAN_TEMPLATES: Record<
     amount: 0,
     includedVerifications: 30,
   },
+  basic: {
+    name: 'Akeed Basic',
+    amount: 9.99,
+    includedVerifications: 200,
+    usage: {
+      cappedAmount: 14,
+      overageRate: 0.035,
+    },
+  },
   pro: {
     name: 'Akeed Pro',
-    amount: 19,
-    includedVerifications: 1000,
+    amount: 18.99,
+    includedVerifications: 500,
     usage: {
-      cappedAmount: 60,
-      overageRate: 0.03,
+      cappedAmount: 32,
+      overageRate: 0.032,
     },
   },
   business: {
     name: 'Akeed Business',
-    amount: 49,
-    includedVerifications: 3000,
+    amount: 48.99,
+    includedVerifications: 1500,
     usage: {
-      cappedAmount: 150,
-      overageRate: 0.025,
+      cappedAmount: 90,
+      overageRate: 0.03,
     },
   },
 };

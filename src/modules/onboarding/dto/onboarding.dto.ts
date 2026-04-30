@@ -33,6 +33,7 @@ export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
 export const ONBOARDING_BILLING_PLAN_IDS = [
   'starter',
+  'basic',
   'pro',
   'business',
 ] as const;

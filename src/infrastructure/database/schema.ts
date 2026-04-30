@@ -42,6 +42,7 @@ export const integrationOnboardingStatus = pgEnum(
 
 export const integrationBillingPlanId = pgEnum('integration_billing_plan_id', [
   'starter',
+  'basic',
   'pro',
   'business',
 ]);

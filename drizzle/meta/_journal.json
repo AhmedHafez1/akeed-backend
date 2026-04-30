@@ -106,6 +106,13 @@
       "when": 1777207184463,
       "tag": "0014_premium_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777900800000,
+      "tag": "0015_add_basic_billing_plan",
+      "breakpoints": true
     }
   ]
 }
