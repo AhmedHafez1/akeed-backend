@@ -113,6 +113,13 @@
       "when": 1777900800000,
       "tag": "0015_add_basic_billing_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778505600000,
+      "tag": "0016_phase_c1_automation_contracts",
+      "breakpoints": true
     }
   ]
 }

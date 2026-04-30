@@ -23,6 +23,7 @@ import {
 } from '../orders/services/pagination.helpers';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
+  'pending',
   'sent',
   'delivered',
   'read',
@@ -30,6 +31,7 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
   'canceled',
   'expired',
   'failed',
+  'no_reply',
 ];
 
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
@@ -41,6 +43,7 @@ interface VerificationStatusCounts {
   total: number;
   confirmed: number;
   canceled: number;
+  customerCanceled: number;
   sent: number;
   delivered: number;
   read: number;
@@ -183,13 +186,20 @@ export class VerificationsService {
     return statuses;
   }
 
+  /**
+   * Reply rate = (confirmed + customer-canceled) / total.
+   * Merchant no-reply cancellations are excluded from the numerator.
+   */
   private calculateReplyRate(counts: VerificationStatusCounts): number {
     if (counts.total === 0) {
       return 0;
     }
 
     return Number(
-      (((counts.confirmed + counts.canceled) / counts.total) * 100).toFixed(1),
+      (
+        ((counts.confirmed + counts.customerCanceled) / counts.total) *
+        100
+      ).toFixed(1),
     );
   }
 

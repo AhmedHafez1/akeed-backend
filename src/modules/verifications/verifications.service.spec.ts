@@ -4,6 +4,7 @@ interface VerificationStatusCounts {
   total: number;
   confirmed: number;
   canceled: number;
+  customerCanceled: number;
   sent: number;
   delivered: number;
   read: number;
@@ -41,6 +42,7 @@ describe('VerificationsService', () => {
           total: 0,
           confirmed: 0,
           canceled: 0,
+          customerCanceled: 0,
           sent: 0,
           delivered: 0,
           read: 0,
@@ -48,12 +50,13 @@ describe('VerificationsService', () => {
       ).toBe(0);
     });
 
-    it('should return correct reply rate', () => {
+    it('should return correct reply rate using customerCanceled', () => {
       expect(
         callReplyRate(service, {
           total: 100,
           confirmed: 40,
-          canceled: 10,
+          canceled: 15,
+          customerCanceled: 10,
           sent: 100,
           delivered: 80,
           read: 60,
@@ -67,11 +70,42 @@ describe('VerificationsService', () => {
           total: 3,
           confirmed: 1,
           canceled: 0,
+          customerCanceled: 0,
           sent: 3,
           delivered: 2,
           read: 1,
         }),
       ).toBe(33.3);
+    });
+
+    it('should exclude merchant_no_reply cancellations from reply rate', () => {
+      // 5 merchant_no_reply cancellations should not count as replies
+      expect(
+        callReplyRate(service, {
+          total: 100,
+          confirmed: 40,
+          canceled: 15,
+          customerCanceled: 10,
+          sent: 100,
+          delivered: 80,
+          read: 60,
+        }),
+      ).toBe(50); // (40 + 10) / 100 = 50%, not (40 + 15) / 100 = 55%
+    });
+
+    it('should treat legacy null cancellationSource as customer cancel', () => {
+      // When all canceled have customerCanceled = canceled (null source = customer)
+      expect(
+        callReplyRate(service, {
+          total: 100,
+          confirmed: 40,
+          canceled: 10,
+          customerCanceled: 10,
+          sent: 100,
+          delivered: 80,
+          read: 60,
+        }),
+      ).toBe(50); // (40 + 10) / 100 = 50%
     });
   });
 
@@ -82,6 +116,7 @@ describe('VerificationsService', () => {
           total: 0,
           confirmed: 0,
           canceled: 0,
+          customerCanceled: 0,
           sent: 0,
           delivered: 0,
           read: 0,
@@ -95,6 +130,7 @@ describe('VerificationsService', () => {
           total: 100,
           confirmed: 75,
           canceled: 10,
+          customerCanceled: 10,
           sent: 100,
           delivered: 80,
           read: 60,
@@ -108,6 +144,7 @@ describe('VerificationsService', () => {
           total: 3,
           confirmed: 1,
           canceled: 0,
+          customerCanceled: 0,
           sent: 3,
           delivered: 2,
           read: 1,
@@ -121,6 +158,7 @@ describe('VerificationsService', () => {
           total: 50,
           confirmed: 50,
           canceled: 0,
+          customerCanceled: 0,
           sent: 50,
           delivered: 50,
           read: 50,

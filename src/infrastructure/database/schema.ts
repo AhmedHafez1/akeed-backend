@@ -28,6 +28,7 @@ export const verificationStatus = pgEnum('verification_status', [
   'canceled',
   'expired',
   'failed',
+  'no_reply',
 ]);
 
 export const integrationDefaultLanguage = pgEnum(
@@ -213,6 +214,18 @@ export const integrations = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    followUpEnabled: boolean('follow_up_enabled').default(true).notNull(),
+    followUpDelayMinutes: integer('follow_up_delay_minutes')
+      .default(120)
+      .notNull(),
+    escalationDelayMinutes: integer('escalation_delay_minutes')
+      .default(360)
+      .notNull(),
+    quietHoursEnabled: boolean('quiet_hours_enabled').default(false).notNull(),
+    quietHoursStart: text('quiet_hours_start'),
+    quietHoursEnd: text('quiet_hours_end'),
+    timezone: text('timezone').default('Asia/Riyadh').notNull(),
+    sendDelayMinutes: integer('send_delay_minutes').default(0).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -512,6 +525,20 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     expiredAt: timestamp('expired_at', { withTimezone: true, mode: 'string' }),
+    followUpSentAt: timestamp('follow_up_sent_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    noReplyAt: timestamp('no_reply_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    followUpAttempts: integer('follow_up_attempts').default(0).notNull(),
+    merchantCanceledAt: timestamp('merchant_canceled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    cancellationSource: text('cancellation_source'),
     metadata: jsonb().default({}),
     createdAt: timestamp('created_at', {
       withTimezone: true,
