@@ -126,6 +126,7 @@ export class VerificationsService {
     });
 
     const replyRate = this.calculateReplyRate(filteredCounts);
+    const confirmationRate = this.calculateConfirmationRate(filteredCounts);
     const usageLimit =
       usage.includedLimit > 0
         ? usage.includedLimit
@@ -145,6 +146,7 @@ export class VerificationsService {
         delivered: filteredCounts.delivered,
         read: filteredCounts.read,
         reply_rate: replyRate,
+        confirmation_rate: confirmationRate,
       },
       usage: {
         used: usage.consumedCount,
@@ -189,6 +191,14 @@ export class VerificationsService {
     return Number(
       (((counts.confirmed + counts.canceled) / counts.total) * 100).toFixed(1),
     );
+  }
+
+  private calculateConfirmationRate(counts: VerificationStatusCounts): number {
+    if (counts.total === 0) {
+      return 0;
+    }
+
+    return Number(((counts.confirmed / counts.total) * 100).toFixed(1));
   }
 
   private resolveDateRangeBounds(
