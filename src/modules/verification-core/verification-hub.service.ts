@@ -47,6 +47,13 @@ export class VerificationHubService {
       return { skipped: true, reason: eligibility.reason };
     }
 
+    if (!integration.isAutoVerifyEnabled) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: auto verification is disabled`,
+      );
+      return { skipped: true, reason: 'auto_verify_disabled' };
+    }
+
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
 
     // 1. Check if order exists (Idempotency)
