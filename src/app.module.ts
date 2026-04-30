@@ -13,6 +13,7 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
+import { ORDER_ADMIN_PORT } from './shared/ports/order-admin.port';
 import { ORDER_TAGGING_PORT } from './shared/ports/order-tagging.port';
 import { STORE_PLATFORM_PORT } from './shared/ports/store-platform.port';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
@@ -47,6 +48,7 @@ import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shop
       imports: [MetaModule, ShopifyModule],
       ports: [
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
+        { provide: ORDER_ADMIN_PORT, useExisting: ShopifyApiService },
         { provide: ORDER_TAGGING_PORT, useExisting: ShopifyApiService },
         { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
       ],

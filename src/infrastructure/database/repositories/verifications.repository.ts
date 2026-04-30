@@ -315,6 +315,41 @@ export class VerificationsRepository {
   }
 
   /**
+   * Atomically mark a no_reply verification as merchant-canceled.
+   *
+   * The WHERE clause guards on `id + orgId + status='no_reply'` so that
+   * concurrent calls, customer replies, or status transitions that already
+   * moved the row away from no_reply will cause zero rows affected.
+   *
+   * Returns the updated row, or null if no row matched.
+   */
+  async markMerchantNoReplyCanceled(
+    verificationId: string,
+    orgId: string,
+    canceledAt: string,
+  ) {
+    const now = new Date().toISOString();
+    const [result] = await this.db
+      .update(verifications)
+      .set({
+        status: 'canceled',
+        canceledAt,
+        merchantCanceledAt: canceledAt,
+        cancellationSource: 'merchant_no_reply',
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+          sql`${verifications.status} = 'no_reply'`,
+        ),
+      )
+      .returning();
+    return result ?? null;
+  }
+
+  /**
    * Find a verification by its primary key, scoped to an organization.
    */
   async findByIdForOrg(verificationId: string, orgId: string) {

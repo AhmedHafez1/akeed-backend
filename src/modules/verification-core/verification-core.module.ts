@@ -4,6 +4,7 @@ import {
   Provider,
   Type,
   ForwardReference,
+  InjectionToken,
 } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationHubService } from './verification-hub.service';
@@ -11,6 +12,13 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
+
+function extractProviderToken(provider: Provider): InjectionToken {
+  if (typeof provider === 'function') {
+    return provider;
+  }
+  return (provider as { provide: InjectionToken }).provide;
+}
 
 @Module({})
 export class VerificationCoreModule {
@@ -35,6 +43,7 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
+        ...config.ports.map(extractProviderToken),
       ],
     };
   }

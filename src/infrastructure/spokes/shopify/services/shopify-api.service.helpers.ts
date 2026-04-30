@@ -297,6 +297,41 @@ export function toOrderGid(orderId: string): string {
     : `gid://shopify/Order/${orderId}`;
 }
 
+export type OrderCancelResponse = GraphQLResponse<{
+  orderCancel?: {
+    job?: { id: string };
+    orderCancelUserErrors?: GraphQLUserError[];
+  };
+}>;
+
+export const ORDER_CANCEL_MUTATION = `
+  mutation orderCancel(
+    $orderId: ID!
+    $reason: OrderCancelReason!
+    $notifyCustomer: Boolean
+    $refund: Boolean!
+    $restock: Boolean!
+    $staffNote: String
+  ) {
+    orderCancel(
+      orderId: $orderId
+      reason: $reason
+      notifyCustomer: $notifyCustomer
+      refund: $refund
+      restock: $restock
+      staffNote: $staffNote
+    ) {
+      job {
+        id
+      }
+      orderCancelUserErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export function toAppSubscriptionGid(chargeId: string): string {
   return chargeId.startsWith('gid://')
     ? chargeId

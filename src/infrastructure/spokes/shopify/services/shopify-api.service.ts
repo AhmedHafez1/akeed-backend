@@ -20,6 +20,8 @@ import {
   type GraphQLErrorItem,
   type GraphQLUserError,
   GET_SHOP_NAME_QUERY,
+  ORDER_CANCEL_MUTATION,
+  type OrderCancelResponse,
   type ShopNameResponse,
   TAGS_ADD_MUTATION,
   type TagsAddResponse,
@@ -89,6 +91,43 @@ export class ShopifyApiService {
       this.logger.error(`Failed to add tag to order: ${message}`, stack);
       throw error;
     }
+  }
+
+  async cancelOrder(
+    integration: typeof integrations.$inferSelect,
+    externalOrderId: string,
+    reason: string,
+  ): Promise<{ jobId?: string }> {
+    const orderGid = toOrderGid(externalOrderId);
+
+    const response = await this.executeGraphql<OrderCancelResponse>(
+      integration,
+      ORDER_CANCEL_MUTATION,
+      {
+        orderId: orderGid,
+        reason,
+        notifyCustomer: false,
+        refund: false,
+        restock: true,
+        staffNote: 'Canceled by Akeed after no reply to COD verification.',
+      },
+    );
+
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify order cancellation errors',
+    );
+    throwIfUserErrors(
+      response.data.data?.orderCancel?.orderCancelUserErrors,
+      'Shopify order cancellation validation failed',
+    );
+
+    const jobId = response.data.data?.orderCancel?.job?.id;
+    this.logger.log(
+      `Canceled order ${orderGid} on ${integration.platformStoreUrl} (jobId=${jobId ?? 'n/a'})`,
+    );
+
+    return { jobId: jobId ?? undefined };
   }
 
   async getShopName(
