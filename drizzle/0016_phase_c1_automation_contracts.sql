@@ -2,11 +2,17 @@
 -- NOTE: ALTER TYPE ... ADD VALUE 'no_reply' is not reversible in Postgres.
 -- Rollback requires rebuilding the enum type entirely.
 
--- 1. Add 'no_reply' to verification_status enum (same DROP+CREATE pattern as 0015)
-ALTER TABLE "verifications" ALTER COLUMN "status" SET DATA TYPE text;--> statement-breakpoint
-DROP TYPE "public"."verification_status";--> statement-breakpoint
-CREATE TYPE "public"."verification_status" AS ENUM('pending', 'sent', 'delivered', 'read', 'confirmed', 'canceled', 'expired', 'failed', 'no_reply');--> statement-breakpoint
-ALTER TABLE "verifications" ALTER COLUMN "status" SET DATA TYPE "public"."verification_status" USING "status"::"public"."verification_status";--> statement-breakpoint
+-- 1. Add 'no_reply' to verification_status enum
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_enum
+    WHERE enumlabel = 'no_reply'
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'verification_status')
+  ) THEN
+    ALTER TYPE "public"."verification_status" ADD VALUE 'no_reply' AFTER 'failed';
+  END IF;
+END $$;--> statement-breakpoint
 
 -- 2. Add automation columns to integrations
 ALTER TABLE "integrations" ADD COLUMN "follow_up_enabled" boolean DEFAULT true NOT NULL;--> statement-breakpoint
