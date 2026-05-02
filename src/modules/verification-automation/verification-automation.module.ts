@@ -1,9 +1,7 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
-import { VERIFICATION_AUTOMATION_QUEUE_NAME } from './verification-automation.constants';
-import { VerificationAutomationProducer } from './verification-automation.producer';
+import { VerificationAutomationQueueModule } from './verification-automation-queue.module';
 import { VerificationAutomationProcessor } from './verification-automation.processor';
 
 /**
@@ -13,12 +11,7 @@ import { VerificationAutomationProcessor } from './verification-automation.proce
  * only registers the queue itself, the producer, and the processor.
  */
 @Module({
-  imports: [
-    ConfigModule,
-    DatabaseModule,
-    BullModule.registerQueue({ name: VERIFICATION_AUTOMATION_QUEUE_NAME }),
-  ],
-  providers: [VerificationAutomationProducer, VerificationAutomationProcessor],
-  exports: [VerificationAutomationProducer],
+  imports: [ConfigModule, DatabaseModule, VerificationAutomationQueueModule],
+  providers: [VerificationAutomationProcessor],
 })
 export class VerificationAutomationModule {}

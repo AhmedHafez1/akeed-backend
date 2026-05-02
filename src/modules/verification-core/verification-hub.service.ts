@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
@@ -22,8 +22,7 @@ export class VerificationHubService {
     @Inject(ORDER_TAGGING_PORT) private orderTaggingPort: OrderTaggingPort,
     private orderEligibilityService: OrderEligibilityService,
     private verificationSendService: VerificationSendService,
-    @Optional()
-    private readonly automationProducer?: VerificationAutomationProducer,
+    private readonly automationProducer: VerificationAutomationProducer,
   ) {}
 
   async handleNewOrder(
@@ -149,13 +148,6 @@ export class VerificationHubService {
     integration: typeof integrations.$inferSelect;
     baselineSentAt: Date;
   }): Promise<void> {
-    if (!this.automationProducer) {
-      this.logger.warn(
-        `Skipping follow-up/no-reply scheduling for verification ${params.verificationId}: automation producer not registered`,
-      );
-      return;
-    }
-
     const { integration, baselineSentAt } = params;
     const baseMs = baselineSentAt.getTime();
 
@@ -210,12 +202,6 @@ export class VerificationHubService {
     orgId: string;
     dueAt: Date;
   }): Promise<void> {
-    if (!this.automationProducer) {
-      this.logger.warn(
-        `Cannot schedule delayed initial send for verification ${params.verificationId}: automation producer not registered`,
-      );
-      return;
-    }
     await this.automationProducer.enqueueInitialSend(params);
   }
 

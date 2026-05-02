@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
@@ -64,7 +64,9 @@ export class WebhookQueueProcessor extends WorkerHost {
 
     switch (data.jobType) {
       case WebhookJobType.ORDER_CREATE:
-        await this.handleOrderCreate(data);
+        if (await this.handleOrderCreate(data)) {
+          await this.webhookEventsRepo.markCompleted(data.webhookEventId);
+        }
         break;
       default:
         this.logger.warn(`Unhandled job type: ${data.jobType} — skipping`);
@@ -74,11 +76,29 @@ export class WebhookQueueProcessor extends WorkerHost {
         );
         return;
     }
-
-    await this.webhookEventsRepo.markCompleted(data.webhookEventId);
   }
 
-  private async handleOrderCreate(data: WebhookJobPayload): Promise<void> {
+  @OnWorkerEvent('failed')
+  async onFailed(job: Job<WebhookJobPayload> | undefined, error: Error) {
+    if (!job) {
+      this.logger.error(
+        `Webhook queue job failed without job context: ${error.message}`,
+      );
+      return;
+    }
+
+    const maxAttempts =
+      typeof job.opts.attempts === 'number' ? job.opts.attempts : 1;
+    if (job.attemptsMade < maxAttempts) return;
+
+    await this.webhookEventsRepo.markFailed(
+      job.data.webhookEventId,
+      error.message,
+      job.attemptsMade,
+    );
+  }
+
+  private async handleOrderCreate(data: WebhookJobPayload): Promise<boolean> {
     const integration = await this.integrationsRepo.findByPlatformDomain(
       data.storeDomain,
       data.platform,
@@ -92,7 +112,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'no_integration_found',
       );
-      return;
+      return false;
     }
 
     if (this.isIntegrationBillingBlocked(integration)) {
@@ -103,7 +123,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         `billing_blocked:${integration.billingStatus ?? 'unknown'}`,
       );
-      return;
+      return false;
     }
 
     const normalizer = this.normalizersByPlatform.get(data.platform);
@@ -115,7 +135,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         `no_normalizer:${data.platform}`,
       );
-      return;
+      return false;
     }
 
     const normalizedOrder = normalizer.normalizeOrder(
@@ -129,10 +149,11 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'normalisation_failed',
       );
-      return;
+      return false;
     }
 
     await this.verificationHub.handleNewOrder(normalizedOrder, integration);
+    return true;
   }
 
   private isIntegrationBillingBlocked(
