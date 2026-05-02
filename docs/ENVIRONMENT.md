@@ -80,8 +80,9 @@ npm run db:push
     - `false`: creates real charges (only for production billing validation).
   - `POST /api/onboarding/billing` requires `planId` and maps to built-in plans:
     - `starter`: free, 30 Verification Messages (no Shopify charge, onboarding auto-completes; one-time claim per store).
-    - `pro`: `$19`/month, 1,000 Verification Messages/month, $0.03 per overage attempt, $60 monthly cap. Recommended plan.
-    - `business`: `$49`/month, 3,000 Verification Messages/month, $0.025 per overage attempt, $150 monthly cap.
+    - `basic`: `$9.99`/month, 200 Verification Messages/month, `$0.035` per overage message, `$14` monthly usage cap. Recommended plan.
+    - `pro`: `$18.99`/month, 500 Verification Messages/month, `$0.032` per overage message, `$32` monthly usage cap.
+    - `business`: `$48.99`/month, 1,500 Verification Messages/month, `$0.03` per overage message, `$90` monthly usage cap.
   - Paid plans include a usage-cap line item (`cappedAmount`) so Verification Message overages can be billed via Shopify usage records.
 
 ## WhatsApp (Meta) Configuration
