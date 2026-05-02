@@ -161,11 +161,6 @@ export interface OnboardingBillingPlanDto {
   amount: number;
   currencyCode: string;
   includedVerifications: number;
-  usage?: {
-    cappedAmount: number;
-    overageRate: number;
-    terms: string;
-  };
 }
 
 export interface OnboardingBillingPlansResponseDto {

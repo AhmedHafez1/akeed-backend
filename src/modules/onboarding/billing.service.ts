@@ -72,7 +72,6 @@ export class BillingService {
         amount: plan.amount,
         currencyCode: plan.currencyCode,
         includedVerifications: plan.includedVerifications,
-        usage: plan.usage,
       })),
       isFreePlanClaimed,
     };
@@ -365,8 +364,6 @@ export class BillingService {
       name: params.plan.name,
       amount: params.plan.amount,
       currencyCode: params.plan.currencyCode,
-      cappedAmount: params.plan.usage?.cappedAmount,
-      usageTerms: params.plan.usage?.terms,
       returnUrl: buildBillingReturnUrl(
         this.billingConfig.getAppUrl(),
         params.integration.platformStoreUrl,

@@ -1,6 +1,5 @@
 import {
   resolveIncludedVerificationsLimit,
-  resolveOverageConfig,
   resolveBillingPlan,
   resolveBillingPlans,
   isOnboardingBillingPlanId,
@@ -37,46 +36,16 @@ describe('onboarding.service.helpers', () => {
       expect(resolveIncludedVerificationsLimit('starter')).toBe(30);
     });
 
-    it('returns 200 for basic', () => {
-      expect(resolveIncludedVerificationsLimit('basic')).toBe(200);
+    it('returns 300 for basic', () => {
+      expect(resolveIncludedVerificationsLimit('basic')).toBe(300);
     });
 
-    it('returns 500 for pro', () => {
-      expect(resolveIncludedVerificationsLimit('pro')).toBe(500);
+    it('returns 1000 for pro', () => {
+      expect(resolveIncludedVerificationsLimit('pro')).toBe(1000);
     });
 
-    it('returns 1500 for business', () => {
-      expect(resolveIncludedVerificationsLimit('business')).toBe(1500);
-    });
-  });
-
-  describe('resolveOverageConfig', () => {
-    it('returns null for starter (no overage)', () => {
-      expect(resolveOverageConfig('starter')).toBeNull();
-    });
-
-    it('returns correct overage config for basic', () => {
-      const config = resolveOverageConfig('basic');
-      expect(config).toEqual({
-        overageRate: 0.035,
-        cappedAmount: 14,
-      });
-    });
-
-    it('returns correct overage config for pro', () => {
-      const config = resolveOverageConfig('pro');
-      expect(config).toEqual({
-        overageRate: 0.032,
-        cappedAmount: 32,
-      });
-    });
-
-    it('returns correct overage config for business', () => {
-      const config = resolveOverageConfig('business');
-      expect(config).toEqual({
-        overageRate: 0.03,
-        cappedAmount: 90,
-      });
+    it('returns 3000 for business', () => {
+      expect(resolveIncludedVerificationsLimit('business')).toBe(3000);
     });
   });
 
@@ -95,53 +64,40 @@ describe('onboarding.service.helpers', () => {
         currencyCode: 'USD',
         testMode: false,
         includedVerifications: 30,
-        usage: undefined,
       });
     });
 
-    it('resolves basic plan with usage terms', () => {
+    it('resolves basic plan without usage billing', () => {
       const plan = resolveBillingPlan({
         planId: 'basic',
         ...defaultParams,
       });
       expect(plan.id).toBe('basic');
       expect(plan.name).toBe('Akeed Basic');
-      expect(plan.amount).toBe(9.99);
-      expect(plan.includedVerifications).toBe(200);
-      expect(plan.usage).toBeDefined();
-      expect(plan.usage!.cappedAmount).toBe(14);
-      expect(plan.usage!.overageRate).toBe(0.035);
-      expect(plan.usage!.terms).toContain('200');
-      expect(plan.usage!.terms).toContain('0.035');
-      expect(plan.usage!.terms).toContain('USD');
+      expect(plan.amount).toBe(8.99);
+      expect(plan.includedVerifications).toBe(300);
     });
 
-    it('resolves pro plan with usage terms', () => {
+    it('resolves pro plan without usage billing', () => {
       const plan = resolveBillingPlan({
         planId: 'pro',
         ...defaultParams,
       });
       expect(plan.id).toBe('pro');
       expect(plan.name).toBe('Akeed Pro');
-      expect(plan.amount).toBe(18.99);
-      expect(plan.includedVerifications).toBe(500);
-      expect(plan.usage).toBeDefined();
-      expect(plan.usage!.cappedAmount).toBe(32);
-      expect(plan.usage!.overageRate).toBe(0.032);
+      expect(plan.amount).toBe(19.99);
+      expect(plan.includedVerifications).toBe(1000);
     });
 
-    it('resolves business plan with usage terms', () => {
+    it('resolves business plan as public Scale plan without usage billing', () => {
       const plan = resolveBillingPlan({
         planId: 'business',
         ...defaultParams,
       });
       expect(plan.id).toBe('business');
-      expect(plan.name).toBe('Akeed Business');
-      expect(plan.amount).toBe(48.99);
-      expect(plan.includedVerifications).toBe(1500);
-      expect(plan.usage).toBeDefined();
-      expect(plan.usage!.cappedAmount).toBe(90);
-      expect(plan.usage!.overageRate).toBe(0.03);
+      expect(plan.name).toBe('Akeed Scale');
+      expect(plan.amount).toBe(49.99);
+      expect(plan.includedVerifications).toBe(3000);
     });
 
     it('passes testMode through', () => {
@@ -160,7 +116,6 @@ describe('onboarding.service.helpers', () => {
         testMode: false,
       });
       expect(plan.currencyCode).toBe('SAR');
-      expect(plan.usage!.terms).toContain('SAR');
     });
   });
 

@@ -42,7 +42,7 @@ export class VerificationAutomationProducer {
     await this.enqueue(
       params,
       VerificationAutomationJobType.FOLLOW_UP,
-      'follow-up:1',
+      'follow-up-1',
     );
   }
 
@@ -61,7 +61,7 @@ export class VerificationAutomationProducer {
   ): Promise<void> {
     const now = Date.now();
     const delay = Math.max(0, params.dueAt.getTime() - now);
-    const jobId = `verification:${params.verificationId}:${suffix}`;
+    const jobId = `verification-${params.verificationId}-${suffix}`;
 
     const payload: VerificationAutomationJobPayload = {
       verificationId: params.verificationId,

@@ -395,21 +395,22 @@ Important constraints and indexes:
 
 Plan limits are defined in `akeed-backend/src/modules/onboarding/onboarding.service.helpers.ts`.
 
-| Plan | Monthly price | Included verifications | Overage |
-|---|---:|---:|---:|
-| Starter | `0` | `30` | None |
-| Basic | `9.99` | `200` | `0.035` per extra verification, capped at `14` |
-| Pro | `18.99` | `500` | `0.032` per extra verification, capped at `32` |
-| Business | `48.99` | `1500` | `0.03` per extra verification, capped at `90` |
+| Plan | Monthly price | Included WhatsApp confirmations | Public positioning |
+|---|---:|---:|---|
+| Starter | `0` | `30` one-time | Try Akeed before paying |
+| Basic | `8.99` | `300` monthly | Start confirming COD orders |
+| Pro | `19.99` | `1000` monthly | For stores confirming COD orders daily |
+| Scale (`business`) | `49.99` | `3000` monthly | Higher-volume COD stores |
 
 Usage principles:
 
 - Usage is consumed when a WhatsApp send is attempted, not when a verification row is created.
 - Delayed initial sends consume only when the delayed worker sends the message.
 - Failed sends release the usage reservation.
-- Follow-up messages are separately billable attempts.
+- Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
 - Dashboard usage shows consumed count and included limit for the current billing period.
+- Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade.
 
 ## Reliability And Safety
 

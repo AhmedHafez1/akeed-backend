@@ -6,7 +6,7 @@ describe('BillingEntitlementService', () => {
 
     beforeEach(() => {
       // Instantiate with null dependencies — only testing pure method
-      service = new BillingEntitlementService(null as any, null as any);
+      service = new BillingEntitlementService(null as any);
     });
 
     it('returns 1st of current month when no activation date', () => {
