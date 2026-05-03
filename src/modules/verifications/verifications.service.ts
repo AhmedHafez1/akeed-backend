@@ -53,6 +53,9 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
+const DEFAULT_AUTO_VERIFY_ENABLED = true;
+const DEFAULT_FOLLOW_UP_ENABLED = true;
+const DEFAULT_QUIET_HOURS_ENABLED = false;
 type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {
@@ -159,12 +162,15 @@ export class VerificationsService {
         : this.resolveFallbackUsageLimit(activeIntegrations);
     const shippingSettings =
       this.resolveDashboardShippingSettings(activeIntegrations);
+    const automationSettings =
+      this.resolveDashboardAutomationSettings(activeIntegrations);
     const moneySaved = Number(
       (filteredCounts.canceled * shippingSettings.avgShippingCost).toFixed(2),
     );
 
     return {
       date_range: dateRange,
+      automation: automationSettings,
       totals: {
         confirmed: filteredCounts.confirmed,
         canceled: filteredCounts.canceled,
@@ -489,6 +495,21 @@ export class VerificationsService {
     return {
       currency,
       avgShippingCost,
+    };
+  }
+
+  private resolveDashboardAutomationSettings(
+    activeIntegrations: IntegrationRecord[],
+  ): VerificationStatsDto['automation'] {
+    const withSettings = activeIntegrations[0];
+
+    return {
+      is_auto_verify_enabled:
+        withSettings?.isAutoVerifyEnabled ?? DEFAULT_AUTO_VERIFY_ENABLED,
+      follow_up_enabled:
+        withSettings?.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
+      quiet_hours_enabled:
+        withSettings?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
     };
   }
 

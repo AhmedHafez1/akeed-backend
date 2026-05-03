@@ -82,6 +82,11 @@ export interface PaginatedResponse<T> {
 
 export interface VerificationStatsDto {
   date_range: DashboardDateRange;
+  automation: {
+    is_auto_verify_enabled: boolean;
+    follow_up_enabled: boolean;
+    quiet_hours_enabled: boolean;
+  };
   totals: {
     confirmed: number;
     canceled: number;
