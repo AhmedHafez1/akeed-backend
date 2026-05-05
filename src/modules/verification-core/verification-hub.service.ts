@@ -3,16 +3,14 @@ import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import {
-  MESSAGING_PORT,
-  type MessagingPort,
-} from '../../shared/ports/messaging.port';
-import {
   ORDER_TAGGING_PORT,
   type OrderTaggingPort,
 } from '../../shared/ports/order-tagging.port';
 import { integrations, orders } from '../../infrastructure/database/schema';
-import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
+import { VerificationSendService } from './verification-send.service';
+import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
+import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 
 @Injectable()
 export class VerificationHubService {
@@ -21,10 +19,10 @@ export class VerificationHubService {
   constructor(
     private ordersRepo: OrdersRepository,
     private verificationsRepo: VerificationsRepository,
-    @Inject(MESSAGING_PORT) private messagingPort: MessagingPort,
     @Inject(ORDER_TAGGING_PORT) private orderTaggingPort: OrderTaggingPort,
-    private billingEntitlementService: BillingEntitlementService,
     private orderEligibilityService: OrderEligibilityService,
+    private verificationSendService: VerificationSendService,
+    private readonly automationProducer: VerificationAutomationProducer,
   ) {}
 
   async handleNewOrder(
@@ -45,6 +43,13 @@ export class VerificationHubService {
         })`,
       );
       return { skipped: true, reason: eligibility.reason };
+    }
+
+    if (!integration.isAutoVerifyEnabled) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: auto verification is disabled`,
+      );
+      return { skipped: true, reason: 'auto_verify_disabled' };
     }
 
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
@@ -68,88 +73,136 @@ export class VerificationHubService {
       return { orderId: order.id, verificationId: verification.id };
     }
 
-    const reservation =
-      await this.billingEntitlementService.reserveVerificationSlot(integration);
-    if (!reservation.allowed) {
-      this.logger.warn(
-        `Plan limit reached for integration ${integration.id} (${reservation.consumedCount}/${reservation.includedLimit}) in period ${reservation.periodStart}; skipping WhatsApp send for order ${order.id}`,
-      );
+    // 3. Create the verification record in `pending` state. Billing is only
+    //    consumed when the WhatsApp template is actually attempted, so a
+    //    delayed initial send (sendDelayMinutes > 0) does not reserve a slot
+    //    until the worker fires.
+    verification = await this.verificationsRepo.create({
+      orgId: order.orgId,
+      orderId: order.id,
+      status: 'pending',
+    });
 
-      verification = await this.verificationsRepo.create({
-        orgId: order.orgId,
-        orderId: order.id,
-        status: 'failed',
-        metadata: {
-          reason: 'plan_limit_reached',
-          planId: reservation.planId,
-          periodStart: reservation.periodStart,
-          consumedCount: reservation.consumedCount,
-          includedLimit: reservation.includedLimit,
-        },
+    const sendDelayMinutes = Math.max(0, integration.sendDelayMinutes ?? 0);
+
+    if (sendDelayMinutes > 0) {
+      const desiredDueAt = new Date(Date.now() + sendDelayMinutes * 60_000);
+      const adjustedDueAt = adjustForQuietHours(desiredDueAt, {
+        enabled: integration.quietHoursEnabled,
+        start: integration.quietHoursStart,
+        end: integration.quietHoursEnd,
+        timezone: integration.timezone,
       });
 
+      await this.scheduleInitialSend({
+        verificationId: verification.id,
+        orgId: order.orgId,
+        dueAt: adjustedDueAt,
+      });
+
+      this.logger.log(
+        `Scheduled delayed initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
+      );
       return { orderId: order.id, verificationId: verification.id };
     }
 
-    // 3. Create Verification Record
-    try {
-      verification = await this.verificationsRepo.create({
-        orgId: order.orgId,
-        orderId: order.id,
-        status: 'pending',
-      });
-    } catch (error) {
-      await this.safeReleaseUsageReservation({
-        integrationId: integration.id,
-        periodStart: reservation.periodStart,
-      });
-      throw error;
-    }
-
-    // 4. Trigger WhatsApp Message
-    this.logger.log(`Triggering WhatsApp for Order ${order.id}...`);
-    let response: Awaited<
-      ReturnType<MessagingPort['sendVerificationTemplate']>
-    > | null = null;
-    try {
-      response = await this.messagingPort.sendVerificationTemplate(
-        order.customerPhone,
-        order.externalOrderId,
-        order.totalPrice!,
-        verification.id,
-        integration.defaultLanguage,
-      );
-    } catch (error) {
-      await this.safeReleaseUsageReservation({
-        integrationId: integration.id,
-        periodStart: reservation.periodStart,
-      });
-      await this.safeMarkVerificationFailed(verification.id);
-      throw error;
-    }
-
-    // 5. Update Verification Record with WhatsApp Message ID
-    const waMessageId = response?.messages?.[0]?.id;
-    if (!waMessageId) {
-      this.logger.error(
-        `WhatsApp API response did not include a message id for verification ${verification.id}; releasing reserved usage slot`,
-      );
-      await this.safeReleaseUsageReservation({
-        integrationId: integration.id,
-        periodStart: reservation.periodStart,
-      });
-      await this.safeMarkVerificationFailed(verification.id);
-      return { orderId: order.id, verificationId: verification.id };
-    }
-
-    this.logger.log(`WhatsApp Message Sent with ID: ${waMessageId}`);
-    await this.verificationsRepo.updateStatus(
+    // Immediate send path
+    const sendOutcome = await this.verificationSendService.sendInitial(
       verification.id,
-      'sent',
-      waMessageId,
     );
 
+    if (sendOutcome.status === 'sent') {
+      await this.scheduleFollowUpAndEscalation({
+        verificationId: verification.id,
+        orgId: order.orgId,
+        integration,
+        baselineSentAt: sendOutcome.sentAt
+          ? new Date(sendOutcome.sentAt)
+          : new Date(),
+      });
+    } else if (sendOutcome.status === 'plan_limit_reached') {
+      await this.verificationsRepo.updateByIdForOrg(
+        verification.id,
+        order.orgId,
+        {
+          status: 'failed',
+          metadata: {
+            reason: 'plan_limit_reached',
+            kind: 'initial',
+          },
+        },
+      );
+    }
+
     return { orderId: order.id, verificationId: verification.id };
+  }
+
+  /**
+   * Schedules the follow-up send and the no-reply escalation, applying
+   * quiet-hours adjustment and ensuring no-reply runs strictly after a
+   * follow-up attempt when follow-ups are enabled.
+   */
+  async scheduleFollowUpAndEscalation(params: {
+    verificationId: string;
+    orgId: string;
+    integration: typeof integrations.$inferSelect;
+    baselineSentAt: Date;
+  }): Promise<void> {
+    const { integration, baselineSentAt } = params;
+    const baseMs = baselineSentAt.getTime();
+
+    const quietConfig = {
+      enabled: integration.quietHoursEnabled,
+      start: integration.quietHoursStart,
+      end: integration.quietHoursEnd,
+      timezone: integration.timezone,
+    };
+
+    let followUpDueAt: Date | null = null;
+    if (
+      integration.followUpEnabled &&
+      (integration.followUpDelayMinutes ?? 0) > 0
+    ) {
+      followUpDueAt = adjustForQuietHours(
+        new Date(baseMs + integration.followUpDelayMinutes * 60_000),
+        quietConfig,
+      );
+      await this.automationProducer.enqueueFollowUp({
+        verificationId: params.verificationId,
+        orgId: params.orgId,
+        dueAt: followUpDueAt,
+      });
+    }
+
+    const escalationMinutes = Math.max(
+      0,
+      integration.escalationDelayMinutes ?? 0,
+    );
+    if (escalationMinutes > 0) {
+      let escalationDueAt = adjustForQuietHours(
+        new Date(baseMs + escalationMinutes * 60_000),
+        quietConfig,
+      );
+
+      // Preserve at least one follow-up attempt before no-reply fires.
+      if (followUpDueAt && escalationDueAt <= followUpDueAt) {
+        escalationDueAt = new Date(followUpDueAt.getTime() + 60_000);
+      }
+
+      await this.automationProducer.enqueueNoReplyEscalation({
+        verificationId: params.verificationId,
+        orgId: params.orgId,
+        dueAt: escalationDueAt,
+      });
+    }
+  }
+
+  private async scheduleInitialSend(params: {
+    verificationId: string;
+    orgId: string;
+    dueAt: Date;
+  }): Promise<void> {
+    await this.automationProducer.enqueueInitialSend(params);
   }
 
   async finalizeVerification(verificationId: string, status: string) {
@@ -201,35 +254,6 @@ export class VerificationHubService {
           `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
         );
       }
-    }
-  }
-
-  private async safeReleaseUsageReservation(params: {
-    integrationId: string;
-    periodStart: string;
-  }): Promise<void> {
-    try {
-      await this.billingEntitlementService.releaseVerificationSlot(params);
-    } catch (error) {
-      this.logger.error(
-        `Failed to release usage reservation for integration ${params.integrationId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  private async safeMarkVerificationFailed(
-    verificationId: string,
-  ): Promise<void> {
-    try {
-      await this.verificationsRepo.updateStatus(verificationId, 'failed');
-    } catch (error) {
-      this.logger.error(
-        `Failed to mark verification ${verificationId} as failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
     }
   }
 

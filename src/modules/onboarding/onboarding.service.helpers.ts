@@ -7,21 +7,10 @@ import {
   type OnboardingBillingPlanId,
 } from './dto/onboarding.dto';
 
-interface BillingPlanUsageTemplate {
-  cappedAmount: number;
-  overageRate: number;
-}
-
 interface BillingPlanTemplate {
   name: string;
   amount: number;
   includedVerifications: number;
-  usage?: BillingPlanUsageTemplate;
-}
-
-export interface BillingPlanUsageConfig {
-  cappedAmount: number;
-  terms: string;
 }
 
 export interface BillingPlanConfig {
@@ -31,7 +20,6 @@ export interface BillingPlanConfig {
   currencyCode: string;
   testMode: boolean;
   includedVerifications: number;
-  usage?: BillingPlanUsageConfig;
 }
 
 interface BillingRedirectParams {
@@ -48,23 +36,20 @@ const BILLING_PLAN_TEMPLATES: Record<
     amount: 0,
     includedVerifications: 30,
   },
+  basic: {
+    name: 'Akeed Basic',
+    amount: 8.99,
+    includedVerifications: 300,
+  },
   pro: {
     name: 'Akeed Pro',
-    amount: 19,
+    amount: 19.99,
     includedVerifications: 1000,
-    usage: {
-      cappedAmount: 60,
-      overageRate: 0.03,
-    },
   },
   business: {
-    name: 'Akeed Business',
-    amount: 49,
+    name: 'Akeed Scale',
+    amount: 49.99,
     includedVerifications: 3000,
-    usage: {
-      cappedAmount: 150,
-      overageRate: 0.025,
-    },
   },
 };
 
@@ -87,25 +72,6 @@ export function resolveIncludedVerificationsLimit(
   return planTemplate.includedVerifications;
 }
 
-interface OverageConfig {
-  overageRate: number;
-  cappedAmount: number;
-}
-
-export function resolveOverageConfig(
-  planId: OnboardingBillingPlanId,
-): OverageConfig | null {
-  const planTemplate = BILLING_PLAN_TEMPLATES[planId];
-  if (!planTemplate?.usage) {
-    return null;
-  }
-
-  return {
-    overageRate: planTemplate.usage.overageRate,
-    cappedAmount: planTemplate.usage.cappedAmount,
-  };
-}
-
 export function resolveBillingPlan(params: {
   planId: OnboardingBillingPlanId;
   currencyCode: string;
@@ -116,17 +82,6 @@ export function resolveBillingPlan(params: {
     throw new BadRequestException(`Unsupported billing plan: ${params.planId}`);
   }
 
-  const usage = planTemplate.usage
-    ? {
-        cappedAmount: planTemplate.usage.cappedAmount,
-        terms: buildUsageTerms({
-          includedVerifications: planTemplate.includedVerifications,
-          overageRate: planTemplate.usage.overageRate,
-          currencyCode: params.currencyCode,
-        }),
-      }
-    : undefined;
-
   const billingPlan: BillingPlanConfig = {
     id: params.planId,
     name: planTemplate.name,
@@ -134,7 +89,6 @@ export function resolveBillingPlan(params: {
     currencyCode: params.currencyCode,
     testMode: params.testMode,
     includedVerifications: planTemplate.includedVerifications,
-    usage,
   };
 
   validateBillingPlan(billingPlan);
@@ -192,14 +146,6 @@ export function resolveBooleanConfig(
   return parseBooleanConfig(rawValue);
 }
 
-function buildUsageTerms(params: {
-  includedVerifications: number;
-  overageRate: number;
-  currencyCode: string;
-}): string {
-  return `Includes ${params.includedVerifications} Verification Messages/month. Additional Verification Messages are billed at ${params.overageRate} ${params.currencyCode} each.`;
-}
-
 function validateBillingPlan(plan: BillingPlanConfig): void {
   if (!Number.isFinite(plan.amount) || plan.amount < 0) {
     throw new InternalServerErrorException(
@@ -211,23 +157,6 @@ function validateBillingPlan(plan: BillingPlanConfig): void {
     throw new InternalServerErrorException(
       `Invalid included verification limit for plan: ${plan.id}`,
     );
-  }
-
-  if (plan.usage) {
-    if (
-      !Number.isFinite(plan.usage.cappedAmount) ||
-      plan.usage.cappedAmount <= 0
-    ) {
-      throw new InternalServerErrorException(
-        `Invalid billing capped amount for plan: ${plan.id}`,
-      );
-    }
-
-    if (!plan.usage.terms.trim()) {
-      throw new InternalServerErrorException(
-        `Invalid billing usage terms for plan: ${plan.id}`,
-      );
-    }
   }
 }
 

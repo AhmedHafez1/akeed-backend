@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SecurityMiddleware } from './shared/middleware/security.middleware';
@@ -10,7 +11,9 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { VerificationsModule } from './modules/verifications/verifications.module';
 import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module';
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
+import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
+import { ORDER_ADMIN_PORT } from './shared/ports/order-admin.port';
 import { ORDER_TAGGING_PORT } from './shared/ports/order-tagging.port';
 import { STORE_PLATFORM_PORT } from './shared/ports/store-platform.port';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
@@ -26,10 +29,26 @@ import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shop
         ? '.env'
         : `.env.${process.env.NODE_ENV}`,
     }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+        },
+        defaultJobOptions: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 3_000 },
+          removeOnComplete: { age: 7 * 24 * 3_600 },
+          removeOnFail: { age: 30 * 24 * 3_600 },
+        },
+      }),
+    }),
     VerificationCoreModule.register({
       imports: [MetaModule, ShopifyModule],
       ports: [
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
+        { provide: ORDER_ADMIN_PORT, useExisting: ShopifyApiService },
         { provide: ORDER_TAGGING_PORT, useExisting: ShopifyApiService },
         { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
       ],
@@ -40,6 +59,7 @@ import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shop
     OrdersModule,
     VerificationsModule,
     WebhookQueueModule,
+    VerificationAutomationModule,
   ],
   controllers: [AppController],
   providers: [AppService, SecurityMiddleware],

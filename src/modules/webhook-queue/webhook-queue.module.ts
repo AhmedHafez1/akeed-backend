@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { WEBHOOK_QUEUE_NAME } from './webhook-queue.constants';
 import { WebhookQueueProducer } from './webhook-queue.producer';
@@ -13,22 +13,6 @@ import { PhoneService } from '../../shared/services/phone.service';
   imports: [
     ConfigModule,
     DatabaseModule,
-
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        connection: {
-          url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
-        },
-        defaultJobOptions: {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 3_000 },
-          removeOnComplete: { age: 7 * 24 * 3_600 },
-          removeOnFail: { age: 30 * 24 * 3_600 },
-        },
-      }),
-    }),
 
     BullModule.registerQueue({ name: WEBHOOK_QUEUE_NAME }),
   ],

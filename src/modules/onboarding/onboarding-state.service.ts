@@ -12,6 +12,8 @@ import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_SHIPPING_CURRENCIES,
   ONBOARDING_STATUSES,
+  AUTOMATION_TIMEZONES,
+  type AutomationTimezone,
   type OnboardingShippingCurrency,
   type OnboardingStateDto,
   type UpdateOnboardingSettingsDto,
@@ -26,6 +28,12 @@ import { BillingConfigService } from './billing-config.service';
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
 const DEFAULT_AVG_SHIPPING_COST = 3;
+const DEFAULT_FOLLOW_UP_ENABLED = true;
+const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
+const DEFAULT_ESCALATION_DELAY_MINUTES = 360;
+const DEFAULT_QUIET_HOURS_ENABLED = false;
+const DEFAULT_TIMEZONE: AutomationTimezone = 'Asia/Riyadh';
+const DEFAULT_SEND_DELAY_MINUTES = 0;
 
 @Injectable()
 export class OnboardingStateService {
@@ -62,6 +70,70 @@ export class OnboardingStateService {
 
     if (payload.avgShippingCost !== undefined) {
       updates.avgShippingCost = payload.avgShippingCost.toFixed(2);
+    }
+
+    // Automation settings
+    if (payload.followUpEnabled !== undefined) {
+      updates.followUpEnabled = payload.followUpEnabled;
+    }
+    if (payload.followUpDelayMinutes !== undefined) {
+      updates.followUpDelayMinutes = payload.followUpDelayMinutes;
+    }
+    if (payload.escalationDelayMinutes !== undefined) {
+      updates.escalationDelayMinutes = payload.escalationDelayMinutes;
+    }
+    if (payload.quietHoursEnabled !== undefined) {
+      updates.quietHoursEnabled = payload.quietHoursEnabled;
+    }
+    if (payload.quietHoursStart !== undefined) {
+      updates.quietHoursStart = payload.quietHoursStart;
+    }
+    if (payload.quietHoursEnd !== undefined) {
+      updates.quietHoursEnd = payload.quietHoursEnd;
+    }
+    if (payload.timezone !== undefined) {
+      updates.timezone = payload.timezone;
+    }
+    if (payload.sendDelayMinutes !== undefined) {
+      updates.sendDelayMinutes = payload.sendDelayMinutes;
+    }
+
+    // Cross-field validation: followUpDelayMinutes < escalationDelayMinutes
+    const resolvedFollowUpDelay =
+      updates.followUpDelayMinutes ?? integration.followUpDelayMinutes;
+    const resolvedEscalationDelay =
+      updates.escalationDelayMinutes ?? integration.escalationDelayMinutes;
+    const resolvedFollowUpEnabled =
+      updates.followUpEnabled ?? integration.followUpEnabled;
+
+    if (
+      resolvedFollowUpEnabled &&
+      resolvedFollowUpDelay >= resolvedEscalationDelay
+    ) {
+      throw new BadRequestException(
+        'followUpDelayMinutes must be less than escalationDelayMinutes when follow-up is enabled',
+      );
+    }
+
+    // Cross-field validation: quiet hours require both start and end
+    const resolvedQuietHoursEnabled =
+      updates.quietHoursEnabled ?? integration.quietHoursEnabled;
+    const resolvedQuietHoursStart =
+      updates.quietHoursStart !== undefined
+        ? updates.quietHoursStart
+        : integration.quietHoursStart;
+    const resolvedQuietHoursEnd =
+      updates.quietHoursEnd !== undefined
+        ? updates.quietHoursEnd
+        : integration.quietHoursEnd;
+
+    if (
+      resolvedQuietHoursEnabled &&
+      (!resolvedQuietHoursStart || !resolvedQuietHoursEnd)
+    ) {
+      throw new BadRequestException(
+        'quietHoursStart and quietHoursEnd are required when quiet hours are enabled',
+      );
     }
 
     const updated = await this.integrationsRepo.updateById(integration.id, {
@@ -177,6 +249,18 @@ export class OnboardingStateService {
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
       billingManagementUrl: this.resolveBillingManagementUrl(integration),
+      followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
+      followUpDelayMinutes:
+        integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
+      escalationDelayMinutes:
+        integration.escalationDelayMinutes ?? DEFAULT_ESCALATION_DELAY_MINUTES,
+      quietHoursEnabled:
+        integration.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
+      quietHoursStart: integration.quietHoursStart ?? null,
+      quietHoursEnd: integration.quietHoursEnd ?? null,
+      timezone: this.resolveTimezone(integration),
+      sendDelayMinutes:
+        integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
     };
   }
 
@@ -235,5 +319,13 @@ export class OnboardingStateService {
     }
 
     return Number(parsed.toFixed(2));
+  }
+
+  private resolveTimezone(integration: IntegrationRecord): AutomationTimezone {
+    const tz = integration.timezone?.trim();
+    if (tz && AUTOMATION_TIMEZONES.includes(tz as AutomationTimezone)) {
+      return tz as AutomationTimezone;
+    }
+    return DEFAULT_TIMEZONE;
   }
 }

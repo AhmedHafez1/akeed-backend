@@ -6,4 +6,5 @@ export type VerificationStatus =
   | 'confirmed'
   | 'canceled'
   | 'expired'
-  | 'failed';
+  | 'failed'
+  | 'no_reply';

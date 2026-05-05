@@ -1,6 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
+import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import {
@@ -21,8 +29,17 @@ import {
   decodeCursor,
   encodeCursor,
 } from '../orders/services/pagination.helpers';
+import {
+  ORDER_ADMIN_PORT,
+  type OrderAdminPort,
+} from '../../shared/ports/order-admin.port';
+import {
+  ORDER_TAGGING_PORT,
+  type OrderTaggingPort,
+} from '../../shared/ports/order-tagging.port';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
+  'pending',
   'sent',
   'delivered',
   'read',
@@ -30,17 +47,22 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
   'canceled',
   'expired',
   'failed',
+  'no_reply',
 ];
 
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
+const DEFAULT_AUTO_VERIFY_ENABLED = true;
+const DEFAULT_FOLLOW_UP_ENABLED = true;
+const DEFAULT_QUIET_HOURS_ENABLED = false;
 type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {
   total: number;
   confirmed: number;
   canceled: number;
+  customerCanceled: number;
   sent: number;
   delivered: number;
   read: number;
@@ -48,10 +70,17 @@ interface VerificationStatusCounts {
 
 @Injectable()
 export class VerificationsService {
+  private readonly logger = new Logger(VerificationsService.name);
+
   constructor(
     private readonly verificationsRepo: VerificationsRepository,
     private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
     private readonly integrationsRepo: IntegrationsRepository,
+    private readonly ordersRepo: OrdersRepository,
+    @Inject(ORDER_ADMIN_PORT)
+    private readonly orderAdmin: OrderAdminPort,
+    @Inject(ORDER_TAGGING_PORT)
+    private readonly orderTagging: OrderTaggingPort,
   ) {}
 
   async listByOrg(
@@ -126,18 +155,22 @@ export class VerificationsService {
     });
 
     const replyRate = this.calculateReplyRate(filteredCounts);
+    const confirmationRate = this.calculateConfirmationRate(filteredCounts);
     const usageLimit =
       usage.includedLimit > 0
         ? usage.includedLimit
         : this.resolveFallbackUsageLimit(activeIntegrations);
     const shippingSettings =
       this.resolveDashboardShippingSettings(activeIntegrations);
+    const automationSettings =
+      this.resolveDashboardAutomationSettings(activeIntegrations);
     const moneySaved = Number(
       (filteredCounts.canceled * shippingSettings.avgShippingCost).toFixed(2),
     );
 
     return {
       date_range: dateRange,
+      automation: automationSettings,
       totals: {
         confirmed: filteredCounts.confirmed,
         canceled: filteredCounts.canceled,
@@ -145,6 +178,7 @@ export class VerificationsService {
         delivered: filteredCounts.delivered,
         read: filteredCounts.read,
         reply_rate: replyRate,
+        confirmation_rate: confirmationRate,
       },
       usage: {
         used: usage.consumedCount,
@@ -155,6 +189,148 @@ export class VerificationsService {
         currency: shippingSettings.currency,
         money_saved: moneySaved,
       },
+    };
+  }
+
+  /**
+   * Merchant-initiated cancellation for a no_reply verification.
+   *
+   * 1. Load verification (org-scoped).
+   * 2. Idempotent: if already merchant_no_reply canceled, return success.
+   * 3. Reject any status other than no_reply.
+   * 4. Load the linked order to obtain the Shopify integration.
+   * 5. Cancel the order on Shopify first (fail-fast on error).
+   * 6. Mark verification as merchant-canceled locally.
+   * 7. Apply "Akeed: Canceled" tag (best-effort; log but don't fail).
+   */
+  async cancelNoReplyOrder(
+    orgId: string,
+    verificationId: string,
+  ): Promise<{
+    success: true;
+    verificationId: string;
+    status: 'canceled';
+    alreadyCanceled?: boolean;
+    shopifyJobId?: string;
+  }> {
+    const verification = await this.verificationsRepo.findByIdForOrg(
+      verificationId,
+      orgId,
+    );
+
+    if (!verification) {
+      throw new NotFoundException('Verification not found');
+    }
+
+    // Idempotent: already merchant_no_reply canceled
+    if (
+      verification.status === 'canceled' &&
+      verification.cancellationSource === 'merchant_no_reply' &&
+      verification.merchantCanceledAt
+    ) {
+      return {
+        success: true,
+        verificationId,
+        status: 'canceled',
+        alreadyCanceled: true,
+      };
+    }
+
+    if (verification.status !== 'no_reply') {
+      throw new BadRequestException(
+        `Cannot cancel verification with status '${verification.status}'; only 'no_reply' verifications can be canceled`,
+      );
+    }
+
+    // Load order with integration
+    const order = await this.ordersRepo.findById(verification.orderId);
+    if (!order?.integration) {
+      throw new BadRequestException(
+        'Cannot cancel: order has no linked Shopify integration',
+      );
+    }
+
+    const externalOrderId = order.externalOrderId;
+    if (!externalOrderId) {
+      throw new BadRequestException(
+        'Cannot cancel: order has no external Shopify order ID',
+      );
+    }
+
+    // Cancel on Shopify first — if this fails, do NOT update local state
+    let shopifyJobId: string | undefined;
+    try {
+      const result = await this.orderAdmin.cancelOrder(
+        order.integration,
+        externalOrderId,
+        'CUSTOMER',
+      );
+      shopifyJobId = result.jobId;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[CancelNoReply] Shopify cancellation failed for verification ${verificationId}: ${message}`,
+      );
+      throw new BadGatewayException(
+        `Shopify order cancellation failed: ${message}`,
+      );
+    }
+
+    // Mark as merchant-canceled locally
+    const canceledAt = new Date().toISOString();
+    const updated = await this.verificationsRepo.markMerchantNoReplyCanceled(
+      verificationId,
+      orgId,
+      canceledAt,
+    );
+
+    if (!updated) {
+      // Race: verification status changed between our check and the update.
+      // Re-check for idempotent merchant_no_reply.
+      const reloaded = await this.verificationsRepo.findByIdForOrg(
+        verificationId,
+        orgId,
+      );
+      if (
+        reloaded?.status === 'canceled' &&
+        reloaded.cancellationSource === 'merchant_no_reply'
+      ) {
+        return {
+          success: true,
+          verificationId,
+          status: 'canceled',
+          alreadyCanceled: true,
+          shopifyJobId,
+        };
+      }
+
+      this.logger.warn(
+        `[CancelNoReply] Verification ${verificationId} status changed during cancellation (now=${reloaded?.status ?? 'unknown'})`,
+      );
+      throw new BadRequestException(
+        'Verification status changed during cancellation; Shopify order was already canceled — check order status manually',
+      );
+    }
+
+    // Best-effort: add "Akeed: Canceled" tag
+    try {
+      await this.orderTagging.addOrderTag(
+        order.integration,
+        externalOrderId,
+        'Akeed: Canceled',
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `[CancelNoReply] Failed to add 'Akeed: Canceled' tag for verification ${verificationId}: ${message}`,
+      );
+    }
+
+    return {
+      success: true,
+      verificationId,
+      status: 'canceled',
+      shopifyJobId,
     };
   }
 
@@ -181,14 +357,29 @@ export class VerificationsService {
     return statuses;
   }
 
+  /**
+   * Reply rate = (confirmed + customer-canceled) / total.
+   * Merchant no-reply cancellations are excluded from the numerator.
+   */
   private calculateReplyRate(counts: VerificationStatusCounts): number {
     if (counts.total === 0) {
       return 0;
     }
 
     return Number(
-      (((counts.confirmed + counts.canceled) / counts.total) * 100).toFixed(1),
+      (
+        ((counts.confirmed + counts.customerCanceled) / counts.total) *
+        100
+      ).toFixed(1),
     );
+  }
+
+  private calculateConfirmationRate(counts: VerificationStatusCounts): number {
+    if (counts.total === 0) {
+      return 0;
+    }
+
+    return Number(((counts.confirmed / counts.total) * 100).toFixed(1));
   }
 
   private resolveDateRangeBounds(
@@ -304,6 +495,21 @@ export class VerificationsService {
     return {
       currency,
       avgShippingCost,
+    };
+  }
+
+  private resolveDashboardAutomationSettings(
+    activeIntegrations: IntegrationRecord[],
+  ): VerificationStatsDto['automation'] {
+    const withSettings = activeIntegrations[0];
+
+    return {
+      is_auto_verify_enabled:
+        withSettings?.isAutoVerifyEnabled ?? DEFAULT_AUTO_VERIFY_ENABLED,
+      follow_up_enabled:
+        withSettings?.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
+      quiet_hours_enabled:
+        withSettings?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
     };
   }
 

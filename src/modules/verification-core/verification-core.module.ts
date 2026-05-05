@@ -4,12 +4,22 @@ import {
   Provider,
   Type,
   ForwardReference,
+  InjectionToken,
 } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationHubService } from './verification-hub.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
+import { VerificationSendService } from './verification-send.service';
 import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
+import { VerificationAutomationQueueModule } from '../verification-automation/verification-automation-queue.module';
+
+function extractProviderToken(provider: Provider): InjectionToken {
+  if (typeof provider === 'function') {
+    return provider;
+  }
+  return (provider as { provide: InjectionToken }).provide;
+}
 
 @Module({})
 export class VerificationCoreModule {
@@ -20,11 +30,16 @@ export class VerificationCoreModule {
     return {
       module: VerificationCoreModule,
       global: true,
-      imports: [DatabaseModule, ...config.imports],
+      imports: [
+        DatabaseModule,
+        VerificationAutomationQueueModule,
+        ...config.imports,
+      ],
       providers: [
         VerificationHubService,
         BillingEntitlementService,
         OrderEligibilityService,
+        VerificationSendService,
         ShopifyOrderEligibilityStrategy,
         ...config.ports,
       ],
@@ -32,6 +47,8 @@ export class VerificationCoreModule {
         VerificationHubService,
         BillingEntitlementService,
         OrderEligibilityService,
+        VerificationSendService,
+        ...config.ports.map(extractProviderToken),
       ],
     };
   }

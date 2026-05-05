@@ -7,9 +7,22 @@ import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
 
 /**
- * Terminal statuses that must never be overwritten by later webhook events.
+ * Terminal statuses that must never be overwritten by later webhook events
+ * (delivery/read/failed). Note: `no_reply` is also protected from webhook
+ * status updates but can still be overridden by customer button replies.
  */
 const TERMINAL_STATUSES: VerificationStatus[] = ['confirmed', 'canceled'];
+
+/**
+ * Statuses that webhook delivery/read/failed events must not overwrite.
+ * This is a superset of TERMINAL_STATUSES — it additionally blocks
+ * late webhook events from reverting a no_reply escalation.
+ */
+const WEBHOOK_PROTECTED_STATUSES: VerificationStatus[] = [
+  'confirmed',
+  'canceled',
+  'no_reply',
+];
 
 /**
  * Converts a Meta webhook Unix-epoch string (seconds) to an ISO-8601 string.
@@ -37,6 +50,7 @@ export class VerificationsRepository {
     total: number;
     confirmed: number;
     canceled: number;
+    customerCanceled: number;
     sent: number;
     delivered: number;
     read: number;
@@ -49,6 +63,7 @@ export class VerificationsRepository {
         read: sql<number>`count(${verifications.readAt})::int`,
         confirmed: sql<number>`count(${verifications.confirmedAt})::int`,
         canceled: sql<number>`count(${verifications.canceledAt})::int`,
+        customerCanceled: sql<number>`count(CASE WHEN ${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer') THEN 1 END)::int`,
       })
       .from(verifications)
       .where(
@@ -66,6 +81,7 @@ export class VerificationsRepository {
       read: row?.read ?? 0,
       confirmed: row?.confirmed ?? 0,
       canceled: row?.canceled ?? 0,
+      customerCanceled: row?.customerCanceled ?? 0,
     };
   }
 
@@ -160,12 +176,15 @@ export class VerificationsRepository {
    *   (e.g. `read` implies `delivered`; `confirmed`/`canceled` imply both).
    * - Refuses to overwrite terminal statuses (`confirmed` / `canceled`).
    * - Writes `last_sent_at` and increments `attempts` when status is `sent`.
+   * - Allows customer button replies (confirmed/canceled) to override `no_reply`.
+   * - Accepts optional extra fields to merge into the SET payload.
    */
   async updateStatus(
     id: string,
     status: VerificationStatus,
     waMessageId?: string,
     eventTimestamp?: string,
+    extraUpdates?: Record<string, unknown>,
   ) {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
@@ -174,6 +193,15 @@ export class VerificationsRepository {
     if (waMessageId !== undefined) {
       setPayload.waMessageId = waMessageId;
     }
+    if (extraUpdates) {
+      Object.assign(setPayload, extraUpdates);
+    }
+
+    // For confirmed/canceled (customer replies), also allow overriding no_reply
+    const isCustomerReply = status === 'confirmed' || status === 'canceled';
+    const blockedStatuses = isCustomerReply
+      ? TERMINAL_STATUSES
+      : [...TERMINAL_STATUSES, 'no_reply' as VerificationStatus];
 
     return await this.db
       .update(verifications)
@@ -181,7 +209,7 @@ export class VerificationsRepository {
       .where(
         and(
           eq(verifications.id, id),
-          notInArray(verifications.status, TERMINAL_STATUSES),
+          notInArray(verifications.status, blockedStatuses),
         ),
       )
       .returning();
@@ -190,7 +218,9 @@ export class VerificationsRepository {
   /**
    * Update a verification by its WhatsApp message id (wamid).
    *
-   * Same lifecycle-aware semantics as `updateStatus`.
+   * Same lifecycle-aware semantics as `updateStatus`, but uses
+   * WEBHOOK_PROTECTED_STATUSES to additionally block late delivery/read/failed
+   * events from overwriting a no_reply escalation.
    */
   async updateStatusByWamid(
     wamid: string,
@@ -208,7 +238,7 @@ export class VerificationsRepository {
       .where(
         and(
           eq(verifications.waMessageId, wamid),
-          notInArray(verifications.status, TERMINAL_STATUSES),
+          notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
         ),
       )
       .returning();
@@ -238,6 +268,121 @@ export class VerificationsRepository {
       .returning({ id: verifications.id });
 
     return results.length;
+  }
+
+  /**
+   * Mark a follow-up WhatsApp message as sent.
+   *
+   * - Updates `followUpSentAt` to the current time.
+   * - Increments `followUpAttempts` (preserving the existing count).
+   * - Replaces `waMessageId` with the latest follow-up wamid (so subsequent
+   *   delivery/read webhooks update this verification record).
+   * - Refuses to overwrite terminal statuses (confirmed/canceled).
+   */
+  async markFollowUpSent(id: string, waMessageId: string) {
+    const now = new Date().toISOString();
+    return await this.db
+      .update(verifications)
+      .set({
+        followUpSentAt: now,
+        followUpAttempts: sql`COALESCE(${verifications.followUpAttempts}, 0) + 1`,
+        waMessageId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(verifications.id, id),
+          notInArray(verifications.status, TERMINAL_STATUSES),
+        ),
+      )
+      .returning();
+  }
+
+  /**
+   * Merge additional keys into the JSONB `metadata` column without dropping
+   * existing keys. Performed in-database so concurrent updates do not clobber
+   * each other.
+   */
+  async mergeMetadata(id: string, patch: Record<string, unknown>) {
+    return await this.db
+      .update(verifications)
+      .set({
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(verifications.id, id))
+      .returning();
+  }
+
+  /**
+   * Atomically mark a no_reply verification as merchant-canceled.
+   *
+   * The WHERE clause guards on `id + orgId + status='no_reply'` so that
+   * concurrent calls, customer replies, or status transitions that already
+   * moved the row away from no_reply will cause zero rows affected.
+   *
+   * Returns the updated row, or null if no row matched.
+   */
+  async markMerchantNoReplyCanceled(
+    verificationId: string,
+    orgId: string,
+    canceledAt: string,
+  ) {
+    const now = new Date().toISOString();
+    const [result] = await this.db
+      .update(verifications)
+      .set({
+        status: 'canceled',
+        canceledAt,
+        merchantCanceledAt: canceledAt,
+        cancellationSource: 'merchant_no_reply',
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+          sql`${verifications.status} = 'no_reply'`,
+        ),
+      )
+      .returning();
+    return result ?? null;
+  }
+
+  /**
+   * Find a verification by its primary key, scoped to an organization.
+   */
+  async findByIdForOrg(verificationId: string, orgId: string) {
+    return await this.db.query.verifications.findFirst({
+      where: and(
+        eq(verifications.id, verificationId),
+        eq(verifications.orgId, orgId),
+      ),
+    });
+  }
+
+  /**
+   * Update a verification by its primary key, scoped to an organization.
+   */
+  async updateByIdForOrg(
+    verificationId: string,
+    orgId: string,
+    updates: Partial<typeof verifications.$inferInsert>,
+  ) {
+    const [result] = await this.db
+      .update(verifications)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+        ),
+      )
+      .returning();
+    return result;
   }
 
   /**
@@ -281,6 +426,10 @@ export class VerificationsRepository {
         payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
         payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
         payload.canceledAt = eventTs;
+        break;
+
+      case 'no_reply':
+        payload.noReplyAt = eventTs;
         break;
 
       default:

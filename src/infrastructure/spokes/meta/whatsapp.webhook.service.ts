@@ -53,6 +53,22 @@ export class WhatsAppWebhookService {
           if (action === 'cancel' || action === 'no') newStatus = 'canceled';
 
           if (newStatus) {
+            // Block customer reply if merchant already canceled (no_reply escalation)
+            const existing =
+              await this.verificationsRepo.findById(verificationId);
+            if (existing?.merchantCanceledAt) {
+              this.logger.log(
+                `Ignoring customer reply for verification ${verificationId} — merchant already canceled`,
+              );
+              return;
+            }
+
+            // Set cancellationSource for customer-initiated cancellations
+            const extraUpdates: Record<string, unknown> = {};
+            if (newStatus === 'canceled') {
+              extraUpdates.cancellationSource = 'customer';
+            }
+
             this.logger.log(
               `Updated verification status for verificationId: ${verificationId} to ${newStatus}`,
             );
@@ -61,6 +77,7 @@ export class WhatsAppWebhookService {
               newStatus,
               undefined,
               message.timestamp,
+              extraUpdates,
             );
 
             // Only finalize when the row was actually updated (not already terminal)
