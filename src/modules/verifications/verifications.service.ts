@@ -94,15 +94,18 @@ export class VerificationsService {
     const limit = query.limit ?? 50;
     const cursor = decodeCursor(query.cursor);
 
-    const verifications = await this.verificationsRepo.findByOrg(
-      orgId,
-      statuses,
-      {
-        startAt: filterPeriod.startAt,
-        endAt: filterPeriod.endAt,
-      },
-      { cursor, limit: limit + 1 },
-    );
+    const [verifications, activeIntegrations] = await Promise.all([
+      this.verificationsRepo.findByOrg(
+        orgId,
+        statuses,
+        {
+          startAt: filterPeriod.startAt,
+          endAt: filterPeriod.endAt,
+        },
+        { cursor, limit: limit + 1 },
+      ),
+      this.integrationsRepo.findActiveByOrg(orgId),
+    ]);
 
     const hasMore = verifications.length > limit;
     const items = hasMore ? verifications.slice(0, limit) : verifications;
@@ -127,6 +130,9 @@ export class VerificationsService {
         created_at: verification.createdAt ?? null,
       })),
       next_cursor: nextCursor,
+      page_context: {
+        automation: this.resolveDashboardAutomationSettings(activeIntegrations),
+      },
     };
   }
 

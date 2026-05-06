@@ -230,7 +230,7 @@ export class OnboardingStateService {
     return missingFields;
   }
 
-  private toState(integration: IntegrationRecord): OnboardingStateDto {
+  toState(integration: IntegrationRecord): OnboardingStateDto {
     const onboardingStatus = ONBOARDING_STATUSES.includes(
       integration.onboardingStatus,
     )

@@ -168,6 +168,37 @@ export interface OnboardingBillingPlansResponseDto {
   isFreePlanClaimed: boolean;
 }
 
+export interface SettingsResponseDto {
+  state: OnboardingStateDto;
+  billing: {
+    plans: OnboardingBillingPlanDto[];
+    isFreePlanClaimed: boolean;
+    usage: {
+      used: number;
+      limit: number;
+      periodStart: string;
+      periodEnd: string;
+    };
+  };
+  template: {
+    languages: Array<'ar' | 'en'>;
+    defaultPreviewLanguage: 'ar' | 'en';
+    previews: {
+      ar: MessageTemplatePreviewDto;
+      en: MessageTemplatePreviewDto;
+    };
+  };
+}
+
+export interface MessageTemplatePreviewDto {
+  greeting: string;
+  body: string;
+  totalLabel: string;
+  ending: string;
+  confirmButton: string;
+  cancelButton: string;
+}
+
 export class OnboardingBillingRequestDto {
   @IsString()
   @IsIn(ONBOARDING_BILLING_PLAN_IDS)
