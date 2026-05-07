@@ -43,13 +43,13 @@ const BILLING_PLAN_TEMPLATES: Record<
   },
   pro: {
     name: 'Akeed Pro',
-    amount: 19.99,
+    amount: 22.99,
     includedVerifications: 1000,
   },
   business: {
     name: 'Akeed Scale',
-    amount: 49.99,
-    includedVerifications: 3000,
+    amount: 44.99,
+    includedVerifications: 2500,
   },
 };
 
