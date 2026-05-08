@@ -78,6 +78,13 @@ export interface OrderListItemDto {
 export interface PaginatedResponse<T> {
   data: T[];
   next_cursor: string | null;
+  page_context?: {
+    automation: {
+      is_auto_verify_enabled: boolean;
+      follow_up_enabled: boolean;
+      quiet_hours_enabled: boolean;
+    };
+  };
 }
 
 export interface VerificationStatsDto {

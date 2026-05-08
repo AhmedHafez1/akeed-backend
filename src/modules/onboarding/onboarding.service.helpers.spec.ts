@@ -44,8 +44,8 @@ describe('onboarding.service.helpers', () => {
       expect(resolveIncludedVerificationsLimit('pro')).toBe(1000);
     });
 
-    it('returns 3000 for business', () => {
-      expect(resolveIncludedVerificationsLimit('business')).toBe(3000);
+    it('returns 2500 for business', () => {
+      expect(resolveIncludedVerificationsLimit('business')).toBe(2500);
     });
   });
 
@@ -85,7 +85,7 @@ describe('onboarding.service.helpers', () => {
       });
       expect(plan.id).toBe('pro');
       expect(plan.name).toBe('Akeed Pro');
-      expect(plan.amount).toBe(19.99);
+      expect(plan.amount).toBe(22.99);
       expect(plan.includedVerifications).toBe(1000);
     });
 
@@ -96,8 +96,8 @@ describe('onboarding.service.helpers', () => {
       });
       expect(plan.id).toBe('business');
       expect(plan.name).toBe('Akeed Scale');
-      expect(plan.amount).toBe(49.99);
-      expect(plan.includedVerifications).toBe(3000);
+      expect(plan.amount).toBe(44.99);
+      expect(plan.includedVerifications).toBe(2500);
     });
 
     it('passes testMode through', () => {

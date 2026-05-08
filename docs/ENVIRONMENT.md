@@ -81,8 +81,8 @@ npm run db:push
   - `POST /api/onboarding/billing` requires `planId` and maps to built-in plans:
     - `starter`: free, 30 WhatsApp confirmations (no Shopify charge, onboarding auto-completes; one-time claim per store).
     - `basic`: `$8.99`/month, 300 WhatsApp confirmations/month.
-    - `pro`: `$19.99`/month, 1,000 WhatsApp confirmations/month.
-    - `business`: public-facing Scale plan, `$49.99`/month, 3,000 WhatsApp confirmations/month.
+    - `pro`: `$22.99`/month, 1,000 WhatsApp confirmations/month.
+    - `business`: public-facing Scale plan, `$44.99`/month, 2,500 WhatsApp confirmations/month.
   - Plans do not include usage-based Shopify billing line items. When the included limit is reached, sending stops until renewal or upgrade.
 
 ## WhatsApp (Meta) Configuration

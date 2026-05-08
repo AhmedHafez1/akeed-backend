@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ShopifyModule } from '../../infrastructure/spokes/shopify/shopify.module';
 import { OnboardingBillingCallbackController } from './onboarding-billing-callback.controller';
 import { OnboardingController } from './onboarding.controller';
+import { SettingsController } from './settings.controller';
 import { OnboardingService } from './onboarding.service';
 import { OnboardingStateService } from './onboarding-state.service';
 import { BillingService } from './billing.service';
@@ -15,7 +16,11 @@ import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [DatabaseModule, AuthModule, ShopifyModule],
-  controllers: [OnboardingController, OnboardingBillingCallbackController],
+  controllers: [
+    OnboardingController,
+    OnboardingBillingCallbackController,
+    SettingsController,
+  ],
   providers: [
     OnboardingService,
     OnboardingStateService,
