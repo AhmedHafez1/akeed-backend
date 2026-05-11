@@ -7,6 +7,19 @@ export class WhatsAppButtonDto {
   payload?: string;
 }
 
+export class WhatsAppInteractiveButtonReplyDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+}
+
+export class WhatsAppInteractiveDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppInteractiveButtonReplyDto)
+  button_reply?: WhatsAppInteractiveButtonReplyDto;
+}
+
 export class WhatsAppMessageDto {
   @IsOptional()
   @IsString()
@@ -20,6 +33,11 @@ export class WhatsAppMessageDto {
   @ValidateNested()
   @Type(() => WhatsAppButtonDto)
   button?: WhatsAppButtonDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppInteractiveDto)
+  interactive?: WhatsAppInteractiveDto;
 }
 
 export class WhatsAppStatusDto {
