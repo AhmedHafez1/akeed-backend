@@ -32,35 +32,6 @@ Out of scope:
 - Automatically canceling Shopify orders on a customer cancel reply. The current customer cancel flow marks and tags the order, but does not call Shopify order cancellation.
 - Multi-platform order support beyond the currently implemented Shopify strategy.
 
-## Business Workflow
-
-```mermaid
-flowchart TD
-  A[Shopify orders-create webhook] --> B[Persist and enqueue webhook job]
-  B --> C[Load Shopify integration]
-  C --> D{Integration active and billing allowed?}
-  D -- No --> D1[Skip webhook job]
-  D -- Yes --> E[Normalize Shopify order]
-  E --> F{Valid phone found?}
-  F -- No --> F1[Skip order]
-  F -- Yes --> G{COD eligible?}
-  G -- No --> G1[Skip order]
-  G -- Yes --> H{Auto verification enabled?}
-  H -- No --> H1[Skip verification]
-  H -- Yes --> I[Create or reuse order and verification]
-  I --> J{Initial send delayed?}
-  J -- Yes --> K[Schedule initial send]
-  J -- No --> L[Send WhatsApp verification]
-  K --> L
-  L --> M[Schedule follow-up and no-reply jobs]
-  M --> N{Customer reply?}
-  N -- Confirm --> O[Mark confirmed and tag Akeed: Verified]
-  N -- Cancel --> P[Mark canceled and tag Akeed: Canceled]
-  N -- No reply by escalation time --> Q[Mark no_reply and tag Akeed: No Reply]
-  Q --> R{Merchant cancels?}
-  R -- Yes --> S[Cancel Shopify order, mark merchant canceled, tag Akeed: Canceled]
-```
-
 ## Lifecycle States
 
 | Status      | Meaning                                                                            | Main writer                                         |
