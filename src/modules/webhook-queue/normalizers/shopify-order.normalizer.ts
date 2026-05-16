@@ -32,7 +32,7 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
 
     if (!standardizedPhone) {
       this.logger.warn(
-        `Cannot normalise Shopify order ${payload.id}: no valid phone found`,
+        `Cannot normalize Shopify order ${payload.id}: no valid phone found`,
       );
       return null;
     }
