@@ -67,7 +67,6 @@ describe('OnboardingStateService', () => {
     service = new OnboardingStateService(
       mockIntegrationsRepo as any,
       {} as any,
-      { getApiKey: () => null } as any,
     );
   });
 

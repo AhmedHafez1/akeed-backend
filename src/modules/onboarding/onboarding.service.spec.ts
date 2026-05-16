@@ -32,7 +32,6 @@ describe('OnboardingService', () => {
       avgShippingCost: 3,
       billingPlanId: 'basic',
       billingStatus: 'active',
-      billingManagementUrl: null,
       followUpEnabled: true,
       followUpDelayMinutes: 120,
       escalationDelayMinutes: 360,

@@ -22,8 +22,6 @@ import {
   STORE_PLATFORM_PORT,
   type StorePlatformPort,
 } from '../../shared/ports/store-platform.port';
-import { validateShop } from '../../infrastructure/spokes/shopify/shopify.utils';
-import { BillingConfigService } from './billing-config.service';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
@@ -43,7 +41,6 @@ export class OnboardingStateService {
     private readonly integrationsRepo: IntegrationsRepository,
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
-    private readonly billingConfig: BillingConfigService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -248,7 +245,6 @@ export class OnboardingStateService {
       avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
-      billingManagementUrl: this.resolveBillingManagementUrl(integration),
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
@@ -262,28 +258,6 @@ export class OnboardingStateService {
       sendDelayMinutes:
         integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
     };
-  }
-
-  private resolveBillingManagementUrl(
-    integration: IntegrationRecord,
-  ): string | null {
-    const apiKey = this.billingConfig.getApiKey();
-    if (!apiKey) {
-      return null;
-    }
-
-    const shopDomain = integration.platformStoreUrl?.trim();
-    if (!shopDomain) {
-      return null;
-    }
-
-    try {
-      validateShop(shopDomain);
-    } catch {
-      return null;
-    }
-
-    return new URL(`https://${shopDomain}/admin/apps/${apiKey}`).toString();
   }
 
   private resolveShippingCurrency(

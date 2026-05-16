@@ -66,8 +66,7 @@ export class WhatsAppWebhookService {
       if (!newStatus) continue;
 
       // Block customer reply if merchant already canceled (no_reply escalation)
-      const existing =
-        await this.verificationsRepo.findById(verificationId);
+      const existing = await this.verificationsRepo.findById(verificationId);
       if (existing?.merchantCanceledAt) {
         this.logger.log(
           `Ignoring customer reply for verification ${verificationId} — merchant already canceled`,
