@@ -180,4 +180,77 @@ describe('WebhookQueueProcessor', () => {
       5,
     );
   });
+
+  it.each([
+    [
+      'pending',
+      { id: 'int-1', orgId: 'org-1', isActive: true, billingStatus: 'pending' },
+    ],
+    [
+      'null',
+      { id: 'int-1', orgId: 'org-1', isActive: true, billingStatus: null },
+    ],
+    [
+      'cancelled',
+      {
+        id: 'int-1',
+        orgId: 'org-1',
+        isActive: true,
+        billingStatus: 'cancelled',
+      },
+    ],
+    [
+      'error',
+      { id: 'int-1', orgId: 'org-1', isActive: true, billingStatus: 'error' },
+    ],
+    [
+      'frozen',
+      { id: 'int-1', orgId: 'org-1', isActive: true, billingStatus: 'frozen' },
+    ],
+  ])('skips webhook when billing status is %s', async (_label, integration) => {
+    const { processor, webhookEventsRepo, verificationHub } = createMocks({
+      integration,
+    });
+
+    await processor.process(buildJob(buildPayload()));
+
+    expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+      'event-1',
+      expect.stringContaining('billing_blocked'),
+    );
+    expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
+  });
+
+  it('processes webhook when billing status is active', async () => {
+    const { processor, webhookEventsRepo, verificationHub } = createMocks({
+      integration: {
+        id: 'int-1',
+        orgId: 'org-1',
+        isActive: true,
+        billingStatus: 'active',
+      },
+    });
+
+    await processor.process(buildJob(buildPayload()));
+
+    expect(verificationHub.handleNewOrder).toHaveBeenCalledTimes(1);
+    expect(webhookEventsRepo.markCompleted).toHaveBeenCalledWith('event-1');
+  });
+
+  it('processes webhook when billing status is not_required', async () => {
+    const { processor, webhookEventsRepo, verificationHub } = createMocks({
+      integration: {
+        id: 'int-1',
+        orgId: 'org-1',
+        isActive: true,
+        billingStatus: 'not_required',
+      },
+    });
+
+    await processor.process(buildJob(buildPayload()));
+
+    expect(verificationHub.handleNewOrder).toHaveBeenCalledTimes(1);
+    expect(webhookEventsRepo.markCompleted).toHaveBeenCalledWith('event-1');
+  });
 });

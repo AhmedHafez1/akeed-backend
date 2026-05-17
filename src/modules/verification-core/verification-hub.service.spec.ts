@@ -98,6 +98,14 @@ function createMocks() {
     sendFollowUp: jest.fn(),
   };
 
+  const billingEntitlementService = {
+    hasAvailableSlot: jest.fn().mockResolvedValue({
+      available: true,
+      consumedCount: 0,
+      includedLimit: 1000,
+    }),
+  };
+
   const automationProducer = {
     enqueueInitialSend: jest.fn(),
     enqueueFollowUp: jest.fn(),
@@ -110,6 +118,7 @@ function createMocks() {
     orderTaggingPort as any,
     orderEligibilityService as any,
     verificationSendService as any,
+    billingEntitlementService as any,
     automationProducer as any,
   );
 
@@ -120,6 +129,7 @@ function createMocks() {
     orderTaggingPort,
     orderEligibilityService,
     verificationSendService,
+    billingEntitlementService,
     automationProducer,
   };
 }
@@ -173,6 +183,151 @@ describe('VerificationHubService', () => {
       expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
       expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+    });
+
+    it('skips when onboarding is not completed', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({ onboardingStatus: 'pending' }),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'onboarding_incomplete',
+      });
+      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['pending', 'pending'],
+      ['null', null],
+      ['error', 'error'],
+      ['cancelled', 'cancelled'],
+      ['declined', 'declined'],
+      ['frozen', 'frozen'],
+      ['expired', 'expired'],
+    ])('skips when billing status is %s', async (_label, billingStatus) => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({ billingStatus } as any),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'billing_not_active',
+      });
+      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['active', 'active'],
+      ['not_required', 'not_required'],
+    ])(
+      'allows verification creation when billing status is %s',
+      async (_label, billingStatus) => {
+        const {
+          service,
+          ordersRepo,
+          verificationsRepo,
+          orderEligibilityService,
+          verificationSendService,
+        } = createMocks();
+
+        orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+          eligible: true,
+          reason: 'cod_match',
+        });
+        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.create.mockResolvedValue({
+          id: 'order-db-1',
+          orgId: 'org-1',
+          externalOrderId: 'ext-order-1',
+        });
+        verificationsRepo.findByOrderId.mockResolvedValue(null);
+        verificationsRepo.create.mockResolvedValue({
+          id: 'ver-1',
+          orgId: 'org-1',
+        });
+        verificationSendService.sendInitial.mockResolvedValue({
+          status: 'sent',
+          waMessageId: 'wamid-123',
+        });
+
+        const result = await service.handleNewOrder(
+          buildOrder(),
+          buildIntegration({ billingStatus } as any),
+        );
+
+        expect(result).toEqual({
+          orderId: 'order-db-1',
+          verificationId: 'ver-1',
+        });
+        expect(verificationsRepo.create).toHaveBeenCalled();
+      },
+    );
+
+    it('skips verification creation when plan limit is reached', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        billingEntitlementService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      billingEntitlementService.hasAvailableSlot.mockResolvedValue({
+        available: false,
+        consumedCount: 1000,
+        includedLimit: 1000,
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'plan_limit_reached',
+      });
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
     });
   });
 

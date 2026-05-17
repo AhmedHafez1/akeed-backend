@@ -9,8 +9,14 @@ import {
 import { integrations, orders } from '../../infrastructure/database/schema';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
+import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
+
+const BILLING_STATUSES_ALLOWING_VERIFICATION: ReadonlySet<string> = new Set([
+  'active',
+  'not_required',
+]);
 
 @Injectable()
 export class VerificationHubService {
@@ -22,6 +28,7 @@ export class VerificationHubService {
     @Inject(ORDER_TAGGING_PORT) private orderTaggingPort: OrderTaggingPort,
     private orderEligibilityService: OrderEligibilityService,
     private verificationSendService: VerificationSendService,
+    private readonly billingEntitlementService: BillingEntitlementService,
     private readonly automationProducer: VerificationAutomationProducer,
   ) {}
 
@@ -52,6 +59,24 @@ export class VerificationHubService {
       return { skipped: true, reason: 'auto_verify_disabled' };
     }
 
+    if (integration.onboardingStatus !== 'completed') {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: onboarding not completed (status=${integration.onboardingStatus ?? 'unknown'})`,
+      );
+      return { skipped: true, reason: 'onboarding_incomplete' };
+    }
+
+    const billingStatus = integration.billingStatus?.trim().toLowerCase();
+    if (
+      !billingStatus ||
+      !BILLING_STATUSES_ALLOWING_VERIFICATION.has(billingStatus)
+    ) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: billing not active (status=${billingStatus ?? 'unknown'})`,
+      );
+      return { skipped: true, reason: 'billing_not_active' };
+    }
+
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
 
     // 1. Check if order exists (Idempotency)
@@ -73,10 +98,17 @@ export class VerificationHubService {
       return { orderId: order.id, verificationId: verification.id };
     }
 
-    // 3. Create the verification record in `pending` state. Billing is only
-    //    consumed when the WhatsApp template is actually attempted, so a
-    //    delayed initial send (sendDelayMinutes > 0) does not reserve a slot
-    //    until the worker fires.
+    // 3. Check plan limit before creating a verification
+    const slotCheck =
+      await this.billingEntitlementService.hasAvailableSlot(integration);
+    if (!slotCheck.available) {
+      this.logger.warn(
+        `Plan limit reached for integration ${integration.id} (${slotCheck.consumedCount}/${slotCheck.includedLimit}); skipping verification creation for order ${order.id}`,
+      );
+      return { skipped: true, reason: 'plan_limit_reached' };
+    }
+
+    // 4. Create the verification record in `pending` state.
     verification = await this.verificationsRepo.create({
       orgId: order.orgId,
       orderId: order.id,

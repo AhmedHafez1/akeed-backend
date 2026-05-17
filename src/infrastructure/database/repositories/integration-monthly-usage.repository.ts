@@ -47,6 +47,29 @@ export class IntegrationMonthlyUsageRepository {
     };
   }
 
+  async getIntegrationUsageForPeriod(params: {
+    integrationId: string;
+    periodStart: string;
+  }): Promise<{ consumedCount: number; includedLimit: number }> {
+    const [usage] = await this.db
+      .select({
+        consumedCount: integrationMonthlyUsage.consumedCount,
+        includedLimit: integrationMonthlyUsage.includedLimit,
+      })
+      .from(integrationMonthlyUsage)
+      .where(
+        and(
+          eq(integrationMonthlyUsage.integrationId, params.integrationId),
+          eq(integrationMonthlyUsage.periodStart, params.periodStart),
+        ),
+      );
+
+    return {
+      consumedCount: usage?.consumedCount ?? 0,
+      includedLimit: usage?.includedLimit ?? 0,
+    };
+  }
+
   async reserveMonthlyVerificationSlot(
     params: ReserveMonthlyVerificationSlotParams,
   ): Promise<MonthlyVerificationSlotReservation> {

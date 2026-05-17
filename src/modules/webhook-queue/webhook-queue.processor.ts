@@ -164,10 +164,8 @@ export class WebhookQueueProcessor extends WorkerHost {
     if (integration.isActive === false) return true;
 
     const status = integration.billingStatus?.trim().toLowerCase();
-    if (!status) return false;
+    if (!status) return true;
 
-    return ['cancelled', 'canceled', 'declined', 'expired', 'frozen'].includes(
-      status,
-    );
+    return !['active', 'not_required'].includes(status);
   }
 }

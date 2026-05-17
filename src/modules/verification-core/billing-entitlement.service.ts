@@ -49,6 +49,32 @@ export class BillingEntitlementService {
     };
   }
 
+  async hasAvailableSlot(
+    integration: typeof integrations.$inferSelect,
+  ): Promise<{
+    available: boolean;
+    consumedCount: number;
+    includedLimit: number;
+  }> {
+    const planId = this.resolvePlanId(integration.billingPlanId);
+    const includedLimit = resolveIncludedVerificationsLimit(planId);
+    const periodStart = this.getBillingPeriodStart(
+      integration.billingActivatedAt,
+    );
+
+    const usage =
+      await this.monthlyUsageRepository.getIntegrationUsageForPeriod({
+        integrationId: integration.id,
+        periodStart,
+      });
+
+    return {
+      available: usage.consumedCount < includedLimit,
+      consumedCount: usage.consumedCount,
+      includedLimit,
+    };
+  }
+
   async releaseVerificationSlot(params: {
     integrationId: string;
     periodStart: string;
