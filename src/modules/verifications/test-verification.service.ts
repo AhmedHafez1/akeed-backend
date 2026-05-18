@@ -71,7 +71,7 @@ export class TestVerificationService {
       integration,
     );
 
-    if ('skipped' in result && result.skipped) {
+    if ('skipped' in result) {
       return {
         skipped: true,
         reason: result.reason,

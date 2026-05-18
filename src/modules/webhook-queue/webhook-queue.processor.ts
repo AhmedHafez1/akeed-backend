@@ -115,17 +115,6 @@ export class WebhookQueueProcessor extends WorkerHost {
       return false;
     }
 
-    if (this.isIntegrationBillingBlocked(integration)) {
-      this.logger.warn(
-        `Billing blocked for ${data.platform}:${data.storeDomain} (status=${integration.billingStatus ?? 'unknown'}) — skipping`,
-      );
-      await this.webhookEventsRepo.markSkipped(
-        data.webhookEventId,
-        `billing_blocked:${integration.billingStatus ?? 'unknown'}`,
-      );
-      return false;
-    }
-
     const normalizer = this.normalizersByPlatform.get(data.platform);
     if (!normalizer) {
       this.logger.error(
@@ -154,18 +143,5 @@ export class WebhookQueueProcessor extends WorkerHost {
 
     await this.verificationHub.handleNewOrder(normalizedOrder, integration);
     return true;
-  }
-
-  private isIntegrationBillingBlocked(
-    integration: NonNullable<
-      Awaited<ReturnType<IntegrationsRepository['findByPlatformDomain']>>
-    >,
-  ): boolean {
-    if (integration.isActive === false) return true;
-
-    const status = integration.billingStatus?.trim().toLowerCase();
-    if (!status) return true;
-
-    return !['active', 'not_required'].includes(status);
   }
 }

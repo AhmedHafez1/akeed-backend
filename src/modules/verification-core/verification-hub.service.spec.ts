@@ -2,7 +2,7 @@ import { VerificationHubService } from './verification-hub.service';
 import type { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import type { integrations } from '../../infrastructure/database/schema';
 
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,6 +206,32 @@ describe('VerificationHubService', () => {
       expect(result).toEqual({
         skipped: true,
         reason: 'onboarding_incomplete',
+      });
+      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('skips when integration is not active', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({ isActive: false }),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'integration_inactive',
       });
       expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
@@ -556,6 +582,288 @@ describe('VerificationHubService', () => {
       });
       expect(verificationsRepo.create).not.toHaveBeenCalled();
       expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+    });
+
+    it('reuses existing order but creates new verification when none exists', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+
+      ordersRepo.findByExternalId.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({
+        id: 'ver-new',
+        orgId: 'org-1',
+      });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent',
+        waMessageId: 'wamid-456',
+      });
+
+      const result = await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
+
+      expect(ordersRepo.create).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).toHaveBeenCalled();
+      expect(result).toEqual({
+        orderId: 'order-db-1',
+        verificationId: 'ver-new',
+      });
+    });
+  });
+
+  describe('scheduleFollowUpAndEscalation', () => {
+    it('skips follow-up when followUpEnabled is false', async () => {
+      const { service, automationProducer } = createMocks();
+
+      await service.scheduleFollowUpAndEscalation({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        integration: buildIntegration({
+          followUpEnabled: false,
+          followUpDelayMinutes: 120,
+          escalationDelayMinutes: 360,
+        }),
+        baselineSentAt: new Date(),
+      });
+
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueNoReplyEscalation).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('skips follow-up when followUpDelayMinutes is 0', async () => {
+      const { service, automationProducer } = createMocks();
+
+      await service.scheduleFollowUpAndEscalation({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        integration: buildIntegration({
+          followUpEnabled: true,
+          followUpDelayMinutes: 0,
+          escalationDelayMinutes: 360,
+        }),
+        baselineSentAt: new Date(),
+      });
+
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueNoReplyEscalation).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('skips escalation when escalationDelayMinutes is 0', async () => {
+      const { service, automationProducer } = createMocks();
+
+      await service.scheduleFollowUpAndEscalation({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        integration: buildIntegration({
+          followUpEnabled: true,
+          followUpDelayMinutes: 120,
+          escalationDelayMinutes: 0,
+        }),
+        baselineSentAt: new Date(),
+      });
+
+      expect(automationProducer.enqueueFollowUp).toHaveBeenCalledTimes(1);
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('pushes escalation after follow-up when escalation would fire first', async () => {
+      const { service, automationProducer } = createMocks();
+
+      await service.scheduleFollowUpAndEscalation({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        integration: buildIntegration({
+          followUpEnabled: true,
+          followUpDelayMinutes: 120,
+          escalationDelayMinutes: 60,
+          quietHoursEnabled: false,
+        }),
+        baselineSentAt: new Date('2026-01-15T10:00:00Z'),
+      });
+
+      const followUpCall = automationProducer.enqueueFollowUp.mock
+        .calls[0][0] as { dueAt: Date };
+      const escalationCall = automationProducer.enqueueNoReplyEscalation.mock
+        .calls[0][0] as { dueAt: Date };
+
+      expect(escalationCall.dueAt.getTime()).toBeGreaterThan(
+        followUpCall.dueAt.getTime(),
+      );
+    });
+  });
+
+  describe('finalizeVerification', () => {
+    it('does nothing when verification is not found', async () => {
+      const { service, verificationsRepo, orderTaggingPort } = createMocks();
+      verificationsRepo.findById.mockResolvedValue(null);
+
+      await service.finalizeVerification('ver-missing', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when order is not found', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue(null);
+
+      await service.finalizeVerification('ver-1', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('tags confirmed orders with "Akeed: Verified"', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      const integration = buildIntegration();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration,
+      });
+
+      await service.finalizeVerification('ver-1', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).toHaveBeenCalledWith(
+        integration,
+        'ext-order-1',
+        'Akeed: Verified',
+      );
+    });
+
+    it('tags canceled orders with "Akeed: Canceled"', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      const integration = buildIntegration();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration,
+      });
+
+      await service.finalizeVerification('ver-1', 'canceled');
+
+      expect(orderTaggingPort.addOrderTag).toHaveBeenCalledWith(
+        integration,
+        'ext-order-1',
+        'Akeed: Canceled',
+      );
+    });
+
+    it('skips tagging for test orders', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'akeed-test-123',
+        integration: buildIntegration(),
+      });
+
+      await service.finalizeVerification('ver-1', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('does not tag for non-terminal statuses', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration: buildIntegration(),
+      });
+
+      await service.finalizeVerification('ver-1', 'pending');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when tagging fails', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      const integration = buildIntegration();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration,
+      });
+      orderTaggingPort.addOrderTag.mockRejectedValue(
+        new Error('Shopify API error'),
+      );
+
+      await expect(
+        service.finalizeVerification('ver-1', 'confirmed'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('skips tagging when integration has no platformStoreUrl', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration: buildIntegration({ platformStoreUrl: null } as any),
+      });
+
+      await service.finalizeVerification('ver-1', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
     });
   });
 });

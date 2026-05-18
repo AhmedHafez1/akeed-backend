@@ -12,11 +12,13 @@ import { VerificationSendService } from './verification-send.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 
-const BILLING_STATUSES_ALLOWING_VERIFICATION: ReadonlySet<string> = new Set([
-  'active',
-  'not_required',
-]);
+type IntegrationRecord = typeof integrations.$inferSelect;
+
+type SkippedResult = { skipped: true; reason: string };
+type ProcessedResult = { orderId: string; verificationId: string };
+type HandleNewOrderResult = SkippedResult | ProcessedResult;
 
 @Injectable()
 export class VerificationHubService {
@@ -34,71 +36,28 @@ export class VerificationHubService {
 
   async handleNewOrder(
     orderData: NormalizedOrder,
-    integration: typeof integrations.$inferSelect,
-  ) {
-    const eligibility =
-      this.orderEligibilityService.evaluateOrderForVerification({
-        order: orderData,
-        integration,
-      });
-    if (!eligibility.eligible) {
-      this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: verification is only sent for COD orders (reason=${eligibility.reason}${
-          eligibility.matchedSignal
-            ? `, signal=${eligibility.matchedSignal}`
-            : ''
-        })`,
-      );
-      return { skipped: true, reason: eligibility.reason };
-    }
-
-    if (!integration.isAutoVerifyEnabled) {
-      this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: auto verification is disabled`,
-      );
-      return { skipped: true, reason: 'auto_verify_disabled' };
-    }
-
-    if (integration.onboardingStatus !== 'completed') {
-      this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: onboarding not completed (status=${integration.onboardingStatus ?? 'unknown'})`,
-      );
-      return { skipped: true, reason: 'onboarding_incomplete' };
-    }
-
-    const billingStatus = integration.billingStatus?.trim().toLowerCase();
-    if (
-      !billingStatus ||
-      !BILLING_STATUSES_ALLOWING_VERIFICATION.has(billingStatus)
-    ) {
-      this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: billing not active (status=${billingStatus ?? 'unknown'})`,
-      );
-      return { skipped: true, reason: 'billing_not_active' };
+    integration: IntegrationRecord,
+  ): Promise<HandleNewOrderResult> {
+    const skipReason = this.validateIntegrationCanVerify(
+      orderData,
+      integration,
+    );
+    if (skipReason) {
+      return { skipped: true, reason: skipReason };
     }
 
     this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
 
-    // 1. Check if order exists (Idempotency)
-    let order = await this.ordersRepo.findByExternalId(
-      orderData.externalOrderId,
-      orderData.orgId,
+    const order = await this.findOrCreateOrder(orderData);
+
+    const existingVerification = await this.verificationsRepo.findByOrderId(
+      order.id,
     );
-
-    if (!order) {
-      order = await this.ordersRepo.create(
-        this.toOrderInsertPayload(orderData),
-      );
-    }
-
-    // 2. Check if we already have a verification for this order
-    let verification = await this.verificationsRepo.findByOrderId(order.id);
-    if (verification) {
+    if (existingVerification) {
       this.logger.log(`Verification already exists for Order ${order.id}`);
-      return { orderId: order.id, verificationId: verification.id };
+      return { orderId: order.id, verificationId: existingVerification.id };
     }
 
-    // 3. Check plan limit before creating a verification
     const slotCheck =
       await this.billingEntitlementService.hasAvailableSlot(integration);
     if (!slotCheck.available) {
@@ -108,63 +67,13 @@ export class VerificationHubService {
       return { skipped: true, reason: 'plan_limit_reached' };
     }
 
-    // 4. Create the verification record in `pending` state.
-    verification = await this.verificationsRepo.create({
+    const verification = await this.verificationsRepo.create({
       orgId: order.orgId,
       orderId: order.id,
       status: 'pending',
     });
 
-    const sendDelayMinutes = Math.max(0, integration.sendDelayMinutes ?? 0);
-
-    if (sendDelayMinutes > 0) {
-      const desiredDueAt = new Date(Date.now() + sendDelayMinutes * 60_000);
-      const adjustedDueAt = adjustForQuietHours(desiredDueAt, {
-        enabled: integration.quietHoursEnabled,
-        start: integration.quietHoursStart,
-        end: integration.quietHoursEnd,
-        timezone: integration.timezone,
-      });
-
-      await this.scheduleInitialSend({
-        verificationId: verification.id,
-        orgId: order.orgId,
-        dueAt: adjustedDueAt,
-      });
-
-      this.logger.log(
-        `Scheduled delayed initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
-      );
-      return { orderId: order.id, verificationId: verification.id };
-    }
-
-    // Immediate send path
-    const sendOutcome = await this.verificationSendService.sendInitial(
-      verification.id,
-    );
-
-    if (sendOutcome.status === 'sent') {
-      await this.scheduleFollowUpAndEscalation({
-        verificationId: verification.id,
-        orgId: order.orgId,
-        integration,
-        baselineSentAt: sendOutcome.sentAt
-          ? new Date(sendOutcome.sentAt)
-          : new Date(),
-      });
-    } else if (sendOutcome.status === 'plan_limit_reached') {
-      await this.verificationsRepo.updateByIdForOrg(
-        verification.id,
-        order.orgId,
-        {
-          status: 'failed',
-          metadata: {
-            reason: 'plan_limit_reached',
-            kind: 'initial',
-          },
-        },
-      );
-    }
+    await this.dispatchInitialSend(verification, order, integration);
 
     return { orderId: order.id, verificationId: verification.id };
   }
@@ -177,7 +86,7 @@ export class VerificationHubService {
   async scheduleFollowUpAndEscalation(params: {
     verificationId: string;
     orgId: string;
-    integration: typeof integrations.$inferSelect;
+    integration: IntegrationRecord;
     baselineSentAt: Date;
   }): Promise<void> {
     const { integration, baselineSentAt } = params;
@@ -229,63 +138,184 @@ export class VerificationHubService {
     }
   }
 
-  private async scheduleInitialSend(params: {
-    verificationId: string;
-    orgId: string;
-    dueAt: Date;
-  }): Promise<void> {
-    await this.automationProducer.enqueueInitialSend(params);
-  }
-
   async finalizeVerification(verificationId: string, status: string) {
     this.logger.log(
       `Finalizing Verification ${verificationId} with status: ${status}`,
     );
 
-    // 1. Fetch the full record to get the externalOrderId and orgId
     const verification = await this.verificationsRepo.findById(verificationId);
     if (!verification) return;
 
     const order = await this.ordersRepo.findById(verification.orderId);
     if (!order) return;
 
-    // 2. Only take action on terminal states (Confirmed/Canceled)
     if (status === 'confirmed' || status === 'canceled') {
-      // Skip Shopify tagging for test verifications (no real Shopify order)
-      if (order.externalOrderId.startsWith('akeed-test-')) {
-        this.logger.log(
-          `Skipping Shopify tag for test order ${order.externalOrderId}`,
-        );
-        return;
-      }
+      await this.tagExternalOrder(order, status);
+    }
+  }
 
-      const tag =
-        status === 'confirmed' ? 'Akeed: Verified' : 'Akeed: Canceled';
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
 
-      // 3. Trigger the Shopify Spoke (Adapter)
-      // We'll pass the shop domain (stored in integrations) and the order ID
-      const integration = order.integration as typeof integrations.$inferSelect;
-      if (integration?.platformStoreUrl) {
-        try {
-          await this.orderTaggingPort.addOrderTag(
-            integration,
-            order.externalOrderId,
-            tag,
-          );
+  /**
+   * Returns a skip reason string if the integration is not eligible for
+   * verification, or `null` if processing should continue.
+   */
+  private validateIntegrationCanVerify(
+    orderData: NormalizedOrder,
+    integration: IntegrationRecord,
+  ): string | null {
+    const eligibility =
+      this.orderEligibilityService.evaluateOrderForVerification({
+        order: orderData,
+        integration,
+      });
+    if (!eligibility.eligible) {
+      const signalSuffix = eligibility.matchedSignal
+        ? `, signal=${eligibility.matchedSignal}`
+        : '';
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: verification is only sent for COD orders (reason=${eligibility.reason}${signalSuffix})`,
+      );
+      return eligibility.reason;
+    }
 
-          this.logger.log(
-            `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error as Error}`,
-          );
-        }
-      } else {
-        this.logger.warn(
-          `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
-        );
-      }
+    if (!integration.isAutoVerifyEnabled) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: auto verification is disabled`,
+      );
+      return 'auto_verify_disabled';
+    }
+
+    if (integration.onboardingStatus !== 'completed') {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: onboarding not completed (status=${integration.onboardingStatus ?? 'unknown'})`,
+      );
+      return 'onboarding_incomplete';
+    }
+
+    if (!integration.isActive) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: integration is not active`,
+      );
+      return 'integration_inactive';
+    }
+
+    if (!isBillingStatusActive(integration.billingStatus)) {
+      this.logger.log(
+        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: billing not active (status=${integration.billingStatus ?? 'unknown'})`,
+      );
+      return 'billing_not_active';
+    }
+
+    return null;
+  }
+
+  private async findOrCreateOrder(orderData: NormalizedOrder) {
+    const existing = await this.ordersRepo.findByExternalId(
+      orderData.externalOrderId,
+      orderData.orgId,
+    );
+    if (existing) return existing;
+
+    return this.ordersRepo.create(this.toOrderInsertPayload(orderData));
+  }
+
+  /**
+   * Routes to the delayed or immediate send path based on integration config.
+   */
+  private async dispatchInitialSend(
+    verification: { id: string },
+    order: { id: string; orgId: string },
+    integration: IntegrationRecord,
+  ): Promise<void> {
+    const sendDelayMinutes = Math.max(0, integration.sendDelayMinutes ?? 0);
+
+    if (sendDelayMinutes > 0) {
+      const desiredDueAt = new Date(Date.now() + sendDelayMinutes * 60_000);
+      const adjustedDueAt = adjustForQuietHours(desiredDueAt, {
+        enabled: integration.quietHoursEnabled,
+        start: integration.quietHoursStart,
+        end: integration.quietHoursEnd,
+        timezone: integration.timezone,
+      });
+
+      await this.automationProducer.enqueueInitialSend({
+        verificationId: verification.id,
+        orgId: order.orgId,
+        dueAt: adjustedDueAt,
+      });
+
+      this.logger.log(
+        `Scheduled delayed initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
+      );
+      return;
+    }
+
+    const sendOutcome = await this.verificationSendService.sendInitial(
+      verification.id,
+    );
+
+    if (sendOutcome.status === 'sent') {
+      await this.scheduleFollowUpAndEscalation({
+        verificationId: verification.id,
+        orgId: order.orgId,
+        integration,
+        baselineSentAt: sendOutcome.sentAt
+          ? new Date(sendOutcome.sentAt)
+          : new Date(),
+      });
+    } else if (sendOutcome.status === 'plan_limit_reached') {
+      await this.verificationsRepo.updateByIdForOrg(
+        verification.id,
+        order.orgId,
+        {
+          status: 'failed',
+          metadata: {
+            reason: 'plan_limit_reached',
+            kind: 'initial',
+          },
+        },
+      );
+    }
+  }
+
+  private async tagExternalOrder(
+    order: Awaited<ReturnType<OrdersRepository['findById']>> &
+      Record<string, unknown>,
+    status: 'confirmed' | 'canceled',
+  ): Promise<void> {
+    if (order.externalOrderId.startsWith('akeed-test-')) {
+      this.logger.log(
+        `Skipping Shopify tag for test order ${order.externalOrderId}`,
+      );
+      return;
+    }
+
+    const tag = status === 'confirmed' ? 'Akeed: Verified' : 'Akeed: Canceled';
+    const integration = order.integration as IntegrationRecord;
+
+    if (!integration?.platformStoreUrl) {
+      this.logger.warn(
+        `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
+      );
+      return;
+    }
+
+    try {
+      await this.orderTaggingPort.addOrderTag(
+        integration,
+        order.externalOrderId,
+        tag,
+      );
+      this.logger.log(
+        `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error as Error}`,
+      );
     }
   }
 

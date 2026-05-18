@@ -4,7 +4,7 @@ Last updated: 2026-04-30
 
 ## Purpose
 
-This document explains the Akeed cash-on-delivery order confirmation feature from both a business and code perspective. It covers the order lifecycle, merchant controls, backend services, frontend screens, data model, API contracts, and operational behavior.
+This document explains the Akeed cash-on-delivery order confirmation feature from a business perspective. It covers the order lifecycle, merchant controls, backend services, frontend screens, data model, API contracts, and operational behavior.
 
 The feature verifies COD Shopify orders through WhatsApp before the merchant fulfills the order. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`, tag the Shopify order, and let the merchant cancel it from the Akeed dashboard.
 
@@ -80,23 +80,23 @@ Cross-field rules:
 
 ## Backend Code Map
 
-| Area                          | File                                                                                        | Responsibility                                                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Shopify webhook controller    | `akeed-backend/src/infrastructure/spokes/shopify/shopify.controller.ts`                     | Receives `POST /webhooks/shopify/orders-create` and verifies Shopify HMAC through `ShopifyHmacGuard`.                           |
-| Shopify webhook ingestion     | `akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts` | Fast path that persists/enqueues the webhook and returns `200`.                                                                 |
-| Webhook queue processor       | `akeed-backend/src/modules/webhook-queue/webhook-queue.processor.ts`                        | Loads integration, checks billing block, normalizes order, and calls core verification logic.                                   |
-| Shopify order normalizer      | `akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts`           | Extracts customer phone, order number, total, currency, and payment method from raw Shopify payload.                            |
-| COD eligibility               | `akeed-backend/src/modules/verification-core/order-eligibility.service.ts`                  | Dispatches platform-specific eligibility strategy.                                                                              |
-| Core orchestration            | `akeed-backend/src/modules/verification-core/verification-hub.service.ts`                   | Handles new orders, idempotency, delayed initial sends, immediate sends, follow-up/no-reply scheduling, and final Shopify tags. |
-| WhatsApp sending              | `akeed-backend/src/modules/verification-core/verification-send.service.ts`                  | Reserves billing usage, sends the WhatsApp template, marks initial status, and releases usage on send failure.                  |
-| Automation producer           | `akeed-backend/src/modules/verification-automation/verification-automation.producer.ts`     | Enqueues deterministic BullMQ jobs for initial, follow-up, and no-reply automation.                                             |
-| Automation worker             | `akeed-backend/src/modules/verification-automation/verification-automation.processor.ts`    | Executes delayed initial sends, follow-ups, quiet-hours rescheduling, and no-reply escalation.                                  |
-| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Sends the `akeed_cod_verification` Meta template with confirm/cancel quick-reply payloads.                                      |
-| WhatsApp webhook              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.webhook.service.ts`                  | Handles customer button replies and delivery/read/failed status webhooks.                                                       |
-| Dashboard/verifications API   | `akeed-backend/src/modules/verifications/verifications.controller.ts`                       | Exposes stats, list, test send, and merchant no-reply cancellation endpoint.                                                    |
-| Merchant cancellation service | `akeed-backend/src/modules/verifications/verifications.service.ts`                          | Cancels no-reply Shopify orders and updates local verification state.                                                           |
-| Settings API                  | `akeed-backend/src/modules/onboarding/onboarding.controller.ts`                             | Exposes onboarding/settings state and updates.                                                                                  |
-| Settings business rules       | `akeed-backend/src/modules/onboarding/onboarding-state.service.ts`                          | Persists merchant controls and enforces cross-field validation.                                                                 |
+| Area                          | File                                                                                        | Responsibility                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shopify webhook controller    | `akeed-backend/src/infrastructure/spokes/shopify/shopify.controller.ts`                     | Receives `POST /webhooks/shopify/orders-create` and verifies Shopify HMAC through `ShopifyHmacGuard`.                                         |
+| Shopify webhook ingestion     | `akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts` | Fast path that persists/enqueues the webhook and returns `200`.                                                                               |
+| Webhook queue processor       | `akeed-backend/src/modules/webhook-queue/webhook-queue.processor.ts`                        | Loads integration, normalizes order, and calls core verification logic.                                                                       |
+| Shopify order normalizer      | `akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts`           | Extracts customer phone, order number, total, currency, and payment method from raw Shopify payload.                                          |
+| COD eligibility               | `akeed-backend/src/modules/verification-core/order-eligibility.service.ts`                  | Dispatches platform-specific eligibility strategy.                                                                                            |
+| Core orchestration            | `akeed-backend/src/modules/verification-core/verification-hub.service.ts`                   | Handles and validates new orders, idempotency, delayed initial sends, immediate sends, follow-up/no-reply scheduling, and final Shopify tags. |
+| WhatsApp sending              | `akeed-backend/src/modules/verification-core/verification-send.service.ts`                  | Reserves billing usage, sends the WhatsApp template, marks initial status, and releases usage on send failure.                                |
+| Automation producer           | `akeed-backend/src/modules/verification-automation/verification-automation.producer.ts`     | Enqueues deterministic BullMQ jobs for initial, follow-up, and no-reply automation.                                                           |
+| Automation worker             | `akeed-backend/src/modules/verification-automation/verification-automation.processor.ts`    | Executes delayed initial sends, follow-ups, quiet-hours rescheduling, and no-reply escalation.                                                |
+| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Sends the `akeed_cod_verification` Meta template with confirm/cancel quick-reply payloads.                                                    |
+| WhatsApp webhook              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.webhook.service.ts`                  | Handles customer button replies and delivery/read/failed status webhooks.                                                                     |
+| Dashboard/verifications API   | `akeed-backend/src/modules/verifications/verifications.controller.ts`                       | Exposes stats, list, test send, and merchant no-reply cancellation endpoint.                                                                  |
+| Merchant cancellation service | `akeed-backend/src/modules/verifications/verifications.service.ts`                          | Cancels no-reply Shopify orders and updates local verification state.                                                                         |
+| Settings API                  | `akeed-backend/src/modules/onboarding/onboarding.controller.ts`                             | Exposes onboarding/settings state and updates.                                                                                                |
+| Settings business rules       | `akeed-backend/src/modules/onboarding/onboarding-state.service.ts`                          | Persists merchant controls and enforces cross-field validation.                                                                               |
 
 ## Frontend Code Map
 
@@ -113,219 +113,6 @@ Cross-field rules:
 | Settings embedded skin      | `akeed-frontend/src/features/settings/skins/embedded/SettingsEmbeddedSkin.tsx`                 | Polaris settings UI and message preview.                                                            |
 | Message preview             | `akeed-frontend/src/features/message-preview/`                                                 | Shows English/Arabic verification template preview.                                                 |
 | API/auth wrapper            | `akeed-frontend/src/shared/lib/auth.ts`                                                        | Sends authenticated backend requests in standalone and embedded modes.                              |
-
-## Backend Flow Details
-
-### 1. Shopify Webhook Ingestion
-
-Endpoint: `POST /webhooks/shopify/orders-create`
-
-Processing:
-
-- `ShopifyHmacGuard` verifies the raw Shopify HMAC before the controller handles the payload.
-- `ShopifyOrderWebhookService.handleOrderCreate` enqueues the webhook via `WebhookQueueProducer`.
-- The controller returns `200` quickly so Shopify does not time out.
-- `webhook_events` stores idempotency and processing status.
-
-Skip cases:
-
-- Missing or inactive integration.
-- Billing status is `cancelled`, `canceled`, `declined`, `expired`, or `frozen`.
-- No normalizer is registered for the platform.
-- Normalizer cannot produce a valid order, most commonly because no valid phone is found.
-
-### 2. Order Normalization And Eligibility
-
-`ShopifyOrderNormalizer` extracts:
-
-- Shopify order id as `externalOrderId`.
-- Shopify order number.
-- Customer phone from order, customer, billing address, or shipping address.
-- Customer name.
-- Total price and currency.
-- Payment method from `payment_gateway_names` or `gateway`.
-- Raw payload for audit/debugging.
-
-`OrderEligibilityService` then applies the Shopify COD strategy. Non-COD orders are skipped and no verification is created.
-
-### 3. Auto-Verify Gate And Idempotency
-
-`VerificationHubService.handleNewOrder` runs the main gate sequence:
-
-1. Evaluate COD eligibility.
-2. Stop if `integration.isAutoVerifyEnabled` is false.
-3. Find or create the local `orders` row by `externalOrderId + orgId`.
-4. Find an existing verification for the order.
-5. Create a new `verifications` row with `status = pending` if no verification exists.
-
-Idempotency is enforced by:
-
-- Lookup by `orders.external_order_id + org_id`.
-- One active verification per order through `unique_active_verification_per_order`.
-- Deterministic BullMQ job ids for automation jobs.
-
-### 4. Initial Send
-
-Immediate path:
-
-- If `sendDelayMinutes = 0`, `VerificationSendService.sendInitial` sends the WhatsApp template immediately.
-- On success, status becomes `sent` and `waMessageId` is stored.
-- Follow-up and no-reply jobs are scheduled from the successful send time.
-
-Delayed path:
-
-- If `sendDelayMinutes > 0`, `VerificationAutomationProducer.enqueueInitialSend` schedules a BullMQ job.
-- The scheduled due time is adjusted for quiet hours before enqueueing.
-- Billing is not reserved until the worker actually sends the WhatsApp message.
-- If auto-verify is disabled before the delayed job runs, the worker skips the send and records metadata.
-
-Billing behavior:
-
-- A billing slot is reserved at send time, not at verification creation time.
-- Initial send failure or missing Meta `wamid` releases the reservation and marks the verification `failed`.
-- Plan limit on initial send marks the verification `failed` with metadata `{ reason: 'plan_limit_reached', kind: 'initial' }`.
-
-### 5. WhatsApp Template
-
-`WhatsAppService.sendVerificationTemplate` sends Meta template `akeed_cod_verification`.
-
-Template parameters:
-
-- Body parameter 1: current backend send path passes `orders.externalOrderId`.
-- Body parameter 2: total price.
-- Button 0 quick reply payload: `confirm_<verificationId>`.
-- Button 1 quick reply payload: `cancel_<verificationId>`.
-
-Language behavior:
-
-- Merchant can force `ar` or `en` through `defaultLanguage`.
-- `auto` resolves to Arabic for configured Arabic-region country calling codes, otherwise English.
-
-### 6. Customer Reply Handling
-
-Endpoint: `POST /webhooks/whatsapp`
-
-Button payload handling:
-
-- `confirm_<verificationId>` or `yes_<verificationId>` sets status to `confirmed`.
-- `cancel_<verificationId>` or `no_<verificationId>` sets status to `canceled` and `cancellationSource = customer`.
-- If `merchantCanceledAt` exists, the reply is ignored.
-- If the row changed successfully, `VerificationHubService.finalizeVerification` applies a Shopify tag.
-
-Shopify tags:
-
-- `confirmed` -> `Akeed: Verified`.
-- Customer `canceled` -> `Akeed: Canceled`.
-- Test orders with `externalOrderId` starting `akeed-test-` are not tagged.
-
-Status webhook handling:
-
-- Meta `delivered`, `read`, and `failed` statuses update by `waMessageId`.
-- Late delivery/read/failed webhooks cannot overwrite `confirmed`, `canceled`, or `no_reply`.
-
-### 7. Follow-Up Automation
-
-The follow-up worker runs when `followUpEnabled = true` and `followUpDelayMinutes > 0`.
-
-Skip cases:
-
-- Follow-up disabled.
-- Current status is terminal/final: `confirmed`, `canceled`, `failed`, `expired`, or `no_reply`.
-- Merchant already canceled.
-- A follow-up was already attempted.
-- Quiet hours are active and the job can be delayed.
-
-Send behavior:
-
-- Follow-up uses the same WhatsApp template and current verification id.
-- On success, `followUpSentAt`, `followUpAttempts`, and `waMessageId` are updated.
-- Follow-up send failure does not mark the verification `failed`; it records metadata and leaves the original request active.
-- Plan limit on follow-up records metadata instead of failing the verification.
-
-### 8. No-Reply Escalation
-
-The escalation worker runs when `escalationDelayMinutes > 0`.
-
-Behavior:
-
-- Skips terminal/final statuses.
-- Skips merchant-canceled records.
-- Respects quiet hours at execution time.
-- If follow-up is enabled but no follow-up was attempted yet, pushes escalation behind the follow-up.
-- Updates the verification to `no_reply`.
-- Adds Shopify tag `Akeed: No Reply` when the order is not a test order and has a linked Shopify integration.
-
-### 9. Merchant No-Reply Cancellation
-
-Endpoint: `POST /api/verifications/:id/cancel`
-
-This action is exposed only for `no_reply` rows in the dashboard UI.
-
-Service behavior in `VerificationsService.cancelNoReplyOrder`:
-
-1. Load verification scoped by `orgId`.
-2. Return success idempotently if it is already `canceled` with `cancellationSource = merchant_no_reply` and `merchantCanceledAt` set.
-3. Reject any status other than `no_reply`.
-4. Load the linked Shopify order and integration.
-5. Require an external Shopify order id.
-6. Call Shopify `orderCancel` first.
-7. Only after Shopify succeeds, atomically update the local verification from `no_reply` to `canceled`.
-8. Best-effort add Shopify tag `Akeed: Canceled`.
-
-Shopify cancel parameters:
-
-- `reason = CUSTOMER`.
-- `notifyCustomer = false`.
-- `refund = false`.
-- `restock = true`.
-- Staff note: `Canceled by Akeed after no reply to COD verification.`
-
-Failure behavior:
-
-- If Shopify cancellation fails, local state is not changed.
-- If local state changed between pre-check and update, the service re-checks for idempotency.
-- If the local update cannot apply and the row is not already merchant-canceled, the service returns a bad request and logs that Shopify may already be canceled.
-- If final tagging fails, the cancellation response still succeeds because Shopify cancellation is already irreversible.
-
-## Frontend Flow Details
-
-### Dashboard
-
-`useDashboard` coordinates dashboard data and user actions:
-
-- Loads verification list through dashboard data hooks.
-- Loads stats by selected date range.
-- Provides status filters: all, awaiting response, confirmed, canceled, no reply.
-- Maps awaiting response to `pending,sent,delivered,read` in the backend query string.
-- Provides date filters: today, last 7 days, last 30 days, last 3 months.
-- Sends test verification through `POST /api/verifications/test`.
-- Handles `no_reply` cancellation confirmation, loading state, generic localized error, and refetches stats/list on success.
-
-Dashboard KPIs:
-
-- Confirmed count.
-- Canceled count.
-- Awaiting response count.
-- Reply rate.
-- Confirmation rate.
-- Usage used/limit.
-- Money saved based on canceled count and average shipping cost.
-- Sent/delivered/read summary.
-
-### Settings
-
-`useSettings` loads and saves merchant controls:
-
-- Fetches `GET /api/onboarding/state` and billing plans.
-- Redirects pending onboarding users back to onboarding.
-- Validates local form values before saving.
-- Sends updates to `PATCH /api/onboarding/settings`.
-- Rolls UI state back if save fails.
-- Shows the same settings in embedded Polaris and standalone Tailwind skins.
-
-### Message Preview
-
-`features/message-preview` renders the customer-facing WhatsApp template in English and Arabic using local sample data. The preview is UI-only and does not call Meta.
 
 ## API Reference
 
