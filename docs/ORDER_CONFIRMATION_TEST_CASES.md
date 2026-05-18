@@ -4,51 +4,11 @@ Derived from [ORDER_CONFIRMATION_WORKFLOW.md](ORDER_CONFIRMATION_WORKFLOW.md).
 
 ---
 
-## 1. Webhook Ingestion
-
-| #   | Case            | Precondition                                             | Action       | Expected        |
-| --- | --------------- | -------------------------------------------------------- | ------------ | --------------- |
-| 1.2 | Blocked billing | Billing status `cancelled`/`declined`/`expired`/`frozen` | Send webhook | Webhook skipped |
-
-## 2. Order Normalization
-
-| #   | Case                        | Input                                | Expected                              |
-| --- | --------------------------- | ------------------------------------ | ------------------------------------- |
-| 2.2 | Phone from billing address  | Phone only on billing address        | Phone extracted from billing address  |
-| 2.3 | Phone from shipping address | Phone only on shipping address       | Phone extracted from shipping address |
-| 2.4 | No phone anywhere           | No phone on order/customer/addresses | Normalization fails, webhook skipped  |
-
-## 3. COD Eligibility
-
-| #   | Case          | `payment_gateway_names` / `gateway` | Expected                         |
-| --- | ------------- | ----------------------------------- | -------------------------------- |
-| 3.1 | Non-COD order | Credit card / online gateway        | Skipped, no verification created |
-
-## 4. Auto-Verify Gate & Idempotency
-
-| #   | Case                   | Precondition                                  | Expected                                                                |
-| --- | ---------------------- | --------------------------------------------- | ----------------------------------------------------------------------- |
-| 4.1 | Auto-verify enabled    | `isAutoVerifyEnabled = true`                  | Verification created with `status = pending`                            |
-| 4.2 | Auto-verify disabled   | `isAutoVerifyEnabled = false`                 | No verification created, reason `auto_verify_disabled`                  |
-| 4.3 | Duplicate order        | Same `externalOrderId + orgId` already exists | Existing order reused, no duplicate                                     |
-| 4.4 | Duplicate verification | Active verification already exists for order  | No second verification created (`unique_active_verification_per_order`) |
-
 ## 5. Initial Send — Immediate
 
-| #   | Case                   | Precondition                           | Expected                                                                        |
-| --- | ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
-| 5.1 | Immediate send success | `sendDelayMinutes = 0`, plan has quota | Status → `sent`, `waMessageId` stored, follow-up/no-reply jobs scheduled        |
-| 5.2 | Immediate send failure | WhatsApp API error                     | Usage reservation released, status → `failed`                                   |
-| 5.3 | Plan limit reached     | Included confirmations exhausted       | Status → `failed`, metadata `{ reason: 'plan_limit_reached', kind: 'initial' }` |
-
-## 6. Initial Send — Delayed
-
-| #   | Case                            | Precondition                         | Expected                                                      |
-| --- | ------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
-| 6.1 | Delayed send scheduled          | `sendDelayMinutes > 0`               | BullMQ job enqueued with correct delay                        |
-| 6.2 | Delayed send executes           | Job fires, auto-verify still enabled | WhatsApp sent, status → `sent`, billing consumed at send time |
-| 6.3 | Auto-verify disabled before job | `isAutoVerifyEnabled` turned off     | Worker skips send, records metadata                           |
-| 6.4 | Quiet hours adjustment          | Delayed send falls in quiet hours    | Job due time moved outside quiet window                       |
+| #   | Case               | Precondition                     | Expected                                                                        |
+| --- | ------------------ | -------------------------------- | ------------------------------------------------------------------------------- |
+| 5.3 | Plan limit reached | Included confirmations exhausted | Status → `failed`, metadata `{ reason: 'plan_limit_reached', kind: 'initial' }` |
 
 ## 7. WhatsApp Template & Language
 
