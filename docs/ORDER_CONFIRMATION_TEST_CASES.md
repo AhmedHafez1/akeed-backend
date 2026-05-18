@@ -10,24 +10,11 @@ Derived from [ORDER_CONFIRMATION_WORKFLOW.md](ORDER_CONFIRMATION_WORKFLOW.md).
 | --- | ------------------ | -------------------------------- | ------------------------------------------------------------------------------- |
 | 5.3 | Plan limit reached | Included confirmations exhausted | Status → `failed`, metadata `{ reason: 'plan_limit_reached', kind: 'initial' }` |
 
-## 7. WhatsApp Template & Language
-
-| #   | Case                     | `defaultLanguage` | Phone prefix       | Expected language |
-| --- | ------------------------ | ----------------- | ------------------ | ----------------- |
-| 7.1 | Forced Arabic            | `ar`              | Any                | `ar`              |
-| 7.2 | Forced English           | `en`              | Any                | `en`              |
-| 7.3 | Auto — Arabic region     | `auto`            | Arabic-region code | `ar`              |
-| 7.4 | Auto — non-Arabic region | `auto`            | Non-Arabic code    | `en`              |
-
 ## 8. Customer Reply Handling
 
-| #   | Case                                            | Button payload | Current status                         | Expected                                                                    |
-| --- | ----------------------------------------------- | -------------- | -------------------------------------- | --------------------------------------------------------------------------- |
-| 8.1 | Customer confirms                               | `confirm_<id>` | `sent`/`delivered`/`read`              | Status → `confirmed`, tag `Akeed: Verified`                                 |
-| 8.2 | Customer cancels                                | `cancel_<id>`  | `sent`/`delivered`/`read`              | Status → `canceled`, `cancellationSource = customer`, tag `Akeed: Canceled` |
-| 8.3 | Confirm after no-reply (before merchant cancel) | `confirm_<id>` | `no_reply`, no `merchantCanceledAt`    | Status → `confirmed`                                                        |
-| 8.4 | Reply after merchant cancel                     | Any            | `merchantCanceledAt` set               | Reply ignored                                                               |
-| 8.5 | Test order reply                                | `confirm_<id>` | `externalOrderId` starts `akeed-test-` | Status updated, **no** Shopify tag                                          |
+| #   | Case                                            | Button payload | Current status                      | Expected             |
+| --- | ----------------------------------------------- | -------------- | ----------------------------------- | -------------------- |
+| 8.3 | Confirm after no-reply (before merchant cancel) | `confirm_<id>` | `no_reply`, no `merchantCanceledAt` | Status → `confirmed` |
 
 ## 9. Status Webhooks (Meta)
 
