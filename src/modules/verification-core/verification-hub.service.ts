@@ -231,16 +231,19 @@ export class VerificationHubService {
     integration: IntegrationRecord,
   ): Promise<void> {
     const sendDelayMinutes = Math.max(0, integration.sendDelayMinutes ?? 0);
+    const quietConfig = {
+      enabled: integration.quietHoursEnabled,
+      start: integration.quietHoursStart,
+      end: integration.quietHoursEnd,
+      timezone: integration.timezone,
+    };
+    const desiredDueAt = new Date(Date.now() + sendDelayMinutes * 60_000);
+    const adjustedDueAt = adjustForQuietHours(desiredDueAt, quietConfig);
 
-    if (sendDelayMinutes > 0) {
-      const desiredDueAt = new Date(Date.now() + sendDelayMinutes * 60_000);
-      const adjustedDueAt = adjustForQuietHours(desiredDueAt, {
-        enabled: integration.quietHoursEnabled,
-        start: integration.quietHoursStart,
-        end: integration.quietHoursEnd,
-        timezone: integration.timezone,
-      });
-
+    if (
+      sendDelayMinutes > 0 ||
+      adjustedDueAt.getTime() > desiredDueAt.getTime()
+    ) {
       await this.automationProducer.enqueueInitialSend({
         verificationId: verification.id,
         orgId: order.orgId,
@@ -248,7 +251,7 @@ export class VerificationHubService {
       });
 
       this.logger.log(
-        `Scheduled delayed initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
+        `Scheduled initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
       );
       return;
     }

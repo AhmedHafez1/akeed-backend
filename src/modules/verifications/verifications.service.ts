@@ -248,38 +248,52 @@ export class VerificationsService {
       );
     }
 
-    // Load order with integration
     const order = await this.ordersRepo.findById(verification.orderId);
-    if (!order?.integration) {
+    if (!order) {
+      throw new BadRequestException('Cannot cancel: order not found');
+    }
+
+    const externalOrderId = order.externalOrderId;
+
+    if (!order.integration) {
       throw new BadRequestException(
         'Cannot cancel: order has no linked Shopify integration',
       );
     }
 
-    const externalOrderId = order.externalOrderId;
     if (!externalOrderId) {
       throw new BadRequestException(
         'Cannot cancel: order has no external Shopify order ID',
       );
     }
 
-    // Cancel on Shopify first — if this fails, do NOT update local state
+    const isTestOrder = externalOrderId?.startsWith('akeed-test-') ?? false;
     let shopifyJobId: string | undefined;
-    try {
-      const result = await this.orderAdmin.cancelOrder(
-        order.integration,
-        externalOrderId,
-        'CUSTOMER',
-      );
-      shopifyJobId = result.jobId;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `[CancelNoReply] Shopify cancellation failed for verification ${verificationId}: ${message}`,
-      );
-      throw new BadGatewayException(
-        `Shopify order cancellation failed: ${message}`,
-      );
+    if (!isTestOrder) {
+      const integration = order.integration;
+      if (!integration) {
+        throw new BadRequestException(
+          'Cannot cancel: order has no linked Shopify integration',
+        );
+      }
+
+      // Cancel on Shopify first — if this fails, do NOT update local state
+      try {
+        const result = await this.orderAdmin.cancelOrder(
+          integration,
+          externalOrderId,
+          'CUSTOMER',
+        );
+        shopifyJobId = result.jobId;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `[CancelNoReply] Shopify cancellation failed for verification ${verificationId}: ${message}`,
+        );
+        throw new BadGatewayException(
+          `Shopify order cancellation failed: ${message}`,
+        );
+      }
     }
 
     // Mark as merchant-canceled locally
@@ -318,18 +332,27 @@ export class VerificationsService {
       );
     }
 
-    // Best-effort: add "Akeed: Canceled" tag
-    try {
-      await this.orderTagging.addOrderTag(
-        order.integration,
-        externalOrderId,
-        'Akeed: Canceled',
-      );
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `[CancelNoReply] Failed to add 'Akeed: Canceled' tag for verification ${verificationId}: ${message}`,
-      );
+    if (!isTestOrder) {
+      const integration = order.integration;
+      if (!integration) {
+        throw new BadRequestException(
+          'Cannot cancel: order has no linked Shopify integration',
+        );
+      }
+
+      // Best-effort: add "Akeed: Canceled" tag
+      try {
+        await this.orderTagging.addOrderTag(
+          integration,
+          externalOrderId,
+          'Akeed: Canceled',
+        );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `[CancelNoReply] Failed to add 'Akeed: Canceled' tag for verification ${verificationId}: ${message}`,
+        );
+      }
     }
 
     return {

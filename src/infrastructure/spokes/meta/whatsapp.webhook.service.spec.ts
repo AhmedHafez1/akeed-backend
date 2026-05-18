@@ -201,6 +201,52 @@ describe('WhatsAppWebhookService', () => {
       );
     });
 
+    it('should confirm a no_reply verification before merchant cancellation', async () => {
+      const { service, verificationsRepo, verificationHub } = createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'v1',
+        status: 'no_reply',
+        merchantCanceledAt: null,
+      });
+
+      await service.processIncoming(buttonPayload('confirm_v1'));
+
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'v1',
+        'confirmed',
+        undefined,
+        '1700000000',
+        {},
+      );
+      expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
+        'v1',
+        'confirmed',
+      );
+    });
+
+    it('should cancel a no_reply verification before merchant cancellation', async () => {
+      const { service, verificationsRepo, verificationHub } = createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'v1',
+        status: 'no_reply',
+        merchantCanceledAt: null,
+      });
+
+      await service.processIncoming(buttonPayload('cancel_v1'));
+
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'v1',
+        'canceled',
+        undefined,
+        '1700000000',
+        { cancellationSource: 'customer' },
+      );
+      expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
+        'v1',
+        'canceled',
+      );
+    });
+
     it('should accept "yes" as confirm alias', async () => {
       const { service, verificationsRepo } = createMocks();
       verificationsRepo.findById.mockResolvedValue({

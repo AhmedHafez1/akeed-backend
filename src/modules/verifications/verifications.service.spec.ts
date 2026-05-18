@@ -416,6 +416,37 @@ describe('VerificationsService', () => {
       ).toHaveBeenCalledWith('v-1', 'org-1', expect.any(String));
     });
 
+    it('cancels test orders locally without calling Shopify', async () => {
+      const {
+        service,
+        verificationsRepo,
+        ordersRepo,
+        orderAdmin,
+        orderTagging,
+      } = createMocks();
+
+      verificationsRepo.findByIdForOrg.mockResolvedValue(buildVerification());
+      ordersRepo.findById.mockResolvedValue(
+        buildOrder({ externalOrderId: 'akeed-test-1770000000000' }),
+      );
+      verificationsRepo.markMerchantNoReplyCanceled.mockResolvedValue(
+        buildVerification({
+          status: 'canceled',
+          cancellationSource: 'merchant_no_reply',
+        }),
+      );
+
+      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+
+      expect(result.status).toBe('canceled');
+      expect(result.shopifyJobId).toBeUndefined();
+      expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+      expect(orderTagging.addOrderTag).not.toHaveBeenCalled();
+      expect(
+        verificationsRepo.markMerchantNoReplyCanceled,
+      ).toHaveBeenCalledWith('v-1', 'org-1', expect.any(String));
+    });
+
     it('applies Akeed: Canceled tag after local update', async () => {
       const {
         service,

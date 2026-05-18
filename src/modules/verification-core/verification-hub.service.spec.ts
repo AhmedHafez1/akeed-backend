@@ -452,6 +452,60 @@ describe('VerificationHubService', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('queues initial send when sendDelayMinutes is 0 but quiet hours are active', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-05-01T03:00:00.000Z'));
+
+      try {
+        const {
+          service,
+          ordersRepo,
+          verificationsRepo,
+          orderEligibilityService,
+          verificationSendService,
+          automationProducer,
+        } = createMocks();
+
+        orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+          eligible: true,
+          reason: 'cod_match',
+        });
+
+        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.create.mockResolvedValue({
+          id: 'order-db-1',
+          orgId: 'org-1',
+          externalOrderId: 'ext-order-1',
+        });
+        verificationsRepo.findByOrderId.mockResolvedValue(null);
+        verificationsRepo.create.mockResolvedValue({
+          id: 'ver-1',
+          orgId: 'org-1',
+        });
+
+        await service.handleNewOrder(
+          buildOrder(),
+          buildIntegration({
+            sendDelayMinutes: 0,
+            quietHoursEnabled: true,
+            quietHoursStart: '21:00',
+            quietHoursEnd: '09:00',
+            timezone: 'Asia/Riyadh',
+          }),
+        );
+
+        expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+        expect(automationProducer.enqueueInitialSend).toHaveBeenCalledWith(
+          expect.objectContaining({
+            verificationId: 'ver-1',
+            orgId: 'org-1',
+            dueAt: new Date('2026-05-01T06:00:00.000Z'),
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('marks failed with plan_limit_reached metadata when send service reports plan limit', async () => {
       const {
         service,
