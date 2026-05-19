@@ -92,6 +92,10 @@ export class UpdateOnboardingSettingsDto {
   followUpDelayMinutes?: number;
 
   @IsOptional()
+  @IsBoolean()
+  escalationEnabled?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 0 })
   @Min(0)
@@ -142,6 +146,7 @@ export interface OnboardingStateDto {
   billingStatus: string | null;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
+  escalationEnabled: boolean;
   escalationDelayMinutes: number;
   quietHoursEnabled: boolean;
   quietHoursStart: string | null;

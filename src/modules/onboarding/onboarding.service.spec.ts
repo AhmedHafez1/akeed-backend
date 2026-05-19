@@ -34,6 +34,7 @@ describe('OnboardingService', () => {
       billingStatus: 'active',
       followUpEnabled: true,
       followUpDelayMinutes: 120,
+      escalationEnabled: true,
       escalationDelayMinutes: 360,
       quietHoursEnabled: false,
       quietHoursStart: null,

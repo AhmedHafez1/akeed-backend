@@ -119,7 +119,7 @@ export class VerificationHubService {
       0,
       integration.escalationDelayMinutes ?? 0,
     );
-    if (escalationMinutes > 0) {
+    if (integration.escalationEnabled && escalationMinutes > 0) {
       let escalationDueAt = adjustForQuietHours(
         new Date(baseMs + escalationMinutes * 60_000),
         quietConfig,

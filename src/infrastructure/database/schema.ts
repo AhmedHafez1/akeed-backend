@@ -218,6 +218,7 @@ export const integrations = pgTable(
     followUpDelayMinutes: integer('follow_up_delay_minutes')
       .default(120)
       .notNull(),
+    escalationEnabled: boolean('escalation_enabled').default(true).notNull(),
     escalationDelayMinutes: integer('escalation_delay_minutes')
       .default(360)
       .notNull(),

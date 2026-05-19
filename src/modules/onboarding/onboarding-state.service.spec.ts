@@ -41,6 +41,7 @@ function makeIntegration(overrides: Record<string, unknown> = {}) {
     billingStatusUpdatedAt: null,
     followUpEnabled: true,
     followUpDelayMinutes: 120,
+    escalationEnabled: true,
     escalationDelayMinutes: 360,
     quietHoursEnabled: false,
     quietHoursStart: null,
@@ -76,6 +77,7 @@ describe('OnboardingStateService', () => {
 
       expect(state.followUpEnabled).toBe(true);
       expect(state.followUpDelayMinutes).toBe(120);
+      expect(state.escalationEnabled).toBe(true);
       expect(state.escalationDelayMinutes).toBe(360);
       expect(state.quietHoursEnabled).toBe(false);
       expect(state.quietHoursStart).toBeNull();
@@ -90,6 +92,7 @@ describe('OnboardingStateService', () => {
         makeIntegration({
           followUpEnabled: false,
           followUpDelayMinutes: 60,
+          escalationEnabled: false,
           escalationDelayMinutes: 480,
           quietHoursEnabled: true,
           quietHoursStart: '22:00',
@@ -101,6 +104,7 @@ describe('OnboardingStateService', () => {
 
       expect(state.followUpEnabled).toBe(false);
       expect(state.followUpDelayMinutes).toBe(60);
+      expect(state.escalationEnabled).toBe(false);
       expect(state.escalationDelayMinutes).toBe(480);
       expect(state.quietHoursEnabled).toBe(true);
       expect(state.quietHoursStart).toBe('22:00');
@@ -172,7 +176,7 @@ describe('OnboardingStateService', () => {
       expect(result.sendDelayMinutes).toBe(10);
     });
 
-    it('should reject followUpDelayMinutes >= escalationDelayMinutes when follow-up enabled', async () => {
+    it('should reject followUpDelayMinutes >= escalationDelayMinutes when both follow-up and escalation enabled', async () => {
       await expect(
         service.updateSettings(user, {
           storeName: 'Test Store',
@@ -203,6 +207,27 @@ describe('OnboardingStateService', () => {
       });
 
       expect(result.followUpEnabled).toBe(false);
+    });
+
+    it('should allow followUpDelayMinutes >= escalationDelayMinutes when escalation disabled', async () => {
+      mockIntegrationsRepo.updateById.mockResolvedValue(
+        makeIntegration({
+          escalationEnabled: false,
+          followUpDelayMinutes: 400,
+          escalationDelayMinutes: 360,
+        }),
+      );
+
+      const result = await service.updateSettings(user, {
+        storeName: 'Test Store',
+        defaultLanguage: 'auto',
+        isAutoVerifyEnabled: true,
+        escalationEnabled: false,
+        followUpDelayMinutes: 400,
+        escalationDelayMinutes: 360,
+      });
+
+      expect(result.escalationEnabled).toBe(false);
     });
 
     it('should reject quiet hours enabled without start time', async () => {

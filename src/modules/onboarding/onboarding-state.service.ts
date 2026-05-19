@@ -28,6 +28,7 @@ const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_FOLLOW_UP_ENABLED = true;
 const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
+const DEFAULT_ESCALATION_ENABLED = true;
 const DEFAULT_ESCALATION_DELAY_MINUTES = 360;
 const DEFAULT_QUIET_HOURS_ENABLED = false;
 const DEFAULT_TIMEZONE: AutomationTimezone = 'Asia/Riyadh';
@@ -76,6 +77,9 @@ export class OnboardingStateService {
     if (payload.followUpDelayMinutes !== undefined) {
       updates.followUpDelayMinutes = payload.followUpDelayMinutes;
     }
+    if (payload.escalationEnabled !== undefined) {
+      updates.escalationEnabled = payload.escalationEnabled;
+    }
     if (payload.escalationDelayMinutes !== undefined) {
       updates.escalationDelayMinutes = payload.escalationDelayMinutes;
     }
@@ -102,13 +106,16 @@ export class OnboardingStateService {
       updates.escalationDelayMinutes ?? integration.escalationDelayMinutes;
     const resolvedFollowUpEnabled =
       updates.followUpEnabled ?? integration.followUpEnabled;
+    const resolvedEscalationEnabled =
+      updates.escalationEnabled ?? integration.escalationEnabled;
 
     if (
       resolvedFollowUpEnabled &&
+      resolvedEscalationEnabled &&
       resolvedFollowUpDelay >= resolvedEscalationDelay
     ) {
       throw new BadRequestException(
-        'followUpDelayMinutes must be less than escalationDelayMinutes when follow-up is enabled',
+        'followUpDelayMinutes must be less than escalationDelayMinutes when both follow-up and escalation are enabled',
       );
     }
 
@@ -248,6 +255,8 @@ export class OnboardingStateService {
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
+      escalationEnabled:
+        integration.escalationEnabled ?? DEFAULT_ESCALATION_ENABLED,
       escalationDelayMinutes:
         integration.escalationDelayMinutes ?? DEFAULT_ESCALATION_DELAY_MINUTES,
       quietHoursEnabled:

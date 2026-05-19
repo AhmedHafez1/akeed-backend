@@ -56,6 +56,7 @@ function buildIntegration(
     updatedAt: '2026-01-01T00:00:00Z',
     followUpEnabled: true,
     followUpDelayMinutes: 120,
+    escalationEnabled: true,
     escalationDelayMinutes: 360,
     quietHoursEnabled: false,
     quietHoursStart: null,
@@ -731,7 +732,29 @@ describe('VerificationHubService', () => {
         integration: buildIntegration({
           followUpEnabled: true,
           followUpDelayMinutes: 120,
+          escalationEnabled: true,
           escalationDelayMinutes: 0,
+        }),
+        baselineSentAt: new Date(),
+      });
+
+      expect(automationProducer.enqueueFollowUp).toHaveBeenCalledTimes(1);
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('skips escalation when escalationEnabled is false', async () => {
+      const { service, automationProducer } = createMocks();
+
+      await service.scheduleFollowUpAndEscalation({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        integration: buildIntegration({
+          followUpEnabled: true,
+          followUpDelayMinutes: 120,
+          escalationEnabled: false,
+          escalationDelayMinutes: 360,
         }),
         baselineSentAt: new Date(),
       });
