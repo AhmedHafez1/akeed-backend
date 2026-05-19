@@ -1,1 +1,1 @@
-ALTER TABLE "integrations" ADD COLUMN "escalation_enabled" boolean DEFAULT true NOT NULL;
+ALTER TABLE "integrations" ADD COLUMN IF NOT EXISTS "escalation_enabled" boolean DEFAULT true NOT NULL;

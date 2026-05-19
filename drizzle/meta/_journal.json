@@ -120,6 +120,13 @@
       "when": 1778505600000,
       "tag": "0016_phase_c1_automation_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779192000000,
+      "tag": "0017_add_escalation_enabled",
+      "breakpoints": true
     }
   ]
 }
