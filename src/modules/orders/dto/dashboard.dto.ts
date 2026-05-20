@@ -60,6 +60,15 @@ export interface VerificationListItemDto {
   total_price: string | null;
   currency: string | null;
   created_at: string | null;
+  last_sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  confirmed_at: string | null;
+  canceled_at: string | null;
+  expired_at: string | null;
+  no_reply_at: string | null;
+  follow_up_attempts: number;
+  follow_up_sent_at: string | null;
 }
 
 export interface OrderListItemDto {

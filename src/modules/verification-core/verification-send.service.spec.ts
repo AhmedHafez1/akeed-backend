@@ -242,7 +242,7 @@ describe('VerificationSendService', () => {
   });
 
   describe('sendFollowUp', () => {
-    it('does NOT mark status=sent on success (caller updates follow-up fields)', async () => {
+    it('reserves quota and does NOT mark status=sent on success', async () => {
       const {
         service,
         verificationsRepo,
@@ -283,6 +283,9 @@ describe('VerificationSendService', () => {
         waMessageId: 'wamid-2',
         sentAt: expect.any(String) as string,
       });
+      expect(
+        billingEntitlementService.reserveVerificationSlot,
+      ).toHaveBeenCalledWith(baseIntegration);
       expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
     });
   });
