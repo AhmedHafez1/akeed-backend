@@ -112,7 +112,7 @@ export class VerificationSendService {
       response = await this.messagingPort.sendVerificationTemplate(
         order.customerPhone,
         order.externalOrderId,
-        order.totalPrice!,
+        `${order.totalPrice} ${order.currency ?? ''}`.trim(),
         verification.id,
         integration.defaultLanguage,
       );
