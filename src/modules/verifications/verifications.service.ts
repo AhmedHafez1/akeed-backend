@@ -60,12 +60,16 @@ type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {
   total: number;
+  pending: number;
+  failed: number;
+  awaitingReply: number;
   confirmed: number;
   canceled: number;
   customerCanceled: number;
   sent: number;
   delivered: number;
   read: number;
+  followUpsSent: number;
 }
 
 @Injectable()
@@ -187,11 +191,16 @@ export class VerificationsService {
       date_range: dateRange,
       automation: automationSettings,
       totals: {
+        pending: filteredCounts.pending,
+        failed: filteredCounts.failed,
+        awaiting_reply: filteredCounts.awaitingReply,
         confirmed: filteredCounts.confirmed,
         canceled: filteredCounts.canceled,
+        customer_canceled: filteredCounts.customerCanceled,
         sent: filteredCounts.sent,
         delivered: filteredCounts.delivered,
         read: filteredCounts.read,
+        follow_ups_sent: filteredCounts.followUpsSent,
         reply_rate: replyRate,
         confirmation_rate: confirmationRate,
       },
@@ -396,28 +405,28 @@ export class VerificationsService {
   }
 
   /**
-   * Reply rate = (confirmed + customer-canceled) / total.
+   * Reply rate = (confirmed + customer-canceled) / sent.
    * Merchant no-reply cancellations are excluded from the numerator.
    */
   private calculateReplyRate(counts: VerificationStatusCounts): number {
-    if (counts.total === 0) {
+    if (counts.sent === 0) {
       return 0;
     }
 
     return Number(
       (
-        ((counts.confirmed + counts.customerCanceled) / counts.total) *
+        ((counts.confirmed + counts.customerCanceled) / counts.sent) *
         100
       ).toFixed(1),
     );
   }
 
   private calculateConfirmationRate(counts: VerificationStatusCounts): number {
-    if (counts.total === 0) {
+    if (counts.sent === 0) {
       return 0;
     }
 
-    return Number(((counts.confirmed / counts.total) * 100).toFixed(1));
+    return Number(((counts.confirmed / counts.sent) * 100).toFixed(1));
   }
 
   private resolveDateRangeBounds(

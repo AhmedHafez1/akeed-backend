@@ -48,22 +48,30 @@ export class VerificationsRepository {
     endAt: string,
   ): Promise<{
     total: number;
+    pending: number;
+    failed: number;
+    awaitingReply: number;
     confirmed: number;
     canceled: number;
     customerCanceled: number;
     sent: number;
     delivered: number;
     read: number;
+    followUpsSent: number;
   }> {
     const [row] = await this.db
       .select({
         total: sql<number>`count(*)::int`,
+        pending: sql<number>`count(CASE WHEN ${verifications.status} = 'pending' THEN 1 END)::int`,
+        failed: sql<number>`count(CASE WHEN ${verifications.status} = 'failed' THEN 1 END)::int`,
+        awaitingReply: sql<number>`count(CASE WHEN ${verifications.status} IN ('sent', 'delivered', 'read', 'no_reply') THEN 1 END)::int`,
         sent: sql<number>`count(${verifications.lastSentAt})::int`,
         delivered: sql<number>`count(${verifications.deliveredAt})::int`,
         read: sql<number>`count(${verifications.readAt})::int`,
         confirmed: sql<number>`count(${verifications.confirmedAt})::int`,
         canceled: sql<number>`count(${verifications.canceledAt})::int`,
         customerCanceled: sql<number>`count(CASE WHEN ${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer') THEN 1 END)::int`,
+        followUpsSent: sql<number>`COALESCE(sum(${verifications.followUpAttempts}), 0)::int`,
       })
       .from(verifications)
       .where(
@@ -76,12 +84,16 @@ export class VerificationsRepository {
 
     return {
       total: row?.total ?? 0,
+      pending: row?.pending ?? 0,
+      failed: row?.failed ?? 0,
+      awaitingReply: row?.awaitingReply ?? 0,
       sent: row?.sent ?? 0,
       delivered: row?.delivered ?? 0,
       read: row?.read ?? 0,
       confirmed: row?.confirmed ?? 0,
       canceled: row?.canceled ?? 0,
       customerCanceled: row?.customerCanceled ?? 0,
+      followUpsSent: row?.followUpsSent ?? 0,
     };
   }
 

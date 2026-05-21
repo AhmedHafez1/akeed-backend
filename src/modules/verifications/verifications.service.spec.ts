@@ -3,28 +3,51 @@ import { VerificationsService } from './verifications.service';
 
 interface VerificationStatusCounts {
   total: number;
+  pending: number;
+  failed: number;
+  awaitingReply: number;
   confirmed: number;
   canceled: number;
   customerCanceled: number;
   sent: number;
   delivered: number;
   read: number;
+  followUpsSent: number;
 }
 
 /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
 
+function buildCounts(
+  overrides: Partial<VerificationStatusCounts>,
+): VerificationStatusCounts {
+  return {
+    total: 0,
+    pending: 0,
+    failed: 0,
+    awaitingReply: 0,
+    confirmed: 0,
+    canceled: 0,
+    customerCanceled: 0,
+    sent: 0,
+    delivered: 0,
+    read: 0,
+    followUpsSent: 0,
+    ...overrides,
+  };
+}
+
 function callReplyRate(
   svc: VerificationsService,
-  counts: VerificationStatusCounts,
+  counts: Partial<VerificationStatusCounts>,
 ): number {
-  return (svc as any).calculateReplyRate(counts);
+  return (svc as any).calculateReplyRate(buildCounts(counts));
 }
 
 function callConfirmationRate(
   svc: VerificationsService,
-  counts: VerificationStatusCounts,
+  counts: Partial<VerificationStatusCounts>,
 ): number {
-  return (svc as any).calculateConfirmationRate(counts);
+  return (svc as any).calculateConfirmationRate(buildCounts(counts));
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
@@ -107,32 +130,26 @@ describe('VerificationsService', () => {
       );
     });
 
-    it('should return 0 when total is 0', () => {
+    it('should return 0 when sent is 0', () => {
       expect(
         callReplyRate(service, {
-          total: 0,
-          confirmed: 0,
-          canceled: 0,
-          customerCanceled: 0,
           sent: 0,
-          delivered: 0,
-          read: 0,
         }),
       ).toBe(0);
     });
 
-    it('should return correct reply rate using customerCanceled', () => {
+    it('should return correct reply rate using sent denominator and customerCanceled', () => {
       expect(
         callReplyRate(service, {
           total: 100,
           confirmed: 40,
           canceled: 15,
           customerCanceled: 10,
-          sent: 100,
+          sent: 80,
           delivered: 80,
           read: 60,
         }),
-      ).toBe(50);
+      ).toBe(62.5);
     });
 
     it('should round to 1 decimal place', () => {
@@ -178,6 +195,19 @@ describe('VerificationsService', () => {
         }),
       ).toBe(50); // (40 + 10) / 100 = 50%
     });
+
+    it('should not count pending or failed verifications as replies', () => {
+      expect(
+        callReplyRate(service, {
+          total: 100,
+          pending: 20,
+          failed: 10,
+          confirmed: 24,
+          customerCanceled: 12,
+          sent: 60,
+        }),
+      ).toBe(60);
+    });
   });
 
   describe('calculateConfirmationRate', () => {
@@ -194,28 +224,22 @@ describe('VerificationsService', () => {
       );
     });
 
-    it('should return 0 when total is 0', () => {
+    it('should return 0 when sent is 0', () => {
       expect(
         callConfirmationRate(service, {
-          total: 0,
-          confirmed: 0,
-          canceled: 0,
-          customerCanceled: 0,
           sent: 0,
-          delivered: 0,
-          read: 0,
         }),
       ).toBe(0);
     });
 
-    it('should return correct confirmation rate', () => {
+    it('should return correct confirmation rate using sent denominator', () => {
       expect(
         callConfirmationRate(service, {
           total: 100,
-          confirmed: 75,
+          confirmed: 60,
           canceled: 10,
           customerCanceled: 10,
-          sent: 100,
+          sent: 80,
           delivered: 80,
           read: 60,
         }),
@@ -248,6 +272,18 @@ describe('VerificationsService', () => {
           read: 50,
         }),
       ).toBe(100);
+    });
+
+    it('should not count pending or failed verifications as confirmations', () => {
+      expect(
+        callConfirmationRate(service, {
+          total: 100,
+          pending: 20,
+          failed: 10,
+          confirmed: 30,
+          sent: 60,
+        }),
+      ).toBe(50);
     });
   });
 

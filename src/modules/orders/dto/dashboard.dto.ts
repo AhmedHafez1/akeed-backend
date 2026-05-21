@@ -104,11 +104,16 @@ export interface VerificationStatsDto {
     quiet_hours_enabled: boolean;
   };
   totals: {
+    pending: number;
+    failed: number;
+    awaiting_reply: number;
     confirmed: number;
     canceled: number;
+    customer_canceled: number;
     sent: number;
     delivered: number;
     read: number;
+    follow_ups_sent: number;
     reply_rate: number;
     confirmation_rate: number;
   };
