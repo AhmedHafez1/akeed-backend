@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
 
@@ -132,8 +133,12 @@ export class WhatsAppService {
       );
       return response.data as WhatsAppResponse;
     } catch (error) {
-      this.logger.error('Error sending WhatsApp message');
-      throw error;
+      const context = this.buildSafeErrorContext(error, {
+        verificationId,
+        resolvedLanguage,
+      });
+      this.logger.error(`WhatsApp send failed: ${context}`);
+      throw new Error(`WhatsApp send failed: ${context}`);
     }
   }
 
@@ -159,5 +164,50 @@ export class WhatsAppService {
     return this.arabicCountryCallingCodes.some((dialCode) =>
       internationalDigits.startsWith(dialCode),
     );
+  }
+
+  private buildSafeErrorContext(
+    error: unknown,
+    params: {
+      verificationId: string;
+      resolvedLanguage: VerificationTemplateLanguage;
+    },
+  ): string {
+    if (!isAxiosError(error)) {
+      return [
+        `verificationId=${params.verificationId}`,
+        `language=${params.resolvedLanguage}`,
+        `message=${error instanceof Error ? error.message : String(error)}`,
+      ].join(' ');
+    }
+
+    const responseData = error.response?.data as
+      | {
+          error?: {
+            message?: string;
+            type?: string;
+            code?: number;
+            error_subcode?: number;
+            fbtrace_id?: string;
+          };
+        }
+      | undefined;
+    const metaError = responseData?.error;
+    const status = error.response?.status;
+    const rateLimitLabel = status === 429 ? ' rate_limited=true' : '';
+
+    return [
+      `verificationId=${params.verificationId}`,
+      `language=${params.resolvedLanguage}`,
+      `status=${status ?? 'unknown'}`,
+      `code=${metaError?.code ?? 'unknown'}`,
+      `subcode=${metaError?.error_subcode ?? 'unknown'}`,
+      `type=${metaError?.type ?? 'unknown'}`,
+      `fbtraceId=${metaError?.fbtrace_id ?? 'unknown'}`,
+      `message=${metaError?.message ?? error.message}`,
+      rateLimitLabel.trim(),
+    ]
+      .filter(Boolean)
+      .join(' ');
   }
 }

@@ -20,6 +20,7 @@ import { MetaModule } from './infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shopify-api.service';
+import { DatabaseModule } from './infrastructure/database';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shop
     VerificationsModule,
     WebhookQueueModule,
     VerificationAutomationModule,
+    DatabaseModule,
   ],
   controllers: [AppController],
   providers: [AppService, SecurityMiddleware],

@@ -134,6 +134,13 @@
       "when": 1780272000000,
       "tag": "0018_merchant_billing_health_view",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780358400000,
+      "tag": "0019_reliability_monitoring_views",
+      "breakpoints": true
     }
   ]
 }
