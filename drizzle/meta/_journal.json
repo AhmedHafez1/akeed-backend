@@ -141,6 +141,13 @@
       "when": 1780358400000,
       "tag": "0019_reliability_monitoring_views",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780444800000,
+      "tag": "0020_add_pending_billing_plan_id",
+      "breakpoints": true
     }
   ]
 }

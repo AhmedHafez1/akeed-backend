@@ -93,8 +93,25 @@ export class ShopifyBillingWebhookService {
     }
 
     const now = new Date().toISOString();
+    const incomingSubscriptionId = this.resolveSubscriptionId(payload);
     const isBlockedStatus = this.isBlockedBillingStatus(normalizedStatus);
     const isActiveStatus = normalizedStatus === 'active';
+
+    // If the webhook is for a subscription that is NOT the current one and
+    // the status is blocked (declined/cancelled/expired/frozen), skip the
+    // update. This prevents a declined plan-upgrade attempt from disabling
+    // the merchant's existing active subscription.
+    const isCurrentSubscription =
+      !integration.shopifySubscriptionId ||
+      integration.shopifySubscriptionId === incomingSubscriptionId;
+
+    if (!isCurrentSubscription && isBlockedStatus) {
+      this.logger.warn(
+        `Ignoring blocked-status webhook for non-current subscription ${incomingSubscriptionId} on ${shopDomain} (current=${integration.shopifySubscriptionId}, status=${normalizedStatus})`,
+      );
+      return { received: true };
+    }
+
     const nextIsActive = isBlockedStatus
       ? false
       : isActiveStatus
@@ -104,7 +121,7 @@ export class ShopifyBillingWebhookService {
     await this.integrationsRepo.updateById(integration.id, {
       billingStatus: normalizedStatus,
       billingStatusUpdatedAt: now,
-      shopifySubscriptionId: this.resolveSubscriptionId(payload),
+      shopifySubscriptionId: incomingSubscriptionId,
       billingActivatedAt: isActiveStatus ? now : integration.billingActivatedAt,
       billingCanceledAt: isBlockedStatus ? now : null,
       isActive: nextIsActive,

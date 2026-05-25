@@ -196,6 +196,7 @@ export const integrations = pgTable(
       .default('pending')
       .notNull(),
     billingPlanId: integrationBillingPlanId('billing_plan_id'),
+    pendingBillingPlanId: integrationBillingPlanId('pending_billing_plan_id'),
     shopifySubscriptionId: text('shopify_subscription_id'),
     billingStatus: text('billing_status'),
     billingInitiatedAt: timestamp('billing_initiated_at', {

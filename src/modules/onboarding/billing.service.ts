@@ -28,6 +28,7 @@ import {
   buildPostBillingRedirectUrl,
 } from './onboarding.service.helpers';
 import { BillingConfigService } from './billing-config.service';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -84,6 +85,19 @@ export class BillingService {
   ): Promise<OnboardingBillingResponseDto> {
     const billingPlan = this.billingConfig.resolvePlan(planId);
 
+    // Same-plan guard: skip if already active on the requested plan.
+    if (
+      planId === integration.billingPlanId &&
+      isBillingStatusActive(integration.billingStatus)
+    ) {
+      return {
+        confirmationUrl: this.createPostBillingRedirectUrl({
+          shop: integration.platformStoreUrl,
+          host,
+        }),
+      };
+    }
+
     if (billingPlan.amount === 0) {
       return await this.initiateFreePlan(integration, billingPlan, host);
     }
@@ -109,13 +123,12 @@ export class BillingService {
       host,
     );
 
+    // Only store the pending plan — keep the current billingPlanId and
+    // billingStatus unchanged so verification processing continues.
     await this.persistBillingState({
       integrationId: integration.id,
-      planId: billingPlan.id,
-      status: 'pending',
+      pendingBillingPlanId: billingPlan.id,
       markInitiatedAt: true,
-      clearCanceledAt: true,
-      // Keep old shopifySubscriptionId so the callback can cancel it
     });
 
     return { confirmationUrl };
@@ -231,15 +244,24 @@ export class BillingService {
     }
 
     // Merchant declined or subscription was not approved.
-    // Keep the old subscription intact so they stay on their current plan.
+    // Clear the pending plan. If the merchant already has an active plan,
+    // keep it intact so verification processing continues.
+    const hasActivePlan = isBillingStatusActive(integration.billingStatus);
     const isCanceledStatus = this.isCanceledBillingStatus(
       billingResolution.status,
     );
     await this.persistBillingState({
       integrationId: integration.id,
-      status: billingResolution.status,
-      markCanceledAt: isCanceledStatus,
-      clearCanceledAt: !isCanceledStatus,
+      pendingBillingPlanId: null,
+      // Only write the declined/canceled status if there is no active plan
+      // (e.g. first onboarding). Otherwise preserve the current active status.
+      ...(hasActivePlan
+        ? {}
+        : {
+            status: billingResolution.status,
+            markCanceledAt: isCanceledStatus,
+            clearCanceledAt: !isCanceledStatus,
+          }),
     });
 
     return this.createPostBillingRedirectUrl({
@@ -256,8 +278,17 @@ export class BillingService {
     // Cancel the previous subscription only after the new one is confirmed.
     await this.cancelExistingSubscriptionIfAny(integration);
 
+    // Promote the pending plan to the active plan.
+    const activatedPlanId =
+      integration.pendingBillingPlanId ?? integration.billingPlanId;
+    const activatedPlan = activatedPlanId
+      ? this.billingConfig.resolvePlan(activatedPlanId)
+      : null;
+
     await this.persistBillingState({
       integrationId: integration.id,
+      planId: activatedPlanId ?? undefined,
+      pendingBillingPlanId: null,
       status: billingResolution.status,
       shopifySubscriptionId: billingResolution.subscriptionId,
       markActivatedAt: true,
@@ -265,9 +296,6 @@ export class BillingService {
     });
 
     // Reset usage counters so the new plan starts with a clean slate.
-    const activatedPlan = integration.billingPlanId
-      ? this.billingConfig.resolvePlan(integration.billingPlanId)
-      : null;
     await this.resetUsageForPlanChange(
       integration.id,
       activatedPlan?.includedVerifications,
@@ -526,6 +554,7 @@ export class BillingService {
   async persistBillingState(params: {
     integrationId: string;
     planId?: OnboardingBillingPlanId;
+    pendingBillingPlanId?: OnboardingBillingPlanId | null;
     status?: string;
     shopifySubscriptionId?: string | null;
     markInitiatedAt?: boolean;
@@ -538,6 +567,10 @@ export class BillingService {
 
     if (params.planId !== undefined) {
       updates.billingPlanId = params.planId;
+    }
+
+    if (params.pendingBillingPlanId !== undefined) {
+      updates.pendingBillingPlanId = params.pendingBillingPlanId;
     }
 
     if (params.status !== undefined) {
