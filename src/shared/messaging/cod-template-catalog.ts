@@ -118,8 +118,8 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     bodyParameterOrder: ['order', 'total'],
     preview: {
       greeting: 'السلام عليكم',
-      body: 'تم استلام طلبك رقم #{order_number} والدفع عند الاستلام',
-      totalLabel: 'إجمالي السعر: {total}',
+      body: 'تم استلام طلبك رقم #{{order}} والدفع عند الاستلام',
+      totalLabel: 'إجمالي السعر: {{total}}',
       ending: 'من فضلك أكد الطلب.',
       confirmButton: 'تأكيد',
       cancelButton: 'إلغاء',
@@ -186,8 +186,8 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     bodyParameterOrder: ['order', 'total'],
     preview: {
       greeting: 'Hello',
-      body: 'We have received your order #{order_number} with Cash on Delivery.',
-      totalLabel: 'Total Price: {total}',
+      body: 'We have received your order #{{order}} with Cash on Delivery.',
+      totalLabel: 'Total Price: {{total}}',
       ending: 'Please confirm your order.',
       confirmButton: 'Confirm',
       cancelButton: 'Cancel',
