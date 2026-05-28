@@ -67,6 +67,8 @@ export class WhatsAppService {
 
   async sendVerificationTemplate(params: {
     to: string;
+    customerName?: string | null;
+    storeName?: string | null;
     orderNumber: string;
     totalPrice: string;
     verificationId: string;
@@ -90,6 +92,14 @@ export class WhatsAppService {
 
         if (parameterKey === 'total') {
           return params.totalPrice;
+        }
+
+        if (parameterKey === 'customer') {
+          return (params.customerName ?? '').trim() || 'Customer';
+        }
+
+        if (parameterKey === 'store') {
+          return (params.storeName ?? '').trim() || 'Akeed Store';
         }
 
         return '';

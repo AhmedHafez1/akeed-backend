@@ -8,6 +8,10 @@ import {
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import {
+  isArabicCodTemplateVariant,
+  isEnglishCodTemplateVariant,
+} from '../../shared/messaging/cod-template-catalog';
 
 export type SendKind = 'initial' | 'follow_up';
 
@@ -91,6 +95,14 @@ export class VerificationSendService {
     kind: SendKind,
   ): Promise<SendOutcome> {
     const { verification, order, integration } = ctx;
+    const templateSelection = {
+      ar: isArabicCodTemplateVariant(integration.codTemplateArVariant)
+        ? integration.codTemplateArVariant
+        : undefined,
+      en: isEnglishCodTemplateVariant(integration.codTemplateEnVariant)
+        ? integration.codTemplateEnVariant
+        : undefined,
+    };
 
     const reservation =
       await this.billingEntitlementService.reserveVerificationSlot(integration);
@@ -111,10 +123,13 @@ export class VerificationSendService {
     try {
       response = await this.messagingPort.sendVerificationTemplate({
         to: order.customerPhone,
+        customerName: order.customerName,
+        storeName: integration.storeName,
         orderNumber: order.externalOrderId,
         totalPrice: `${order.totalPrice} ${order.currency ?? ''}`.trim(),
         verificationId: verification.id,
         preferredLanguage: integration.defaultLanguage,
+        templateSelection,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

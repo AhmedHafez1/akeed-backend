@@ -42,7 +42,10 @@ function createMocks() {
 const baseIntegration = {
   id: 'int-1',
   orgId: 'org-1',
+  storeName: 'Akeed Fashion',
   defaultLanguage: 'ar',
+  codTemplateArVariant: 'gulf',
+  codTemplateEnVariant: 'direct',
   billingPlanId: 'pro',
   billingActivatedAt: '2026-01-01T00:00:00Z',
   shopifySubscriptionId: 'sub-1',
@@ -68,6 +71,7 @@ describe('VerificationSendService', () => {
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
+        customerName: 'Sara',
         externalOrderId: 'ext-1',
         totalPrice: '100.00',
         integration: baseIntegration,
@@ -105,6 +109,19 @@ describe('VerificationSendService', () => {
         'sent',
         'wamid-1',
       );
+      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith({
+        to: '+966500000000',
+        customerName: 'Sara',
+        storeName: 'Akeed Fashion',
+        orderNumber: 'ext-1',
+        totalPrice: '100.00',
+        verificationId: 'ver-1',
+        preferredLanguage: 'ar',
+        templateSelection: {
+          ar: 'gulf',
+          en: 'direct',
+        },
+      });
     });
 
     it('releases quota and marks failed when send throws', async () => {
@@ -125,6 +142,7 @@ describe('VerificationSendService', () => {
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
+        customerName: 'Sara',
         externalOrderId: 'ext-1',
         totalPrice: '100.00',
         integration: baseIntegration,
@@ -174,6 +192,7 @@ describe('VerificationSendService', () => {
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
+        customerName: 'Sara',
         externalOrderId: 'ext-1',
         totalPrice: '100.00',
         integration: baseIntegration,
@@ -220,6 +239,7 @@ describe('VerificationSendService', () => {
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
+        customerName: 'Sara',
         externalOrderId: 'ext-1',
         totalPrice: '100.00',
         integration: baseIntegration,
@@ -260,6 +280,7 @@ describe('VerificationSendService', () => {
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
+        customerName: 'Sara',
         externalOrderId: 'ext-1',
         totalPrice: '100.00',
         integration: baseIntegration,
