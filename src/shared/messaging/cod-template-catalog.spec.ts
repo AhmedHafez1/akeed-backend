@@ -1,6 +1,7 @@
 import {
   COD_TEMPLATE_DEFAULTS,
   getArabicCodTemplateDefinition,
+  getAvailableCodTemplateDefinitions,
   getCodTemplateDefinition,
   getDefaultCodTemplatePreviews,
   getEnglishCodTemplateDefinition,
@@ -27,6 +28,23 @@ describe('cod-template-catalog', () => {
       'store',
       'order',
       'total',
+    ]);
+  });
+
+  it('returns available variants grouped by language', () => {
+    const variants = getAvailableCodTemplateDefinitions();
+
+    expect(variants.ar.map((variant) => variant.variant)).toEqual([
+      'standard',
+      'egyptian',
+      'gulf',
+      'short',
+    ]);
+    expect(variants.en.map((variant) => variant.variant)).toEqual([
+      'friendly',
+      'professional',
+      'direct',
+      'short',
     ]);
   });
 

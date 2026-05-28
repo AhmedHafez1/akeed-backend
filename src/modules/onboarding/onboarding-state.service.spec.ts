@@ -176,6 +176,51 @@ describe('OnboardingStateService', () => {
       expect(result.sendDelayMinutes).toBe(10);
     });
 
+    it('should persist COD template variant selections', async () => {
+      mockIntegrationsRepo.updateById.mockResolvedValue(
+        makeIntegration({
+          codTemplateArVariant: 'gulf',
+          codTemplateEnVariant: 'direct',
+        }),
+      );
+
+      await service.updateSettings(user, {
+        storeName: 'Test Store',
+        defaultLanguage: 'auto',
+        isAutoVerifyEnabled: true,
+        codTemplateArVariant: 'gulf',
+        codTemplateEnVariant: 'direct',
+      });
+
+      expect(mockIntegrationsRepo.updateById).toHaveBeenCalledWith(
+        'int-1',
+        expect.objectContaining({
+          codTemplateArVariant: 'gulf',
+          codTemplateEnVariant: 'direct',
+        }),
+      );
+    });
+
+    it('should reject unsupported COD template variants', async () => {
+      await expect(
+        service.updateSettings(user, {
+          storeName: 'Test Store',
+          defaultLanguage: 'auto',
+          isAutoVerifyEnabled: true,
+          codTemplateArVariant: 'friendly',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.updateSettings(user, {
+          storeName: 'Test Store',
+          defaultLanguage: 'auto',
+          isAutoVerifyEnabled: true,
+          codTemplateEnVariant: 'gulf',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should reject followUpDelayMinutes >= escalationDelayMinutes when both follow-up and escalation enabled', async () => {
       await expect(
         service.updateSettings(user, {

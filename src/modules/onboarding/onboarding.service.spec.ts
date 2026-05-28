@@ -92,6 +92,20 @@ describe('OnboardingService', () => {
       periodEnd: '2026-05-31',
     });
     expect(result.template.languages).toEqual(['ar', 'en']);
+    expect(result.template.defaults).toEqual({
+      ar: 'standard',
+      en: 'friendly',
+    });
+    expect(result.template.selected).toEqual({
+      ar: 'standard',
+      en: 'friendly',
+    });
+    expect(
+      result.template.variants.ar.map((variant) => variant.variant),
+    ).toEqual(['standard', 'egyptian', 'gulf', 'short']);
+    expect(
+      result.template.variants.en.map((variant) => variant.variant),
+    ).toEqual(['friendly', 'professional', 'direct', 'short']);
     expect(result.template.previews.en.confirmButton).toBe('Confirm Order');
     expect(monthlyUsageRepo.getOrgUsageTotalsForPeriod).toHaveBeenCalledWith({
       orgId: 'org-1',

@@ -46,6 +46,20 @@ export const COD_TEMPLATE_DEFAULTS: CodTemplateSelection = {
   en: 'friendly',
 };
 
+export const ARABIC_COD_TEMPLATE_VARIANTS = [
+  'standard',
+  'egyptian',
+  'gulf',
+  'short',
+] as const satisfies readonly ArabicCodTemplateVariantId[];
+
+export const ENGLISH_COD_TEMPLATE_VARIANTS = [
+  'friendly',
+  'professional',
+  'direct',
+  'short',
+] as const satisfies readonly EnglishCodTemplateVariantId[];
+
 const ARABIC_COD_TEMPLATE_CATALOG: Record<
   ArabicCodTemplateVariantId,
   CodTemplateDefinition
@@ -191,6 +205,32 @@ export function getEnglishCodTemplateDefinition(
   variant: EnglishCodTemplateVariantId = COD_TEMPLATE_DEFAULTS.en,
 ): CodTemplateDefinition {
   return ENGLISH_COD_TEMPLATE_CATALOG[variant];
+}
+
+export function isArabicCodTemplateVariant(
+  variant: string,
+): variant is ArabicCodTemplateVariantId {
+  return ARABIC_COD_TEMPLATE_VARIANTS.includes(
+    variant as ArabicCodTemplateVariantId,
+  );
+}
+
+export function isEnglishCodTemplateVariant(
+  variant: string,
+): variant is EnglishCodTemplateVariantId {
+  return ENGLISH_COD_TEMPLATE_VARIANTS.includes(
+    variant as EnglishCodTemplateVariantId,
+  );
+}
+
+export function getAvailableCodTemplateDefinitions(): {
+  ar: CodTemplateDefinition[];
+  en: CodTemplateDefinition[];
+} {
+  return {
+    ar: ARABIC_COD_TEMPLATE_VARIANTS.map(getArabicCodTemplateDefinition),
+    en: ENGLISH_COD_TEMPLATE_VARIANTS.map(getEnglishCodTemplateDefinition),
+  };
 }
 
 export function getCodTemplateDefinition(params: {

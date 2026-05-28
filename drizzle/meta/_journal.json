@@ -148,6 +148,13 @@
       "when": 1780444800000,
       "tag": "0020_add_pending_billing_plan_id",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780531200000,
+      "tag": "0021_add_cod_template_variants",
+      "breakpoints": true
     }
   ]
 }

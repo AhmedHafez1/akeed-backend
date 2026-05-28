@@ -17,7 +17,14 @@ import {
   isOnboardingBillingPlanId,
   resolveIncludedVerificationsLimit,
 } from './onboarding.service.helpers';
-import { getDefaultCodTemplatePreviews } from '../../shared/messaging/cod-template-catalog';
+import {
+  COD_TEMPLATE_DEFAULTS,
+  getAvailableCodTemplateDefinitions,
+  getArabicCodTemplateDefinition,
+  getEnglishCodTemplateDefinition,
+  isArabicCodTemplateVariant,
+  isEnglishCodTemplateVariant,
+} from '../../shared/messaging/cod-template-catalog';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -58,7 +65,7 @@ export class OnboardingService {
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
         usage,
       },
-      template: this.getTemplatePreview(),
+      template: this.getTemplateSettings(hydratedIntegration),
     };
   }
 
@@ -168,15 +175,28 @@ export class OnboardingService {
     return start.toISOString().slice(0, 10);
   }
 
-  private getTemplatePreview(): SettingsResponseDto['template'] {
-    const previews = getDefaultCodTemplatePreviews();
+  private getTemplateSettings(
+    integration: IntegrationRecord,
+  ): SettingsResponseDto['template'] {
+    const selected = {
+      ar: isArabicCodTemplateVariant(integration.codTemplateArVariant)
+        ? integration.codTemplateArVariant
+        : COD_TEMPLATE_DEFAULTS.ar,
+      en: isEnglishCodTemplateVariant(integration.codTemplateEnVariant)
+        ? integration.codTemplateEnVariant
+        : COD_TEMPLATE_DEFAULTS.en,
+    };
+    const variants = getAvailableCodTemplateDefinitions();
 
     return {
       languages: ['ar', 'en'],
       defaultPreviewLanguage: 'en',
+      defaults: COD_TEMPLATE_DEFAULTS,
+      selected,
+      variants,
       previews: {
-        ar: previews.ar,
-        en: previews.en,
+        ar: getArabicCodTemplateDefinition(selected.ar).preview,
+        en: getEnglishCodTemplateDefinition(selected.en).preview,
       },
     };
   }

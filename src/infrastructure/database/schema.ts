@@ -185,6 +185,12 @@ export const integrations = pgTable(
     defaultLanguage: integrationDefaultLanguage('default_language')
       .default('auto')
       .notNull(),
+    codTemplateArVariant: text('cod_template_ar_variant')
+      .default('standard')
+      .notNull(),
+    codTemplateEnVariant: text('cod_template_en_variant')
+      .default('friendly')
+      .notNull(),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
     avgShippingCost: numeric('avg_shipping_cost', { precision: 10, scale: 2 })
       .default('3')
@@ -274,6 +280,14 @@ export const integrations = pgTable(
     check(
       'integrations_platform_type_check',
       sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])`,
+    ),
+    check(
+      'integrations_cod_template_ar_variant_check',
+      sql`cod_template_ar_variant = ANY (ARRAY['standard'::text, 'egyptian'::text, 'gulf'::text, 'short'::text])`,
+    ),
+    check(
+      'integrations_cod_template_en_variant_check',
+      sql`cod_template_en_variant = ANY (ARRAY['friendly'::text, 'professional'::text, 'direct'::text, 'short'::text])`,
     ),
   ],
 );

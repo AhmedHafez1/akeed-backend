@@ -11,6 +11,13 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  ARABIC_COD_TEMPLATE_VARIANTS,
+  ENGLISH_COD_TEMPLATE_VARIANTS,
+  type ArabicCodTemplateVariantId,
+  type CodTemplateDefinition,
+  type EnglishCodTemplateVariantId,
+} from '../../../shared/messaging/cod-template-catalog';
 
 export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
@@ -131,6 +138,16 @@ export class UpdateOnboardingSettingsDto {
   @Min(0)
   @Max(1440)
   sendDelayMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(ARABIC_COD_TEMPLATE_VARIANTS)
+  codTemplateArVariant?: ArabicCodTemplateVariantId;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(ENGLISH_COD_TEMPLATE_VARIANTS)
+  codTemplateEnVariant?: EnglishCodTemplateVariantId;
 }
 
 export interface OnboardingStateDto {
@@ -187,6 +204,18 @@ export interface SettingsResponseDto {
   template: {
     languages: Array<'ar' | 'en'>;
     defaultPreviewLanguage: 'ar' | 'en';
+    defaults: {
+      ar: ArabicCodTemplateVariantId;
+      en: EnglishCodTemplateVariantId;
+    };
+    selected: {
+      ar: ArabicCodTemplateVariantId;
+      en: EnglishCodTemplateVariantId;
+    };
+    variants: {
+      ar: CodTemplateDefinition[];
+      en: CodTemplateDefinition[];
+    };
     previews: {
       ar: MessageTemplatePreviewDto;
       en: MessageTemplatePreviewDto;

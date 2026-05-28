@@ -22,6 +22,10 @@ import {
   STORE_PLATFORM_PORT,
   type StorePlatformPort,
 } from '../../shared/ports/store-platform.port';
+import {
+  isArabicCodTemplateVariant,
+  isEnglishCodTemplateVariant,
+} from '../../shared/messaging/cod-template-catalog';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
@@ -97,6 +101,22 @@ export class OnboardingStateService {
     }
     if (payload.sendDelayMinutes !== undefined) {
       updates.sendDelayMinutes = payload.sendDelayMinutes;
+    }
+    if (payload.codTemplateArVariant !== undefined) {
+      if (!isArabicCodTemplateVariant(payload.codTemplateArVariant)) {
+        throw new BadRequestException(
+          'Unsupported Arabic COD template variant',
+        );
+      }
+      updates.codTemplateArVariant = payload.codTemplateArVariant;
+    }
+    if (payload.codTemplateEnVariant !== undefined) {
+      if (!isEnglishCodTemplateVariant(payload.codTemplateEnVariant)) {
+        throw new BadRequestException(
+          'Unsupported English COD template variant',
+        );
+      }
+      updates.codTemplateEnVariant = payload.codTemplateEnVariant;
     }
 
     // Cross-field validation: followUpDelayMinutes < escalationDelayMinutes
