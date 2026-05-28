@@ -3,6 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
+import {
+  getCodTemplateDefinition,
+  type CodTemplateSelection,
+} from '../../../shared/messaging/cod-template-catalog';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
 
 type VerificationTemplateLanguage = 'ar' | 'en';
@@ -61,40 +65,53 @@ export class WhatsAppService {
     this.apiUrl = `https://graph.facebook.com/v24.0/${this.phoneNumberId}/messages`;
   }
 
-  async sendVerificationTemplate(
-    to: string,
-    orderNumber: string,
-    totalPrice: string,
-    verificationId: string,
-    preferredLanguage: VerificationTemplatePreference = 'auto',
-  ): Promise<WhatsAppResponse> {
+  async sendVerificationTemplate(params: {
+    to: string;
+    orderNumber: string;
+    totalPrice: string;
+    verificationId: string;
+    preferredLanguage?: VerificationTemplatePreference;
+    templateSelection?: Partial<CodTemplateSelection>;
+  }): Promise<WhatsAppResponse> {
+    const preferredLanguage = params.preferredLanguage ?? 'auto';
     const resolvedLanguage = this.resolveTemplateLanguage(
       preferredLanguage,
-      to,
+      params.to,
+    );
+    const templateDefinition = getCodTemplateDefinition({
+      language: resolvedLanguage,
+      selection: params.templateSelection,
+    });
+    const bodyParameters = templateDefinition.bodyParameterOrder.map(
+      (parameterKey) => {
+        if (parameterKey === 'order') {
+          return params.orderNumber;
+        }
+
+        if (parameterKey === 'total') {
+          return params.totalPrice;
+        }
+
+        return '';
+      },
     );
 
     const payload = {
       messaging_product: 'whatsapp',
-      to: to,
+      to: params.to,
       type: 'template',
       template: {
-        name: 'akeed_cod_verification',
+        name: templateDefinition.metaTemplateName,
         language: {
-          code: resolvedLanguage,
+          code: templateDefinition.metaLanguageCode,
         },
         components: [
           {
             type: 'body',
-            parameters: [
-              {
-                type: 'text',
-                text: orderNumber,
-              },
-              {
-                type: 'text',
-                text: totalPrice,
-              },
-            ],
+            parameters: bodyParameters.map((parameterValue) => ({
+              type: 'text',
+              text: parameterValue,
+            })),
           },
           {
             type: 'button',
@@ -103,7 +120,7 @@ export class WhatsAppService {
             parameters: [
               {
                 type: 'payload',
-                payload: `confirm_${verificationId}`,
+                payload: `confirm_${params.verificationId}`,
               },
             ],
           },
@@ -114,7 +131,7 @@ export class WhatsAppService {
             parameters: [
               {
                 type: 'payload',
-                payload: `cancel_${verificationId}`,
+                payload: `cancel_${params.verificationId}`,
               },
             ],
           },
@@ -134,8 +151,9 @@ export class WhatsAppService {
       return response.data as WhatsAppResponse;
     } catch (error) {
       const context = this.buildSafeErrorContext(error, {
-        verificationId,
+        verificationId: params.verificationId,
         resolvedLanguage,
+        templateName: templateDefinition.metaTemplateName,
       });
       this.logger.error(`WhatsApp send failed: ${context}`);
       throw new Error(`WhatsApp send failed: ${context}`);
@@ -171,12 +189,14 @@ export class WhatsAppService {
     params: {
       verificationId: string;
       resolvedLanguage: VerificationTemplateLanguage;
+      templateName: string;
     },
   ): string {
     if (!isAxiosError(error)) {
       return [
         `verificationId=${params.verificationId}`,
         `language=${params.resolvedLanguage}`,
+        `template=${params.templateName}`,
         `message=${error instanceof Error ? error.message : String(error)}`,
       ].join(' ');
     }
@@ -199,6 +219,7 @@ export class WhatsAppService {
     return [
       `verificationId=${params.verificationId}`,
       `language=${params.resolvedLanguage}`,
+      `template=${params.templateName}`,
       `status=${status ?? 'unknown'}`,
       `code=${metaError?.code ?? 'unknown'}`,
       `subcode=${metaError?.error_subcode ?? 'unknown'}`,

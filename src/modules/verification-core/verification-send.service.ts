@@ -109,13 +109,13 @@ export class VerificationSendService {
     > | null = null;
 
     try {
-      response = await this.messagingPort.sendVerificationTemplate(
-        order.customerPhone,
-        order.externalOrderId,
-        `${order.totalPrice} ${order.currency ?? ''}`.trim(),
-        verification.id,
-        integration.defaultLanguage,
-      );
+      response = await this.messagingPort.sendVerificationTemplate({
+        to: order.customerPhone,
+        orderNumber: order.externalOrderId,
+        totalPrice: `${order.totalPrice} ${order.currency ?? ''}`.trim(),
+        verificationId: verification.id,
+        preferredLanguage: integration.defaultLanguage,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(

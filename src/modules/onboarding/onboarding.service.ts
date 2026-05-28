@@ -17,6 +17,7 @@ import {
   isOnboardingBillingPlanId,
   resolveIncludedVerificationsLimit,
 } from './onboarding.service.helpers';
+import { getDefaultCodTemplatePreviews } from '../../shared/messaging/cod-template-catalog';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -168,26 +169,14 @@ export class OnboardingService {
   }
 
   private getTemplatePreview(): SettingsResponseDto['template'] {
+    const previews = getDefaultCodTemplatePreviews();
+
     return {
       languages: ['ar', 'en'],
       defaultPreviewLanguage: 'en',
       previews: {
-        ar: {
-          greeting: 'السلام عليكم',
-          body: 'تم استلام طلبك رقم #{order_number} والدفع عند الاستلام',
-          totalLabel: 'إجمالي السعر: {total}',
-          ending: 'من فضلك أكد الطلب.',
-          confirmButton: 'تأكيد',
-          cancelButton: 'إلغاء',
-        },
-        en: {
-          greeting: 'Hello',
-          body: 'We have received your order #{order_number} with Cash on Delivery.',
-          totalLabel: 'Total Price: {total}',
-          ending: 'Please confirm your order.',
-          confirmButton: 'Confirm',
-          cancelButton: 'Cancel',
-        },
+        ar: previews.ar,
+        en: previews.en,
       },
     };
   }

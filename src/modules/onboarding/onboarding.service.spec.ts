@@ -92,7 +92,7 @@ describe('OnboardingService', () => {
       periodEnd: '2026-05-31',
     });
     expect(result.template.languages).toEqual(['ar', 'en']);
-    expect(result.template.previews.en.confirmButton).toBe('Confirm');
+    expect(result.template.previews.en.confirmButton).toBe('Confirm Order');
     expect(monthlyUsageRepo.getOrgUsageTotalsForPeriod).toHaveBeenCalledWith({
       orgId: 'org-1',
       periodStart: '2026-05-01',
