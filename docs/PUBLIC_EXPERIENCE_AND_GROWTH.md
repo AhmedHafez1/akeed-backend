@@ -38,21 +38,21 @@ Out of scope:
 
 All routes are locale-prefixed (`/ar/...`, `/en/...`).
 
-| Route              | Page                  | Layout            | SEO indexed |
-| ------------------ | --------------------- | ----------------- | ----------- |
-| `/`                | Landing / Homepage    | Header + Footer   | Yes         |
-| `/privacy`         | Privacy Policy        | Header + Footer   | Yes         |
-| `/terms`           | Terms of Service      | Header + Footer   | Yes         |
-| `/support`         | Support               | Header + Footer   | Yes         |
+| Route      | Page               | Layout          | SEO indexed |
+| ---------- | ------------------ | --------------- | ----------- |
+| `/`        | Landing / Homepage | Header + Footer | Yes         |
+| `/privacy` | Privacy Policy     | Header + Footer | Yes         |
+| `/terms`   | Terms of Service   | Header + Footer | Yes         |
+| `/support` | Support            | Header + Footer | Yes         |
 
 ### Auth Routes
 
-| Route              | Page                  | Layout            | SEO indexed |
-| ------------------ | --------------------- | ----------------- | ----------- |
-| `/login`           | Login                 | Auth (minimal)    | No          |
-| `/signup`          | Signup                | Auth (minimal)    | No          |
-| `/forgot-password` | Password recovery     | Auth (minimal)    | No          |
-| `/reset-password`  | Password reset        | Auth (minimal)    | No          |
+| Route              | Page              | Layout         | SEO indexed |
+| ------------------ | ----------------- | -------------- | ----------- |
+| `/login`           | Login             | Auth (minimal) | No          |
+| `/signup`          | Signup            | Auth (minimal) | No          |
+| `/forgot-password` | Password recovery | Auth (minimal) | No          |
+| `/reset-password`  | Password reset    | Auth (minimal) | No          |
 
 ### Protected Routes (not public)
 
@@ -78,24 +78,24 @@ The homepage is rendered by `HomePage.tsx` and composed of sequential sections.
 
 ### Sections
 
-| Order | Section          | Purpose                                                            |
-| ----- | ---------------- | ------------------------------------------------------------------ |
-| 1     | Hero             | Main value proposition and primary CTA.                            |
-| 2     | Problem          | Four pain points COD merchants face.                               |
-| 3     | Solution         | Eight benefit cards showing how Akeed solves each problem.         |
-| 4     | HowItWorks       | Three-step process (connect, automate, ship).                      |
-| 5     | Pricing          | Four pricing tiers with feature comparison.                        |
-| 6     | FAQ              | Six common questions in accordion format.                          |
+| Order | Section    | Purpose                                                    |
+| ----- | ---------- | ---------------------------------------------------------- |
+| 1     | Hero       | Main value proposition and primary CTA.                    |
+| 2     | Problem    | Four pain points COD merchants face.                       |
+| 3     | Solution   | Eight benefit cards showing how Akeed solves each problem. |
+| 4     | HowItWorks | Three-step process (connect, automate, ship).              |
+| 5     | Pricing    | Four pricing tiers with feature comparison.                |
+| 6     | FAQ        | Six common questions in accordion format.                  |
 
 Additional elements:
 
-| Component           | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `StickyMobileCta`   | Persistent CTA bar on mobile viewports.                    |
-| `ChatInterface`     | Live demo WhatsApp chat simulation.                        |
-| `PlatformAvailability` | Platform badges (Shopify available, others coming soon).|
-| `SocialProof`       | Social proof metrics.                                      |
-| `LogoTicker`        | Partner/brand logo carousel.                               |
+| Component              | Purpose                                                  |
+| ---------------------- | -------------------------------------------------------- |
+| `StickyMobileCta`      | Persistent CTA bar on mobile viewports.                  |
+| `ChatInterface`        | Live demo WhatsApp chat simulation.                      |
+| `PlatformAvailability` | Platform badges (Shopify available, others coming soon). |
+| `SocialProof`          | Social proof metrics.                                    |
+| `LogoTicker`           | Partner/brand logo carousel.                             |
 
 ### Hero Section
 
@@ -136,34 +136,34 @@ Interactive calculator showing potential savings at different order volumes.
 Configuration (from `roi.ts`):
 
 | Monthly COD orders | Estimated cancellation rate | Shipping cost saved |
-| ------------------- | -------------------------- | ------------------- |
-| 500                 | Variable                   | Calculated          |
-| 1,000               | Variable                   | Calculated          |
-| 2,000               | Variable                   | Calculated          |
+| ------------------ | --------------------------- | ------------------- |
+| 500                | Variable                    | Calculated          |
+| 1,000              | Variable                    | Calculated          |
+| 2,000              | Variable                    | Calculated          |
 
 ## Pricing
 
 ### Tiers
 
-| Plan     | Included verifications | Price       | Key features                                    |
-| -------- | ---------------------- | ----------- | ----------------------------------------------- |
-| Starter  | 30 / month             | Free        | Automatic COD confirmation, dashboard, Shopify updates. |
-| Basic    | 300 / month            | $8.99/month | + Automated follow-up reminders, rule-based automation.  |
-| Pro      | 1,000 / month          | $22.99/month| + Quiet hours / scheduling.                              |
-| Scale    | 2,500 / month          | $44.99/month| + Priority support, setup call.                          |
+| Plan    | Included verifications | Price        | Key features                                            |
+| ------- | ---------------------- | ------------ | ------------------------------------------------------- |
+| Starter | 30 / month             | Free         | Automatic COD confirmation, dashboard, Shopify updates. |
+| Basic   | 300 / month            | $8.99/month  | + Automated follow-up reminders, rule-based automation. |
+| Pro     | 1,000 / month          | $22.99/month | + Quiet hours / scheduling.                             |
+| Scale   | 2,500 / month          | $44.99/month | + Priority support, setup call.                         |
 
 ### Feature Matrix
 
-| Feature                                     | Starter | Basic | Pro | Scale |
-| ------------------------------------------- | ------- | ----- | --- | ----- |
-| Automatic COD confirmation on WhatsApp      | ✓       | ✓     | ✓   | ✓     |
-| Automatic order status updates to Shopify   | ✓       | ✓     | ✓   | ✓     |
-| Dashboard with confirmation insights        | ✓       | ✓     | ✓   | ✓     |
-| Automated follow-up reminders               |         | ✓     | ✓   | ✓     |
-| Rule-based automation                       |         | ✓     | ✓   | ✓     |
-| Quiet hours / scheduling                    |         |       | ✓   | ✓     |
-| Priority support                            |         |       |     | ✓     |
-| Setup call                                  |         |       |     | ✓     |
+| Feature                                   | Starter | Basic | Pro | Scale |
+| ----------------------------------------- | ------- | ----- | --- | ----- |
+| Automatic COD confirmation on WhatsApp    | ✓       | ✓     | ✓   | ✓     |
+| Automatic order status updates to Shopify | ✓       | ✓     | ✓   | ✓     |
+| Dashboard with confirmation insights      | ✓       | ✓     | ✓   | ✓     |
+| Automated follow-up reminders             |         | ✓     | ✓   | ✓     |
+| Rule-based automation                     |         | ✓     | ✓   | ✓     |
+| Quiet hours / scheduling                  |         |       | ✓   | ✓     |
+| Priority support                          |         |       |     | ✓     |
+| Setup call                                |         |       |     | ✓     |
 
 Pricing configuration lives in `features/marketing/config/site.ts`. The same plan IDs and prices are used in the backend billing system (see `ONBOARDING_AND_BILLING.md`).
 
@@ -218,27 +218,27 @@ Includes `ContactPoint` JSON-LD schema markup for structured data.
 
 Configured in the root locale layout (`app/[locale]/layout.tsx`):
 
-| Property            | Value                                                   |
-| ------------------- | ------------------------------------------------------- |
-| `applicationName`   | Akeed                                                   |
-| `creator`           | Akeed                                                   |
-| `publisher`         | Akeed                                                   |
-| Title template      | `%s | Akeed`                                            |
-| Default description | From `metadata.description` translation key.            |
-| Favicon             | `/favicon.ico`                                          |
-| App icon            | `/images/akeed-web-app-icon-512.png` (512×512)          |
-| Apple icon          | `/images/akeed-web-app-icon-512.png` (512×512)          |
-| OG image            | `/images/akeed-app-icon-1200.png` (1200×1200)           |
-| OG type             | `website`                                               |
-| OG locale           | `ar_AR` or `en_US` (based on route locale)              |
-| Twitter card        | `summary_large_image`                                   |
+| Property            | Value                                          |
+| ------------------- | ---------------------------------------------- | ------ |
+| `applicationName`   | Akeed                                          |
+| `creator`           | Akeed                                          |
+| `publisher`         | Akeed                                          |
+| Title template      | `%s                                            | Akeed` |
+| Default description | From `metadata.description` translation key.   |
+| Favicon             | `/favicon.ico`                                 |
+| App icon            | `/images/akeed-web-app-icon-512.png` (512×512) |
+| Apple icon          | `/images/akeed-web-app-icon-512.png` (512×512) |
+| OG image            | `/images/akeed-app-icon-1200.png` (1200×1200)  |
+| OG type             | `website`                                      |
+| OG locale           | `ar_AR` or `en_US` (based on route locale)     |
+| Twitter card        | `summary_large_image`                          |
 
 ### Fonts
 
-| Font   | Script | Usage                             |
-| ------ | ------ | --------------------------------- |
-| Cairo  | Arabic | Arabic text, RTL layout           |
-| Inter  | Latin  | English text, LTR layout          |
+| Font  | Script | Usage                    |
+| ----- | ------ | ------------------------ |
+| Cairo | Arabic | Arabic text, RTL layout  |
+| Inter | Latin  | English text, LTR layout |
 
 Font selection is dynamic based on the current locale.
 
@@ -246,12 +246,12 @@ Font selection is dynamic based on the current locale.
 
 Generated by `app/sitemap.ts`.
 
-| Route       | Changefreq | Priority | Languages     |
-| ----------- | ---------- | -------- | ------------- |
-| `/`         | weekly     | 1.0      | ar, en        |
-| `/support`  | monthly    | 0.7      | ar, en        |
-| `/privacy`  | monthly    | 0.7      | ar, en        |
-| `/terms`    | monthly    | 0.7      | ar, en        |
+| Route      | Changefreq | Priority | Languages |
+| ---------- | ---------- | -------- | --------- |
+| `/`        | weekly     | 1.0      | ar, en    |
+| `/support` | monthly    | 0.7      | ar, en    |
+| `/privacy` | monthly    | 0.7      | ar, en    |
+| `/terms`   | monthly    | 0.7      | ar, en    |
 
 Each entry includes `hreflang` alternates for both languages.
 
@@ -272,16 +272,16 @@ Sitemap URL: `{siteOrigin}/sitemap.xml`.
 
 **Organization schema** (from `shared/lib/seo.ts`):
 
-| Field                 | Value                               |
-| --------------------- | ----------------------------------- |
-| `@type`               | Organization                        |
-| `name`                | Akeed                               |
-| `legalName`           | Akeed Digital Solutions              |
-| `taxID`               | 5813 (Commercial Registration)       |
-| `email`               | support@getakeed.com                 |
-| `address`             | Giza, Egypt                          |
-| `contactPoint`        | Arabic + English, customer service   |
-| `sameAs`              | Facebook, YouTube                    |
+| Field          | Value                              |
+| -------------- | ---------------------------------- |
+| `@type`        | Organization                       |
+| `name`         | Akeed                              |
+| `legalName`    | Akeed Digital Solutions            |
+| `taxID`        | 5813 (Commercial Registration)     |
+| `email`        | support@getakeed.com               |
+| `address`      | Giza, Egypt                        |
+| `contactPoint` | Arabic + English, customer service |
+| `sameAs`       | Facebook, YouTube                  |
 
 Additional schemas rendered on specific pages:
 
@@ -300,12 +300,12 @@ Additional schemas rendered on specific pages:
 
 ### Configuration
 
-| Setting         | Value              |
-| --------------- | ------------------ |
-| Locales         | `['en', 'ar']`     |
-| Default locale  | `ar` (Arabic)      |
-| Locale prefix   | Always (e.g., `/ar/`, `/en/`) |
-| Library         | `next-intl`        |
+| Setting        | Value                         |
+| -------------- | ----------------------------- |
+| Locales        | `['en', 'ar']`                |
+| Default locale | `ar` (Arabic)                 |
+| Locale prefix  | Always (e.g., `/ar/`, `/en/`) |
+| Library        | `next-intl`                   |
 
 ### Middleware
 
@@ -318,38 +318,38 @@ Additional schemas rendered on specific pages:
 
 Located at `public/messages/{locale}.json`.
 
-| File      | Content               |
-| --------- | --------------------- |
-| `ar.json` | Complete Arabic       |
-| `en.json` | Complete English      |
+| File      | Content          |
+| --------- | ---------------- |
+| `ar.json` | Complete Arabic  |
+| `en.json` | Complete English |
 
 ### Translation Namespaces
 
-| Namespace          | Coverage                                         |
-| ------------------ | ------------------------------------------------ |
-| `metadata`         | Page titles, meta descriptions.                  |
-| `header`           | Navigation links, CTAs.                          |
-| `hero`             | Hero section copy.                               |
-| `demo`             | Live demo chat interface.                        |
-| `problems`         | Problem statement cards.                         |
-| `how_it_works`     | Process steps.                                   |
-| `solution`         | Benefits/solutions section.                      |
-| `pricing`          | Pricing tiers, feature labels.                   |
-| `faq`              | FAQ questions and answers.                       |
-| `roi_calculator`   | ROI calculator labels.                           |
-| `whatsapp_button`  | WhatsApp CTA button copy.                        |
-| `mobile_cta`       | Mobile sticky CTA.                               |
-| `post_faq_cta`     | Post-FAQ call-to-action.                         |
-| `auth`             | Login, signup, password reset forms.             |
-| `legal`            | Terms, privacy content.                          |
-| `footer`           | Footer navigation and links.                    |
-| `support`          | Support page content.                            |
-| `embeddedSupport`  | Support in Shopify embedded app.                 |
-| `appHeader`        | Dashboard header.                                |
-| `common`           | Shared strings.                                  |
-| `onboarding`       | Onboarding wizard flow.                          |
-| `dashboard`        | Dashboard and analytics.                         |
-| `settings`         | Settings page.                                   |
+| Namespace         | Coverage                             |
+| ----------------- | ------------------------------------ |
+| `metadata`        | Page titles, meta descriptions.      |
+| `header`          | Navigation links, CTAs.              |
+| `hero`            | Hero section copy.                   |
+| `demo`            | Live demo chat interface.            |
+| `problems`        | Problem statement cards.             |
+| `how_it_works`    | Process steps.                       |
+| `solution`        | Benefits/solutions section.          |
+| `pricing`         | Pricing tiers, feature labels.       |
+| `faq`             | FAQ questions and answers.           |
+| `roi_calculator`  | ROI calculator labels.               |
+| `whatsapp_button` | WhatsApp CTA button copy.            |
+| `mobile_cta`      | Mobile sticky CTA.                   |
+| `post_faq_cta`    | Post-FAQ call-to-action.             |
+| `auth`            | Login, signup, password reset forms. |
+| `legal`           | Terms, privacy content.              |
+| `footer`          | Footer navigation and links.         |
+| `support`         | Support page content.                |
+| `embeddedSupport` | Support in Shopify embedded app.     |
+| `appHeader`       | Dashboard header.                    |
+| `common`          | Shared strings.                      |
+| `onboarding`      | Onboarding wizard flow.              |
+| `dashboard`       | Dashboard and analytics.             |
+| `settings`        | Settings page.                       |
 
 ### RTL Support
 
@@ -369,10 +369,10 @@ The header includes a language toggle that switches between Arabic and English. 
 
 Loaded by `MarketingScripts.tsx`. Scripts are conditionally rendered only in standalone mode — never inside the Shopify Admin iframe.
 
-| Platform         | ID                       | Events tracked |
-| ---------------- | ------------------------ | -------------- |
-| Facebook Pixel   | `2079384036148209`       | `PageView`     |
-| Google Analytics | `G-J7EM70ZQS0`           | Page views     |
+| Platform         | ID                 | Events tracked |
+| ---------------- | ------------------ | -------------- |
+| Facebook Pixel   | `2079384036148209` | `PageView`     |
+| Google Analytics | `G-J7EM70ZQS0`     | Page views     |
 
 **Why standalone only:** Avoids unnecessary tracking inside the Shopify Admin, prevents CSP conflicts with the Shopify iframe sandbox, and reduces network overhead for embedded merchants.
 
@@ -384,19 +384,19 @@ Fixed header with scroll-aware styling (blur backdrop on scroll).
 
 Desktop navigation items:
 
-| Label     | Target       | Type           |
-| --------- | ------------ | -------------- |
-| Features  | `#solution`  | Anchor scroll  |
-| Pricing   | `#pricing`   | Anchor scroll  |
-| Demo      | `#demo`      | Anchor scroll  |
-| FAQ       | `#faq`       | Anchor scroll  |
+| Label    | Target      | Type          |
+| -------- | ----------- | ------------- |
+| Features | `#solution` | Anchor scroll |
+| Pricing  | `#pricing`  | Anchor scroll |
+| Demo     | `#demo`     | Anchor scroll |
+| FAQ      | `#faq`      | Anchor scroll |
 
 Mobile navigation adds:
 
-| Label     | Target       |
-| --------- | ------------ |
-| Home      | `/`          |
-| Sign In   | `/login`     |
+| Label   | Target   |
+| ------- | -------- |
+| Home    | `/`      |
+| Sign In | `/login` |
 
 Primary CTA button: "Install on Shopify" → links to Shopify App Store.
 
@@ -413,35 +413,35 @@ Structure:
 
 Social media:
 
-| Platform   | URL                                                           |
-| ---------- | ------------------------------------------------------------- |
-| Facebook   | `https://www.facebook.com/profile.php?id=61585900432277`      |
-| YouTube    | `https://www.youtube.com/@akeed-digital`                      |
-| Instagram  | `https://www.instagram.com/akeed_app`                         |
+| Platform  | URL                                                      |
+| --------- | -------------------------------------------------------- |
+| Facebook  | `https://www.facebook.com/profile.php?id=61585900432277` |
+| YouTube   | `https://www.youtube.com/@akeed-digital`                 |
+| Instagram | `https://www.instagram.com/akeed_app`                    |
 
 Footer link groups:
 
-| Group      | Links                                    |
-| ---------- | ---------------------------------------- |
-| Navigation | Home, Features, Pricing                  |
-| Support    | Help Center, Contact Us, Community       |
+| Group      | Links                                      |
+| ---------- | ------------------------------------------ |
+| Navigation | Home, Features, Pricing                    |
+| Support    | Help Center, Contact Us, Community         |
 | Legal      | Privacy Policy, Terms of Service, Security |
 
 ## Public Assets
 
 ### Images
 
-| File                                    | Size     | Purpose                     |
-| --------------------------------------- | -------- | --------------------------- |
-| `akeed-web-logo-horizontal.png`         | —        | Header logo (light bg)      |
-| `akeed-web-logo-horizontal-white.png`   | —        | Footer logo (dark bg)       |
-| `akeed-web-app-icon-512.png`            | 512×512  | App icon, Apple icon        |
-| `akeed-app-icon-1200.png`               | 1200×1200| OpenGraph / social sharing  |
-| `akeed-social-profile-circle-1080.png`  | 1080×1080| Social media profile        |
-| `landing/1.jpg` – `landing/5.jpg`       | —        | Feature/demo screenshots    |
-| `landing/wa_chat_bg.png`                | —        | WhatsApp chat background    |
-| `landing/logos/shopify_icon_1.png`      | —        | Shopify platform badge      |
-| `landing/logos/wa_icon_1.png`           | —        | WhatsApp platform badge     |
+| File                                   | Size      | Purpose                    |
+| -------------------------------------- | --------- | -------------------------- |
+| `akeed-web-logo-horizontal.png`        | —         | Header logo (light bg)     |
+| `akeed-web-logo-horizontal-white.png`  | —         | Footer logo (dark bg)      |
+| `akeed-web-app-icon-512.png`           | 512×512   | App icon, Apple icon       |
+| `akeed-app-icon-1200.png`              | 1200×1200 | OpenGraph / social sharing |
+| `akeed-social-profile-circle-1080.png` | 1080×1080 | Social media profile       |
+| `landing/1.jpg` – `landing/5.jpg`      | —         | Feature/demo screenshots   |
+| `landing/wa_chat_bg.png`               | —         | WhatsApp chat background   |
+| `landing/logos/shopify_icon_1.png`     | —         | Shopify platform badge     |
+| `landing/logos/wa_icon_1.png`          | —         | WhatsApp platform badge    |
 
 ### Favicon
 
@@ -451,43 +451,43 @@ Footer link groups:
 
 ### App Manifest (`shopify.app.toml`)
 
-| Field              | Value                                    |
-| ------------------ | ---------------------------------------- |
-| `client_id`        | `f1f4012b31f1bb37c897ee284a501623`       |
-| `name`             | Akeed                                    |
-| `embedded`         | `true`                                   |
-| API version        | `2026-01`                                |
-| Application URL    | `http://localhost:3001` (dev)            |
-| Auth redirect      | `https://get-akeed-dev.vercel.app/api/auth/shopify/callback` |
+| Field           | Value                                                        |
+| --------------- | ------------------------------------------------------------ |
+| `client_id`     | `f1f4012b31f1bb37c897ee284a501623`                           |
+| `name`          | Akeed                                                        |
+| `embedded`      | `true`                                                       |
+| API version     | `2026-01`                                                    |
+| Application URL | `http://localhost:3001` (dev)                                |
+| Auth redirect   | `https://get-akeed-dev.vercel.app/api/auth/shopify/callback` |
 
 ### Access Scopes
 
-| Scope                | Purpose                              |
-| -------------------- | ------------------------------------ |
-| `read_customers`     | Customer data for verification.      |
-| `write_order_edits`  | Order modifications.                 |
-| `read_orders`        | Order data for COD detection.        |
-| `write_orders`       | Order cancellation and tagging.      |
-| `read_products`      | Product data (future use).           |
+| Scope               | Purpose                         |
+| ------------------- | ------------------------------- |
+| `read_customers`    | Customer data for verification. |
+| `write_order_edits` | Order modifications.            |
+| `read_orders`       | Order data for COD detection.   |
+| `write_orders`      | Order cancellation and tagging. |
+| `read_products`     | Product data (future use).      |
 
 ### Registered Webhooks
 
-| Topic                           | Endpoint                                              |
-| ------------------------------- | ----------------------------------------------------- |
-| `app_subscriptions/update`      | `/webhooks/shopify/app-subscriptions/update`           |
-| `orders/create`                 | `/webhooks/shopify/orders-create`                      |
-| `app/uninstalled`               | `/webhooks/shopify/uninstalled`                        |
-| `customers/data_request`        | `/webhooks/shopify/customers/data_request`             |
-| `customers/redact`              | `/webhooks/shopify/customers/redact`                   |
-| `shop/redact`                   | `/webhooks/shopify/shop/redact`                        |
+| Topic                      | Endpoint                                     |
+| -------------------------- | -------------------------------------------- |
+| `app_subscriptions/update` | `/webhooks/shopify/app-subscriptions/update` |
+| `orders/create`            | `/webhooks/shopify/orders-create`            |
+| `app/uninstalled`          | `/webhooks/shopify/uninstalled`              |
+| `customers/data_request`   | `/webhooks/shopify/customers/data_request`   |
+| `customers/redact`         | `/webhooks/shopify/customers/redact`         |
+| `shop/redact`              | `/webhooks/shopify/shop/redact`              |
 
 ### Web Config (`shopify.web.toml`)
 
-| Field      | Value                                      |
-| ---------- | ------------------------------------------ |
-| `name`     | `frontend`                                 |
-| `roles`    | `["frontend"]`                             |
-| Dev command| `node ./node_modules/next/dist/bin/next dev`|
+| Field       | Value                                        |
+| ----------- | -------------------------------------------- |
+| `name`      | `frontend`                                   |
+| `roles`     | `["frontend"]`                               |
+| Dev command | `node ./node_modules/next/dist/bin/next dev` |
 
 ## Message Template Preview
 
@@ -495,70 +495,70 @@ The `features/message-preview/` feature provides a WhatsApp template preview com
 
 Exports:
 
-| Export                          | Purpose                                        |
-| ------------------------------- | ---------------------------------------------- |
-| `VerificationTemplatePreview`   | React component rendering a WhatsApp message preview. |
-| `getTemplateContent()`          | Returns template strings for a given language/variant. |
-| `renderTemplateBody()`          | Interpolates order data into template body.    |
-| `sampleData`                    | Sample order data for preview rendering.       |
-| `TemplateLanguage`, `TemplatePreviewData` | TypeScript types.                   |
+| Export                                    | Purpose                                                |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `VerificationTemplatePreview`             | React component rendering a WhatsApp message preview.  |
+| `getTemplateContent()`                    | Returns template strings for a given language/variant. |
+| `renderTemplateBody()`                    | Interpolates order data into template body.            |
+| `sampleData`                              | Sample order data for preview rendering.               |
+| `TemplateLanguage`, `TemplatePreviewData` | TypeScript types.                                      |
 
 ## Company Information
 
-| Field                    | Value                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| Site name                | Akeed                                                                                        |
-| Legal entity             | Akeed Digital Solutions                                                                      |
-| Commercial Registration  | 5813 (Egypt)                                                                                 |
-| Address                  | Apartment 13, third floor, plot 473, Area A, Hadabet Al Ahram III, Al Haram, Giza, Egypt    |
-| Support email            | support@getakeed.com                                                                         |
+| Field                   | Value                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| Site name               | Akeed                                                                                    |
+| Legal entity            | Akeed Digital Solutions                                                                  |
+| Commercial Registration | 5813 (Egypt)                                                                             |
+| Address                 | Apartment 13, third floor, plot 473, Area A, Hadabet Al Ahram III, Al Haram, Giza, Egypt |
+| Support email           | support@getakeed.com                                                                     |
 
 ## Frontend Code Map
 
-| Area                       | File                                                               | Responsibility                                               |
-| -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Marketing homepage         | `features/marketing/ui/HomePage.tsx`                              | Composes all homepage sections.                              |
-| Hero section               | `features/marketing/ui/sections/Hero.tsx`                         | Value proposition, badges, primary CTA.                      |
-| Problem section            | `features/marketing/ui/sections/Problem.tsx`                      | Four pain point cards.                                       |
-| Solution section           | `features/marketing/ui/sections/Solution.tsx`                     | Eight benefit cards.                                         |
-| How it works               | `features/marketing/ui/sections/HowItWorks.tsx`                   | Three-step process.                                          |
-| Pricing section            | `features/marketing/ui/sections/Pricing.tsx`                      | Pricing tier display.                                        |
-| FAQ section                | `features/marketing/ui/sections/FAQ.tsx`                          | Accordion FAQ.                                               |
-| Post-FAQ CTA               | `features/marketing/ui/sections/PostFaqCta.tsx`                   | Final call-to-action.                                        |
-| ROI calculator             | `features/marketing/ui/sections/roi/`                             | Interactive savings calculator.                              |
-| Chat demo                  | `features/marketing/ui/components/ChatInterface.tsx`              | Live WhatsApp chat simulation.                               |
-| Mobile CTA                 | `features/marketing/ui/components/StickyMobileCta.tsx`            | Sticky CTA bar for mobile.                                   |
-| Platform badges            | `features/marketing/ui/components/PlatformAvailability.tsx`       | Shopify/coming-soon badges.                                  |
-| Social proof               | `features/marketing/ui/components/SocialProof.tsx`                | Merchant count metrics.                                      |
-| Logo ticker                | `features/marketing/ui/components/LogoTicker.tsx`                 | Brand logo carousel.                                         |
-| Landing primitives         | `features/marketing/ui/components/LandingPrimitives.tsx`          | Reusable section/card primitives.                            |
-| Site config                | `features/marketing/config/site.ts`                               | Pricing tiers, feature lists, FAQs.                          |
-| ROI config                 | `features/marketing/config/roi.ts`                                | ROI calculator data.                                         |
-| Message preview            | `features/message-preview/ui/VerificationTemplatePreview.tsx`     | WhatsApp template preview component.                         |
-| Template content           | `features/message-preview/lib/templatePreviewContent.ts`          | Template strings and interpolation.                          |
-| Header                     | `shared/layout/Header.tsx`                                        | Public navigation header.                                    |
-| Header hook                | `shared/layout/header/useHeader.ts`                               | Navigation items, scroll state.                              |
-| Header nav                 | `shared/layout/header/HeaderNav.tsx`                              | Desktop/mobile navigation links.                             |
-| Header actions             | `shared/layout/header/HeaderActions.tsx`                          | CTA button, language toggle.                                 |
-| Footer                     | `shared/layout/Footer.tsx`                                        | Links, social media, copyright.                              |
-| Legal page template        | `shared/layout/LegalDocumentPage.tsx`                             | Reusable legal document renderer.                            |
-| Public page shell          | `shared/layout/PublicPageShell.tsx`                               | Public page wrapper template.                                |
-| Marketing scripts          | `shared/layout/MarketingScripts.tsx`                              | Facebook Pixel + Google Analytics (standalone only).          |
-| SEO utilities              | `shared/lib/seo.ts`                                               | Metadata helpers, canonical URLs, JSON-LD schemas.           |
-| Locale utilities           | `shared/lib/locale.ts`                                            | Route classification, locale path helpers.                   |
-| i18n config                | `i18n.ts`                                                         | Locale list, default locale, message loading.                |
-| Locale middleware          | `proxy.ts`                                                        | `next-intl` middleware, route matcher.                       |
-| Root layout                | `app/[locale]/layout.tsx`                                         | Metadata, fonts, OG images, HTML lang/dir.                   |
-| Sitemap                    | `app/sitemap.ts`                                                  | Public page sitemap with language alternates.                |
-| Robots                     | `app/robots.ts`                                                   | Crawl rules, sitemap reference.                              |
-| Landing page               | `app/[locale]/(public)/page.tsx`                                  | Mode-aware root page.                                        |
-| Privacy page               | `app/[locale]/(public)/privacy/page.tsx`                          | Privacy Policy.                                              |
-| Terms page                 | `app/[locale]/(public)/terms/page.tsx`                            | Terms of Service.                                            |
-| Support page               | `app/[locale]/(public)/support/page.tsx`                          | Support channels with schema markup.                         |
-| Arabic translations        | `public/messages/ar.json`                                         | Complete Arabic message catalog.                             |
-| English translations       | `public/messages/en.json`                                         | Complete English message catalog.                            |
-| Shopify app manifest       | `shopify.app.toml`                                                | App config, scopes, webhook subscriptions.                   |
-| Shopify web config         | `shopify.web.toml`                                                | Frontend role, dev command.                                  |
+| Area                 | File                                                          | Responsibility                                       |
+| -------------------- | ------------------------------------------------------------- | ---------------------------------------------------- |
+| Marketing homepage   | `features/marketing/ui/HomePage.tsx`                          | Composes all homepage sections.                      |
+| Hero section         | `features/marketing/ui/sections/Hero.tsx`                     | Value proposition, badges, primary CTA.              |
+| Problem section      | `features/marketing/ui/sections/Problem.tsx`                  | Four pain point cards.                               |
+| Solution section     | `features/marketing/ui/sections/Solution.tsx`                 | Eight benefit cards.                                 |
+| How it works         | `features/marketing/ui/sections/HowItWorks.tsx`               | Three-step process.                                  |
+| Pricing section      | `features/marketing/ui/sections/Pricing.tsx`                  | Pricing tier display.                                |
+| FAQ section          | `features/marketing/ui/sections/FAQ.tsx`                      | Accordion FAQ.                                       |
+| Post-FAQ CTA         | `features/marketing/ui/sections/PostFaqCta.tsx`               | Final call-to-action.                                |
+| ROI calculator       | `features/marketing/ui/sections/roi/`                         | Interactive savings calculator.                      |
+| Chat demo            | `features/marketing/ui/components/ChatInterface.tsx`          | Live WhatsApp chat simulation.                       |
+| Mobile CTA           | `features/marketing/ui/components/StickyMobileCta.tsx`        | Sticky CTA bar for mobile.                           |
+| Platform badges      | `features/marketing/ui/components/PlatformAvailability.tsx`   | Shopify/coming-soon badges.                          |
+| Social proof         | `features/marketing/ui/components/SocialProof.tsx`            | Merchant count metrics.                              |
+| Logo ticker          | `features/marketing/ui/components/LogoTicker.tsx`             | Brand logo carousel.                                 |
+| Landing primitives   | `features/marketing/ui/components/LandingPrimitives.tsx`      | Reusable section/card primitives.                    |
+| Site config          | `features/marketing/config/site.ts`                           | Pricing tiers, feature lists, FAQs.                  |
+| ROI config           | `features/marketing/config/roi.ts`                            | ROI calculator data.                                 |
+| Message preview      | `features/message-preview/ui/VerificationTemplatePreview.tsx` | WhatsApp template preview component.                 |
+| Template content     | `features/message-preview/lib/templatePreviewContent.ts`      | Template strings and interpolation.                  |
+| Header               | `shared/layout/Header.tsx`                                    | Public navigation header.                            |
+| Header hook          | `shared/layout/header/useHeader.ts`                           | Navigation items, scroll state.                      |
+| Header nav           | `shared/layout/header/HeaderNav.tsx`                          | Desktop/mobile navigation links.                     |
+| Header actions       | `shared/layout/header/HeaderActions.tsx`                      | CTA button, language toggle.                         |
+| Footer               | `shared/layout/Footer.tsx`                                    | Links, social media, copyright.                      |
+| Legal page template  | `shared/layout/LegalDocumentPage.tsx`                         | Reusable legal document renderer.                    |
+| Public page shell    | `shared/layout/PublicPageShell.tsx`                           | Public page wrapper template.                        |
+| Marketing scripts    | `shared/layout/MarketingScripts.tsx`                          | Facebook Pixel + Google Analytics (standalone only). |
+| SEO utilities        | `shared/lib/seo.ts`                                           | Metadata helpers, canonical URLs, JSON-LD schemas.   |
+| Locale utilities     | `shared/lib/locale.ts`                                        | Route classification, locale path helpers.           |
+| i18n config          | `i18n.ts`                                                     | Locale list, default locale, message loading.        |
+| Locale middleware    | `proxy.ts`                                                    | `next-intl` middleware, route matcher.               |
+| Root layout          | `app/[locale]/layout.tsx`                                     | Metadata, fonts, OG images, HTML lang/dir.           |
+| Sitemap              | `app/sitemap.ts`                                              | Public page sitemap with language alternates.        |
+| Robots               | `app/robots.ts`                                               | Crawl rules, sitemap reference.                      |
+| Landing page         | `app/[locale]/(public)/page.tsx`                              | Mode-aware root page.                                |
+| Privacy page         | `app/[locale]/(public)/privacy/page.tsx`                      | Privacy Policy.                                      |
+| Terms page           | `app/[locale]/(public)/terms/page.tsx`                        | Terms of Service.                                    |
+| Support page         | `app/[locale]/(public)/support/page.tsx`                      | Support channels with schema markup.                 |
+| Arabic translations  | `public/messages/ar.json`                                     | Complete Arabic message catalog.                     |
+| English translations | `public/messages/en.json`                                     | Complete English message catalog.                    |
+| Shopify app manifest | `shopify.app.toml`                                            | App config, scopes, webhook subscriptions.           |
+| Shopify web config   | `shopify.web.toml`                                            | Frontend role, dev command.                          |
 
 ## Known Business Decisions
 
@@ -585,25 +585,25 @@ npm --prefix akeed-frontend run build
 
 ## Recommended Test Scenarios
 
-| Scenario                                             | Expected result                                                                       |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Load homepage in standalone mode (English)           | Full marketing page renders with all sections.                                        |
-| Load homepage in standalone mode (Arabic)            | Arabic content renders with RTL layout and Cairo font.                                |
-| Load homepage in embedded mode                       | Redirects to dashboard.                                                               |
-| Switch language via header toggle                    | Locale prefix changes, content re-renders in new language, path preserved.            |
-| Click "Install on Shopify" CTA                       | Navigates to Shopify App Store listing.                                               |
-| Navigate to `/en/privacy`                            | Privacy Policy renders with 5 sections, March 2026 date.                              |
-| Navigate to `/ar/terms`                              | Terms of Service renders in Arabic with RTL.                                          |
-| Navigate to `/en/support`                            | Support page renders with email and WhatsApp channels.                                |
-| Check `/sitemap.xml`                                 | Contains 4 public routes with ar/en alternates.                                       |
-| Check `/robots.txt`                                  | Private and auth routes disallowed, sitemap referenced.                               |
-| View page source for OG tags                         | `og:title`, `og:description`, `og:image` present and locale-aware.                   |
-| View page source for JSON-LD                         | Organization schema with legal entity details on homepage.                            |
-| Load page in mobile viewport                         | Sticky mobile CTA appears, hamburger menu works.                                      |
-| Scroll on desktop                                    | Header gains blur backdrop effect.                                                    |
-| Check Facebook Pixel fires (standalone)              | `PageView` event tracked.                                                             |
-| Check analytics absent (embedded)                    | No Facebook Pixel or Google Analytics scripts loaded.                                 |
-| Pricing section displays all 4 tiers                 | Correct prices, inclusion counts, and feature lists.                                  |
-| FAQ accordion interaction                            | Questions expand/collapse on click.                                                   |
-| ROI calculator interaction                           | Savings update based on selected order volume.                                        |
-| Legal page navigation links                          | "Terms" links to terms, "Privacy" links to privacy, toggle works.                     |
+| Scenario                                   | Expected result                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| Load homepage in standalone mode (English) | Full marketing page renders with all sections.                             |
+| Load homepage in standalone mode (Arabic)  | Arabic content renders with RTL layout and Cairo font.                     |
+| Load homepage in embedded mode             | Redirects to dashboard.                                                    |
+| Switch language via header toggle          | Locale prefix changes, content re-renders in new language, path preserved. |
+| Click "Install on Shopify" CTA             | Navigates to Shopify App Store listing.                                    |
+| Navigate to `/en/privacy`                  | Privacy Policy renders with 5 sections, March 2026 date.                   |
+| Navigate to `/ar/terms`                    | Terms of Service renders in Arabic with RTL.                               |
+| Navigate to `/en/support`                  | Support page renders with email and WhatsApp channels.                     |
+| Check `/sitemap.xml`                       | Contains 4 public routes with ar/en alternates.                            |
+| Check `/robots.txt`                        | Private and auth routes disallowed, sitemap referenced.                    |
+| View page source for OG tags               | `og:title`, `og:description`, `og:image` present and locale-aware.         |
+| View page source for JSON-LD               | Organization schema with legal entity details on homepage.                 |
+| Load page in mobile viewport               | Sticky mobile CTA appears, hamburger menu works.                           |
+| Scroll on desktop                          | Header gains blur backdrop effect.                                         |
+| Check Facebook Pixel fires (standalone)    | `PageView` event tracked.                                                  |
+| Check analytics absent (embedded)          | No Facebook Pixel or Google Analytics scripts loaded.                      |
+| Pricing section displays all 4 tiers       | Correct prices, inclusion counts, and feature lists.                       |
+| FAQ accordion interaction                  | Questions expand/collapse on click.                                        |
+| ROI calculator interaction                 | Savings update based on selected order volume.                             |
+| Legal page navigation links                | "Terms" links to terms, "Privacy" links to privacy, toggle works.          |
