@@ -1,12 +1,14 @@
 # Order Confirmation Workflow And Controls
 
-Last updated: 2026-04-30
+Last updated: 2026-05-28
 
 ## Purpose
 
 This document explains the Akeed cash-on-delivery order confirmation feature from a business perspective. It covers the order lifecycle, merchant controls, backend services, frontend screens, data model, API contracts, and operational behavior.
 
 The feature verifies COD Shopify orders through WhatsApp before the merchant fulfills the order. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`, tag the Shopify order, and let the merchant cancel it from the Akeed dashboard.
+
+Merchants can now choose branded confirmation template variants per language (Arabic and English). The selected variants are used for both preview and actual sends.
 
 ## Scope
 
@@ -69,6 +71,8 @@ Controls are edited from the Settings page and persisted on the `integrations` t
 | `quietHoursEnd`          | UI default `09:00` | `HH:mm`, required when quiet hours enabled | End of quiet-hours window in the configured timezone.                                                                 |
 | `timezone`               |      `Asia/Riyadh` | Allowlist in `AUTOMATION_TIMEZONES`        | Timezone used for quiet-hours calculations.                                                                           |
 | `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`                         | WhatsApp template language. `auto` resolves Arabic for Arabic-region phone prefixes and English otherwise.            |
+| `codTemplateArVariant`   |        `standard` | `standard`, `egyptian`, `gulf`, `short`   | Selected Arabic branded template variant for send and preview.                                                          |
+| `codTemplateEnVariant`   |        `friendly` | `friendly`, `professional`, `direct`, `short` | Selected English branded template variant for send and preview.                                                      |
 | `shippingCurrency`       |              `USD` | Allowlist                                  | Used for dashboard savings display, not verification routing.                                                         |
 | `avgShippingCost`        |                `3` | Number `>= 0`, max 2 decimals              | Used for dashboard money-saved KPI.                                                                                   |
 
@@ -91,7 +95,7 @@ Cross-field rules:
 | WhatsApp sending              | `akeed-backend/src/modules/verification-core/verification-send.service.ts`                  | Reserves billing usage, sends the WhatsApp template, marks initial status, and releases usage on send failure.                                |
 | Automation producer           | `akeed-backend/src/modules/verification-automation/verification-automation.producer.ts`     | Enqueues deterministic BullMQ jobs for initial, follow-up, and no-reply automation.                                                           |
 | Automation worker             | `akeed-backend/src/modules/verification-automation/verification-automation.processor.ts`    | Executes delayed initial sends, follow-ups, quiet-hours rescheduling, and no-reply escalation.                                                |
-| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Sends the `akeed_cod_verification` Meta template with confirm/cancel quick-reply payloads.                                                    |
+| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Resolves language + selected template variant, then sends the mapped Meta template with confirm/cancel quick-reply payloads.                   |
 | WhatsApp webhook              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.webhook.service.ts`                  | Handles customer button replies and delivery/read/failed status webhooks.                                                                     |
 | Dashboard/verifications API   | `akeed-backend/src/modules/verifications/verifications.controller.ts`                       | Exposes stats, list, test send, and merchant no-reply cancellation endpoint.                                                                  |
 | Merchant cancellation service | `akeed-backend/src/modules/verifications/verifications.service.ts`                          | Cancels no-reply Shopify orders and updates local verification state.                                                                         |
@@ -108,10 +112,10 @@ Cross-field rules:
 | Stats cards                 | `akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneStatsSummary.tsx` | Displays confirmed, canceled, awaiting response, reply rate, confirmation rate, usage, and savings. |
 | Verification table          | `akeed-frontend/src/features/dashboard/skins/standalone/VerificationsTableStandalone.tsx`      | Shows verification rows and no-reply cancel action in standalone mode.                              |
 | Embedded verification table | `akeed-frontend/src/features/dashboard/skins/embedded/VerificationsTableEmbedded.tsx`          | Shows verification rows and no-reply cancel action in embedded mode.                                |
-| Settings hook               | `akeed-frontend/src/features/settings/domain/useSettings.ts`                                   | Loads/saves merchant controls, validates values, and handles billing plan actions.                  |
-| Settings standalone skin    | `akeed-frontend/src/features/settings/skins/standalone/SettingsStandaloneSkin.tsx`             | Standalone settings UI and message preview.                                                         |
-| Settings embedded skin      | `akeed-frontend/src/features/settings/skins/embedded/SettingsEmbeddedSkin.tsx`                 | Polaris settings UI and message preview.                                                            |
-| Message preview             | `akeed-frontend/src/features/message-preview/`                                                 | Shows English/Arabic verification template preview.                                                 |
+| Settings hook               | `akeed-frontend/src/features/settings/domain/useSettings.ts`                                   | Loads/saves merchant controls, template selections, validates values, and handles billing plan actions. |
+| Settings standalone skin    | `akeed-frontend/src/features/settings/skins/standalone/SettingsStandaloneSkin.tsx`             | Standalone settings UI including branded template selectors and live preview.                         |
+| Settings embedded skin      | `akeed-frontend/src/features/settings/skins/embedded/SettingsEmbeddedTabbedSkin.tsx`           | Polaris tabbed settings UI including branded template selectors and live preview.                     |
+| Message preview route       | `akeed-frontend/src/app/[locale]/message-preview/page.tsx`                                    | Redirects to settings `message-preview` tab (single source of truth).                                |
 | API/auth wrapper            | `akeed-frontend/src/shared/lib/auth.ts`                                                        | Sends authenticated backend requests in standalone and embedded modes.                              |
 
 ## API Reference
@@ -136,7 +140,7 @@ Primary tables:
 
 | Table            | Important fields                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive`, `storeName`, `defaultLanguage`, `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus`, `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
+| `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive`, `storeName`, `defaultLanguage`, `codTemplateArVariant`, `codTemplateEnVariant`, `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus`, `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
 | `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`                                                                                                                                                                                                                             |
 | `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                           |
 | `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                 |
@@ -201,6 +205,8 @@ Operational behavior:
 - Customer cancel does not automatically cancel the Shopify order; it marks and tags the order for merchant awareness.
 - Merchant order cancellation is available only after `no_reply` escalation.
 - Shopify cancellation is called before local state is changed.
+- Branded template defaults are `friendly` for English and `standard` for Arabic.
+- Legacy short template variants stay available and keep their existing two-body-parameter shape.
 - `no_reply` is excluded from customer reply rate numerator unless the customer later replies before merchant cancellation.
 - Tagging failures after irreversible actions are logged but do not fail the completed action.
 
