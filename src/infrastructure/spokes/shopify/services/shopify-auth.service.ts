@@ -162,9 +162,6 @@ export class ShopifyAuthService {
     // Already installed — short-circuit
     const alreadyInstalled = await this.isInstalled(shop);
     if (alreadyInstalled) {
-      this.logger.log(
-        `Shop ${shop} already installed — token exchange not needed`,
-      );
       return { installed: true, shop };
     }
 
