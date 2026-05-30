@@ -82,11 +82,6 @@ export class DualAuthGuard implements CanActivate {
       // Attach user context to request
       request.user = user;
 
-      const orgLabel = user.orgId || 'none';
-      this.logger.debug(
-        `Authenticated user: ${user.userId} (${user.source}) org: ${orgLabel}`,
-      );
-
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

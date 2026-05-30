@@ -10,10 +10,6 @@ export class AuthService {
   constructor(private readonly organizationsRepo: OrganizationsRepository) {}
 
   async getCurrentUser(user: AuthenticatedUser): Promise<MeResponseDto> {
-    this.logger.debug(
-      `GET /api/auth/me - user: ${user.userId}, org: ${user.orgId}, source: ${user.source}`,
-    );
-
     const organization = await this.organizationsRepo.findById(user.orgId);
 
     if (!organization) {

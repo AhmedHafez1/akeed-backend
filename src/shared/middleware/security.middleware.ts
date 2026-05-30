@@ -75,8 +75,6 @@ export class SecurityMiddleware implements NestMiddleware {
     ];
 
     res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
-
-    this.logger.debug('CSP headers set for Shopify embedding');
   }
 
   private getConnectSrcDirectives(): string[] {
