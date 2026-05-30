@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -79,7 +80,14 @@ export class VerificationAutomationProducer {
     });
 
     this.logger.log(
-      `Enqueued ${jobType} for verification ${params.verificationId} (delay=${delay}ms, jobId=${jobId})`,
+      buildBackendLog('VerificationAutomationProducer', {
+        action: 'enqueue',
+        outcome: 'success',
+        jobType,
+        verificationId: params.verificationId,
+        delayMs: delay,
+        jobId,
+      }),
     );
   }
 }

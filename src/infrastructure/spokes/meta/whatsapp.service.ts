@@ -7,6 +7,10 @@ import {
   getCodTemplateDefinition,
   type CodTemplateSelection,
 } from '../../../shared/messaging/cod-template-catalog';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../shared/logging/backend-log.util';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
 
 type VerificationTemplateLanguage = 'ar' | 'en';
@@ -53,12 +57,20 @@ export class WhatsAppService {
     // Basic validation to ensure env vars are present
     if (!this.accessToken) {
       this.logger.warn(
-        'WA_ACCESS_TOKEN is not defined in environment variables',
+        buildBackendLog(WhatsAppService.name, {
+          action: 'whatsapp-service-config-validate',
+          outcome: 'failure',
+          errorCode: 'missing_wa_access_token',
+        }),
       );
     }
     if (!this.phoneNumberId) {
       this.logger.warn(
-        'WA_PHONE_NUMBER_ID is not defined in environment variables',
+        buildBackendLog(WhatsAppService.name, {
+          action: 'whatsapp-service-config-validate',
+          outcome: 'failure',
+          errorCode: 'missing_wa_phone_number_id',
+        }),
       );
     }
 
@@ -165,7 +177,18 @@ export class WhatsAppService {
         resolvedLanguage,
         templateName: templateDefinition.metaTemplateName,
       });
-      this.logger.error(`WhatsApp send failed: ${context}`);
+      this.logger.error(
+        buildBackendLog(WhatsAppService.name, {
+          action: 'whatsapp-template-send',
+          outcome: 'failure',
+          verificationId: params.verificationId,
+          to: params.to,
+          resolvedLanguage,
+          templateName: templateDefinition.metaTemplateName,
+          context,
+          ...normalizeError(error),
+        }),
+      );
       throw new Error(`WhatsApp send failed: ${context}`);
     }
   }

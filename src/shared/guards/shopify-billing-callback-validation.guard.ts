@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
+import { buildBackendLog } from '../logging/backend-log.util';
 import {
   validateShop,
   verifyShopifyHmac,
@@ -61,7 +62,12 @@ export class ShopifyBillingCallbackValidationGuard implements CanActivate {
       }
     } else {
       this.logger.warn(
-        `Shopify billing callback arrived without hmac (shop=${shop}, charge_id=${chargeId}); allowing and relying on charge status verification.`,
+        buildBackendLog('ShopifyBillingCallbackValidationGuard', {
+          action: 'canActivate.hmacMissing',
+          outcome: 'skipped',
+          shopDomain: shop,
+          chargeId,
+        }),
       );
     }
 

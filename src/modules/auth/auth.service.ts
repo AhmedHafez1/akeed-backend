@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import type { AuthenticatedUser } from './guards/dual-auth.guard';
 import { AuthStatusResponseDto, MeResponseDto } from './dto/auth.dto';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 
 @Injectable()
 export class AuthService {
@@ -13,7 +14,15 @@ export class AuthService {
     const organization = await this.organizationsRepo.findById(user.orgId);
 
     if (!organization) {
-      this.logger.warn(`Organization not found: ${user.orgId}`);
+      this.logger.warn(
+        buildBackendLog(AuthService.name, {
+          action: 'auth-get-current-user',
+          outcome: 'skipped',
+          userId: user.userId,
+          orgId: user.orgId,
+          reason: 'organization_not_found',
+        }),
+      );
       return {
         user_id: user.userId,
         org_id: user.orgId,

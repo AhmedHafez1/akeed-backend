@@ -17,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 import { MetaWebhookSignatureGuard } from '../../../shared/guards/meta-webhook-signature.guard';
+import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 
 @SkipThrottle()
 @Controller('webhooks/whatsapp')
@@ -48,12 +49,23 @@ export class WhatsAppWebhookController {
     const isTokenMatch = requestToken === verifyToken;
 
     if (mode === 'subscribe' && isTokenMatch) {
-      this.logger.log('Webhook verified successfully.');
+      this.logger.log(
+        buildBackendLog(WhatsAppWebhookController.name, {
+          action: 'meta-webhook-verify',
+          outcome: 'success',
+        }),
+      );
       return challenge;
     }
 
     this.logger.error(
-      `Webhook verification failed. mode=${mode}, tokenLength=${token?.length ?? 0}, challengeLength=${challenge?.length ?? 0}`,
+      buildBackendLog(WhatsAppWebhookController.name, {
+        action: 'meta-webhook-verify',
+        outcome: 'failure',
+        mode,
+        tokenLength: token?.length ?? 0,
+        challengeLength: challenge?.length ?? 0,
+      }),
     );
     throw new ForbiddenException('Webhook verification failed');
   }

@@ -5,6 +5,10 @@ import * as crypto from 'crypto';
 import { AuthenticatedUser } from '../guards/dual-auth.guard';
 import { IntegrationsRepository } from '../../../infrastructure/database/repositories/integrations.repository';
 import { MembershipsRepository } from '../../../infrastructure/database/repositories/memberships.repository';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../shared/logging/backend-log.util';
 
 /**
  * Token Validator Service
@@ -103,7 +107,13 @@ export class TokenValidatorService {
 
       return 'unknown';
     } catch (error) {
-      this.logger.error('Failed to detect token type', error);
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-type-detect',
+          outcome: 'failure',
+          ...normalizeError(error),
+        }),
+      );
       return 'unknown';
     }
   }
@@ -128,7 +138,14 @@ export class TokenValidatorService {
       );
 
       if (!integration) {
-        this.logger.warn(`No integration found for shop: ${shop}`);
+        this.logger.warn(
+          buildBackendLog(TokenValidatorService.name, {
+            action: 'token-validate-shopify',
+            outcome: 'failure',
+            shopDomain: shop,
+            reason: 'integration_not_found',
+          }),
+        );
         throw new UnauthorizedException('Shop not registered');
       }
 
@@ -139,7 +156,15 @@ export class TokenValidatorService {
       const membership = await this.membershipsRepo.findByOrg(orgId);
 
       if (!membership || membership.length === 0) {
-        this.logger.warn(`No membership found for org: ${orgId}`);
+        this.logger.warn(
+          buildBackendLog(TokenValidatorService.name, {
+            action: 'token-validate-shopify',
+            outcome: 'failure',
+            orgId,
+            shopDomain: shop,
+            reason: 'membership_not_found',
+          }),
+        );
         throw new UnauthorizedException('User not found');
       }
 
@@ -154,7 +179,13 @@ export class TokenValidatorService {
         shop,
       };
     } catch (error) {
-      this.logger.error('Shopify token validation failed', error);
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-validate-shopify',
+          outcome: 'failure',
+          ...normalizeError(error),
+        }),
+      );
       throw new UnauthorizedException('Invalid Shopify session token');
     }
   }
@@ -174,7 +205,14 @@ export class TokenValidatorService {
       } = await this.supabase.auth.getUser(token);
 
       if (error || !user) {
-        this.logger.warn(`Supabase token validation failed: ${error?.message}`);
+        this.logger.warn(
+          buildBackendLog(TokenValidatorService.name, {
+            action: 'token-validate-supabase',
+            outcome: 'failure',
+            reason: 'supabase_user_lookup_failed',
+            errorMessage: error?.message,
+          }),
+        );
         throw new UnauthorizedException('Invalid Supabase token');
       }
 
@@ -184,7 +222,14 @@ export class TokenValidatorService {
       const memberships = await this.membershipsRepo.findByUser(userId);
 
       if (!memberships || memberships.length === 0) {
-        this.logger.warn(`No organization found for user: ${userId}`);
+        this.logger.warn(
+          buildBackendLog(TokenValidatorService.name, {
+            action: 'token-validate-supabase',
+            outcome: 'failure',
+            userId,
+            reason: 'organization_not_found',
+          }),
+        );
         if (allowMissingOrg) {
           return {
             userId,
@@ -204,7 +249,13 @@ export class TokenValidatorService {
         source: 'supabase',
       };
     } catch (error) {
-      this.logger.error('Supabase token validation failed', error);
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-validate-supabase',
+          outcome: 'failure',
+          ...normalizeError(error),
+        }),
+      );
       throw new UnauthorizedException('Invalid Supabase token');
     }
   }
@@ -240,26 +291,52 @@ export class TokenValidatorService {
     const expectedSignatureBuffer = Buffer.from(expectedSignature, 'base64url');
 
     if (signatureBuffer.length !== expectedSignatureBuffer.length) {
-      this.logger.error('JWT signature verification failed');
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-verify-shopify-jwt-signature',
+          outcome: 'failure',
+          reason: 'signature_length_mismatch',
+        }),
+      );
       throw new Error('Invalid JWT signature');
     }
 
     if (!crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)) {
-      this.logger.error('JWT signature verification failed');
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-verify-shopify-jwt-signature',
+          outcome: 'failure',
+          reason: 'invalid_signature',
+        }),
+      );
       throw new Error('Invalid JWT signature');
     }
 
     // Verify expiration
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      this.logger.error(`Token expired. Exp: ${payload.exp}, Now: ${now}`);
+      this.logger.error(
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-verify-shopify-jwt-claims',
+          outcome: 'failure',
+          reason: 'token_expired',
+          exp: payload.exp,
+          now,
+        }),
+      );
       throw new Error('JWT expired');
     }
 
     // Verify not before
     if (payload.nbf > now) {
       this.logger.error(
-        `Token not yet valid. Nbf: ${payload.nbf}, Now: ${now}`,
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-verify-shopify-jwt-claims',
+          outcome: 'failure',
+          reason: 'token_not_yet_valid',
+          nbf: payload.nbf,
+          now,
+        }),
       );
       throw new Error('JWT not yet valid');
     }
@@ -268,7 +345,12 @@ export class TokenValidatorService {
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     if (payload.aud !== apiKey) {
       this.logger.error(
-        `JWT audience mismatch for shop: ${payload.dest ?? 'unknown'}`,
+        buildBackendLog(TokenValidatorService.name, {
+          action: 'token-verify-shopify-jwt-claims',
+          outcome: 'failure',
+          reason: 'audience_mismatch',
+          shopDomain: payload.dest ?? 'unknown',
+        }),
       );
       throw new Error('Invalid JWT audience');
     }

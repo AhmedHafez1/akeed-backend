@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
+import { buildBackendLog } from '../logging/backend-log.util';
 
 /**
  * Security Middleware
@@ -111,7 +112,14 @@ export class SecurityMiddleware implements NestMiddleware {
     try {
       return new URL(rawUrl).origin;
     } catch {
-      this.logger.warn(`Invalid URL configured for CSP connect-src: ${rawUrl}`);
+      this.logger.warn(
+        buildBackendLog(SecurityMiddleware.name, {
+          action: 'security-csp-connect-src-parse',
+          outcome: 'skipped',
+          rawUrl,
+          reason: 'invalid_url',
+        }),
+      );
       return null;
     }
   }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
@@ -25,7 +26,12 @@ export class ShopifyBillingWebhookService {
     shopDomain: string,
   ): Promise<WebhookAck> {
     this.logger.log(
-      `Received Shopify App Uninstalled Webhook from ${shopDomain}: ${payload.id}`,
+      buildBackendLog('ShopifyBillingWebhookService', {
+        action: 'handleAppUninstalled.received',
+        outcome: 'success',
+        shopDomain,
+        payloadId: String(payload.id),
+      }),
     );
 
     const integration = await this.integrationsRepo.findByPlatformDomain(
@@ -35,7 +41,11 @@ export class ShopifyBillingWebhookService {
 
     if (!integration) {
       this.logger.warn(
-        `Skipping app uninstalled: No integration found for domain ${shopDomain}`,
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppUninstalled.noIntegration',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -52,12 +62,22 @@ export class ShopifyBillingWebhookService {
   ): Promise<WebhookAck> {
     const normalizedStatus = this.normalizeBillingStatus(payload.status);
     this.logger.log(
-      `Received Shopify App Subscription Webhook from ${shopDomain}: id=${payload.id}, status=${normalizedStatus}`,
+      buildBackendLog('ShopifyBillingWebhookService', {
+        action: 'handleAppSubscriptionUpdate.received',
+        outcome: 'success',
+        shopDomain,
+        payloadId: String(payload.id),
+        billingStatus: normalizedStatus,
+      }),
     );
 
     if (!webhookId) {
       this.logger.warn(
-        `Missing X-Shopify-Webhook-Id for app subscription update from ${shopDomain}`,
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.missingWebhookId',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
     }
 
@@ -79,7 +99,12 @@ export class ShopifyBillingWebhookService {
 
       if (!insertedWebhookRecord) {
         this.logger.warn(
-          `Duplicate Shopify webhook ${webhookId} ignored for shop ${shopDomain}`,
+          buildBackendLog('ShopifyBillingWebhookService', {
+            action: 'handleAppSubscriptionUpdate.duplicateWebhook',
+            outcome: 'skipped',
+            shopDomain,
+            webhookId,
+          }),
         );
         return { received: true, duplicate: true };
       }
@@ -87,7 +112,11 @@ export class ShopifyBillingWebhookService {
 
     if (!integration) {
       this.logger.warn(
-        `Skipping app subscription update: No integration/org found for domain ${shopDomain}`,
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.noIntegration',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -107,7 +136,14 @@ export class ShopifyBillingWebhookService {
 
     if (!isCurrentSubscription && isBlockedStatus) {
       this.logger.warn(
-        `Ignoring blocked-status webhook for non-current subscription ${incomingSubscriptionId} on ${shopDomain} (current=${integration.shopifySubscriptionId}, status=${normalizedStatus})`,
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.ignoredNonCurrentBlocked',
+          outcome: 'skipped',
+          shopDomain,
+          incomingSubscriptionId,
+          currentSubscriptionId: integration.shopifySubscriptionId,
+          billingStatus: normalizedStatus,
+        }),
       );
       return { received: true };
     }
@@ -129,7 +165,12 @@ export class ShopifyBillingWebhookService {
 
     if (isBlockedStatus) {
       this.logger.warn(
-        `Shop ${shopDomain} subscription became non-billable (${normalizedStatus}). Verification processing will be blocked.`,
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.nonBillable',
+          outcome: 'failure',
+          shopDomain,
+          billingStatus: normalizedStatus,
+        }),
       );
     }
 

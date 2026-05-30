@@ -19,6 +19,10 @@ import {
   adjustForQuietHours,
   isInsideQuietHours,
 } from '../../shared/utils/quiet-hours.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 const TERMINAL_OR_FINAL_STATUSES = [
   'confirmed',
@@ -50,7 +54,14 @@ export class VerificationAutomationProcessor extends WorkerHost {
   ): Promise<void> {
     const { data, name } = job;
     this.logger.log(
-      `Processing ${name} for verification ${data.verificationId} (jobId=${job.id})`,
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action: 'verification-automation-job-process',
+        outcome: 'success',
+        jobId: String(job.id),
+        jobType: name,
+        verificationId: data.verificationId,
+        orgId: data.orgId,
+      }),
     );
 
     switch (name as VerificationAutomationJobType) {
@@ -64,7 +75,17 @@ export class VerificationAutomationProcessor extends WorkerHost {
         await this.handleEscalateNoReply(job, token);
         return;
       default:
-        this.logger.warn(`Unhandled automation job type: ${name}`);
+        this.logger.warn(
+          buildBackendLog(VerificationAutomationProcessor.name, {
+            action: 'verification-automation-job-process',
+            outcome: 'skipped',
+            jobId: String(job.id),
+            jobType: name,
+            verificationId: data.verificationId,
+            orgId: data.orgId,
+            reason: 'unhandled_job_type',
+          }),
+        );
         return;
     }
   }
@@ -82,7 +103,13 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (!ctx.integration.isAutoVerifyEnabled) {
       this.logger.log(
-        `Skipping delayed initial send for verification ${ctx.verification.id}: auto verify disabled`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-initial-send',
+          outcome: 'skipped',
+          verificationId: ctx.verification.id,
+          orgId: ctx.verification.orgId,
+          reason: 'auto_verify_disabled',
+        }),
       );
       await this.verificationsRepo.mergeMetadata(ctx.verification.id, {
         initial_send_skipped: 'auto_verify_disabled',
@@ -92,7 +119,14 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (ctx.verification.status !== 'pending') {
       this.logger.log(
-        `Skipping delayed initial send for verification ${ctx.verification.id}: status=${ctx.verification.status}`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-initial-send',
+          outcome: 'skipped',
+          verificationId: ctx.verification.id,
+          orgId: ctx.verification.orgId,
+          status: ctx.verification.status,
+          reason: 'status_not_pending',
+        }),
       );
       return;
     }
@@ -140,28 +174,54 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (!integration.followUpEnabled) {
       this.logger.log(
-        `Skipping follow-up for verification ${verification.id}: follow-up disabled`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-follow-up',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          reason: 'follow_up_disabled',
+        }),
       );
       return;
     }
 
     if (this.isStatusTerminal(verification.status)) {
       this.logger.log(
-        `Skipping follow-up for verification ${verification.id}: status=${verification.status}`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-follow-up',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          status: verification.status,
+          reason: 'status_terminal',
+        }),
       );
       return;
     }
 
     if (verification.merchantCanceledAt) {
       this.logger.log(
-        `Skipping follow-up for verification ${verification.id}: merchant canceled`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-follow-up',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          reason: 'merchant_canceled',
+        }),
       );
       return;
     }
 
     if ((verification.followUpAttempts ?? 0) > 0) {
       this.logger.log(
-        `Skipping follow-up for verification ${verification.id}: already attempted`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-follow-up',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          followUpAttempts: verification.followUpAttempts ?? 0,
+          reason: 'already_attempted',
+        }),
       );
       return;
     }
@@ -178,7 +238,13 @@ export class VerificationAutomationProcessor extends WorkerHost {
         outcome.waMessageId!,
       );
       this.logger.log(
-        `Follow-up sent for verification ${verification.id} (wamid=${outcome.waMessageId})`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-follow-up',
+          outcome: 'success',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          wamid: outcome.waMessageId,
+        }),
       );
     } else if (outcome.status === 'plan_limit_reached') {
       await this.verificationsRepo.mergeMetadata(verification.id, {
@@ -208,14 +274,27 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (this.isStatusTerminal(verification.status)) {
       this.logger.log(
-        `Skipping no-reply escalation for verification ${verification.id}: status=${verification.status}`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-no-reply-escalate',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          status: verification.status,
+          reason: 'status_terminal',
+        }),
       );
       return;
     }
 
     if (verification.merchantCanceledAt) {
       this.logger.log(
-        `Skipping no-reply escalation for verification ${verification.id}: merchant canceled`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-no-reply-escalate',
+          outcome: 'skipped',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          reason: 'merchant_canceled',
+        }),
       );
       return;
     }
@@ -229,11 +308,24 @@ export class VerificationAutomationProcessor extends WorkerHost {
     ) {
       const reschedule = new Date(Date.now() + 60_000);
       this.logger.log(
-        `Postponing no-reply escalation for verification ${verification.id} to allow follow-up first`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-no-reply-escalate',
+          outcome: 'retry',
+          verificationId: verification.id,
+          orgId: verification.orgId,
+          reason: 'follow_up_pending',
+          rescheduleAt: reschedule.toISOString(),
+        }),
       );
       if (!token) {
         this.logger.warn(
-          `Cannot postpone no-reply escalation for verification ${verification.id}: BullMQ token unavailable`,
+          buildBackendLog(VerificationAutomationProcessor.name, {
+            action: 'verification-automation-no-reply-escalate',
+            outcome: 'failure',
+            verificationId: verification.id,
+            orgId: verification.orgId,
+            reason: 'missing_bullmq_token',
+          }),
         );
         throw new Error('cannot_delay_without_token');
       }
@@ -260,13 +352,28 @@ export class VerificationAutomationProcessor extends WorkerHost {
           'Akeed: No Reply',
         );
         this.logger.log(
-          `Tagged Shopify order ${order.externalOrderId} as 'Akeed: No Reply'`,
+          buildBackendLog(VerificationAutomationProcessor.name, {
+            action: 'verification-automation-no-reply-tag-order',
+            outcome: 'success',
+            verificationId: verification.id,
+            orgId: verification.orgId,
+            shopDomain: integration.platformStoreUrl,
+            orderId: order.externalOrderId,
+            tag: 'Akeed: No Reply',
+          }),
         );
       } catch (error) {
         this.logger.error(
-          `Failed to tag Shopify order ${order.externalOrderId} as no_reply: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          buildBackendLog(VerificationAutomationProcessor.name, {
+            action: 'verification-automation-no-reply-tag-order',
+            outcome: 'failure',
+            verificationId: verification.id,
+            orgId: verification.orgId,
+            shopDomain: integration.platformStoreUrl,
+            orderId: order.externalOrderId,
+            tag: 'Akeed: No Reply',
+            ...normalizeError(error),
+          }),
         );
       }
     }
@@ -285,14 +392,28 @@ export class VerificationAutomationProcessor extends WorkerHost {
   } | null> {
     const verification = await this.verificationsRepo.findById(verificationId);
     if (!verification) {
-      this.logger.warn(`Verification ${verificationId} not found; skipping`);
+      this.logger.warn(
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-context-load',
+          outcome: 'skipped',
+          verificationId,
+          reason: 'verification_not_found',
+        }),
+      );
       return null;
     }
 
     const order = await this.ordersRepo.findById(verification.orderId);
     if (!order) {
       this.logger.warn(
-        `Order ${verification.orderId} for verification ${verificationId} not found; skipping`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-context-load',
+          outcome: 'skipped',
+          verificationId,
+          orgId: verification.orgId,
+          orderId: verification.orderId,
+          reason: 'order_not_found',
+        }),
       );
       return null;
     }
@@ -301,7 +422,14 @@ export class VerificationAutomationProcessor extends WorkerHost {
       (order.integration as typeof integrations.$inferSelect | null) ?? null;
     if (!integration) {
       this.logger.warn(
-        `Integration not loaded for verification ${verificationId}; skipping`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-context-load',
+          outcome: 'skipped',
+          verificationId,
+          orgId: verification.orgId,
+          orderId: order.id,
+          reason: 'integration_not_loaded',
+        }),
       );
       return null;
     }
@@ -340,12 +468,26 @@ export class VerificationAutomationProcessor extends WorkerHost {
     if (nextDue.getTime() <= now.getTime()) return false;
 
     this.logger.log(
-      `Quiet hours active for verification ${job.data.verificationId}; delaying job to ${nextDue.toISOString()}`,
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action: 'verification-automation-job-delay-quiet-hours',
+        outcome: 'retry',
+        jobId: String(job.id),
+        verificationId: job.data.verificationId,
+        orgId: job.data.orgId,
+        dueAt: nextDue.toISOString(),
+      }),
     );
 
     if (!token) {
       this.logger.warn(
-        `Cannot delay job for verification ${job.data.verificationId}: BullMQ token unavailable; processing now`,
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-job-delay-quiet-hours',
+          outcome: 'failure',
+          jobId: String(job.id),
+          verificationId: job.data.verificationId,
+          orgId: job.data.orgId,
+          reason: 'missing_bullmq_token',
+        }),
       );
       return false;
     }

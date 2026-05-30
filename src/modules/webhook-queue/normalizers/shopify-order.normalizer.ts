@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { NormalizedOrder } from '../../../shared/interfaces/order.interface';
 import { WebhookOrderNormalizer } from '../interfaces/webhook-normalizer.interface';
 import { PhoneService } from '../../../shared/services/phone.service';
@@ -32,7 +33,12 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
 
     if (!standardizedPhone) {
       this.logger.warn(
-        `Cannot normalize Shopify order ${payload.id}: no valid phone found`,
+        buildBackendLog('ShopifyOrderNormalizer', {
+          action: 'normalizeOrder',
+          outcome: 'skipped',
+          externalOrderId: String(payload.id),
+          reason: 'no_valid_phone',
+        }),
       );
       return null;
     }

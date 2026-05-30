@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { validateShop } from '../../infrastructure/spokes/shopify/shopify.utils';
+import { buildBackendLog } from '../logging/backend-log.util';
 
 interface RateLimitEntry {
   count: number;
@@ -58,7 +59,15 @@ export class BillingCallbackRateLimitGuard implements CanActivate {
         1,
         Math.ceil((entry.resetAt - now) / 1000),
       );
-      this.logger.warn(`Rate limit exceeded for billing callback (${key}).`);
+      this.logger.warn(
+        buildBackendLog(BillingCallbackRateLimitGuard.name, {
+          action: 'billing-callback-rate-limit-check',
+          outcome: 'failure',
+          key,
+          retryAfterSeconds,
+          reason: 'rate_limit_exceeded',
+        }),
+      );
       throw new HttpException(
         `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
         HttpStatus.TOO_MANY_REQUESTS,

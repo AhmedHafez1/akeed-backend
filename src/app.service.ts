@@ -1,4 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  buildBackendLog,
+  normalizeError,
+} from './shared/logging/backend-log.util';
 import { sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from './infrastructure/database';
 
@@ -34,9 +38,11 @@ export class AppService {
       };
     } catch (error) {
       this.logger.error(
-        `Health check database ping failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        buildBackendLog('AppService', {
+          action: 'getHealth.databasePing',
+          outcome: 'failure',
+          ...normalizeError(error),
+        }),
       );
 
       return {

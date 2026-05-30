@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { WebhookQueueProducer } from '../../../../modules/webhook-queue/webhook-queue.producer';
 import { WebhookJobType } from '../../../../modules/webhook-queue/webhook-queue.constants';
 import { ShopifyOrderWebhookDto } from '../dto/shopify-webhooks.dto';
@@ -31,12 +32,23 @@ export class ShopifyOrderWebhookService {
     topic: string,
   ): Promise<WebhookAck> {
     this.logger.log(
-      `Received Shopify Order Webhook from ${shopDomain}: ${payload.id}`,
+      buildBackendLog('ShopifyOrderWebhookService', {
+        action: 'handleOrderCreate.received',
+        outcome: 'success',
+        shopDomain,
+        externalOrderId: String(payload.id),
+      }),
     );
 
     if (!webhookId) {
       this.logger.warn(
-        `Missing X-Shopify-Webhook-Id for order ${payload.id} from ${shopDomain} (topic=${topic})`,
+        buildBackendLog('ShopifyOrderWebhookService', {
+          action: 'handleOrderCreate.missingWebhookId',
+          outcome: 'skipped',
+          shopDomain,
+          externalOrderId: String(payload.id),
+          topic,
+        }),
       );
     }
 

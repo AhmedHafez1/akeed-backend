@@ -1,4 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
@@ -84,7 +88,12 @@ export class VerificationSendService {
         .findActiveByOrgAndPlatform(order.orgId, 'shopify')
         .catch((error) => {
           this.logger.error(
-            `Failed to look up integration for org ${order.orgId}: ${error instanceof Error ? error.message : String(error)}`,
+            buildBackendLog('VerificationSendService', {
+              action: 'loadContext.lookupIntegration',
+              outcome: 'failure',
+              orgId: order.orgId,
+              ...normalizeError(error),
+            }),
           );
           return null;
         })) ??
@@ -113,7 +122,15 @@ export class VerificationSendService {
       await this.billingEntitlementService.reserveVerificationSlot(integration);
     if (!reservation.allowed) {
       this.logger.warn(
-        `Plan limit reached for integration ${integration.id} (${reservation.consumedCount}/${reservation.includedLimit}); skipping ${kind} send for verification ${verification.id}`,
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.planLimitReached',
+          outcome: 'skipped',
+          integrationId: integration.id,
+          verificationId: verification.id,
+          kind,
+          consumedCount: reservation.consumedCount,
+          includedLimit: reservation.includedLimit,
+        }),
       );
       return {
         status: 'plan_limit_reached',
@@ -137,9 +154,15 @@ export class VerificationSendService {
         templateSelection,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const errInfo = normalizeError(error);
       this.logger.error(
-        `WhatsApp send failed for verification ${verification.id} (${kind}): ${message}`,
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.whatsappSend',
+          outcome: 'failure',
+          verificationId: verification.id,
+          kind,
+          ...errInfo,
+        }),
       );
       await this.safeReleaseUsage({
         integrationId: integration.id,
@@ -157,7 +180,12 @@ export class VerificationSendService {
     const waMessageId = response?.messages?.[0]?.id;
     if (!waMessageId) {
       this.logger.error(
-        `WhatsApp API response missing message id for verification ${verification.id} (${kind}); releasing reservation`,
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.missingWamid',
+          outcome: 'failure',
+          verificationId: verification.id,
+          kind,
+        }),
       );
       await this.safeReleaseUsage({
         integrationId: integration.id,
@@ -192,9 +220,12 @@ export class VerificationSendService {
       await this.billingEntitlementService.releaseVerificationSlot(params);
     } catch (error) {
       this.logger.error(
-        `Failed to release usage reservation for integration ${params.integrationId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        buildBackendLog('VerificationSendService', {
+          action: 'safeReleaseUsage',
+          outcome: 'failure',
+          integrationId: params.integrationId,
+          ...normalizeError(error),
+        }),
       );
     }
   }
@@ -204,9 +235,12 @@ export class VerificationSendService {
       await this.verificationsRepo.updateStatus(verificationId, 'failed');
     } catch (error) {
       this.logger.error(
-        `Failed to mark verification ${verificationId} as failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        buildBackendLog('VerificationSendService', {
+          action: 'safeMarkFailed',
+          outcome: 'failure',
+          verificationId,
+          ...normalizeError(error),
+        }),
       );
     }
   }

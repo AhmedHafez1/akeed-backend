@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import {
@@ -31,7 +32,13 @@ export class OrderEligibilityService {
     }
 
     this.logger.warn(
-      `No COD eligibility strategy is configured for platform ${params.integration.platformType}. Skipping order ${params.order.externalOrderId}.`,
+      buildBackendLog('OrderEligibilityService', {
+        action: 'evaluateOrderForVerification',
+        outcome: 'skipped',
+        platform: params.integration.platformType,
+        externalOrderId: params.order.externalOrderId,
+        reason: 'unsupported_platform',
+      }),
     );
     return { eligible: false, reason: 'unsupported_platform' };
   }

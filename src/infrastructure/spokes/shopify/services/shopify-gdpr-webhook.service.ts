@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { IntegrationMonthlyUsageRepository } from '../../../database/repositories/integration-monthly-usage.repository';
@@ -41,7 +42,12 @@ export class ShopifyGdprWebhookService {
   ): Promise<WebhookAck> {
     const customerId = payload.customer?.id ?? 'unknown';
     this.logger.log(
-      `Received Shopify GDPR Data Request from ${shopDomain}: customer=${customerId}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleCustomerDataRequest.received',
+        outcome: 'success',
+        shopDomain,
+        customerId: String(customerId),
+      }),
     );
 
     const { integration, orgId, isDuplicate } =
@@ -59,7 +65,11 @@ export class ShopifyGdprWebhookService {
 
     if (!integration || !orgId) {
       this.logger.warn(
-        `GDPR data request received but no integration/org found for ${shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'handleCustomerDataRequest.noIntegration',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -67,7 +77,11 @@ export class ShopifyGdprWebhookService {
     const rawPhone = payload.customer?.phone?.trim();
     if (!rawPhone) {
       this.logger.warn(
-        `GDPR data request missing customer phone for shop ${shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'handleCustomerDataRequest.missingPhone',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -106,7 +120,12 @@ export class ShopifyGdprWebhookService {
     }));
 
     this.logger.log(
-      `GDPR data request export prepared for shop ${shopDomain}: orders=${exportPayload.length}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleCustomerDataRequest.exportPrepared',
+        outcome: 'success',
+        shopDomain,
+        ordersCount: exportPayload.length,
+      }),
     );
 
     return { received: true };
@@ -120,7 +139,12 @@ export class ShopifyGdprWebhookService {
   ): Promise<WebhookAck> {
     const customerId = payload.customer?.id ?? 'unknown';
     this.logger.log(
-      `Received Shopify GDPR Customer Redact from ${shopDomain}: customer=${customerId}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleCustomerRedact.received',
+        outcome: 'success',
+        shopDomain,
+        customerId: String(customerId),
+      }),
     );
 
     const { integration, orgId, isDuplicate } =
@@ -138,7 +162,11 @@ export class ShopifyGdprWebhookService {
 
     if (!integration || !orgId) {
       this.logger.warn(
-        `GDPR customer redact received but no integration/org found for ${shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'handleCustomerRedact.noIntegration',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -146,7 +174,11 @@ export class ShopifyGdprWebhookService {
     const rawPhone = payload.customer?.phone?.trim();
     if (!rawPhone) {
       this.logger.warn(
-        `GDPR customer redact missing customer phone for shop ${shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'handleCustomerRedact.missingPhone',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -165,7 +197,13 @@ export class ShopifyGdprWebhookService {
       await this.verificationsRepo.clearMetadataByOrderIds(orderIds);
 
     this.logger.log(
-      `GDPR customer redact completed for shop ${shopDomain}: orders=${redactedOrders}, verifications=${clearedVerifications}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleCustomerRedact.completed',
+        outcome: 'success',
+        shopDomain,
+        redactedOrders,
+        clearedVerifications,
+      }),
     );
 
     return { received: true };
@@ -179,7 +217,11 @@ export class ShopifyGdprWebhookService {
   ): Promise<WebhookAck> {
     const resolvedShopDomain = payload.shop_domain ?? shopDomain;
     this.logger.log(
-      `Received Shopify GDPR Shop Redact from ${resolvedShopDomain}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleShopRedact.received',
+        outcome: 'success',
+        shopDomain: resolvedShopDomain,
+      }),
     );
 
     const { orgId, isDuplicate } = await this.resolveWebhookContext({
@@ -196,7 +238,11 @@ export class ShopifyGdprWebhookService {
 
     if (!orgId) {
       this.logger.warn(
-        `GDPR shop redact received but no integration/org found for ${shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'handleShopRedact.noIntegration',
+          outcome: 'skipped',
+          shopDomain,
+        }),
       );
       return { received: true };
     }
@@ -213,7 +259,18 @@ export class ShopifyGdprWebhookService {
     const organizationsDeleted = await this.organizationsRepo.deleteById(orgId);
 
     this.logger.log(
-      `GDPR shop redact completed for org ${orgId}: webhooks=${webhookEventsDeleted}, usage=${usageDeleted}, verifications=${verificationsDeleted}, orders=${ordersDeleted}, integrations=${integrationsDeleted}, memberships=${membershipsDeleted}, organizations=${organizationsDeleted}`,
+      buildBackendLog('ShopifyGdprWebhookService', {
+        action: 'handleShopRedact.completed',
+        outcome: 'success',
+        orgId,
+        webhookEventsDeleted,
+        usageDeleted,
+        verificationsDeleted,
+        ordersDeleted,
+        integrationsDeleted,
+        membershipsDeleted,
+        organizationsDeleted,
+      }),
     );
 
     return { received: true };
@@ -234,7 +291,12 @@ export class ShopifyGdprWebhookService {
   }> {
     if (!params.webhookId) {
       this.logger.warn(
-        `Missing X-Shopify-Webhook-Id for ${params.logLabel} from ${params.shopDomain}`,
+        buildBackendLog('ShopifyGdprWebhookService', {
+          action: 'resolveWebhookContext.missingWebhookId',
+          outcome: 'skipped',
+          shopDomain: params.shopDomain,
+          logLabel: params.logLabel,
+        }),
       );
     }
 
@@ -257,7 +319,13 @@ export class ShopifyGdprWebhookService {
 
       if (!insertedWebhookRecord) {
         this.logger.warn(
-          `Duplicate Shopify ${params.logLabel} ${params.webhookId} ignored for shop ${params.shopDomain}`,
+          buildBackendLog('ShopifyGdprWebhookService', {
+            action: 'resolveWebhookContext.duplicateWebhook',
+            outcome: 'skipped',
+            shopDomain: params.shopDomain,
+            webhookId: params.webhookId,
+            logLabel: params.logLabel,
+          }),
         );
         return { integration, orgId, isDuplicate: true };
       }

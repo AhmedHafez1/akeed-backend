@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { integrations } from '../../infrastructure/database/schema';
 import {
   IntegrationMonthlyUsageRepository,
@@ -90,7 +91,12 @@ export class BillingEntitlementService {
     }
 
     this.logger.warn(
-      `Integration billingPlanId is missing or invalid; using ${DEFAULT_BILLING_PLAN_ID} for entitlement enforcement.`,
+      buildBackendLog('BillingEntitlementService', {
+        action: 'resolvePlanId',
+        outcome: 'skipped',
+        fallbackPlanId: DEFAULT_BILLING_PLAN_ID,
+        rawPlanId: rawPlanId ?? null,
+      }),
     );
     return DEFAULT_BILLING_PLAN_ID;
   }

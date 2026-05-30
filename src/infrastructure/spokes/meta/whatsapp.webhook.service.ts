@@ -7,6 +7,10 @@ import {
   WhatsAppWebhookPayloadDto,
 } from './dto/whatsapp-webhook.dto';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../shared/logging/backend-log.util';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -24,14 +28,25 @@ export class WhatsAppWebhookService {
       await this.handleIncoming(payload);
       return { status: 'success' };
     } catch (error) {
-      this.logger.error('Error handling webhook payload:', error);
+      this.logger.error(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-process',
+          outcome: 'failure',
+          ...normalizeError(error),
+        }),
+      );
       // Always return 200 OK to prevent Meta from disabling the webhook
       return { status: 'error', message: 'Internal Server Error' };
     }
   }
 
   private async handleIncoming(payload: WhatsAppWebhookPayloadDto) {
-    this.logger.log('Received WhatsApp webhook payload');
+    this.logger.log(
+      buildBackendLog(WhatsAppWebhookService.name, {
+        action: 'whatsapp-webhook-receive',
+        outcome: 'success',
+      }),
+    );
 
     const entries = payload.entry ?? [];
     for (const entry of entries) {
@@ -69,7 +84,12 @@ export class WhatsAppWebhookService {
       const existing = await this.verificationsRepo.findById(verificationId);
       if (existing?.merchantCanceledAt) {
         this.logger.log(
-          `Ignoring customer reply for verification ${verificationId} — merchant already canceled`,
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            verificationId,
+            reason: 'merchant_already_canceled',
+          }),
         );
         continue;
       }
@@ -90,7 +110,12 @@ export class WhatsAppWebhookService {
 
       if (rows.length > 0) {
         this.logger.log(
-          `Updated verification ${verificationId} to ${newStatus}`,
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'success',
+            verificationId,
+            status: newStatus,
+          }),
         );
         await this.verificationHub.finalizeVerification(
           verificationId,
@@ -98,7 +123,13 @@ export class WhatsAppWebhookService {
         );
       } else {
         this.logger.warn(
-          `No rows updated for verification ${verificationId} → ${newStatus} (already terminal or not found)`,
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            verificationId,
+            status: newStatus,
+            reason: 'already_terminal_or_not_found',
+          }),
         );
       }
     }
@@ -127,11 +158,22 @@ export class WhatsAppWebhookService {
 
       if (rows.length > 0) {
         this.logger.log(
-          `Updated verification wamid=${wamid} to ${typedStatus}`,
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-status',
+            outcome: 'success',
+            wamid,
+            status: typedStatus,
+          }),
         );
       } else {
         this.logger.warn(
-          `No verification matched wamid=${wamid} for status ${typedStatus}`,
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-status',
+            outcome: 'skipped',
+            wamid,
+            status: typedStatus,
+            reason: 'verification_not_found',
+          }),
         );
       }
     }
