@@ -10,16 +10,6 @@ async function bootstrap() {
   const adapterHost = app.get(HttpAdapterHost);
   app.useGlobalFilters(new GlobalExceptionFilter(adapterHost));
 
-  app.enableCors({
-    origin: true,
-    credentials: true,
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'ngrok-skip-browser-warning',
-    ],
-  });
-
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap().catch((err) => {

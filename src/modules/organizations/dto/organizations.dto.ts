@@ -43,5 +43,5 @@ export interface OrganizationResponseDto {
   plan_type: string | null;
   wa_phone_number_id: string | null;
   wa_business_account_id: string | null;
-  wa_access_token: string | null;
+  wa_access_token_configured: boolean;
 }

@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   CreateOrganizationDto,
   OrganizationResponseDto,
@@ -7,14 +6,13 @@ import {
 } from './dto/organizations.dto';
 import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
-import { decryptToken } from '../../shared/utils/token-encryption.util';
+
 
 @Injectable()
 export class OrganizationsService {
   constructor(
     private readonly organizationsRepo: OrganizationsRepository,
     private readonly membershipsRepo: MembershipsRepository,
-    private readonly configService: ConfigService,
   ) {}
 
   async createOrganization(
@@ -88,15 +86,7 @@ export class OrganizationsService {
       plan_type: organization.planType ?? 'free',
       wa_phone_number_id: organization.waPhoneNumberId ?? null,
       wa_business_account_id: organization.waBusinessAccountId ?? null,
-      wa_access_token: this.decryptAccessToken(organization.waAccessToken),
+      wa_access_token_configured: !!organization.waAccessToken,
     };
-  }
-
-  private decryptAccessToken(token: string | null | undefined): string | null {
-    if (!token) return null;
-    const encryptionKey = this.configService.getOrThrow<string>(
-      'SHOPIFY_TOKEN_ENCRYPTION_KEY',
-    );
-    return decryptToken(token, encryptionKey);
   }
 }
