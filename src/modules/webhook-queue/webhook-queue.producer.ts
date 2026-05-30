@@ -12,6 +12,7 @@ import {
   WebhookJobType,
 } from './webhook-queue.constants';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 
 interface WebhookIngestionParams {
   platform: PlatformType;
@@ -65,7 +66,15 @@ export class WebhookQueueProducer {
 
     if (!event) {
       this.logger.warn(
-        `Duplicate webhook ignored: platform=${params.platform} key=${params.idempotencyKey}`,
+        buildBackendLog(WebhookQueueProducer.name, {
+          action: 'webhook-ingest',
+          outcome: 'skipped',
+          shopDomain: params.storeDomain,
+          platform: params.platform,
+          jobType: params.jobType,
+          idempotencyKey: params.idempotencyKey,
+          reason: 'duplicate_webhook',
+        }),
       );
       return { enqueued: false, duplicate: true };
     }
@@ -89,7 +98,17 @@ export class WebhookQueueProducer {
     });
 
     this.logger.log(
-      `Enqueued ${params.jobType} job for ${params.platform}:${params.storeDomain} (eventId=${event.id})`,
+      buildBackendLog(WebhookQueueProducer.name, {
+        action: 'webhook-ingest',
+        outcome: 'success',
+        orgId: integration?.orgId ?? undefined,
+        shopDomain: params.storeDomain,
+        integrationId: integration?.id ?? undefined,
+        platform: params.platform,
+        jobType: params.jobType,
+        webhookEventId: event.id,
+        idempotencyKey: params.idempotencyKey,
+      }),
     );
 
     return { enqueued: true };

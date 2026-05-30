@@ -92,7 +92,9 @@ describe('BillingService', () => {
       const result = await service.initiateBilling(integration as any, 'pro');
 
       expect(result.confirmationUrl).toContain('app.akeed.co');
-      expect(storePlatform.createRecurringApplicationCharge).not.toHaveBeenCalled();
+      expect(
+        storePlatform.createRecurringApplicationCharge,
+      ).not.toHaveBeenCalled();
     });
 
     it('proceeds when plan differs from current', async () => {

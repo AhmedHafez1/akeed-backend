@@ -7,7 +7,6 @@ import {
 import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
 
-
 @Injectable()
 export class OrganizationsService {
   constructor(

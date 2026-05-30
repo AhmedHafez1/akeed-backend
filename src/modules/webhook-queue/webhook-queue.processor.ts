@@ -14,6 +14,10 @@ import {
   PlatformType,
   WebhookJobType,
 } from './webhook-queue.constants';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 /**
  * BullMQ consumer that processes webhook jobs.
@@ -50,14 +54,26 @@ export class WebhookQueueProcessor extends WorkerHost {
       normalizers.map((n) => [n.platform, n]),
     );
     this.logger.log(
-      `Registered normalizers for: ${[...this.normalizersByPlatform.keys()].join(', ')}`,
+      buildBackendLog(WebhookQueueProcessor.name, {
+        action: 'webhook-queue-normalizers-register',
+        outcome: 'success',
+        normalizers: [...this.normalizersByPlatform.keys()],
+      }),
     );
   }
 
   async process(job: Job<WebhookJobPayload>): Promise<void> {
     const { data } = job;
     this.logger.log(
-      `Processing job ${job.id} — type=${data.jobType} platform=${data.platform} store=${data.storeDomain}`,
+      buildBackendLog(WebhookQueueProcessor.name, {
+        action: 'webhook-job-process',
+        outcome: 'success',
+        jobId: String(job.id),
+        webhookEventId: data.webhookEventId,
+        platform: data.platform,
+        jobType: data.jobType,
+        shopDomain: data.storeDomain,
+      }),
     );
 
     await this.webhookEventsRepo.markProcessing(data.webhookEventId);
@@ -69,7 +85,18 @@ export class WebhookQueueProcessor extends WorkerHost {
         }
         break;
       default:
-        this.logger.warn(`Unhandled job type: ${data.jobType} — skipping`);
+        this.logger.warn(
+          buildBackendLog(WebhookQueueProcessor.name, {
+            action: 'webhook-job-process',
+            outcome: 'skipped',
+            jobId: String(job.id),
+            webhookEventId: data.webhookEventId,
+            platform: data.platform,
+            jobType: data.jobType,
+            shopDomain: data.storeDomain,
+            reason: 'unhandled_job_type',
+          }),
+        );
         await this.webhookEventsRepo.markSkipped(
           data.webhookEventId,
           `unhandled_job_type:${data.jobType}`,
@@ -82,7 +109,12 @@ export class WebhookQueueProcessor extends WorkerHost {
   async onFailed(job: Job<WebhookJobPayload> | undefined, error: Error) {
     if (!job) {
       this.logger.error(
-        `Webhook queue job failed without job context: ${error.message}`,
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-job-process',
+          outcome: 'failure',
+          reason: 'missing_job_context',
+          ...normalizeError(error),
+        }),
       );
       return;
     }
@@ -106,7 +138,14 @@ export class WebhookQueueProcessor extends WorkerHost {
 
     if (!integration?.orgId) {
       this.logger.warn(
-        `No integration found for ${data.platform}:${data.storeDomain} — skipping`,
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-create-handle',
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          shopDomain: data.storeDomain,
+          reason: 'no_integration_found',
+        }),
       );
       await this.webhookEventsRepo.markSkipped(
         data.webhookEventId,
@@ -118,7 +157,14 @@ export class WebhookQueueProcessor extends WorkerHost {
     const normalizer = this.normalizersByPlatform.get(data.platform);
     if (!normalizer) {
       this.logger.error(
-        `No normalizer registered for platform "${data.platform}"`,
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-create-handle',
+          outcome: 'failure',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          shopDomain: data.storeDomain,
+          reason: 'no_normalizer_registered',
+        }),
       );
       await this.webhookEventsRepo.markSkipped(
         data.webhookEventId,

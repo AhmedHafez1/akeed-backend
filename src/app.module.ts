@@ -75,7 +75,11 @@ import { DatabaseModule } from './infrastructure/database';
     DatabaseModule,
   ],
   controllers: [AppController],
-  providers: [AppService, SecurityMiddleware, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    SecurityMiddleware,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

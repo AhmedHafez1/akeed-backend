@@ -26,6 +26,10 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
@@ -216,9 +220,15 @@ export class OnboardingStateService {
       });
       return updated ?? integration;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Failed to prefill store name for ${integration.platformStoreUrl}: ${message}`,
+        buildBackendLog(OnboardingStateService.name, {
+          action: 'onboarding-store-name-prefill',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          ...normalizeError(error),
+        }),
       );
       return integration;
     }

@@ -29,6 +29,10 @@ import {
 } from './onboarding.service.helpers';
 import { BillingConfigService } from './billing-config.service';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -156,7 +160,15 @@ export class BillingService {
     );
 
     this.logger.log(
-      `Shopify billing skipped by configuration for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+      buildBackendLog(BillingService.name, {
+        action: 'billing-initiate-without-paying',
+        outcome: 'success',
+        orgId: integration.orgId,
+        shopDomain: integration.platformStoreUrl,
+        integrationId: integration.id,
+        billingPlanId: billingPlan.id,
+        billingStatus: 'not_required',
+      }),
     );
 
     return {
@@ -211,7 +223,15 @@ export class BillingService {
     }
 
     this.logger.log(
-      `Free onboarding plan activated for ${integration.platformStoreUrl} (plan=${billingPlan.id})`,
+      buildBackendLog(BillingService.name, {
+        action: 'billing-initiate-free-plan',
+        outcome: 'success',
+        orgId: integration.orgId,
+        shopDomain: integration.platformStoreUrl,
+        integrationId: integration.id,
+        billingPlanId: billingPlan.id,
+        billingStatus: 'active',
+      }),
     );
 
     return {
@@ -305,7 +325,14 @@ export class BillingService {
       this.getMissingBillingPrerequisites(integration);
     if (missingPrerequisites.length > 0) {
       this.logger.warn(
-        `Skipping onboarding completion for ${callbackParams.shop}; missing prerequisites: ${missingPrerequisites.join(', ')}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-callback-onboarding-complete',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: callbackParams.shop,
+          integrationId: integration.id,
+          missingPrerequisites,
+        }),
       );
       return this.createPostBillingRedirectUrl({
         shop: callbackParams.shop,
@@ -368,9 +395,16 @@ export class BillingService {
         subscriptionId: subscription.id,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `Failed Shopify billing callback processing for ${params.shop}: ${message}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-callback-resolve-status',
+          outcome: 'failure',
+          orgId: params.integration.orgId,
+          shopDomain: params.shop,
+          integrationId: params.integration.id,
+          chargeId: params.chargeId,
+          ...normalizeError(error),
+        }),
       );
       throw new BadGatewayException('Failed to verify Shopify billing status');
     }
@@ -433,7 +467,16 @@ export class BillingService {
         });
 
         this.logger.warn(
-          `Skipping Shopify billing for custom app ${integration.platformStoreUrl}: ${message}`,
+          buildBackendLog(BillingService.name, {
+            action: 'billing-initiate-paid-plan',
+            outcome: 'skipped',
+            orgId: integration.orgId,
+            shopDomain: integration.platformStoreUrl,
+            integrationId: integration.id,
+            billingPlanId: plan.id,
+            reason: 'custom_app_billing_not_supported',
+            errorMessage: message,
+          }),
         );
 
         return await this.completeOnboardingAndBuildRedirect({
@@ -444,7 +487,16 @@ export class BillingService {
       }
 
       this.logger.error(
-        `Failed to initiate billing for ${integration.platformStoreUrl}: ${message}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-initiate-paid-plan',
+          outcome: 'failure',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          billingPlanId: plan.id,
+          errorMessage: message,
+          ...normalizeError(error),
+        }),
       );
 
       await this.persistBillingState({
@@ -480,12 +532,26 @@ export class BillingService {
         existingSubscriptionId,
       );
       this.logger.log(
-        `Cancelled previous subscription ${existingSubscriptionId} for ${integration.platformStoreUrl} during plan change`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-cancel-existing-subscription',
+          outcome: 'success',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          subscriptionId: existingSubscriptionId,
+        }),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Failed to cancel previous subscription ${existingSubscriptionId} for ${integration.platformStoreUrl}: ${message}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-cancel-existing-subscription',
+          outcome: 'retry',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          subscriptionId: existingSubscriptionId,
+          ...normalizeError(error),
+        }),
       );
     }
   }
@@ -512,9 +578,15 @@ export class BillingService {
         includedLimit,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Failed to reset usage counters for integration ${integrationId}: ${message}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-usage-reset-for-plan-change',
+          outcome: 'retry',
+          integrationId,
+          periodStart: newPeriodStart,
+          includedLimit,
+          ...normalizeError(error),
+        }),
       );
     }
   }
@@ -527,8 +599,13 @@ export class BillingService {
       await this.freePlanClaimsRepo.deleteByPlatformAndShop(params);
     } catch (error) {
       this.logger.warn(
-        `Failed to rollback free plan claim for ${params.platformType}:${params.shopDomain}: 
-        ${error instanceof Error ? error.message : String(error)}`,
+        buildBackendLog(BillingService.name, {
+          action: 'billing-free-plan-claim-rollback',
+          outcome: 'retry',
+          platformType: params.platformType,
+          shopDomain: params.shopDomain,
+          ...normalizeError(error),
+        }),
       );
     }
   }

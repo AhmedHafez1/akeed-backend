@@ -5,6 +5,10 @@ import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../../shared/logging/backend-log.util';
+import {
   type AppSubscriptionCancelResponse,
   type AppSubscriptionCreateResponse,
   type AppSubscriptionLineItemsResponse,
@@ -83,12 +87,26 @@ export class ShopifyApiService {
 
       const reqId = getRequestId(response.headers);
       this.logger.log(
-        `Successfully added tag '${tag}' to order ${orderGid} on ${integration.platformStoreUrl} (requestId=${reqId ?? 'n/a'})`,
+        buildBackendLog(ShopifyApiService.name, {
+          action: 'shopify-order-tag-add',
+          outcome: 'success',
+          requestId: reqId,
+          shopDomain: integration.platformStoreUrl,
+          orderId: orderGid,
+          tag,
+        }),
       );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      this.logger.error(`Failed to add tag to order: ${message}`, stack);
+      this.logger.error(
+        buildBackendLog(ShopifyApiService.name, {
+          action: 'shopify-order-tag-add',
+          outcome: 'failure',
+          shopDomain: integration.platformStoreUrl,
+          orderId: orderGid,
+          tag,
+          ...normalizeError(error),
+        }),
+      );
       throw error;
     }
   }
@@ -124,7 +142,14 @@ export class ShopifyApiService {
 
     const jobId = response.data.data?.orderCancel?.job?.id;
     this.logger.log(
-      `Canceled order ${orderGid} on ${integration.platformStoreUrl} (jobId=${jobId ?? 'n/a'})`,
+      buildBackendLog(ShopifyApiService.name, {
+        action: 'shopify-order-cancel',
+        outcome: 'success',
+        requestId: getRequestId(response.headers),
+        shopDomain: integration.platformStoreUrl,
+        orderId: orderGid,
+        jobId,
+      }),
     );
 
     return { jobId: jobId ?? undefined };
@@ -234,7 +259,15 @@ export class ShopifyApiService {
     const cancelledStatus =
       response.data.data?.appSubscriptionCancel?.appSubscription?.status;
     this.logger.log(
-      `Cancelled subscription ${gid} (status=${cancelledStatus ?? 'unknown'}, prorate=${prorate})`,
+      buildBackendLog(ShopifyApiService.name, {
+        action: 'shopify-app-subscription-cancel',
+        outcome: 'success',
+        requestId: getRequestId(response.headers),
+        shopDomain: integration.platformStoreUrl,
+        subscriptionId: gid,
+        status: cancelledStatus ?? 'unknown',
+        prorate,
+      }),
     );
   }
 
@@ -292,7 +325,15 @@ export class ShopifyApiService {
     );
 
     this.logger.log(
-      `Usage record created for subscription ${gid}: ${amount} ${currencyCode}`,
+      buildBackendLog(ShopifyApiService.name, {
+        action: 'shopify-usage-record-create',
+        outcome: 'success',
+        requestId: getRequestId(response.headers),
+        shopDomain: integration.platformStoreUrl,
+        subscriptionId: gid,
+        amount,
+        currencyCode,
+      }),
     );
   }
 
@@ -330,13 +371,23 @@ export class ShopifyApiService {
 
     if (params.graphQLErrors && params.graphQLErrors.length > 0) {
       this.logger.error(
-        `GraphQL Errors (${params.operation}, requestId=${requestId ?? 'n/a'}): ${JSON.stringify(params.graphQLErrors)}`,
+        buildBackendLog(ShopifyApiService.name, {
+          action: `${params.operation}-graphql-response`,
+          outcome: 'failure',
+          requestId,
+          graphQLErrors: params.graphQLErrors,
+        }),
       );
     }
 
     if (params.userErrors && params.userErrors.length > 0) {
       this.logger.error(
-        `User Errors (${params.operation}, requestId=${requestId ?? 'n/a'}): ${JSON.stringify(params.userErrors)}`,
+        buildBackendLog(ShopifyApiService.name, {
+          action: `${params.operation}-graphql-response`,
+          outcome: 'failure',
+          requestId,
+          userErrors: params.userErrors,
+        }),
       );
     }
   }
@@ -357,7 +408,12 @@ export class ShopifyApiService {
     }
 
     this.logger.error(
-      `Missing token for domain: ${integration.platformStoreUrl}`,
+      buildBackendLog(ShopifyApiService.name, {
+        action: 'shopify-access-token-resolve',
+        outcome: 'failure',
+        shopDomain: integration.platformStoreUrl,
+        errorCode: 'missing_access_token',
+      }),
     );
     throw new Error(
       `Missing token for domain: ${integration.platformStoreUrl}`,

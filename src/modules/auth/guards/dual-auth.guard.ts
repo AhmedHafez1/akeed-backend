@@ -9,6 +9,10 @@ import { Reflector } from '@nestjs/core';
 import { TokenValidatorService } from '../services/token-validator.service';
 import { Request } from 'express';
 import { ALLOW_ORGLESS_KEY } from './orgless.decorator';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../shared/logging/backend-log.util';
 
 /**
  * Dual Authentication Guard
@@ -57,14 +61,28 @@ export class DualAuthGuard implements CanActivate {
     // Extract Authorization header
     const authHeader = request.headers.authorization;
     if (!authHeader) {
-      this.logger.warn('Missing Authorization header');
+      this.logger.warn(
+        buildBackendLog(DualAuthGuard.name, {
+          action: 'token-validate',
+          outcome: 'failure',
+          requestId: this.getRequestId(request),
+          errorCode: 'missing_authorization_header',
+        }),
+      );
       throw new UnauthorizedException('Missing authorization token');
     }
 
     // Extract token from "Bearer <token>" format
     const token = this.extractToken(authHeader);
     if (!token) {
-      this.logger.warn('Invalid Authorization header format');
+      this.logger.warn(
+        buildBackendLog(DualAuthGuard.name, {
+          action: 'token-validate',
+          outcome: 'failure',
+          requestId: this.getRequestId(request),
+          errorCode: 'invalid_authorization_header_format',
+        }),
+      );
       throw new UnauthorizedException('Invalid authorization format');
     }
 
@@ -82,12 +100,40 @@ export class DualAuthGuard implements CanActivate {
       // Attach user context to request
       request.user = user;
 
+      this.logger.log(
+        buildBackendLog(DualAuthGuard.name, {
+          action: 'token-validate',
+          outcome: 'success',
+          requestId: this.getRequestId(request),
+          userId: user.userId,
+          orgId: user.orgId,
+          shopDomain: user.shop,
+          authSource: user.source,
+        }),
+      );
+
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Authentication failed: ${message}`);
+      this.logger.error(
+        buildBackendLog(DualAuthGuard.name, {
+          action: 'token-validate',
+          outcome: 'failure',
+          requestId: this.getRequestId(request),
+          ...normalizeError(error),
+        }),
+      );
       throw new UnauthorizedException('Invalid or expired token');
     }
+  }
+
+  private getRequestId(request: Request): string | undefined {
+    const value = request.headers['x-request-id'];
+
+    if (Array.isArray(value)) {
+      return value[0];
+    }
+
+    return value;
   }
 
   /**

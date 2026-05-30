@@ -15,6 +15,10 @@ import { IntegrationsRepository } from '../../../database/repositories/integrati
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../../shared/logging/backend-log.util';
+import {
   generateNonce,
   validateShop,
   verifyShopifyHmac,
@@ -66,7 +70,13 @@ export class ShopifyAuthService {
 
   install(shop: string, host?: string): string {
     this.assertValidShop(shop);
-    this.logger.log(`Installing Shopify app for shop: ${shop}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-install-start',
+        outcome: 'success',
+        shopDomain: shop,
+      }),
+    );
 
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     const scopes = this.configService.getOrThrow<string>('SHOPIFY_SCOPES');
@@ -84,7 +94,14 @@ export class ShopifyAuthService {
 
     const authUrl = `https://${shop}/admin/oauth/authorize?${queryParams.toString()}`;
 
-    this.logger.log(`Shopify app installation URL: ${authUrl}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-install-url-generated',
+        outcome: 'success',
+        shopDomain: shop,
+        authUrl,
+      }),
+    );
 
     return authUrl;
   }
@@ -99,7 +116,13 @@ export class ShopifyAuthService {
     }
 
     this.assertValidShop(shop);
-    this.logger.log(`Shopify app callback for shop: ${shop}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-callback-received',
+        outcome: 'success',
+        shopDomain: shop,
+      }),
+    );
 
     this.verifyHmac(rawQuery);
     const statePayload = this.verifyState(state, shop, host);
@@ -117,7 +140,14 @@ export class ShopifyAuthService {
     const resolvedHost = host ?? statePayload.host ?? undefined;
     const redirectUrl = this.getPostAuthRedirectUrl(shop, resolvedHost);
 
-    this.logger.log(`Shopify app callback redirect to: ${redirectUrl}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-callback-redirect',
+        outcome: 'success',
+        shopDomain: shop,
+        redirectUrl,
+      }),
+    );
     return redirectUrl;
   }
 
@@ -157,7 +187,13 @@ export class ShopifyAuthService {
     const shop = payload.dest.replace('https://', '');
     this.assertValidShop(shop);
 
-    this.logger.log(`Token exchange requested for shop: ${shop}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-token-exchange-requested',
+        outcome: 'success',
+        shopDomain: shop,
+      }),
+    );
 
     // Already installed — short-circuit
     const alreadyInstalled = await this.isInstalled(shop);
@@ -177,7 +213,13 @@ export class ShopifyAuthService {
     // Register webhooks and ensure critical topics are active
     await this.registerWebhooks(shop, accessToken);
 
-    this.logger.log(`Token exchange completed successfully for shop: ${shop}`);
+    this.logger.log(
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-token-exchange-completed',
+        outcome: 'success',
+        shopDomain: shop,
+      }),
+    );
     return { installed: true, shop };
   }
 
@@ -372,7 +414,12 @@ export class ShopifyAuthService {
       );
 
       this.logger.log(
-        `Offline token obtained via token exchange for shop: ${shop}, scopes: ${data.scope}`,
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-offline-token-exchange',
+          outcome: 'success',
+          shopDomain: shop,
+          scopes: data.scope,
+        }),
       );
       return data.access_token;
     } catch (error: unknown) {
@@ -381,8 +428,14 @@ export class ShopifyAuthService {
       const errData = axiosError.response?.data;
 
       this.logger.error(
-        `Token exchange failed for shop: ${shop}, status: ${status}, ` +
-          `details: ${errData ? JSON.stringify(errData) : axiosError.message}`,
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-offline-token-exchange',
+          outcome: 'failure',
+          shopDomain: shop,
+          httpStatus: status,
+          details: errData ? JSON.stringify(errData) : axiosError.message,
+          ...normalizeError(error),
+        }),
       );
 
       throw new InternalServerErrorException(
@@ -410,7 +463,14 @@ export class ShopifyAuthService {
       );
       return data.access_token;
     } catch (error: unknown) {
-      this.logger.error('Failed to exchange code for token', error as Error);
+      this.logger.error(
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-auth-code-exchange',
+          outcome: 'failure',
+          shopDomain: shop,
+          ...normalizeError(error),
+        }),
+      );
       throw new InternalServerErrorException(
         'Failed to exchange authorization code',
       );
@@ -454,12 +514,23 @@ export class ShopifyAuthService {
           'owner',
         );
         this.logger.log(
-          `Created user and membership for shop: ${shop}, userId: ${user.id}`,
+          buildBackendLog(ShopifyAuthService.name, {
+            action: 'shopify-install-membership-provision',
+            outcome: 'success',
+            shopDomain: shop,
+            orgId,
+            userId: user.id,
+          }),
         );
       } catch (error) {
         this.logger.error(
-          `Failed to create user/membership for shop: ${shop}`,
-          error,
+          buildBackendLog(ShopifyAuthService.name, {
+            action: 'shopify-install-membership-provision',
+            outcome: 'failure',
+            shopDomain: shop,
+            orgId,
+            ...normalizeError(error),
+          }),
         );
         // Don't throw - allow installation to continue even if user creation fails
         // This can be retried later or handled manually
@@ -498,7 +569,13 @@ export class ShopifyAuthService {
 
     if (existingUsersError) {
       this.logger.error(
-        `Failed lookup via listUsers filter for ${email}: ${existingUsersError.message}`,
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-user-lookup-by-email',
+          outcome: 'failure',
+          shopDomain: shop,
+          email,
+          errorMessage: existingUsersError.message,
+        }),
       );
       throw new InternalServerErrorException('Failed to lookup existing user');
     }
@@ -509,7 +586,12 @@ export class ShopifyAuthService {
 
     if (existingUser?.id) {
       this.logger.log(
-        `Found existing user for shop: ${shop}, userId: ${existingUser.id}`,
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-user-lookup-by-email',
+          outcome: 'success',
+          shopDomain: shop,
+          userId: existingUser.id,
+        }),
       );
       return { id: existingUser.id };
     }
@@ -528,14 +610,26 @@ export class ShopifyAuthService {
     });
 
     if (error || !newUser?.user) {
-      this.logger.error(`Failed to create user for shop: ${shop}`, error);
+      this.logger.error(
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-user-create',
+          outcome: 'failure',
+          shopDomain: shop,
+          ...normalizeError(error),
+        }),
+      );
       throw new InternalServerErrorException(
         `Failed to create user account: ${error?.message || 'Unknown error'}`,
       );
     }
 
     this.logger.log(
-      `Created new user for shop: ${shop}, userId: ${newUser.user.id}`,
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-user-create',
+        outcome: 'success',
+        shopDomain: shop,
+        userId: newUser.user.id,
+      }),
     );
     return { id: newUser.user.id };
   }
@@ -709,7 +803,13 @@ export class ShopifyAuthService {
         // An empty userErrors list + a valid id means success
         if (result?.webhookSubscription?.id) {
           this.logger.log(
-            `Webhook registered via GraphQL: topic=${topic} shop=${shop} id=${result.webhookSubscription.id}`,
+            buildBackendLog(ShopifyAuthService.name, {
+              action: 'shopify-webhook-register',
+              outcome: 'success',
+              shopDomain: shop,
+              topic,
+              webhookId: result.webhookSubscription.id,
+            }),
           );
           return true;
         }
@@ -723,7 +823,13 @@ export class ShopifyAuthService {
 
         if (alreadyExists) {
           this.logger.log(
-            `Webhook already exists (GraphQL, treated as success): topic=${topic} shop=${shop}`,
+            buildBackendLog(ShopifyAuthService.name, {
+              action: 'shopify-webhook-register',
+              outcome: 'success',
+              shopDomain: shop,
+              topic,
+              status: 'already_exists',
+            }),
           );
           return true;
         }
@@ -743,7 +849,15 @@ export class ShopifyAuthService {
 
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Webhook GraphQL registration failed (attempt ${attempt}/${maxAttempts}): topic=${topic} shop=${shop} error=${message}`,
+          buildBackendLog(ShopifyAuthService.name, {
+            action: 'shopify-webhook-register',
+            outcome: 'retry',
+            shopDomain: shop,
+            topic,
+            attempt,
+            maxAttempts,
+            errorMessage: message,
+          }),
         );
 
         if (attempt < maxAttempts) {
@@ -757,7 +871,13 @@ export class ShopifyAuthService {
     const message =
       lastError instanceof Error ? lastError.message : String(lastError);
     this.logger.error(
-      `Webhook registration ultimately failed: topic=${topic} shop=${shop} error=${message}`,
+      buildBackendLog(ShopifyAuthService.name, {
+        action: 'shopify-webhook-register',
+        outcome: 'failure',
+        shopDomain: shop,
+        topic,
+        errorMessage: message,
+      }),
     );
     return false;
   }

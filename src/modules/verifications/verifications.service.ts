@@ -37,6 +37,10 @@ import {
   ORDER_TAGGING_PORT,
   type OrderTaggingPort,
 } from '../../shared/ports/order-tagging.port';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
   'pending',
@@ -304,10 +308,18 @@ export class VerificationsService {
         );
         shopifyJobId = result.jobId;
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
         this.logger.error(
-          `[CancelNoReply] Shopify cancellation failed for verification ${verificationId}: ${message}`,
+          buildBackendLog(VerificationsService.name, {
+            action: 'verification-no-reply-cancel-shopify-order',
+            outcome: 'failure',
+            orgId,
+            shopDomain: integration.platformStoreUrl,
+            verificationId,
+            orderId: externalOrderId,
+            ...normalizeError(error),
+          }),
         );
+        const message = error instanceof Error ? error.message : String(error);
         throw new BadGatewayException(
           `Shopify order cancellation failed: ${message}`,
         );
@@ -343,7 +355,14 @@ export class VerificationsService {
       }
 
       this.logger.warn(
-        `[CancelNoReply] Verification ${verificationId} status changed during cancellation (now=${reloaded?.status ?? 'unknown'})`,
+        buildBackendLog(VerificationsService.name, {
+          action: 'verification-no-reply-cancel-mark-local',
+          outcome: 'retry',
+          orgId,
+          verificationId,
+          status: reloaded?.status ?? 'unknown',
+          reason: 'status_changed_during_cancellation',
+        }),
       );
       throw new BadRequestException(
         'Verification status changed during cancellation; Shopify order was already canceled — check order status manually',
@@ -366,9 +385,17 @@ export class VerificationsService {
           'Akeed: Canceled',
         );
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `[CancelNoReply] Failed to add 'Akeed: Canceled' tag for verification ${verificationId}: ${message}`,
+          buildBackendLog(VerificationsService.name, {
+            action: 'verification-no-reply-cancel-tag-order',
+            outcome: 'retry',
+            orgId,
+            shopDomain: integration.platformStoreUrl,
+            verificationId,
+            orderId: externalOrderId,
+            tag: 'Akeed: Canceled',
+            ...normalizeError(error),
+          }),
         );
       }
     }

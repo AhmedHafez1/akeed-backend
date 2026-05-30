@@ -13,6 +13,10 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -46,7 +50,16 @@ export class VerificationHubService {
       return { skipped: true, reason: skipReason };
     }
 
-    this.logger.log(`Processing Hub Order: ${orderData.externalOrderId}`);
+    this.logger.log(
+      buildBackendLog(VerificationHubService.name, {
+        action: 'verification-order-process',
+        outcome: 'success',
+        orgId: integration.orgId,
+        shopDomain: integration.platformStoreUrl,
+        integrationId: integration.id,
+        orderId: orderData.externalOrderId,
+      }),
+    );
 
     const order = await this.findOrCreateOrder(orderData);
 
@@ -54,7 +67,17 @@ export class VerificationHubService {
       order.id,
     );
     if (existingVerification) {
-      this.logger.log(`Verification already exists for Order ${order.id}`);
+      this.logger.log(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-create-for-order',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: order.id,
+          verificationId: existingVerification.id,
+          reason: 'verification_already_exists',
+        }),
+      );
       return { orderId: order.id, verificationId: existingVerification.id };
     }
 
@@ -62,7 +85,17 @@ export class VerificationHubService {
       await this.billingEntitlementService.hasAvailableSlot(integration);
     if (!slotCheck.available) {
       this.logger.warn(
-        `Plan limit reached for integration ${integration.id} (${slotCheck.consumedCount}/${slotCheck.includedLimit}); skipping verification creation for order ${order.id}`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-create-for-order',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          orderId: order.id,
+          consumedCount: slotCheck.consumedCount,
+          includedLimit: slotCheck.includedLimit,
+          reason: 'plan_limit_reached',
+        }),
       );
       return { skipped: true, reason: 'plan_limit_reached' };
     }
@@ -140,7 +173,12 @@ export class VerificationHubService {
 
   async finalizeVerification(verificationId: string, status: string) {
     this.logger.log(
-      `Finalizing Verification ${verificationId} with status: ${status}`,
+      buildBackendLog(VerificationHubService.name, {
+        action: 'verification-finalize',
+        outcome: 'success',
+        verificationId,
+        status,
+      }),
     );
 
     const verification = await this.verificationsRepo.findById(verificationId);
@@ -176,35 +214,73 @@ export class VerificationHubService {
         ? `, signal=${eligibility.matchedSignal}`
         : '';
       this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: verification is only sent for COD orders (reason=${eligibility.reason}${signalSuffix})`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-order-eligibility-check',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          orderId: orderData.externalOrderId,
+          reason: `${eligibility.reason}${signalSuffix}`,
+        }),
       );
       return eligibility.reason;
     }
 
     if (!integration.isAutoVerifyEnabled) {
       this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: auto verification is disabled`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-order-eligibility-check',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: orderData.externalOrderId,
+          reason: 'auto_verify_disabled',
+        }),
       );
       return 'auto_verify_disabled';
     }
 
     if (integration.onboardingStatus !== 'completed') {
       this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: onboarding not completed (status=${integration.onboardingStatus ?? 'unknown'})`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-order-eligibility-check',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: orderData.externalOrderId,
+          reason: 'onboarding_incomplete',
+          onboardingStatus: integration.onboardingStatus ?? 'unknown',
+        }),
       );
       return 'onboarding_incomplete';
     }
 
     if (!integration.isActive) {
       this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: integration is not active`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-order-eligibility-check',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: orderData.externalOrderId,
+          reason: 'integration_inactive',
+        }),
       );
       return 'integration_inactive';
     }
 
     if (!isBillingStatusActive(integration.billingStatus)) {
       this.logger.log(
-        `Skipping order ${orderData.externalOrderId} for integration ${integration.id}: billing not active (status=${integration.billingStatus ?? 'unknown'})`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-order-eligibility-check',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: orderData.externalOrderId,
+          reason: 'billing_not_active',
+          billingStatus: integration.billingStatus ?? 'unknown',
+        }),
       );
       return 'billing_not_active';
     }
@@ -251,7 +327,13 @@ export class VerificationHubService {
       });
 
       this.logger.log(
-        `Scheduled initial send for verification ${verification.id} at ${adjustedDueAt.toISOString()}`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-initial-send-schedule',
+          outcome: 'success',
+          orgId: order.orgId,
+          verificationId: verification.id,
+          dueAt: adjustedDueAt.toISOString(),
+        }),
       );
       return;
     }
@@ -291,7 +373,13 @@ export class VerificationHubService {
   ): Promise<void> {
     if (order.externalOrderId.startsWith('akeed-test-')) {
       this.logger.log(
-        `Skipping Shopify tag for test order ${order.externalOrderId}`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-shopify-tag-update',
+          outcome: 'skipped',
+          orgId: String(order.orgId),
+          orderId: String(order.externalOrderId),
+          reason: 'test_order',
+        }),
       );
       return;
     }
@@ -301,7 +389,13 @@ export class VerificationHubService {
 
     if (!integration?.platformStoreUrl) {
       this.logger.warn(
-        `Skipping Shopify tag update for Order ${order.externalOrderId}: No linked integration found (Organization: ${order.orgId})`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-shopify-tag-update',
+          outcome: 'skipped',
+          orgId: String(order.orgId),
+          orderId: String(order.externalOrderId),
+          reason: 'missing_linked_integration',
+        }),
       );
       return;
     }
@@ -313,11 +407,26 @@ export class VerificationHubService {
         tag,
       );
       this.logger.log(
-        `Shopify Order ${order.externalOrderId} updated with tag: ${tag}`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-shopify-tag-update',
+          outcome: 'success',
+          orgId: String(order.orgId),
+          shopDomain: integration.platformStoreUrl,
+          orderId: String(order.externalOrderId),
+          tag,
+        }),
       );
     } catch (error) {
       this.logger.error(
-        `Failed to update Shopify tag for Order ${order.externalOrderId}: ${error as Error}`,
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-shopify-tag-update',
+          outcome: 'failure',
+          orgId: String(order.orgId),
+          shopDomain: integration.platformStoreUrl,
+          orderId: String(order.externalOrderId),
+          tag,
+          ...normalizeError(error),
+        }),
       );
     }
   }
