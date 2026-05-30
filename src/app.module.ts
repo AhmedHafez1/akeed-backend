@@ -1,6 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SecurityMiddleware } from './shared/middleware/security.middleware';
@@ -29,6 +31,15 @@ import { DatabaseModule } from './infrastructure/database';
       envFilePath: !process.env.NODE_ENV
         ? '.env'
         : `.env.${process.env.NODE_ENV}`,
+    }),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'default',
+          ttl: 60_000,
+          limit: 60,
+        },
+      ],
     }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
@@ -64,7 +75,7 @@ import { DatabaseModule } from './infrastructure/database';
     DatabaseModule,
   ],
   controllers: [AppController],
-  providers: [AppService, SecurityMiddleware],
+  providers: [AppService, SecurityMiddleware, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

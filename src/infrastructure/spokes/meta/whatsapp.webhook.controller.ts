@@ -12,11 +12,13 @@ import {
   ValidationPipe,
   ForbiddenException,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 import { MetaWebhookSignatureGuard } from '../../../shared/guards/meta-webhook-signature.guard';
 
+@SkipThrottle()
 @Controller('webhooks/whatsapp')
 @UsePipes(
   new ValidationPipe({

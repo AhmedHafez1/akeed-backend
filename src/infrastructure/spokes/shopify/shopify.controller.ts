@@ -8,6 +8,7 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { ShopifyBillingWebhookService } from './services/shopify-billing-webhook.service';
 import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.service';
@@ -21,6 +22,7 @@ import {
   ShopifyShopRedactDto,
 } from './dto/shopify-webhooks.dto';
 
+@SkipThrottle()
 @Controller('webhooks/shopify')
 @UseGuards(ShopifyHmacGuard)
 @UsePipes(

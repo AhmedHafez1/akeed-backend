@@ -32,6 +32,7 @@
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.11",
     "@nestjs/platform-express": "^11.1.11",
+    "@nestjs/throttler": "^6.5.0",
     "@supabase/supabase-js": "^2.93.1",
     "axios": "^1.13.5",
     "bullmq": "^5.70.4",

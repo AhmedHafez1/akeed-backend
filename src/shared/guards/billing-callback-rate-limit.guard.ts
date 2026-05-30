@@ -1,6 +1,8 @@
 import {
   CanActivate,
   ExecutionContext,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -57,8 +59,9 @@ export class BillingCallbackRateLimitGuard implements CanActivate {
         Math.ceil((entry.resetAt - now) / 1000),
       );
       this.logger.warn(`Rate limit exceeded for billing callback (${key}).`);
-      throw new Error(
+      throw new HttpException(
         `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 

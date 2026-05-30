@@ -82,7 +82,12 @@ export class VerificationSendService {
       (order.integration as typeof integrations.$inferSelect | null) ??
       (await this.integrationsRepo
         .findActiveByOrgAndPlatform(order.orgId, 'shopify')
-        .catch(() => null)) ??
+        .catch((error) => {
+          this.logger.error(
+            `Failed to look up integration for org ${order.orgId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return null;
+        })) ??
       null;
 
     if (!integration) return null;
