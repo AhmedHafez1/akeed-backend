@@ -15,7 +15,6 @@ import {
 } from './services/shopify-auth.service';
 import type { Request, Response } from 'express';
 import {
-  ShopifyCallbackQueryDto,
   ShopifyLoginQueryDto,
   ShopifyTokenExchangeDto,
 } from './dto/shopify-auth.dto';
@@ -78,11 +77,7 @@ export class ShopifyAuthController {
   }
 
   @Get('/callback')
-  async callback(
-    @Query() query: ShopifyCallbackQueryDto,
-    @Req() req: Request,
-    @Res() res: Response,
-  ): Promise<void> {
+  async callback(@Req() req: Request, @Res() res: Response): Promise<void> {
     const appUrl = await this.shopifyAuthService.callback(
       req.query as Record<string, string | undefined>,
     );
