@@ -52,6 +52,4 @@
 
 ## Helpful Links
 
-- README: [README.md](../README.md)
 - Environment guide: [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)
-- Database guide: [docs/DATABASE.md](../docs/DATABASE.md)
