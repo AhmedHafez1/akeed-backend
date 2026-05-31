@@ -23,6 +23,7 @@ describe('cod-template-catalog', () => {
       '_akeed_cod_verification_professional',
     );
     expect(template.metaLanguageCode).toBe('en');
+    expect(template.bodyVariableMode).toBe('named');
     expect(template.bodyParameterOrder).toEqual([
       'customer',
       'store',
@@ -67,7 +68,17 @@ describe('cod-template-catalog', () => {
 
     expect(shortAr.metaTemplateName).toBe('akeed_cod_verification');
     expect(shortEn.metaTemplateName).toBe('akeed_cod_verification');
+    expect(shortAr.bodyVariableMode).toBe('positional');
+    expect(shortEn.bodyVariableMode).toBe('positional');
     expect(shortAr.bodyParameterOrder).toEqual(['order', 'total']);
     expect(shortEn.bodyParameterOrder).toEqual(['order', 'total']);
+  });
+
+  it('keeps non-short variants on named body variables', () => {
+    const gulf = getArabicCodTemplateDefinition('gulf');
+    const direct = getEnglishCodTemplateDefinition('direct');
+
+    expect(gulf.bodyVariableMode).toBe('named');
+    expect(direct.bodyVariableMode).toBe('named');
   });
 });

@@ -53,15 +53,40 @@ describe('WhatsAppService', () => {
       template: {
         name: string;
         language: { code: string };
-        components: Array<{ parameters: Array<{ text: string }> }>;
+        components: Array<{
+          parameters: Array<{
+            type: 'text';
+            parameter_name?: string;
+            text: string;
+          }>;
+        }>;
       };
     };
 
     expect(payload.template.name).toBe('_akeed_cod_verification_professional');
     expect(payload.template.language.code).toBe('en');
-    expect(
-      payload.template.components[0].parameters.map((p) => p.text),
-    ).toEqual(['John', 'Akeed Home', 'ORD-1001', '250 SAR']);
+    expect(payload.template.components[0].parameters).toEqual([
+      {
+        type: 'text',
+        parameter_name: 'customer',
+        text: 'John',
+      },
+      {
+        type: 'text',
+        parameter_name: 'store',
+        text: 'Akeed Home',
+      },
+      {
+        type: 'text',
+        parameter_name: 'order',
+        text: 'ORD-1001',
+      },
+      {
+        type: 'text',
+        parameter_name: 'total',
+        text: '250 SAR',
+      },
+    ]);
   });
 
   it('keeps short template body parameters on order and total only', async () => {
@@ -83,13 +108,26 @@ describe('WhatsAppService', () => {
     const payload = httpService.post.mock.calls[0][1] as {
       template: {
         name: string;
-        components: Array<{ parameters: Array<{ text: string }> }>;
+        components: Array<{
+          parameters: Array<{
+            type: 'text';
+            parameter_name?: string;
+            text: string;
+          }>;
+        }>;
       };
     };
 
     expect(payload.template.name).toBe('akeed_cod_verification');
-    expect(
-      payload.template.components[0].parameters.map((p) => p.text),
-    ).toEqual(['ORD-AR-22', '900 EGP']);
+    expect(payload.template.components[0].parameters).toEqual([
+      {
+        type: 'text',
+        text: 'ORD-AR-22',
+      },
+      {
+        type: 'text',
+        text: '900 EGP',
+      },
+    ]);
   });
 });

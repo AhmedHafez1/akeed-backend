@@ -17,6 +17,7 @@ export type CodTemplateVariantId =
   | EnglishCodTemplateVariantId;
 
 export type CodTemplateVariableKey = 'customer' | 'store' | 'order' | 'total';
+export type CodTemplateBodyVariableMode = 'named' | 'positional';
 
 export interface CodTemplatePreview {
   greeting: string;
@@ -32,6 +33,7 @@ export interface CodTemplateDefinition {
   variant: CodTemplateVariantId;
   metaTemplateName: string;
   metaLanguageCode: string;
+  bodyVariableMode: CodTemplateBodyVariableMode;
   bodyParameterOrder: CodTemplateVariableKey[];
   preview: CodTemplatePreview;
 }
@@ -69,6 +71,7 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     variant: 'standard',
     metaTemplateName: 'akeed_cod_verification_friendly',
     metaLanguageCode: 'ar',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'store', 'order', 'total'],
     preview: {
       greeting: 'أهلًا بك {{customer}} 👋',
@@ -84,6 +87,7 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     variant: 'egyptian',
     metaTemplateName: 'akeed_cod_verification_direct_eg',
     metaLanguageCode: 'ar_EG',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'order', 'store', 'total'],
     preview: {
       greeting: 'أهلًا {{customer}}،',
@@ -99,6 +103,7 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     variant: 'gulf',
     metaTemplateName: 'akeed_cod_verification_direct_gulf',
     metaLanguageCode: 'ar',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'order', 'store', 'total'],
     preview: {
       greeting: 'أهلًا {{customer}}،',
@@ -115,6 +120,7 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     variant: 'short',
     metaTemplateName: 'akeed_cod_verification',
     metaLanguageCode: 'ar',
+    bodyVariableMode: 'positional',
     bodyParameterOrder: ['order', 'total'],
     preview: {
       greeting: 'السلام عليكم',
@@ -136,6 +142,7 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     variant: 'friendly',
     metaTemplateName: 'akeed_cod_verification_friendly',
     metaLanguageCode: 'en',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'store', 'order', 'total'],
     preview: {
       greeting: 'Hi {{customer}}! 👋',
@@ -152,6 +159,7 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     variant: 'professional',
     metaTemplateName: '_akeed_cod_verification_professional',
     metaLanguageCode: 'en',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'store', 'order', 'total'],
     preview: {
       greeting: 'Hello {{customer}},',
@@ -168,6 +176,7 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     variant: 'direct',
     metaTemplateName: 'akeed_cod_verification_direct',
     metaLanguageCode: 'en',
+    bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'order', 'store', 'total'],
     preview: {
       greeting: 'Hi {{customer}},',
@@ -183,6 +192,7 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     variant: 'short',
     metaTemplateName: 'akeed_cod_verification',
     metaLanguageCode: 'en',
+    bodyVariableMode: 'positional',
     bodyParameterOrder: ['order', 'total'],
     preview: {
       greeting: 'Hello',

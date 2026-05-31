@@ -5,6 +5,7 @@ import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import {
   getCodTemplateDefinition,
+  type CodTemplateVariableKey,
   type CodTemplateSelection,
 } from '../../../shared/messaging/cod-template-catalog';
 import {
@@ -96,25 +97,29 @@ export class WhatsAppService {
       language: resolvedLanguage,
       selection: params.templateSelection,
     });
+    const bodyParameterValueByKey: Record<CodTemplateVariableKey, string> = {
+      customer: (params.customerName ?? '').trim() || 'Customer',
+      store: (params.storeName ?? '').trim() || 'Akeed Store',
+      order: params.orderNumber,
+      total: params.totalPrice,
+    };
+
     const bodyParameters = templateDefinition.bodyParameterOrder.map(
       (parameterKey) => {
-        if (parameterKey === 'order') {
-          return params.orderNumber;
+        const text = bodyParameterValueByKey[parameterKey];
+
+        if (templateDefinition.bodyVariableMode === 'named') {
+          return {
+            type: 'text' as const,
+            parameter_name: parameterKey,
+            text,
+          };
         }
 
-        if (parameterKey === 'total') {
-          return params.totalPrice;
-        }
-
-        if (parameterKey === 'customer') {
-          return (params.customerName ?? '').trim() || 'Customer';
-        }
-
-        if (parameterKey === 'store') {
-          return (params.storeName ?? '').trim() || 'Akeed Store';
-        }
-
-        return '';
+        return {
+          type: 'text' as const,
+          text,
+        };
       },
     );
 
@@ -130,10 +135,7 @@ export class WhatsAppService {
         components: [
           {
             type: 'body',
-            parameters: bodyParameters.map((parameterValue) => ({
-              type: 'text',
-              text: parameterValue,
-            })),
+            parameters: bodyParameters,
           },
           {
             type: 'button',
