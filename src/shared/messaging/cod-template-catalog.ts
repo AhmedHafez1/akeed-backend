@@ -174,7 +174,7 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
   direct: {
     language: 'en',
     variant: 'direct',
-    metaTemplateName: 'akeed_cod_verification_direct',
+    metaTemplateName: 'akeed_cod_verification_direct_',
     metaLanguageCode: 'en',
     bodyVariableMode: 'named',
     bodyParameterOrder: ['customer', 'order', 'store', 'total'],
