@@ -75,7 +75,7 @@ const ARABIC_COD_TEMPLATE_CATALOG: Record<
     bodyParameterOrder: ['customer', 'store', 'order', 'total'],
     preview: {
       greeting: 'أهلًا بك {{customer}} 👋',
-      body: 'شكرًا لتسوّقك من {{store}}. طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريبًا للشحن!',
+      body: 'شكرًا لتسوّقك من {{store}}.\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريبًا للشحن!',
       totalLabel: 'إجمالي الطلب: {{total}}',
       ending: 'يرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.',
       confirmButton: 'تأكيد الطلب',
@@ -181,8 +181,9 @@ const ENGLISH_COD_TEMPLATE_CATALOG: Record<
     preview: {
       greeting: 'Hi {{customer}},',
       body: 'We are preparing your order #{{order}} at {{store}}.',
-      totalLabel: 'Please confirm your COD total of {{total}} right now',
-      ending: 'so we ship your order immediately.',
+      totalLabel:
+        'Please confirm your COD total of {{total}} right now so we ship your order immediately.',
+      ending: '',
       confirmButton: 'Ship My Order',
       cancelButton: 'Cancel',
     },
