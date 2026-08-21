@@ -97,6 +97,6 @@ npm run db:push
 
 The webhook processing job queue uses BullMQ backed by Redis.
 
-- `REDIS_URL`: Redis connection string (default: `redis://localhost:6379`).
-  - Production: use a managed Redis instance (e.g. Upstash, ElastiCache, Redis Cloud).
-  - Example: `redis://:password@host:6379/0`
+- `REDIS_URL`: Redis connection string to use for the job queue.
+  - Production: Railway's Redis service
+  - Local: `redis://localhost:6379`
