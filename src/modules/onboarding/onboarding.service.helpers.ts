@@ -38,7 +38,7 @@ const BILLING_PLAN_TEMPLATES: Record<
   },
   basic: {
     name: 'Akeed Basic',
-    amount: 8.99,
+    amount: 9.99,
     includedVerifications: 300,
   },
   pro: {
@@ -48,7 +48,7 @@ const BILLING_PLAN_TEMPLATES: Record<
   },
   business: {
     name: 'Akeed Scale',
-    amount: 44.99,
+    amount: 49.99,
     includedVerifications: 2500,
   },
 };

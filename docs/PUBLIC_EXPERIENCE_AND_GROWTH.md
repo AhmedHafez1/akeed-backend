@@ -148,9 +148,9 @@ Configuration (from `roi.ts`):
 | Plan    | Included verifications | Price        | Key features                                            |
 | ------- | ---------------------- | ------------ | ------------------------------------------------------- |
 | Starter | 30 / month             | Free         | Automatic COD confirmation, dashboard, Shopify updates. |
-| Basic   | 300 / month            | $8.99/month  | + Automated follow-up reminders, rule-based automation. |
+| Basic   | 300 / month            | $9.99/month  | + Automated follow-up reminders, rule-based automation. |
 | Pro     | 1,000 / month          | $22.99/month | + Quiet hours / scheduling.                             |
-| Scale   | 2,500 / month          | $44.99/month | + Priority support, setup call.                         |
+| Scale   | 2,500 / month          | $49.99/month | + Priority support, setup call.                         |
 
 ### Feature Matrix
 

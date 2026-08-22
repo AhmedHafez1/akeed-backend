@@ -74,7 +74,7 @@ describe('onboarding.service.helpers', () => {
       });
       expect(plan.id).toBe('basic');
       expect(plan.name).toBe('Akeed Basic');
-      expect(plan.amount).toBe(8.99);
+      expect(plan.amount).toBe(9.99);
       expect(plan.includedVerifications).toBe(300);
     });
 
@@ -96,7 +96,7 @@ describe('onboarding.service.helpers', () => {
       });
       expect(plan.id).toBe('business');
       expect(plan.name).toBe('Akeed Scale');
-      expect(plan.amount).toBe(44.99);
+      expect(plan.amount).toBe(49.99);
       expect(plan.includedVerifications).toBe(2500);
     });
 

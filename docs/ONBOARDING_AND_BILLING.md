@@ -93,9 +93,9 @@ Plan definitions are in `akeed-backend/src/modules/onboarding/onboarding.service
 | Plan    | Plan ID    | Monthly price | Included confirmations | Billing type             |
 | ------- | ---------- | ------------: | ---------------------: | ------------------------ |
 | Starter | `starter`  |          `$0` |          `30` one-time | No Shopify charge        |
-| Basic   | `basic`    |       `$8.99` |          `300` monthly | Shopify recurring charge |
+| Basic   | `basic`    |       `$9.99` |          `300` monthly | Shopify recurring charge |
 | Pro     | `pro`      |      `$22.99` |         `1000` monthly | Shopify recurring charge |
-| Scale   | `business` |      `$44.99` |         `2500` monthly | Shopify recurring charge |
+| Scale   | `business` |      `$49.99` |         `2500` monthly | Shopify recurring charge |
 
 Currency is configurable via `SHOPIFY_BILLING_CURRENCY` (default `USD`).
 Test mode is enabled in non-production environments via `SHOPIFY_BILLING_TEST_MODE`.

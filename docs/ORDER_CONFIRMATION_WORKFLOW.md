@@ -59,22 +59,22 @@ Protected behavior:
 
 Controls are edited from the Settings page and persisted on the `integrations` table through `PATCH /api/onboarding/settings`.
 
-| Control                  |            Default | Validation                                 | Business behavior                                                                                                     |
-| ------------------------ | -----------------: | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `isAutoVerifyEnabled`    |             `true` | Boolean                                    | If disabled, new eligible COD orders are not stored or verified by `handleNewOrder`.                                  |
-| `sendDelayMinutes`       |                `0` | `0..1440`                                  | Delays the initial WhatsApp send. Billing is not consumed until the delayed send executes.                            |
-| `followUpEnabled`        |             `true` | Boolean                                    | Enables one follow-up message when the customer has not replied.                                                      |
-| `followUpDelayMinutes`   |              `120` | `0..10080`                                 | Follow-up delay from the initial successful send time. Must be lower than escalation delay when follow-up is enabled. |
-| `escalationDelayMinutes` |              `360` | `0..10080`                                 | No-reply escalation delay from the initial successful send time. `0` disables escalation scheduling.                  |
-| `quietHoursEnabled`      |            `false` | Boolean                                    | When enabled, delayed automation jobs are moved outside quiet hours.                                                  |
-| `quietHoursStart`        | UI default `21:00` | `HH:mm`, required when quiet hours enabled | Start of quiet-hours window in the configured timezone.                                                               |
-| `quietHoursEnd`          | UI default `09:00` | `HH:mm`, required when quiet hours enabled | End of quiet-hours window in the configured timezone.                                                                 |
-| `timezone`               |      `Asia/Riyadh` | Allowlist in `AUTOMATION_TIMEZONES`        | Timezone used for quiet-hours calculations.                                                                           |
-| `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`                         | WhatsApp template language. `auto` resolves Arabic for Arabic-region phone prefixes and English otherwise.            |
-| `codTemplateArVariant`   |        `standard` | `standard`, `egyptian`, `gulf`, `short`   | Selected Arabic branded template variant for send and preview.                                                          |
-| `codTemplateEnVariant`   |        `friendly` | `friendly`, `professional`, `direct`, `short` | Selected English branded template variant for send and preview.                                                      |
-| `shippingCurrency`       |              `USD` | Allowlist                                  | Used for dashboard savings display, not verification routing.                                                         |
-| `avgShippingCost`        |                `3` | Number `>= 0`, max 2 decimals              | Used for dashboard money-saved KPI.                                                                                   |
+| Control                  |            Default | Validation                                    | Business behavior                                                                                                     |
+| ------------------------ | -----------------: | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `isAutoVerifyEnabled`    |             `true` | Boolean                                       | If disabled, new eligible COD orders are not stored or verified by `handleNewOrder`.                                  |
+| `sendDelayMinutes`       |                `0` | `0..1440`                                     | Delays the initial WhatsApp send. Billing is not consumed until the delayed send executes.                            |
+| `followUpEnabled`        |             `true` | Boolean                                       | Enables one follow-up message when the customer has not replied.                                                      |
+| `followUpDelayMinutes`   |              `120` | `0..10080`                                    | Follow-up delay from the initial successful send time. Must be lower than escalation delay when follow-up is enabled. |
+| `escalationDelayMinutes` |              `360` | `0..10080`                                    | No-reply escalation delay from the initial successful send time. `0` disables escalation scheduling.                  |
+| `quietHoursEnabled`      |            `false` | Boolean                                       | When enabled, delayed automation jobs are moved outside quiet hours.                                                  |
+| `quietHoursStart`        | UI default `21:00` | `HH:mm`, required when quiet hours enabled    | Start of quiet-hours window in the configured timezone.                                                               |
+| `quietHoursEnd`          | UI default `09:00` | `HH:mm`, required when quiet hours enabled    | End of quiet-hours window in the configured timezone.                                                                 |
+| `timezone`               |      `Asia/Riyadh` | Allowlist in `AUTOMATION_TIMEZONES`           | Timezone used for quiet-hours calculations.                                                                           |
+| `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`                            | WhatsApp template language. `auto` resolves Arabic for Arabic-region phone prefixes and English otherwise.            |
+| `codTemplateArVariant`   |         `standard` | `standard`, `egyptian`, `gulf`, `short`       | Selected Arabic branded template variant for send and preview.                                                        |
+| `codTemplateEnVariant`   |         `friendly` | `friendly`, `professional`, `direct`, `short` | Selected English branded template variant for send and preview.                                                       |
+| `shippingCurrency`       |              `USD` | Allowlist                                     | Used for dashboard savings display, not verification routing.                                                         |
+| `avgShippingCost`        |                `3` | Number `>= 0`, max 2 decimals                 | Used for dashboard money-saved KPI.                                                                                   |
 
 Cross-field rules:
 
@@ -95,7 +95,7 @@ Cross-field rules:
 | WhatsApp sending              | `akeed-backend/src/modules/verification-core/verification-send.service.ts`                  | Reserves billing usage, sends the WhatsApp template, marks initial status, and releases usage on send failure.                                |
 | Automation producer           | `akeed-backend/src/modules/verification-automation/verification-automation.producer.ts`     | Enqueues deterministic BullMQ jobs for initial, follow-up, and no-reply automation.                                                           |
 | Automation worker             | `akeed-backend/src/modules/verification-automation/verification-automation.processor.ts`    | Executes delayed initial sends, follow-ups, quiet-hours rescheduling, and no-reply escalation.                                                |
-| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Resolves language + selected template variant, then sends the mapped Meta template with confirm/cancel quick-reply payloads.                   |
+| WhatsApp adapter              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts`                          | Resolves language + selected template variant, then sends the mapped Meta template with confirm/cancel quick-reply payloads.                  |
 | WhatsApp webhook              | `akeed-backend/src/infrastructure/spokes/meta/whatsapp.webhook.service.ts`                  | Handles customer button replies and delivery/read/failed status webhooks.                                                                     |
 | Dashboard/verifications API   | `akeed-backend/src/modules/verifications/verifications.controller.ts`                       | Exposes stats, list, test send, and merchant no-reply cancellation endpoint.                                                                  |
 | Merchant cancellation service | `akeed-backend/src/modules/verifications/verifications.service.ts`                          | Cancels no-reply Shopify orders and updates local verification state.                                                                         |
@@ -104,19 +104,19 @@ Cross-field rules:
 
 ## Frontend Code Map
 
-| Area                        | File                                                                                           | Responsibility                                                                                      |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Dashboard hook              | `akeed-frontend/src/features/dashboard/domain/useDashboard.ts`                                 | Loads stats/list data, handles filters, test sends, and cancel-order UI state.                      |
-| Dashboard standalone skin   | `akeed-frontend/src/features/dashboard/skins/standalone/DashboardStandaloneSkin.tsx`           | Standalone dashboard page composition.                                                              |
-| Dashboard embedded skin     | `akeed-frontend/src/features/dashboard/skins/embedded/DashboardEmbeddedSkin.tsx`               | Shopify embedded dashboard page composition.                                                        |
-| Stats cards                 | `akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneStatsSummary.tsx` | Displays confirmed, canceled, awaiting response, reply rate, confirmation rate, usage, and savings. |
-| Verification table          | `akeed-frontend/src/features/dashboard/skins/standalone/VerificationsTableStandalone.tsx`      | Shows verification rows and no-reply cancel action in standalone mode.                              |
-| Embedded verification table | `akeed-frontend/src/features/dashboard/skins/embedded/VerificationsTableEmbedded.tsx`          | Shows verification rows and no-reply cancel action in embedded mode.                                |
+| Area                        | File                                                                                           | Responsibility                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Dashboard hook              | `akeed-frontend/src/features/dashboard/domain/useDashboard.ts`                                 | Loads stats/list data, handles filters, test sends, and cancel-order UI state.                          |
+| Dashboard standalone skin   | `akeed-frontend/src/features/dashboard/skins/standalone/DashboardStandaloneSkin.tsx`           | Standalone dashboard page composition.                                                                  |
+| Dashboard embedded skin     | `akeed-frontend/src/features/dashboard/skins/embedded/DashboardEmbeddedSkin.tsx`               | Shopify embedded dashboard page composition.                                                            |
+| Stats cards                 | `akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneStatsSummary.tsx` | Displays confirmed, canceled, awaiting response, reply rate, confirmation rate, usage, and savings.     |
+| Verification table          | `akeed-frontend/src/features/dashboard/skins/standalone/VerificationsTableStandalone.tsx`      | Shows verification rows and no-reply cancel action in standalone mode.                                  |
+| Embedded verification table | `akeed-frontend/src/features/dashboard/skins/embedded/VerificationsTableEmbedded.tsx`          | Shows verification rows and no-reply cancel action in embedded mode.                                    |
 | Settings hook               | `akeed-frontend/src/features/settings/domain/useSettings.ts`                                   | Loads/saves merchant controls, template selections, validates values, and handles billing plan actions. |
-| Settings standalone skin    | `akeed-frontend/src/features/settings/skins/standalone/SettingsStandaloneSkin.tsx`             | Standalone settings UI including branded template selectors and live preview.                         |
-| Settings embedded skin      | `akeed-frontend/src/features/settings/skins/embedded/SettingsEmbeddedTabbedSkin.tsx`           | Polaris tabbed settings UI including branded template selectors and live preview.                     |
-| Message preview route       | `akeed-frontend/src/app/[locale]/message-preview/page.tsx`                                    | Redirects to settings `message-preview` tab (single source of truth).                                |
-| API/auth wrapper            | `akeed-frontend/src/shared/lib/auth.ts`                                                        | Sends authenticated backend requests in standalone and embedded modes.                              |
+| Settings standalone skin    | `akeed-frontend/src/features/settings/skins/standalone/SettingsStandaloneSkin.tsx`             | Standalone settings UI including branded template selectors and live preview.                           |
+| Settings embedded skin      | `akeed-frontend/src/features/settings/skins/embedded/SettingsEmbeddedTabbedSkin.tsx`           | Polaris tabbed settings UI including branded template selectors and live preview.                       |
+| Message preview route       | `akeed-frontend/src/app/[locale]/message-preview/page.tsx`                                     | Redirects to settings `message-preview` tab (single source of truth).                                   |
+| API/auth wrapper            | `akeed-frontend/src/shared/lib/auth.ts`                                                        | Sends authenticated backend requests in standalone and embedded modes.                                  |
 
 ## API Reference
 
@@ -138,12 +138,12 @@ Cross-field rules:
 
 Primary tables:
 
-| Table            | Important fields                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table            | Important fields                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive`, `storeName`, `defaultLanguage`, `codTemplateArVariant`, `codTemplateEnVariant`, `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus`, `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
-| `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`                                                                                                                                                                                                                             |
-| `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                           |
-| `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                 |
+| `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`                                                                                                                                                                                                                                                                             |
+| `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                                                                           |
+| `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                                                                 |
 
 Important constraints and indexes:
 
@@ -160,9 +160,9 @@ Plan limits are defined in `akeed-backend/src/modules/onboarding/onboarding.serv
 | Plan               | Monthly price | Included WhatsApp confirmations | Public positioning                     |
 | ------------------ | ------------: | ------------------------------: | -------------------------------------- |
 | Starter            |           `0` |                   `30` one-time | Try Akeed before paying                |
-| Basic              |        `8.99` |                   `300` monthly | Start confirming COD orders            |
+| Basic              |        `9.99` |                   `300` monthly | Start confirming COD orders            |
 | Pro                |       `22.99` |                  `1000` monthly | For stores confirming COD orders daily |
-| Scale (`business`) |       `44.99` |                  `2500` monthly | Higher-volume COD stores               |
+| Scale (`business`) |       `49.99` |                  `2500` monthly | Higher-volume COD stores               |
 
 Usage principles:
 

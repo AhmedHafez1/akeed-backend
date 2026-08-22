@@ -54,7 +54,7 @@ describe('OnboardingService', () => {
           {
             id: 'basic',
             name: 'Akeed Basic',
-            amount: 8.99,
+            amount: 9.99,
             currencyCode: 'USD',
             includedVerifications: 300,
           },
