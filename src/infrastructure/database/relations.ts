@@ -8,6 +8,7 @@ import {
   webhookEvents,
   orders,
   verifications,
+  adminStoreLifecycles,
 } from './schema';
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -28,6 +29,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   webhookEvents: many(webhookEvents),
   orders: many(orders),
   verifications: many(verifications),
+  adminStoreLifecycles: many(adminStoreLifecycles),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -44,6 +46,7 @@ export const integrationsRelations = relations(
     integrationMonthlyUsage: many(integrationMonthlyUsage),
     orders: many(orders),
     webhookEvents: many(webhookEvents),
+    adminStoreLifecycles: many(adminStoreLifecycles),
   }),
 );
 
@@ -94,3 +97,17 @@ export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
     references: [integrations.id],
   }),
 }));
+
+export const adminStoreLifecyclesRelations = relations(
+  adminStoreLifecycles,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [adminStoreLifecycles.orgId],
+      references: [organizations.id],
+    }),
+    integration: one(integrations, {
+      fields: [adminStoreLifecycles.integrationId],
+      references: [integrations.id],
+    }),
+  }),
+);

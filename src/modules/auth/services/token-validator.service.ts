@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
@@ -30,6 +35,13 @@ interface ShopifySessionPayload {
   iat: number; // Issued at
   jti: string; // JWT ID
   sid: string; // Session ID
+}
+
+export interface AuthenticatedAdmin {
+  userId: string;
+  role: 'admin';
+  aal: string;
+  source: 'supabase';
 }
 
 @Injectable()
@@ -78,6 +90,44 @@ export class TokenValidatorService {
     } else {
       throw new UnauthorizedException('Unknown token type');
     }
+  }
+
+  async validateAdminToken(token: string): Promise<AuthenticatedAdmin> {
+    if (this.detectTokenType(token) !== 'supabase') {
+      throw new ForbiddenException('Admin access requires Supabase auth');
+    }
+
+    const {
+      data: { user },
+      error,
+    } = await this.supabase.auth.getUser(token);
+
+    if (error || !user) {
+      throw new UnauthorizedException('Invalid Supabase token');
+    }
+
+    if (user.app_metadata?.akeed_role !== 'admin') {
+      throw new ForbiddenException('Staff role required');
+    }
+
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1], 'base64url').toString('utf8'),
+    ) as { aal?: string };
+    const requireAal2 =
+      this.configService.get<string>('ADMIN_REQUIRE_AAL2') === 'true' ||
+      (this.configService.get<string>('ADMIN_REQUIRE_AAL2') !== 'false' &&
+        this.configService.get<string>('NODE_ENV') === 'production');
+
+    if (requireAal2 && payload.aal !== 'aal2') {
+      throw new ForbiddenException('Multi-factor authentication required');
+    }
+
+    return {
+      userId: user.id,
+      role: 'admin',
+      aal: payload.aal ?? 'aal1',
+      source: 'supabase',
+    };
   }
 
   /**

@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import { PhoneService } from '../../shared/services/phone.service';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 
@@ -12,6 +13,8 @@ export class TestVerificationService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHubService: VerificationHubService,
     private readonly phoneService: PhoneService,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async sendTestVerification(
@@ -51,6 +54,13 @@ export class TestVerificationService {
       integration.shippingCurrency.trim().length > 0
         ? integration.shippingCurrency.trim().toUpperCase()
         : DEFAULT_SHIPPING_CURRENCY;
+
+    await this.adminLifecycles?.markMilestone(
+      integration.id,
+      'testRequestedAt',
+      undefined,
+      { test_requested: 'captured_exact' },
+    );
 
     const result = await this.verificationHubService.handleNewOrder(
       {

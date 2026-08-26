@@ -5,11 +5,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingFreePlanClaimsRepository } from '../../infrastructure/database/repositories/billing-free-plan-claims.repository';
 import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
 import { integrations } from '../../infrastructure/database/schema';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import {
   ONBOARDING_LANGUAGES,
   type OnboardingBillingPlanId,
@@ -58,6 +60,8 @@ export class BillingService {
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
     private readonly billingConfig: BillingConfigService,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async getBillingPlans(
@@ -88,6 +92,12 @@ export class BillingService {
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
     const billingPlan = this.billingConfig.resolvePlan(planId);
+    await this.adminLifecycles?.markMilestone(
+      integration.id,
+      'planSelectedAt',
+      undefined,
+      { plan_selected: 'captured_exact' },
+    );
 
     // Same-plan guard: skip if already active on the requested plan.
     if (
@@ -315,6 +325,15 @@ export class BillingService {
       clearCanceledAt: true,
     });
 
+    if (activatedPlan && activatedPlan.amount > 0) {
+      await this.adminLifecycles?.markMilestone(
+        integration.id,
+        'paidSubscriptionActivatedAt',
+        undefined,
+        { paid_subscription_activated: 'captured_exact' },
+      );
+    }
+
     // Reset usage counters so the new plan starts with a clean slate.
     await this.resetUsageForPlanChange(
       integration.id,
@@ -363,6 +382,12 @@ export class BillingService {
     await this.integrationsRepo.updateById(integrationId, {
       onboardingStatus: 'completed',
     });
+    await this.adminLifecycles?.markMilestone(
+      integrationId,
+      'onboardingCompletedAt',
+      undefined,
+      { onboarding_completed: 'captured_exact' },
+    );
   }
 
   private async resolveIntegrationByShop(

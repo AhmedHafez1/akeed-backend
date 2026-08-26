@@ -10,6 +10,8 @@ import { MembershipsRepository } from './repositories/memberships.repository';
 import { IntegrationMonthlyUsageRepository } from './repositories/integration-monthly-usage.repository';
 import { WebhookEventsRepository } from './repositories/webhook-events.repository';
 import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
+import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifecycles.repository';
+import { AdminAccessAuditRepository } from './repositories/admin-access-audit.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -23,6 +25,8 @@ import { BillingFreePlanClaimsRepository } from './repositories/billing-free-pla
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
+    AdminStoreLifecyclesRepository,
+    AdminAccessAuditRepository,
   ],
   exports: [
     drizzleProvider,
@@ -34,6 +38,8 @@ import { BillingFreePlanClaimsRepository } from './repositories/billing-free-pla
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
+    AdminStoreLifecyclesRepository,
+    AdminAccessAuditRepository,
   ],
 })
 export class DatabaseModule {}

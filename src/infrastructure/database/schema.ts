@@ -16,6 +16,7 @@ import {
   date,
   pgEnum,
   pgSchema,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -93,6 +94,7 @@ export const organizations = pgTable(
       as: 'permissive',
       for: 'select',
       to: ['authenticated'],
+      using: sql`(id = get_user_org_id())`,
     }),
     check(
       'organizations_plan_type_check',
@@ -151,6 +153,7 @@ export const memberships = pgTable(
       as: 'permissive',
       for: 'select',
       to: ['authenticated'],
+      using: sql`(user_id = auth.uid())`,
     }),
     check(
       'memberships_role_check',
@@ -234,6 +237,8 @@ export const integrations = pgTable(
     quietHoursEnd: text('quiet_hours_end'),
     timezone: text('timezone').default('Asia/Riyadh').notNull(),
     sendDelayMinutes: integer('send_delay_minutes').default(0).notNull(),
+    countryCode: varchar('country_code', { length: 2 }),
+    shopTimezone: text('shop_timezone'),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -450,6 +455,7 @@ export const orders = pgTable(
     currency: text().default('SAR'),
     paymentMethod: text('payment_method'),
     rawPayload: jsonb('raw_payload'),
+    isTest: boolean('is_test').default(false).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -498,6 +504,8 @@ export const orders = pgTable(
       as: 'permissive',
       for: 'all',
       to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
     }),
   ],
 );
@@ -609,6 +617,8 @@ export const verifications = pgTable(
       as: 'permissive',
       for: 'all',
       to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
     }),
   ],
 );
@@ -688,6 +698,169 @@ export const webhookEvents = pgTable(
       table.idempotencyKey,
     ),
     pgPolicy('Service role manages webhook events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+);
+
+export const adminStoreLifecycles = pgTable(
+  'admin_store_lifecycles',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    installedAt: timestamp('installed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    uninstalledAt: timestamp('uninstalled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    onboardingStartedAt: timestamp('onboarding_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    onboardingCompletedAt: timestamp('onboarding_completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    planSelectedAt: timestamp('plan_selected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    testRequestedAt: timestamp('test_requested_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    testDeliveredAt: timestamp('test_delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstEligibleOrderAt: timestamp('first_eligible_order_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstMessageDeliveredAt: timestamp('first_message_delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstCustomerResponseAt: timestamp('first_customer_response_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstResolvedAt: timestamp('first_resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    paidSubscriptionActivatedAt: timestamp('paid_subscription_activated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    provenance: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_admin_store_lifecycles_org').on(table.orgId),
+    index('idx_admin_store_lifecycles_installed').on(table.installedAt),
+    index('idx_admin_store_lifecycles_integration_installed').on(
+      table.integrationId,
+      table.installedAt,
+    ),
+    uniqueIndex('uq_admin_store_lifecycles_current')
+      .on(table.integrationId)
+      .where(sql`${table.uninstalledAt} IS NULL`),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'admin_store_lifecycles_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId],
+      foreignColumns: [integrations.id],
+      name: 'admin_store_lifecycles_integration_id_fkey',
+    }).onDelete('cascade'),
+    pgPolicy('Service role manages admin store lifecycles', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+);
+
+export const adminAccessAudit = pgTable(
+  'admin_access_audit',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    userId: uuid('user_id'),
+    action: text().notNull(),
+    outcome: text().notNull(),
+    requestId: text('request_id'),
+    targetIntegrationId: uuid('target_integration_id'),
+    metadata: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    index('idx_admin_access_audit_user_created').on(
+      table.userId,
+      table.createdAt,
+    ),
+    pgPolicy('Service role manages admin access audit', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+);
+
+export const adminFunnelMonthly = pgTable(
+  'admin_funnel_monthly',
+  {
+    cohortMonth: date('cohort_month', { mode: 'string' }).notNull(),
+    stage: text().notNull(),
+    reachedCount: integer('reached_count').default(0).notNull(),
+    durationSecondsTotal: numeric('duration_seconds_total', {
+      precision: 20,
+      scale: 0,
+    })
+      .default('0')
+      .notNull(),
+    durationSampleCount: integer('duration_sample_count').default(0).notNull(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    unique('admin_funnel_monthly_cohort_stage_key').on(
+      table.cohortMonth,
+      table.stage,
+    ),
+    pgPolicy('Service role manages admin funnel monthly', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
@@ -10,6 +10,7 @@ import { integrations, orders } from '../../infrastructure/database/schema';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
@@ -36,6 +37,8 @@ export class VerificationHubService {
     private verificationSendService: VerificationSendService,
     private readonly billingEntitlementService: BillingEntitlementService,
     private readonly automationProducer: VerificationAutomationProducer,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async handleNewOrder(
@@ -48,6 +51,16 @@ export class VerificationHubService {
     );
     if (skipReason) {
       return { skipped: true, reason: skipReason };
+    }
+
+    const isTestOrder = orderData.externalOrderId.startsWith('akeed-test-');
+    if (!isTestOrder) {
+      await this.adminLifecycles?.markMilestone(
+        integration.id,
+        'firstEligibleOrderAt',
+        undefined,
+        { eligible_real_cod_detected: 'captured_exact' },
+      );
     }
 
     this.logger.log(
@@ -445,6 +458,7 @@ export class VerificationHubService {
       currency: orderData.currency,
       paymentMethod: orderData.paymentMethod,
       rawPayload: orderData.rawPayload,
+      isTest: orderData.externalOrderId.startsWith('akeed-test-'),
     };
   }
 }

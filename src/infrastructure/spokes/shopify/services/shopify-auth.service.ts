@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +15,7 @@ import { createClient } from '@supabase/supabase-js';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
+import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
 import {
   buildBackendLog,
   normalizeError,
@@ -59,13 +61,17 @@ export class ShopifyAuthService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly organizationsRepo: OrganizationsRepository,
     private readonly membershipsRepo: MembershipsRepository,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async isInstalled(shop: string): Promise<boolean> {
     this.assertValidShop(shop);
-    return Boolean(
-      await this.integrationsRepo.findByPlatformDomain(shop, 'shopify'),
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shop,
+      'shopify',
     );
+    return Boolean(integration?.isActive);
   }
 
   install(shop: string, host?: string): string {
@@ -135,6 +141,8 @@ export class ShopifyAuthService {
 
     // Register webhooks and ensure critical topics are active
     await this.registerWebhooks(shop, accessToken);
+    await this.syncShopProfile(shop, accessToken);
+    await this.recordInstallation(shop);
 
     // Redirect to app dashboard after successful installation
     const resolvedHost = host ?? statePayload.host ?? undefined;
@@ -212,6 +220,8 @@ export class ShopifyAuthService {
 
     // Register webhooks and ensure critical topics are active
     await this.registerWebhooks(shop, accessToken);
+    await this.syncShopProfile(shop, accessToken);
+    await this.recordInstallation(shop);
 
     this.logger.log(
       buildBackendLog(ShopifyAuthService.name, {
@@ -221,6 +231,73 @@ export class ShopifyAuthService {
       }),
     );
     return { installed: true, shop };
+  }
+
+  private async recordInstallation(shop: string): Promise<void> {
+    if (!this.adminLifecycles) return;
+    const integration = await this.integrationsRepo.findByPlatformDomain(
+      shop,
+      'shopify',
+    );
+    if (!integration) return;
+    await this.adminLifecycles.startInstallation({
+      orgId: integration.orgId,
+      integrationId: integration.id,
+      provenance: { installation_completed: 'captured_exact' },
+    });
+  }
+
+  private async syncShopProfile(
+    shop: string,
+    accessToken: string,
+  ): Promise<void> {
+    try {
+      const apiVersion = this.getShopifyApiVersion();
+      const response = await firstValueFrom(
+        this.httpService.post<{
+          data?: {
+            shop?: {
+              name?: string;
+              billingAddress?: { countryCodeV2?: string };
+              ianaTimezone?: string;
+            };
+          };
+        }>(
+          `https://${shop}/admin/api/${apiVersion}/graphql.json`,
+          {
+            query: `query AkeedAdminShopProfile {
+              shop {
+                name
+                ianaTimezone
+                billingAddress { countryCodeV2 }
+              }
+            }`,
+          },
+          { headers: { 'X-Shopify-Access-Token': accessToken } },
+        ),
+      );
+      const profile = response.data.data?.shop;
+      const integration = await this.integrationsRepo.findByPlatformDomain(
+        shop,
+        'shopify',
+      );
+      if (!profile || !integration) return;
+      await this.integrationsRepo.updateById(integration.id, {
+        storeName: profile.name ?? integration.storeName,
+        countryCode:
+          profile.billingAddress?.countryCodeV2 ?? integration.countryCode,
+        shopTimezone: profile.ianaTimezone ?? integration.shopTimezone,
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(ShopifyAuthService.name, {
+          action: 'shopify-shop-profile-sync',
+          outcome: 'skipped',
+          shopDomain: shop,
+          ...normalizeError(error),
+        }),
+      );
+    }
   }
 
   private verifyHmac(query: Record<string, string | undefined>): void {

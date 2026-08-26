@@ -4,10 +4,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { integrations } from '../../infrastructure/database/schema';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_SHIPPING_CURRENCIES,
@@ -50,6 +52,8 @@ export class OnboardingStateService {
     private readonly integrationsRepo: IntegrationsRepository,
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -171,6 +175,13 @@ export class OnboardingStateService {
     if (!updated) {
       throw new NotFoundException('Integration not found');
     }
+
+    await this.adminLifecycles?.markMilestone(
+      integration.id,
+      'onboardingStartedAt',
+      undefined,
+      { onboarding_started: 'captured_exact' },
+    );
 
     return this.toState(updated);
   }

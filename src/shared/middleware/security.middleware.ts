@@ -2,6 +2,7 @@ import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
 import { buildBackendLog } from '../logging/backend-log.util';
+import { randomUUID } from 'crypto';
 
 /**
  * Security Middleware
@@ -21,6 +22,12 @@ export class SecurityMiddleware implements NestMiddleware {
   constructor(private readonly configService: ConfigService) {}
 
   use(req: Request, res: Response, next: NextFunction) {
+    const requestId =
+      (Array.isArray(req.headers['x-request-id'])
+        ? req.headers['x-request-id'][0]
+        : req.headers['x-request-id']) ?? randomUUID();
+    req.headers['x-request-id'] = requestId;
+    res.setHeader('X-Request-Id', requestId);
     // Set Content Security Policy
     // IMPORTANT: Must allow frame-ancestors for Shopify embedding
     this.setCSPHeaders(res);
@@ -148,6 +155,7 @@ export class SecurityMiddleware implements NestMiddleware {
       'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning, x-shopify-access-token',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
   }
 

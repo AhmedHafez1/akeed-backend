@@ -23,6 +23,7 @@ import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shopify-api.service';
 import { DatabaseModule } from './infrastructure/database';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { DatabaseModule } from './infrastructure/database';
     WebhookQueueModule,
     VerificationAutomationModule,
     DatabaseModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [

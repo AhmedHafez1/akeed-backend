@@ -27,16 +27,46 @@ function createMocks() {
   const webhookEventsRepo = {
     insertIfNew: jest.fn().mockResolvedValue({ id: 'wh-1' }),
   };
+  const adminLifecycles = {
+    markUninstalled: jest.fn(),
+  };
 
   const service = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     webhookEventsRepo as any,
+    adminLifecycles as any,
   );
 
-  return { service, integrationsRepo, webhookEventsRepo };
+  return { service, integrationsRepo, webhookEventsRepo, adminLifecycles };
 }
 
 describe('ShopifyBillingWebhookService', () => {
+  describe('handleAppUninstalled', () => {
+    it('retains the integration while clearing credentials and closing the lifecycle', async () => {
+      const { service, integrationsRepo, adminLifecycles } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
+      );
+
+      await service.handleAppUninstalled(
+        { id: 123 } as any,
+        'test.myshopify.com',
+      );
+
+      expect(adminLifecycles.markUninstalled).toHaveBeenCalledWith(
+        'int-1',
+        expect.any(String),
+      );
+      expect(integrationsRepo.updateById).toHaveBeenCalledWith('int-1', {
+        isActive: false,
+        accessToken: null,
+        webhookSecret: null,
+        expiresAt: null,
+      });
+      expect(integrationsRepo.deleteById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleAppSubscriptionUpdate — current subscription', () => {
     it('updates billing status for the current subscription', async () => {
       const { service, integrationsRepo } = createMocks();

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
+import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
   ShopifyAppUninstalledDto,
@@ -19,6 +20,8 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async handleAppUninstalled(
@@ -50,7 +53,14 @@ export class ShopifyBillingWebhookService {
       return { received: true };
     }
 
-    await this.integrationsRepo.deleteById(integration.id);
+    const uninstalledAt = new Date().toISOString();
+    await this.adminLifecycles?.markUninstalled(integration.id, uninstalledAt);
+    await this.integrationsRepo.updateById(integration.id, {
+      isActive: false,
+      accessToken: null,
+      webhookSecret: null,
+      expiresAt: null,
+    });
     return { received: true };
   }
 

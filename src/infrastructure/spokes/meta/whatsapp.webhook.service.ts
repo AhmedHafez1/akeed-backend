@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { VerificationsRepository } from '../../database/repositories/verifications.repository';
 import { VerificationHubService } from '../../../modules/verification-core/verification-hub.service';
+import { AdminStoreLifecyclesRepository } from '../../database/repositories/admin-store-lifecycles.repository';
 import {
   WhatsAppMessageDto,
   WhatsAppStatusDto,
@@ -19,6 +20,8 @@ export class WhatsAppWebhookService {
   constructor(
     private verificationsRepo: VerificationsRepository,
     private verificationHub: VerificationHubService,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async processIncoming(
@@ -121,6 +124,13 @@ export class WhatsAppWebhookService {
           verificationId,
           newStatus,
         );
+        await this.adminLifecycles?.recordMessageStatus({
+          verificationId,
+          status: newStatus,
+          occurredAt: message.timestamp
+            ? new Date(Number(message.timestamp) * 1000).toISOString()
+            : undefined,
+        });
       } else {
         this.logger.warn(
           buildBackendLog(WhatsAppWebhookService.name, {
@@ -165,6 +175,15 @@ export class WhatsAppWebhookService {
             status: typedStatus,
           }),
         );
+        if (typedStatus === 'delivered' || typedStatus === 'read') {
+          await this.adminLifecycles?.recordMessageStatus({
+            verificationId: rows[0].id,
+            status: typedStatus,
+            occurredAt: statusObj.timestamp
+              ? new Date(Number(statusObj.timestamp) * 1000).toISOString()
+              : undefined,
+          });
+        }
       } else {
         this.logger.warn(
           buildBackendLog(WhatsAppWebhookService.name, {
