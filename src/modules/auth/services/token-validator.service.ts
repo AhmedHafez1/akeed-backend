@@ -187,13 +187,15 @@ export class TokenValidatorService {
         'shopify',
       );
 
-      if (!integration) {
+      if (!integration || !integration.isActive) {
         this.logger.warn(
           buildBackendLog(TokenValidatorService.name, {
             action: 'token-validate-shopify',
             outcome: 'failure',
             shopDomain: shop,
-            reason: 'integration_not_found',
+            reason: integration
+              ? 'integration_inactive'
+              : 'integration_not_found',
           }),
         );
         throw new UnauthorizedException('Shop not registered');

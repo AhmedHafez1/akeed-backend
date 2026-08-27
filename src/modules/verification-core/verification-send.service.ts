@@ -16,6 +16,7 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 
 export type SendKind = 'initial' | 'follow_up';
 
@@ -33,6 +34,16 @@ interface ResolvedContext {
   order: NonNullable<Awaited<ReturnType<OrdersRepository['findById']>>>;
   integration: typeof integrations.$inferSelect;
 }
+
+type ContextLoadResult =
+  | { context: ResolvedContext; reason?: never }
+  | {
+      context: null;
+      reason:
+        | 'verification_not_found'
+        | 'integration_inactive'
+        | 'billing_not_active';
+    };
 
 /**
  * Shared service that performs the actual WhatsApp template send
@@ -62,25 +73,33 @@ export class VerificationSendService {
   ) {}
 
   async sendInitial(verificationId: string): Promise<SendOutcome> {
-    const ctx = await this.loadContext(verificationId);
-    if (!ctx) return { status: 'skipped', reason: 'verification_not_found' };
-    return this.sendOnce(ctx, 'initial');
+    const result = await this.loadContext(verificationId);
+    if (!result.context) {
+      return { status: 'skipped', reason: result.reason };
+    }
+    return this.sendOnce(result.context, 'initial');
   }
 
   async sendFollowUp(verificationId: string): Promise<SendOutcome> {
-    const ctx = await this.loadContext(verificationId);
-    if (!ctx) return { status: 'skipped', reason: 'verification_not_found' };
-    return this.sendOnce(ctx, 'follow_up');
+    const result = await this.loadContext(verificationId);
+    if (!result.context) {
+      return { status: 'skipped', reason: result.reason };
+    }
+    return this.sendOnce(result.context, 'follow_up');
   }
 
   private async loadContext(
     verificationId: string,
-  ): Promise<ResolvedContext | null> {
+  ): Promise<ContextLoadResult> {
     const verification = await this.verificationsRepo.findById(verificationId);
-    if (!verification) return null;
+    if (!verification) {
+      return { context: null, reason: 'verification_not_found' };
+    }
 
     const order = await this.ordersRepo.findById(verification.orderId);
-    if (!order) return null;
+    if (!order) {
+      return { context: null, reason: 'verification_not_found' };
+    }
 
     const integration =
       (order.integration as typeof integrations.$inferSelect | null) ??
@@ -99,9 +118,40 @@ export class VerificationSendService {
         })) ??
       null;
 
-    if (!integration) return null;
+    if (!integration) {
+      return { context: null, reason: 'verification_not_found' };
+    }
 
-    return { verification, order, integration };
+    if (!integration.isActive) {
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'loadContext.integrationEligibility',
+          outcome: 'skipped',
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId,
+          reason: 'integration_inactive',
+        }),
+      );
+      return { context: null, reason: 'integration_inactive' };
+    }
+
+    if (!isBillingStatusActive(integration.billingStatus)) {
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'loadContext.integrationEligibility',
+          outcome: 'skipped',
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId,
+          billingStatus: integration.billingStatus ?? 'unknown',
+          reason: 'billing_not_active',
+        }),
+      );
+      return { context: null, reason: 'billing_not_active' };
+    }
+
+    return { context: { verification, order, integration } };
   }
 
   private async sendOnce(

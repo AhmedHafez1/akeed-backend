@@ -1,8 +1,7 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
-import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
   ShopifyAppUninstalledDto,
@@ -20,8 +19,6 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
-    @Optional()
-    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async handleAppUninstalled(
@@ -54,13 +51,10 @@ export class ShopifyBillingWebhookService {
     }
 
     const uninstalledAt = new Date().toISOString();
-    await this.adminLifecycles?.markUninstalled(integration.id, uninstalledAt);
-    await this.integrationsRepo.updateById(integration.id, {
-      isActive: false,
-      accessToken: null,
-      webhookSecret: null,
-      expiresAt: null,
-    });
+    await this.integrationsRepo.markShopifyUninstalled(
+      integration.id,
+      uninstalledAt,
+    );
     return { received: true };
   }
 
@@ -131,6 +125,18 @@ export class ShopifyBillingWebhookService {
       return { received: true };
     }
 
+    if (!integration.isActive) {
+      this.logger.warn(
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.integrationUninstalled',
+          outcome: 'skipped',
+          shopDomain,
+          billingStatus: normalizedStatus,
+        }),
+      );
+      return { received: true };
+    }
+
     const now = new Date().toISOString();
     const incomingSubscriptionId = this.resolveSubscriptionId(payload);
     const isBlockedStatus = this.isBlockedBillingStatus(normalizedStatus);
@@ -158,19 +164,12 @@ export class ShopifyBillingWebhookService {
       return { received: true };
     }
 
-    const nextIsActive = isBlockedStatus
-      ? false
-      : isActiveStatus
-        ? true
-        : integration.isActive;
-
     await this.integrationsRepo.updateById(integration.id, {
       billingStatus: normalizedStatus,
       billingStatusUpdatedAt: now,
       shopifySubscriptionId: incomingSubscriptionId,
       billingActivatedAt: isActiveStatus ? now : integration.billingActivatedAt,
       billingCanceledAt: isBlockedStatus ? now : null,
-      isActive: nextIsActive,
     });
 
     if (isBlockedStatus) {

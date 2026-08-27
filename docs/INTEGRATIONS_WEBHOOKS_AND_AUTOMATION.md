@@ -104,11 +104,15 @@ If the idempotency key already exists, returns `{ received: true, duplicate: tru
 
 Handled statuses: `active`, `cancelled`, `declined`, `expired`, `frozen`.
 
+Billing webhooks never change `is_active`, which is reserved for Shopify installation state. Updates received for an uninstalled integration are acknowledged and ignored so a late `active` event cannot reactivate service.
+
 Smart filtering: ignores blocked-status webhooks for non-current subscriptions. This prevents a failed upgrade attempt from disabling the active billing on the current plan.
 
 ### Uninstall Webhook
 
-`APP_UNINSTALLED` deletes the integration record from the database, effectively deactivating the store.
+`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Historical configuration, plan, subscription, order, and verification records remain until `shop/redact` performs the GDPR wipe.
+
+Queued automation re-checks both installation and billing state at execution time. Pending initial sends become `failed` with an `integration_inactive` or `billing_not_active` reason; follow-up and escalation jobs retain the existing verification status and record skip metadata. No quota is reserved and no WhatsApp send, quiet-hours reschedule, or Shopify tag is attempted for blocked jobs.
 
 ### GDPR Webhooks
 
@@ -671,7 +675,7 @@ npm --prefix akeed-backend run build
 | WhatsApp send failure                                  | Billing reservation released, verification marked `failed`.                             |
 | APP_SUBSCRIPTIONS_UPDATE with status active            | Integration billing status updated to `active`.                                         |
 | APP_SUBSCRIPTIONS_UPDATE for non-current subscription  | Webhook ignored (smart filtering).                                                      |
-| APP_UNINSTALLED webhook                                | Integration record deleted.                                                             |
+| APP_UNINSTALLED webhook                                | Integration disabled, credentials cleared, billing cancelled, lifecycle closed.         |
 | GDPR customer data request                             | Orders + verifications exported for the customer.                                       |
 | GDPR customer redact                                   | All customer data deleted.                                                              |
 | GDPR shop redact                                       | All store data deleted.                                                                 |

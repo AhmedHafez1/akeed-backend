@@ -50,6 +50,8 @@ function createMocks() {
 const baseIntegration = {
   id: 'int-1',
   orgId: 'org-1',
+  isActive: true,
+  billingStatus: 'active',
   isAutoVerifyEnabled: true,
   followUpEnabled: true,
   followUpDelayMinutes: 120,
@@ -83,6 +85,115 @@ function buildJob(
 }
 
 describe('VerificationAutomationProcessor', () => {
+  describe('integration eligibility', () => {
+    it.each([
+      VerificationAutomationJobType.INITIAL_SEND,
+      VerificationAutomationJobType.FOLLOW_UP,
+      VerificationAutomationJobType.ESCALATE_NO_REPLY,
+    ])('skips %s after uninstall without outbound work', async (jobType) => {
+      const {
+        processor,
+        verificationsRepo,
+        ordersRepo,
+        verificationSendService,
+        verificationHub,
+        orderTaggingPort,
+      } = createMocks();
+      const isInitial = jobType === VerificationAutomationJobType.INITIAL_SEND;
+      const isEscalation =
+        jobType === VerificationAutomationJobType.ESCALATE_NO_REPLY;
+
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: isInitial ? 'pending' : 'sent',
+        followUpAttempts: isEscalation ? 1 : 0,
+        merchantCanceledAt: null,
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-1',
+        integration: { ...baseIntegration, isActive: false },
+      });
+
+      const job = buildJob(jobType);
+      await processor.process(job);
+
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(verificationSendService.sendFollowUp).not.toHaveBeenCalled();
+      expect(
+        verificationHub.scheduleFollowUpAndEscalation,
+      ).not.toHaveBeenCalled();
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+      expect(job.moveToDelayed).not.toHaveBeenCalled();
+
+      if (isInitial) {
+        expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+          'ver-1',
+          'org-1',
+          expect.objectContaining({
+            status: 'failed',
+            metadata: expect.objectContaining({
+              reason: 'integration_inactive',
+            }) as Record<string, unknown>,
+          }),
+        );
+      } else {
+        expect(verificationsRepo.mergeMetadata).toHaveBeenCalledWith(
+          'ver-1',
+          expect.objectContaining({
+            [isEscalation ? 'escalation_skipped' : 'follow_up_skipped']:
+              'integration_inactive',
+          }),
+        );
+      }
+    });
+
+    it('blocks delayed work when billing is inactive but installation remains active', async () => {
+      const {
+        processor,
+        verificationsRepo,
+        ordersRepo,
+        verificationSendService,
+      } = createMocks();
+
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'pending',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-1',
+        integration: {
+          ...baseIntegration,
+          isActive: true,
+          billingStatus: 'cancelled',
+        },
+      });
+
+      await processor.process(
+        buildJob(VerificationAutomationJobType.INITIAL_SEND),
+      );
+
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+        'ver-1',
+        'org-1',
+        expect.objectContaining({
+          status: 'failed',
+          metadata: expect.objectContaining({
+            reason: 'billing_not_active',
+          }) as Record<string, unknown>,
+        }),
+      );
+    });
+  });
+
   describe('FOLLOW_UP', () => {
     it('skips when follow-up disabled', async () => {
       const {

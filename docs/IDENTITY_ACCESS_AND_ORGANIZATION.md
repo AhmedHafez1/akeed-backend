@@ -249,14 +249,16 @@ Unique constraint on `(org_id, user_id)`. RLS policies: owners have all operatio
 
 **Integrations table (auth-relevant columns):**
 
-| Column               | Type    | Notes                                        |
-| -------------------- | ------- | -------------------------------------------- |
-| `id`                 | UUID    | Primary key.                                 |
-| `org_id`             | UUID    | FK → organizations.                          |
-| `platform_type`      | enum    | `shopify`, `salla`, `zid`, `woocommerce`.    |
-| `platform_store_url` | string  | Shop domain (e.g., `mystore.myshopify.com`). |
-| `access_token`       | string  | Encrypted at rest (AES-256-GCM).             |
-| `is_active`          | boolean | Deactivated on app uninstall.                |
+| Column               | Type    | Notes                                                   |
+| -------------------- | ------- | ------------------------------------------------------- |
+| `id`                 | UUID    | Primary key.                                            |
+| `org_id`             | UUID    | FK → organizations.                                     |
+| `platform_type`      | enum    | `shopify`, `salla`, `zid`, `woocommerce`.               |
+| `platform_store_url` | string  | Shop domain (e.g., `mystore.myshopify.com`).            |
+| `access_token`       | string  | Encrypted at rest (AES-256-GCM).                        |
+| `is_active`          | boolean | Shopify installation state; false only after uninstall. |
+
+`is_active` is independent of billing. Subscription eligibility is represented by `billing_status`; only `active` and `not_required` allow verification sends. Shopify session authentication rejects inactive installations.
 
 ### Organization Creation
 

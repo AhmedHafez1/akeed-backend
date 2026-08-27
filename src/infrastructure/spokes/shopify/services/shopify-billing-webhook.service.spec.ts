@@ -1,6 +1,6 @@
 import { ShopifyBillingWebhookService } from './shopify-billing-webhook.service';
 
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
 
 function makeIntegration(overrides: Record<string, unknown> = {}) {
   return {
@@ -23,27 +23,23 @@ function createMocks() {
     findByPlatformDomain: jest.fn(),
     updateById: jest.fn(),
     deleteById: jest.fn(),
+    markShopifyUninstalled: jest.fn(),
   };
   const webhookEventsRepo = {
     insertIfNew: jest.fn().mockResolvedValue({ id: 'wh-1' }),
   };
-  const adminLifecycles = {
-    markUninstalled: jest.fn(),
-  };
-
   const service = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     webhookEventsRepo as any,
-    adminLifecycles as any,
   );
 
-  return { service, integrationsRepo, webhookEventsRepo, adminLifecycles };
+  return { service, integrationsRepo, webhookEventsRepo };
 }
 
 describe('ShopifyBillingWebhookService', () => {
   describe('handleAppUninstalled', () => {
     it('retains the integration while clearing credentials and closing the lifecycle', async () => {
-      const { service, integrationsRepo, adminLifecycles } = createMocks();
+      const { service, integrationsRepo } = createMocks();
       integrationsRepo.findByPlatformDomain.mockResolvedValue(
         makeIntegration(),
       );
@@ -53,16 +49,11 @@ describe('ShopifyBillingWebhookService', () => {
         'test.myshopify.com',
       );
 
-      expect(adminLifecycles.markUninstalled).toHaveBeenCalledWith(
+      expect(integrationsRepo.markShopifyUninstalled).toHaveBeenCalledWith(
         'int-1',
         expect.any(String),
       );
-      expect(integrationsRepo.updateById).toHaveBeenCalledWith('int-1', {
-        isActive: false,
-        accessToken: null,
-        webhookSecret: null,
-        expiresAt: null,
-      });
+      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
       expect(integrationsRepo.deleteById).not.toHaveBeenCalled();
     });
   });
@@ -88,8 +79,10 @@ describe('ShopifyBillingWebhookService', () => {
         'int-1',
         expect.objectContaining({
           billingStatus: 'cancelled',
-          isActive: false,
         }),
+      );
+      expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
+        'isActive',
       );
     });
   });
@@ -187,8 +180,10 @@ describe('ShopifyBillingWebhookService', () => {
         expect.objectContaining({
           billingStatus: 'active',
           shopifySubscriptionId: 'gid://shopify/AppSubscription/NEW',
-          isActive: true,
         }),
+      );
+      expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
+        'isActive',
       );
     });
   });
@@ -216,9 +211,33 @@ describe('ShopifyBillingWebhookService', () => {
         'int-1',
         expect.objectContaining({
           billingStatus: 'declined',
-          isActive: false,
         }),
       );
+      expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
+        'isActive',
+      );
+    });
+  });
+
+  describe('handleAppSubscriptionUpdate — uninstalled integration', () => {
+    it('acknowledges without changing billing or installation state', async () => {
+      const { service, integrationsRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration({ isActive: false, billingStatus: 'cancelled' }),
+      );
+
+      const result = await service.handleAppSubscriptionUpdate(
+        {
+          id: 'gid://shopify/AppSubscription/CURRENT',
+          status: 'ACTIVE',
+        },
+        'test.myshopify.com',
+        'webhook-uninstalled',
+        'app_subscriptions/update',
+      );
+
+      expect(result).toEqual({ received: true });
+      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
     });
   });
 
@@ -249,4 +268,4 @@ describe('ShopifyBillingWebhookService', () => {
   });
 });
 
-/* eslint-enable @typescript-eslint/no-unsafe-argument */
+/* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */

@@ -42,6 +42,8 @@ function createMocks() {
 const baseIntegration = {
   id: 'int-1',
   orgId: 'org-1',
+  isActive: true,
+  billingStatus: 'active',
   storeName: 'Akeed Fashion',
   defaultLanguage: 'ar',
   codTemplateArVariant: 'gulf',
@@ -259,6 +261,52 @@ describe('VerificationSendService', () => {
       expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
       expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
     });
+
+    it.each([
+      [
+        'an uninstalled integration',
+        { isActive: false, billingStatus: 'active' },
+        'integration_inactive',
+      ],
+      [
+        'inactive billing',
+        { isActive: true, billingStatus: 'cancelled' },
+        'billing_not_active',
+      ],
+    ])(
+      'skips before reserving quota for %s',
+      async (_label, integrationOverrides, expectedReason) => {
+        const {
+          service,
+          verificationsRepo,
+          ordersRepo,
+          billingEntitlementService,
+          messagingPort,
+        } = createMocks();
+
+        verificationsRepo.findById.mockResolvedValue({
+          id: 'ver-1',
+          orderId: 'order-1',
+          orgId: 'org-1',
+        });
+        ordersRepo.findById.mockResolvedValue({
+          id: 'order-1',
+          orgId: 'org-1',
+          customerPhone: '+966500000000',
+          externalOrderId: 'ext-1',
+          integration: { ...baseIntegration, ...integrationOverrides },
+        });
+
+        await expect(service.sendInitial('ver-1')).resolves.toEqual({
+          status: 'skipped',
+          reason: expectedReason,
+        });
+        expect(
+          billingEntitlementService.reserveVerificationSlot,
+        ).not.toHaveBeenCalled();
+        expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('sendFollowUp', () => {

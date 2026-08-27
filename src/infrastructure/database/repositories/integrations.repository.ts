@@ -2,9 +2,9 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
-import { integrations } from '../schema';
+import { adminStoreLifecycles, integrations } from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 @Injectable()
@@ -145,6 +145,45 @@ export class IntegrationsRepository {
       .returning();
 
     return result;
+  }
+
+  async markShopifyUninstalled(
+    integrationId: string,
+    occurredAt = new Date().toISOString(),
+  ) {
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(integrations)
+        .set({
+          isActive: false,
+          accessToken: null,
+          webhookSecret: null,
+          expiresAt: null,
+          billingStatus: 'cancelled',
+          pendingBillingPlanId: null,
+          billingCanceledAt: sql`COALESCE(${integrations.billingCanceledAt}, ${occurredAt})`,
+          billingStatusUpdatedAt: occurredAt,
+          updatedAt: occurredAt,
+        })
+        .where(eq(integrations.id, integrationId))
+        .returning();
+
+      await tx
+        .update(adminStoreLifecycles)
+        .set({
+          uninstalledAt: occurredAt,
+          updatedAt: occurredAt,
+          provenance: sql`COALESCE(${adminStoreLifecycles.provenance}, '{}'::jsonb) || '{"uninstall":"captured_exact"}'::jsonb`,
+        })
+        .where(
+          and(
+            eq(adminStoreLifecycles.integrationId, integrationId),
+            isNull(adminStoreLifecycles.uninstalledAt),
+          ),
+        );
+
+      return updated;
+    });
   }
 
   private encryptAccessToken(accessToken: string): string {

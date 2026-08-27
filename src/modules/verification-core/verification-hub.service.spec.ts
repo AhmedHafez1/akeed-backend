@@ -552,6 +552,55 @@ describe('VerificationHubService', () => {
       );
       expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
     });
+
+    it.each(['integration_inactive', 'billing_not_active'])(
+      'marks an immediate initial send failed when execution is skipped for %s',
+      async (reason) => {
+        const {
+          service,
+          ordersRepo,
+          verificationsRepo,
+          orderEligibilityService,
+          verificationSendService,
+          automationProducer,
+        } = createMocks();
+
+        orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+          eligible: true,
+          reason: 'cod_match',
+        });
+        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.create.mockResolvedValue({
+          id: 'order-db-1',
+          orgId: 'org-1',
+          externalOrderId: 'ext-order-1',
+        });
+        verificationsRepo.findByOrderId.mockResolvedValue(null);
+        verificationsRepo.create.mockResolvedValue({
+          id: 'ver-1',
+          orgId: 'org-1',
+        });
+        verificationSendService.sendInitial.mockResolvedValue({
+          status: 'skipped',
+          reason,
+        });
+
+        await service.handleNewOrder(buildOrder(), buildIntegration());
+
+        expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+          'ver-1',
+          'org-1',
+          expect.objectContaining({
+            status: 'failed',
+            metadata: expect.objectContaining({ reason }) as Record<
+              string,
+              unknown
+            >,
+          }),
+        );
+        expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('handleNewOrder — delayed initial send (sendDelayMinutes>0)', () => {
@@ -897,6 +946,25 @@ describe('VerificationHubService', () => {
       });
 
       await service.finalizeVerification('ver-1', 'pending');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('does not tag Shopify after the integration is uninstalled', async () => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+        integration: buildIntegration({ isActive: false }),
+      });
+
+      await service.finalizeVerification('ver-1', 'confirmed');
 
       expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
     });

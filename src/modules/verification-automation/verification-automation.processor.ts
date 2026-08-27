@@ -23,6 +23,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 
 const TERMINAL_OR_FINAL_STATUSES = [
   'confirmed',
@@ -131,6 +132,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
       return;
     }
 
+    if (await this.skipUnavailableIntegration(ctx, 'initial')) return;
+
     if (await this.delayIfQuietHours(job, ctx.integration, token)) return;
 
     const outcome = await this.verificationSendService.sendInitial(
@@ -152,6 +155,22 @@ export class VerificationAutomationProcessor extends WorkerHost {
           status: 'failed',
           metadata: {
             reason: 'plan_limit_reached',
+            kind: 'initial',
+          },
+        },
+      );
+    } else if (
+      outcome.status === 'skipped' &&
+      (outcome.reason === 'integration_inactive' ||
+        outcome.reason === 'billing_not_active')
+    ) {
+      await this.verificationsRepo.updateByIdForOrg(
+        ctx.verification.id,
+        ctx.verification.orgId,
+        {
+          status: 'failed',
+          metadata: {
+            reason: outcome.reason,
             kind: 'initial',
           },
         },
@@ -226,6 +245,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
       return;
     }
 
+    if (await this.skipUnavailableIntegration(ctx, 'follow_up')) return;
+
     if (await this.delayIfQuietHours(job, integration, token)) return;
 
     const outcome = await this.verificationSendService.sendFollowUp(
@@ -255,6 +276,11 @@ export class VerificationAutomationProcessor extends WorkerHost {
       await this.verificationsRepo.mergeMetadata(verification.id, {
         follow_up_failed: outcome.reason ?? 'unknown',
         follow_up_failed_at: new Date().toISOString(),
+      });
+    } else if (outcome.status === 'skipped') {
+      await this.verificationsRepo.mergeMetadata(verification.id, {
+        follow_up_skipped: outcome.reason ?? 'unknown',
+        follow_up_skipped_at: new Date().toISOString(),
       });
     }
   }
@@ -298,6 +324,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
       );
       return;
     }
+
+    if (await this.skipUnavailableIntegration(ctx, 'escalation')) return;
 
     if (await this.delayIfQuietHours(job, integration, token)) return;
 
@@ -382,6 +410,64 @@ export class VerificationAutomationProcessor extends WorkerHost {
   // ───────────────────────────────────────────────────────────────────────
   // Helpers
   // ───────────────────────────────────────────────────────────────────────
+
+  private async skipUnavailableIntegration(
+    ctx: {
+      verification: NonNullable<
+        Awaited<ReturnType<VerificationsRepository['findById']>>
+      >;
+      integration: typeof integrations.$inferSelect;
+    },
+    kind: 'initial' | 'follow_up' | 'escalation',
+  ): Promise<boolean> {
+    const reason = !ctx.integration.isActive
+      ? 'integration_inactive'
+      : !isBillingStatusActive(ctx.integration.billingStatus)
+        ? 'billing_not_active'
+        : null;
+
+    if (!reason) return false;
+
+    const skippedAt = new Date().toISOString();
+    this.logger.warn(
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action: 'verification-automation-integration-eligibility',
+        outcome: 'skipped',
+        verificationId: ctx.verification.id,
+        orgId: ctx.verification.orgId,
+        integrationId: ctx.integration.id,
+        billingStatus: ctx.integration.billingStatus ?? 'unknown',
+        jobType: kind,
+        reason,
+      }),
+    );
+
+    if (kind === 'initial') {
+      await this.verificationsRepo.updateByIdForOrg(
+        ctx.verification.id,
+        ctx.verification.orgId,
+        {
+          status: 'failed',
+          metadata: {
+            reason,
+            kind: 'initial',
+            skippedAt,
+          },
+        },
+      );
+      return true;
+    }
+
+    const metadataKey =
+      kind === 'follow_up' ? 'follow_up_skipped' : 'escalation_skipped';
+    const timestampKey =
+      kind === 'follow_up' ? 'follow_up_skipped_at' : 'escalation_skipped_at';
+    await this.verificationsRepo.mergeMetadata(ctx.verification.id, {
+      [metadataKey]: reason,
+      [timestampKey]: skippedAt,
+    });
+    return true;
+  }
 
   private async loadContext(verificationId: string): Promise<{
     verification: NonNullable<

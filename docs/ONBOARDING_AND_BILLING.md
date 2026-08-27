@@ -221,8 +221,10 @@ Rules:
 Shopify sends `app_subscriptions/update` webhooks when subscription status changes. Handled by `ShopifyBillingWebhookService`:
 
 - Webhooks are HMAC-verified and deduplicated via `webhook_events`.
-- Active status updates `billingStatus`, `billingActivatedAt`, and `isActive = true`.
-- Blocked statuses (`cancelled`, `declined`, `expired`, `frozen`) set `isActive = false` and `billingCanceledAt`.
+- Active status updates `billingStatus` and `billingActivatedAt`.
+- Blocked statuses (`cancelled`, `declined`, `expired`, `frozen`) update billing fields and `billingCanceledAt` without changing installation state.
+- `isActive` represents whether the Shopify app is installed. Only install and uninstall flows may change it; billing entitlement is controlled by `billingStatus`.
+- Subscription updates for an uninstalled integration are acknowledged without mutating local installation or billing state.
 - Non-current subscription webhooks with blocked status are ignored to prevent a declined upgrade from disabling the merchant's existing active plan.
 
 ## Backend Code Map
@@ -379,7 +381,7 @@ npm --prefix akeed-frontend run build
 | Plan upgrade declined                             | Existing Basic plan stays active and unmodified.                                                                  |
 | Merchant returns to onboarding after decline      | Step 2 loads with declined recovery banner, merchant can retry.                                                   |
 | Completed onboarding merchant visits onboarding   | Redirected to dashboard immediately.                                                                              |
-| Shopify subscription webhook with `frozen` status | `isActive = false`, `billingCanceledAt` set, verification sends blocked.                                          |
+| Shopify subscription webhook with `frozen` status | Installation remains active, `billingCanceledAt` is set, and verification sends are blocked by billing status.    |
 | Shopify webhook for non-current subscription      | Ignored if status is blocked; does not affect current active plan.                                                |
 | Usage limit reached                               | Next verification send returns `plan_limit_reached`, `blockedCount` increments.                                   |
 | Plan change resets usage                          | `consumedCount` and `blockedCount` reset, new `includedLimit` applied.                                            |

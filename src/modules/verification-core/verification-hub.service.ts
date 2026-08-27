@@ -376,6 +376,22 @@ export class VerificationHubService {
           },
         },
       );
+    } else if (
+      sendOutcome.status === 'skipped' &&
+      (sendOutcome.reason === 'integration_inactive' ||
+        sendOutcome.reason === 'billing_not_active')
+    ) {
+      await this.verificationsRepo.updateByIdForOrg(
+        verification.id,
+        order.orgId,
+        {
+          status: 'failed',
+          metadata: {
+            reason: sendOutcome.reason,
+            kind: 'initial',
+          },
+        },
+      );
     }
   }
 
@@ -408,6 +424,20 @@ export class VerificationHubService {
           orgId: String(order.orgId),
           orderId: String(order.externalOrderId),
           reason: 'missing_linked_integration',
+        }),
+      );
+      return;
+    }
+
+    if (!integration.isActive) {
+      this.logger.warn(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-shopify-tag-update',
+          outcome: 'skipped',
+          orgId: String(order.orgId),
+          shopDomain: integration.platformStoreUrl,
+          orderId: String(order.externalOrderId),
+          reason: 'integration_inactive',
         }),
       );
       return;
