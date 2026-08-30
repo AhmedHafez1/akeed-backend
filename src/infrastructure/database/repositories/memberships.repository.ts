@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc, desc, sql } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { memberships } from '../schema';
@@ -49,7 +49,12 @@ export class MembershipsRepository {
     return await this.db
       .select()
       .from(memberships)
-      .where(eq(memberships.userId, userId));
+      .where(eq(memberships.userId, userId))
+      .orderBy(
+        desc(sql<boolean>`${memberships.role} = 'owner'`),
+        asc(memberships.createdAt),
+        asc(memberships.id),
+      );
   }
 
   async deleteByOrgId(orgId: string): Promise<number> {

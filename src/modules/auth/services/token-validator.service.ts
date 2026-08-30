@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -7,7 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
-import { AuthenticatedUser } from '../guards/dual-auth.guard';
+import {
+  AuthenticatedRequestUser,
+  AuthenticatedUser,
+} from '../guards/dual-auth.guard';
 import { IntegrationsRepository } from '../../../infrastructure/database/repositories/integrations.repository';
 import { MembershipsRepository } from '../../../infrastructure/database/repositories/memberships.repository';
 import {
@@ -79,7 +83,7 @@ export class TokenValidatorService {
   async validateToken(
     token: string,
     options?: { allowMissingOrg?: boolean },
-  ): Promise<AuthenticatedUser> {
+  ): Promise<AuthenticatedRequestUser> {
     // Detect token type
     const tokenType = this.detectTokenType(token);
 
@@ -231,6 +235,10 @@ export class TokenValidatorService {
         shop,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error(
         buildBackendLog(TokenValidatorService.name, {
           action: 'token-validate-shopify',
@@ -248,7 +256,7 @@ export class TokenValidatorService {
   private async validateSupabaseToken(
     token: string,
     allowMissingOrg = false,
-  ): Promise<AuthenticatedUser> {
+  ): Promise<AuthenticatedRequestUser> {
     try {
       // Verify JWT with Supabase
       const {
@@ -274,6 +282,22 @@ export class TokenValidatorService {
       const memberships = await this.membershipsRepo.findByUser(userId);
 
       if (!memberships || memberships.length === 0) {
+        if (allowMissingOrg) {
+          this.logger.log(
+            buildBackendLog(TokenValidatorService.name, {
+              action: 'token-validate-supabase',
+              outcome: 'success',
+              userId,
+              reason: 'orgless_identity_allowed',
+            }),
+          );
+          return {
+            userId,
+            orgId: null,
+            source: 'supabase',
+          };
+        }
+
         this.logger.warn(
           buildBackendLog(TokenValidatorService.name, {
             action: 'token-validate-supabase',
@@ -282,14 +306,12 @@ export class TokenValidatorService {
             reason: 'organization_not_found',
           }),
         );
-        if (allowMissingOrg) {
-          return {
-            userId,
-            orgId: '',
-            source: 'supabase',
-          };
-        }
-        throw new UnauthorizedException('User has no organization');
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Authenticated user has no organization',
+          code: 'ORGANIZATION_REQUIRED',
+        });
       }
 
       // Use the first organization (in future, support org switching)
@@ -301,6 +323,10 @@ export class TokenValidatorService {
         source: 'supabase',
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error(
         buildBackendLog(TokenValidatorService.name, {
           action: 'token-validate-supabase',

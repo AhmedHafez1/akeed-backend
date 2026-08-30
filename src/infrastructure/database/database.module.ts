@@ -12,6 +12,7 @@ import { WebhookEventsRepository } from './repositories/webhook-events.repositor
 import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
 import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifecycles.repository';
 import { AdminAccessAuditRepository } from './repositories/admin-access-audit.repository';
+import { StandaloneOrganizationProvisioningRepository } from './repositories/standalone-organization-provisioning.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -27,6 +28,7 @@ import { AdminAccessAuditRepository } from './repositories/admin-access-audit.re
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
     AdminAccessAuditRepository,
+    StandaloneOrganizationProvisioningRepository,
   ],
   exports: [
     drizzleProvider,
@@ -40,6 +42,7 @@ import { AdminAccessAuditRepository } from './repositories/admin-access-audit.re
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
     AdminAccessAuditRepository,
+    StandaloneOrganizationProvisioningRepository,
   ],
 })
 export class DatabaseModule {}

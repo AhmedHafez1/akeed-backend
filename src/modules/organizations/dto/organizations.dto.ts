@@ -1,22 +1,14 @@
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateOrganizationDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   name!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  slug!: string;
 }
 
 export class UpdateOrganizationDto {

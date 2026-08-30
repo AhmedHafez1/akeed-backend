@@ -15,7 +15,10 @@ import {
 import { OrganizationsService } from './organizations.service';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import { AllowOrgless } from '../auth/guards/orgless.decorator';
-import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import type {
+  AuthenticatedRequestUser,
+  AuthenticatedUser,
+} from '../auth/guards/dual-auth.guard';
 import { CurrentUser } from '../auth/guards/current-user.decorator';
 
 @Controller('api/organizations')
@@ -32,15 +35,10 @@ export class OrganizationsController {
   @Post()
   @AllowOrgless()
   async createOrganization(
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedRequestUser,
     @Body() payload: CreateOrganizationDto,
-  ): Promise<{ organization: OrganizationResponseDto }> {
-    const organization = await this.organizationsService.createOrganization(
-      user.userId,
-      payload,
-    );
-
-    return { organization };
+  ): Promise<{ organization: OrganizationResponseDto; created: boolean }> {
+    return this.organizationsService.createOrganization(user, payload);
   }
 
   @Patch('current')

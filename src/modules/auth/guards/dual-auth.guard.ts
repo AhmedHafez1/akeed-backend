@@ -2,6 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  HttpException,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
@@ -28,22 +29,34 @@ import {
  * ```
  * req.user = {
  *   userId: string,      // Unique user ID
- *   orgId: string,       // Organization ID
+ *   orgId: string | null, // Null only on explicitly orgless endpoints
  *   source: 'shopify' | 'supabase',
  *   shop?: string,       // Only present for Shopify tokens
  * }
  * ```
  */
 
-export interface AuthenticatedUser {
+export interface AuthenticatedIdentity {
   userId: string;
-  orgId: string;
   source: 'shopify' | 'supabase';
   shop?: string;
 }
 
+export interface AuthenticatedUser extends AuthenticatedIdentity {
+  orgId: string;
+}
+
+export interface OrglessAuthenticatedUser extends AuthenticatedIdentity {
+  source: 'supabase';
+  orgId: null;
+}
+
+export type AuthenticatedRequestUser =
+  | AuthenticatedUser
+  | OrglessAuthenticatedUser;
+
 export interface RequestWithUser extends Request {
-  user: AuthenticatedUser;
+  user: AuthenticatedRequestUser;
 }
 
 @Injectable()
@@ -106,7 +119,7 @@ export class DualAuthGuard implements CanActivate {
           outcome: 'success',
           requestId: this.getRequestId(request),
           userId: user.userId,
-          orgId: user.orgId,
+          orgId: user.orgId ?? undefined,
           shopDomain: user.shop,
           authSource: user.source,
         }),
@@ -122,6 +135,10 @@ export class DualAuthGuard implements CanActivate {
           ...normalizeError(error),
         }),
       );
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

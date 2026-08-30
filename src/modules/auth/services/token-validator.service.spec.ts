@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { TokenValidatorService } from './token-validator.service';
@@ -31,6 +31,17 @@ function createShopifyToken(): string {
   return `${header}.${payload}.${signature}`;
 }
 
+function createSupabaseToken(): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString(
+    'base64url',
+  );
+  const payload = Buffer.from(
+    JSON.stringify({ aud: 'authenticated', role: 'authenticated' }),
+  ).toString('base64url');
+
+  return `${header}.${payload}.signature`;
+}
+
 function createService(isActive: boolean) {
   const config = {
     getOrThrow: jest.fn((key: string) => {
@@ -57,6 +68,7 @@ function createService(isActive: boolean) {
       .mockResolvedValue([
         { userId: 'owner-1', orgId: 'org-1', role: 'owner' },
       ]),
+    findByUser: jest.fn().mockResolvedValue([]),
   };
   const service = new TokenValidatorService(
     config as unknown as ConfigService,
@@ -65,6 +77,26 @@ function createService(isActive: boolean) {
   );
 
   return { service, membershipsRepo };
+}
+
+function mockSupabaseUser(
+  service: TokenValidatorService,
+  userId = 'standalone-user-1',
+): void {
+  const supabase = (
+    service as unknown as {
+      supabase: {
+        auth: {
+          getUser: () => Promise<unknown>;
+        };
+      };
+    }
+  ).supabase;
+
+  jest.spyOn(supabase.auth, 'getUser').mockResolvedValue({
+    data: { user: { id: userId } },
+    error: null,
+  });
 }
 
 describe('TokenValidatorService Shopify installation state', () => {
@@ -86,5 +118,55 @@ describe('TokenValidatorService Shopify installation state', () => {
       source: 'shopify',
       shop: 'test.myshopify.com',
     });
+  });
+});
+
+describe('TokenValidatorService Supabase organization state', () => {
+  it('returns an explicit orgless identity when the endpoint allows it', async () => {
+    const { service } = createService(true);
+    mockSupabaseUser(service);
+
+    await expect(
+      service.validateToken(createSupabaseToken(), { allowMissingOrg: true }),
+    ).resolves.toEqual({
+      userId: 'standalone-user-1',
+      orgId: null,
+      source: 'supabase',
+    });
+  });
+
+  it('returns ORGANIZATION_REQUIRED for strict protected endpoints', async () => {
+    const { service } = createService(true);
+    mockSupabaseUser(service);
+
+    try {
+      await service.validateToken(createSupabaseToken());
+      throw new Error('Expected organization validation to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      if (!(error instanceof ForbiddenException)) {
+        throw error;
+      }
+      expect(error.getResponse()).toMatchObject({
+        code: 'ORGANIZATION_REQUIRED',
+      });
+    }
+  });
+
+  it('uses the deterministic first membership returned by the repository', async () => {
+    const { service, membershipsRepo } = createService(true);
+    mockSupabaseUser(service);
+    membershipsRepo.findByUser.mockResolvedValue([
+      { userId: 'standalone-user-1', orgId: 'owned-org', role: 'owner' },
+      { userId: 'standalone-user-1', orgId: 'invited-org', role: 'viewer' },
+    ]);
+
+    await expect(service.validateToken(createSupabaseToken())).resolves.toEqual(
+      {
+        userId: 'standalone-user-1',
+        orgId: 'owned-org',
+        source: 'supabase',
+      },
+    );
   });
 });

@@ -118,13 +118,13 @@ Used for standalone SaaS users who sign up with email/password.
 **Signup:**
 
 ```
-Signup page → auth.signUp(email, password, { full_name, company_name })
-  → Supabase creates user with metadata
-  → Frontend redirects to dashboard
-  → First API call: DualAuthGuard → TokenValidatorService detects Supabase
-    (aud === 'authenticated' or role === 'authenticated')
-  → Calls supabase.auth.getUser(token) server-side (service role key)
-  → Looks up membership → if none, AllowOrgless lets user create org
+Signup page → auth.signUp(email, password, { metadata, emailRedirectTo })
+  → Supabase creates user with full_name and company_name metadata
+  → If a session is returned, frontend redirects to dashboard
+  → If confirmation is required, frontend shows a verify-email state
+  → Confirmed session reaches AuthGuard
+  → AuthGuard calls POST /api/organizations before rendering protected content
+  → Backend returns the existing owned org or transactionally creates org + owner membership
 ```
 
 **Login:**
@@ -134,6 +134,7 @@ Login page → auth.signIn(email, password)
   → Supabase returns session (access + refresh tokens)
   → Frontend stores in local storage (Supabase client handles this)
   → Redirects to dashboard
+  → AuthGuard repairs legacy orgless accounts before dashboard APIs run
 ```
 
 **Password Reset:**
@@ -181,10 +182,10 @@ Execution flow:
 1. Extract `Bearer <token>` from `Authorization` header. If missing → 401.
 2. Check `@AllowOrgless()` metadata via Reflector.
 3. Call `TokenValidatorService.validateToken(token, { allowMissingOrg })`.
-4. Attach `AuthenticatedUser` to `request.user`.
-5. If validation fails → 401.
+4. Attach `AuthenticatedUser` or an explicitly allowed orgless Supabase identity to `request.user`.
+5. Preserve authentication failures as 401 and missing tenant context as `403 ORGANIZATION_REQUIRED`.
 
-The `@AllowOrgless()` decorator is used on endpoints that need to work before the user has an organization (e.g., `POST /api/organizations` during standalone onboarding).
+The `@AllowOrgless()` decorator is limited to endpoints that must work before organization provisioning. `POST /api/organizations` is the standalone bootstrap endpoint and rejects Shopify identities.
 
 ## Token Validator Service
 
@@ -271,13 +272,15 @@ During Shopify install (OAuth callback or token exchange), `ShopifyAuthService.h
 3. For new orgs: creates a Supabase user with email `{shop}@akeed-shopify.internal` and a random 32-char password.
 4. Creates owner membership linking the Supabase user to the org.
 
-**Standalone flow (manual):**
+**Standalone flow (automatic and idempotent):**
 
-After signup, the user has no org. During onboarding:
+After the first confirmed Supabase session:
 
-1. Frontend calls `POST /api/organizations` with `{ name, slug }`.
+1. `AuthGuard` calls `POST /api/organizations` with `{ name }` before rendering protected content.
 2. Endpoint is decorated with `@AllowOrgless()` so `DualAuthGuard` passes without an org.
-3. Backend upserts org by slug, creates owner membership.
+3. The backend rejects non-Supabase callers and generates `standalone-{userId}`; clients cannot select tenant slugs.
+4. A database transaction returns the existing owned organization or creates the organization and owner membership.
+5. Repeated, concurrent, and legacy-repair calls converge on the same organization.
 
 ### Organization Update
 
@@ -368,7 +371,12 @@ Shopify session tokens from `window.shopify.idToken()` are cached in a module-le
 1. Skips auth check for public and auth routes (login, signup, forgot-password, etc.).
 2. Checks `supabase.auth.getSession()`.
 3. If no session → redirects to login page.
-4. Listens for `onAuthStateChange` to handle sign-outs reactively.
+4. Provisions or resolves the standalone organization before rendering protected children.
+5. Caches successful provisioning by user ID and clears the cache on sign-out or user change.
+6. Shows retry/sign-out actions for provisioning failures; only a genuine 401 redirects to login.
+7. Listens for `onAuthStateChange` to handle sign-outs reactively.
+
+Admin routes use the same guard for Supabase session checks with organization bootstrap disabled, so staff accounts are not provisioned as merchant tenants.
 
 ### Layout Routing
 
@@ -405,7 +413,7 @@ The `auth` object in `shared/lib/auth.ts` provides:
 
 | Method                    | Purpose                                                |
 | ------------------------- | ------------------------------------------------------ |
-| `signUp(email, pw, meta)` | Supabase signup with full_name, company_name metadata. |
+| `signUp(email, pw, options)` | Supabase signup with metadata and confirmation redirect. |
 | `signIn(email, pw)`       | Supabase login, returns session.                       |
 | `signOut()`               | Supabase sign-out.                                     |
 | `getCurrentUser()`        | Returns current Supabase user.                         |
@@ -440,7 +448,8 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 | Token validator          | `modules/auth/services/token-validator.service.ts`                 | JWT detection (Shopify vs Supabase), signature verification, identity resolution. |
 | Organizations module     | `modules/organizations/organizations.module.ts`                    | Imports `DatabaseModule`, `AuthModule`. Exports `OrganizationsService`.           |
 | Organizations controller | `modules/organizations/organizations.controller.ts`                | `POST /api/organizations`, `PATCH /api/organizations/current`.                    |
-| Organizations service    | `modules/organizations/organizations.service.ts`                   | Org upsert, WhatsApp config update, token decryption on read.                     |
+| Organizations service    | `modules/organizations/organizations.service.ts`                   | Standalone provisioning orchestration and WhatsApp config update.                 |
+| Provisioning repository  | `infrastructure/database/repositories/standalone-organization-provisioning.repository.ts` | Atomic standalone org and membership provisioning.               |
 | Organizations DTOs       | `modules/organizations/dto/organizations.dto.ts`                   | `CreateOrganizationDto`, `UpdateOrganizationDto`, `OrganizationResponseDto`.      |
 | Shopify auth controller  | `infrastructure/spokes/shopify/shopify-auth.controller.ts`         | `GET /api/auth/shopify`, `GET /callback`, `POST /token-exchange`, `GET /check`.   |
 | Shopify auth service     | `infrastructure/spokes/shopify/services/shopify-auth.service.ts`   | OAuth flow, token exchange, persistence, webhook registration.                    |
@@ -463,7 +472,7 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 | Mode detection hook   | `shared/hooks/useAkeedMode.ts`                 | Runtime embedded/standalone detection with App Bridge polling.                      |
 | Embedded context      | `shared/lib/embedded-context.ts`               | Session-level persistence of `shop` + `host` params.                                |
 | Embedded auth gate    | `shared/auth/EmbeddedAuthGate.tsx`             | Install check, token exchange, onboarding gate with caching.                        |
-| Standalone auth guard | `shared/auth/AuthGuard.tsx`                    | Session check, sign-out listener, redirect to login.                                |
+| Standalone auth guard | `shared/auth/AuthGuard.tsx`                    | Session check, organization bootstrap, retry UI, sign-out listener.                  |
 | Embedded auth helpers | `features/onboarding/lib/embeddedAuth.ts`      | `performTokenExchange`, `checkEmbeddedInstall`, onboarding status fetch with retry. |
 | App layout            | `shared/layout/AppLayout.tsx`                  | Mode-aware layout switching (embedded vs standalone).                               |
 | Standalone layout     | `shared/layout/StandaloneLayout.tsx`           | Three-branch routing: auth, public, protected.                                      |
@@ -488,7 +497,7 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 | `GET`   | `/api/auth/shopify/callback`       | Shopify HMAC (query string)         | OAuth code exchange callback.                      |
 | `POST`  | `/api/auth/shopify/token-exchange` | None (session token in body)        | App Bridge v4 seamless install.                    |
 | `GET`   | `/api/auth/shopify/check`          | None (public)                       | Check if shop is installed: `{ installed }`.       |
-| `POST`  | `/api/organizations`               | `DualAuthGuard` + `@AllowOrgless()` | Create organization (standalone onboarding).       |
+| `POST`  | `/api/organizations`               | Supabase + `DualAuthGuard` + `@AllowOrgless()` | Idempotently provision standalone organization. |
 | `PATCH` | `/api/organizations/current`       | `DualAuthGuard`                     | Update WhatsApp config for current org.            |
 
 ### Request / Response Examples
@@ -514,12 +523,13 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 
 ```json
 {
-  "name": "My Company",
-  "slug": "my-company"
+  "name": "My Company"
 }
 ```
 
-Slug validation: max 120 chars, kebab-case regex.
+The name is trimmed and limited to 120 characters. The backend generates the collision-proof slug `standalone-{userId}` and returns `{ organization, created }`.
+
+Strict endpoints return `401` for invalid or expired credentials and `403` with `code: "ORGANIZATION_REQUIRED"` when the identity is valid but tenant context is missing.
 
 **`PATCH /api/organizations/current` request:**
 
@@ -591,7 +601,8 @@ All fields optional. Access token is encrypted before storage.
 ## Known Business Decisions
 
 - Shopify merchants get a Supabase user auto-created with an internal email (`{shop}@akeed-shopify.internal`). This enables a unified user model across both auth modes.
-- The `AllowOrgless` decorator exists solely for the standalone onboarding flow where a user signs up before creating an org.
+- The `AllowOrgless` decorator exists solely for standalone organization bootstrap after a confirmed session.
+- Unconfirmed standalone accounts do not create organization records.
 - Billing callback HMAC is optional: if Shopify omits it, the guard warns but allows the request through, relying on downstream charge status verification.
 - The standalone login page includes a Shopify OAuth section where merchants can enter their shop domain to start the install flow.
 - The embedded layout is dynamically imported with SSR disabled to avoid App Bridge issues during server rendering.
@@ -626,8 +637,9 @@ npm --prefix akeed-frontend run build
 | API call with valid Shopify session token                | `DualAuthGuard` passes, `AuthenticatedUser` attached with `source: 'shopify'`.            |
 | API call with expired Shopify session token              | Frontend retries once with fresh token from `window.shopify.idToken()`.                   |
 | API call with valid Supabase JWT                         | `DualAuthGuard` passes, `AuthenticatedUser` attached with `source: 'supabase'`.           |
-| Standalone signup with email/password                    | Supabase user created, redirect to dashboard, org creation via `POST /api/organizations`. |
-| Standalone login with valid credentials                  | Session returned, redirect to dashboard.                                                  |
+| Standalone signup with immediate session                 | Dashboard gate provisions the organization before protected APIs run.                     |
+| Standalone signup requiring confirmation                 | Verify-email state is shown; organization is provisioned only after confirmation.          |
+| Standalone login with valid credentials                  | Session returns; missing legacy organization is repaired before dashboard render.          |
 | Password reset flow                                      | Email sent, recovery link works, password updated (≥ 8 chars).                            |
 | `GET /api/auth/me` returns org context                   | Response includes `organization` with name, slug, plan_type.                              |
 | Webhook with valid HMAC                                  | `ShopifyHmacGuard` passes, webhook processed.                                             |
@@ -636,8 +648,9 @@ npm --prefix akeed-frontend run build
 | Billing callback with valid HMAC                         | Guard passes, charge verified downstream.                                                 |
 | Billing callback without HMAC                            | Guard warns but allows, relying on charge status verification.                            |
 | Billing callback rate limit exceeded                     | 429 Too Many Requests.                                                                    |
-| `POST /api/organizations` without org (AllowOrgless)     | Org created, membership established.                                                      |
-| `POST /api/organizations` with duplicate slug            | Upsert: existing org updated, no error.                                                   |
+| `POST /api/organizations` without org (AllowOrgless)     | Org and owner membership are created transactionally.                                    |
+| Repeated or concurrent standalone provisioning           | The same user-based organization is returned without duplication.                        |
+| `POST /api/organizations` with Shopify authentication    | 403; Shopify continues using OAuth/token-exchange provisioning.                           |
 | `PATCH /api/organizations/current` with WA config        | Token encrypted and stored, decrypted on read.                                            |
 | Embedded auth gate with cached install status            | No API call, immediate render.                                                            |
 | Embedded auth gate with not-installed shop               | Redirects to OAuth in `_top` frame.                                                       |

@@ -65,6 +65,12 @@ npm run db:push
   - `SHOPIFY_REDIRECT_URI` (usually `${API_URL}/api/auth/shopify/callback`)
   - `SHOPIFY_TOKEN_ENCRYPTION_KEY` (required, AES-256-GCM key used to encrypt `integrations.access_token` at rest; supported formats: 32-byte UTF-8, 64-char hex, or base64-encoded 32-byte key)
 
+## Supabase Email Confirmation
+
+- Add each deployed localized dashboard URL (for example, `https://app.example.com/en/dashboard` and `https://app.example.com/ar/dashboard`) to the Supabase Auth redirect allow list.
+- Standalone signup passes the localized dashboard as `emailRedirectTo`. Confirmed users receive a Supabase session there, and the standalone auth gate provisions their organization before protected APIs run.
+- Accounts that have not confirmed their email do not receive an organization record.
+
 ## Shopify Billing
 
 - Configure billing behavior explicitly with:

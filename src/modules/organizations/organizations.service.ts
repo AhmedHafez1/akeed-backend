@@ -1,35 +1,85 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   CreateOrganizationDto,
   OrganizationResponseDto,
   UpdateOrganizationDto,
 } from './dto/organizations.dto';
 import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
-import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
+import {
+  StandaloneOrganizationProvisioningRepository,
+  StandaloneOrganizationProvisioningResult,
+} from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import type { AuthenticatedRequestUser } from '../auth/guards/dual-auth.guard';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 
 @Injectable()
 export class OrganizationsService {
+  private readonly logger = new Logger(OrganizationsService.name);
+
   constructor(
     private readonly organizationsRepo: OrganizationsRepository,
-    private readonly membershipsRepo: MembershipsRepository,
+    private readonly standaloneProvisioningRepo: StandaloneOrganizationProvisioningRepository,
   ) {}
 
   async createOrganization(
-    userId: string,
+    user: AuthenticatedRequestUser,
     payload: CreateOrganizationDto,
-  ): Promise<OrganizationResponseDto> {
-    const organization = await this.organizationsRepo.createOrUpdateBySlug(
-      payload.name,
-      payload.slug,
-    );
+  ): Promise<{ organization: OrganizationResponseDto; created: boolean }> {
+    if (user.source !== 'supabase') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Standalone organization provisioning requires Supabase auth',
+        code: 'STANDALONE_PROVISIONING_ONLY',
+      });
+    }
 
-    await this.membershipsRepo.createOrUpdateMembership(
-      organization.id,
-      userId,
-      'owner',
-    );
+    try {
+      const result = await this.standaloneProvisioningRepo.provision(
+        user.userId,
+        payload.name,
+      );
 
-    return this.toResponse(organization);
+      this.logProvisioningResult(user.userId, result);
+
+      return {
+        organization: this.toResponse(result.organization),
+        created: result.created,
+      };
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(OrganizationsService.name, {
+          action: 'standalone-organization-provision',
+          outcome: 'failure',
+          userId: user.userId,
+          ...normalizeError(error),
+        }),
+      );
+      throw error;
+    }
+  }
+
+  private logProvisioningResult(
+    userId: string,
+    result: StandaloneOrganizationProvisioningResult,
+  ): void {
+    this.logger.log(
+      buildBackendLog(OrganizationsService.name, {
+        action: 'standalone-organization-provision',
+        outcome: 'success',
+        provisioningResult: result.created ? 'created' : 'existing',
+        userId,
+        orgId: result.organization.id,
+      }),
+    );
   }
 
   async updateCurrentOrganization(

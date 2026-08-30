@@ -1,0 +1,8 @@
+import { buildStandaloneOrganizationSlug } from './standalone-organization-provisioning.repository';
+
+describe('buildStandaloneOrganizationSlug', () => {
+  it('uses the authenticated user ID instead of the company name', () => {
+    expect(buildStandaloneOrganizationSlug('user-1')).toBe('standalone-user-1');
+    expect(buildStandaloneOrganizationSlug('user-2')).toBe('standalone-user-2');
+  });
+});
