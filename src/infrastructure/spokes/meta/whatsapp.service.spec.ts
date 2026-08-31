@@ -1,5 +1,6 @@
 import { of } from 'rxjs';
 import { WhatsAppService } from './whatsapp.service';
+import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -29,8 +30,121 @@ describe('WhatsAppService', () => {
       configService as any,
     );
 
-    return { service, httpService };
+    return { service, httpService, configService };
   }
+
+  it.each(['sendInitial', 'sendFollowUp'] as const)(
+    'uses the actual global sender and selected template through %s',
+    async (method) => {
+      const {
+        service: messaging,
+        httpService,
+        configService,
+      } = createService();
+      const verification = {
+        id: 'ver-1',
+        orderId: 'order-1',
+        status: method === 'sendInitial' ? 'pending' : 'sent',
+      };
+      const integration = {
+        id: 'int-1',
+        orgId: 'org-1',
+        isActive: true,
+        billingStatus: 'active',
+        storeName: 'Synthetic Store',
+        defaultLanguage: 'en',
+        codTemplateEnVariant: 'professional',
+      };
+      const verifications = {
+        findById: jest.fn().mockResolvedValue(verification),
+        updateStatus: jest.fn(),
+      };
+      const orders = {
+        findById: jest.fn().mockResolvedValue({
+          orgId: 'org-1',
+          externalOrderId: '12345',
+          customerPhone: '+14155552671',
+          customerName: 'Synthetic Customer',
+          totalPrice: '123.40',
+          currency: 'USD',
+          integration,
+        }),
+      };
+      const entitlement = {
+        reserveVerificationSlot: jest
+          .fn()
+          .mockResolvedValue({ allowed: true, periodStart: '2026-05-01' }),
+        releaseVerificationSlot: jest.fn(),
+      };
+      const sender = new VerificationSendService(
+        verifications as never,
+        orders as never,
+        {} as never,
+        entitlement as never,
+        messaging,
+      );
+      await expect(sender[method]('ver-1')).resolves.toMatchObject({
+        status: 'sent',
+        waMessageId: 'wamid-1',
+      });
+      expect(configService.get).toHaveBeenNthCalledWith(1, 'WA_ACCESS_TOKEN');
+      expect(configService.get).toHaveBeenNthCalledWith(
+        2,
+        'WA_PHONE_NUMBER_ID',
+      );
+      expect(httpService.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v24.0/phone-id-123/messages',
+        expect.objectContaining({
+          to: '+14155552671',
+          type: 'template',
+          template: expect.objectContaining({
+            name: '_akeed_cod_verification_professional',
+            language: { code: 'en' },
+            components: expect.arrayContaining([
+              expect.objectContaining({
+                type: 'body',
+                parameters: [
+                  {
+                    type: 'text',
+                    parameter_name: 'customer',
+                    text: 'Synthetic Customer',
+                  },
+                  {
+                    type: 'text',
+                    parameter_name: 'store',
+                    text: 'Synthetic Store',
+                  },
+                  { type: 'text', parameter_name: 'order', text: '12345' },
+                  { type: 'text', parameter_name: 'total', text: '123.40 USD' },
+                ],
+              }),
+              expect.objectContaining({
+                type: 'button',
+                parameters: [{ type: 'payload', payload: 'confirm_ver-1' }],
+              }),
+              expect.objectContaining({
+                type: 'button',
+                parameters: [{ type: 'payload', payload: 'cancel_ver-1' }],
+              }),
+            ]) as unknown,
+          }) as unknown,
+        }),
+        {
+          headers: {
+            Authorization: 'Bearer token-123',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      if (method === 'sendInitial')
+        expect(verifications.updateStatus).toHaveBeenCalledWith(
+          'ver-1',
+          'sent',
+          'wamid-1',
+        );
+      else expect(verifications.updateStatus).not.toHaveBeenCalled();
+    },
+  );
 
   it('sends selected EN professional template with four body parameters', async () => {
     const { service, httpService } = createService();

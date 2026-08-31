@@ -1,5 +1,6 @@
 import { VerificationAutomationProcessor } from './verification-automation.processor';
 import type { Job } from 'bullmq';
+import { DelayedError } from 'bullmq';
 import {
   VerificationAutomationJobPayload,
   VerificationAutomationJobType,
@@ -85,6 +86,191 @@ function buildJob(
 }
 
 describe('VerificationAutomationProcessor', () => {
+  describe('remaining E01 boundaries', () => {
+    afterEach(() => jest.useRealTimers());
+    function setup(status = 'sent', integration: Record<string, unknown> = {}) {
+      const mocks = createMocks();
+      const verification = {
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status,
+        followUpAttempts: 0,
+        merchantCanceledAt: null,
+      };
+      mocks.verificationsRepo.findById.mockResolvedValue(verification);
+      mocks.ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        externalOrderId: 'ext-1',
+        integration: { ...baseIntegration, ...integration },
+      });
+      return { ...mocks, verification };
+    }
+
+    it('does not send a second initial message when a completed send job is retried', async () => {
+      const {
+        processor,
+        verificationsRepo,
+        verificationSendService,
+        verificationHub,
+      } = setup();
+      await processor.process(
+        buildJob(VerificationAutomationJobType.INITIAL_SEND),
+      );
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(
+        verificationHub.scheduleFollowUpAndEscalation,
+      ).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it.each(['confirmed', 'canceled', 'failed', 'expired', 'no_reply'])(
+      'blocks follow-up and escalation for %s',
+      async (status) => {
+        const {
+          processor,
+          verificationSendService,
+          verificationsRepo,
+          orderTaggingPort,
+        } = setup(status);
+        await processor.process(
+          buildJob(VerificationAutomationJobType.FOLLOW_UP),
+        );
+        await processor.process(
+          buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+        );
+        expect(verificationSendService.sendFollowUp).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+        expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      VerificationAutomationJobType.INITIAL_SEND,
+      VerificationAutomationJobType.FOLLOW_UP,
+      VerificationAutomationJobType.ESCALATE_NO_REPLY,
+    ])(
+      'reschedules %s during quiet hours using the lock token',
+      async (kind) => {
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2026-05-01T03:00:00.000Z'));
+        const {
+          processor,
+          verificationSendService,
+          verificationsRepo,
+          orderTaggingPort,
+        } = setup(
+          kind === VerificationAutomationJobType.INITIAL_SEND
+            ? 'pending'
+            : 'sent',
+          {
+            quietHoursEnabled: true,
+            quietHoursStart: '21:00',
+            quietHoursEnd: '09:00',
+            timezone: 'Asia/Riyadh',
+          },
+        );
+        const job = buildJob(kind);
+        await expect(
+          processor.process(job, 'synthetic-lock-token'),
+        ).rejects.toBeInstanceOf(DelayedError);
+        expect(job.moveToDelayed).toHaveBeenCalledWith(
+          new Date('2026-05-01T06:00:00.000Z').getTime(),
+          'synthetic-lock-token',
+        );
+        expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+        expect(verificationSendService.sendFollowUp).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+        expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['send_error', 'missing_wamid'])(
+      'records follow-up %s metadata without replacing the original message or status',
+      async (reason) => {
+        const { processor, verificationSendService, verificationsRepo } =
+          setup();
+        verificationSendService.sendFollowUp.mockResolvedValue({
+          status: 'failed',
+          reason,
+        });
+        await processor.process(
+          buildJob(VerificationAutomationJobType.FOLLOW_UP),
+        );
+        expect(verificationsRepo.mergeMetadata).toHaveBeenCalledWith(
+          'ver-1',
+          expect.objectContaining({ follow_up_failed: reason }),
+        );
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+        expect(verificationsRepo.markFollowUpSent).not.toHaveBeenCalled();
+      },
+    );
+
+    it('marks synthetic no-reply orders locally without provider tagging', async () => {
+      const {
+        processor,
+        ordersRepo,
+        verificationsRepo,
+        orderTaggingPort,
+        verification,
+      } = setup();
+      verification.followUpAttempts = 1;
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        externalOrderId: 'akeed-test-123',
+        integration: baseIntegration,
+      });
+      await processor.process(
+        buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+      );
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'ver-1',
+        'no_reply',
+        undefined,
+        undefined,
+      );
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    it('keeps no-reply status when provider tagging fails', async () => {
+      const { processor, orderTaggingPort, verificationsRepo, verification } =
+        setup();
+      verification.followUpAttempts = 1;
+      orderTaggingPort.addOrderTag.mockRejectedValue(
+        new Error('provider tagging failed'),
+      );
+      await expect(
+        processor.process(
+          buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+        ),
+      ).resolves.toBeUndefined();
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledTimes(1);
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'ver-1',
+        'no_reply',
+        undefined,
+        undefined,
+      );
+      expect(orderTaggingPort.addOrderTag).toHaveBeenCalledTimes(1);
+    });
+
+    it('US-06-02: accepted follow-up with failed message persistence can be sent again on retry', async () => {
+      const { processor, verificationSendService, verificationsRepo } = setup();
+      verificationSendService.sendFollowUp.mockResolvedValue({
+        status: 'sent',
+        waMessageId: 'accepted-follow-up',
+      });
+      verificationsRepo.markFollowUpSent.mockRejectedValueOnce(
+        new Error('write failed'),
+      );
+      const job = buildJob(VerificationAutomationJobType.FOLLOW_UP);
+      await expect(processor.process(job)).rejects.toThrow('write failed');
+      await processor.process(job);
+      expect(verificationSendService.sendFollowUp).toHaveBeenCalledTimes(2);
+      expect(verificationsRepo.markFollowUpSent).toHaveBeenCalledTimes(2);
+    });
+  });
   describe('integration eligibility', () => {
     it.each([
       VerificationAutomationJobType.INITIAL_SEND,

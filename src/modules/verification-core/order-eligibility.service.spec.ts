@@ -1,6 +1,7 @@
 import { OrderEligibilityService } from './order-eligibility.service';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
+import { shopifyPaymentFixtures } from '../webhook-queue/normalizers/fixtures/shopify-order.fixture';
 
 describe('OrderEligibilityService', () => {
   let service: OrderEligibilityService;
@@ -18,6 +19,36 @@ describe('OrderEligibilityService', () => {
     service = new OrderEligibilityService(
       new ShopifyOrderEligibilityStrategy(),
     );
+  });
+
+  it.each([
+    'COD',
+    'cash_on_delivery',
+    'collect-on-delivery',
+    'cash on receipt',
+    'الدفع عند الاستلام',
+    'كاش عند الاستلام',
+  ])('accepts normalized paymentMethod %s', (paymentMethod) => {
+    expect(
+      service.evaluateOrderForVerification({
+        order: { ...baseOrder, paymentMethod },
+        integration: { platformType: 'shopify' },
+      }),
+    ).toMatchObject({ eligible: true, reason: 'cod_match' });
+  });
+
+  it.each(
+    shopifyPaymentFixtures.filter(
+      ({ name }) =>
+        !['gateway list', 'prepaid', 'missing signals'].includes(name),
+    ),
+  )('collects payment evidence: $name', ({ payload, eligible }) => {
+    expect(
+      service.evaluateOrderForVerification({
+        order: { ...baseOrder, rawPayload: payload },
+        integration: { platformType: 'shopify' },
+      }).eligible,
+    ).toBe(eligible);
   });
 
   it('marks Shopify COD orders as eligible from payment_gateway_names', () => {

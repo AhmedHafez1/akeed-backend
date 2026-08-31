@@ -54,6 +54,171 @@ const baseIntegration = {
 };
 
 describe('VerificationSendService', () => {
+  describe('failure and retry boundaries', () => {
+    function setup(billingStatus = 'active') {
+      const mocks = createMocks();
+      const verification = {
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'sent',
+        waMessageId: 'original-wamid',
+      };
+      mocks.verificationsRepo.findById.mockResolvedValue(verification);
+      mocks.ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-1',
+        customerPhone: '+201001234567',
+        totalPrice: '123.40',
+        integration: { ...baseIntegration, billingStatus },
+      });
+      mocks.billingEntitlementService.reserveVerificationSlot.mockResolvedValue(
+        {
+          allowed: true,
+          periodStart: '2026-05-01',
+          includedLimit: 1000,
+          consumedCount: 1,
+        },
+      );
+      mocks.messagingPort.sendVerificationTemplate.mockResolvedValue({
+        messages: [{ id: 'new-wamid' }],
+      });
+      return { ...mocks, verification };
+    }
+
+    it.each(['active', 'not_required'])(
+      'allows initial and follow-up sends with %s billing',
+      async (billingStatus) => {
+        const { service, billingEntitlementService, messagingPort } =
+          setup(billingStatus);
+        await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+          status: 'sent',
+        });
+        await expect(service.sendFollowUp('ver-1')).resolves.toMatchObject({
+          status: 'sent',
+        });
+        expect(
+          billingEntitlementService.reserveVerificationSlot,
+        ).toHaveBeenCalledTimes(2);
+        expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it.each(['send_error', 'missing_wamid'])(
+      'follow-up %s releases quota and preserves the original request',
+      async (reason) => {
+        const {
+          service,
+          verificationsRepo,
+          messagingPort,
+          billingEntitlementService,
+          verification,
+        } = setup();
+        if (reason === 'send_error')
+          messagingPort.sendVerificationTemplate.mockRejectedValue(
+            new Error('known rejection'),
+          );
+        else
+          messagingPort.sendVerificationTemplate.mockResolvedValue({
+            messages: [],
+          });
+        await expect(service.sendFollowUp('ver-1')).resolves.toEqual({
+          status: 'failed',
+          reason,
+        });
+        expect(
+          billingEntitlementService.releaseVerificationSlot,
+        ).toHaveBeenCalledWith({
+          integrationId: 'int-1',
+          periodStart: '2026-05-01',
+        });
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+        expect(verification).toMatchObject({
+          status: 'sent',
+          waMessageId: 'original-wamid',
+        });
+      },
+    );
+
+    it('allows a later follow-up attempt after a known rejection with successful release', async () => {
+      const { service, messagingPort, billingEntitlementService } = setup();
+      messagingPort.sendVerificationTemplate.mockRejectedValueOnce(
+        new Error('known rejection'),
+      );
+      await expect(service.sendFollowUp('ver-1')).resolves.toMatchObject({
+        status: 'failed',
+      });
+      await expect(service.sendFollowUp('ver-1')).resolves.toMatchObject({
+        status: 'sent',
+      });
+      expect(
+        billingEntitlementService.reserveVerificationSlot,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        billingEntitlementService.releaseVerificationSlot,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['sendInitial', 'sendFollowUp'] as const)(
+      'US-06-02: %s swallows failed quota release; reservation recovery is not guaranteed',
+      async (method) => {
+        const {
+          service,
+          messagingPort,
+          billingEntitlementService,
+          verificationsRepo,
+        } = setup();
+        messagingPort.sendVerificationTemplate.mockRejectedValue(
+          new Error('provider rejection'),
+        );
+        billingEntitlementService.releaseVerificationSlot.mockRejectedValue(
+          new Error('usage store unavailable'),
+        );
+        await expect(service[method]('ver-1')).resolves.toEqual({
+          status: 'failed',
+          reason: 'send_error',
+        });
+        expect(
+          billingEntitlementService.releaseVerificationSlot,
+        ).toHaveBeenCalledTimes(1);
+        if (method === 'sendInitial')
+          expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+            'ver-1',
+            'failed',
+          );
+        else expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      },
+    );
+
+    it('US-06-02: provider acceptance then failed local persistence leaves a retry able to send and reserve again', async () => {
+      const {
+        service,
+        verificationsRepo,
+        messagingPort,
+        billingEntitlementService,
+        verification,
+      } = setup();
+      verification.status = 'pending';
+      verificationsRepo.updateStatus.mockRejectedValueOnce(
+        new Error('local persistence unavailable'),
+      );
+      await expect(service.sendInitial('ver-1')).rejects.toThrow(
+        'local persistence unavailable',
+      );
+      expect(verification.status).toBe('pending');
+      expect(
+        billingEntitlementService.releaseVerificationSlot,
+      ).not.toHaveBeenCalled();
+      await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+        status: 'sent',
+      });
+      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledTimes(2);
+      expect(
+        billingEntitlementService.reserveVerificationSlot,
+      ).toHaveBeenCalledTimes(2);
+    });
+  });
   describe('sendInitial', () => {
     it('reserves quota at send time and marks status=sent on success', async () => {
       const {

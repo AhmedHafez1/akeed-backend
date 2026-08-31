@@ -1,6 +1,14 @@
 import { VerificationHubService } from './verification-hub.service';
 import type { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import type { integrations } from '../../infrastructure/database/schema';
+import { WhatsAppWebhookService } from '../../infrastructure/spokes/meta/whatsapp.webhook.service';
+import { WebhookQueueProcessor } from '../webhook-queue/webhook-queue.processor';
+import { ShopifyOrderNormalizer } from '../webhook-queue/normalizers/shopify-order.normalizer';
+import { shopifyOrderFixture } from '../webhook-queue/normalizers/fixtures/shopify-order.fixture';
+import { PhoneService } from '../../shared/services/phone.service';
+import { WebhookJobType } from '../webhook-queue/webhook-queue.constants';
+import type { Job } from 'bullmq';
+import type { WebhookJobPayload } from '../webhook-queue/interfaces/webhook-job.interface';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
 
@@ -88,6 +96,7 @@ function createMocks() {
 
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
+    cancelOrder: jest.fn(),
   };
 
   const orderEligibilityService = {
@@ -140,6 +149,133 @@ function createMocks() {
 // ---------------------------------------------------------------------------
 
 describe('VerificationHubService', () => {
+  it.each([
+    ['confirm', 'confirmed', 'Akeed: Verified'],
+    ['cancel', 'canceled', 'Akeed: Canceled'],
+  ])(
+    'composes a Meta %s reply with the real hub without canceling the commerce order',
+    async (action, status, tag) => {
+      const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
+        createMocks();
+      const integration = buildIntegration();
+      const verification = {
+        id: 'ver-1',
+        orderId: 'order-1',
+        status: 'sent',
+        merchantCanceledAt: null,
+      };
+      verificationsRepo.findById.mockResolvedValue(verification);
+      verificationsRepo.updateStatus.mockImplementation(
+        (_id: string, nextStatus: string) => {
+          verification.status = nextStatus;
+          return Promise.resolve([verification]);
+        },
+      );
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-1',
+        orgId: 'org-1',
+        externalOrderId: '12345',
+        integration,
+      });
+      const callback = new WhatsAppWebhookService(
+        verificationsRepo as never,
+        service,
+      );
+      await expect(
+        callback.processIncoming({
+          object: 'whatsapp_business_account',
+          entry: [
+            {
+              changes: [
+                {
+                  value: {
+                    messages: [
+                      {
+                        type: 'button',
+                        button: { payload: `${action}_ver-1` },
+                        timestamp: '1778803200',
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      ).resolves.toEqual({ status: 'success' });
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'ver-1',
+        status,
+        undefined,
+        '1778803200',
+        action === 'cancel' ? { cancellationSource: 'customer' } : {},
+      );
+      expect(verification.status).toBe(status);
+      expect(orderTaggingPort.addOrderTag).toHaveBeenCalledWith(
+        integration,
+        '12345',
+        tag,
+      );
+      expect(orderTaggingPort.cancelOrder).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['unknown', 'inactive'])(
+    'composes worker and real hub for %s store without sending',
+    async (store) => {
+      const {
+        service,
+        verificationSendService,
+        ordersRepo,
+        orderEligibilityService,
+      } = createMocks();
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+      });
+      const eventRepo = {
+        markProcessing: jest.fn(),
+        markCompleted: jest.fn(),
+        markSkipped: jest.fn(),
+      };
+      const integrationRepo = {
+        findByPlatformDomain: jest
+          .fn()
+          .mockResolvedValue(
+            store === 'unknown' ? null : buildIntegration({ isActive: false }),
+          ),
+      };
+      const worker = new WebhookQueueProcessor(
+        [new ShopifyOrderNormalizer(new PhoneService())],
+        eventRepo as never,
+        integrationRepo as never,
+        service,
+      );
+      const job = {
+        id: 'job-1',
+        data: {
+          webhookEventId: 'event-1',
+          platform: 'shopify',
+          jobType: WebhookJobType.ORDER_CREATE,
+          idempotencyKey: 'delivery-1',
+          storeDomain: 'synthetic.myshopify.com',
+          rawPayload: shopifyOrderFixture({
+            orgId: 'forged',
+            integrationId: 'forged',
+          }),
+          receivedAt: '2026-05-15T00:00:00.000Z',
+        },
+      } as Job<WebhookJobPayload>;
+      await worker.process(job);
+      expect(ordersRepo.create).not.toHaveBeenCalled();
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      if (store === 'unknown')
+        expect(eventRepo.markSkipped).toHaveBeenCalledWith(
+          'event-1',
+          'no_integration_found',
+        );
+      else expect(eventRepo.markCompleted).toHaveBeenCalledWith('event-1');
+    },
+  );
   describe('handleNewOrder — eligibility & auto-verify guards', () => {
     it('skips before order creation when COD eligibility fails', async () => {
       const { service, ordersRepo, orderEligibilityService } = createMocks();
