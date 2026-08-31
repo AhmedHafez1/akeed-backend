@@ -1,4 +1,5 @@
 import { BillingService } from './billing.service';
+import type { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
@@ -28,7 +29,10 @@ function makeIntegration(overrides: Record<string, unknown> = {}) {
 function createMocks() {
   const integrationsRepo = {
     findByPlatformDomain: jest.fn(),
-    updateById: jest.fn(),
+    updateById: jest.fn<
+      ReturnType<IntegrationsRepository['updateById']>,
+      Parameters<IntegrationsRepository['updateById']>
+    >(),
   };
   const freePlanClaimsRepo = {
     hasClaim: jest.fn().mockResolvedValue(false),
@@ -176,7 +180,7 @@ describe('BillingService', () => {
 
       // Find the persistBillingState update (the one with planId)
       const activationCall = integrationsRepo.updateById.mock.calls.find(
-        (call: any[]) => call[1].billingPlanId !== undefined,
+        (call) => call[1].billingPlanId !== undefined,
       );
       expect(activationCall).toBeDefined();
       const updates = activationCall![1];

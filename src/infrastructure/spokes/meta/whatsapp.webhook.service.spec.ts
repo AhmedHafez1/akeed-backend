@@ -1,5 +1,8 @@
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
-import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
+import type {
+  WhatsAppWebhookPayloadDto,
+  WhatsAppChangeValueDto,
+} from './dto/whatsapp-webhook.dto';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
@@ -7,10 +10,10 @@ import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function wrap(value: Record<string, unknown>): WhatsAppWebhookPayloadDto {
+function wrap(value: WhatsAppChangeValueDto): WhatsAppWebhookPayloadDto {
   return {
     object: 'whatsapp_business_account',
-    entry: [{ changes: [{ value: value as any }] }],
+    entry: [{ changes: [{ value }] }],
   };
 }
 

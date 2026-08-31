@@ -55,12 +55,10 @@ function createMocks(
     normalizerPlatform?: PlatformType;
   } = {},
 ) {
-  const normalizedOrder = Object.prototype.hasOwnProperty.call(
-    options,
-    'normalizedOrder',
-  )
-    ? options.normalizedOrder
-    : buildOrder();
+  const normalizedOrder =
+    options.normalizedOrder === undefined
+      ? buildOrder()
+      : options.normalizedOrder;
 
   const webhookEventsRepo = {
     markProcessing: jest.fn(),
