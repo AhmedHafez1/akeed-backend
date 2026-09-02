@@ -1,3 +1,5 @@
+import type { EntitlementSource } from '../../shared/billing/entitlement';
+import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { VerificationAutomationProcessor } from './verification-automation.processor';
@@ -44,6 +46,15 @@ function createMocks() {
       } as never,
       [new ShopifyOutcomeAdapter(orderTaggingPort as never)],
     ),
+    new BillingEntitlementService({
+      getEntitlementSource: async () => {
+        const result = (await ordersRepo.findById()) as
+          | { integration?: EntitlementSource }
+          | undefined;
+        return result?.integration;
+      },
+      getIntegrationUsageForPeriod: () => Promise.resolve({ consumedCount: 0 }),
+    } as never),
   );
 
   return {

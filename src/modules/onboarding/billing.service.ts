@@ -1,5 +1,7 @@
+import { getBillingManagement } from '../../shared/billing/entitlement';
 import {
   BadRequestException,
+  ForbiddenException,
   BadGatewayException,
   Inject,
   Injectable,
@@ -20,10 +22,10 @@ import {
   type OnboardingBillingPlansResponseDto,
 } from './dto/onboarding.dto';
 import {
-  STORE_PLATFORM_PORT,
-  type StorePlatformPort,
+  SUBSCRIPTION_BILLING_PORT,
+  type SubscriptionBillingPort,
   type CreateSubscriptionInput,
-} from '../../shared/ports/store-platform.port';
+} from '../../shared/ports/subscription-billing.port';
 import {
   type BillingPlanConfig,
   buildBillingReturnUrl,
@@ -57,8 +59,8 @@ export class BillingService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly freePlanClaimsRepo: BillingFreePlanClaimsRepository,
     private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
-    @Inject(STORE_PLATFORM_PORT)
-    private readonly storePlatform: StorePlatformPort,
+    @Inject(SUBSCRIPTION_BILLING_PORT)
+    private readonly subscriptionBilling: SubscriptionBillingPort,
     private readonly billingConfig: BillingConfigService,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
@@ -67,6 +69,9 @@ export class BillingService {
   async getBillingPlans(
     integration: IntegrationRecord,
   ): Promise<OnboardingBillingPlansResponseDto> {
+    const billingManagement = getBillingManagement(integration);
+    if (billingManagement.mode === 'manual')
+      return { plans: [], isFreePlanClaimed: false, billingManagement };
     const plans = this.billingConfig.resolveAllPlans();
 
     const isFreePlanClaimed = await this.freePlanClaimsRepo.hasClaim({
@@ -75,6 +80,7 @@ export class BillingService {
     });
 
     return {
+      billingManagement,
       plans: plans.map<OnboardingBillingPlanDto>((plan) => ({
         id: plan.id,
         name: plan.name,
@@ -91,6 +97,11 @@ export class BillingService {
     planId: OnboardingBillingPlanId,
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
+    if (!getBillingManagement(integration).canManageBilling) {
+      throw new ForbiddenException(
+        'Subscription billing is unavailable for this source',
+      );
+    }
     const billingPlan = this.billingConfig.resolvePlan(planId);
     await this.adminLifecycles?.markMilestone(
       integration.id,
@@ -411,10 +422,11 @@ export class BillingService {
     chargeId: string;
   }): Promise<BillingChargeResolution> {
     try {
-      const subscription = await this.storePlatform.getAppSubscriptionStatus(
-        params.integration,
-        params.chargeId,
-      );
+      const subscription =
+        await this.subscriptionBilling.getAppSubscriptionStatus(
+          params.integration,
+          params.chargeId,
+        );
       return {
         status: subscription.status.toLowerCase(),
         subscriptionId: subscription.id,
@@ -472,7 +484,7 @@ export class BillingService {
     });
 
     try {
-      return await this.storePlatform.createRecurringApplicationCharge(
+      return await this.subscriptionBilling.createRecurringApplicationCharge(
         integration,
         payload,
       );
@@ -552,7 +564,7 @@ export class BillingService {
     }
 
     try {
-      await this.storePlatform.cancelAppSubscription(
+      await this.subscriptionBilling.cancelAppSubscription(
         integration,
         existingSubscriptionId,
       );

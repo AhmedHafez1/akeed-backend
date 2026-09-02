@@ -1,3 +1,5 @@
+import { SUBSCRIPTION_BILLING_PORT } from '../../shared/ports/subscription-billing.port';
+import { ShopifyBillingAdapter } from '../../infrastructure/spokes/shopify/services/shopify-billing.adapter';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ShopifyModule } from '../../infrastructure/spokes/shopify/shopify.module';
@@ -28,6 +30,7 @@ import { AuthModule } from '../auth/auth.module';
     BillingConfigService,
     BillingCallbackRateLimitGuard,
     ShopifyBillingCallbackValidationGuard,
+    { provide: SUBSCRIPTION_BILLING_PORT, useExisting: ShopifyBillingAdapter },
     { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
   ],
   exports: [

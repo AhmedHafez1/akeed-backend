@@ -10,7 +10,6 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
-import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import {
   buildBackendLog,
   normalizeError,
@@ -104,10 +103,13 @@ export class VerificationHubService {
           orderId: order.id,
           consumedCount: slotCheck.consumedCount,
           includedLimit: slotCheck.includedLimit,
-          reason: 'plan_limit_reached',
+          reason: slotCheck.reason ?? 'plan_limit_reached',
         }),
       );
-      return { skipped: true, reason: 'plan_limit_reached' };
+      return {
+        skipped: true,
+        reason: slotCheck.reason ?? 'plan_limit_reached',
+      };
     }
 
     const verification = await this.verificationsRepo.create({
@@ -271,36 +273,10 @@ export class VerificationHubService {
       return 'onboarding_incomplete';
     }
 
-    if (!integration.isActive) {
-      this.logger.log(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-order-eligibility-check',
-          outcome: 'skipped',
-          orgId: integration.orgId,
-          integrationId: integration.id,
-          orderId: orderData.externalOrderId,
-          reason: 'integration_inactive',
-        }),
-      );
-      return 'integration_inactive';
-    }
-
-    if (!isBillingStatusActive(integration.billingStatus)) {
-      this.logger.log(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-order-eligibility-check',
-          outcome: 'skipped',
-          orgId: integration.orgId,
-          integrationId: integration.id,
-          orderId: orderData.externalOrderId,
-          reason: 'billing_not_active',
-          billingStatus: integration.billingStatus ?? 'unknown',
-        }),
-      );
-      return 'billing_not_active';
-    }
-
-    return null;
+    return this.billingEntitlementService.evaluateAccess(integration, {
+      id: orderData.integrationId,
+      orgId: orderData.orgId,
+    }).reason;
   }
 
   private async findOrCreateOrder(orderData: NormalizedOrder) {

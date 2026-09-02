@@ -20,7 +20,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
-import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 
 const TERMINAL_OR_FINAL_STATUSES = [
   'confirmed',
@@ -41,6 +41,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly verificationSendService: VerificationSendService,
     private readonly verificationHub: VerificationHubService,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
+    private readonly billingEntitlements: BillingEntitlementService,
   ) {
     super();
   }
@@ -400,11 +401,10 @@ export class VerificationAutomationProcessor extends WorkerHost {
     },
     kind: 'initial' | 'follow_up' | 'escalation',
   ): Promise<boolean> {
-    const reason = !ctx.integration.isActive
-      ? 'integration_inactive'
-      : !isBillingStatusActive(ctx.integration.billingStatus)
-        ? 'billing_not_active'
-        : null;
+    const { reason } = await this.billingEntitlements.readEntitlement({
+      id: ctx.integration.id,
+      orgId: ctx.verification.orgId,
+    });
 
     if (!reason) return false;
 

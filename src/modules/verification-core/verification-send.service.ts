@@ -15,7 +15,6 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
-import { isBillingStatusActive } from '../../shared/utils/billing.util';
 
 export type SendKind = 'initial' | 'follow_up';
 
@@ -113,7 +112,8 @@ export class VerificationSendService {
       return { context: null, reason: 'source_identity_mismatch' };
     }
 
-    if (!integration.isActive) {
+    const access = this.billingEntitlementService.evaluateAccess(integration);
+    if (access.reason) {
       this.logger.warn(
         buildBackendLog('VerificationSendService', {
           action: 'loadContext.integrationEligibility',
@@ -121,25 +121,10 @@ export class VerificationSendService {
           orgId: order.orgId,
           integrationId: integration.id,
           verificationId,
-          reason: 'integration_inactive',
+          reason: access.reason,
         }),
       );
-      return { context: null, reason: 'integration_inactive' };
-    }
-
-    if (!isBillingStatusActive(integration.billingStatus)) {
-      this.logger.warn(
-        buildBackendLog('VerificationSendService', {
-          action: 'loadContext.integrationEligibility',
-          outcome: 'skipped',
-          orgId: order.orgId,
-          integrationId: integration.id,
-          verificationId,
-          billingStatus: integration.billingStatus ?? 'unknown',
-          reason: 'billing_not_active',
-        }),
-      );
-      return { context: null, reason: 'billing_not_active' };
+      return { context: null, reason: access.reason };
     }
 
     return { context: { verification, order, integration } };
@@ -162,6 +147,20 @@ export class VerificationSendService {
     const reservation =
       await this.billingEntitlementService.reserveVerificationSlot(integration);
     if (!reservation.allowed) {
+      if (reservation.reason && reservation.reason !== 'plan_limit_reached') {
+        this.logger.warn(
+          buildBackendLog('VerificationSendService', {
+            action: 'sendOnce.entitlementEligibility',
+            outcome: 'skipped',
+            orgId: order.orgId,
+            integrationId: integration.id,
+            verificationId: verification.id,
+            kind,
+            reason: reservation.reason,
+          }),
+        );
+        return { status: 'skipped', reason: reservation.reason };
+      }
       this.logger.warn(
         buildBackendLog('VerificationSendService', {
           action: 'sendOnce.planLimitReached',

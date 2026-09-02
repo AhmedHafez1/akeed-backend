@@ -17,11 +17,9 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
-import { STORE_PLATFORM_PORT } from './shared/ports/store-platform.port';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
-import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shopify-api.service';
 import { DatabaseModule } from './infrastructure/database';
 import { AdminModule } from './modules/admin/admin.module';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
@@ -67,7 +65,6 @@ import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outc
           useFactory: (shopify: ShopifyOrderEligibilityStrategy) => [shopify],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
-        { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
       ],
     }),
     AuthModule,

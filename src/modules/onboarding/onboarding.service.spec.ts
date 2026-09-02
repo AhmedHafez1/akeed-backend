@@ -1,3 +1,4 @@
+import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OnboardingService } from './onboarding.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -7,6 +8,8 @@ function makeIntegration(overrides: Record<string, unknown> = {}) {
     id: 'int-1',
     orgId: 'org-1',
     platformType: 'shopify',
+    isActive: true,
+    billingStatus: 'active',
     platformStoreUrl: 'test.myshopify.com',
     storeName: 'Test Store',
     defaultLanguage: 'auto',
@@ -72,7 +75,8 @@ describe('OnboardingService', () => {
         }),
       };
       const monthlyUsageRepo = {
-        getOrgUsageTotalsForPeriod: jest.fn().mockResolvedValue({
+        getEntitlementSource: jest.fn().mockResolvedValue(integration),
+        getIntegrationUsageForPeriod: jest.fn().mockResolvedValue({
           consumedCount: 42,
           includedLimit: 300,
         }),
@@ -81,7 +85,7 @@ describe('OnboardingService', () => {
       const service = new OnboardingService(
         onboardingState as any,
         billingService as any,
-        monthlyUsageRepo as any,
+        new BillingEntitlementService(monthlyUsageRepo as never),
       );
 
       const result = await service.getSettings({
@@ -116,8 +120,10 @@ describe('OnboardingService', () => {
         result.template.variants.en.map((variant) => variant.variant),
       ).toEqual(['friendly', 'professional', 'direct', 'short']);
       expect(result.template.previews.en.confirmButton).toBe('Confirm Order');
-      expect(monthlyUsageRepo.getOrgUsageTotalsForPeriod).toHaveBeenCalledWith({
-        orgId: 'org-1',
+      expect(
+        monthlyUsageRepo.getIntegrationUsageForPeriod,
+      ).toHaveBeenCalledWith({
+        integrationId: 'int-1',
         periodStart,
       });
     },

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import { getBillingManagement } from '../../shared/billing/entitlement';
 import { integrations } from '../../infrastructure/database/schema';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import type {
@@ -12,11 +13,6 @@ import type {
 } from './dto/onboarding.dto';
 import { OnboardingStateService } from './onboarding-state.service';
 import { BillingService, type BillingCallbackParams } from './billing.service';
-import {
-  DEFAULT_BILLING_PLAN_ID,
-  isOnboardingBillingPlanId,
-  resolveIncludedVerificationsLimit,
-} from './onboarding.service.helpers';
 import {
   COD_TEMPLATE_DEFAULTS,
   getAvailableCodTemplateDefinitions,
@@ -33,7 +29,7 @@ export class OnboardingService {
   constructor(
     private readonly onboardingState: OnboardingStateService,
     private readonly billingService: BillingService,
-    private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
+    private readonly billingEntitlements: BillingEntitlementService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -55,7 +51,7 @@ export class OnboardingService {
 
     const [billingPlans, usage] = await Promise.all([
       this.billingService.getBillingPlans(hydratedIntegration),
-      this.getCurrentUsage(user.orgId, hydratedIntegration),
+      this.getCurrentUsage(hydratedIntegration),
     ]);
 
     return {
@@ -92,6 +88,11 @@ export class OnboardingService {
   ): Promise<OnboardingBillingResponseDto> {
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
+    if (!getBillingManagement(integration).canManageBilling) {
+      throw new ForbiddenException(
+        'Subscription billing is unavailable for this source',
+      );
+    }
     const hydratedIntegration =
       await this.onboardingState.prefillStoreNameIfMissing(integration);
     this.onboardingState.ensureBillingPrerequisitesMet(hydratedIntegration);
@@ -107,72 +108,16 @@ export class OnboardingService {
   }
 
   private async getCurrentUsage(
-    orgId: string,
     integration: IntegrationRecord,
   ): Promise<SettingsResponseDto['billing']['usage']> {
-    const periodStart = this.getBillingPeriodStart(
-      integration.billingActivatedAt,
-    );
-    const periodEnd = this.getBillingPeriodEnd(periodStart);
-    const usage = await this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
-      orgId,
-      periodStart,
-    });
-
-    const planId =
-      integration.billingPlanId &&
-      isOnboardingBillingPlanId(integration.billingPlanId)
-        ? integration.billingPlanId
-        : DEFAULT_BILLING_PLAN_ID;
-
+    const entitlement =
+      await this.billingEntitlements.readEntitlement(integration);
     return {
-      used: usage.consumedCount,
-      limit:
-        usage.includedLimit > 0
-          ? usage.includedLimit
-          : resolveIncludedVerificationsLimit(planId),
-      periodStart,
-      periodEnd,
+      used: entitlement.consumedCount,
+      limit: entitlement.includedLimit,
+      periodStart: entitlement.periodStart,
+      periodEnd: entitlement.periodEnd,
     };
-  }
-
-  private getBillingPeriodStart(
-    billingActivatedAt?: string | Date | null,
-    now = new Date(),
-  ): string {
-    if (!billingActivatedAt) {
-      const fallback = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-      );
-      return fallback.toISOString().slice(0, 10);
-    }
-
-    const activation = new Date(billingActivatedAt);
-    if (isNaN(activation.getTime())) {
-      const fallback = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-      );
-      return fallback.toISOString().slice(0, 10);
-    }
-
-    const msPerDay = 86_400_000;
-    const elapsedMs = now.getTime() - activation.getTime();
-    if (elapsedMs < 0) {
-      return activation.toISOString().slice(0, 10);
-    }
-
-    const elapsedDays = Math.floor(elapsedMs / msPerDay);
-    const completedCycles = Math.floor(elapsedDays / 30);
-    const periodStart = new Date(
-      activation.getTime() + completedCycles * 30 * msPerDay,
-    );
-    return periodStart.toISOString().slice(0, 10);
-  }
-
-  private getBillingPeriodEnd(periodStart: string): string {
-    const start = new Date(`${periodStart}T00:00:00.000Z`);
-    start.setUTCDate(start.getUTCDate() + 30);
-    return start.toISOString().slice(0, 10);
   }
 
   private getTemplateSettings(

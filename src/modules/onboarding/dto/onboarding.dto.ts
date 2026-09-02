@@ -1,3 +1,5 @@
+import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
+import type { BillingManagement } from '../../../shared/billing/entitlement';
 import {
   IsBoolean,
   IsIn,
@@ -40,14 +42,8 @@ export type OnboardingShippingCurrency =
 export const ONBOARDING_STATUSES = ['pending', 'completed'] as const;
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
-export const ONBOARDING_BILLING_PLAN_IDS = [
-  'starter',
-  'basic',
-  'pro',
-  'business',
-] as const;
-export type OnboardingBillingPlanId =
-  (typeof ONBOARDING_BILLING_PLAN_IDS)[number];
+export const ONBOARDING_BILLING_PLAN_IDS = BILLING_PLAN_IDS;
+export type OnboardingBillingPlanId = (typeof BILLING_PLAN_IDS)[number];
 
 export const AUTOMATION_TIMEZONES = [
   'Asia/Riyadh',
@@ -161,6 +157,7 @@ export interface OnboardingStateDto {
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
   billingStatus: string | null;
+  billingManagement: BillingManagement;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
   escalationEnabled: boolean;
@@ -185,6 +182,7 @@ export interface OnboardingBillingPlanDto {
 }
 
 export interface OnboardingBillingPlansResponseDto {
+  billingManagement: BillingManagement;
   plans: OnboardingBillingPlanDto[];
   isFreePlanClaimed: boolean;
 }

@@ -85,6 +85,29 @@ function createMocks() {
 }
 
 describe('BillingService', () => {
+  it.each(['starter', 'pro'])(
+    'blocks manual %s billing at the service boundary',
+    async (planId) => {
+      const mocks = createMocks();
+      mocks.billingConfig.isBillingRequired.mockReturnValue(false);
+      await expect(
+        mocks.service.initiateBilling(
+          makeIntegration({
+            platformType: 'standalone',
+            billingStatus: 'not_required',
+          }) as never,
+          planId as 'starter' | 'pro',
+        ),
+      ).rejects.toThrow('unavailable');
+      expect(mocks.integrationsRepo.updateById).not.toHaveBeenCalled();
+      expect(mocks.freePlanClaimsRepo.createIfNew).not.toHaveBeenCalled();
+      expect(
+        mocks.storePlatform.createRecurringApplicationCharge,
+      ).not.toHaveBeenCalled();
+      expect(mocks.storePlatform.cancelAppSubscription).not.toHaveBeenCalled();
+    },
+  );
+
   describe('initiateBilling — same-plan guard', () => {
     it('returns redirect without Shopify call when plan is already active', async () => {
       const { service, storePlatform } = createMocks();

@@ -1,5 +1,7 @@
+import { getBillingManagement } from '../../shared/billing/entitlement';
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -205,14 +207,13 @@ export class OnboardingStateService {
       return byShop;
     }
 
-    const fallback = await this.integrationsRepo.findActiveByOrgAndPlatform(
-      user.orgId,
-      'shopify',
-    );
-
-    if (!fallback) {
-      throw new NotFoundException('Shopify integration not found');
-    }
+    const sources = await this.integrationsRepo.findActiveByOrg(user.orgId);
+    if (sources.length > 1)
+      throw new ConflictException(
+        'Multiple active commerce sources require staff review',
+      );
+    const fallback = sources[0];
+    if (!fallback) throw new NotFoundException('Integration not found');
 
     return fallback;
   }
@@ -220,7 +221,7 @@ export class OnboardingStateService {
   async prefillStoreNameIfMissing(
     integration: IntegrationRecord,
   ): Promise<IntegrationRecord> {
-    if (integration.storeName) {
+    if (integration.storeName || integration.platformType !== 'shopify') {
       return integration;
     }
 
@@ -293,6 +294,7 @@ export class OnboardingStateService {
       avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
+      billingManagement: getBillingManagement(integration),
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,

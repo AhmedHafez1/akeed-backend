@@ -1,3 +1,4 @@
+import { ShopifyBillingAdapter } from './services/shopify-billing.adapter';
 import { ShopifyOrderEligibilityStrategy } from './services/shopify-order-eligibility.strategy';
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
@@ -8,11 +9,13 @@ import { ShopifyOutcomeAdapter } from './services/shopify-outcome.adapter';
   imports: [HttpModule],
   providers: [
     ShopifyApiService,
+    ShopifyBillingAdapter,
     ShopifyOutcomeAdapter,
     ShopifyOrderEligibilityStrategy,
   ],
   exports: [
     ShopifyApiService,
+    ShopifyBillingAdapter,
     ShopifyOutcomeAdapter,
     ShopifyOrderEligibilityStrategy,
   ],

@@ -3,26 +3,50 @@ import { and, eq, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
-import { integrationMonthlyUsage } from '../schema';
+import { integrationMonthlyUsage, integrations } from '../schema';
 
-interface ReserveMonthlyVerificationSlotParams {
-  orgId: string;
-  integrationId: string;
-  periodStart: string;
-  includedLimit: number;
-  overageAllowed?: boolean;
-}
+import {
+  resolveEntitlement,
+  type EntitlementIdentity,
+  type EntitlementSnapshot,
+  type EntitlementDenialReason,
+} from '../../../shared/billing/entitlement';
 
-export interface MonthlyVerificationSlotReservation {
-  allowed: boolean;
+export interface MonthlyVerificationSlotReservation extends Omit<
+  EntitlementSnapshot,
+  'reason'
+> {
+  reason: EntitlementDenialReason | 'plan_limit_reached' | null;
   isOverage: boolean;
   consumedCount: number;
-  includedLimit: number;
 }
+
+const entitlementColumns = {
+  id: integrations.id,
+  orgId: integrations.orgId,
+  platformType: integrations.platformType,
+  isActive: integrations.isActive,
+  billingStatus: integrations.billingStatus,
+  billingPlanId: integrations.billingPlanId,
+  billingActivatedAt: integrations.billingActivatedAt,
+};
 
 @Injectable()
 export class IntegrationMonthlyUsageRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+
+  async getEntitlementSource(identity: EntitlementIdentity) {
+    const [source] = await this.db
+      .select(entitlementColumns)
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, identity.id),
+          eq(integrations.orgId, identity.orgId),
+        ),
+      );
+    return source;
+  }
 
   async getOrgUsageTotalsForPeriod(params: {
     orgId: string;
@@ -71,11 +95,31 @@ export class IntegrationMonthlyUsageRepository {
   }
 
   async reserveMonthlyVerificationSlot(
-    params: ReserveMonthlyVerificationSlotParams,
+    identity: EntitlementIdentity,
   ): Promise<MonthlyVerificationSlotReservation> {
     const now = new Date().toISOString();
 
     return await this.db.transaction(async (tx) => {
+      const [source] = await tx
+        .select(entitlementColumns)
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.id, identity.id),
+            eq(integrations.orgId, identity.orgId),
+          ),
+        )
+        .for('update');
+      const entitlement = resolveEntitlement(source, identity);
+      if (!entitlement.allowed)
+        return { ...entitlement, isOverage: false, consumedCount: 0 };
+      const params = {
+        orgId: identity.orgId,
+        integrationId: identity.id,
+        periodStart: entitlement.periodStart,
+        includedLimit: entitlement.includedLimit,
+      };
+
       await tx
         .insert(integrationMonthlyUsage)
         .values({
@@ -109,35 +153,6 @@ export class IntegrationMonthlyUsageRepository {
       }
 
       if (usageRow.consumedCount >= params.includedLimit) {
-        if (params.overageAllowed) {
-          // Plan supports overages — allow consumption beyond the included limit
-          const [overageRow] = await tx
-            .update(integrationMonthlyUsage)
-            .set({
-              includedLimit: params.includedLimit,
-              consumedCount: sql`${integrationMonthlyUsage.consumedCount} + 1`,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(integrationMonthlyUsage.integrationId, params.integrationId),
-                eq(integrationMonthlyUsage.periodStart, params.periodStart),
-              ),
-            )
-            .returning({
-              consumedCount: integrationMonthlyUsage.consumedCount,
-              includedLimit: integrationMonthlyUsage.includedLimit,
-            });
-
-          return {
-            allowed: true,
-            isOverage: true,
-            consumedCount:
-              overageRow?.consumedCount ?? usageRow.consumedCount + 1,
-            includedLimit: overageRow?.includedLimit ?? params.includedLimit,
-          };
-        }
-
         const [blockedRow] = await tx
           .update(integrationMonthlyUsage)
           .set({
@@ -157,6 +172,8 @@ export class IntegrationMonthlyUsageRepository {
           });
 
         return {
+          ...entitlement,
+          reason: 'plan_limit_reached' as const,
           allowed: false,
           isOverage: false,
           consumedCount: blockedRow?.consumedCount ?? usageRow.consumedCount,
@@ -189,6 +206,8 @@ export class IntegrationMonthlyUsageRepository {
       }
 
       return {
+        ...entitlement,
+        reason: null,
         allowed: true,
         isOverage: false,
         consumedCount: updatedRow.consumedCount,

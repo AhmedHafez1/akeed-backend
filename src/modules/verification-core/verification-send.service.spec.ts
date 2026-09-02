@@ -1,3 +1,7 @@
+import {
+  resolveEntitlement,
+  type EntitlementSource,
+} from '../../shared/billing/entitlement';
 import { VerificationSendService } from './verification-send.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -14,6 +18,8 @@ function createMocks() {
     findActiveByOrgAndPlatform: jest.fn(),
   };
   const billingEntitlementService = {
+    evaluateAccess: (source: EntitlementSource, identity = source) =>
+      resolveEntitlement(source, identity),
     reserveVerificationSlot: jest.fn(),
     releaseVerificationSlot: jest.fn(),
   };
@@ -39,6 +45,7 @@ function createMocks() {
 }
 
 const baseIntegration = {
+  platformType: 'shopify',
   id: 'int-1',
   orgId: 'org-1',
   isActive: true,

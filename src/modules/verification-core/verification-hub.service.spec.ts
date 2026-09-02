@@ -1,3 +1,7 @@
+import {
+  resolveEntitlement,
+  type EntitlementSource,
+} from '../../shared/billing/entitlement';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { VerificationHubService } from './verification-hub.service';
@@ -111,6 +115,8 @@ function createMocks() {
   };
 
   const billingEntitlementService = {
+    evaluateAccess: (source: EntitlementSource, identity = source) =>
+      resolveEntitlement(source, identity),
     hasAvailableSlot: jest.fn().mockResolvedValue({
       available: true,
       consumedCount: 0,

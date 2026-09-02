@@ -1,3 +1,7 @@
+import {
+  resolveEntitlement,
+  type EntitlementSource,
+} from '../../../shared/billing/entitlement';
 import { of } from 'rxjs';
 import { WhatsAppService } from './whatsapp.service';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
@@ -51,6 +55,7 @@ describe('WhatsAppService', () => {
         id: 'int-1',
         orgId: 'org-1',
         isActive: true,
+        platformType: 'shopify',
         billingStatus: 'active',
         storeName: 'Synthetic Store',
         defaultLanguage: 'en',
@@ -73,6 +78,8 @@ describe('WhatsAppService', () => {
         }),
       };
       const entitlement = {
+        evaluateAccess: (source: EntitlementSource) =>
+          resolveEntitlement(source, source),
         reserveVerificationSlot: jest
           .fn()
           .mockResolvedValue({ allowed: true, periodStart: '2026-05-01' }),

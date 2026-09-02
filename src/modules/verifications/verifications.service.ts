@@ -1,12 +1,13 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
+import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import { integrations } from '../../infrastructure/database/schema';
@@ -19,11 +20,7 @@ import {
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
 import { VerificationStatus } from '../../shared/interfaces/verification.interface';
-import {
-  DEFAULT_BILLING_PLAN_ID,
-  isOnboardingBillingPlanId,
-  resolveIncludedVerificationsLimit,
-} from '../onboarding/onboarding.service.helpers';
+
 import {
   decodeCursor,
   encodeCursor,
@@ -78,7 +75,7 @@ export class VerificationsService {
 
   constructor(
     private readonly verificationsRepo: VerificationsRepository,
-    private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
+    private readonly billingEntitlements: BillingEntitlementService,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly ordersRepo: OrdersRepository,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
@@ -184,18 +181,16 @@ export class VerificationsService {
       this.integrationsRepo.findActiveByOrg(orgId),
     ]);
 
-    const periodStart = this.getBillingPeriodStart(activeIntegrations, now);
-    const usage = await this.monthlyUsageRepo.getOrgUsageTotalsForPeriod({
-      orgId,
-      periodStart,
-    });
-
+    if (activeIntegrations.length > 1)
+      throw new ConflictException(
+        'Multiple active commerce sources require staff review',
+      );
+    const usage = activeIntegrations[0]
+      ? await this.billingEntitlements.readEntitlement(activeIntegrations[0])
+      : { consumedCount: 0, includedLimit: 0 };
     const replyRate = this.calculateReplyRate(filteredCounts);
     const confirmationRate = this.calculateConfirmationRate(filteredCounts);
-    const usageLimit =
-      usage.includedLimit > 0
-        ? usage.includedLimit
-        : this.resolveFallbackUsageLimit(activeIntegrations);
+    const usageLimit = usage.includedLimit;
     const shippingSettings =
       this.resolveDashboardShippingSettings(activeIntegrations);
     const automationSettings =
@@ -512,37 +507,6 @@ export class VerificationsService {
    * Falls back to the 1st of the current UTC calendar month when no
    * activation date is available.
    */
-  private getBillingPeriodStart(
-    activeIntegrations: IntegrationRecord[],
-    now: Date,
-  ): string {
-    const activatedAt = activeIntegrations
-      .map((i) => i.billingActivatedAt)
-      .filter(Boolean)
-      .sort()[0];
-
-    if (!activatedAt) {
-      const fallback = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-      );
-      return fallback.toISOString().slice(0, 10);
-    }
-
-    const activation = new Date(activatedAt);
-    const msPerDay = 86_400_000;
-    const elapsedMs = now.getTime() - activation.getTime();
-    if (elapsedMs < 0) {
-      return activation.toISOString().slice(0, 10);
-    }
-
-    const elapsedDays = Math.floor(elapsedMs / msPerDay);
-    const completedCycles = Math.floor(elapsedDays / 30);
-    const periodStart = new Date(
-      activation.getTime() + completedCycles * 30 * msPerDay,
-    );
-    return periodStart.toISOString().slice(0, 10);
-  }
-
   private resolveDashboardShippingSettings(
     activeIntegrations: IntegrationRecord[],
   ): {
@@ -597,23 +561,5 @@ export class VerificationsService {
       quiet_hours_enabled:
         withSettings?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
     };
-  }
-
-  private resolveFallbackUsageLimit(
-    activeIntegrations: IntegrationRecord[],
-  ): number {
-    if (activeIntegrations.length === 0) {
-      return resolveIncludedVerificationsLimit(DEFAULT_BILLING_PLAN_ID);
-    }
-
-    return activeIntegrations.reduce((total, integration) => {
-      const planId =
-        integration.billingPlanId &&
-        isOnboardingBillingPlanId(integration.billingPlanId)
-          ? integration.billingPlanId
-          : DEFAULT_BILLING_PLAN_ID;
-
-      return total + resolveIncludedVerificationsLimit(planId);
-    }, 0);
   }
 }

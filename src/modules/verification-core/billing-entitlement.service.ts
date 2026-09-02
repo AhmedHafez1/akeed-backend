@@ -1,145 +1,67 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { buildBackendLog } from '../../shared/logging/backend-log.util';
-import { integrations } from '../../infrastructure/database/schema';
+import { Injectable } from '@nestjs/common';
+import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
 import {
-  IntegrationMonthlyUsageRepository,
-  MonthlyVerificationSlotReservation,
-} from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
-import {
-  DEFAULT_BILLING_PLAN_ID,
-  isOnboardingBillingPlanId,
-  resolveIncludedVerificationsLimit,
-} from '../onboarding/onboarding.service.helpers';
-import type { OnboardingBillingPlanId } from '../onboarding/dto/onboarding.dto';
-
-interface ReserveVerificationSlotResult extends MonthlyVerificationSlotReservation {
-  periodStart: string;
-  planId: OnboardingBillingPlanId;
-}
+  resolveEntitlement,
+  type EntitlementIdentity,
+  type EntitlementSource,
+  type EntitlementAvailability,
+} from '../../shared/billing/entitlement';
+import { getBillingPeriodStart } from '../../shared/billing/billing-period';
 
 @Injectable()
 export class BillingEntitlementService {
-  private readonly logger = new Logger(BillingEntitlementService.name);
-
   constructor(
     private readonly monthlyUsageRepository: IntegrationMonthlyUsageRepository,
   ) {}
 
-  async reserveVerificationSlot(
-    integration: typeof integrations.$inferSelect,
-  ): Promise<ReserveVerificationSlotResult> {
-    const planId = this.resolvePlanId(integration.billingPlanId);
-    const includedLimit = resolveIncludedVerificationsLimit(planId);
-    const periodStart = this.getBillingPeriodStart(
-      integration.billingActivatedAt,
-    );
+  evaluateAccess(
+    source: EntitlementSource,
+    identity: EntitlementIdentity = source,
+  ) {
+    return resolveEntitlement(source, identity);
+  }
 
-    const reservation =
-      await this.monthlyUsageRepository.reserveMonthlyVerificationSlot({
-        orgId: integration.orgId,
-        integrationId: integration.id,
-        periodStart,
-        includedLimit,
-        overageAllowed: false,
-      });
-
-    return {
-      ...reservation,
-      periodStart,
-      planId,
-    };
+  async readEntitlement(identity: EntitlementIdentity) {
+    const source =
+      await this.monthlyUsageRepository.getEntitlementSource(identity);
+    const entitlement = resolveEntitlement(source, identity);
+    const usage = source
+      ? await this.monthlyUsageRepository.getIntegrationUsageForPeriod({
+          integrationId: identity.id,
+          periodStart: entitlement.periodStart,
+        })
+      : { consumedCount: 0 };
+    return { ...entitlement, consumedCount: usage.consumedCount };
   }
 
   async hasAvailableSlot(
-    integration: typeof integrations.$inferSelect,
-  ): Promise<{
-    available: boolean;
-    consumedCount: number;
-    includedLimit: number;
-  }> {
-    const planId = this.resolvePlanId(integration.billingPlanId);
-    const includedLimit = resolveIncludedVerificationsLimit(planId);
-    const periodStart = this.getBillingPeriodStart(
-      integration.billingActivatedAt,
-    );
-
-    const usage =
-      await this.monthlyUsageRepository.getIntegrationUsageForPeriod({
-        integrationId: integration.id,
-        periodStart,
-      });
-
+    identity: EntitlementIdentity,
+  ): Promise<EntitlementAvailability> {
+    const entitlement = await this.readEntitlement(identity);
+    const available =
+      entitlement.allowed &&
+      entitlement.consumedCount < entitlement.includedLimit;
     return {
-      available: usage.consumedCount < includedLimit,
-      consumedCount: usage.consumedCount,
-      includedLimit,
+      available,
+      consumedCount: entitlement.consumedCount,
+      includedLimit: entitlement.includedLimit,
+      reason: entitlement.reason ?? (available ? null : 'plan_limit_reached'),
     };
   }
 
-  async releaseVerificationSlot(params: {
+  reserveVerificationSlot(identity: EntitlementIdentity) {
+    return this.monthlyUsageRepository.reserveMonthlyVerificationSlot({
+      id: identity.id,
+      orgId: identity.orgId,
+    });
+  }
+
+  releaseVerificationSlot(params: {
     integrationId: string;
     periodStart: string;
   }): Promise<void> {
-    await this.monthlyUsageRepository.releaseMonthlyVerificationSlot(params);
+    return this.monthlyUsageRepository.releaseMonthlyVerificationSlot(params);
   }
 
-  private resolvePlanId(
-    rawPlanId: typeof integrations.$inferSelect.billingPlanId,
-  ): OnboardingBillingPlanId {
-    if (rawPlanId && isOnboardingBillingPlanId(rawPlanId)) {
-      return rawPlanId;
-    }
-
-    this.logger.warn(
-      buildBackendLog('BillingEntitlementService', {
-        action: 'resolvePlanId',
-        outcome: 'skipped',
-        fallbackPlanId: DEFAULT_BILLING_PLAN_ID,
-        rawPlanId: rawPlanId ?? null,
-      }),
-    );
-    return DEFAULT_BILLING_PLAN_ID;
-  }
-
-  /**
-   * Computes the start of the current 30-day billing period based on the
-   * subscription activation date. Shopify bills on a rolling 30-day cycle
-   * from the activation date, not on calendar-month boundaries, so usage
-   * accounting must follow the same cadence.
-   *
-   * Falls back to the 1st of the current UTC month when no activation date
-   * is available, such as free Starter plans that bypass Shopify billing.
-   */
-  getBillingPeriodStart(
-    billingActivatedAt?: string | Date | null,
-    now = new Date(),
-  ): string {
-    if (!billingActivatedAt) {
-      const fallback = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-      );
-      return fallback.toISOString().slice(0, 10);
-    }
-
-    const activation = new Date(billingActivatedAt);
-    if (isNaN(activation.getTime())) {
-      const fallback = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-      );
-      return fallback.toISOString().slice(0, 10);
-    }
-
-    const msPerDay = 86_400_000;
-    const elapsedMs = now.getTime() - activation.getTime();
-    if (elapsedMs < 0) {
-      return activation.toISOString().slice(0, 10);
-    }
-
-    const elapsedDays = Math.floor(elapsedMs / msPerDay);
-    const completedCycles = Math.floor(elapsedDays / 30);
-    const periodStart = new Date(
-      activation.getTime() + completedCycles * 30 * msPerDay,
-    );
-    return periodStart.toISOString().slice(0, 10);
-  }
+  getBillingPeriodStart = getBillingPeriodStart;
 }
