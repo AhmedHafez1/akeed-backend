@@ -116,6 +116,48 @@ describe('Shopify isolated PostgreSQL contract', () => {
     expect(rows[0].definition).toBe('UNIQUE (platform, idempotency_key)');
   });
 
+  it('rehearses the additive commerce platform constraints with existing Shopify rows', async () => {
+    await client.unsafe(
+      `CREATE TABLE "${namespace}"."integrations" ("platform_type" text NOT NULL, CONSTRAINT "integrations_platform_type_check" CHECK ("platform_type" = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])))`,
+    );
+    await client.unsafe(
+      `CREATE TABLE "${namespace}"."billing_free_plan_claims" ("platform_type" text NOT NULL, CONSTRAINT "billing_free_plan_claims_platform_type_check" CHECK ("platform_type" = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])))`,
+    );
+    await client`INSERT INTO ${client(namespace)}.integrations (platform_type) VALUES ('shopify')`;
+    await client`INSERT INTO ${client(namespace)}.billing_free_plan_claims (platform_type) VALUES ('shopify')`;
+
+    const migration = readFileSync(
+      resolve(
+        __dirname,
+        '../drizzle/0023_expand_commerce_platform_contracts.sql',
+      ),
+      'utf8',
+    );
+    for (const statement of migration.split('--> statement-breakpoint')) {
+      await client.unsafe(statement);
+    }
+
+    for (const platform of ['standalone', 'easyorders']) {
+      await client`INSERT INTO ${client(namespace)}.integrations (platform_type) VALUES (${platform})`;
+      await client`INSERT INTO ${client(namespace)}.billing_free_plan_claims (platform_type) VALUES (${platform})`;
+    }
+    await expect(
+      client`INSERT INTO ${client(namespace)}.integrations (platform_type) VALUES ('magento')`,
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      client`INSERT INTO ${client(namespace)}.billing_free_plan_claims (platform_type) VALUES ('magento')`,
+    ).rejects.toMatchObject({ code: '23514' });
+
+    const retained = await client<
+      { platform_type: string }[]
+    >`SELECT platform_type FROM ${client(namespace)}.integrations ORDER BY platform_type`;
+    expect(retained.map((row) => row.platform_type)).toEqual([
+      'easyorders',
+      'shopify',
+      'standalone',
+    ]);
+  });
+
   it('concurrent identical producer deliveries insert one row and enqueue once', async () => {
     const { producer, queue, input } = setup();
     const results = await Promise.all([

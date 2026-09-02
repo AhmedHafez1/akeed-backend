@@ -3,7 +3,11 @@ import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { NormalizedOrder } from '../../../shared/interfaces/order.interface';
 import { WebhookOrderNormalizer } from '../interfaces/webhook-normalizer.interface';
 import { PhoneService } from '../../../shared/services/phone.service';
-import { PlatformType } from '../webhook-queue.constants';
+import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
+import {
+  appendPaymentSignal,
+  classifyCodStatus,
+} from '../../../shared/commerce/payment-signals';
 
 /**
  * Converts a raw Shopify order webhook payload into a NormalizedOrder.
@@ -44,6 +48,7 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
     }
 
     const paymentMethod = this.resolvePaymentMethod(payload);
+    const paymentSignals = this.collectPaymentSignals(payload, paymentMethod);
 
     return {
       orgId,
@@ -57,8 +62,27 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
       totalPrice: payload.total_price ?? '',
       currency: payload.currency ?? '',
       paymentMethod,
+      paymentSignals,
+      codStatus: classifyCodStatus(paymentSignals),
       rawPayload,
     };
+  }
+
+  private collectPaymentSignals(
+    payload: ShopifyRawOrder,
+    paymentMethod: string,
+  ): string[] {
+    const signals: string[] = [];
+    appendPaymentSignal(signals, paymentMethod);
+    for (const gatewayName of payload.payment_gateway_names ?? []) {
+      appendPaymentSignal(signals, gatewayName);
+    }
+    appendPaymentSignal(signals, payload.gateway);
+    for (const transaction of payload.transactions ?? []) {
+      if (!transaction || typeof transaction !== 'object') continue;
+      appendPaymentSignal(signals, transaction.gateway);
+    }
+    return signals;
   }
 
   private resolvePhoneDetails(payload: ShopifyRawOrder): {
@@ -117,4 +141,5 @@ interface ShopifyRawOrder {
   currency?: string;
   gateway?: string;
   payment_gateway_names?: string[];
+  transactions?: Array<{ gateway?: string } | null>;
 }

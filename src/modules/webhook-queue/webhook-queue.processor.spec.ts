@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq';
 import { WebhookQueueProcessor } from './webhook-queue.processor';
-import { WebhookJobType, type PlatformType } from './webhook-queue.constants';
+import { WebhookJobType } from './webhook-queue.constants';
+import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
 import type { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import type { WebhookOrderNormalizer } from './interfaces/webhook-normalizer.interface';
 import type { NormalizedOrder } from '../../shared/interfaces/order.interface';
@@ -108,6 +109,19 @@ function createMocks(
 }
 
 describe('WebhookQueueProcessor', () => {
+  it('explicitly skips a runtime payload with an unknown platform', async () => {
+    const { processor, webhookEventsRepo, integrationsRepo } = createMocks();
+    const payload = { ...buildPayload(), platform: 'magento' };
+
+    await processor.process(buildJob(payload as never));
+
+    expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+      'event-1',
+      'unsupported_platform:magento',
+    );
+    expect(integrationsRepo.findByPlatformDomain).not.toHaveBeenCalled();
+  });
+
   it('marks a valid order-create event completed after hub processing', async () => {
     const { processor, webhookEventsRepo, normalizeOrder, verificationHub } =
       createMocks();

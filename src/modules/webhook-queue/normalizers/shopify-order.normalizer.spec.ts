@@ -33,6 +33,8 @@ describe('ShopifyOrderNormalizer compatibility', () => {
       totalPrice: '123.40',
       currency: 'EGP',
       paymentMethod: 'Cash on Delivery (COD)',
+      paymentSignals: ['cash on delivery (cod)'],
+      codStatus: 'cod',
       rawPayload: raw,
     });
   });
@@ -125,12 +127,35 @@ describe('ShopifyOrderNormalizer compatibility', () => {
   });
 
   it('trims gateway names and prefers the nonempty list over gateway', () => {
-    expect(
-      normalize({
-        payment_gateway_names: [' ', ' cod ', ' manual '],
-        gateway: 'prepaid',
-      })?.paymentMethod,
-    ).toBe('cod, manual');
+    const order = normalize({
+      payment_gateway_names: [' ', ' cod ', ' manual '],
+      gateway: 'prepaid',
+    });
+    expect(order?.paymentMethod).toBe('cod, manual');
+    expect(order?.paymentSignals).toEqual([
+      'cod, manual',
+      'cod',
+      'manual',
+      'prepaid',
+    ]);
+    expect(order?.codStatus).toBe('cod');
+  });
+
+  it('normalizes transaction gateways into canonical payment evidence', () => {
+    const order = normalize({
+      payment_gateway_names: [],
+      gateway: undefined,
+      transactions: [{ gateway: ' Pay-On-Delivery ' }, { gateway: 'card' }],
+    });
+    expect(order?.paymentSignals).toEqual(['pay on delivery', 'card']);
+    expect(order?.codStatus).toBe('cod');
+  });
+
+  it('distinguishes non-COD from missing payment evidence', () => {
+    expect(normalize({ payment_gateway_names: ['card'] })?.codStatus).toBe(
+      'non_cod',
+    );
+    expect(normalize({ payment_gateway_names: [] })?.codStatus).toBe('unknown');
   });
 
   it.each(shopifyPaymentFixtures)(

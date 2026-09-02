@@ -284,7 +284,7 @@ export const integrations = pgTable(
     }),
     check(
       'integrations_platform_type_check',
-      sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])`,
+      sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text, 'standalone'::text, 'easyorders'::text])`,
     ),
     check(
       'integrations_cod_template_ar_variant_check',
@@ -432,7 +432,7 @@ export const billingFreePlanClaims = pgTable(
     }),
     check(
       'billing_free_plan_claims_platform_type_check',
-      sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text])`,
+      sql`platform_type = ANY (ARRAY['shopify'::text, 'salla'::text, 'zid'::text, 'woocommerce'::text, 'standalone'::text, 'easyorders'::text])`,
     ),
   ],
 );

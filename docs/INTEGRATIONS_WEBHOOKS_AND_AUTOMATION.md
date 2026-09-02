@@ -272,10 +272,15 @@ Delivery statuses from Meta (`delivered`, `read`, `failed`) are matched by `waMe
 
 `OrderEligibilityService` routes to a platform-specific strategy. Currently only `ShopifyOrderEligibilityStrategy` is implemented.
 
+The canonical commerce-source values are `shopify`, `salla`, `zid`, `woocommerce`, `standalone`, and `easyorders`. This list is a storage and TypeScript compatibility contract; only platforms with a registered normalizer and eligibility strategy can process orders. Unknown, differently cased, or whitespace-padded values are unsupported and never fall back to Shopify.
+
+`NormalizedOrder` carries trusted `orgId`/`integrationId`, source order ID/reference, E.164 phone, optional customer name, decimal-string amount, currency, normalized `paymentSignals`, and `codStatus` (`cod`, `non_cod`, or `unknown`). `rawPayload` is an opaque `Record<string, unknown>` interpreted only by provider-specific adapters or strategies.
+
 **COD detection:**
 
-The strategy collects payment signals from multiple locations in the order payload:
+An explicit `codStatus` of `cod` or `non_cod` takes precedence. For `unknown` and legacy callers that omit it, the Shopify strategy collects payment signals from:
 
+- `order.paymentSignals[]`
 - `order.paymentMethod`
 - `rawPayload.payment_gateway_names[]`
 - `rawPayload.gateway`
@@ -298,6 +303,10 @@ Results:
 | `eligible: true`  | `cod_match` + matched signal |
 | `eligible: false` | `non_cod_payment_method`     |
 | `eligible: false` | `missing_payment_signal`     |
+
+### Platform Constraint Rollout and Rollback
+
+Apply migration `0023_expand_commerce_platform_contracts.sql` before deploying any writer that stores `standalone` or `easyorders`. The migration retains all existing values and does not update existing integrations or billing claims. An application rollback must leave the expanded database checks in place; removing a value after it has been written would make valid retained rows incompatible with the old constraint.
 
 ### Verification Hub Service
 

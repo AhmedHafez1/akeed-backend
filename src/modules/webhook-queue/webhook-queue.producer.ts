@@ -6,11 +6,8 @@ import {
   WebhookEvent,
 } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import {
-  WEBHOOK_QUEUE_NAME,
-  PlatformType,
-  WebhookJobType,
-} from './webhook-queue.constants';
+import { WEBHOOK_QUEUE_NAME, WebhookJobType } from './webhook-queue.constants';
+import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 

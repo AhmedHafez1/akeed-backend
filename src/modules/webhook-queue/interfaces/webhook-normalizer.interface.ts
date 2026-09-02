@@ -1,5 +1,5 @@
 import { NormalizedOrder } from '../../../shared/interfaces/order.interface';
-import { PlatformType } from '../webhook-queue.constants';
+import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
 
 /**
  * Strategy interface for platform-specific webhook normalisation.

@@ -25,7 +25,7 @@ export class OrderEligibilityService {
     order: NormalizedOrder;
     integration: IntegrationEligibilityInput;
   }): OrderEligibilityResult {
-    const platform = params.integration.platformType.trim().toLowerCase();
+    const platform = params.integration.platformType;
     const strategy = this.strategyByPlatform.get(platform);
     if (strategy) {
       return strategy.evaluateOrderForVerification(params.order);

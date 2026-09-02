@@ -14,6 +14,3 @@ export enum WebhookJobType {
   APP_UNINSTALLED = 'app.uninstalled',
   SUBSCRIPTION_UPDATE = 'subscription.update',
 }
-
-/** Supported e-commerce platforms. Must match `integrations.platform_type`. */
-export type PlatformType = 'shopify' | 'salla' | 'woocommerce' | 'zid';

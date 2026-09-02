@@ -9,11 +9,9 @@ import {
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
-import {
-  WEBHOOK_QUEUE_NAME,
-  PlatformType,
-  WebhookJobType,
-} from './webhook-queue.constants';
+import { WEBHOOK_QUEUE_NAME, WebhookJobType } from './webhook-queue.constants';
+import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
+import { isPlatformType } from '../../shared/interfaces/commerce-source.interface';
 import {
   buildBackendLog,
   normalizeError,
@@ -77,6 +75,24 @@ export class WebhookQueueProcessor extends WorkerHost {
     );
 
     await this.webhookEventsRepo.markProcessing(data.webhookEventId);
+
+    if (!isPlatformType(data.platform)) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-job-process',
+          outcome: 'skipped',
+          jobId: String(job.id),
+          webhookEventId: data.webhookEventId,
+          platform: String(data.platform),
+          reason: 'unsupported_platform',
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        `unsupported_platform:${String(data.platform)}`,
+      );
+      return;
+    }
 
     switch (data.jobType) {
       case WebhookJobType.ORDER_CREATE:

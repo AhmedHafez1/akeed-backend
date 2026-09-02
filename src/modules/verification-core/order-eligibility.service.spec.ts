@@ -96,6 +96,47 @@ describe('OrderEligibilityService', () => {
     });
   });
 
+  it('honors explicit canonical COD disposition', () => {
+    expect(
+      service.evaluateOrderForVerification({
+        order: { ...baseOrder, codStatus: 'cod' },
+        integration: { platformType: 'shopify' },
+      }),
+    ).toEqual({ eligible: true, reason: 'cod_match' });
+    expect(
+      service.evaluateOrderForVerification({
+        order: {
+          ...baseOrder,
+          codStatus: 'non_cod',
+          paymentSignals: ['cod'],
+        },
+        integration: { platformType: 'shopify' },
+      }),
+    ).toEqual({ eligible: false, reason: 'non_cod_payment_method' });
+  });
+
+  it('uses canonical payment signals when disposition is unknown', () => {
+    expect(
+      service.evaluateOrderForVerification({
+        order: {
+          ...baseOrder,
+          codStatus: 'unknown',
+          paymentSignals: ['Cash_On_Delivery'],
+        },
+        integration: { platformType: 'shopify' },
+      }),
+    ).toMatchObject({ eligible: true, reason: 'cod_match' });
+  });
+
+  it('keeps explicit unknown without evidence ineligible', () => {
+    expect(
+      service.evaluateOrderForVerification({
+        order: { ...baseOrder, codStatus: 'unknown' },
+        integration: { platformType: 'shopify' },
+      }),
+    ).toEqual({ eligible: false, reason: 'missing_payment_signal' });
+  });
+
   it('skips unsupported platforms', () => {
     const result = service.evaluateOrderForVerification({
       order: baseOrder,
@@ -107,4 +148,16 @@ describe('OrderEligibilityService', () => {
       reason: 'unsupported_platform',
     });
   });
+
+  it.each(['SHOPIFY', ' shopify ', 'magento', ''])(
+    'does not coerce unknown platform %p to Shopify',
+    (platformType) => {
+      expect(
+        service.evaluateOrderForVerification({
+          order: { ...baseOrder, codStatus: 'cod' },
+          integration: { platformType },
+        }),
+      ).toEqual({ eligible: false, reason: 'unsupported_platform' });
+    },
+  );
 });

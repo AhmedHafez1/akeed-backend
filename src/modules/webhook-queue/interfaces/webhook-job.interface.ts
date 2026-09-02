@@ -1,4 +1,5 @@
-import { PlatformType, WebhookJobType } from '../webhook-queue.constants';
+import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
+import { WebhookJobType } from '../webhook-queue.constants';
 
 /**
  * Payload persisted in Redis by the producer and consumed by the processor.
