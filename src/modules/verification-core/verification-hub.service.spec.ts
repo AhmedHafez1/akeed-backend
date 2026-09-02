@@ -1,3 +1,5 @@
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { VerificationHubService } from './verification-hub.service';
 import type { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import type { integrations } from '../../infrastructure/database/schema';
@@ -125,7 +127,13 @@ function createMocks() {
   const service = new VerificationHubService(
     ordersRepo as any,
     verificationsRepo as any,
-    orderTaggingPort as any,
+    new CommerceOutcomeRegistryService(
+      {
+        findForOutcomeDispatch: (...args: unknown[]) =>
+          ordersRepo.findById(...args) as unknown,
+      } as never,
+      [new ShopifyOutcomeAdapter(orderTaggingPort as never)],
+    ),
     orderEligibilityService as any,
     verificationSendService as any,
     billingEntitlementService as any,
@@ -159,6 +167,7 @@ describe('VerificationHubService', () => {
         createMocks();
       const integration = buildIntegration();
       const verification = {
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
         status: 'sent',
@@ -172,6 +181,7 @@ describe('VerificationHubService', () => {
         },
       );
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: '12345',
@@ -990,6 +1000,7 @@ describe('VerificationHubService', () => {
       const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
         createMocks();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
@@ -1005,10 +1016,12 @@ describe('VerificationHubService', () => {
         createMocks();
       const integration = buildIntegration();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1029,10 +1042,12 @@ describe('VerificationHubService', () => {
         createMocks();
       const integration = buildIntegration();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1052,10 +1067,12 @@ describe('VerificationHubService', () => {
       const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
         createMocks();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'akeed-test-123',
@@ -1071,10 +1088,12 @@ describe('VerificationHubService', () => {
       const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
         createMocks();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1090,10 +1109,12 @@ describe('VerificationHubService', () => {
       const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
         createMocks();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1110,10 +1131,12 @@ describe('VerificationHubService', () => {
         createMocks();
       const integration = buildIntegration();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1132,10 +1155,12 @@ describe('VerificationHubService', () => {
       const { service, verificationsRepo, ordersRepo, orderTaggingPort } =
         createMocks();
       verificationsRepo.findById.mockResolvedValue({
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',

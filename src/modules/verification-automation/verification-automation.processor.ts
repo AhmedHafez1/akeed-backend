@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DelayedError, Job } from 'bullmq';
 import {
   VERIFICATION_AUTOMATION_QUEUE_NAME,
@@ -10,10 +10,7 @@ import { VerificationsRepository } from '../../infrastructure/database/repositor
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationSendService } from '../verification-core/verification-send.service';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
-import {
-  ORDER_TAGGING_PORT,
-  type OrderTaggingPort,
-} from '../../shared/ports/order-tagging.port';
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { integrations } from '../../infrastructure/database/schema';
 import {
   adjustForQuietHours,
@@ -43,8 +40,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly ordersRepo: OrdersRepository,
     private readonly verificationSendService: VerificationSendService,
     private readonly verificationHub: VerificationHubService,
-    @Inject(ORDER_TAGGING_PORT)
-    private readonly orderTaggingPort: OrderTaggingPort,
+    private readonly commerceOutcomes: CommerceOutcomeRegistryService,
   ) {
     super();
   }
@@ -99,7 +95,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     job: Job<VerificationAutomationJobPayload>,
     token?: string,
   ): Promise<void> {
-    const ctx = await this.loadContext(job.data.verificationId);
+    const ctx = await this.loadContext(job.data.verificationId, job.data.orgId);
     if (!ctx) return;
 
     if (!ctx.integration.isAutoVerifyEnabled) {
@@ -162,7 +158,9 @@ export class VerificationAutomationProcessor extends WorkerHost {
     } else if (
       outcome.status === 'skipped' &&
       (outcome.reason === 'integration_inactive' ||
-        outcome.reason === 'billing_not_active')
+        outcome.reason === 'billing_not_active' ||
+        outcome.reason === 'missing_linked_integration' ||
+        outcome.reason === 'source_identity_mismatch')
     ) {
       await this.verificationsRepo.updateByIdForOrg(
         ctx.verification.id,
@@ -186,7 +184,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     job: Job<VerificationAutomationJobPayload>,
     token?: string,
   ): Promise<void> {
-    const ctx = await this.loadContext(job.data.verificationId);
+    const ctx = await this.loadContext(job.data.verificationId, job.data.orgId);
     if (!ctx) return;
 
     const { verification, integration } = ctx;
@@ -293,7 +291,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     job: Job<VerificationAutomationJobPayload>,
     token?: string,
   ): Promise<void> {
-    const ctx = await this.loadContext(job.data.verificationId);
+    const ctx = await this.loadContext(job.data.verificationId, job.data.orgId);
     if (!ctx) return;
 
     const { verification, order, integration } = ctx;
@@ -368,42 +366,24 @@ export class VerificationAutomationProcessor extends WorkerHost {
       undefined,
     );
 
-    if (
-      order.externalOrderId &&
-      !order.externalOrderId.startsWith('akeed-test-') &&
-      integration.platformStoreUrl
-    ) {
-      try {
-        await this.orderTaggingPort.addOrderTag(
-          integration,
-          order.externalOrderId,
-          'Akeed: No Reply',
-        );
-        this.logger.log(
-          buildBackendLog(VerificationAutomationProcessor.name, {
-            action: 'verification-automation-no-reply-tag-order',
-            outcome: 'success',
-            verificationId: verification.id,
-            orgId: verification.orgId,
-            shopDomain: integration.platformStoreUrl,
-            orderId: order.externalOrderId,
-            tag: 'Akeed: No Reply',
-          }),
-        );
-      } catch (error) {
-        this.logger.error(
-          buildBackendLog(VerificationAutomationProcessor.name, {
-            action: 'verification-automation-no-reply-tag-order',
-            outcome: 'failure',
-            verificationId: verification.id,
-            orgId: verification.orgId,
-            shopDomain: integration.platformStoreUrl,
-            orderId: order.externalOrderId,
-            tag: 'Akeed: No Reply',
-            ...normalizeError(error),
-          }),
-        );
-      }
+    try {
+      await this.commerceOutcomes.dispatch({
+        orgId: verification.orgId,
+        integrationId: integration.id,
+        externalOrderId: order.externalOrderId,
+        action: 'automatic_no_reply_tagging',
+        correlationId: verification.id,
+      });
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-outcome-dispatch',
+          outcome: 'failure',
+          orgId: verification.orgId,
+          verificationId: verification.id,
+          ...normalizeError(error),
+        }),
+      );
     }
   }
 
@@ -469,7 +449,10 @@ export class VerificationAutomationProcessor extends WorkerHost {
     return true;
   }
 
-  private async loadContext(verificationId: string): Promise<{
+  private async loadContext(
+    verificationId: string,
+    orgId: string,
+  ): Promise<{
     verification: NonNullable<
       Awaited<ReturnType<VerificationsRepository['findById']>>
     >;
@@ -477,7 +460,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     integration: typeof integrations.$inferSelect;
   } | null> {
     const verification = await this.verificationsRepo.findById(verificationId);
-    if (!verification) {
+    if (!verification || verification.orgId !== orgId) {
       this.logger.warn(
         buildBackendLog(VerificationAutomationProcessor.name, {
           action: 'verification-automation-context-load',
@@ -506,7 +489,12 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     const integration =
       (order.integration as typeof integrations.$inferSelect | null) ?? null;
-    if (!integration) {
+    if (
+      !integration ||
+      order.orgId !== orgId ||
+      order.integrationId !== integration.id ||
+      integration.orgId !== orgId
+    ) {
       this.logger.warn(
         buildBackendLog(VerificationAutomationProcessor.name, {
           action: 'verification-automation-context-load',

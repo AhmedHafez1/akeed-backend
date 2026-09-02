@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { NormalizedOrder } from '../../../shared/interfaces/order.interface';
-import { OrderEligibilityResult } from '../order-eligibility.types';
-import { OrderEligibilityStrategy } from './order-eligibility.strategy';
+import { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
+import { OrderEligibilityResult } from '../../../../modules/verification-core/order-eligibility.types';
+import { OrderEligibilityStrategy } from '../../../../modules/verification-core/strategies/order-eligibility.strategy';
 import {
   appendPaymentSignal,
   isCashOnDeliveryPaymentSignal,
   normalizePaymentSignal,
-} from '../../../shared/commerce/payment-signals';
+} from '../../../../shared/commerce/payment-signals';
 
 @Injectable()
 export class ShopifyOrderEligibilityStrategy implements OrderEligibilityStrategy {

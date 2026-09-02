@@ -24,7 +24,6 @@ function createMocks() {
   const service = new VerificationSendService(
     verificationsRepo as any,
     ordersRepo as any,
-    integrationsRepo as any,
     billingEntitlementService as any,
     messagingPort as any,
   );
@@ -66,6 +65,7 @@ describe('VerificationSendService', () => {
       };
       mocks.verificationsRepo.findById.mockResolvedValue(verification);
       mocks.ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-1',
@@ -235,6 +235,7 @@ describe('VerificationSendService', () => {
         orgId: 'org-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
@@ -306,6 +307,7 @@ describe('VerificationSendService', () => {
         orgId: 'org-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
@@ -356,6 +358,7 @@ describe('VerificationSendService', () => {
         orgId: 'org-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
@@ -403,6 +406,7 @@ describe('VerificationSendService', () => {
         orgId: 'org-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
@@ -455,6 +459,7 @@ describe('VerificationSendService', () => {
           orgId: 'org-1',
         });
         ordersRepo.findById.mockResolvedValue({
+          integrationId: 'int-1',
           id: 'order-1',
           orgId: 'org-1',
           customerPhone: '+966500000000',
@@ -490,6 +495,7 @@ describe('VerificationSendService', () => {
         orgId: 'org-1',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         customerPhone: '+966500000000',
@@ -523,4 +529,59 @@ describe('VerificationSendService', () => {
       expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
     });
   });
+});
+
+describe('VerificationSendService trusted integration boundary', () => {
+  it.each(['sendInitial', 'sendFollowUp'] as const)(
+    'rejects invalid source identity before quota or messaging for %s',
+    async (method) => {
+      for (const kind of [
+        'missing',
+        'wrong_integration',
+        'wrong_owner',
+        'wrong_order_owner',
+      ]) {
+        const {
+          service,
+          verificationsRepo,
+          ordersRepo,
+          integrationsRepo,
+          billingEntitlementService,
+          messagingPort,
+        } = createMocks();
+        verificationsRepo.findById.mockResolvedValue({
+          id: 'ver-1',
+          orderId: 'order-1',
+          orgId: 'org-1',
+        });
+        ordersRepo.findById.mockResolvedValue({
+          id: 'order-1',
+          orgId: kind === 'wrong_order_owner' ? 'org-2' : 'org-1',
+          integrationId: 'int-1',
+          integration:
+            kind === 'missing'
+              ? null
+              : {
+                  ...baseIntegration,
+                  id: kind === 'wrong_integration' ? 'int-2' : 'int-1',
+                  orgId: kind === 'wrong_owner' ? 'org-2' : 'org-1',
+                },
+        });
+        await expect(service[method]('ver-1')).resolves.toEqual({
+          status: 'skipped',
+          reason:
+            kind === 'missing'
+              ? 'missing_linked_integration'
+              : 'source_identity_mismatch',
+        });
+        expect(
+          integrationsRepo.findActiveByOrgAndPlatform,
+        ).not.toHaveBeenCalled();
+        expect(
+          billingEntitlementService.reserveVerificationSlot,
+        ).not.toHaveBeenCalled();
+        expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
+      }
+    },
+  );
 });

@@ -5,3 +5,7 @@ export interface OrderEligibilityStrategy {
   readonly platform: string;
   evaluateOrderForVerification(order: NormalizedOrder): OrderEligibilityResult;
 }
+
+export const ORDER_ELIGIBILITY_STRATEGIES = Symbol(
+  'ORDER_ELIGIBILITY_STRATEGIES',
+);

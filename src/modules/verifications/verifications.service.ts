@@ -1,7 +1,6 @@
 import {
   BadGatewayException,
   BadRequestException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -29,14 +28,11 @@ import {
   decodeCursor,
   encodeCursor,
 } from '../orders/services/pagination.helpers';
-import {
-  ORDER_ADMIN_PORT,
-  type OrderAdminPort,
-} from '../../shared/ports/order-admin.port';
-import {
-  ORDER_TAGGING_PORT,
-  type OrderTaggingPort,
-} from '../../shared/ports/order-tagging.port';
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import type {
+  CancelOrderResponse,
+  CommerceOutcomeOperationResult,
+} from '../../shared/commerce/commerce-outcome';
 import {
   buildBackendLog,
   normalizeError,
@@ -85,10 +81,7 @@ export class VerificationsService {
     private readonly monthlyUsageRepo: IntegrationMonthlyUsageRepository,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly ordersRepo: OrdersRepository,
-    @Inject(ORDER_ADMIN_PORT)
-    private readonly orderAdmin: OrderAdminPort,
-    @Inject(ORDER_TAGGING_PORT)
-    private readonly orderTagging: OrderTaggingPort,
+    private readonly commerceOutcomes: CommerceOutcomeRegistryService,
   ) {}
 
   async listByOrg(
@@ -125,6 +118,26 @@ export class VerificationsService {
 
     return {
       data: items.map((verification) => ({
+        capabilities: [
+          {
+            action: 'merchant_no_reply_cancellation',
+            supported:
+              verification.order?.orgId === orgId &&
+              activeIntegrations.some(
+                (integration) =>
+                  integration.id === verification.order?.integrationId &&
+                  integration.orgId === orgId &&
+                  integration.isActive === true &&
+                  this.commerceOutcomes.supports(
+                    integration.platformType,
+                    'merchant_no_reply_cancellation',
+                  ),
+              ),
+          },
+        ],
+        cancellation_operation: this.readCancellationOperation(
+          verification.metadata,
+        ),
         id: verification.id,
         status: verification.status ?? 'pending',
         order_id: verification.orderId,
@@ -220,123 +233,96 @@ export class VerificationsService {
     };
   }
 
-  /**
-   * Merchant-initiated cancellation for a no_reply verification.
-   *
-   * 1. Load verification (org-scoped).
-   * 2. Idempotent: if already merchant_no_reply canceled, return success.
-   * 3. Reject any status other than no_reply.
-   * 4. Load the linked order to obtain the Shopify integration.
-   * 5. Cancel the order on Shopify first (fail-fast on error).
-   * 6. Mark verification as merchant-canceled locally.
-   * 7. Apply "Akeed: Canceled" tag (best-effort; log but don't fail).
-   */
   async cancelNoReplyOrder(
     orgId: string,
     verificationId: string,
-  ): Promise<{
-    success: true;
-    verificationId: string;
-    status: 'canceled';
-    alreadyCanceled?: boolean;
-    shopifyJobId?: string;
-  }> {
+  ): Promise<CancelOrderResponse> {
     const verification = await this.verificationsRepo.findByIdForOrg(
       verificationId,
       orgId,
     );
-
-    if (!verification) {
+    if (!verification || verification.orgId !== orgId) {
       throw new NotFoundException('Verification not found');
     }
-
-    // Idempotent: already merchant_no_reply canceled
     if (
       verification.status === 'canceled' &&
       verification.cancellationSource === 'merchant_no_reply' &&
       verification.merchantCanceledAt
     ) {
-      return {
-        success: true,
+      return this.cancellationResponse(
         verificationId,
-        status: 'canceled',
-        alreadyCanceled: true,
-      };
+        this.readCancellationOperation(verification.metadata),
+        true,
+      );
     }
-
     if (verification.status !== 'no_reply') {
       throw new BadRequestException(
         `Cannot cancel verification with status '${verification.status}'; only 'no_reply' verifications can be canceled`,
       );
     }
-
     const order = await this.ordersRepo.findById(verification.orderId);
-    if (!order) {
-      throw new BadRequestException('Cannot cancel: order not found');
-    }
-
-    const externalOrderId = order.externalOrderId;
-
-    if (!order.integration) {
+    if (!order) throw new BadRequestException('Cannot cancel: order not found');
+    if (!order.integration || !order.integrationId) {
       throw new BadRequestException(
-        'Cannot cancel: order has no linked Shopify integration',
+        'Cannot cancel: order has no linked integration',
       );
     }
-
-    if (!externalOrderId) {
+    if (
+      order.orgId !== orgId ||
+      order.integration.orgId !== orgId ||
+      order.integration.id !== order.integrationId
+    ) {
+      throw new BadRequestException('Cannot cancel: source identity mismatch');
+    }
+    if (!order.externalOrderId)
       throw new BadRequestException(
-        'Cannot cancel: order has no external Shopify order ID',
+        'Cannot cancel: order has no external order ID',
       );
+    const command = {
+      orgId,
+      integrationId: order.integrationId,
+      externalOrderId: order.externalOrderId,
+      correlationId: verificationId,
+    };
+    const result = await this.commerceOutcomes.dispatch({
+      ...command,
+      action: 'merchant_no_reply_cancellation',
+    });
+    if (result.status === 'unsupported') {
+      throw new BadRequestException({
+        message: 'Order cancellation is not supported by this source',
+        code: result.reason,
+        operation: { status: result.status, reason: result.reason },
+      });
     }
-
-    const isTestOrder = externalOrderId?.startsWith('akeed-test-') ?? false;
-    let shopifyJobId: string | undefined;
-    if (!isTestOrder) {
-      const integration = order.integration;
-      if (!integration) {
-        throw new BadRequestException(
-          'Cannot cancel: order has no linked Shopify integration',
-        );
-      }
-
-      // Cancel on Shopify first — if this fails, do NOT update local state
-      try {
-        const result = await this.orderAdmin.cancelOrder(
-          integration,
-          externalOrderId,
-          'CUSTOMER',
-        );
-        shopifyJobId = result.jobId;
-      } catch (error: unknown) {
-        this.logger.error(
-          buildBackendLog(VerificationsService.name, {
-            action: 'verification-no-reply-cancel-shopify-order',
-            outcome: 'failure',
-            orgId,
-            shopDomain: integration.platformStoreUrl,
-            verificationId,
-            orderId: externalOrderId,
-            ...normalizeError(error),
-          }),
-        );
-        const message = error instanceof Error ? error.message : String(error);
-        throw new BadGatewayException(
-          `Shopify order cancellation failed: ${message}`,
-        );
-      }
+    if (result.status === 'permanent_failure') {
+      throw new BadRequestException({
+        message: 'Order cancellation could not be dispatched',
+        code: result.errorCode,
+        operation: { status: result.status, errorCode: result.errorCode },
+      });
     }
-
-    // Mark as merchant-canceled locally
-    const canceledAt = new Date().toISOString();
+    if (result.status === 'retryable_failure') {
+      throw new BadGatewayException({
+        message: 'Order cancellation failed',
+        code: result.errorCode,
+        operation: { status: result.status, errorCode: result.errorCode },
+      });
+    }
+    const operation: CommerceOutcomeOperationResult =
+      result.status === 'pending_provider_operation'
+        ? {
+            status: result.status,
+            providerOperationId: result.providerOperationId,
+          }
+        : { status: result.status };
     const updated = await this.verificationsRepo.markMerchantNoReplyCanceled(
       verificationId,
       orgId,
-      canceledAt,
+      new Date().toISOString(),
+      operation,
     );
-
     if (!updated) {
-      // Race: verification status changed between our check and the update.
-      // Re-check for idempotent merchant_no_reply.
       const reloaded = await this.verificationsRepo.findByIdForOrg(
         verificationId,
         orgId,
@@ -345,67 +331,93 @@ export class VerificationsService {
         reloaded?.status === 'canceled' &&
         reloaded.cancellationSource === 'merchant_no_reply'
       ) {
-        return {
-          success: true,
+        return this.cancellationResponse(
           verificationId,
-          status: 'canceled',
-          alreadyCanceled: true,
-          shopifyJobId,
-        };
+          this.readCancellationOperation(reloaded.metadata) ?? operation,
+          true,
+        );
       }
-
       this.logger.warn(
         buildBackendLog(VerificationsService.name, {
           action: 'verification-no-reply-cancel-mark-local',
           outcome: 'retry',
           orgId,
           verificationId,
-          status: reloaded?.status ?? 'unknown',
           reason: 'status_changed_during_cancellation',
+          providerOperationId:
+            result.status === 'pending_provider_operation'
+              ? result.providerOperationId
+              : undefined,
         }),
       );
-      throw new BadRequestException(
-        'Verification status changed during cancellation; Shopify order was already canceled — check order status manually',
+      throw new BadRequestException({
+        message:
+          'Verification status changed during cancellation; the provider accepted the request. Check order status before retrying.',
+        operation,
+      });
+    }
+    try {
+      await this.commerceOutcomes.dispatch({
+        ...command,
+        action: 'merchant_cancellation_tagging',
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(VerificationsService.name, {
+          action: 'verification-no-reply-cancel-tag-order',
+          outcome: 'retry',
+          orgId,
+          verificationId,
+          ...normalizeError(error),
+        }),
       );
     }
+    return this.cancellationResponse(verificationId, operation);
+  }
 
-    if (!isTestOrder) {
-      const integration = order.integration;
-      if (!integration) {
-        throw new BadRequestException(
-          'Cannot cancel: order has no linked Shopify integration',
-        );
-      }
-
-      // Best-effort: add "Akeed: Canceled" tag
-      try {
-        await this.orderTagging.addOrderTag(
-          integration,
-          externalOrderId,
-          'Akeed: Canceled',
-        );
-      } catch (error: unknown) {
-        this.logger.warn(
-          buildBackendLog(VerificationsService.name, {
-            action: 'verification-no-reply-cancel-tag-order',
-            outcome: 'retry',
-            orgId,
-            shopDomain: integration.platformStoreUrl,
-            verificationId,
-            orderId: externalOrderId,
-            tag: 'Akeed: Canceled',
-            ...normalizeError(error),
-          }),
-        );
-      }
-    }
-
+  private cancellationResponse(
+    verificationId: string,
+    operation?: CommerceOutcomeOperationResult,
+    alreadyCanceled?: boolean,
+  ): CancelOrderResponse {
     return {
       success: true,
       verificationId,
       status: 'canceled',
-      shopifyJobId,
+      ...(alreadyCanceled ? { alreadyCanceled } : {}),
+      ...(operation ? { operation } : {}),
+      ...(operation?.status === 'pending_provider_operation'
+        ? { providerOperationId: operation.providerOperationId }
+        : {}),
     };
+  }
+
+  private readCancellationOperation(
+    metadata: unknown,
+  ): CommerceOutcomeOperationResult | undefined {
+    if (
+      !metadata ||
+      typeof metadata !== 'object' ||
+      !('commerceCancellation' in metadata)
+    )
+      return undefined;
+    const operation = metadata.commerceCancellation;
+    if (!operation || typeof operation !== 'object' || !('status' in operation))
+      return undefined;
+    if (operation.status === 'applied') return { status: 'applied' };
+    if (operation.status === 'accepted_without_reference')
+      return { status: operation.status };
+    if (
+      operation.status === 'pending_provider_operation' &&
+      'providerOperationId' in operation &&
+      typeof operation.providerOperationId === 'string'
+    ) {
+      return {
+        status: operation.status,
+        providerOperationId: operation.providerOperationId,
+      };
+    }
+    return undefined;
   }
 
   private parseStatuses(input?: string): VerificationStatus[] | undefined {

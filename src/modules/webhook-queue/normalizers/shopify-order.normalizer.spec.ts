@@ -1,7 +1,7 @@
 import { ShopifyOrderNormalizer } from './shopify-order.normalizer';
 import { PhoneService } from '../../../shared/services/phone.service';
 import { InvalidPhoneNumberError } from '../../../shared/errors/invalid-phone-number.error';
-import { ShopifyOrderEligibilityStrategy } from '../../verification-core/strategies/shopify-order-eligibility.strategy';
+import { ShopifyOrderEligibilityStrategy } from '../../../infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
 import {
   shopifyOrderFixture,
   shopifyPaymentFixtures,

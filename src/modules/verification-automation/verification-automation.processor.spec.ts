@@ -1,3 +1,5 @@
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { VerificationAutomationProcessor } from './verification-automation.processor';
 import type { Job } from 'bullmq';
 import { DelayedError } from 'bullmq';
@@ -35,7 +37,13 @@ function createMocks() {
     ordersRepo as any,
     verificationSendService as any,
     verificationHub as any,
-    orderTaggingPort as any,
+    new CommerceOutcomeRegistryService(
+      {
+        findForOutcomeDispatch: (...args: unknown[]) =>
+          ordersRepo.findById(...args) as unknown,
+      } as never,
+      [new ShopifyOutcomeAdapter(orderTaggingPort as never)],
+    ),
   );
 
   return {
@@ -50,6 +58,8 @@ function createMocks() {
 
 const baseIntegration = {
   id: 'int-1',
+  platformType: 'shopify',
+  accessToken: 'synthetic-token',
   orgId: 'org-1',
   isActive: true,
   billingStatus: 'active',
@@ -100,6 +110,8 @@ describe('VerificationAutomationProcessor', () => {
       };
       mocks.verificationsRepo.findById.mockResolvedValue(verification);
       mocks.ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: { ...baseIntegration, ...integration },
@@ -217,6 +229,8 @@ describe('VerificationAutomationProcessor', () => {
       } = setup();
       verification.followUpAttempts = 1;
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'akeed-test-123',
         integration: baseIntegration,
@@ -298,6 +312,7 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: null,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-1',
@@ -352,6 +367,7 @@ describe('VerificationAutomationProcessor', () => {
         status: 'pending',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-1',
@@ -398,6 +414,7 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: null,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
         id: 'order-1',
         orgId: 'org-1',
         externalOrderId: 'ext-1',
@@ -427,6 +444,8 @@ describe('VerificationAutomationProcessor', () => {
         followUpAttempts: 0,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -456,6 +475,8 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: null,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -492,6 +513,8 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: null,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -531,6 +554,8 @@ describe('VerificationAutomationProcessor', () => {
           merchantCanceledAt: null,
         });
         ordersRepo.findById.mockResolvedValue({
+          integrationId: 'int-1',
+          orgId: 'org-1',
           id: 'order-1',
           externalOrderId: 'ext-1',
           integration: {
@@ -573,6 +598,8 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: null,
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -606,6 +633,8 @@ describe('VerificationAutomationProcessor', () => {
         status: 'confirmed',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -631,6 +660,8 @@ describe('VerificationAutomationProcessor', () => {
         merchantCanceledAt: '2026-05-01T10:00:00Z',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,
@@ -661,6 +692,8 @@ describe('VerificationAutomationProcessor', () => {
         status: 'pending',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: { ...baseIntegration, isAutoVerifyEnabled: false },
@@ -695,6 +728,8 @@ describe('VerificationAutomationProcessor', () => {
         status: 'pending',
       });
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         externalOrderId: 'ext-1',
         integration: baseIntegration,

@@ -34,34 +34,18 @@ Out of scope:
 
 ## Architecture Overview
 
-Akeed uses a ports-and-adapters architecture to abstract external platform interactions. Core verification logic depends on port interfaces; concrete implementations live in spoke modules.
+Core order outcomes use CommerceOutcomeRegistryService. It reloads the source-scoped persisted order and integration before selecting an adapter. ShopifyOutcomeAdapter wraps the existing ShopifyApiService GraphQL implementation. Shopify-specific eligibility also lives in the spoke and is injected through ORDER_ELIGIBILITY_STRATEGIES.
 
-```
-                     ┌──────────────────────────────┐
-                     │    Verification Core Module   │
-                     │  (Hub, Send, Billing, Eligib) │
-                     └──────┬───────┬───────┬───────┘
-                            │       │       │
-                  ┌─────────┘       │       └──────────┐
-                  ▼                 ▼                   ▼
-           MessagingPort     OrderAdminPort       OrderTaggingPort
-                  │          OrderTaggingPort      StorePlatformPort
-                  │                 │
-                  ▼                 ▼
-           ┌────────────┐   ┌──────────────┐
-           │ Meta Spoke  │   │ Shopify Spoke │
-           │ (WhatsApp)  │   │ (Admin API)   │
-           └────────────┘   └──────────────┘
-```
+| Boundary | Implementation |
+| --- | --- |
+| MessagingPort | WhatsAppService (existing Akeed sender) |
+| CommerceOutcomeRegistryService | ShopifyOutcomeAdapter selected from the persisted integration |
+| ORDER_ELIGIBILITY_STRATEGIES | ShopifyOrderEligibilityStrategy supplied at composition time |
+| STORE_PLATFORM_PORT | ShopifyApiService for existing onboarding/billing; separation remains US-02-04 |
 
-Port binding (configured in `AppModule`):
+ORDER_ADMIN_PORT and ORDER_TAGGING_PORT remain legacy interface files, with no runtime global bindings or core consumers. ShopifyCommerceModule provides the API and outcome adapter without importing webhook ingestion.
 
-| Port                  | Provider token      | Implementation      |
-| --------------------- | ------------------- | ------------------- |
-| `MESSAGING_PORT`      | `WhatsAppService`   | Meta WhatsApp API   |
-| `ORDER_ADMIN_PORT`    | `ShopifyApiService` | Shopify GraphQL API |
-| `ORDER_TAGGING_PORT`  | `ShopifyApiService` | Shopify GraphQL API |
-| `STORE_PLATFORM_PORT` | `ShopifyApiService` | Shopify GraphQL API |
+See [US-02-03 implementation evidence and rollout](US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).
 
 ## Shopify Webhooks
 
@@ -260,7 +244,7 @@ Two buttons are attached to every template:
 3. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
 4. Update verification status in database.
 5. Set `cancellationSource: 'customer'` for customer-initiated cancellations.
-6. Call `VerificationHubService.finalizeVerification()` → tags Shopify order.
+6. Call `VerificationHubService.finalizeVerification()` → dispatch the customer outcome through the registry. Shopify adds the existing tag; customer cancellation never calls remote order cancellation.
 
 **Status updates:**
 
@@ -350,7 +334,7 @@ Handles the actual WhatsApp send for both initial and follow-up messages.
 
 **`sendInitial(verificationId)` flow:**
 
-1. Load verification + order + integration.
+1. Load verification + order + its linked integration. Missing linkage returns `missing_linked_integration`; inconsistent order/integration ownership returns `source_identity_mismatch` before quota or messaging. No Shopify fallback lookup.
 2. Reserve billing slot → if limit reached, return `plan_limit_reached`.
 3. Resolve template selection from integration settings (`codTemplateArVariant`, `codTemplateEnVariant`).
 4. Call `MessagingPort.sendVerificationTemplate()`.
@@ -429,7 +413,7 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 1. Check: verification not in terminal status, merchant has not already canceled.
 2. **Deferred follow-up check:** if follow-up is still pending (no `follow_up_sent_at` and follow-up enabled), reschedule escalation +60 seconds to allow follow-up to complete first.
 3. Mark verification status as `no_reply`.
-4. Tag Shopify order with `Akeed: No Reply` (skipped for test orders with `akeed-test-` prefix).
+4. Dispatch `automatic_no_reply_tagging`; Shopify adds `Akeed: No Reply`. The registry suppresses external work for persisted `isTest` orders and `akeed-test-` IDs after validating source and capability.
 
 ### Quiet-Hours Engine
 
@@ -474,7 +458,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 - `cancelOrder(integration, externalOrderId, reason)` — GraphQL `orderCancel` mutation.
 - Reason: `"Canceled by Akeed after no reply to COD verification"`.
 - Restock enabled, refund disabled, no customer notification.
-- Returns `jobId` if Shopify processes the cancellation asynchronously.
+- The API retains its optional `jobId`. The outcome adapter exposes `pending_provider_operation` with `providerOperationId`; absence of a reference is `accepted_without_reference`, never proof of completion.
 
 **Billing operations:**
 
@@ -489,7 +473,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 
 ### Error Handling
 
-- GraphQL errors and user validation errors are logged with request IDs from response headers.
+- GraphQL errors and user validation errors are logged with request IDs. Tagging errors now propagate to registry failure results while callers preserve local outcomes and best-effort semantics.
 - Access tokens are decrypted per-request using `SHOPIFY_TOKEN_ENCRYPTION_KEY`.
 
 ## Backend Code Map

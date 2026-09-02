@@ -190,9 +190,9 @@ Flow:
 2. A confirmation dialog appears.
 3. On confirm, the backend:
    a. Validates verification is `no_reply` status (rejects other statuses).
-   b. Cancels the Shopify order via `OrderAdminPort` (fail-fast on error).
+   b. Dispatches `merchant_no_reply_cancellation` through the trusted integration registry (fail-fast on unsupported source or error).
    c. Marks verification as `canceled` with `cancellationSource = 'merchant_no_reply'` and `merchantCanceledAt`.
-   d. Tags the Shopify order with `Akeed: Canceled` (best-effort).
+   d. Dispatches `merchant_cancellation_tagging` after the local transition; Shopify adds `Akeed: Canceled` (best-effort).
 4. The verification list and stats are refetched.
 5. If the verification was already merchant-canceled, returns success with `alreadyCanceled: true` (idempotent).
 
@@ -476,7 +476,7 @@ npm --prefix akeed-frontend run build
 | Send test verification with empty phone       | Client-side error: phone required.                                                 |
 | Send test verification with invalid phone     | Server-side error: invalid phone number.                                           |
 | Test verification when plan limit reached     | Returns `skipped: true` with reason.                                               |
-| Cancel no-reply order                         | Shopify order canceled, verification marked merchant-canceled, list/stats refresh. |
+| Cancel no-reply order                         | Provider cancellation accepted, verification marked merchant-canceled, list/stats refresh; asynchronous completion remains separate. |
 | Cancel already-canceled no-reply order        | Returns success with `alreadyCanceled: true`.                                      |
 | Cancel order with non-no_reply status         | Returns 400: only no_reply verifications can be canceled.                          |
 | Settings: save valid settings                 | All fields saved, success banner shown, state re-synced from response.             |
@@ -489,3 +489,11 @@ npm --prefix akeed-frontend run build
 | Embedded mode tab navigation via URL          | `?tab=confirmation` opens Confirmation tab directly.                               |
 | Legacy route `/message-preview`               | Redirects to `/settings?tab=message-preview`.                                      |
 | Legacy route `/automation-settings`           | Redirects to `/settings?tab=confirmation`.                                         |
+
+### US-02-03 cancellation contract
+
+The list exposes per-row `capabilities` and optional `cancellation_operation`. Both dashboard domain hooks and skins honor merchant cancellation support and display pending/untracked provider state in English and Arabic. Missing capabilities remain compatible with the older Shopify-only backend; explicit unsupported capabilities suppress the action.
+
+The cancellation POST returns `providerOperationId` and `operation` when known. The controller temporarily also returns `shopifyJobId` as the same reference for old deployments. New frontend consumers use the neutral shared response type. Local `status: canceled` does not prove remote completion. References are merged into verification metadata with the guarded local update and returned on idempotent repeats; historical rows without references remain unknown.
+
+[Validation, deployment order, and recovery](US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).

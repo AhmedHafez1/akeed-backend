@@ -32,6 +32,23 @@ export class OrdersRepository {
     });
   }
 
+  async findForOutcomeDispatch(source: {
+    orgId: string;
+    integrationId: string;
+    externalOrderId: string;
+  }) {
+    return await this.db.query.orders.findFirst({
+      where: and(
+        eq(orders.orgId, source.orgId),
+        eq(orders.integrationId, source.integrationId),
+        eq(orders.externalOrderId, source.externalOrderId),
+      ),
+      with: {
+        integration: true,
+      },
+    });
+  }
+
   async findByOrg(
     orgId: string,
     opts?: { cursor?: { createdAt: string; id: string }; limit?: number },

@@ -5,7 +5,6 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
-import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import {
   MESSAGING_PORT,
   type MessagingPort,
@@ -41,6 +40,8 @@ type ContextLoadResult =
       context: null;
       reason:
         | 'verification_not_found'
+        | 'missing_linked_integration'
+        | 'source_identity_mismatch'
         | 'integration_inactive'
         | 'billing_not_active';
     };
@@ -67,7 +68,6 @@ export class VerificationSendService {
   constructor(
     private readonly verificationsRepo: VerificationsRepository,
     private readonly ordersRepo: OrdersRepository,
-    private readonly integrationsRepo: IntegrationsRepository,
     private readonly billingEntitlementService: BillingEntitlementService,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
   ) {}
@@ -101,25 +101,16 @@ export class VerificationSendService {
       return { context: null, reason: 'verification_not_found' };
     }
 
-    const integration =
-      (order.integration as typeof integrations.$inferSelect | null) ??
-      (await this.integrationsRepo
-        .findActiveByOrgAndPlatform(order.orgId, 'shopify')
-        .catch((error) => {
-          this.logger.error(
-            buildBackendLog('VerificationSendService', {
-              action: 'loadContext.lookupIntegration',
-              outcome: 'failure',
-              orgId: order.orgId,
-              ...normalizeError(error),
-            }),
-          );
-          return null;
-        })) ??
-      null;
-
+    const integration = order.integration;
     if (!integration) {
-      return { context: null, reason: 'verification_not_found' };
+      return { context: null, reason: 'missing_linked_integration' };
+    }
+    if (
+      order.orgId !== verification.orgId ||
+      order.integrationId !== integration.id ||
+      integration.orgId !== verification.orgId
+    ) {
+      return { context: null, reason: 'source_identity_mismatch' };
     }
 
     if (!integration.isActive) {

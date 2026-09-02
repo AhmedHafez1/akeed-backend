@@ -32,7 +32,7 @@
 - Use async/await
 - Prefer services over controllers
 - Never put business logic in controllers
-- Use Shopify Admin REST API
+- Use the existing Shopify Admin GraphQL API for order outcomes, store metadata, and billing; keep commerce outcomes behind the trusted integration adapter registry
 - Validate HMAC for all Shopify callbacks
 - Assume raw body is required for webhooks
 

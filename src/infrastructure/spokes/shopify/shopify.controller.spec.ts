@@ -18,7 +18,7 @@ import { WebhookEventsRepository } from '../../database/repositories/webhook-eve
 import { IntegrationsRepository } from '../../database/repositories/integrations.repository';
 import { shopifyOrderFixture } from '../../../modules/webhook-queue/normalizers/fixtures/shopify-order.fixture';
 import { ShopifyOrderNormalizer } from '../../../modules/webhook-queue/normalizers/shopify-order.normalizer';
-import { ShopifyOrderEligibilityStrategy } from '../../../modules/verification-core/strategies/shopify-order-eligibility.strategy';
+import { ShopifyOrderEligibilityStrategy } from './services/shopify-order-eligibility.strategy';
 import { PhoneService } from '../../../shared/services/phone.service';
 
 describe('Shopify HTTP raw-body boundary', () => {

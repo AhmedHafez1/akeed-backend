@@ -1,3 +1,4 @@
+import type { CommerceOutcomeConnection } from '../../../../shared/commerce/commerce-outcome';
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -35,7 +36,6 @@ import {
   toOrderGid,
   validateUsageBillingPayload,
 } from './shopify-api.service.helpers';
-import { integrations } from '../../../database';
 
 interface CreateRecurringApplicationChargeInput {
   name: string;
@@ -62,7 +62,7 @@ export class ShopifyApiService {
   ) {}
 
   async addOrderTag(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     orderId: string,
     tag: string,
   ): Promise<void> {
@@ -84,6 +84,15 @@ export class ShopifyApiService {
         userErrors: response.data.data?.tagsAdd?.userErrors,
         headers: response.headers,
       });
+
+      throwIfGraphQLErrors(
+        response.data.errors,
+        'Shopify order tagging errors',
+      );
+      throwIfUserErrors(
+        response.data.data?.tagsAdd?.userErrors,
+        'Shopify order tagging validation failed',
+      );
 
       const reqId = getRequestId(response.headers);
       this.logger.log(
@@ -112,7 +121,7 @@ export class ShopifyApiService {
   }
 
   async cancelOrder(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     externalOrderId: string,
     reason: string,
   ): Promise<{ jobId?: string }> {
@@ -155,9 +164,7 @@ export class ShopifyApiService {
     return { jobId: jobId ?? undefined };
   }
 
-  async getShopName(
-    integration: typeof integrations.$inferSelect,
-  ): Promise<string> {
+  async getShopName(integration: CommerceOutcomeConnection): Promise<string> {
     const response = await this.executeGraphql<ShopNameResponse>(
       integration,
       GET_SHOP_NAME_QUERY,
@@ -174,7 +181,7 @@ export class ShopifyApiService {
   }
 
   async createRecurringApplicationCharge(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     payload: CreateRecurringApplicationChargeInput,
   ): Promise<string> {
     validateUsageBillingPayload(payload);
@@ -207,7 +214,7 @@ export class ShopifyApiService {
   }
 
   async getAppSubscriptionStatus(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     chargeId: string,
   ): Promise<AppSubscriptionStatusResult> {
     const subscriptionId = toAppSubscriptionGid(chargeId);
@@ -235,7 +242,7 @@ export class ShopifyApiService {
   }
 
   async cancelAppSubscription(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     subscriptionId: string,
     prorate = true,
   ): Promise<void> {
@@ -272,7 +279,7 @@ export class ShopifyApiService {
   }
 
   async reportUsageCharge(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     subscriptionId: string,
     amount: number,
     currencyCode: string,
@@ -338,7 +345,7 @@ export class ShopifyApiService {
   }
 
   private async executeGraphql<T>(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
     query: string,
     variables?: Record<string, unknown>,
   ): Promise<AxiosResponse<T>> {
@@ -393,7 +400,7 @@ export class ShopifyApiService {
   }
 
   private getAccessTokenOrThrow(
-    integration: typeof integrations.$inferSelect,
+    integration: CommerceOutcomeConnection,
   ): string {
     if (integration.accessToken) {
       const encryptionKey = this.configService.get<string>(

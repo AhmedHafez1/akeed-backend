@@ -1,11 +1,8 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
-import {
-  ORDER_TAGGING_PORT,
-  type OrderTaggingPort,
-} from '../../shared/ports/order-tagging.port';
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { integrations, orders } from '../../infrastructure/database/schema';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
@@ -32,7 +29,7 @@ export class VerificationHubService {
   constructor(
     private ordersRepo: OrdersRepository,
     private verificationsRepo: VerificationsRepository,
-    @Inject(ORDER_TAGGING_PORT) private orderTaggingPort: OrderTaggingPort,
+    private readonly commerceOutcomes: CommerceOutcomeRegistryService,
     private orderEligibilityService: OrderEligibilityService,
     private verificationSendService: VerificationSendService,
     private readonly billingEntitlementService: BillingEntitlementService,
@@ -198,10 +195,15 @@ export class VerificationHubService {
     if (!verification) return;
 
     const order = await this.ordersRepo.findById(verification.orderId);
-    if (!order) return;
+    if (!order || order.orgId !== verification.orgId) return;
 
     if (status === 'confirmed' || status === 'canceled') {
-      await this.tagExternalOrder(order, status);
+      await this.synchronizeExternalOrder(
+        order,
+        status,
+        verification.id,
+        verification.orgId,
+      );
     }
   }
 
@@ -379,7 +381,9 @@ export class VerificationHubService {
     } else if (
       sendOutcome.status === 'skipped' &&
       (sendOutcome.reason === 'integration_inactive' ||
-        sendOutcome.reason === 'billing_not_active')
+        sendOutcome.reason === 'billing_not_active' ||
+        sendOutcome.reason === 'missing_linked_integration' ||
+        sendOutcome.reason === 'source_identity_mismatch')
     ) {
       await this.verificationsRepo.updateByIdForOrg(
         verification.id,
@@ -395,79 +399,42 @@ export class VerificationHubService {
     }
   }
 
-  private async tagExternalOrder(
-    order: Awaited<ReturnType<OrdersRepository['findById']>> &
-      Record<string, unknown>,
+  private async synchronizeExternalOrder(
+    order: NonNullable<Awaited<ReturnType<OrdersRepository['findById']>>>,
     status: 'confirmed' | 'canceled',
+    verificationId: string,
+    orgId: string,
   ): Promise<void> {
-    if (order.externalOrderId.startsWith('akeed-test-')) {
-      this.logger.log(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-shopify-tag-update',
-          outcome: 'skipped',
-          orgId: String(order.orgId),
-          orderId: String(order.externalOrderId),
-          reason: 'test_order',
-        }),
-      );
-      return;
-    }
-
-    const tag = status === 'confirmed' ? 'Akeed: Verified' : 'Akeed: Canceled';
-    const integration = order.integration as IntegrationRecord;
-
-    if (!integration?.platformStoreUrl) {
+    if (!order.integrationId) {
       this.logger.warn(
         buildBackendLog(VerificationHubService.name, {
-          action: 'verification-shopify-tag-update',
+          action: 'verification-outcome-dispatch',
           outcome: 'skipped',
-          orgId: String(order.orgId),
-          orderId: String(order.externalOrderId),
+          orgId,
+          verificationId,
           reason: 'missing_linked_integration',
         }),
       );
       return;
     }
-
-    if (!integration.isActive) {
-      this.logger.warn(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-shopify-tag-update',
-          outcome: 'skipped',
-          orgId: String(order.orgId),
-          shopDomain: integration.platformStoreUrl,
-          orderId: String(order.externalOrderId),
-          reason: 'integration_inactive',
-        }),
-      );
-      return;
-    }
-
     try {
-      await this.orderTaggingPort.addOrderTag(
-        integration,
-        order.externalOrderId,
-        tag,
-      );
-      this.logger.log(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-shopify-tag-update',
-          outcome: 'success',
-          orgId: String(order.orgId),
-          shopDomain: integration.platformStoreUrl,
-          orderId: String(order.externalOrderId),
-          tag,
-        }),
-      );
+      await this.commerceOutcomes.dispatch({
+        orgId,
+        integrationId: order.integrationId,
+        externalOrderId: order.externalOrderId,
+        action:
+          status === 'confirmed'
+            ? 'customer_confirmation'
+            : 'customer_cancellation',
+        correlationId: verificationId,
+      });
     } catch (error) {
       this.logger.error(
         buildBackendLog(VerificationHubService.name, {
-          action: 'verification-shopify-tag-update',
+          action: 'verification-outcome-dispatch',
           outcome: 'failure',
-          orgId: String(order.orgId),
-          shopDomain: integration.platformStoreUrl,
-          orderId: String(order.externalOrderId),
-          tag,
+          orgId,
+          verificationId,
           ...normalizeError(error),
         }),
       );

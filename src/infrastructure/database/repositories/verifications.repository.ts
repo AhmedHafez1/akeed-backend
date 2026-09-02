@@ -1,3 +1,4 @@
+import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
@@ -127,6 +128,8 @@ export class VerificationsRepository {
       typeof verifications.$inferSelect & {
         order: Pick<
           typeof schema.orders.$inferSelect,
+          | 'orgId'
+          | 'integrationId'
           | 'orderNumber'
           | 'customerName'
           | 'customerPhone'
@@ -164,6 +167,8 @@ export class VerificationsRepository {
       with: {
         order: {
           columns: {
+            orgId: true,
+            integrationId: true,
             orderNumber: true,
             customerName: true,
             customerPhone: true,
@@ -339,6 +344,7 @@ export class VerificationsRepository {
     verificationId: string,
     orgId: string,
     canceledAt: string,
+    operation?: CommerceOutcomeOperationResult,
   ) {
     const now = new Date().toISOString();
     const [result] = await this.db
@@ -348,6 +354,11 @@ export class VerificationsRepository {
         canceledAt,
         merchantCanceledAt: canceledAt,
         cancellationSource: 'merchant_no_reply',
+        ...(operation
+          ? {
+              metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ commerceCancellation: operation })}::jsonb`,
+            }
+          : {}),
         updatedAt: now,
       })
       .where(

@@ -3,7 +3,7 @@ import { ShopifyController } from './shopify.controller';
 import { WebhookQueueModule } from '../../../modules/webhook-queue/webhook-queue.module';
 import { DatabaseModule } from '../../database/database.module';
 import { HttpModule } from '@nestjs/axios';
-import { ShopifyApiService } from './services/shopify-api.service';
+import { ShopifyCommerceModule } from './shopify-commerce.module';
 import { ShopifyAuthService } from './services/shopify-auth.service.js';
 import { ShopifyBillingWebhookService } from './services/shopify-billing-webhook.service';
 import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.service';
@@ -13,10 +13,14 @@ import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
 import { PhoneService } from '../../../shared/services/phone.service';
 
 @Module({
-  imports: [WebhookQueueModule, DatabaseModule, HttpModule],
+  imports: [
+    WebhookQueueModule,
+    DatabaseModule,
+    HttpModule,
+    ShopifyCommerceModule,
+  ],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [
-    ShopifyApiService,
     ShopifyAuthService,
     ShopifyBillingWebhookService,
     ShopifyOrderWebhookService,
@@ -24,6 +28,6 @@ import { PhoneService } from '../../../shared/services/phone.service';
     ShopifyHmacGuard,
     PhoneService,
   ],
-  exports: [ShopifyApiService, ShopifyAuthService],
+  exports: [ShopifyCommerceModule, ShopifyAuthService],
 })
 export class ShopifyModule {}

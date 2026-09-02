@@ -42,6 +42,7 @@ describe('WhatsAppService', () => {
         configService,
       } = createService();
       const verification = {
+        orgId: 'org-1',
         id: 'ver-1',
         orderId: 'order-1',
         status: method === 'sendInitial' ? 'pending' : 'sent',
@@ -62,6 +63,7 @@ describe('WhatsAppService', () => {
       const orders = {
         findById: jest.fn().mockResolvedValue({
           orgId: 'org-1',
+          integrationId: 'int-1',
           externalOrderId: '12345',
           customerPhone: '+14155552671',
           customerName: 'Synthetic Customer',
@@ -79,7 +81,6 @@ describe('WhatsAppService', () => {
       const sender = new VerificationSendService(
         verifications as never,
         orders as never,
-        {} as never,
         entitlement as never,
         messaging,
       );

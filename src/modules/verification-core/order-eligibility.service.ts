@@ -1,12 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
-import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import {
   IntegrationEligibilityInput,
   OrderEligibilityResult,
 } from './order-eligibility.types';
-import { OrderEligibilityStrategy } from './strategies/order-eligibility.strategy';
+import {
+  ORDER_ELIGIBILITY_STRATEGIES,
+  type OrderEligibilityStrategy,
+} from './strategies/order-eligibility.strategy';
 
 @Injectable()
 export class OrderEligibilityService {
@@ -14,11 +16,12 @@ export class OrderEligibilityService {
   private readonly strategyByPlatform: Map<string, OrderEligibilityStrategy>;
 
   constructor(
-    private readonly shopifyStrategy: ShopifyOrderEligibilityStrategy,
+    @Inject(ORDER_ELIGIBILITY_STRATEGIES)
+    strategies: readonly OrderEligibilityStrategy[],
   ) {
-    this.strategyByPlatform = new Map<string, OrderEligibilityStrategy>([
-      [this.shopifyStrategy.platform, this.shopifyStrategy],
-    ]);
+    this.strategyByPlatform = new Map(
+      strategies.map((strategy) => [strategy.platform, strategy]),
+    );
   }
 
   evaluateOrderForVerification(params: {

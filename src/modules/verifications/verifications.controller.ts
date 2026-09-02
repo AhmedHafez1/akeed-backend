@@ -1,3 +1,4 @@
+import type { CancelOrderResponse } from '../../shared/commerce/commerce-outcome';
 import {
   Body,
   Controller,
@@ -93,16 +94,16 @@ export class VerificationsController {
   async cancelNoReplyOrder(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') verificationId: string,
-  ): Promise<{
-    success: true;
-    verificationId: string;
-    status: 'canceled';
-    alreadyCanceled?: boolean;
-    shopifyJobId?: string;
-  }> {
-    return this.verificationsService.cancelNoReplyOrder(
+  ): Promise<CancelOrderResponse & { shopifyJobId?: string }> {
+    const result = await this.verificationsService.cancelNoReplyOrder(
       user.orgId,
       verificationId,
     );
+    return {
+      ...result,
+      ...(result.providerOperationId
+        ? { shopifyJobId: result.providerOperationId }
+        : {}),
+    };
   }
 }

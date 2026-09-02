@@ -1,3 +1,5 @@
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { VerificationsService } from './verifications.service';
 
@@ -79,8 +81,13 @@ function createMocks() {
     null as any,
     null as any,
     ordersRepo as any,
-    orderAdmin as any,
-    orderTagging as any,
+    new CommerceOutcomeRegistryService(
+      {
+        findForOutcomeDispatch: (...args: unknown[]) =>
+          ordersRepo.findById(...args) as unknown,
+      } as never,
+      [new ShopifyOutcomeAdapter({ ...orderAdmin, ...orderTagging } as never)],
+    ),
   );
 
   return { service, verificationsRepo, ordersRepo, orderAdmin, orderTagging };
@@ -101,9 +108,14 @@ function buildVerification(overrides: Record<string, unknown> = {}) {
 function buildOrder(overrides: Record<string, unknown> = {}) {
   return {
     id: 'order-1',
+    orgId: 'org-1',
+    integrationId: 'int-1',
     externalOrderId: 'ext-123',
     integration: {
       id: 'int-1',
+      orgId: 'org-1',
+      platformType: 'shopify',
+      isActive: true,
       platformStoreUrl: 'test.myshopify.com',
       accessToken: 'tok',
     },
@@ -121,7 +133,6 @@ describe('VerificationsService', () => {
 
     beforeEach(() => {
       service = new VerificationsService(
-        null as any,
         null as any,
         null as any,
         null as any,
@@ -215,7 +226,6 @@ describe('VerificationsService', () => {
 
     beforeEach(() => {
       service = new VerificationsService(
-        null as any,
         null as any,
         null as any,
         null as any,
@@ -353,20 +363,22 @@ describe('VerificationsService', () => {
       );
     });
 
-    it('rejects when order has no linked Shopify integration', async () => {
+    it('rejects when order has no linked integration', async () => {
       const { service, verificationsRepo, ordersRepo } = createMocks();
       verificationsRepo.findByIdForOrg.mockResolvedValue(buildVerification());
       ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
         id: 'order-1',
         integration: null,
       });
 
       await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        'Cannot cancel: order has no linked Shopify integration',
+        'Cannot cancel: order has no linked integration',
       );
     });
 
-    it('rejects when order has no external Shopify order ID', async () => {
+    it('rejects when order has no external order ID', async () => {
       const { service, verificationsRepo, ordersRepo } = createMocks();
       verificationsRepo.findByIdForOrg.mockResolvedValue(buildVerification());
       ordersRepo.findById.mockResolvedValue(
@@ -374,7 +386,7 @@ describe('VerificationsService', () => {
       );
 
       await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        'Cannot cancel: order has no external Shopify order ID',
+        'Cannot cancel: order has no external order ID',
       );
     });
 
@@ -446,10 +458,15 @@ describe('VerificationsService', () => {
       const result = await service.cancelNoReplyOrder('org-1', 'v-1');
 
       expect(result.status).toBe('canceled');
-      expect(result.shopifyJobId).toBe('job-1');
+      expect(result.providerOperationId).toBe('job-1');
       expect(
         verificationsRepo.markMerchantNoReplyCanceled,
-      ).toHaveBeenCalledWith('v-1', 'org-1', expect.any(String));
+      ).toHaveBeenCalledWith(
+        'v-1',
+        'org-1',
+        expect.any(String),
+        expect.objectContaining({ status: expect.any(String) as unknown }),
+      );
     });
 
     it('cancels test orders locally without calling Shopify', async () => {
@@ -475,12 +492,17 @@ describe('VerificationsService', () => {
       const result = await service.cancelNoReplyOrder('org-1', 'v-1');
 
       expect(result.status).toBe('canceled');
-      expect(result.shopifyJobId).toBeUndefined();
+      expect(result.providerOperationId).toBeUndefined();
       expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
       expect(orderTagging.addOrderTag).not.toHaveBeenCalled();
       expect(
         verificationsRepo.markMerchantNoReplyCanceled,
-      ).toHaveBeenCalledWith('v-1', 'org-1', expect.any(String));
+      ).toHaveBeenCalledWith(
+        'v-1',
+        'org-1',
+        expect.any(String),
+        expect.objectContaining({ status: expect.any(String) as unknown }),
+      );
     });
 
     it('applies Akeed: Canceled tag after local update', async () => {
@@ -577,4 +599,144 @@ describe('VerificationsService', () => {
       expect(result.alreadyCanceled).toBe(true);
     });
   });
+});
+
+describe('Merchant cancellation source and operation contract', () => {
+  it.each([
+    'inactive',
+    'foreign_owner',
+    'wrong_integration',
+    'unsupported',
+    'foreign_order',
+  ])(
+    'rejects %s without outbound cancellation or local mutation',
+    async (kind) => {
+      const {
+        service,
+        verificationsRepo,
+        ordersRepo,
+        orderAdmin,
+        orderTagging,
+      } = createMocks();
+      verificationsRepo.findByIdForOrg.mockResolvedValue(buildVerification());
+      const order = buildOrder();
+      if (kind === 'inactive') order.integration.isActive = false;
+      if (kind === 'foreign_owner') order.integration.orgId = 'org-2';
+      if (kind === 'wrong_integration') order.integration.id = 'int-2';
+      if (kind === 'unsupported') order.integration.platformType = 'standalone';
+      if (kind === 'foreign_order') order.orgId = 'org-2';
+      ordersRepo.findById.mockResolvedValue(order);
+      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+      expect(orderTagging.addOrderTag).not.toHaveBeenCalled();
+      expect(
+        verificationsRepo.markMerchantNoReplyCanceled,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('returns stored pending operation on idempotent repeat without another provider action', async () => {
+    const { service, verificationsRepo, orderAdmin } = createMocks();
+    const operation = {
+      status: 'pending_provider_operation',
+      providerOperationId: 'gid://shopify/Job/42',
+    };
+    verificationsRepo.findByIdForOrg.mockResolvedValue(
+      buildVerification({
+        status: 'canceled',
+        cancellationSource: 'merchant_no_reply',
+        merchantCanceledAt: '2026-09-02T00:00:00Z',
+        metadata: { commerceCancellation: operation, retained: true },
+      }),
+    );
+    await expect(service.cancelNoReplyOrder('org-1', 'v-1')).resolves.toEqual({
+      success: true,
+      verificationId: 'v-1',
+      status: 'canceled',
+      alreadyCanceled: true,
+      operation,
+      providerOperationId: operation.providerOperationId,
+    });
+    expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cancel/local/tag sequence across adapter dispatch', async () => {
+    const { service, verificationsRepo, ordersRepo, orderAdmin, orderTagging } =
+      createMocks();
+    const sequence: string[] = [];
+    verificationsRepo.findByIdForOrg.mockResolvedValue(buildVerification());
+    ordersRepo.findById.mockResolvedValue(buildOrder());
+    orderAdmin.cancelOrder.mockImplementation(() => {
+      sequence.push('cancel');
+      return Promise.resolve({ jobId: 'operation-1' });
+    });
+    verificationsRepo.markMerchantNoReplyCanceled.mockImplementation(() => {
+      sequence.push('local');
+      return Promise.resolve(buildVerification({ status: 'canceled' }));
+    });
+    orderTagging.addOrderTag.mockImplementation(() => {
+      sequence.push('tag');
+      return Promise.resolve();
+    });
+    await service.cancelNoReplyOrder('org-1', 'v-1');
+    expect(sequence).toEqual(['cancel', 'local', 'tag']);
+    expect(verificationsRepo.markMerchantNoReplyCanceled).toHaveBeenCalledWith(
+      'v-1',
+      'org-1',
+      expect.any(String),
+      {
+        status: 'pending_provider_operation',
+        providerOperationId: 'operation-1',
+      },
+    );
+  });
+});
+
+describe('Dashboard cancellation capabilities', () => {
+  it.each(['shopify', 'standalone', 'inactive', 'missing', 'foreign'])(
+    'reports per-order support for %s without provider calls',
+    async (kind) => {
+      const repo = {
+        findByOrg: jest.fn().mockResolvedValue([
+          {
+            id: 'ver-1',
+            status: 'no_reply',
+            orderId: 'order-1',
+            order: { orgId: 'org-1', integrationId: 'int-1' },
+          },
+        ]),
+      };
+      const integration = {
+        id: 'int-1',
+        orgId: kind === 'foreign' ? 'org-2' : 'org-1',
+        isActive: kind !== 'inactive',
+        platformType: kind === 'standalone' ? 'standalone' : 'shopify',
+      };
+      const integrations = {
+        findActiveByOrg: jest
+          .fn()
+          .mockResolvedValue(kind === 'missing' ? [] : [integration]),
+      };
+      const registry = new CommerceOutcomeRegistryService({} as never, [
+        new ShopifyOutcomeAdapter({} as never),
+      ]);
+      const service = new VerificationsService(
+        repo as never,
+        {} as never,
+        integrations as never,
+        {} as never,
+        registry,
+      );
+      const result = await service.listByOrg('org-1', {});
+      expect(result.data[0].capabilities).toEqual([
+        {
+          action: 'merchant_no_reply_cancellation',
+          supported: kind === 'shopify',
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain('accessToken');
+    },
+  );
 });

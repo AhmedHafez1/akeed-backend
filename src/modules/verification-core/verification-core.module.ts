@@ -11,7 +11,6 @@ import { VerificationHubService } from './verification-hub.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
-import { ShopifyOrderEligibilityStrategy } from './strategies/shopify-order-eligibility.strategy';
 import { VerificationAutomationQueueModule } from '../verification-automation/verification-automation-queue.module';
 
 function extractProviderToken(provider: Provider): InjectionToken {
@@ -40,7 +39,6 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
-        ShopifyOrderEligibilityStrategy,
         ...config.ports,
       ],
       exports: [

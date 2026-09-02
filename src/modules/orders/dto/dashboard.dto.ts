@@ -1,3 +1,7 @@
+import type {
+  CommerceOutcomeAction,
+  CommerceOutcomeOperationResult,
+} from '../../../shared/commerce/commerce-outcome';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -51,6 +55,8 @@ export class GetVerificationStatsQueryDto {
 }
 
 export interface VerificationListItemDto {
+  capabilities: { action: CommerceOutcomeAction; supported: boolean }[];
+  cancellation_operation?: CommerceOutcomeOperationResult;
   id: string;
   status: string;
   order_id: string;

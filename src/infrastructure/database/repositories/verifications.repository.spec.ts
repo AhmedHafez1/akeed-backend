@@ -42,3 +42,39 @@ describe('VerificationsRepository follow-up SQL contract', () => {
     expect(query).not.toMatch(/set[^]*"status"\s*=/);
   });
 });
+
+describe('Merchant cancellation persistence', () => {
+  it('merges the provider reference atomically with the guarded local transition without replacing metadata', async () => {
+    const execute = jest.fn<
+      Promise<{ rows: unknown[][] }>,
+      [string, unknown[]]
+    >(() => Promise.resolve({ rows: [] }));
+    const repository = new VerificationsRepository(
+      drizzle(execute, { schema }) as never,
+    );
+    await repository.markMerchantNoReplyCanceled(
+      'ver-1',
+      'org-1',
+      '2026-09-02T00:00:00Z',
+      {
+        status: 'pending_provider_operation',
+        providerOperationId: 'operation-1',
+      },
+    );
+    const [query, params] = execute.mock.calls[0];
+    expect(query).toContain('COALESCE("verifications"."metadata",');
+    expect(query).toContain('||');
+    expect(query).toContain(`"verifications"."status" = 'no_reply'`);
+    expect(params).toContain(
+      JSON.stringify({
+        commerceCancellation: {
+          status: 'pending_provider_operation',
+          providerOperationId: 'operation-1',
+        },
+      }),
+    );
+    expect(params).toEqual(
+      expect.arrayContaining(['ver-1', 'org-1', 'merchant_no_reply']),
+    );
+  });
+});

@@ -1,3 +1,5 @@
+import { ShopifyOrderEligibilityStrategy } from './infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
+import { ORDER_ELIGIBILITY_STRATEGIES } from './modules/verification-core/strategies/order-eligibility.strategy';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
@@ -15,8 +17,6 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
-import { ORDER_ADMIN_PORT } from './shared/ports/order-admin.port';
-import { ORDER_TAGGING_PORT } from './shared/ports/order-tagging.port';
 import { STORE_PLATFORM_PORT } from './shared/ports/store-platform.port';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
@@ -24,6 +24,7 @@ import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
 import { ShopifyApiService } from './infrastructure/spokes/shopify/services/shopify-api.service';
 import { DatabaseModule } from './infrastructure/database';
 import { AdminModule } from './modules/admin/admin.module';
+import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
 
 @Module({
   imports: [
@@ -60,9 +61,12 @@ import { AdminModule } from './modules/admin/admin.module';
     VerificationCoreModule.register({
       imports: [MetaModule, ShopifyModule],
       ports: [
+        {
+          provide: ORDER_ELIGIBILITY_STRATEGIES,
+          inject: [ShopifyOrderEligibilityStrategy],
+          useFactory: (shopify: ShopifyOrderEligibilityStrategy) => [shopify],
+        },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
-        { provide: ORDER_ADMIN_PORT, useExisting: ShopifyApiService },
-        { provide: ORDER_TAGGING_PORT, useExisting: ShopifyApiService },
         { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
       ],
     }),
@@ -75,6 +79,7 @@ import { AdminModule } from './modules/admin/admin.module';
     VerificationAutomationModule,
     DatabaseModule,
     AdminModule,
+    CommerceOutcomeModule,
   ],
   controllers: [AppController],
   providers: [
