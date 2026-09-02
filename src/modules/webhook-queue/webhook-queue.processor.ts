@@ -147,12 +147,7 @@ export class WebhookQueueProcessor extends WorkerHost {
   }
 
   private async handleOrderCreate(data: WebhookJobPayload): Promise<boolean> {
-    const integration = await this.integrationsRepo.findByPlatformDomain(
-      data.storeDomain,
-      data.platform,
-    );
-
-    if (!integration?.orgId) {
+    if (!data.integrationId || !data.orgId) {
       this.logger.warn(
         buildBackendLog(WebhookQueueProcessor.name, {
           action: 'webhook-order-create-handle',
@@ -160,12 +155,59 @@ export class WebhookQueueProcessor extends WorkerHost {
           webhookEventId: data.webhookEventId,
           platform: data.platform,
           shopDomain: data.storeDomain,
-          reason: 'no_integration_found',
+          reason: 'missing_source_identity',
         }),
       );
       await this.webhookEventsRepo.markSkipped(
         data.webhookEventId,
-        'no_integration_found',
+        'missing_source_identity',
+      );
+      return false;
+    }
+
+    const integration = await this.integrationsRepo.findBySourceIdentity({
+      id: data.integrationId,
+      orgId: data.orgId,
+      platformType: data.platform,
+      platformStoreUrl: data.storeDomain,
+    });
+
+    if (!integration) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-create-handle',
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          shopDomain: data.storeDomain,
+          orgId: data.orgId,
+          integrationId: data.integrationId,
+          reason: 'source_identity_mismatch',
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        'source_identity_mismatch',
+      );
+      return false;
+    }
+
+    if (integration.isActive !== true) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-create-handle',
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          shopDomain: data.storeDomain,
+          orgId: data.orgId,
+          integrationId: data.integrationId,
+          reason: 'integration_inactive',
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        'integration_inactive',
       );
       return false;
     }

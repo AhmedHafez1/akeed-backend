@@ -15,6 +15,8 @@ function buildPayload(
     jobType: WebhookJobType.ORDER_CREATE,
     idempotencyKey: 'idempotency-1',
     storeDomain: 'test.myshopify.com',
+    orgId: 'org-1',
+    integrationId: 'int-1',
     rawPayload: { id: 123 },
     receivedAt: new Date().toISOString(),
     ...overrides,
@@ -69,7 +71,7 @@ function createMocks(
   };
 
   const integrationsRepo = {
-    findByPlatformDomain: jest.fn().mockResolvedValue(
+    findBySourceIdentity: jest.fn().mockResolvedValue(
       options.integration === undefined
         ? {
             id: 'int-1',
@@ -119,7 +121,7 @@ describe('WebhookQueueProcessor', () => {
       'event-1',
       'unsupported_platform:magento',
     );
-    expect(integrationsRepo.findByPlatformDomain).not.toHaveBeenCalled();
+    expect(integrationsRepo.findBySourceIdentity).not.toHaveBeenCalled();
   });
 
   it('marks a valid order-create event completed after hub processing', async () => {
@@ -149,7 +151,7 @@ describe('WebhookQueueProcessor', () => {
 
     expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
       'event-1',
-      'no_integration_found',
+      'source_identity_mismatch',
     );
     expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
     expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
@@ -256,13 +258,30 @@ describe('WebhookQueueProcessor', () => {
     expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
   });
 
-  it('skips when integration exists but orgId is missing', async () => {
+  it('skips when the queued event has no trusted source identity', async () => {
+    const { processor, webhookEventsRepo, verificationHub } = createMocks({
+      integration: null,
+    });
+
+    await processor.process(
+      buildJob(buildPayload({ orgId: null, integrationId: null })),
+    );
+
+    expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+      'event-1',
+      'missing_source_identity',
+    );
+    expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
+  });
+
+  it('skips a queued order after its source is disconnected', async () => {
     const { processor, webhookEventsRepo, verificationHub } = createMocks({
       integration: {
         id: 'int-1',
-        orgId: null,
-        isActive: true,
-        billingStatus: 'active',
+        orgId: 'org-1',
+        isActive: false,
+        billingStatus: 'cancelled',
       },
     });
 
@@ -270,7 +289,7 @@ describe('WebhookQueueProcessor', () => {
 
     expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
       'event-1',
-      'no_integration_found',
+      'integration_inactive',
     );
     expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
     expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();

@@ -275,6 +275,7 @@ export const integrations = pgTable(
       table.platformType,
       table.platformStoreUrl,
     ),
+    unique('integrations_id_org_id_key').on(table.id, table.orgId),
     pgPolicy('Multi-tenant integrations', {
       as: 'permissive',
       for: 'all',
@@ -338,10 +339,10 @@ export const integrationMonthlyUsage = pgTable(
       name: 'integration_monthly_usage_org_id_fkey',
     }).onDelete('cascade'),
     foreignKey({
-      columns: [table.integrationId],
-      foreignColumns: [integrations.id],
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
       name: 'integration_monthly_usage_integration_id_fkey',
-    }).onDelete('cascade'),
+    }),
     unique('integration_monthly_usage_integration_id_period_start_key').on(
       table.integrationId,
       table.periodStart,
@@ -445,7 +446,7 @@ export const orders = pgTable(
       .primaryKey()
       .notNull(),
     orgId: uuid('org_id').notNull(),
-    integrationId: uuid('integration_id'),
+    integrationId: uuid('integration_id').notNull(),
     externalOrderId: text('external_order_id').notNull(),
     orderNumber: text('order_number'),
     customerPhone: text('customer_phone').notNull(),
@@ -481,10 +482,10 @@ export const orders = pgTable(
       table.customerPhone.asc().nullsLast().op('text_ops'),
     ),
     foreignKey({
-      columns: [table.integrationId],
-      foreignColumns: [integrations.id],
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
       name: 'orders_integration_id_fkey',
-    }).onDelete('cascade'),
+    }),
     foreignKey({
       columns: [table.orgId],
       foreignColumns: [organizations.id],
@@ -494,6 +495,7 @@ export const orders = pgTable(
       table.integrationId,
       table.externalOrderId,
     ),
+    unique('orders_id_org_id_key').on(table.id, table.orgId),
     pgPolicy('Service role inserts orders', {
       as: 'permissive',
       for: 'insert',
@@ -596,10 +598,10 @@ export const verifications = pgTable(
       table.waMessageId.asc().nullsLast().op('text_ops'),
     ),
     foreignKey({
-      columns: [table.orderId],
-      foreignColumns: [orders.id],
+      columns: [table.orderId, table.orgId],
+      foreignColumns: [orders.id, orders.orgId],
       name: 'verifications_order_id_fkey',
-    }).onDelete('cascade'),
+    }),
     foreignKey({
       columns: [table.orgId],
       foreignColumns: [organizations.id],
@@ -689,13 +691,17 @@ export const webhookEvents = pgTable(
       name: 'webhook_events_org_id_fkey',
     }).onDelete('cascade'),
     foreignKey({
-      columns: [table.integrationId],
-      foreignColumns: [integrations.id],
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
       name: 'webhook_events_integration_id_fkey',
-    }).onDelete('cascade'),
+    }),
     unique('webhook_events_platform_idempotency_key').on(
       table.platform,
       table.idempotencyKey,
+    ),
+    check(
+      'webhook_events_source_identity_pair_check',
+      sql`(${table.orgId} IS NULL) = (${table.integrationId} IS NULL)`,
     ),
     pgPolicy('Service role manages webhook events', {
       as: 'permissive',
@@ -790,8 +796,8 @@ export const adminStoreLifecycles = pgTable(
       name: 'admin_store_lifecycles_org_id_fkey',
     }).onDelete('cascade'),
     foreignKey({
-      columns: [table.integrationId],
-      foreignColumns: [integrations.id],
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
       name: 'admin_store_lifecycles_integration_id_fkey',
     }).onDelete('cascade'),
     pgPolicy('Service role manages admin store lifecycles', {

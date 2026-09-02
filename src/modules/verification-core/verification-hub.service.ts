@@ -280,10 +280,11 @@ export class VerificationHubService {
   }
 
   private async findOrCreateOrder(orderData: NormalizedOrder) {
-    const existing = await this.ordersRepo.findByExternalId(
-      orderData.externalOrderId,
-      orderData.orgId,
-    );
+    const existing = await this.ordersRepo.findBySourceExternalId({
+      orgId: orderData.orgId,
+      integrationId: orderData.integrationId,
+      externalOrderId: orderData.externalOrderId,
+    });
     if (existing) return existing;
 
     return this.ordersRepo.create(this.toOrderInsertPayload(orderData));

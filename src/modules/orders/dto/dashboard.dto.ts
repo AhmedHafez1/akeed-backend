@@ -94,6 +94,7 @@ export interface PaginatedResponse<T> {
   data: T[];
   next_cursor: string | null;
   page_context?: {
+    source: DashboardSourceState;
     automation: {
       is_auto_verify_enabled: boolean;
       follow_up_enabled: boolean;
@@ -104,6 +105,7 @@ export interface PaginatedResponse<T> {
 
 export interface VerificationStatsDto {
   date_range: DashboardDateRange;
+  source: DashboardSourceState;
   automation: {
     is_auto_verify_enabled: boolean;
     follow_up_enabled: boolean;
@@ -132,4 +134,10 @@ export interface VerificationStatsDto {
     currency: string;
     money_saved: number;
   };
+}
+
+export interface DashboardSourceState {
+  status: 'connected' | 'disconnected' | 'not_connected';
+  integration_id: string | null;
+  platform_type: string | null;
 }

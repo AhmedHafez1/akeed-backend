@@ -25,6 +25,12 @@ export interface WebhookJobPayload {
   /** Store domain / identifier as reported by the platform. */
   storeDomain: string;
 
+  /** Trusted tenant identity captured when the event was accepted. */
+  orgId: string | null;
+
+  /** Trusted source identity captured when the event was accepted. */
+  integrationId: string | null;
+
   /** Raw webhook body — opaque to the queue, interpreted by normalizers. */
   rawPayload: Record<string, unknown>;
 

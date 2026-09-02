@@ -13,6 +13,7 @@ import { VerificationsRepository } from '../../infrastructure/database/repositor
 import { integrations } from '../../infrastructure/database/schema';
 import {
   DashboardDateRange,
+  DashboardSourceState,
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
   PaginatedResponse,
@@ -50,8 +51,6 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
-const DEFAULT_AUTO_VERIFY_ENABLED = true;
-const DEFAULT_FOLLOW_UP_ENABLED = true;
 const DEFAULT_QUIET_HOURS_ENABLED = false;
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -92,7 +91,7 @@ export class VerificationsService {
     const limit = query.limit ?? 50;
     const cursor = decodeCursor(query.cursor);
 
-    const [verifications, activeIntegrations] = await Promise.all([
+    const [verifications, integrations] = await Promise.all([
       this.verificationsRepo.findByOrg(
         orgId,
         statuses,
@@ -102,8 +101,11 @@ export class VerificationsService {
         },
         { cursor, limit: limit + 1 },
       ),
-      this.integrationsRepo.findActiveByOrg(orgId),
+      this.integrationsRepo.findByOrg(orgId),
     ]);
+    const activeIntegrations = integrations.filter(
+      (integration) => integration.isActive === true,
+    );
 
     const hasMore = verifications.length > limit;
     const items = hasMore ? verifications.slice(0, limit) : verifications;
@@ -158,6 +160,7 @@ export class VerificationsService {
       })),
       next_cursor: nextCursor,
       page_context: {
+        source: this.resolveDashboardSourceState(integrations),
         automation: this.resolveDashboardAutomationSettings(activeIntegrations),
       },
     };
@@ -172,14 +175,17 @@ export class VerificationsService {
 
     const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
 
-    const [filteredCounts, activeIntegrations] = await Promise.all([
+    const [filteredCounts, integrations] = await Promise.all([
       this.verificationsRepo.getFunnelCountsByOrgAndPeriod(
         orgId,
         filterPeriod.startAt,
         filterPeriod.endAt,
       ),
-      this.integrationsRepo.findActiveByOrg(orgId),
+      this.integrationsRepo.findByOrg(orgId),
     ]);
+    const activeIntegrations = integrations.filter(
+      (integration) => integration.isActive === true,
+    );
 
     if (activeIntegrations.length > 1)
       throw new ConflictException(
@@ -201,6 +207,7 @@ export class VerificationsService {
 
     return {
       date_range: dateRange,
+      source: this.resolveDashboardSourceState(integrations),
       automation: automationSettings,
       totals: {
         pending: filteredCounts.pending,
@@ -554,12 +561,25 @@ export class VerificationsService {
     const withSettings = activeIntegrations[0];
 
     return {
-      is_auto_verify_enabled:
-        withSettings?.isAutoVerifyEnabled ?? DEFAULT_AUTO_VERIFY_ENABLED,
-      follow_up_enabled:
-        withSettings?.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
+      is_auto_verify_enabled: withSettings?.isAutoVerifyEnabled ?? false,
+      follow_up_enabled: withSettings?.followUpEnabled ?? false,
       quiet_hours_enabled:
         withSettings?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
+    };
+  }
+
+  private resolveDashboardSourceState(
+    integrations: IntegrationRecord[],
+  ): DashboardSourceState {
+    const active = integrations.find(
+      (integration) => integration.isActive === true,
+    );
+    const source = active ?? integrations[0];
+
+    return {
+      status: active ? 'connected' : source ? 'disconnected' : 'not_connected',
+      integration_id: source?.id ?? null,
+      platform_type: source?.platformType ?? null,
     };
   }
 }

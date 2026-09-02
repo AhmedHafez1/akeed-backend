@@ -82,6 +82,8 @@ export class WebhookQueueProducer {
       jobType: params.jobType,
       idempotencyKey: params.idempotencyKey,
       storeDomain: params.storeDomain,
+      orgId: integration?.orgId ?? null,
+      integrationId: integration?.id ?? null,
       rawPayload: params.rawPayload,
       receivedAt: event.receivedAt ?? new Date().toISOString(),
     };

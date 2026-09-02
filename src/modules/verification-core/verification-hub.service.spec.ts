@@ -87,7 +87,7 @@ function buildIntegration(
 
 function createMocks() {
   const ordersRepo = {
-    findByExternalId: jest.fn(),
+    findBySourceExternalId: jest.fn(),
     create: jest.fn(),
     findById: jest.fn(),
   };
@@ -254,7 +254,7 @@ describe('VerificationHubService', () => {
         markSkipped: jest.fn(),
       };
       const integrationRepo = {
-        findByPlatformDomain: jest
+        findBySourceIdentity: jest
           .fn()
           .mockResolvedValue(
             store === 'unknown' ? null : buildIntegration({ isActive: false }),
@@ -274,6 +274,8 @@ describe('VerificationHubService', () => {
           jobType: WebhookJobType.ORDER_CREATE,
           idempotencyKey: 'delivery-1',
           storeDomain: 'synthetic.myshopify.com',
+          orgId: store === 'unknown' ? null : 'org-1',
+          integrationId: store === 'unknown' ? null : 'int-1',
           rawPayload: shopifyOrderFixture({
             orgId: 'forged',
             integrationId: 'forged',
@@ -287,9 +289,13 @@ describe('VerificationHubService', () => {
       if (store === 'unknown')
         expect(eventRepo.markSkipped).toHaveBeenCalledWith(
           'event-1',
-          'no_integration_found',
+          'missing_source_identity',
         );
-      else expect(eventRepo.markCompleted).toHaveBeenCalledWith('event-1');
+      else
+        expect(eventRepo.markSkipped).toHaveBeenCalledWith(
+          'event-1',
+          'integration_inactive',
+        );
     },
   );
   describe('handleNewOrder — eligibility & auto-verify guards', () => {
@@ -310,7 +316,7 @@ describe('VerificationHubService', () => {
         skipped: true,
         reason: 'non_cod_payment_method',
       });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(ordersRepo.findBySourceExternalId).not.toHaveBeenCalled();
     });
 
     it('skips before order creation when isAutoVerifyEnabled=false', async () => {
@@ -333,7 +339,7 @@ describe('VerificationHubService', () => {
       );
 
       expect(result).toEqual({ skipped: true, reason: 'auto_verify_disabled' });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(ordersRepo.findBySourceExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
       expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
     });
@@ -360,7 +366,7 @@ describe('VerificationHubService', () => {
         skipped: true,
         reason: 'onboarding_incomplete',
       });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(ordersRepo.findBySourceExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
     });
 
@@ -386,7 +392,7 @@ describe('VerificationHubService', () => {
         skipped: true,
         reason: 'integration_inactive',
       });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(ordersRepo.findBySourceExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
     });
 
@@ -420,7 +426,7 @@ describe('VerificationHubService', () => {
         skipped: true,
         reason: 'billing_not_active',
       });
-      expect(ordersRepo.findByExternalId).not.toHaveBeenCalled();
+      expect(ordersRepo.findBySourceExternalId).not.toHaveBeenCalled();
       expect(verificationsRepo.create).not.toHaveBeenCalled();
     });
 
@@ -442,7 +448,7 @@ describe('VerificationHubService', () => {
           eligible: true,
           reason: 'cod_match',
         });
-        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.findBySourceExternalId.mockResolvedValue(null);
         ordersRepo.create.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
@@ -484,7 +490,7 @@ describe('VerificationHubService', () => {
         eligible: true,
         reason: 'cod_match',
       });
-      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
       ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
@@ -526,7 +532,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
       ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
@@ -581,7 +587,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
       ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
@@ -623,7 +629,7 @@ describe('VerificationHubService', () => {
           reason: 'cod_match',
         });
 
-        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.findBySourceExternalId.mockResolvedValue(null);
         ordersRepo.create.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
@@ -674,7 +680,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
       ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
@@ -721,7 +727,7 @@ describe('VerificationHubService', () => {
           eligible: true,
           reason: 'cod_match',
         });
-        ordersRepo.findByExternalId.mockResolvedValue(null);
+        ordersRepo.findBySourceExternalId.mockResolvedValue(null);
         ordersRepo.create.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
@@ -771,7 +777,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue(null);
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
       ordersRepo.create.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
@@ -817,7 +823,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue({
+      ordersRepo.findBySourceExternalId.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -832,6 +838,11 @@ describe('VerificationHubService', () => {
         buildIntegration(),
       );
 
+      expect(ordersRepo.findBySourceExternalId).toHaveBeenCalledWith({
+        orgId: 'org-1',
+        integrationId: 'int-1',
+        externalOrderId: 'ext-order-1',
+      });
       expect(result).toEqual({
         orderId: 'order-db-1',
         verificationId: 'ver-existing',
@@ -854,7 +865,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
 
-      ordersRepo.findByExternalId.mockResolvedValue({
+      ordersRepo.findBySourceExternalId.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',

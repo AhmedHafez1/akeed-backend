@@ -23,11 +23,16 @@ export class OrdersRepository {
     });
   }
 
-  async findByExternalId(externalId: string, orgId: string) {
+  async findBySourceExternalId(source: {
+    orgId: string;
+    integrationId: string;
+    externalOrderId: string;
+  }) {
     return await this.db.query.orders.findFirst({
       where: and(
-        eq(orders.externalOrderId, externalId),
-        eq(orders.orgId, orgId),
+        eq(orders.orgId, source.orgId),
+        eq(orders.integrationId, source.integrationId),
+        eq(orders.externalOrderId, source.externalOrderId),
       ),
     });
   }

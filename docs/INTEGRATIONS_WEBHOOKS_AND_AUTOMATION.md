@@ -94,7 +94,7 @@ Smart filtering: ignores blocked-status webhooks for non-current subscriptions. 
 
 ### Uninstall Webhook
 
-`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Historical configuration, plan, subscription, order, and verification records remain until `shop/redact` performs the GDPR wipe.
+`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Historical configuration, plan, subscription, order, verification, and usage records remain until `shop/redact` performs the explicit GDPR wipe. Accepted webhook jobs carry their trusted organization/source identity and are skipped before business processing if the source is disconnected or the relationship no longer matches.
 
 Queued automation re-checks both installation and billing state at execution time. Pending initial sends become `failed` with an `integration_inactive` or `billing_not_active` reason; follow-up and escalation jobs retain the existing verification status and record skip metadata. No quota is reserved and no WhatsApp send, quiet-hours reschedule, or Shopify tag is attempted for blocked jobs.
 

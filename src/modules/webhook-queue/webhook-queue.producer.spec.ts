@@ -54,6 +54,8 @@ describe('WebhookQueueProducer', () => {
         jobType: WebhookJobType.ORDER_CREATE,
         idempotencyKey: 'delivery-1',
         storeDomain: params.storeDomain,
+        orgId: 'trusted-org',
+        integrationId: 'trusted-int',
         rawPayload: params.rawPayload,
         receivedAt: '2026-05-15T00:00:00.000Z',
       },

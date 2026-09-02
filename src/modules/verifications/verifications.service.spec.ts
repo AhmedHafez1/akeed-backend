@@ -715,7 +715,7 @@ describe('Dashboard cancellation capabilities', () => {
         platformType: kind === 'standalone' ? 'standalone' : 'shopify',
       };
       const integrations = {
-        findActiveByOrg: jest
+        findByOrg: jest
           .fn()
           .mockResolvedValue(kind === 'missing' ? [] : [integration]),
       };

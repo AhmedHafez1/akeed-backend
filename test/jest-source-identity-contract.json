@@ -1,0 +1,8 @@
+{
+  "rootDir": "..",
+  "testRegex": "test/source-identity\\.contract-spec\\.ts$",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "transform": { "^.+\\.ts$": "ts-jest" },
+  "testEnvironment": "node",
+  "testTimeout": 20000
+}

@@ -37,7 +37,7 @@ describe('integration-scoped dashboard entitlement usage', () => {
     const service = new VerificationsService(
       verifications as never,
       entitlements,
-      { findActiveByOrg: jest.fn().mockResolvedValue(sources) } as never,
+      { findByOrg: jest.fn().mockResolvedValue(sources) } as never,
       {} as never,
       {} as never,
     );
@@ -56,6 +56,23 @@ describe('integration-scoped dashboard entitlement usage', () => {
     const result = await service.getStatsByOrg('org-1', {});
     expect(result.usage).toEqual({ used: 0, limit: 0 });
     expect(result.totals).toMatchObject({ confirmed: 3, canceled: 2 });
+    expect(result.source.status).toBe('not_connected');
+    expect(result.automation).toMatchObject({
+      is_auto_verify_enabled: false,
+      follow_up_enabled: false,
+    });
+    expect(repository.getEntitlementSource).not.toHaveBeenCalled();
+  });
+  it('reports a disconnected source while retaining historical totals', async () => {
+    const { service, repository } = setup([{ ...source, isActive: false }]);
+    const result = await service.getStatsByOrg('org-1', {});
+    expect(result.source).toEqual({
+      status: 'disconnected',
+      integration_id: 'int-1',
+      platform_type: 'standalone',
+    });
+    expect(result.totals).toMatchObject({ confirmed: 3, canceled: 2 });
+    expect(result.usage).toEqual({ used: 0, limit: 0 });
     expect(repository.getEntitlementSource).not.toHaveBeenCalled();
   });
   it('rejects ambiguous active sources', async () => {

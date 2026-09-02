@@ -169,6 +169,13 @@
       "when": 1788307200000,
       "tag": "0023_expand_commerce_platform_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788310800000,
+      "tag": "0024_source_identity_and_history_retention",
+      "breakpoints": true
     }
   ]
 }

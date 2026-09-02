@@ -23,6 +23,29 @@ export class IntegrationsRepository {
     });
   }
 
+  async findByOrg(orgId: string) {
+    return await this.db.query.integrations.findMany({
+      where: eq(integrations.orgId, orgId),
+      orderBy: (integrations, { desc }) => [desc(integrations.createdAt)],
+    });
+  }
+
+  async findBySourceIdentity(source: {
+    id: string;
+    orgId: string;
+    platformType: string;
+    platformStoreUrl: string;
+  }) {
+    return await this.db.query.integrations.findFirst({
+      where: and(
+        eq(integrations.id, source.id),
+        eq(integrations.orgId, source.orgId),
+        eq(integrations.platformType, source.platformType),
+        eq(integrations.platformStoreUrl, source.platformStoreUrl),
+      ),
+    });
+  }
+
   async findByPlatformDomain(domain: string, platformType: string) {
     return await this.db.query.integrations.findFirst({
       where: and(
