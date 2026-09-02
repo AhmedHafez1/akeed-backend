@@ -19,7 +19,8 @@
 - `npm run build`: passed.
 - `npm run log:check`: passed with 0 violations.
 - Non-fixing ESLint: passed with 0 errors and 23 pre-existing unsafe-test-argument warnings outside this story's changes.
-- Disposable PostgreSQL contract rehearsal: test coverage was added, but execution was blocked because Docker is not installed on this host. Direct execution also confirmed that `E01_TEST_DATABASE_URL` is not configured. Run `scripts/test-shopify-contract.ps1` on a Docker-enabled host, or provide the documented isolated local PostgreSQL database, before deployment.
+- Supabase development database rehearsal: passed through the configured development pooler. Migration `0023` was already recorded in `drizzle.__drizzle_migrations`; both constraints were present and validated. Rollback-only probes changed the representative Shopify integration to `standalone` and billing claim to `easyorders`, verified acceptance, and rolled back. Separate rollback-only probes confirmed `magento` is rejected by both constraints with PostgreSQL check violation `23514`. Final counts confirmed the original Shopify rows were unchanged.
+- The repository's disposable Docker harness was unavailable because Docker is not installed on this host; direct Supabase rehearsal provides the database evidence for this story.
 
 ## Deployment and Recovery
 
