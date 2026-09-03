@@ -71,7 +71,12 @@ export class ShopifyAuthService {
       shop,
       'shopify',
     );
-    return Boolean(integration?.isActive);
+    if (!integration?.isActive) return false;
+
+    const memberships = await this.membershipsRepo.findByOrg(
+      integration.orgId,
+    );
+    return memberships.length > 0;
   }
 
   install(shop: string, host?: string): string {
@@ -559,7 +564,6 @@ export class ShopifyAuthService {
       await this.integrationsRepo.findByPlatformDomain(shop, 'shopify');
 
     let orgId: string;
-    let isNewOrganization = false;
 
     if (existingIntegration) {
       orgId = existingIntegration.orgId;
@@ -571,7 +575,6 @@ export class ShopifyAuthService {
         shop,
       );
       orgId = org.id;
-      isNewOrganization = true;
     }
 
     await this.integrationsRepo.upsertShopifyIntegration(
@@ -581,8 +584,10 @@ export class ShopifyAuthService {
       accessToken,
     );
 
-    // Create or get user and membership (only for new organizations)
-    if (isNewOrganization) {
+    // Existing integrations can outlive their organization membership after
+    // an interrupted install. Repair that state during every install flow.
+    const memberships = await this.membershipsRepo.findByOrg(orgId);
+    if (memberships.length === 0) {
       try {
         const user = await this.createOrGetUser(shop);
         await this.membershipsRepo.createOrUpdateMembership(
@@ -631,35 +636,39 @@ export class ShopifyAuthService {
     // Use shop domain as email identifier
     const email = `${shop}@akeed-shopify.internal`;
 
-    // First, try to find existing user by email via server-side filter
-    const listUsersParams = {
-      page: 1,
-      perPage: 1,
-      filter: `email.eq.${email}`,
-    } as unknown as {
-      page?: number;
-      perPage?: number;
+    const findExistingUser = async () => {
+      const perPage = 1000;
+
+      for (let page = 1; ; page += 1) {
+        const { data, error } = await supabase.auth.admin.listUsers({
+          page,
+          perPage,
+        });
+
+        if (error) {
+          this.logger.error(
+            buildBackendLog(ShopifyAuthService.name, {
+              action: 'shopify-user-lookup-by-email',
+              outcome: 'failure',
+              shopDomain: shop,
+              email,
+              errorMessage: error.message,
+            }),
+          );
+          throw new InternalServerErrorException(
+            'Failed to lookup existing user',
+          );
+        }
+
+        const existingUser = data.users.find(
+          (candidate) => candidate.email === email,
+        );
+        if (existingUser) return existingUser;
+        if (data.users.length < perPage) return null;
+      }
     };
 
-    const { data: existingUsersData, error: existingUsersError } =
-      await supabase.auth.admin.listUsers(listUsersParams);
-
-    if (existingUsersError) {
-      this.logger.error(
-        buildBackendLog(ShopifyAuthService.name, {
-          action: 'shopify-user-lookup-by-email',
-          outcome: 'failure',
-          shopDomain: shop,
-          email,
-          errorMessage: existingUsersError.message,
-        }),
-      );
-      throw new InternalServerErrorException('Failed to lookup existing user');
-    }
-
-    const existingUser = existingUsersData?.users?.find(
-      (candidate) => candidate.email === email,
-    );
+    const existingUser = await findExistingUser();
 
     if (existingUser?.id) {
       this.logger.log(
@@ -687,6 +696,13 @@ export class ShopifyAuthService {
     });
 
     if (error || !newUser?.user) {
+      if (error?.message.toLowerCase().includes('already been registered')) {
+        const concurrentlyCreatedUser = await findExistingUser();
+        if (concurrentlyCreatedUser?.id) {
+          return { id: concurrentlyCreatedUser.id };
+        }
+      }
+
       this.logger.error(
         buildBackendLog(ShopifyAuthService.name, {
           action: 'shopify-user-create',
