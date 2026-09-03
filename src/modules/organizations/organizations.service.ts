@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,6 +14,7 @@ import { OrganizationsRepository } from '../../infrastructure/database/repositor
 import {
   StandaloneOrganizationProvisioningRepository,
   StandaloneOrganizationProvisioningResult,
+  StandaloneSourceConflictError,
 } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import type { AuthenticatedRequestUser } from '../auth/guards/dual-auth.guard';
 import {
@@ -63,6 +65,15 @@ export class OrganizationsService {
           ...normalizeError(error),
         }),
       );
+      if (error instanceof StandaloneSourceConflictError) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message:
+            'Standalone setup is unavailable for an account that already owns another commerce source',
+          code: 'STANDALONE_SOURCE_CONFLICT',
+        });
+      }
       throw error;
     }
   }
@@ -78,6 +89,8 @@ export class OrganizationsService {
         provisioningResult: result.created ? 'created' : 'existing',
         userId,
         orgId: result.organization.id,
+        integrationId: result.integration.id,
+        sourceProvisioningResult: result.sourceCreated ? 'created' : 'existing',
       }),
     );
   }

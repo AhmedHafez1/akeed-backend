@@ -31,7 +31,10 @@ export class OrderEligibilityService {
     const platform = params.integration.platformType;
     const strategy = this.strategyByPlatform.get(platform);
     if (strategy) {
-      return strategy.evaluateOrderForVerification(params.order);
+      return strategy.evaluateOrderForVerification(
+        params.order,
+        params.integration,
+      );
     }
 
     this.logger.warn(

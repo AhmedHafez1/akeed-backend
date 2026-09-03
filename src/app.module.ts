@@ -1,4 +1,5 @@
 import { ShopifyOrderEligibilityStrategy } from './infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
+import { StandaloneOrderEligibilityStrategy } from './infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { ORDER_ELIGIBILITY_STRATEGIES } from './modules/verification-core/strategies/order-eligibility.strategy';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -59,10 +60,17 @@ import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outc
     VerificationCoreModule.register({
       imports: [MetaModule, ShopifyModule],
       ports: [
+        StandaloneOrderEligibilityStrategy,
         {
           provide: ORDER_ELIGIBILITY_STRATEGIES,
-          inject: [ShopifyOrderEligibilityStrategy],
-          useFactory: (shopify: ShopifyOrderEligibilityStrategy) => [shopify],
+          inject: [
+            ShopifyOrderEligibilityStrategy,
+            StandaloneOrderEligibilityStrategy,
+          ],
+          useFactory: (
+            shopify: ShopifyOrderEligibilityStrategy,
+            standalone: StandaloneOrderEligibilityStrategy,
+          ) => [shopify, standalone],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
       ],

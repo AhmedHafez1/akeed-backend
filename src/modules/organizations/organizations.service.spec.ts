@@ -1,6 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import type { StandaloneOrganizationProvisioningRepository } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import { StandaloneSourceConflictError } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import { OrganizationsService } from './organizations.service';
 
 const organization = {
@@ -15,13 +16,22 @@ const organization = {
   updatedAt: null,
 };
 
+const integration = {
+  id: 'integration-1',
+};
+
 function createService(created = true) {
   const organizationsRepo = {
     findById: jest.fn(),
     updateById: jest.fn(),
   };
   const provisioningRepo = {
-    provision: jest.fn().mockResolvedValue({ organization, created }),
+    provision: jest.fn().mockResolvedValue({
+      organization,
+      integration,
+      created,
+      sourceCreated: created,
+    }),
   };
   const service = new OrganizationsService(
     organizationsRepo as unknown as OrganizationsRepository,
@@ -84,5 +94,28 @@ describe('OrganizationsService standalone provisioning', () => {
 
     await expect(result).rejects.toBeInstanceOf(ForbiddenException);
     expect(provisioningRepo.provision).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable conflict for an owner of another commerce source', async () => {
+    const { service, provisioningRepo } = createService();
+    provisioningRepo.provision.mockRejectedValue(
+      new StandaloneSourceConflictError(),
+    );
+
+    const result = service.createOrganization(
+      { userId: 'user-1', orgId: 'shop-org', source: 'supabase' },
+      { name: 'Example Company' },
+    );
+
+    try {
+      await result;
+      throw new Error('Expected standalone source conflict');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getStatus()).toBe(409);
+      expect((error as ConflictException).getResponse()).toMatchObject({
+        code: 'STANDALONE_SOURCE_CONFLICT',
+      });
+    }
   });
 });

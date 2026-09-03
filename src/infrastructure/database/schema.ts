@@ -201,6 +201,9 @@ export const integrations = pgTable(
     isAutoVerifyEnabled: boolean('is_auto_verify_enabled')
       .default(true)
       .notNull(),
+    assumeCodWhenPaymentMissing: boolean('assume_cod_when_payment_missing')
+      .default(false)
+      .notNull(),
     onboardingStatus: integrationOnboardingStatus('onboarding_status')
       .default('pending')
       .notNull(),
@@ -262,6 +265,9 @@ export const integrations = pgTable(
       'btree',
       table.billingStatus.asc().nullsLast().op('text_ops'),
     ),
+    uniqueIndex('integrations_one_active_source_per_org_idx')
+      .on(table.orgId)
+      .where(sql`${table.isActive} = true`),
     index('idx_integrations_shopify_subscription_id').using(
       'btree',
       table.shopifySubscriptionId.asc().nullsLast().op('text_ops'),

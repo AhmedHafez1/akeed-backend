@@ -183,6 +183,13 @@
       "when": 1788397200000,
       "tag": "0025_recoverable_webhook_dispatch",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788400800000,
+      "tag": "0026_standalone_source_provisioning",
+      "breakpoints": true
     }
   ]
 }

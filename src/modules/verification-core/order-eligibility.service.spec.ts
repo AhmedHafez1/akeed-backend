@@ -1,6 +1,7 @@
 import { OrderEligibilityService } from './order-eligibility.service';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { ShopifyOrderEligibilityStrategy } from '../../infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
+import { StandaloneOrderEligibilityStrategy } from '../../infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { shopifyPaymentFixtures } from '../webhook-queue/normalizers/fixtures/shopify-order.fixture';
 
 describe('OrderEligibilityService', () => {
@@ -18,6 +19,7 @@ describe('OrderEligibilityService', () => {
   beforeEach(() => {
     service = new OrderEligibilityService([
       new ShopifyOrderEligibilityStrategy(),
+      new StandaloneOrderEligibilityStrategy(),
     ]);
   });
 

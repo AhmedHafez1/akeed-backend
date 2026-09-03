@@ -29,6 +29,7 @@
     "test:contract:source-identity": "jest --config ./test/jest-source-identity-contract.json --runInBand",
     "test:contract:shopify": "jest --config ./test/jest-shopify-contract.json --runInBand",
     "test:contract:platform-boundary-migration": "jest --config ./test/jest-platform-boundary-migration-contract.json --runInBand",
+    "test:contract:standalone-provisioning": "jest --config ./test/jest-standalone-provisioning-contract.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",
     "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts"
