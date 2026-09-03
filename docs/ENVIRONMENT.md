@@ -91,6 +91,13 @@ npm run db:push
     - `business`: public-facing Scale plan, `$49.99`/month, 2,500 WhatsApp confirmations/month.
   - Plans do not include usage-based Shopify billing line items. When the included limit is reached, sending stops until renewal or upgrade.
 
+## Standalone Pilot Activation
+
+- Keep `STANDALONE_PILOT_ACTIVATION_ENABLED=false` during ordinary deployments. Staff can still list accounts and create read-only previews.
+- Set it to `true` only for a reviewed activation batch after migration `0027_standalone_pilot_permissions.sql` and the deployed database-grant checks pass.
+- The existing `ADMIN_CONTROL_TOWER_ENABLED` and `ADMIN_REQUIRE_AAL2` controls also apply. Enabling pilot activation does not bypass the staff role or MFA requirements.
+- Return the flag to `false` after the approved batch. See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) for preflight, reconciliation, and rollback steps.
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:

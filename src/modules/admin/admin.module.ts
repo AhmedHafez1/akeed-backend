@@ -7,16 +7,21 @@ import { AdminFunnelService } from './admin-funnel.service';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import { AdminQueryRepository } from './admin-query.repository';
 import { AdminStoresService } from './admin-stores.service';
+import { StandalonePilotController } from './standalone-pilot.controller';
+import { StandalonePilotRepository } from './standalone-pilot.repository';
+import { StandalonePilotService } from './standalone-pilot.service';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [AdminController],
+  controllers: [AdminController, StandalonePilotController],
   providers: [
     AdminAccessGuard,
     AdminQueryRepository,
     AdminStoresService,
     AdminFunnelService,
     AdminHealthRuleService,
+    StandalonePilotRepository,
+    StandalonePilotService,
   ],
 })
 export class AdminModule {}

@@ -73,9 +73,7 @@ export class ShopifyAuthService {
     );
     if (!integration?.isActive) return false;
 
-    const memberships = await this.membershipsRepo.findByOrg(
-      integration.orgId,
-    );
+    const memberships = await this.membershipsRepo.findByOrg(integration.orgId);
     return memberships.length > 0;
   }
 

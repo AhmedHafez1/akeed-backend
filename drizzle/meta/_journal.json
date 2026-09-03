@@ -190,6 +190,13 @@
       "when": 1788400800000,
       "tag": "0026_standalone_source_provisioning",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788454800000,
+      "tag": "0027_standalone_pilot_permissions",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,60 @@ export function buildStandaloneSourceIdentity(orgId: string): string {
   return `standalone:${orgId}`;
 }
 
+export type StandaloneProvisioningTransaction = Parameters<
+  Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
+>[0];
+
+export async function provisionStandaloneSourceForOrganization(
+  tx: StandaloneProvisioningTransaction,
+  orgId: string,
+) {
+  const [organization] = await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .for('update');
+  if (!organization) throw new Error('Standalone organization was not found');
+  const sourceIdentity = buildStandaloneSourceIdentity(orgId);
+  const [insertedSource] = await tx
+    .insert(integrations)
+    .values({
+      orgId,
+      platformType: 'standalone',
+      platformStoreUrl: sourceIdentity,
+      accessToken: null,
+      webhookSecret: null,
+      isActive: true,
+      isAutoVerifyEnabled: false,
+      assumeCodWhenPaymentMissing: false,
+      onboardingStatus: 'pending',
+    })
+    .onConflictDoNothing({
+      target: [integrations.platformType, integrations.platformStoreUrl],
+    })
+    .returning();
+  const integration =
+    insertedSource ??
+    (
+      await tx
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.platformType, 'standalone'),
+            eq(integrations.platformStoreUrl, sourceIdentity),
+          ),
+        )
+        .limit(1)
+    )[0];
+  if (!integration || integration.orgId !== orgId || !integration.isActive) {
+    throw new StandaloneSourceConflictError(
+      'Standalone source identity is unavailable',
+    );
+  }
+  return { integration, sourceCreated: Boolean(insertedSource) };
+}
+
 @Injectable()
 export class StandaloneOrganizationProvisioningRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
@@ -126,52 +180,14 @@ export class StandaloneOrganizationProvisioningRepository {
           set: { role: 'owner' },
         });
 
-      const sourceIdentity = buildStandaloneSourceIdentity(organization.id);
-      const [insertedSource] = await tx
-        .insert(integrations)
-        .values({
-          orgId: organization.id,
-          platformType: 'standalone',
-          platformStoreUrl: sourceIdentity,
-          accessToken: null,
-          webhookSecret: null,
-          isActive: true,
-          isAutoVerifyEnabled: false,
-          assumeCodWhenPaymentMissing: false,
-          onboardingStatus: 'pending',
-        })
-        .onConflictDoNothing({
-          target: [integrations.platformType, integrations.platformStoreUrl],
-        })
-        .returning();
-
-      const integration =
-        insertedSource ??
-        (await tx
-          .select()
-          .from(integrations)
-          .where(
-            and(
-              eq(integrations.platformType, 'standalone'),
-              eq(integrations.platformStoreUrl, sourceIdentity),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0]));
-
-      if (
-        !integration ||
-        integration.orgId !== organization.id ||
-        !integration.isActive
-      ) {
-        throw new Error('Failed to provision standalone commerce source');
-      }
+      const { integration, sourceCreated } =
+        await provisionStandaloneSourceForOrganization(tx, organization.id);
 
       return {
         organization,
         integration,
         created: Boolean(inserted),
-        sourceCreated: Boolean(insertedSource),
+        sourceCreated,
       };
     });
   }
