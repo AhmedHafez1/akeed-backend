@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -86,6 +87,10 @@ export class ShopifyOrderWebhookDto {
   @IsArray()
   @IsString({ each: true })
   payment_gateway_names?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  test?: boolean;
 }
 
 export class ShopifyAppUninstalledDto {

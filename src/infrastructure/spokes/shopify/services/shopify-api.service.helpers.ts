@@ -304,6 +304,37 @@ export type OrderCancelResponse = GraphQLResponse<{
   };
 }>;
 
+export interface TestCodOrder {
+  id: string;
+  name: string;
+  test: boolean;
+  displayFinancialStatus: string;
+}
+
+export type CreateTestCodOrderResponse = GraphQLResponse<{
+  orderCreate?: {
+    order?: TestCodOrder;
+    userErrors?: GraphQLUserError[];
+  };
+}>;
+
+export const CREATE_TEST_COD_ORDER_MUTATION = `
+  mutation CreateTestCodOrder($order: OrderCreateOrderInput!) {
+    orderCreate(order: $order) {
+      order {
+        id
+        name
+        test
+        displayFinancialStatus
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 export const ORDER_CANCEL_MUTATION = `
   mutation orderCancel(
     $orderId: ID!

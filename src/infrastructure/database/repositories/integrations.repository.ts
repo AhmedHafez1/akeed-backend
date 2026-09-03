@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import * as schema from '../index';
+import type * as schema from '../schema';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import { adminStoreLifecycles, integrations } from '../schema';
@@ -11,6 +11,7 @@ import { encryptToken } from '../../../shared/utils/token-encryption.util';
 export class IntegrationsRepository {
   constructor(
     @Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>,
+    @Inject(ConfigService)
     private readonly configService: ConfigService,
   ) {}
 

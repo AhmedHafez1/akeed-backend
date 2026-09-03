@@ -2,7 +2,10 @@ import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import * as schema from '.';
+import * as tables from './schema';
+import * as relationDefinitions from './relations';
+
+const schema = { ...tables, ...relationDefinitions };
 
 export const DRIZZLE = Symbol('DRIZZLE');
 

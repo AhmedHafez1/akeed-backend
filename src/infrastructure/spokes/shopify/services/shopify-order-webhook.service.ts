@@ -3,6 +3,7 @@ import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { WebhookQueueProducer } from '../../../../modules/webhook-queue/webhook-queue.producer';
 import { WebhookJobType } from '../../../../modules/webhook-queue/webhook-queue.constants';
 import { ShopifyOrderWebhookDto } from '../dto/shopify-webhooks.dto';
+import { ConfigService } from '@nestjs/config';
 
 interface WebhookAck {
   received: boolean;
@@ -23,7 +24,10 @@ interface WebhookAck {
 export class ShopifyOrderWebhookService {
   private readonly logger = new Logger(ShopifyOrderWebhookService.name);
 
-  constructor(private readonly queueProducer: WebhookQueueProducer) {}
+  constructor(
+    private readonly queueProducer: WebhookQueueProducer,
+    private readonly config: ConfigService,
+  ) {}
 
   async handleOrderCreate(
     payload: ShopifyOrderWebhookDto,
@@ -41,6 +45,18 @@ export class ShopifyOrderWebhookService {
       throw new BadRequestException(
         'A shop domain and provider order ID are required for webhook identity',
       );
+    }
+
+    if (payload.test && !this.shouldProcessTestOrders()) {
+      this.logger.log(
+        buildBackendLog('ShopifyOrderWebhookService', {
+          action: 'handleOrderCreate.testOrder',
+          outcome: 'skipped',
+          shopDomain: normalizedShopDomain,
+          externalOrderId,
+        }),
+      );
+      return { received: true };
     }
 
     this.logger.log(
@@ -78,5 +94,9 @@ export class ShopifyOrderWebhookService {
     }
 
     return { received: true };
+  }
+
+  private shouldProcessTestOrders(): boolean {
+    return this.config.get<string>('SHOPIFY_PROCESS_TEST_ORDERS') === 'true';
   }
 }

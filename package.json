@@ -27,7 +27,11 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:contract:entitlements": "jest --config ./test/jest-entitlement-contract.json --runInBand",
     "test:contract:source-identity": "jest --config ./test/jest-source-identity-contract.json --runInBand",
-    "test:contract:shopify": "jest --config ./test/jest-shopify-contract.json --runInBand"
+    "test:contract:shopify": "jest --config ./test/jest-shopify-contract.json --runInBand",
+    "test:contract:platform-boundary-migration": "jest --config ./test/jest-platform-boundary-migration-contract.json --runInBand",
+    "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
+    "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",
+    "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
@@ -70,6 +74,7 @@
     "ts-jest": "^29.1.2",
     "ts-node": "^1.7.1",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0"
   },

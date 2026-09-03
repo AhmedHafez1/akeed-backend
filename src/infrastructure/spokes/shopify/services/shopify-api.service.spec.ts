@@ -1,6 +1,9 @@
 import { of, throwError } from 'rxjs';
 import { ShopifyApiService } from './shopify-api.service';
-import { ORDER_CANCEL_MUTATION } from './shopify-api.service.helpers';
+import {
+  CREATE_TEST_COD_ORDER_MUTATION,
+  ORDER_CANCEL_MUTATION,
+} from './shopify-api.service.helpers';
 import { encryptToken } from '../../../../shared/utils/token-encryption.util';
 import type { integrations } from '../../../database/schema';
 
@@ -114,5 +117,67 @@ describe('ShopifyApiService cancellation contract', () => {
     await expect(
       service.cancelOrder(integration, '12345', 'OTHER'),
     ).rejects.toThrow('synthetic transport failure');
+  });
+
+  it('creates a tagged pending COD test order without exposing the token', async () => {
+    const created = {
+      id: 'gid://shopify/Order/42',
+      name: '#1042',
+      test: true,
+      displayFinancialStatus: 'PENDING',
+    };
+    const { service, post } = setup({
+      data: { orderCreate: { order: created, userErrors: [] } },
+    });
+
+    await expect(
+      service.createTestCodOrder(integration, {
+        phone: '+201001234567',
+        amount: '49.95',
+        currencyCode: 'USD',
+      }),
+    ).resolves.toEqual(created);
+
+    expect(post).toHaveBeenCalledWith(
+      'https://synthetic.myshopify.com/admin/api/2026-01/graphql.json',
+      {
+        query: CREATE_TEST_COD_ORDER_MUTATION,
+        variables: {
+          order: {
+            test: true,
+            financialStatus: 'PENDING',
+            email: 'akeed-cod-test@example.com',
+            phone: '+201001234567',
+            tags: ['akeed-test', 'akeed-cod-test'],
+            lineItems: [
+              {
+                title: 'Akeed COD Test',
+                quantity: 1,
+                priceSet: {
+                  shopMoney: { amount: '49.95', currencyCode: 'USD' },
+                },
+              },
+            ],
+            transactions: [
+              {
+                gateway: 'Cash on Delivery (COD)',
+                kind: 'SALE',
+                status: 'PENDING',
+                test: true,
+                amountSet: {
+                  shopMoney: { amount: '49.95', currencyCode: 'USD' },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': 'synthetic-shop-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
   });
 });

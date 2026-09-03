@@ -1,5 +1,5 @@
 import type { CommerceOutcomeConnection } from '../../../../shared/commerce/commerce-outcome';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosResponse } from 'axios';
@@ -17,6 +17,8 @@ import {
   type AppUsageRecordCreateResponse,
   buildSubscriptionLineItems,
   CANCEL_APP_SUBSCRIPTION_MUTATION,
+  CREATE_TEST_COD_ORDER_MUTATION,
+  type CreateTestCodOrderResponse,
   CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_USAGE_RECORD_MUTATION,
   GET_APP_SUBSCRIPTION_STATUS_QUERY,
@@ -30,6 +32,7 @@ import {
   type ShopNameResponse,
   TAGS_ADD_MUTATION,
   type TagsAddResponse,
+  type TestCodOrder,
   throwIfGraphQLErrors,
   throwIfUserErrors,
   toAppSubscriptionGid,
@@ -57,7 +60,9 @@ export class ShopifyApiService {
   private readonly logger = new Logger(ShopifyApiService.name);
 
   constructor(
+    @Inject(HttpService)
     private readonly _httpService: HttpService,
+    @Inject(ConfigService)
     private readonly configService: ConfigService,
   ) {}
 
@@ -118,6 +123,61 @@ export class ShopifyApiService {
       );
       throw error;
     }
+  }
+
+  async createTestCodOrder(
+    integration: CommerceOutcomeConnection,
+    input: { phone: string; amount: string; currencyCode: string },
+  ): Promise<TestCodOrder> {
+    const response = await this.executeGraphql<CreateTestCodOrderResponse>(
+      integration,
+      CREATE_TEST_COD_ORDER_MUTATION,
+      {
+        order: {
+          test: true,
+          financialStatus: 'PENDING',
+          email: 'akeed-cod-test@example.com',
+          phone: input.phone,
+          tags: ['akeed-test', 'akeed-cod-test'],
+          lineItems: [
+            {
+              title: 'Akeed COD Test',
+              quantity: 1,
+              priceSet: {
+                shopMoney: {
+                  amount: input.amount,
+                  currencyCode: input.currencyCode,
+                },
+              },
+            },
+          ],
+          transactions: [
+            {
+              gateway: 'Cash on Delivery (COD)',
+              kind: 'SALE',
+              status: 'PENDING',
+              test: true,
+              amountSet: {
+                shopMoney: {
+                  amount: input.amount,
+                  currencyCode: input.currencyCode,
+                },
+              },
+            },
+          ],
+        },
+      },
+    );
+
+    throwIfGraphQLErrors(response.data.errors, 'Shopify order creation errors');
+    throwIfUserErrors(
+      response.data.data?.orderCreate?.userErrors,
+      'Shopify order creation validation failed',
+    );
+
+    const order = response.data.data?.orderCreate?.order;
+    if (!order) throw new Error('Shopify did not return the created order');
+    return order;
   }
 
   async cancelOrder(
@@ -411,7 +471,13 @@ export class ShopifyApiService {
         throw new Error('Missing SHOPIFY_TOKEN_ENCRYPTION_KEY');
       }
 
-      return decryptToken(integration.accessToken, encryptionKey);
+      try {
+        return decryptToken(integration.accessToken, encryptionKey);
+      } catch {
+        throw new Error(
+          `Unable to decrypt the stored Shopify token for ${integration.platformStoreUrl}. Reconnect the store using the current SHOPIFY_TOKEN_ENCRYPTION_KEY.`,
+        );
+      }
     }
 
     this.logger.error(

@@ -3,7 +3,6 @@ import {
   type EntitlementSource,
 } from '../../shared/billing/entitlement';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
-import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { VerificationHubService } from './verification-hub.service';
 import type { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import type { integrations } from '../../infrastructure/database/schema';
@@ -15,6 +14,10 @@ import { PhoneService } from '../../shared/services/phone.service';
 import { WebhookJobType } from '../webhook-queue/webhook-queue.constants';
 import type { Job } from 'bullmq';
 import type { WebhookJobPayload } from '../webhook-queue/interfaces/webhook-job.interface';
+import {
+  COMMERCE_OUTCOME_ACTIONS,
+  type CommerceOutcomeAdapter,
+} from '../../shared/commerce/commerce-outcome';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
 
@@ -105,6 +108,31 @@ function createMocks() {
     cancelOrder: jest.fn(),
   };
 
+  const registryTestAdapter: CommerceOutcomeAdapter = {
+    platformType: 'shopify',
+    capabilities: new Set(COMMERCE_OUTCOME_ACTIONS),
+    execute: jest.fn(async ({ action, connection, externalOrderId }) => {
+      if (!connection.platformStoreUrl || !connection.accessToken) {
+        return {
+          status: 'permanent_failure' as const,
+          errorCode: 'connection_incomplete',
+        };
+      }
+      if (action === 'merchant_no_reply_cancellation') {
+        await orderTaggingPort.cancelOrder(connection, externalOrderId);
+        return { status: 'accepted_without_reference' as const };
+      }
+      const tag = {
+        customer_confirmation: 'Akeed: Verified',
+        customer_cancellation: 'Akeed: Canceled',
+        merchant_cancellation_tagging: 'Akeed: Canceled',
+        automatic_no_reply_tagging: 'Akeed: No Reply',
+      }[action];
+      await orderTaggingPort.addOrderTag(connection, externalOrderId, tag);
+      return { status: 'applied' as const };
+    }),
+  };
+
   const orderEligibilityService = {
     evaluateOrderForVerification: jest.fn(),
   };
@@ -138,7 +166,7 @@ function createMocks() {
         findForOutcomeDispatch: (...args: unknown[]) =>
           ordersRepo.findById(...args) as unknown,
       } as never,
-      [new ShopifyOutcomeAdapter(orderTaggingPort as never)],
+      [registryTestAdapter],
     ),
     orderEligibilityService as any,
     verificationSendService as any,

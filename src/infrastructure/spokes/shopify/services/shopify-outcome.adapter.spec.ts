@@ -12,6 +12,7 @@ import {
   COMMERCE_OUTCOME_ACTIONS,
   type CommerceOutcomeAction,
 } from '../../../../shared/commerce/commerce-outcome';
+import { defineCommerceOutcomeAdapterContract } from '../../../../../test/contracts/commerce-outcome-adapter.contract';
 
 const key = 'a'.repeat(64);
 function setup() {
@@ -75,6 +76,33 @@ function setup() {
     });
   return { order, post, api, registry, dispatch, findForOutcomeDispatch };
 }
+
+defineCommerceOutcomeAdapterContract({
+  name: 'Shopify',
+  platformType: 'shopify',
+  capabilities: COMMERCE_OUTCOME_ACTIONS,
+  expectedStatus: {
+    customer_confirmation: 'applied',
+    customer_cancellation: 'applied',
+    merchant_no_reply_cancellation: 'pending_provider_operation',
+    merchant_cancellation_tagging: 'applied',
+    automatic_no_reply_tagging: 'applied',
+  },
+  createFixture: (action) => {
+    const { api, order } = setup();
+    return {
+      adapter: new ShopifyOutcomeAdapter(api),
+      request: {
+        orgId: order.orgId,
+        integrationId: order.integrationId,
+        externalOrderId: order.externalOrderId,
+        correlationId: 'adapter-contract-verification',
+        action,
+        connection: order.integration,
+      },
+    };
+  },
+});
 
 describe('Shopify outcome dispatch through the real GraphQL service', () => {
   it.each([

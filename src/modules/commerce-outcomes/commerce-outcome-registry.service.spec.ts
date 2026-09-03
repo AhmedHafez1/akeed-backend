@@ -7,6 +7,7 @@ import type {
   CommerceOutcomeDispatchCommand,
   CommerceOutcomeOperationResult,
 } from '../../shared/commerce/commerce-outcome';
+import { COMMERCE_OUTCOME_ACTIONS } from '../../shared/commerce/commerce-outcome';
 import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
 
 const command: CommerceOutcomeDispatchCommand = {
@@ -122,6 +123,25 @@ describe('CommerceOutcomeRegistryService', () => {
 
     expect(result).toEqual({
       ...command,
+      status: 'unsupported',
+      reason: 'capability_not_supported',
+    });
+    expect(adapter.execute).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for an unknown runtime action without calling an adapter', async () => {
+    const adapter = buildAdapter('shopify', [...COMMERCE_OUTCOME_ACTIONS]);
+    const unknownActionCommand = {
+      ...command,
+      action: 'inventory_rewrite',
+    } as unknown as CommerceOutcomeDispatchCommand;
+
+    const result = await createService([adapter]).dispatch(
+      unknownActionCommand,
+    );
+
+    expect(result).toEqual({
+      ...unknownActionCommand,
       status: 'unsupported',
       reason: 'capability_not_supported',
     });
