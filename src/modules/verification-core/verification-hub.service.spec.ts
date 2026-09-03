@@ -249,7 +249,7 @@ describe('VerificationHubService', () => {
         eligible: true,
       });
       const eventRepo = {
-        markProcessing: jest.fn(),
+        claimForProcessing: jest.fn().mockResolvedValue('claimed'),
         markCompleted: jest.fn(),
         markSkipped: jest.fn(),
       };

@@ -1,15 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import {
   WebhookEventsRepository,
   WebhookEvent,
 } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import { WEBHOOK_QUEUE_NAME, WebhookJobType } from './webhook-queue.constants';
+import { WebhookJobType } from './webhook-queue.constants';
 import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
-import { WebhookJobPayload } from './interfaces/webhook-job.interface';
-import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
+import {
+  DispatchOutcome,
+  WebhookDispatchService,
+} from './webhook-dispatch.service';
 
 interface WebhookIngestionParams {
   platform: PlatformType;
@@ -30,9 +34,9 @@ export class WebhookQueueProducer {
   private readonly logger = new Logger(WebhookQueueProducer.name);
 
   constructor(
-    @InjectQueue(WEBHOOK_QUEUE_NAME) private readonly queue: Queue,
     private readonly webhookEventsRepo: WebhookEventsRepository,
     private readonly integrationsRepo: IntegrationsRepository,
+    private readonly dispatcher: WebhookDispatchService,
   ) {}
 
   /**
@@ -58,10 +62,25 @@ export class WebhookQueueProducer {
         orgId: integration?.orgId ?? null,
         integrationId: integration?.id ?? null,
         rawPayload: params.rawPayload,
+        dispatchRequired: true,
       },
     );
 
     if (!event) {
+      let outcome: DispatchOutcome = 'not_claimed';
+      try {
+        const existing =
+          await this.webhookEventsRepo.findBySourceAndIdempotency(
+            params.platform,
+            params.storeDomain,
+            params.idempotencyKey,
+          );
+        outcome = existing
+          ? await this.safeDispatch(existing.id, params)
+          : 'not_claimed';
+      } catch (error) {
+        this.logDeferredDispatch(error, params);
+      }
       this.logger.warn(
         buildBackendLog(WebhookQueueProducer.name, {
           action: 'webhook-ingest',
@@ -73,33 +92,14 @@ export class WebhookQueueProducer {
           reason: 'duplicate_webhook',
         }),
       );
-      return { enqueued: false, duplicate: true };
+      return { enqueued: outcome === 'dispatched', duplicate: true };
     }
-
-    const jobPayload: WebhookJobPayload = {
-      webhookEventId: event.id,
-      platform: params.platform,
-      jobType: params.jobType,
-      idempotencyKey: params.idempotencyKey,
-      storeDomain: params.storeDomain,
-      orgId: integration?.orgId ?? null,
-      integrationId: integration?.id ?? null,
-      rawPayload: params.rawPayload,
-      receivedAt: event.receivedAt ?? new Date().toISOString(),
-    };
-
-    await this.queue.add(params.jobType, jobPayload, {
-      jobId: `${params.platform}-${params.idempotencyKey}`,
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3_000 },
-      removeOnComplete: { age: 7 * 24 * 3_600, count: 10_000 },
-      removeOnFail: { age: 30 * 24 * 3_600, count: 50_000 },
-    });
+    const outcome = await this.safeDispatch(event.id, params);
 
     this.logger.log(
       buildBackendLog(WebhookQueueProducer.name, {
         action: 'webhook-ingest',
-        outcome: 'success',
+        outcome: outcome === 'dispatched' ? 'success' : 'failure',
         orgId: integration?.orgId ?? undefined,
         shopDomain: params.storeDomain,
         integrationId: integration?.id ?? undefined,
@@ -110,6 +110,36 @@ export class WebhookQueueProducer {
       }),
     );
 
-    return { enqueued: true };
+    return { enqueued: outcome === 'dispatched' };
+  }
+
+  private async safeDispatch(
+    eventId: string,
+    params: WebhookIngestionParams,
+  ): Promise<DispatchOutcome> {
+    try {
+      return await this.dispatcher.dispatchById(eventId);
+    } catch (error) {
+      this.logDeferredDispatch(error, params, eventId);
+      return 'failed';
+    }
+  }
+
+  private logDeferredDispatch(
+    error: unknown,
+    params: WebhookIngestionParams,
+    webhookEventId?: string,
+  ): void {
+    this.logger.error(
+      buildBackendLog(WebhookQueueProducer.name, {
+        action: 'webhook-dispatch-deferred',
+        outcome: 'failure',
+        webhookEventId,
+        platform: params.platform,
+        shopDomain: params.storeDomain,
+        jobType: params.jobType,
+        ...normalizeError(error),
+      }),
+    );
   }
 }

@@ -648,6 +648,25 @@ export const webhookEvents = pgTable(
     integrationId: uuid('integration_id'),
     status: webhookEventStatus('status').default('pending').notNull(),
     rawPayload: jsonb('raw_payload').notNull(),
+    dispatchRequired: boolean('dispatch_required').default(false).notNull(),
+    dispatchAttempts: integer('dispatch_attempts').default(0).notNull(),
+    lastDispatchError: text('last_dispatch_error'),
+    nextDispatchAt: timestamp('next_dispatch_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    dispatchLeaseUntil: timestamp('dispatch_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    dispatchedAt: timestamp('dispatched_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    processingLeaseUntil: timestamp('processing_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     attempts: integer('attempts').default(0).notNull(),
     lastError: text('last_error'),
     processedAt: timestamp('processed_at', {
@@ -677,6 +696,12 @@ export const webhookEvents = pgTable(
       'btree',
       table.status.asc().nullsLast().op('enum_ops'),
     ),
+    index('idx_webhook_events_dispatch_recovery').using(
+      'btree',
+      table.dispatchRequired.asc().nullsLast().op('bool_ops'),
+      table.status.asc().nullsLast().op('enum_ops'),
+      table.nextDispatchAt.asc().nullsLast().op('timestamptz_ops'),
+    ),
     index('idx_webhook_events_org_id').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
@@ -695,8 +720,9 @@ export const webhookEvents = pgTable(
       foreignColumns: [integrations.id, integrations.orgId],
       name: 'webhook_events_integration_id_fkey',
     }),
-    unique('webhook_events_platform_idempotency_key').on(
+    unique('webhook_events_source_idempotency_key').on(
       table.platform,
+      table.storeDomain,
       table.idempotencyKey,
     ),
     check(

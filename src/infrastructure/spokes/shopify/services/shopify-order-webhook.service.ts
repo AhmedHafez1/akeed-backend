@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { WebhookQueueProducer } from '../../../../modules/webhook-queue/webhook-queue.producer';
 import { WebhookJobType } from '../../../../modules/webhook-queue/webhook-queue.constants';
@@ -31,12 +31,24 @@ export class ShopifyOrderWebhookService {
     webhookId: string,
     topic: string,
   ): Promise<WebhookAck> {
+    const normalizedShopDomain = shopDomain?.trim().toLowerCase();
+    const externalOrderId = String(payload.id ?? '').trim();
+    if (
+      !normalizedShopDomain ||
+      !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(normalizedShopDomain) ||
+      !externalOrderId
+    ) {
+      throw new BadRequestException(
+        'A shop domain and provider order ID are required for webhook identity',
+      );
+    }
+
     this.logger.log(
       buildBackendLog('ShopifyOrderWebhookService', {
         action: 'handleOrderCreate.received',
         outcome: 'success',
-        shopDomain,
-        externalOrderId: String(payload.id),
+        shopDomain: normalizedShopDomain,
+        externalOrderId,
       }),
     );
 
@@ -45,8 +57,8 @@ export class ShopifyOrderWebhookService {
         buildBackendLog('ShopifyOrderWebhookService', {
           action: 'handleOrderCreate.missingWebhookId',
           outcome: 'skipped',
-          shopDomain,
-          externalOrderId: String(payload.id),
+          shopDomain: normalizedShopDomain,
+          externalOrderId,
           topic,
         }),
       );
@@ -55,8 +67,9 @@ export class ShopifyOrderWebhookService {
     const result = await this.queueProducer.ingest({
       platform: 'shopify',
       jobType: WebhookJobType.ORDER_CREATE,
-      idempotencyKey: webhookId || `shopify-order-${payload.id}-${Date.now()}`,
-      storeDomain: shopDomain,
+      idempotencyKey:
+        webhookId?.trim() || `fallback:order.create:${externalOrderId}`,
+      storeDomain: normalizedShopDomain,
       rawPayload: payload as unknown as Record<string, unknown>,
     });
 

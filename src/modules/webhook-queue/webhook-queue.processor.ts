@@ -62,6 +62,23 @@ export class WebhookQueueProcessor extends WorkerHost {
 
   async process(job: Job<WebhookJobPayload>): Promise<void> {
     const { data } = job;
+    const claim = await this.webhookEventsRepo.claimForProcessing(
+      data.webhookEventId,
+      new Date(Date.now() + 10 * 60_000).toISOString(),
+    );
+    if (claim !== 'claimed') {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-job-claim',
+          outcome: 'skipped',
+          jobId: String(job.id),
+          webhookEventId: data.webhookEventId,
+          reason: claim,
+        }),
+      );
+      return;
+    }
+
     this.logger.log(
       buildBackendLog(WebhookQueueProcessor.name, {
         action: 'webhook-job-process',
@@ -73,8 +90,6 @@ export class WebhookQueueProcessor extends WorkerHost {
         shopDomain: data.storeDomain,
       }),
     );
-
-    await this.webhookEventsRepo.markProcessing(data.webhookEventId);
 
     if (!isPlatformType(data.platform)) {
       this.logger.warn(
@@ -137,7 +152,14 @@ export class WebhookQueueProcessor extends WorkerHost {
 
     const maxAttempts =
       typeof job.opts.attempts === 'number' ? job.opts.attempts : 1;
-    if (job.attemptsMade < maxAttempts) return;
+    if (job.attemptsMade < maxAttempts) {
+      await this.webhookEventsRepo.markProcessingRetryable(
+        job.data.webhookEventId,
+        error.message,
+        job.attemptsMade,
+      );
+      return;
+    }
 
     await this.webhookEventsRepo.markFailed(
       job.data.webhookEventId,

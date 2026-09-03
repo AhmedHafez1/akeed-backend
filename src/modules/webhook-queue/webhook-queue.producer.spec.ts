@@ -3,22 +3,25 @@ import { WebhookJobType } from './webhook-queue.constants';
 import { shopifyOrderFixture } from './normalizers/fixtures/shopify-order.fixture';
 
 function setup() {
-  const queue = { add: jest.fn().mockResolvedValue({ id: 'queued' }) };
   const events = {
     insertIfNew: jest.fn().mockResolvedValue({
       id: 'event-1',
       receivedAt: '2026-05-15T00:00:00.000Z',
     }),
+    findBySourceAndIdempotency: jest.fn(),
   };
   const integrations = {
     findByPlatformDomain: jest
       .fn()
       .mockResolvedValue({ id: 'trusted-int', orgId: 'trusted-org' }),
   };
+  const dispatcher = {
+    dispatchById: jest.fn().mockResolvedValue('dispatched'),
+  };
   const producer = new WebhookQueueProducer(
-    queue as never,
     events as never,
     integrations as never,
+    dispatcher as never,
   );
   const params = {
     platform: 'shopify' as const,
@@ -30,12 +33,12 @@ function setup() {
       integrationId: 'forged-int',
     }),
   };
-  return { producer, queue, events, integrations, params };
+  return { producer, events, integrations, dispatcher, params };
 }
 
 describe('WebhookQueueProducer', () => {
   it('resolves trusted tenant identity and uses a stable job ID', async () => {
-    const { producer, queue, events, integrations, params } = setup();
+    const { producer, events, integrations, dispatcher, params } = setup();
     await expect(producer.ingest(params)).resolves.toEqual({ enqueued: true });
     expect(integrations.findByPlatformDomain).toHaveBeenCalledWith(
       params.storeDomain,
@@ -45,36 +48,23 @@ describe('WebhookQueueProducer', () => {
       ...params,
       orgId: 'trusted-org',
       integrationId: 'trusted-int',
+      dispatchRequired: true,
     });
-    expect(queue.add).toHaveBeenCalledWith(
-      WebhookJobType.ORDER_CREATE,
-      {
-        webhookEventId: 'event-1',
-        platform: 'shopify',
-        jobType: WebhookJobType.ORDER_CREATE,
-        idempotencyKey: 'delivery-1',
-        storeDomain: params.storeDomain,
-        orgId: 'trusted-org',
-        integrationId: 'trusted-int',
-        rawPayload: params.rawPayload,
-        receivedAt: '2026-05-15T00:00:00.000Z',
-      },
-      expect.objectContaining({
-        jobId: 'shopify-delivery-1',
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 3000 },
-      }),
-    );
+    expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
   });
 
   it('acknowledges duplicates without enqueueing', async () => {
-    const { producer, queue, events, params } = setup();
+    const { producer, events, dispatcher, params } = setup();
     events.insertIfNew.mockResolvedValue(null);
+    events.findBySourceAndIdempotency.mockResolvedValue({
+      id: 'event-1',
+    });
+    dispatcher.dispatchById.mockResolvedValue('not_claimed');
     await expect(producer.ingest(params)).resolves.toEqual({
       enqueued: false,
       duplicate: true,
     });
-    expect(queue.add).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
   });
 
   it('persists unknown stores without trusting payload identity; the worker owns rejection', async () => {
@@ -89,7 +79,7 @@ describe('WebhookQueueProducer', () => {
   it.each(['lookup', 'insert'])(
     'propagates %s failures without enqueueing',
     async (failure) => {
-      const { producer, queue, events, integrations, params } = setup();
+      const { producer, events, integrations, dispatcher, params } = setup();
       const operation =
         failure === 'lookup'
           ? integrations.findByPlatformDomain
@@ -98,24 +88,35 @@ describe('WebhookQueueProducer', () => {
       await expect(producer.ingest(params)).rejects.toThrow(
         'database unavailable',
       );
-      expect(queue.add).not.toHaveBeenCalled();
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
       if (failure === 'lookup')
         expect(events.insertIfNew).not.toHaveBeenCalled();
     },
   );
 
-  it('US-02-06 limitation: failed enqueue leaves an inserted event unrecovered on duplicate redelivery', async () => {
-    const { producer, queue, events, params } = setup();
+  it('acknowledges a durably inserted event when immediate dispatch fails', async () => {
+    const { producer, events, dispatcher, params } = setup();
     events.insertIfNew
       .mockResolvedValueOnce({ id: 'event-1' })
       .mockResolvedValueOnce(null);
-    queue.add.mockRejectedValueOnce(new Error('queue unavailable'));
-    await expect(producer.ingest(params)).rejects.toThrow('queue unavailable');
+    events.findBySourceAndIdempotency.mockResolvedValue({ id: 'event-1' });
+    dispatcher.dispatchById
+      .mockResolvedValueOnce('failed')
+      .mockResolvedValueOnce('dispatched');
+    await expect(producer.ingest(params)).resolves.toEqual({ enqueued: false });
     await expect(producer.ingest(params)).resolves.toEqual({
-      enqueued: false,
+      enqueued: true,
       duplicate: true,
     });
     expect(events.insertIfNew).toHaveBeenCalledTimes(2);
-    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(dispatcher.dispatchById).toHaveBeenCalledTimes(2);
+  });
+
+  it('still acknowledges durable acceptance if the dispatch claim store is briefly unavailable', async () => {
+    const { producer, dispatcher, params } = setup();
+    dispatcher.dispatchById.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    await expect(producer.ingest(params)).resolves.toEqual({ enqueued: false });
   });
 });

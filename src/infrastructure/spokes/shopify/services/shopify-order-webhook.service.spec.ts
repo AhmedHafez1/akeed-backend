@@ -4,8 +4,6 @@ import { ShopifyOrderWebhookDto } from '../dto/shopify-webhooks.dto';
 
 describe('ShopifyOrderWebhookService', () => {
   const payload: ShopifyOrderWebhookDto = { id: '12345', order_number: '1001' };
-  afterEach(() => jest.useRealTimers());
-
   it.each([false, true])(
     'acknowledges duplicate=%s without changing the response contract',
     async (duplicate) => {
@@ -35,8 +33,7 @@ describe('ShopifyOrderWebhookService', () => {
     },
   );
 
-  it('uses timestamp fallback for missing delivery IDs; later retries get different keys', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-05-15T00:00:00.000Z'));
+  it('uses a deterministic order identity when the delivery ID is missing', async () => {
     const ingest = jest.fn().mockResolvedValue({ enqueued: true });
     const service = new ShopifyOrderWebhookService({ ingest } as never);
     await service.handleOrderCreate(
@@ -47,10 +44,9 @@ describe('ShopifyOrderWebhookService', () => {
     );
     expect(ingest).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'shopify-order-12345-1778803200000',
+        idempotencyKey: 'fallback:order.create:12345',
       }),
     );
-    jest.advanceTimersByTime(1);
     await service.handleOrderCreate(
       payload,
       'synthetic.myshopify.com',
@@ -59,9 +55,23 @@ describe('ShopifyOrderWebhookService', () => {
     );
     expect(ingest).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'shopify-order-12345-1778803200001',
+        idempotencyKey: 'fallback:order.create:12345',
       }),
     );
+  });
+
+  it('rejects a missing source or event identity before durable acceptance', async () => {
+    const ingest = jest.fn();
+    const service = new ShopifyOrderWebhookService({ ingest } as never);
+    await expect(
+      service.handleOrderCreate(
+        { ...payload, id: '' },
+        'synthetic.myshopify.com',
+        '',
+        'orders/create',
+      ),
+    ).rejects.toThrow('provider order ID');
+    expect(ingest).not.toHaveBeenCalled();
   });
 
   it('propagates ingestion failure rather than returning an acknowledgement', async () => {

@@ -176,6 +176,13 @@
       "when": 1788310800000,
       "tag": "0024_source_identity_and_history_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788397200000,
+      "tag": "0025_recoverable_webhook_dispatch",
+      "breakpoints": true
     }
   ]
 }

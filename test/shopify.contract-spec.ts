@@ -7,8 +7,10 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import * as schema from '../src/infrastructure/database';
 import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
 import { WebhookQueueProducer } from '../src/modules/webhook-queue/webhook-queue.producer';
+import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookJobType } from '../src/modules/webhook-queue/webhook-queue.constants';
 import { shopifyOrderFixture } from '../src/modules/webhook-queue/normalizers/fixtures/shopify-order.fixture';
+import { ConfigService } from '@nestjs/config';
 
 function testDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -63,6 +65,16 @@ describe('Shopify isolated PostgreSQL contract', () => {
     const statements = migration.split('--> statement-breakpoint').slice(0, 2);
     for (const statement of statements)
       await client.unsafe(statement.replaceAll('"public".', `"${namespace}".`));
+
+    const recoveryMigration = readFileSync(
+      resolve(__dirname, '../drizzle/0025_recoverable_webhook_dispatch.sql'),
+      'utf8',
+    );
+    for (const statement of recoveryMigration.split(
+      '--> statement-breakpoint',
+    )) {
+      await client.unsafe(statement.replaceAll('"public".', `"${namespace}".`));
+    }
   });
 
   afterAll(async () => {
@@ -77,7 +89,7 @@ describe('Shopify isolated PostgreSQL contract', () => {
     await client`DELETE FROM ${client(namespace)}.webhook_events`;
   });
 
-  function setup() {
+  function setup(storeDomain = 'synthetic.myshopify.com') {
     const queue = { add: jest.fn().mockResolvedValue({ id: 'synthetic-job' }) };
     const integrations = {
       findByPlatformDomain: jest.fn().mockResolvedValue({
@@ -85,35 +97,43 @@ describe('Shopify isolated PostgreSQL contract', () => {
         orgId: '00000000-0000-4000-8000-000000000002',
       }),
     };
-    const producer = new WebhookQueueProducer(
+    const dispatcher = new WebhookDispatchService(
       queue as never,
       repository,
+      new ConfigService({ WEBHOOK_DISPATCH_MAX_ATTEMPTS: 3 }),
+    );
+    const producer = new WebhookQueueProducer(
+      repository,
       integrations as never,
+      dispatcher,
     );
     const input = {
       platform: 'shopify' as const,
       jobType: WebhookJobType.ORDER_CREATE,
       idempotencyKey: 'delivery-1',
-      storeDomain: 'synthetic.myshopify.com',
+      storeDomain,
       rawPayload: shopifyOrderFixture(),
     };
     return { producer, queue, input };
   }
 
-  it('uses the actual platform/delivery unique constraint from the application schema and migration', async () => {
+  it('uses the source-scoped delivery constraint from the application schema and migration', async () => {
     const constraint = getTableConfig(
       schema.webhookEvents,
     ).uniqueConstraints.find(
-      (entry) => entry.name === 'webhook_events_platform_idempotency_key',
+      (entry) => entry.name === 'webhook_events_source_idempotency_key',
     );
     expect(constraint?.columns.map((column) => column.name)).toEqual([
       'platform',
+      'store_domain',
       'idempotency_key',
     ]);
     const rows = await client<
       { definition: string }[]
-    >`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = ${`${namespace}.webhook_events`}::regclass AND conname = 'webhook_events_platform_idempotency_key'`;
-    expect(rows[0].definition).toBe('UNIQUE (platform, idempotency_key)');
+    >`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = ${`${namespace}.webhook_events`}::regclass AND conname = 'webhook_events_source_idempotency_key'`;
+    expect(rows[0].definition).toBe(
+      'UNIQUE (platform, store_domain, idempotency_key)',
+    );
   });
 
   it('rehearses the additive commerce platform constraints with existing Shopify rows', async () => {
@@ -190,20 +210,104 @@ describe('Shopify isolated PostgreSQL contract', () => {
     expect(queue.add).toHaveBeenCalledTimes(2);
   });
 
-  it('US-02-06: the real pending row survives failed enqueue, and redelivery does not recover it', async () => {
+  it('recovers a durable pending row after Redis becomes available', async () => {
     const { producer, queue, input } = setup();
     queue.add.mockRejectedValueOnce(new Error('synthetic queue outage'));
-    await expect(producer.ingest(input)).rejects.toThrow(
-      'synthetic queue outage',
-    );
+    await expect(producer.ingest(input)).resolves.toEqual({ enqueued: false });
+    await client`UPDATE ${client(namespace)}.webhook_events SET next_dispatch_at = NOW() - INTERVAL '1 second'`;
     await expect(producer.ingest(input)).resolves.toEqual({
-      enqueued: false,
+      enqueued: true,
       duplicate: true,
     });
     expect(await db.select().from(schema.webhookEvents)).toEqual([
-      expect.objectContaining({ status: 'pending', attempts: 0 }),
+      expect.objectContaining({
+        status: 'pending',
+        attempts: 0,
+        dispatchAttempts: 2,
+        lastDispatchError: null,
+      }),
     ]);
-    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(queue.add).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows identical provider delivery IDs for different source stores', async () => {
+    const first = setup('one.myshopify.com');
+    const second = setup('two.myshopify.com');
+    await expect(
+      Promise.all([
+        first.producer.ingest(first.input),
+        second.producer.ingest(second.input),
+      ]),
+    ).resolves.toEqual([{ enqueued: true }, { enqueued: true }]);
+    expect(await db.select().from(schema.webhookEvents)).toHaveLength(2);
+  });
+
+  it('atomically fences concurrent processing and keeps completion replay-safe', async () => {
+    const { producer, queue, input } = setup();
+    await producer.ingest(input);
+    const [persisted] = await db.select().from(schema.webhookEvents);
+
+    const claims = await Promise.all([
+      repository.claimForProcessing(
+        persisted.id,
+        new Date(Date.now() + 60_000).toISOString(),
+      ),
+      repository.claimForProcessing(
+        persisted.id,
+        new Date(Date.now() + 60_000).toISOString(),
+      ),
+    ]);
+    expect(claims).toEqual(expect.arrayContaining(['claimed', 'busy']));
+
+    await repository.markCompleted(persisted.id);
+    await expect(
+      repository.claimForProcessing(
+        persisted.id,
+        new Date(Date.now() + 60_000).toISOString(),
+      ),
+    ).resolves.toBe('terminal');
+    queue.add.mockClear();
+    const dispatcher = new WebhookDispatchService(
+      queue as never,
+      repository,
+      new ConfigService(),
+    );
+    await expect(dispatcher.dispatchById(persisted.id)).resolves.toBe(
+      'not_claimed',
+    );
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('reclaims an expired processing lease with a new dispatch generation', async () => {
+    const { producer, queue, input } = setup();
+    await producer.ingest(input);
+    const [persisted] = await db.select().from(schema.webhookEvents);
+    await repository.claimForProcessing(
+      persisted.id,
+      new Date(Date.now() - 1_000).toISOString(),
+    );
+    queue.add.mockClear();
+    const dispatcher = new WebhookDispatchService(
+      queue as never,
+      repository,
+      new ConfigService(),
+    );
+
+    await expect(dispatcher.dispatchById(persisted.id)).resolves.toBe(
+      'dispatched',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      WebhookJobType.ORDER_CREATE,
+      expect.objectContaining({ webhookEventId: persisted.id }),
+      expect.objectContaining({
+        jobId: `webhook-event-${persisted.id}-dispatch-2`,
+      }),
+    );
+    await expect(repository.findById(persisted.id)).resolves.toMatchObject({
+      status: 'pending',
+      dispatchAttempts: 2,
+      processingLeaseUntil: null,
+    });
   });
 
   it('actual persistence rejects an absent store domain', async () => {

@@ -8,6 +8,8 @@ import { WebhookQueueProcessor } from './webhook-queue.processor';
 import { ShopifyOrderNormalizer } from './normalizers/shopify-order.normalizer';
 import { WEBHOOK_ORDER_NORMALIZERS } from './interfaces/webhook-normalizer.interface';
 import { PhoneService } from '../../shared/services/phone.service';
+import { WebhookDispatchService } from './webhook-dispatch.service';
+import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { PhoneService } from '../../shared/services/phone.service';
   providers: [
     WebhookQueueProducer,
     WebhookQueueProcessor,
+    WebhookDispatchService,
+    WebhookDispatchReconciler,
     PhoneService,
 
     // --- Normalizers (add new platforms here) ---
@@ -42,6 +46,6 @@ import { PhoneService } from '../../shared/services/phone.service';
       ],
     },
   ],
-  exports: [WebhookQueueProducer],
+  exports: [WebhookQueueProducer, WebhookDispatchReconciler],
 })
 export class WebhookQueueModule {}

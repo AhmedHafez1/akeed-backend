@@ -20,12 +20,19 @@ import { shopifyOrderFixture } from '../../../modules/webhook-queue/normalizers/
 import { ShopifyOrderNormalizer } from '../../../modules/webhook-queue/normalizers/shopify-order.normalizer';
 import { ShopifyOrderEligibilityStrategy } from './services/shopify-order-eligibility.strategy';
 import { PhoneService } from '../../../shared/services/phone.service';
+import { WebhookDispatchService } from '../../../modules/webhook-queue/webhook-dispatch.service';
 
 describe('Shopify HTTP raw-body boundary', () => {
   let app: INestApplication;
   const secret = 'synthetic-hmac-secret';
   const queue = { add: jest.fn() };
-  const events = { insertIfNew: jest.fn() };
+  const events = {
+    insertIfNew: jest.fn(),
+    findBySourceAndIdempotency: jest.fn(),
+    claimForDispatch: jest.fn(),
+    markDispatched: jest.fn(),
+    markDispatchFailed: jest.fn(),
+  };
   const integrations = { findByPlatformDomain: jest.fn() };
   const sign = (body: string) =>
     createHmac('sha256', secret).update(body).digest('base64');
@@ -37,9 +44,11 @@ describe('Shopify HTTP raw-body boundary', () => {
         ShopifyHmacGuard,
         ShopifyOrderWebhookService,
         WebhookQueueProducer,
+        WebhookDispatchService,
         {
           provide: ConfigService,
           useValue: {
+            get: () => undefined,
             getOrThrow: (key: string) => {
               if (key !== 'SHOPIFY_API_SECRET')
                 throw new Error('Unexpected config');
@@ -72,6 +81,18 @@ describe('Shopify HTTP raw-body boundary', () => {
     events.insertIfNew.mockResolvedValue({
       id: 'event-1',
       receivedAt: '2026-05-15T00:00:00.000Z',
+    });
+    events.claimForDispatch.mockResolvedValue({
+      id: 'event-1',
+      platform: 'shopify',
+      jobType: 'order.create',
+      idempotencyKey: 'delivery-1',
+      storeDomain: 'synthetic.myshopify.com',
+      orgId: 'trusted-org',
+      integrationId: 'trusted-int',
+      rawPayload: shopifyOrderFixture(),
+      receivedAt: '2026-05-15T00:00:00.000Z',
+      dispatchAttempts: 1,
     });
     integrations.findByPlatformDomain.mockResolvedValue({
       id: 'trusted-int',
@@ -196,24 +217,19 @@ describe('Shopify HTTP raw-body boundary', () => {
         expect.objectContaining({
           idempotencyKey:
             header === 'x-shopify-webhook-id'
-              ? (expect.stringMatching(/^shopify-order-12345-\d+$/) as unknown)
+              ? 'fallback:order.create:12345'
               : 'delivery-1',
         }),
       );
     },
   );
 
-  it.each(['x-shopify-topic', 'x-shopify-webhook-id', 'x-shopify-shop-domain'])(
+  it.each(['x-shopify-topic', 'x-shopify-webhook-id'])(
     'forwards malformed routing header %s without dedicated validation',
     async (header) => {
       await post(JSON.stringify(shopifyOrderFixture()))
         .set(header, 'malformed-value')
         .expect(200);
-      if (header === 'x-shopify-shop-domain')
-        expect(integrations.findByPlatformDomain).toHaveBeenCalledWith(
-          'malformed-value',
-          'shopify',
-        );
       if (header === 'x-shopify-webhook-id')
         expect(events.insertIfNew).toHaveBeenCalledWith(
           expect.objectContaining({ idempotencyKey: 'malformed-value' }),
@@ -222,30 +238,33 @@ describe('Shopify HTTP raw-body boundary', () => {
     },
   );
 
-  it('missing domain reaches persistence; simulated NOT NULL rejection returns 500', async () => {
-    integrations.findByPlatformDomain.mockResolvedValue(null);
-    events.insertIfNew.mockRejectedValue(
-      new Error('store_domain cannot be null'),
-    );
+  it('rejects a malformed source domain before durable acceptance', async () => {
     await post(JSON.stringify(shopifyOrderFixture()))
-      .unset('x-shopify-shop-domain')
-      .expect(500);
-    expect(integrations.findByPlatformDomain).toHaveBeenCalledWith(
-      undefined,
-      'shopify',
-    );
+      .set('x-shopify-shop-domain', 'malformed-value')
+      .expect(400);
+    expect(events.insertIfNew).not.toHaveBeenCalled();
     expect(queue.add).not.toHaveBeenCalled();
   });
 
-  it.each(['database', 'queue'])(
-    'returns 500 on %s failure without a successful acknowledgement',
-    async (failure) => {
-      (failure === 'database'
-        ? events.insertIfNew
-        : queue.add
-      ).mockRejectedValue(new Error('synthetic failure'));
-      await post(JSON.stringify(shopifyOrderFixture())).expect(500);
-      if (failure === 'database') expect(queue.add).not.toHaveBeenCalled();
-    },
-  );
+  it('rejects a missing source domain before durable acceptance', async () => {
+    await post(JSON.stringify(shopifyOrderFixture()))
+      .unset('x-shopify-shop-domain')
+      .expect(400);
+    expect(integrations.findByPlatformDomain).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 on database failure before durable acceptance', async () => {
+    events.insertIfNew.mockRejectedValue(new Error('synthetic failure'));
+    await post(JSON.stringify(shopifyOrderFixture())).expect(500);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges after durable acceptance when queue dispatch fails', async () => {
+    queue.add.mockRejectedValue(new Error('synthetic failure'));
+    await post(JSON.stringify(shopifyOrderFixture())).expect(200, {
+      received: true,
+    });
+    expect(events.markDispatchFailed).toHaveBeenCalled();
+  });
 });

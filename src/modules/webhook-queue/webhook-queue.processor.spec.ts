@@ -64,7 +64,8 @@ function createMocks(
       : options.normalizedOrder;
 
   const webhookEventsRepo = {
-    markProcessing: jest.fn(),
+    claimForProcessing: jest.fn().mockResolvedValue('claimed'),
+    markProcessingRetryable: jest.fn(),
     markSkipped: jest.fn(),
     markCompleted: jest.fn(),
     markFailed: jest.fn(),
@@ -131,7 +132,10 @@ describe('WebhookQueueProcessor', () => {
 
     await processor.process(buildJob(payload));
 
-    expect(webhookEventsRepo.markProcessing).toHaveBeenCalledWith('event-1');
+    expect(webhookEventsRepo.claimForProcessing).toHaveBeenCalledWith(
+      'event-1',
+      expect.any(String),
+    );
     expect(normalizeOrder).toHaveBeenCalledWith(
       payload.rawPayload,
       'int-1',
@@ -182,6 +186,11 @@ describe('WebhookQueueProcessor', () => {
     );
 
     expect(webhookEventsRepo.markFailed).not.toHaveBeenCalled();
+    expect(webhookEventsRepo.markProcessingRetryable).toHaveBeenCalledWith(
+      'event-1',
+      'temporary outage',
+      4,
+    );
 
     await processor.onFailed(
       buildJob(payload, { attemptsMade: 5, opts: { attempts: 5 } }),
@@ -219,7 +228,10 @@ describe('WebhookQueueProcessor', () => {
 
     await processor.process(buildJob(payload));
 
-    expect(webhookEventsRepo.markProcessing).toHaveBeenCalledWith('event-1');
+    expect(webhookEventsRepo.claimForProcessing).toHaveBeenCalledWith(
+      'event-1',
+      expect.any(String),
+    );
     expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
       'event-1',
       `unhandled_job_type:${WebhookJobType.APP_UNINSTALLED}`,
@@ -235,6 +247,19 @@ describe('WebhookQueueProcessor', () => {
 
     expect(webhookEventsRepo.markFailed).not.toHaveBeenCalled();
   });
+
+  it.each(['busy', 'terminal'] as const)(
+    'does not repeat business effects when the persisted event is %s',
+    async (claim) => {
+      const { processor, webhookEventsRepo, verificationHub } = createMocks();
+      webhookEventsRepo.claimForProcessing.mockResolvedValue(claim);
+
+      await processor.process(buildJob(buildPayload()));
+
+      expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
+      expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    },
+  );
 
   it('skips webhook when no normalizer is registered for the platform', async () => {
     const { processor, webhookEventsRepo, verificationHub } = createMocks({
