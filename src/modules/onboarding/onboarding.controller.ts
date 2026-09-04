@@ -62,6 +62,13 @@ export class OnboardingController {
     return billingResponse;
   }
 
+  @Post('complete')
+  async completeStandaloneOnboarding(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ state: OnboardingStateDto }> {
+    return this.onboardingService.completeStandaloneOnboarding(user);
+  }
+
   @Get('billing/plans')
   async getBillingPlans(
     @CurrentUser() user: AuthenticatedUser,

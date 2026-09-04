@@ -19,6 +19,7 @@ describe('manual entitlement HTTP boundary', () => {
   let source: typeof integrations.$inferSelect;
   let activeSources: (typeof source)[];
   let user: AuthenticatedUser;
+  let completionWriteCount: number;
   const provider = {
     getShopName: jest.fn(),
     createRecurringApplicationCharge: jest.fn(),
@@ -33,9 +34,11 @@ describe('manual entitlement HTTP boundary', () => {
   };
   const repository = {
     findActiveByOrg: jest.fn(),
+    findByOrg: jest.fn(),
     findByOrgAndPlatformDomain: jest.fn(),
     updateById: jest.fn(),
   };
+  const memberships = { findByOrgAndUser: jest.fn() };
   const usage = {
     getEntitlementSource: jest.fn(),
     getIntegrationUsageForPeriod: jest.fn(),
@@ -53,13 +56,24 @@ describe('manual entitlement HTTP boundary', () => {
       storeName: null,
       defaultLanguage: 'auto',
       isAutoVerifyEnabled: true,
+      assumeCodWhenPaymentMissing: false,
       onboardingStatus: 'completed',
       billingPlanId: 'starter',
       billingStatus: 'not_required',
       billingActivatedAt: '2026-05-01T00:00:00Z',
       shopifySubscriptionId: null,
+      followUpEnabled: true,
+      followUpDelayMinutes: 120,
+      escalationEnabled: true,
+      escalationDelayMinutes: 360,
+      quietHoursEnabled: false,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      timezone: 'Africa/Cairo',
+      sendDelayMinutes: 0,
     } as typeof source;
     activeSources = [source];
+    completionWriteCount = 0;
     user = { userId: 'user-1', orgId: 'org-1', source: 'supabase' };
     repository.findActiveByOrg.mockImplementation(() =>
       Promise.resolve(activeSources),
@@ -67,9 +81,19 @@ describe('manual entitlement HTTP boundary', () => {
     repository.findByOrgAndPlatformDomain.mockImplementation(() =>
       Promise.resolve(source),
     );
+    repository.findByOrg.mockImplementation(() => Promise.resolve([]));
+    memberships.findByOrgAndUser.mockResolvedValue({ role: 'owner' });
     repository.updateById.mockImplementation(
-      (_id: string, changes: Partial<typeof source>) =>
-        Promise.resolve({ ...source, ...changes }),
+      (_id: string, changes: Partial<typeof source>) => {
+        if (changes.onboardingStatus === 'completed') {
+          completionWriteCount += 1;
+        }
+        source = { ...source, ...changes };
+        activeSources = activeSources.map((entry) =>
+          entry.id === source.id ? source : entry,
+        );
+        return Promise.resolve(source);
+      },
     );
     usage.getEntitlementSource.mockImplementation(() =>
       Promise.resolve(source),
@@ -90,6 +114,7 @@ describe('manual entitlement HTTP boundary', () => {
       state,
       billing,
       new BillingEntitlementService(usage as never),
+      memberships as never,
     );
     const module = await Test.createTestingModule({
       controllers: [OnboardingController, SettingsController],
@@ -183,9 +208,19 @@ describe('manual entitlement HTTP boundary', () => {
 
   it('rejects absent and ambiguous active sources', async () => {
     activeSources = [];
-    await request(app.getHttpServer()).get('/api/settings').expect(404);
+    await request(app.getHttpServer())
+      .get('/api/settings')
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ code: 'ONBOARDING_SOURCE_MISSING' });
+      });
     activeSources = [source, { ...source, id: 'int-2' }];
-    await request(app.getHttpServer()).get('/api/settings').expect(409);
+    await request(app.getHttpServer())
+      .get('/api/settings')
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ code: 'ONBOARDING_SOURCE_AMBIGUOUS' });
+      });
   });
 
   it('keeps Shopify sessions pinned to their exact organization and shop', async () => {
@@ -197,5 +232,151 @@ describe('manual entitlement HTTP boundary', () => {
       'shopify',
     );
     expect(repository.findActiveByOrg).not.toHaveBeenCalled();
+  });
+
+  it('lets viewers read while rejecting configuration and completion writes', async () => {
+    memberships.findByOrgAndUser.mockResolvedValue({ role: 'viewer' });
+
+    await request(app.getHttpServer())
+      .get('/api/settings')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          state: {
+            permissions: {
+              canUpdateConfiguration: false,
+              canCompleteOnboarding: false,
+            },
+          },
+        });
+      });
+    await request(app.getHttpServer())
+      .patch('/api/settings')
+      .send({
+        storeName: 'Viewer edit',
+        defaultLanguage: 'auto',
+        isAutoVerifyEnabled: false,
+      })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(403);
+    expect(repository.updateById).not.toHaveBeenCalled();
+  });
+
+  it('allows an admin membership to update Standalone configuration', async () => {
+    memberships.findByOrgAndUser.mockResolvedValue({ role: 'admin' });
+
+    await request(app.getHttpServer())
+      .patch('/api/onboarding/settings')
+      .send({
+        storeName: 'Admin merchant',
+        defaultLanguage: 'ar',
+        isAutoVerifyEnabled: false,
+        assumeCodWhenPaymentMissing: true,
+      })
+      .expect(200);
+
+    expect(source).toMatchObject({
+      storeName: 'Admin merchant',
+      defaultLanguage: 'ar',
+      isAutoVerifyEnabled: false,
+      assumeCodWhenPaymentMissing: true,
+    });
+  });
+
+  it('reports entitlement blockers without discarding saved settings', async () => {
+    source = {
+      ...source,
+      onboardingStatus: 'pending',
+      billingPlanId: null,
+      billingStatus: null,
+      billingActivatedAt: null,
+    };
+    activeSources = [source];
+
+    await request(app.getHttpServer())
+      .patch('/api/onboarding/settings')
+      .send({
+        storeName: 'Saved before activation',
+        defaultLanguage: 'en',
+        isAutoVerifyEnabled: false,
+        assumeCodWhenPaymentMissing: false,
+      })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          code: 'ONBOARDING_BLOCKED',
+          blockedReasons: ['pilot_entitlement_missing'],
+        });
+      });
+    expect(source.storeName).toBe('Saved before activation');
+    expect(source.onboardingStatus).toBe('pending');
+  });
+
+  it('completes valid Standalone setup idempotently', async () => {
+    source = { ...source, onboardingStatus: 'pending', storeName: 'Pilot' };
+    activeSources = [source];
+
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          state: {
+            onboardingStatus: 'completed',
+            isOnboardingComplete: true,
+          },
+        });
+      });
+    expect(completionWriteCount).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(201);
+    expect(completionWriteCount).toBe(1);
+  });
+
+  it('blocks completion when persisted automation settings are invalid', async () => {
+    source = {
+      ...source,
+      onboardingStatus: 'pending',
+      storeName: 'Invalid automation pilot',
+      sendDelayMinutes: 1441,
+    };
+    activeSources = [source];
+
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          code: 'ONBOARDING_BLOCKED',
+          blockedReasons: ['automation_invalid'],
+        });
+      });
+    expect(completionWriteCount).toBe(0);
+  });
+
+  it('returns stable source resolution codes', async () => {
+    activeSources = [];
+    repository.findByOrg.mockResolvedValue([{ ...source, isActive: false }]);
+    await request(app.getHttpServer())
+      .get('/api/onboarding/state')
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ code: 'ONBOARDING_SOURCE_INACTIVE' });
+      });
+
+    repository.findByOrg.mockResolvedValue([]);
+    await request(app.getHttpServer())
+      .get('/api/onboarding/state')
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ code: 'ONBOARDING_SOURCE_MISSING' });
+      });
   });
 });

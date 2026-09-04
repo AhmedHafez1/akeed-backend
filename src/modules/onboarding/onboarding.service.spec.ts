@@ -95,7 +95,14 @@ describe('OnboardingService', () => {
         shop: 'test.myshopify.com',
       });
 
-      expect(result.state).toBe(state);
+      expect(result.state).toMatchObject({
+        ...state,
+        permissions: {
+          canUpdateConfiguration: true,
+          canCompleteOnboarding: false,
+        },
+        standaloneSetup: null,
+      });
       expect(result.billing.plans).toHaveLength(1);
       expect(result.billing.isFreePlanClaimed).toBe(true);
       expect(result.billing.usage).toEqual({

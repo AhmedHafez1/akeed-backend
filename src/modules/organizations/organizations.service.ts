@@ -44,6 +44,17 @@ export class OrganizationsService {
       });
     }
 
+    if (user.orgId) {
+      const organization = await this.organizationsRepo.findById(user.orgId);
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
+      return {
+        organization: this.toResponse(organization),
+        created: false,
+      };
+    }
+
     try {
       const result = await this.standaloneProvisioningRepo.provision(
         user.userId,

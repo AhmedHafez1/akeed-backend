@@ -59,6 +59,18 @@ export const AUTOMATION_TIMEZONES = [
 ] as const;
 export type AutomationTimezone = (typeof AUTOMATION_TIMEZONES)[number];
 
+export const STANDALONE_SETUP_BLOCKED_REASONS = [
+  'source_invalid',
+  'pilot_entitlement_missing',
+  'merchant_name_missing',
+  'language_invalid',
+  'cod_default_invalid',
+  'automation_invalid',
+  'timezone_invalid',
+] as const;
+export type StandaloneSetupBlockedReason =
+  (typeof STANDALONE_SETUP_BLOCKED_REASONS)[number];
+
 export class UpdateOnboardingSettingsDto {
   @IsString()
   @IsNotEmpty()
@@ -71,6 +83,10 @@ export class UpdateOnboardingSettingsDto {
 
   @IsBoolean()
   isAutoVerifyEnabled!: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  assumeCodWhenPaymentMissing?: boolean;
 
   @IsOptional()
   @IsString()
@@ -148,11 +164,16 @@ export class UpdateOnboardingSettingsDto {
 
 export interface OnboardingStateDto {
   integrationId: string;
+  source: {
+    platformType: string;
+    identity: string;
+  };
   onboardingStatus: OnboardingStatus;
   isOnboardingComplete: boolean;
   storeName: string | null;
   defaultLanguage: OnboardingLanguage;
   isAutoVerifyEnabled: boolean;
+  assumeCodWhenPaymentMissing: boolean;
   shippingCurrency: OnboardingShippingCurrency;
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
@@ -167,6 +188,14 @@ export interface OnboardingStateDto {
   quietHoursEnd: string | null;
   timezone: AutomationTimezone;
   sendDelayMinutes: number;
+  permissions: {
+    canUpdateConfiguration: boolean;
+    canCompleteOnboarding: boolean;
+  };
+  standaloneSetup: {
+    canComplete: boolean;
+    blockedReasons: StandaloneSetupBlockedReason[];
+  } | null;
 }
 
 export interface OnboardingBillingResponseDto {

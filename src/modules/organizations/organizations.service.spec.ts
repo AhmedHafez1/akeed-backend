@@ -22,7 +22,7 @@ const integration = {
 
 function createService(created = true) {
   const organizationsRepo = {
-    findById: jest.fn(),
+    findById: jest.fn().mockResolvedValue(organization),
     updateById: jest.fn(),
   };
   const provisioningRepo = {
@@ -38,7 +38,7 @@ function createService(created = true) {
     provisioningRepo as unknown as StandaloneOrganizationProvisioningRepository,
   );
 
-  return { service, provisioningRepo };
+  return { service, organizationsRepo, provisioningRepo };
 }
 
 describe('OrganizationsService standalone provisioning', () => {
@@ -69,7 +69,7 @@ describe('OrganizationsService standalone provisioning', () => {
   });
 
   it('returns the existing organization on a retry', async () => {
-    const { service } = createService(false);
+    const { service, provisioningRepo } = createService(false);
 
     await expect(
       service.createOrganization(
@@ -77,6 +77,7 @@ describe('OrganizationsService standalone provisioning', () => {
         { name: 'Ignored replacement name' },
       ),
     ).resolves.toMatchObject({ created: false });
+    expect(provisioningRepo.provision).not.toHaveBeenCalled();
   });
 
   it('rejects Shopify identities without calling standalone provisioning', async () => {
@@ -96,26 +97,29 @@ describe('OrganizationsService standalone provisioning', () => {
     expect(provisioningRepo.provision).not.toHaveBeenCalled();
   });
 
-  it('returns a stable conflict for an owner of another commerce source', async () => {
+  it('does not provision or change an existing member organization', async () => {
+    const { service, provisioningRepo } = createService();
+
+    await expect(
+      service.createOrganization(
+        { userId: 'user-1', orgId: 'shop-org', source: 'supabase' },
+        { name: 'Example Company' },
+      ),
+    ).resolves.toMatchObject({ created: false });
+    expect(provisioningRepo.provision).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stable conflict for an orgless identity owning another source', async () => {
     const { service, provisioningRepo } = createService();
     provisioningRepo.provision.mockRejectedValue(
       new StandaloneSourceConflictError(),
     );
 
     const result = service.createOrganization(
-      { userId: 'user-1', orgId: 'shop-org', source: 'supabase' },
+      { userId: 'user-1', orgId: null, source: 'supabase' },
       { name: 'Example Company' },
     );
 
-    try {
-      await result;
-      throw new Error('Expected standalone source conflict');
-    } catch (error) {
-      expect(error).toBeInstanceOf(ConflictException);
-      expect((error as ConflictException).getStatus()).toBe(409);
-      expect((error as ConflictException).getResponse()).toMatchObject({
-        code: 'STANDALONE_SOURCE_CONFLICT',
-      });
-    }
+    await expect(result).rejects.toBeInstanceOf(ConflictException);
   });
 });

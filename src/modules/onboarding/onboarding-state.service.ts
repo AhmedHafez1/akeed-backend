@@ -76,6 +76,10 @@ export class OnboardingStateService {
       isAutoVerifyEnabled: payload.isAutoVerifyEnabled,
     };
 
+    if (payload.assumeCodWhenPaymentMissing !== undefined) {
+      updates.assumeCodWhenPaymentMissing = payload.assumeCodWhenPaymentMissing;
+    }
+
     if (payload.shippingCurrency !== undefined) {
       updates.shippingCurrency = payload.shippingCurrency;
     }
@@ -209,11 +213,29 @@ export class OnboardingStateService {
 
     const sources = await this.integrationsRepo.findActiveByOrg(user.orgId);
     if (sources.length > 1)
-      throw new ConflictException(
-        'Multiple active commerce sources require staff review',
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Multiple active commerce sources require staff review',
+        code: 'ONBOARDING_SOURCE_AMBIGUOUS',
+      });
     const fallback = sources[0];
-    if (!fallback) throw new NotFoundException('Integration not found');
+    if (!fallback) {
+      const existingSources = await this.integrationsRepo.findByOrg(user.orgId);
+      const hasInactiveSource = existingSources.some(
+        (source) => source.isActive === false,
+      );
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'Not Found',
+        message: hasInactiveSource
+          ? 'Commerce source is inactive'
+          : 'Commerce source was not found',
+        code: hasInactiveSource
+          ? 'ONBOARDING_SOURCE_INACTIVE'
+          : 'ONBOARDING_SOURCE_MISSING',
+      });
+    }
 
     return fallback;
   }
@@ -285,11 +307,17 @@ export class OnboardingStateService {
 
     return {
       integrationId: integration.id,
+      source: {
+        platformType: integration.platformType,
+        identity: integration.platformStoreUrl,
+      },
       onboardingStatus,
       isOnboardingComplete: onboardingStatus === 'completed',
       storeName: integration.storeName ?? null,
       defaultLanguage: integration.defaultLanguage ?? 'auto',
       isAutoVerifyEnabled: integration.isAutoVerifyEnabled ?? true,
+      assumeCodWhenPaymentMissing:
+        integration.assumeCodWhenPaymentMissing ?? false,
       shippingCurrency: this.resolveShippingCurrency(integration),
       avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
@@ -309,7 +337,24 @@ export class OnboardingStateService {
       timezone: this.resolveTimezone(integration),
       sendDelayMinutes:
         integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
+      permissions: {
+        canUpdateConfiguration: false,
+        canCompleteOnboarding: false,
+      },
+      standaloneSetup: null,
     };
+  }
+
+  async markOnboardingCompleted(integrationId: string): Promise<void> {
+    await this.integrationsRepo.updateById(integrationId, {
+      onboardingStatus: 'completed',
+    });
+    await this.adminLifecycles?.markMilestone(
+      integrationId,
+      'onboardingCompletedAt',
+      undefined,
+      { onboarding_completed: 'captured_exact' },
+    );
   }
 
   private resolveShippingCurrency(
