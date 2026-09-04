@@ -13,6 +13,7 @@ import { BillingFreePlanClaimsRepository } from './repositories/billing-free-pla
 import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifecycles.repository';
 import { AdminAccessAuditRepository } from './repositories/admin-access-audit.repository';
 import { StandaloneOrganizationProvisioningRepository } from './repositories/standalone-organization-provisioning.repository';
+import { ManualOrderIngestionRepository } from './repositories/manual-order-ingestion.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -29,6 +30,7 @@ import { StandaloneOrganizationProvisioningRepository } from './repositories/sta
     AdminStoreLifecyclesRepository,
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
+    ManualOrderIngestionRepository,
   ],
   exports: [
     drizzleProvider,
@@ -43,6 +45,7 @@ import { StandaloneOrganizationProvisioningRepository } from './repositories/sta
     AdminStoreLifecyclesRepository,
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
+    ManualOrderIngestionRepository,
   ],
 })
 export class DatabaseModule {}

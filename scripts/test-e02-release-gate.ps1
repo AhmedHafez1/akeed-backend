@@ -32,6 +32,7 @@ finally {
 
 Push-Location $frontendRoot
 try {
+    Invoke-GateStep 'frontend route type generation' { npx.cmd next typegen }
     Invoke-GateStep 'frontend application typecheck' { npx.cmd tsc --noEmit }
     Invoke-GateStep 'frontend dual-mode fixture typecheck' { npm.cmd run smoke:e02:typecheck }
     Invoke-GateStep 'frontend non-fixing lint' { npm.cmd run lint }

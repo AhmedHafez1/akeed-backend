@@ -46,6 +46,10 @@ import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service
       ],
     },
   ],
-  exports: [WebhookQueueProducer, WebhookDispatchReconciler],
+  exports: [
+    WebhookQueueProducer,
+    WebhookDispatchService,
+    WebhookDispatchReconciler,
+  ],
 })
 export class WebhookQueueModule {}
