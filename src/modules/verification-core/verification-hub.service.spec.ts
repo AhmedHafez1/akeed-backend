@@ -922,6 +922,108 @@ describe('VerificationHubService', () => {
     });
   });
 
+  describe('handleSyntheticTestOrder', () => {
+    it('sends once immediately without eligibility, delay, quiet-hours, or follow-up automation', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+        automationProducer,
+      } = createMocks();
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent',
+        sentAt: '2026-09-04T12:00:00.000Z',
+      });
+      const integration = buildIntegration({
+        isAutoVerifyEnabled: false,
+        sendDelayMinutes: 60,
+        quietHoursEnabled: true,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '23:59',
+        followUpEnabled: true,
+        escalationEnabled: true,
+      });
+
+      await expect(
+        service.handleSyntheticTestOrder(
+          buildOrder({ externalOrderId: 'akeed-test-id' }),
+          integration,
+        ),
+      ).resolves.toEqual({
+        orderId: 'order-test',
+        verificationId: 'ver-test',
+        deliveryStatus: 'sent',
+        reason: undefined,
+      });
+
+      expect(
+        orderEligibilityService.evaluateOrderForVerification,
+      ).not.toHaveBeenCalled();
+      expect(verificationSendService.sendInitial).toHaveBeenCalledTimes(1);
+      expect(automationProducer.enqueueInitialSend).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the immediate provider outcome to the caller', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        verificationSendService,
+      } = createMocks();
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'failed',
+        reason: 'send_error',
+      });
+
+      await expect(
+        service.handleSyntheticTestOrder(
+          buildOrder({ externalOrderId: 'akeed-test-id' }),
+          buildIntegration(),
+        ),
+      ).resolves.toMatchObject({
+        deliveryStatus: 'failed',
+        reason: 'send_error',
+      });
+    });
+
+    it('never dispatches a commerce outcome for a synthetic callback', async () => {
+      const { service, ordersRepo, verificationsRepo, orderTaggingPort } =
+        createMocks();
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-test',
+        orderId: 'order-test',
+        orgId: 'org-1',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+        integrationId: 'int-1',
+        externalOrderId: 'akeed-test-id',
+        isTest: true,
+        integration: buildIntegration(),
+      });
+
+      await service.finalizeVerification('ver-test', 'confirmed');
+
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+      expect(orderTaggingPort.cancelOrder).not.toHaveBeenCalled();
+    });
+  });
+
   describe('scheduleFollowUpAndEscalation', () => {
     it('skips follow-up when followUpEnabled is false', async () => {
       const { service, automationProducer } = createMocks();

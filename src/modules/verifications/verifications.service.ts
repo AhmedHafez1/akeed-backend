@@ -121,6 +121,7 @@ export class VerificationsService {
           {
             action: 'merchant_no_reply_cancellation',
             supported:
+              !this.isSyntheticOrder(verification.order) &&
               verification.order?.orgId === orgId &&
               activeIntegrations.some(
                 (integration) =>
@@ -141,6 +142,7 @@ export class VerificationsService {
         status: verification.status ?? 'pending',
         order_id: verification.orderId,
         order_number: verification.order?.orderNumber ?? null,
+        is_test: this.isSyntheticOrder(verification.order),
         customer_name: verification.order?.customerName ?? null,
         customer_phone: verification.order?.customerPhone ?? null,
         total_price: verification.order?.totalPrice
@@ -420,6 +422,18 @@ export class VerificationsService {
       };
     }
     return undefined;
+  }
+
+  private isSyntheticOrder(
+    order:
+      | { isTest?: boolean | null; externalOrderId?: string | null }
+      | null
+      | undefined,
+  ): boolean {
+    return Boolean(
+      order?.isTest === true ||
+      order?.externalOrderId?.startsWith('akeed-test-'),
+    );
   }
 
   private parseStatuses(input?: string): VerificationStatus[] | undefined {

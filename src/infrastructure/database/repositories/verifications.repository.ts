@@ -130,11 +130,13 @@ export class VerificationsRepository {
           typeof schema.orders.$inferSelect,
           | 'orgId'
           | 'integrationId'
+          | 'externalOrderId'
           | 'orderNumber'
           | 'customerName'
           | 'customerPhone'
           | 'totalPrice'
           | 'currency'
+          | 'isTest'
         > | null;
       }
     >
@@ -169,11 +171,13 @@ export class VerificationsRepository {
           columns: {
             orgId: true,
             integrationId: true,
+            externalOrderId: true,
             orderNumber: true,
             customerName: true,
             customerPhone: true,
             totalPrice: true,
             currency: true,
+            isTest: true,
           },
         },
       },

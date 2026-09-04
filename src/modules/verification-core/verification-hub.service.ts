@@ -20,6 +20,17 @@ type IntegrationRecord = typeof integrations.$inferSelect;
 type SkippedResult = { skipped: true; reason: string };
 type ProcessedResult = { orderId: string; verificationId: string };
 type HandleNewOrderResult = SkippedResult | ProcessedResult;
+type SyntheticTestResult =
+  | SkippedResult
+  | (ProcessedResult & {
+      deliveryStatus: 'sent' | 'failed' | 'plan_limit_reached' | 'skipped';
+      reason?: string;
+    });
+type PreparedVerification = {
+  order: Awaited<ReturnType<OrdersRepository['create']>>;
+  verification: { id: string };
+  existing: boolean;
+};
 
 @Injectable()
 export class VerificationHubService {
@@ -70,57 +81,69 @@ export class VerificationHubService {
       }),
     );
 
-    const order = await this.findOrCreateOrder(orderData);
-
-    const existingVerification = await this.verificationsRepo.findByOrderId(
-      order.id,
-    );
-    if (existingVerification) {
-      this.logger.log(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-create-for-order',
-          outcome: 'skipped',
-          orgId: integration.orgId,
-          integrationId: integration.id,
-          orderId: order.id,
-          verificationId: existingVerification.id,
-          reason: 'verification_already_exists',
-        }),
-      );
-      return { orderId: order.id, verificationId: existingVerification.id };
+    const prepared = await this.prepareVerification(orderData, integration);
+    if ('skipped' in prepared) return prepared;
+    const { order, verification } = prepared;
+    if (prepared.existing) {
+      return { orderId: order.id, verificationId: verification.id };
     }
-
-    const slotCheck =
-      await this.billingEntitlementService.hasAvailableSlot(integration);
-    if (!slotCheck.available) {
-      this.logger.warn(
-        buildBackendLog(VerificationHubService.name, {
-          action: 'verification-create-for-order',
-          outcome: 'skipped',
-          orgId: integration.orgId,
-          shopDomain: integration.platformStoreUrl,
-          integrationId: integration.id,
-          orderId: order.id,
-          consumedCount: slotCheck.consumedCount,
-          includedLimit: slotCheck.includedLimit,
-          reason: slotCheck.reason ?? 'plan_limit_reached',
-        }),
-      );
-      return {
-        skipped: true,
-        reason: slotCheck.reason ?? 'plan_limit_reached',
-      };
-    }
-
-    const verification = await this.verificationsRepo.create({
-      orgId: order.orgId,
-      orderId: order.id,
-      status: 'pending',
-    });
 
     await this.dispatchInitialSend(verification, order, integration);
 
     return { orderId: order.id, verificationId: verification.id };
+  }
+
+  async handleSyntheticTestOrder(
+    orderData: NormalizedOrder,
+    integration: IntegrationRecord,
+  ): Promise<SyntheticTestResult> {
+    const sourceReason = this.validateSyntheticTestSource(
+      orderData,
+      integration,
+    );
+    if (sourceReason) return { skipped: true, reason: sourceReason };
+
+    const prepared = await this.prepareVerification(orderData, integration);
+    if ('skipped' in prepared) return prepared;
+    const { order, verification } = prepared;
+    if (prepared.existing) {
+      return {
+        orderId: order.id,
+        verificationId: verification.id,
+        deliveryStatus: 'skipped',
+        reason: 'verification_already_exists',
+      };
+    }
+    const delivery = await this.verificationSendService.sendInitial(
+      verification.id,
+    );
+
+    if (delivery.status === 'plan_limit_reached') {
+      await this.markInitialSendFailed(
+        verification.id,
+        order.orgId,
+        delivery.reason ?? 'plan_limit_reached',
+      );
+    } else if (
+      delivery.status === 'skipped' &&
+      (delivery.reason === 'integration_inactive' ||
+        delivery.reason === 'billing_not_active' ||
+        delivery.reason === 'missing_linked_integration' ||
+        delivery.reason === 'source_identity_mismatch')
+    ) {
+      await this.markInitialSendFailed(
+        verification.id,
+        order.orgId,
+        delivery.reason,
+      );
+    }
+
+    return {
+      orderId: order.id,
+      verificationId: verification.id,
+      deliveryStatus: delivery.status,
+      reason: delivery.reason,
+    };
   }
 
   /**
@@ -199,7 +222,10 @@ export class VerificationHubService {
     const order = await this.ordersRepo.findById(verification.orderId);
     if (!order || order.orgId !== verification.orgId) return;
 
-    if (status === 'confirmed' || status === 'canceled') {
+    if (
+      !this.isSyntheticOrder(order) &&
+      (status === 'confirmed' || status === 'canceled')
+    ) {
       await this.synchronizeExternalOrder(
         order,
         status,
@@ -279,6 +305,26 @@ export class VerificationHubService {
     }).reason;
   }
 
+  private validateSyntheticTestSource(
+    orderData: NormalizedOrder,
+    integration: IntegrationRecord,
+  ): string | null {
+    if (
+      orderData.orgId !== integration.orgId ||
+      orderData.integrationId !== integration.id
+    ) {
+      return 'source_identity_mismatch';
+    }
+    if (!integration.isActive) return 'integration_inactive';
+    if (integration.onboardingStatus !== 'completed') {
+      return 'onboarding_incomplete';
+    }
+    return this.billingEntitlementService.evaluateAccess(integration, {
+      id: orderData.integrationId,
+      orgId: orderData.orgId,
+    }).reason;
+  }
+
   private async findOrCreateOrder(orderData: NormalizedOrder) {
     const existing = await this.ordersRepo.findBySourceExternalId({
       orgId: orderData.orgId,
@@ -288,6 +334,63 @@ export class VerificationHubService {
     if (existing) return existing;
 
     return this.ordersRepo.create(this.toOrderInsertPayload(orderData));
+  }
+
+  private async prepareVerification(
+    orderData: NormalizedOrder,
+    integration: IntegrationRecord,
+  ): Promise<SkippedResult | PreparedVerification> {
+    const order = await this.findOrCreateOrder(orderData);
+    const existingVerification = await this.verificationsRepo.findByOrderId(
+      order.id,
+    );
+    if (existingVerification) {
+      this.logger.log(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-create-for-order',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          orderId: order.id,
+          verificationId: existingVerification.id,
+          reason: 'verification_already_exists',
+        }),
+      );
+      return {
+        order,
+        verification: existingVerification,
+        existing: true,
+      };
+    }
+
+    const slotCheck =
+      await this.billingEntitlementService.hasAvailableSlot(integration);
+    if (!slotCheck.available) {
+      this.logger.warn(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-create-for-order',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: integration.platformStoreUrl,
+          integrationId: integration.id,
+          orderId: order.id,
+          consumedCount: slotCheck.consumedCount,
+          includedLimit: slotCheck.includedLimit,
+          reason: slotCheck.reason ?? 'plan_limit_reached',
+        }),
+      );
+      return {
+        skipped: true,
+        reason: slotCheck.reason ?? 'plan_limit_reached',
+      };
+    }
+
+    const verification = await this.verificationsRepo.create({
+      orgId: order.orgId,
+      orderId: order.id,
+      status: 'pending',
+    });
+    return { order, verification, existing: false };
   }
 
   /**
@@ -344,16 +447,10 @@ export class VerificationHubService {
           : new Date(),
       });
     } else if (sendOutcome.status === 'plan_limit_reached') {
-      await this.verificationsRepo.updateByIdForOrg(
+      await this.markInitialSendFailed(
         verification.id,
         order.orgId,
-        {
-          status: 'failed',
-          metadata: {
-            reason: 'plan_limit_reached',
-            kind: 'initial',
-          },
-        },
+        'plan_limit_reached',
       );
     } else if (
       sendOutcome.status === 'skipped' &&
@@ -362,18 +459,23 @@ export class VerificationHubService {
         sendOutcome.reason === 'missing_linked_integration' ||
         sendOutcome.reason === 'source_identity_mismatch')
     ) {
-      await this.verificationsRepo.updateByIdForOrg(
+      await this.markInitialSendFailed(
         verification.id,
         order.orgId,
-        {
-          status: 'failed',
-          metadata: {
-            reason: sendOutcome.reason,
-            kind: 'initial',
-          },
-        },
+        sendOutcome.reason,
       );
     }
+  }
+
+  private async markInitialSendFailed(
+    verificationId: string,
+    orgId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
+      status: 'failed',
+      metadata: { reason, kind: 'initial' },
+    });
   }
 
   private async synchronizeExternalOrder(
@@ -434,5 +536,14 @@ export class VerificationHubService {
       rawPayload: orderData.rawPayload,
       isTest: orderData.externalOrderId.startsWith('akeed-test-'),
     };
+  }
+
+  private isSyntheticOrder(order: {
+    isTest?: boolean | null;
+    externalOrderId?: string | null;
+  }): boolean {
+    return Boolean(
+      order.isTest === true || order.externalOrderId?.startsWith('akeed-test-'),
+    );
   }
 }

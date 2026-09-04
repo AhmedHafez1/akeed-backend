@@ -71,7 +71,7 @@ export class VerificationsController {
     verificationId?: string;
   }> {
     const result = await this.testVerificationService.sendTestVerification(
-      user.orgId,
+      user,
       body.customerPhone,
     );
 
