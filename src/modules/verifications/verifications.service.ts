@@ -35,6 +35,8 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
   'pending',
@@ -238,9 +240,14 @@ export class VerificationsService {
   }
 
   async cancelNoReplyOrder(
-    orgId: string,
+    user: AuthenticatedUser,
     verificationId: string,
   ): Promise<CancelOrderResponse> {
+    assertOrganizationWriteAllowed(user.role, {
+      message: 'Owner or admin role is required to cancel an order.',
+      code: 'VERIFICATION_ROLE_REQUIRED',
+    });
+    const orgId = user.orgId;
     const verification = await this.verificationsRepo.findByIdForOrg(
       verificationId,
       orgId,

@@ -101,6 +101,10 @@ export interface PaginatedResponse<T> {
       follow_up_enabled: boolean;
       quiet_hours_enabled: boolean;
     };
+    permissions?: {
+      can_send_test_verification: boolean;
+      can_cancel_orders: boolean;
+    };
   };
 }
 

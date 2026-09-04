@@ -91,6 +91,7 @@ describe('OnboardingService', () => {
       const result = await service.getSettings({
         userId: 'user-1',
         orgId: 'org-1',
+        role: 'owner',
         source: 'shopify',
         shop: 'test.myshopify.com',
       });

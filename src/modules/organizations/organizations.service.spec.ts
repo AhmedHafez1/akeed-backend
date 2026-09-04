@@ -47,7 +47,7 @@ describe('OrganizationsService standalone provisioning', () => {
 
     await expect(
       service.createOrganization(
-        { userId: 'user-1', orgId: null, source: 'supabase' },
+        { userId: 'user-1', orgId: null, role: null, source: 'supabase' },
         { name: 'Example Company' },
       ),
     ).resolves.toEqual({
@@ -73,7 +73,7 @@ describe('OrganizationsService standalone provisioning', () => {
 
     await expect(
       service.createOrganization(
-        { userId: 'user-1', orgId: 'org-1', source: 'supabase' },
+        { userId: 'user-1', orgId: 'org-1', role: 'owner', source: 'supabase' },
         { name: 'Ignored replacement name' },
       ),
     ).resolves.toMatchObject({ created: false });
@@ -87,6 +87,7 @@ describe('OrganizationsService standalone provisioning', () => {
       {
         userId: 'shop-owner',
         orgId: 'shop-org',
+        role: 'owner',
         source: 'shopify',
         shop: 'example.myshopify.com',
       },
@@ -102,7 +103,12 @@ describe('OrganizationsService standalone provisioning', () => {
 
     await expect(
       service.createOrganization(
-        { userId: 'user-1', orgId: 'shop-org', source: 'supabase' },
+        {
+          userId: 'user-1',
+          orgId: 'shop-org',
+          role: 'viewer',
+          source: 'supabase',
+        },
         { name: 'Example Company' },
       ),
     ).resolves.toMatchObject({ created: false });
@@ -116,10 +122,47 @@ describe('OrganizationsService standalone provisioning', () => {
     );
 
     const result = service.createOrganization(
-      { userId: 'user-1', orgId: null, source: 'supabase' },
+      { userId: 'user-1', orgId: null, role: null, source: 'supabase' },
       { name: 'Example Company' },
     );
 
     await expect(result).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it.each(['owner', 'admin'] as const)(
+    'allows a %s to update only the authenticated organization',
+    async (role) => {
+      const { service, organizationsRepo } = createService();
+      organizationsRepo.updateById.mockResolvedValue(organization);
+
+      await service.updateCurrentOrganization(
+        { userId: 'user-1', orgId: 'org-1', role, source: 'supabase' },
+        { wa_phone_number_id: 'phone-1' },
+      );
+
+      expect(organizationsRepo.updateById).toHaveBeenCalledWith('org-1', {
+        waPhoneNumberId: 'phone-1',
+      });
+    },
+  );
+
+  it('rejects a viewer before reading or updating organization configuration', async () => {
+    const { service, organizationsRepo } = createService();
+
+    await expect(
+      service.updateCurrentOrganization(
+        {
+          userId: 'viewer-1',
+          orgId: 'org-1',
+          role: 'viewer',
+          source: 'supabase',
+        },
+        { wa_phone_number_id: 'forged' },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'ORGANIZATION_ROLE_REQUIRED' },
+    });
+    expect(organizationsRepo.findById).not.toHaveBeenCalled();
+    expect(organizationsRepo.updateById).not.toHaveBeenCalled();
   });
 });

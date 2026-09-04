@@ -133,6 +133,7 @@ describe('OnboardingStateService', () => {
     const user: AuthenticatedUser = {
       userId: 'user-1',
       orgId: 'org-1',
+      role: 'owner',
       source: 'shopify',
       shop: 'test.myshopify.com',
     };

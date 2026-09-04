@@ -38,7 +38,6 @@ describe('manual entitlement HTTP boundary', () => {
     findByOrgAndPlatformDomain: jest.fn(),
     updateById: jest.fn(),
   };
-  const memberships = { findByOrgAndUser: jest.fn() };
   const usage = {
     getEntitlementSource: jest.fn(),
     getIntegrationUsageForPeriod: jest.fn(),
@@ -74,7 +73,12 @@ describe('manual entitlement HTTP boundary', () => {
     } as typeof source;
     activeSources = [source];
     completionWriteCount = 0;
-    user = { userId: 'user-1', orgId: 'org-1', source: 'supabase' };
+    user = {
+      userId: 'user-1',
+      orgId: 'org-1',
+      role: 'owner',
+      source: 'supabase',
+    };
     repository.findActiveByOrg.mockImplementation(() =>
       Promise.resolve(activeSources),
     );
@@ -82,7 +86,6 @@ describe('manual entitlement HTTP boundary', () => {
       Promise.resolve(source),
     );
     repository.findByOrg.mockImplementation(() => Promise.resolve([]));
-    memberships.findByOrgAndUser.mockResolvedValue({ role: 'owner' });
     repository.updateById.mockImplementation(
       (_id: string, changes: Partial<typeof source>) => {
         if (changes.onboardingStatus === 'completed') {
@@ -114,7 +117,6 @@ describe('manual entitlement HTTP boundary', () => {
       state,
       billing,
       new BillingEntitlementService(usage as never),
-      memberships as never,
     );
     const module = await Test.createTestingModule({
       controllers: [OnboardingController, SettingsController],
@@ -192,6 +194,9 @@ describe('manual entitlement HTTP boundary', () => {
           storeName: 'Pilot',
           defaultLanguage: 'auto',
           isAutoVerifyEnabled: true,
+          orgId: 'forged-org',
+          integrationId: 'forged-source',
+          role: 'owner',
           billingStatus: 'not_required',
           billingPlanId: 'business',
           billingActivatedAt: '2026-01-01',
@@ -235,7 +240,7 @@ describe('manual entitlement HTTP boundary', () => {
   });
 
   it('lets viewers read while rejecting configuration and completion writes', async () => {
-    memberships.findByOrgAndUser.mockResolvedValue({ role: 'viewer' });
+    user = { ...user, role: 'viewer' };
 
     await request(app.getHttpServer())
       .get('/api/settings')
@@ -261,11 +266,15 @@ describe('manual entitlement HTTP boundary', () => {
     await request(app.getHttpServer())
       .post('/api/onboarding/complete')
       .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/onboarding/billing')
+      .send({ planId: 'pro' })
+      .expect(403);
     expect(repository.updateById).not.toHaveBeenCalled();
   });
 
   it('allows an admin membership to update Standalone configuration', async () => {
-    memberships.findByOrgAndUser.mockResolvedValue({ role: 'admin' });
+    user = { ...user, role: 'admin' };
 
     await request(app.getHttpServer())
       .patch('/api/onboarding/settings')

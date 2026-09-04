@@ -2,6 +2,14 @@ import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-ou
 import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { VerificationsService } from './verifications.service';
+import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+
+const organizationOwner: AuthenticatedUser = {
+  userId: 'owner-1',
+  orgId: 'org-1',
+  role: 'owner',
+  source: 'supabase',
+};
 
 interface VerificationStatusCounts {
   total: number;
@@ -128,6 +136,23 @@ function buildOrder(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('VerificationsService', () => {
+  it('rejects a viewer cancellation before tenant or provider lookup', async () => {
+    const { service, verificationsRepo, ordersRepo, orderAdmin, orderTagging } =
+      createMocks();
+
+    await expect(
+      service.cancelNoReplyOrder(
+        { ...organizationOwner, userId: 'viewer-1', role: 'viewer' },
+        'v-1',
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'VERIFICATION_ROLE_REQUIRED' },
+    });
+    expect(verificationsRepo.findByIdForOrg).not.toHaveBeenCalled();
+    expect(ordersRepo.findById).not.toHaveBeenCalled();
+    expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+    expect(orderTagging.addOrderTag).not.toHaveBeenCalled();
+  });
   describe('calculateReplyRate', () => {
     let service: VerificationsService;
 
@@ -303,7 +328,7 @@ describe('VerificationsService', () => {
       verificationsRepo.findByIdForOrg.mockResolvedValue(null);
 
       await expect(
-        service.cancelNoReplyOrder('org-1', 'v-nonexistent'),
+        service.cancelNoReplyOrder(organizationOwner, 'v-nonexistent'),
       ).rejects.toThrow('Verification not found');
     });
 
@@ -317,7 +342,7 @@ describe('VerificationsService', () => {
         }),
       );
 
-      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(result.success).toBe(true);
       expect(result.alreadyCanceled).toBe(true);
@@ -343,7 +368,7 @@ describe('VerificationsService', () => {
         );
 
         await expect(
-          service.cancelNoReplyOrder('org-1', 'v-1'),
+          service.cancelNoReplyOrder(organizationOwner, 'v-1'),
         ).rejects.toThrow(BadRequestException);
       }
     });
@@ -358,9 +383,9 @@ describe('VerificationsService', () => {
         }),
       );
 
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects when order has no linked integration', async () => {
@@ -373,9 +398,9 @@ describe('VerificationsService', () => {
         integration: null,
       });
 
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        'Cannot cancel: order has no linked integration',
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow('Cannot cancel: order has no linked integration');
     });
 
     it('rejects when order has no external order ID', async () => {
@@ -385,9 +410,9 @@ describe('VerificationsService', () => {
         buildOrder({ externalOrderId: null }),
       );
 
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        'Cannot cancel: order has no external order ID',
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow('Cannot cancel: order has no external order ID');
     });
 
     it('calls Shopify cancellation before local update', async () => {
@@ -413,7 +438,7 @@ describe('VerificationsService', () => {
       });
       orderTagging.addOrderTag.mockResolvedValue(undefined);
 
-      await service.cancelNoReplyOrder('org-1', 'v-1');
+      await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(callOrder).toEqual(['shopify', 'local']);
     });
@@ -426,9 +451,9 @@ describe('VerificationsService', () => {
       ordersRepo.findById.mockResolvedValue(buildOrder());
       orderAdmin.cancelOrder.mockRejectedValue(new Error('Shopify 502'));
 
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        BadGatewayException,
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow(BadGatewayException);
 
       expect(
         verificationsRepo.markMerchantNoReplyCanceled,
@@ -455,7 +480,7 @@ describe('VerificationsService', () => {
       );
       orderTagging.addOrderTag.mockResolvedValue(undefined);
 
-      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(result.status).toBe('canceled');
       expect(result.providerOperationId).toBe('job-1');
@@ -489,7 +514,7 @@ describe('VerificationsService', () => {
         }),
       );
 
-      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(result.status).toBe('canceled');
       expect(result.providerOperationId).toBeUndefined();
@@ -522,7 +547,7 @@ describe('VerificationsService', () => {
       );
       orderTagging.addOrderTag.mockResolvedValue(undefined);
 
-      await service.cancelNoReplyOrder('org-1', 'v-1');
+      await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(orderTagging.addOrderTag).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'int-1' }),
@@ -548,7 +573,7 @@ describe('VerificationsService', () => {
       );
       orderTagging.addOrderTag.mockRejectedValue(new Error('tag failed'));
 
-      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(result.success).toBe(true);
       expect(result.status).toBe('canceled');
@@ -565,9 +590,9 @@ describe('VerificationsService', () => {
       orderAdmin.cancelOrder.mockResolvedValue({ jobId: 'job-1' });
       verificationsRepo.markMerchantNoReplyCanceled.mockResolvedValue(null);
 
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('returns idempotent success on race when another thread already merchant-canceled', async () => {
@@ -593,7 +618,7 @@ describe('VerificationsService', () => {
       verificationsRepo.markMerchantNoReplyCanceled.mockResolvedValue(null);
       orderTagging.addOrderTag.mockResolvedValue(undefined);
 
-      const result = await service.cancelNoReplyOrder('org-1', 'v-1');
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
 
       expect(result.success).toBe(true);
       expect(result.alreadyCanceled).toBe(true);
@@ -626,9 +651,9 @@ describe('Merchant cancellation source and operation contract', () => {
       if (kind === 'unsupported') order.integration.platformType = 'standalone';
       if (kind === 'foreign_order') order.orgId = 'org-2';
       ordersRepo.findById.mockResolvedValue(order);
-      await expect(service.cancelNoReplyOrder('org-1', 'v-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+      ).rejects.toThrow(BadRequestException);
       expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
       expect(orderTagging.addOrderTag).not.toHaveBeenCalled();
       expect(
@@ -651,7 +676,9 @@ describe('Merchant cancellation source and operation contract', () => {
         metadata: { commerceCancellation: operation, retained: true },
       }),
     );
-    await expect(service.cancelNoReplyOrder('org-1', 'v-1')).resolves.toEqual({
+    await expect(
+      service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+    ).resolves.toEqual({
       success: true,
       verificationId: 'v-1',
       status: 'canceled',
@@ -680,7 +707,7 @@ describe('Merchant cancellation source and operation contract', () => {
       sequence.push('tag');
       return Promise.resolve();
     });
-    await service.cancelNoReplyOrder('org-1', 'v-1');
+    await service.cancelNoReplyOrder(organizationOwner, 'v-1');
     expect(sequence).toEqual(['cancel', 'local', 'tag']);
     expect(verificationsRepo.markMerchantNoReplyCanceled).toHaveBeenCalledWith(
       'v-1',

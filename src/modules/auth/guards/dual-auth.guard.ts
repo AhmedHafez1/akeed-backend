@@ -14,6 +14,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
+import type { OrganizationRole } from '../organization-role';
 
 /**
  * Dual Authentication Guard
@@ -44,11 +45,13 @@ export interface AuthenticatedIdentity {
 
 export interface AuthenticatedUser extends AuthenticatedIdentity {
   orgId: string;
+  role: OrganizationRole;
 }
 
 export interface OrglessAuthenticatedUser extends AuthenticatedIdentity {
   source: 'supabase';
   orgId: null;
+  role: null;
 }
 
 export type AuthenticatedRequestUser =

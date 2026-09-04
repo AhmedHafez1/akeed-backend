@@ -16,7 +16,11 @@ import {
   StandaloneOrganizationProvisioningResult,
   StandaloneSourceConflictError,
 } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
-import type { AuthenticatedRequestUser } from '../auth/guards/dual-auth.guard';
+import type {
+  AuthenticatedRequestUser,
+  AuthenticatedUser,
+} from '../auth/guards/dual-auth.guard';
+import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import {
   buildBackendLog,
   normalizeError,
@@ -107,9 +111,14 @@ export class OrganizationsService {
   }
 
   async updateCurrentOrganization(
-    orgId: string,
+    user: AuthenticatedUser,
     payload: UpdateOrganizationDto,
   ): Promise<OrganizationResponseDto> {
+    assertOrganizationWriteAllowed(user.role, {
+      code: 'ORGANIZATION_ROLE_REQUIRED',
+      message: 'Owner or admin role is required to update the organization',
+    });
+    const orgId = user.orgId;
     const updates: {
       waPhoneNumberId?: string | null;
       waBusinessAccountId?: string | null;

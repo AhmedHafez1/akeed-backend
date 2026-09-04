@@ -194,6 +194,35 @@ describe('standalone source provisioning PostgreSQL contract', () => {
     ).rejects.toThrow();
   });
 
+  it('allows exactly one winner when competing active sources race', async () => {
+    const orgId = randomUUID();
+    await client`
+      INSERT INTO organizations (id, name, slug)
+      VALUES (${orgId}, 'Concurrent source guard', ${`race-${orgId}`})
+    `;
+
+    const attempts = await Promise.allSettled([
+      client`
+        INSERT INTO integrations (org_id, platform_type, platform_store_url)
+        VALUES (${orgId}, 'standalone', ${`standalone:${orgId}`})
+      `,
+      client`
+        INSERT INTO integrations (org_id, platform_type, platform_store_url)
+        VALUES (${orgId}, 'shopify', ${`${orgId}.myshopify.com`})
+      `,
+    ]);
+
+    expect(
+      attempts.filter((attempt) => attempt.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      attempts.filter((attempt) => attempt.status === 'rejected'),
+    ).toHaveLength(1);
+    await expect(
+      client`SELECT id FROM integrations WHERE org_id = ${orgId} AND is_active = true`,
+    ).resolves.toHaveLength(1);
+  });
+
   it('rolls back a failed package and resumes successfully', async () => {
     const userId = randomUUID();
     await client.unsafe(`
@@ -279,6 +308,25 @@ describe('standalone source provisioning PostgreSQL contract', () => {
       access_token: 'preserved-token',
       is_active: true,
     });
+  });
+
+  it('rejects an inactive native source owner instead of converting it', async () => {
+    const userId = randomUUID();
+    const orgId = randomUUID();
+    const integrationId = randomUUID();
+    await client`INSERT INTO organizations (id, name, slug) VALUES (${orgId}, 'Historical source', ${`historical-${orgId}`})`;
+    await client`INSERT INTO memberships (org_id, user_id, role) VALUES (${orgId}, ${userId}, 'owner')`;
+    await client`
+      INSERT INTO integrations (id, org_id, platform_type, platform_store_url, is_active)
+      VALUES (${integrationId}, ${orgId}, 'easyorders', ${`historical-${orgId}.example`}, false)
+    `;
+
+    await expect(
+      repository.provision(userId, 'Standalone replacement'),
+    ).rejects.toBeInstanceOf(StandaloneSourceConflictError);
+    await expect(
+      client`SELECT platform_type, is_active FROM integrations WHERE id = ${integrationId}`,
+    ).resolves.toEqual([{ platform_type: 'easyorders', is_active: false }]);
   });
 
   it('does not claim an organization whose deterministic slug is already owned', async () => {

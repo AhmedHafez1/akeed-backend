@@ -18,6 +18,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
+import { isOrganizationRole } from '../organization-role';
 
 /**
  * Token Validator Service
@@ -226,11 +227,20 @@ export class TokenValidatorService {
 
       // Use the first owner membership (typically created during OAuth)
       const ownerMembership = membership.find((m) => m.role === 'owner');
-      const userId = ownerMembership?.userId || membership[0].userId;
+      const selectedMembership = ownerMembership ?? membership[0];
+      if (!isOrganizationRole(selectedMembership.role)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Organization membership role is invalid',
+          code: 'ORGANIZATION_ROLE_INVALID',
+        });
+      }
 
       return {
-        userId,
+        userId: selectedMembership.userId,
         orgId,
+        role: selectedMembership.role,
         source: 'shopify',
         shop,
       };
@@ -294,6 +304,7 @@ export class TokenValidatorService {
           return {
             userId,
             orgId: null,
+            role: null,
             source: 'supabase',
           };
         }
@@ -315,11 +326,20 @@ export class TokenValidatorService {
       }
 
       // Use the first organization (in future, support org switching)
-      const orgId = memberships[0].orgId;
+      const selectedMembership = memberships[0];
+      if (!isOrganizationRole(selectedMembership.role)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Organization membership role is invalid',
+          code: 'ORGANIZATION_ROLE_INVALID',
+        });
+      }
 
       return {
         userId,
-        orgId,
+        orgId: selectedMembership.orgId,
+        role: selectedMembership.role,
         source: 'supabase',
       };
     } catch (error) {

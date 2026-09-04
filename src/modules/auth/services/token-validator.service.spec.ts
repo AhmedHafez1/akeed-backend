@@ -115,6 +115,7 @@ describe('TokenValidatorService Shopify installation state', () => {
     await expect(service.validateToken(createShopifyToken())).resolves.toEqual({
       userId: 'owner-1',
       orgId: 'org-1',
+      role: 'owner',
       source: 'shopify',
       shop: 'test.myshopify.com',
     });
@@ -131,6 +132,7 @@ describe('TokenValidatorService Supabase organization state', () => {
     ).resolves.toEqual({
       userId: 'standalone-user-1',
       orgId: null,
+      role: null,
       source: 'supabase',
     });
   });
@@ -165,8 +167,49 @@ describe('TokenValidatorService Supabase organization state', () => {
       {
         userId: 'standalone-user-1',
         orgId: 'owned-org',
+        role: 'owner',
         source: 'supabase',
       },
     );
+  });
+
+  it('re-resolves a changed role for the same token on every request', async () => {
+    const { service, membershipsRepo } = createService(true);
+    mockSupabaseUser(service);
+    membershipsRepo.findByUser
+      .mockResolvedValueOnce([
+        {
+          userId: 'standalone-user-1',
+          orgId: 'org-1',
+          role: 'owner',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          userId: 'standalone-user-1',
+          orgId: 'org-1',
+          role: 'viewer',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await expect(
+      service.validateToken(createSupabaseToken()),
+    ).resolves.toMatchObject({
+      orgId: 'org-1',
+      role: 'owner',
+    });
+    await expect(
+      service.validateToken(createSupabaseToken()),
+    ).resolves.toMatchObject({
+      orgId: 'org-1',
+      role: 'viewer',
+    });
+    await expect(
+      service.validateToken(createSupabaseToken()),
+    ).rejects.toMatchObject({
+      response: { code: 'ORGANIZATION_REQUIRED' },
+    });
+    expect(membershipsRepo.findByUser).toHaveBeenCalledTimes(3);
   });
 });

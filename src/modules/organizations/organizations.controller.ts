@@ -47,10 +47,7 @@ export class OrganizationsController {
     @Body() payload: UpdateOrganizationDto,
   ): Promise<{ organization: OrganizationResponseDto }> {
     const organization =
-      await this.organizationsService.updateCurrentOrganization(
-        user.orgId,
-        payload,
-      );
+      await this.organizationsService.updateCurrentOrganization(user, payload);
 
     return { organization };
   }

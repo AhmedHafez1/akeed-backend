@@ -23,6 +23,7 @@ import {
   VerificationListItemDto,
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
+import { canWriteOrganization } from '../auth/organization-role';
 
 @Controller('api/verifications')
 @UseGuards(DualAuthGuard)
@@ -56,7 +57,20 @@ export class VerificationsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetVerificationsQueryDto,
   ): Promise<PaginatedResponse<VerificationListItemDto>> {
-    return this.verificationsService.listByOrg(user.orgId, query);
+    const result = await this.verificationsService.listByOrg(user.orgId, query);
+    const canWrite = canWriteOrganization(user.role);
+    return {
+      ...result,
+      page_context: result.page_context
+        ? {
+            ...result.page_context,
+            permissions: {
+              can_send_test_verification: canWrite,
+              can_cancel_orders: canWrite,
+            },
+          }
+        : undefined,
+    };
   }
 
   @Post('test')
@@ -96,7 +110,7 @@ export class VerificationsController {
     @Param('id') verificationId: string,
   ): Promise<CancelOrderResponse & { shopifyJobId?: string }> {
     const result = await this.verificationsService.cancelNoReplyOrder(
-      user.orgId,
+      user,
       verificationId,
     );
     return {

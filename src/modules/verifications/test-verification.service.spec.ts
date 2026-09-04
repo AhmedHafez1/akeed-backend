@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 const standaloneUser: AuthenticatedUser = {
   userId: 'user-1',
   orgId: 'org-1',
+  role: 'owner',
   source: 'supabase',
 };
 
@@ -39,18 +40,14 @@ function setup() {
       deliveryStatus: 'sent',
     }),
   };
-  const memberships = {
-    findByOrgAndUser: jest.fn().mockResolvedValue({ role: 'owner' }),
-  };
   const lifecycle = { markMilestone: jest.fn() };
   const service = new TestVerificationService(
     integrations as never,
     hub as never,
     new PhoneService(),
-    memberships as never,
     lifecycle as never,
   );
-  return { service, integrations, hub, memberships, lifecycle };
+  return { service, integrations, hub, lifecycle };
 }
 
 function expectCode(error: unknown, code: string): void {
@@ -103,6 +100,7 @@ describe('TestVerificationService', () => {
       {
         userId: 'shopify-owner',
         orgId: 'org-1',
+        role: 'owner',
         source: 'shopify',
         shop: 'merchant.example.test',
       },
@@ -125,11 +123,13 @@ describe('TestVerificationService', () => {
   });
 
   it('rejects a viewer before resolving or sending from a source', async () => {
-    const { service, integrations, hub, memberships } = setup();
-    memberships.findByOrgAndUser.mockResolvedValue({ role: 'viewer' });
+    const { service, integrations, hub } = setup();
 
     await service
-      .sendTestVerification(standaloneUser, '+201001234567')
+      .sendTestVerification(
+        { ...standaloneUser, role: 'viewer' },
+        '+201001234567',
+      )
       .then(() => fail('Expected viewer access to be rejected'))
       .catch((error: unknown) =>
         expectCode(error, 'TEST_VERIFICATION_ROLE_REQUIRED'),

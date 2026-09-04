@@ -2,19 +2,18 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import { PhoneService } from '../../shared/services/phone.service';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { integrations } from '../../infrastructure/database/schema';
+import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 type IntegrationRecord = typeof integrations.$inferSelect;
@@ -25,7 +24,6 @@ export class TestVerificationService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHubService: VerificationHubService,
     private readonly phoneService: PhoneService,
-    private readonly membershipsRepo: MembershipsRepository,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
@@ -39,6 +37,11 @@ export class TestVerificationService {
     orderId?: string;
     verificationId?: string;
   }> {
+    assertOrganizationWriteAllowed(user.role, {
+      message: 'Owner or admin role is required to send a test message.',
+      code: 'TEST_VERIFICATION_ROLE_REQUIRED',
+    });
+
     let normalizedPhone: string;
     try {
       normalizedPhone = this.phoneService.standardize(customerPhone);
@@ -133,19 +136,6 @@ export class TestVerificationService {
       );
       if (source?.isActive) return source;
       this.throwSourceUnavailable('The Shopify source is not active.');
-    }
-
-    const membership = await this.membershipsRepo.findByOrgAndUser(
-      user.orgId,
-      user.userId,
-    );
-    if (membership?.role !== 'owner' && membership?.role !== 'admin') {
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: 'Forbidden',
-        message: 'Owner or admin role is required to send a test message.',
-        code: 'TEST_VERIFICATION_ROLE_REQUIRED',
-      });
     }
 
     const activeSources = await this.integrationsRepo.findActiveByOrg(

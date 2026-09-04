@@ -2,7 +2,6 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Optional,
 } from '@nestjs/common';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { getBillingManagement } from '../../shared/billing/entitlement';
@@ -27,11 +26,14 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
-import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
 import {
   AUTOMATION_TIMEZONES,
   ONBOARDING_LANGUAGES,
 } from './dto/onboarding.dto';
+import {
+  assertOrganizationWriteAllowed,
+  canWriteOrganization,
+} from '../auth/organization-role';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -41,8 +43,6 @@ export class OnboardingService {
     private readonly onboardingState: OnboardingStateService,
     private readonly billingService: BillingService,
     private readonly billingEntitlements: BillingEntitlementService,
-    @Optional()
-    private readonly memberships?: MembershipsRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -57,7 +57,7 @@ export class OnboardingService {
     user: AuthenticatedUser,
     payload: UpdateOnboardingSettingsDto,
   ): Promise<OnboardingStateDto> {
-    await this.assertCanUpdateConfiguration(user);
+    this.assertCanUpdateConfiguration(user);
     await this.onboardingState.updateSettings(user, payload);
     return this.getState(user);
   }
@@ -74,7 +74,7 @@ export class OnboardingService {
     ]);
 
     return {
-      state: await this.buildState(user, hydratedIntegration),
+      state: this.buildState(user, hydratedIntegration),
       billing: {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
@@ -101,10 +101,10 @@ export class OnboardingService {
       );
     }
 
-    await this.assertCanUpdateConfiguration(user);
+    this.assertCanUpdateConfiguration(user);
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
-    const currentState = await this.buildState(user, integration);
+    const currentState = this.buildState(user, integration);
 
     if (currentState.isOnboardingComplete) {
       return { state: currentState };
@@ -140,6 +140,7 @@ export class OnboardingService {
     planId: OnboardingBillingPlanId,
     host?: string,
   ): Promise<OnboardingBillingResponseDto> {
+    this.assertCanUpdateConfiguration(user);
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
     if (!getBillingManagement(integration).canManageBilling) {
@@ -200,12 +201,12 @@ export class OnboardingService {
     };
   }
 
-  private async buildState(
+  private buildState(
     user: AuthenticatedUser,
     integration: IntegrationRecord,
-  ): Promise<OnboardingStateDto> {
+  ): OnboardingStateDto {
     const state = this.onboardingState.toState(integration);
-    const canUpdateConfiguration = await this.canUpdateConfiguration(user);
+    const canUpdateConfiguration = this.canUpdateConfiguration(user);
     const blockedReasons =
       integration.platformType === 'standalone'
         ? this.getStandaloneBlockedReasons(integration)
@@ -276,24 +277,12 @@ export class OnboardingService {
     return reasons;
   }
 
-  private async canUpdateConfiguration(
-    user: AuthenticatedUser,
-  ): Promise<boolean> {
-    if (user.source === 'shopify') return true;
-    const membership = await this.memberships?.findByOrgAndUser(
-      user.orgId,
-      user.userId,
-    );
-    return membership?.role === 'owner' || membership?.role === 'admin';
+  private canUpdateConfiguration(user: AuthenticatedUser): boolean {
+    return canWriteOrganization(user.role);
   }
 
-  private async assertCanUpdateConfiguration(
-    user: AuthenticatedUser,
-  ): Promise<void> {
-    if (await this.canUpdateConfiguration(user)) return;
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: 'Forbidden',
+  private assertCanUpdateConfiguration(user: AuthenticatedUser): void {
+    assertOrganizationWriteAllowed(user.role, {
       message: 'Owner or admin role is required to update configuration',
       code: 'ONBOARDING_CONFIGURATION_READ_ONLY',
     });
