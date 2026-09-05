@@ -2,6 +2,8 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationSendService } from './verification-send.service';
 import type { EntitlementSource } from '../../shared/billing/entitlement';
 
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+
 const source: EntitlementSource = {
   id: 'int-1',
   orgId: 'org-1',
@@ -39,7 +41,7 @@ describe('provider-neutral entitlement boundary', () => {
       findById: jest
         .fn()
         .mockResolvedValue({ id: 'ver-1', orderId: 'order-1', orgId: 'org-1' }),
-      updateStatus: jest.fn(),
+      updateByIdForOrg: jest.fn(),
     };
     const orders = {
       findById: jest.fn().mockResolvedValue({
@@ -49,10 +51,30 @@ describe('provider-neutral entitlement boundary', () => {
         totalPrice: '12.00',
       }),
     };
+    const dispatches = {
+      claim: jest.fn().mockImplementation(async () => {
+        const reservation = await repository.reserveMonthlyVerificationSlot({
+          id: source.id,
+          orgId: source.orgId,
+        });
+        if (!reservation.allowed) {
+          return {
+            outcome: 'blocked',
+            reason: reservation.reason,
+            consumedCount: reservation.consumedCount,
+            includedLimit: reservation.includedLimit,
+          };
+        }
+        return { outcome: 'claimed', dispatch: { id: 'dispatch-1' } };
+      }),
+      markAccepted: jest.fn(),
+      markOutcomeUnknown: jest.fn(),
+    };
     const sender = new VerificationSendService(
       verifications as never,
       orders as never,
       service,
+      dispatches as never,
       messaging,
     );
     return { repository, service, messaging, verifications, sender };
@@ -115,17 +137,14 @@ describe('provider-neutral entitlement boundary', () => {
     },
   );
 
-  it('releases the original reservation period on a failed send', async () => {
+  it('retains the original reservation when provider acceptance is unknown', async () => {
     const { sender, repository, messaging } = setup();
     messaging.sendVerificationTemplate.mockRejectedValue(
       new Error('synthetic failure'),
     );
     expect(await sender.sendFollowUp('ver-1')).toMatchObject({
-      status: 'failed',
+      status: 'outcome_unknown',
     });
-    expect(repository.releaseMonthlyVerificationSlot).toHaveBeenCalledWith({
-      integrationId: 'int-1',
-      periodStart: '2026-05-01',
-    });
+    expect(repository.releaseMonthlyVerificationSlot).not.toHaveBeenCalled();
   });
 });

@@ -89,6 +89,41 @@ export interface OrderListItemDto {
   currency: string | null;
   created_at: string | null;
   verification_status: string | null;
+  lifecycle: ManualOrderLifecycleDto;
+}
+
+export const MANUAL_ORDER_LIFECYCLE_STATUSES = [
+  'accepted',
+  'processing',
+  'ineligible',
+  'blocked',
+  'pending',
+  'sent',
+  'delivered',
+  'read',
+  'confirmed',
+  'canceled',
+  'expired',
+  'failed',
+  'no_reply',
+  'review_required',
+] as const;
+
+export type ManualOrderLifecycleStatus =
+  (typeof MANUAL_ORDER_LIFECYCLE_STATUSES)[number];
+
+export interface ManualOrderLifecycleDto {
+  status: ManualOrderLifecycleStatus;
+  reason: string | null;
+  verification_id: string | null;
+  retryable: boolean;
+}
+
+export interface RetryManualOrderVerificationResponseDto {
+  orderId: string;
+  verificationId?: string;
+  lifecycle: ManualOrderLifecycleDto;
+  duplicate: boolean;
 }
 
 export interface PaginatedResponse<T> {

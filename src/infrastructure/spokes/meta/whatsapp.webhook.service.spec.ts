@@ -63,13 +63,18 @@ function createMocks() {
   const verificationHub = {
     finalizeVerification: jest.fn().mockResolvedValue(undefined),
   };
+  const messageDispatches = {
+    findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
+    recordProviderStatus: jest.fn(),
+  };
 
   const service = new WhatsAppWebhookService(
     verificationsRepo as any,
     verificationHub as any,
+    messageDispatches as any,
   );
 
-  return { service, verificationsRepo, verificationHub };
+  return { service, verificationsRepo, verificationHub, messageDispatches };
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +85,45 @@ describe('WhatsAppWebhookService', () => {
   // ---- Status updates (delivered / read / failed) ----
 
   describe('status updates', () => {
+    it('prefers the dispatch ledger for an initial message callback', async () => {
+      const { service, verificationsRepo, messageDispatches } = createMocks();
+      messageDispatches.findByProviderMessageId.mockResolvedValue({
+        id: 'dispatch-1',
+        kind: 'initial',
+        verificationId: 'v1',
+      });
+
+      await service.processIncoming(statusPayload('wamid_ledger', 'delivered'));
+
+      expect(messageDispatches.recordProviderStatus).toHaveBeenCalledWith(
+        'dispatch-1',
+        'delivered',
+        '2023-11-14T22:13:20.000Z',
+      );
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'v1',
+        'delivered',
+        undefined,
+        '1700000000',
+      );
+      expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
+    });
+
+    it('records a follow-up callback without changing the verification status', async () => {
+      const { service, verificationsRepo, messageDispatches } = createMocks();
+      messageDispatches.findByProviderMessageId.mockResolvedValue({
+        id: 'dispatch-2',
+        kind: 'follow_up',
+        verificationId: 'v1',
+      });
+
+      await service.processIncoming(statusPayload('wamid_follow_up', 'read'));
+
+      expect(messageDispatches.recordProviderStatus).toHaveBeenCalledTimes(1);
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
+    });
+
     it('should update status to delivered via wamid', async () => {
       const { service, verificationsRepo } = createMocks();
 

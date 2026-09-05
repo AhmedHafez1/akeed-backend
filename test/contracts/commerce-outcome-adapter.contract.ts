@@ -44,6 +44,7 @@ export function defineCommerceOutcomeAdapterContract(
       const { adapter } = options.createFixture(options.capabilities[0]);
 
       expect(adapter.platformType).toBe(options.platformType);
+      expect(typeof adapter.requiresActiveConnection).toBe('boolean');
       expect(adapter.capabilities.size).toBeGreaterThan(0);
       expect([...adapter.capabilities].sort()).toEqual(
         [...options.capabilities].sort(),

@@ -56,7 +56,11 @@ function migrationStatements(fileName: string): string[] {
 
 async function applyMigration(fileName: string): Promise<void> {
   for (const statement of migrationStatements(fileName)) {
-    await client.unsafe(statement.replaceAll('"public".', `"${namespace}".`));
+    await client.unsafe(
+      statement
+        .replaceAll('"public".', `"${namespace}".`)
+        .replaceAll("schemaname = 'public'", `schemaname = '${namespace}'`),
+    );
   }
 }
 
@@ -86,6 +90,12 @@ describe('E02 expand/backfill/deploy rollback PostgreSQL rehearsal', () => {
   beforeAll(async () => {
     await client`CREATE SCHEMA ${client(namespace)}`;
     created = true;
+    await client.unsafe(`
+      CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+      DO $$ BEGIN CREATE ROLE service_role; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      DO $$ BEGIN CREATE ROLE authenticated; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      CREATE FUNCTION get_user_org_id() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+    `);
     await client.unsafe(`
       CREATE TYPE webhook_event_status AS ENUM ('pending', 'processing', 'completed', 'failed', 'skipped');
       CREATE TABLE integrations (
@@ -311,5 +321,110 @@ describe('E02 expand/backfill/deploy rollback PostgreSQL rehearsal', () => {
     await expect(
       client`INSERT INTO integrations (id, org_id, platform_type, platform_store_url) VALUES (${randomUUID()}, ${randomUUID()}, 'magento', 'unsupported')`,
     ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('links manual events, backfills legacy dispatches, enforces tenant constraints, and reapplies safely', async () => {
+    const manualOrgId = randomUUID();
+    const manualIntegrationId = randomUUID();
+    const manualOrderId = randomUUID();
+    const manualWebhookId = randomUUID();
+
+    await client.unsafe(`
+      ALTER TABLE verifications ADD COLUMN wa_message_id text;
+      ALTER TABLE verifications ADD COLUMN last_sent_at timestamptz;
+      ALTER TABLE verifications ADD COLUMN updated_at timestamptz DEFAULT now();
+      ALTER TABLE verifications ADD COLUMN created_at timestamptz DEFAULT now();
+    `);
+    await client`
+      UPDATE verifications
+      SET wa_message_id = 'wamid.synthetic-legacy', last_sent_at = now()
+      WHERE id = ${verificationId}
+    `;
+    await client`
+      INSERT INTO integrations (id, org_id, platform_type, platform_store_url)
+      VALUES (${manualIntegrationId}, ${manualOrgId}, 'standalone', 'standalone:manual-lifecycle')
+    `;
+    await client`
+      INSERT INTO orders (id, org_id, integration_id, external_order_id, customer_phone)
+      VALUES (${manualOrderId}, ${manualOrgId}, ${manualIntegrationId}, 'manual-order-1', '+201000000003')
+    `;
+    await client`
+      INSERT INTO webhook_events (
+        id, platform, job_type, idempotency_key, store_domain, org_id,
+        integration_id, status, last_error, raw_payload
+      ) VALUES (
+        ${manualWebhookId}, 'standalone', 'order.create', 'manual-delivery-1',
+        'standalone:manual-lifecycle', ${manualOrgId}, ${manualIntegrationId},
+        'skipped', 'no_normalizer:standalone',
+        ${client.json({ order: { externalOrderId: 'manual-order-1' } })}
+      )
+    `;
+
+    await applyMigration('0028_manual_order_lifecycle_dispatch_ledger.sql');
+    await applyMigration('0028_manual_order_lifecycle_dispatch_ledger.sql');
+
+    const [manualEvent] = await client<
+      { order_id: string; status: string; last_error: string | null }[]
+    >`
+      SELECT order_id, status::text, last_error
+      FROM webhook_events
+      WHERE id = ${manualWebhookId}
+    `;
+    expect(manualEvent).toEqual({
+      order_id: manualOrderId,
+      status: 'pending',
+      last_error: null,
+    });
+
+    const dispatches = await client<
+      {
+        verification_id: string;
+        integration_id: string;
+        kind: string;
+        state: string;
+        provider_message_id: string;
+      }[]
+    >`
+      SELECT verification_id, integration_id, kind::text, state::text, provider_message_id
+      FROM verification_message_dispatches
+    `;
+    expect(dispatches).toEqual([
+      {
+        verification_id: verificationId,
+        integration_id: integrationId,
+        kind: 'legacy_unknown',
+        state: 'accepted',
+        provider_message_id: 'wamid.synthetic-legacy',
+      },
+    ]);
+
+    const [shopifyEvent] = await client<{ order_id: string | null }[]>`
+      SELECT order_id FROM webhook_events WHERE id = ${webhookId}
+    `;
+    expect(shopifyEvent.order_id).toBeNull();
+
+    await expect(
+      client`
+        UPDATE webhook_events
+        SET order_id = ${manualOrderId}
+        WHERE id = ${webhookId}
+      `,
+    ).rejects.toMatchObject({ code: '23505' });
+
+    const constraints = await client<{ conname: string }[]>`
+      SELECT conname
+      FROM pg_constraint
+      WHERE conrelid IN (
+        ${`${namespace}.webhook_events`}::regclass,
+        ${`${namespace}.verification_message_dispatches`}::regclass
+      )
+    `;
+    expect(constraints.map(({ conname }) => conname)).toEqual(
+      expect.arrayContaining([
+        'webhook_events_order_id_fkey',
+        'verification_message_dispatches_verification_id_fkey',
+        'verification_message_dispatches_integration_id_fkey',
+      ]),
+    );
   });
 });

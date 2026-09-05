@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Param,
   Query,
   UseGuards,
   UsePipes,
@@ -26,6 +27,7 @@ import {
   CreateManualOrderDto,
   type CreateManualOrderResponseDto,
 } from './dto/create-manual-order.dto';
+import type { RetryManualOrderVerificationResponseDto } from './dto/dashboard.dto';
 
 const readValidationPipe = new ValidationPipe({
   whitelist: true,
@@ -76,5 +78,14 @@ export class OrdersController {
     @Body() payload: CreateManualOrderDto,
   ): Promise<CreateManualOrderResponseDto> {
     return this.ordersService.createManualOrder(user, idempotencyKey, payload);
+  }
+
+  @Post(':orderId/verification/retry')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async retryManualOrderVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('orderId') orderId: string,
+  ): Promise<RetryManualOrderVerificationResponseDto> {
+    return this.ordersService.retryManualOrderVerification(user, orderId);
   }
 }

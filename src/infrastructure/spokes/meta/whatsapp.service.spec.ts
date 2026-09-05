@@ -89,6 +89,14 @@ describe('WhatsAppService', () => {
         verifications as never,
         orders as never,
         entitlement as never,
+        {
+          claim: jest.fn().mockResolvedValue({
+            outcome: 'claimed',
+            dispatch: { id: 'dispatch-1' },
+          }),
+          markAccepted: jest.fn(),
+          markOutcomeUnknown: jest.fn(),
+        } as never,
         messaging,
       );
       await expect(sender[method]('ver-1')).resolves.toMatchObject({
@@ -144,13 +152,7 @@ describe('WhatsAppService', () => {
           },
         },
       );
-      if (method === 'sendInitial')
-        expect(verifications.updateStatus).toHaveBeenCalledWith(
-          'ver-1',
-          'sent',
-          'wamid-1',
-        );
-      else expect(verifications.updateStatus).not.toHaveBeenCalled();
+      expect(verifications.updateStatus).not.toHaveBeenCalled();
     },
   );
 

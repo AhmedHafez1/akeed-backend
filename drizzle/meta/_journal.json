@@ -197,6 +197,13 @@
       "when": 1788454800000,
       "tag": "0027_standalone_pilot_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788566400000,
+      "tag": "0028_manual_order_lifecycle_dispatch_ledger",
+      "breakpoints": true
     }
   ]
 }

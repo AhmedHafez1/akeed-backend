@@ -64,6 +64,7 @@ describe('E02 platform-neutral verification core release gate', () => {
     const execute = jest.fn().mockResolvedValue({ status: 'applied' });
     const adapter: CommerceOutcomeAdapter = {
       platformType: 'standalone',
+      requiresActiveConnection: false,
       capabilities: new Set(['customer_confirmation']),
       execute,
     };
@@ -76,6 +77,11 @@ describe('E02 platform-neutral verification core release gate', () => {
     const verificationsRepository = {
       findByOrderId: jest.fn().mockResolvedValue(undefined),
       create: jest.fn().mockResolvedValue({ id: 'verification-neutral' }),
+      createForOrderIfAbsent: jest.fn().mockResolvedValue({
+        verification: { id: 'verification-neutral' },
+        created: true,
+      }),
+      reopenRetryableInitialFailure: jest.fn().mockResolvedValue(false),
       findById: jest.fn().mockResolvedValue({
         id: 'verification-neutral',
         orderId: persistedOrder.id,

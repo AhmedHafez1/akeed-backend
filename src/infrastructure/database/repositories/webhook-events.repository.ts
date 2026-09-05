@@ -12,6 +12,7 @@ interface WebhookEventInsert {
   storeDomain: string;
   orgId?: string | null;
   integrationId?: string | null;
+  orderId?: string | null;
   rawPayload: Record<string, unknown>;
   dispatchRequired?: boolean;
 }
@@ -24,6 +25,7 @@ export interface WebhookEvent {
   storeDomain: string;
   orgId: string | null;
   integrationId: string | null;
+  orderId: string | null;
   status: string;
   rawPayload: unknown;
   dispatchRequired: boolean;
@@ -61,6 +63,7 @@ export class WebhookEventsRepository {
         storeDomain: event.storeDomain,
         orgId: event.orgId ?? null,
         integrationId: event.integrationId ?? null,
+        orderId: event.orderId ?? null,
         rawPayload: event.rawPayload,
         dispatchRequired: event.dispatchRequired ?? false,
         nextDispatchAt: event.dispatchRequired
@@ -280,6 +283,34 @@ export class WebhookEventsRepository {
         updatedAt: new Date().toISOString(),
       })
       .where(sql`${webhookEvents.id} = ${id}`);
+  }
+
+  async resetForRedispatch(params: {
+    id: string;
+    orderId: string;
+  }): Promise<boolean> {
+    const now = new Date().toISOString();
+    const rows = await this.db
+      .update(webhookEvents)
+      .set({
+        status: 'pending',
+        dispatchAttempts: 0,
+        lastDispatchError: null,
+        nextDispatchAt: now,
+        dispatchLeaseUntil: null,
+        dispatchedAt: null,
+        processingLeaseUntil: null,
+        lastError: null,
+        processedAt: null,
+        updatedAt: now,
+      })
+      .where(
+        sql`${webhookEvents.id} = ${params.id}
+          AND ${webhookEvents.orderId} = ${params.orderId}
+          AND ${webhookEvents.status} IN ('completed', 'failed', 'skipped')`,
+      )
+      .returning({ id: webhookEvents.id });
+    return rows.length === 1;
   }
 
   async findById(id: string): Promise<WebhookEvent | undefined> {

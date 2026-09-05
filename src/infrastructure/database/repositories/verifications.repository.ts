@@ -106,6 +106,47 @@ export class VerificationsRepository {
     return result;
   }
 
+  async createForOrderIfAbsent(data: typeof verifications.$inferInsert) {
+    const [created] = await this.db
+      .insert(verifications)
+      .values(data)
+      .onConflictDoNothing({ target: verifications.orderId })
+      .returning();
+    if (created) return { verification: created, created: true };
+    const existing = await this.findByOrderId(data.orderId);
+    if (!existing) {
+      throw new Error('Verification conflict winner could not be reloaded');
+    }
+    return { verification: existing, created: false };
+  }
+
+  async reopenRetryableInitialFailure(
+    id: string,
+    orgId: string,
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(verifications)
+      .set({
+        status: 'pending',
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind'`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        sql`${verifications.id} = ${id}
+          AND ${verifications.orgId} = ${orgId}
+          AND ${verifications.status} = 'failed'
+          AND ${verifications.lastSentAt} IS NULL
+          AND COALESCE(${verifications.metadata}->>'reason', '') IN (
+            'plan_limit_reached',
+            'integration_inactive',
+            'billing_not_active',
+            'provider_not_accepted'
+          )`,
+      )
+      .returning({ id: verifications.id });
+    return rows.length === 1;
+  }
+
   async findByOrderId(id: string) {
     return await this.db.query.verifications.findFirst({
       where: eq(verifications.orderId, id),

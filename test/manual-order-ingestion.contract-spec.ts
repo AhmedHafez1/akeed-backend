@@ -143,6 +143,7 @@ describe('manual order ingestion PostgreSQL contract', () => {
         store_domain text NOT NULL,
         org_id uuid REFERENCES organizations(id) ON DELETE CASCADE,
         integration_id uuid,
+        order_id uuid,
         status webhook_event_status DEFAULT 'pending' NOT NULL,
         raw_payload jsonb NOT NULL,
         dispatch_required boolean DEFAULT false NOT NULL,
@@ -159,6 +160,8 @@ describe('manual order ingestion PostgreSQL contract', () => {
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         FOREIGN KEY (integration_id, org_id) REFERENCES integrations(id, org_id),
+        FOREIGN KEY (order_id, org_id) REFERENCES orders(id, org_id),
+        UNIQUE (order_id),
         UNIQUE (platform, store_domain, idempotency_key),
         CHECK ((org_id IS NULL) = (integration_id IS NULL))
       );

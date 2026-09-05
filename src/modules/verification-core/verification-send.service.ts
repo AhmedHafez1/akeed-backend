@@ -15,11 +15,17 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
+import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 
 export type SendKind = 'initial' | 'follow_up';
 
 export interface SendOutcome {
-  status: 'sent' | 'failed' | 'plan_limit_reached' | 'skipped';
+  status:
+    | 'sent'
+    | 'failed'
+    | 'plan_limit_reached'
+    | 'skipped'
+    | 'outcome_unknown';
   reason?: string;
   waMessageId?: string;
   sentAt?: string;
@@ -51,11 +57,10 @@ type ContextLoadResult =
  *
  * Responsibilities:
  *  - Reload the verification, order and integration with current state.
- *  - Reserve a billing slot at the moment of sending.
+ *  - Claim one logical dispatch and reserve usage transactionally.
  *  - Call MessagingPort.sendVerificationTemplate.
- *  - Translate the response into a verification status update
- *    (`sent` on success, `failed` on send error / missing wamid).
- *  - Release the billing reservation when sending fails.
+ *  - Persist provider acceptance and verification projection atomically.
+ *  - Preserve ambiguous provider outcomes for audited reconciliation.
  *
  * Higher-level scheduling, quiet-hours adjustment, and follow-up/no-reply
  * sequencing live in `VerificationHubService` and the automation processor.
@@ -68,6 +73,7 @@ export class VerificationSendService {
     private readonly verificationsRepo: VerificationsRepository,
     private readonly ordersRepo: OrdersRepository,
     private readonly billingEntitlementService: BillingEntitlementService,
+    private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
   ) {}
 
@@ -144,10 +150,21 @@ export class VerificationSendService {
         : undefined,
     };
 
-    const reservation =
-      await this.billingEntitlementService.reserveVerificationSlot(integration);
-    if (!reservation.allowed) {
-      if (reservation.reason && reservation.reason !== 'plan_limit_reached') {
+    const templateName =
+      kind === 'initial'
+        ? (verification.templateName ?? 'cod_verification')
+        : `${verification.templateName ?? 'cod_verification'}:follow_up`;
+    const dispatchClaim = await this.messageDispatches.claim({
+      orgId: order.orgId,
+      integrationId: integration.id,
+      verificationId: verification.id,
+      kind,
+      templateName,
+      languageCode: integration.defaultLanguage ?? 'auto',
+      leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
+    if (dispatchClaim.outcome === 'blocked') {
+      if (dispatchClaim.reason !== 'plan_limit_reached') {
         this.logger.warn(
           buildBackendLog('VerificationSendService', {
             action: 'sendOnce.entitlementEligibility',
@@ -156,10 +173,10 @@ export class VerificationSendService {
             integrationId: integration.id,
             verificationId: verification.id,
             kind,
-            reason: reservation.reason,
+            reason: dispatchClaim.reason,
           }),
         );
-        return { status: 'skipped', reason: reservation.reason };
+        return { status: 'skipped', reason: dispatchClaim.reason };
       }
       this.logger.warn(
         buildBackendLog('VerificationSendService', {
@@ -168,14 +185,27 @@ export class VerificationSendService {
           integrationId: integration.id,
           verificationId: verification.id,
           kind,
-          consumedCount: reservation.consumedCount,
-          includedLimit: reservation.includedLimit,
+          consumedCount: dispatchClaim.consumedCount,
+          includedLimit: dispatchClaim.includedLimit,
         }),
       );
       return {
         status: 'plan_limit_reached',
-        reason: `plan_limit:${reservation.consumedCount}/${reservation.includedLimit}`,
+        reason: 'plan_limit_reached',
       };
+    }
+    if (dispatchClaim.outcome === 'accepted') {
+      return {
+        status: 'sent',
+        waMessageId: dispatchClaim.dispatch.providerMessageId ?? undefined,
+        sentAt: dispatchClaim.dispatch.acceptedAt ?? undefined,
+      };
+    }
+    if (dispatchClaim.outcome === 'busy') {
+      return { status: 'skipped', reason: 'dispatch_in_progress' };
+    }
+    if (dispatchClaim.outcome === 'outcome_unknown') {
+      return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
     let response: Awaited<
@@ -204,17 +234,14 @@ export class VerificationSendService {
           ...errInfo,
         }),
       );
-      await this.safeReleaseUsage({
-        integrationId: integration.id,
-        periodStart: reservation.periodStart,
-      });
-      // Follow-up delivery failures should not invalidate the initial
-      // verification request; the automation worker records metadata and leaves
-      // the verification awaiting the customer's original response.
-      if (kind === 'initial') {
-        await this.safeMarkFailed(verification.id);
-      }
-      return { status: 'failed', reason: 'send_error' };
+      await this.markProviderOutcomeUnknown(
+        dispatchClaim.dispatch.id,
+        verification.id,
+        verification.orgId,
+        kind,
+        'provider_exception',
+      );
+      return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
     const waMessageId = response?.messages?.[0]?.id;
@@ -227,56 +254,82 @@ export class VerificationSendService {
           kind,
         }),
       );
-      await this.safeReleaseUsage({
-        integrationId: integration.id,
-        periodStart: reservation.periodStart,
-      });
-      // Same rationale as send exceptions: a follow-up failure should not mark
-      // the whole verification failed after the initial message was sent.
-      if (kind === 'initial') {
-        await this.safeMarkFailed(verification.id);
-      }
-      return { status: 'failed', reason: 'missing_wamid' };
+      await this.markProviderOutcomeUnknown(
+        dispatchClaim.dispatch.id,
+        verification.id,
+        verification.orgId,
+        kind,
+        'missing_provider_message_id',
+      );
+      return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
     const sentAt = new Date().toISOString();
 
-    if (kind === 'initial') {
-      await this.verificationsRepo.updateStatus(
-        verification.id,
-        'sent',
-        waMessageId,
+    try {
+      await this.messageDispatches.markAccepted({
+        dispatchId: dispatchClaim.dispatch.id,
+        providerMessageId: waMessageId,
+        sentAt,
+      });
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.persistAcceptance',
+          outcome: 'failure',
+          verificationId: verification.id,
+          kind,
+          ...normalizeError(error),
+        }),
       );
+      await this.markProviderOutcomeUnknown(
+        dispatchClaim.dispatch.id,
+        verification.id,
+        verification.orgId,
+        kind,
+        'acceptance_persistence_failed',
+      );
+      return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
     return { status: 'sent', waMessageId, sentAt };
   }
 
-  private async safeReleaseUsage(params: {
-    integrationId: string;
-    periodStart: string;
-  }): Promise<void> {
+  private async markProviderOutcomeUnknown(
+    dispatchId: string,
+    verificationId: string,
+    orgId: string,
+    kind: SendKind,
+    errorCode: string,
+  ): Promise<void> {
     try {
-      await this.billingEntitlementService.releaseVerificationSlot(params);
+      await this.messageDispatches.markOutcomeUnknown(dispatchId, errorCode);
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
-          action: 'safeReleaseUsage',
+          action: 'markProviderOutcomeUnknown',
           outcome: 'failure',
-          integrationId: params.integrationId,
+          dispatchId,
+          verificationId,
           ...normalizeError(error),
         }),
       );
     }
-  }
-
-  private async safeMarkFailed(verificationId: string): Promise<void> {
     try {
-      await this.verificationsRepo.updateStatus(verificationId, 'failed');
+      await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
+        status: kind === 'initial' ? 'failed' : undefined,
+        metadata:
+          kind === 'initial'
+            ? { reason: 'provider_outcome_unknown', kind }
+            : {
+                follow_up_failed: 'provider_outcome_unknown',
+                follow_up_failed_at: new Date().toISOString(),
+              },
+      });
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
-          action: 'safeMarkFailed',
+          action: 'markProviderOutcomeUnknownProjection',
           outcome: 'failure',
           verificationId,
           ...normalizeError(error),

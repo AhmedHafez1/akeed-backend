@@ -91,7 +91,10 @@ function createMocks(
   };
 
   const verificationHub = {
-    handleNewOrder: jest.fn(),
+    handleNewOrder: jest.fn().mockResolvedValue({
+      status: 'verification_created',
+      verificationId: 'ver-1',
+    }),
   };
 
   const processor = new WebhookQueueProcessor(
@@ -145,6 +148,32 @@ describe('WebhookQueueProcessor', () => {
     expect(webhookEventsRepo.markCompleted).toHaveBeenCalledWith('event-1');
     expect(webhookEventsRepo.markSkipped).not.toHaveBeenCalled();
   });
+
+  it.each([
+    'non_cod_payment_method',
+    'missing_payment_signal',
+    'billing_not_active',
+    'plan_limit_reached',
+    'auto_verify_disabled',
+    'onboarding_incomplete',
+  ])(
+    'persists a terminal hub result as %s instead of completed',
+    async (reason) => {
+      const { processor, webhookEventsRepo, verificationHub } = createMocks();
+      verificationHub.handleNewOrder.mockResolvedValue({
+        skipped: true,
+        reason,
+      });
+
+      await processor.process(buildJob(buildPayload()));
+
+      expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+        'event-1',
+        reason,
+      );
+      expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not overwrite skipped no-integration events as completed', async () => {
     const { processor, webhookEventsRepo, verificationHub } = createMocks({

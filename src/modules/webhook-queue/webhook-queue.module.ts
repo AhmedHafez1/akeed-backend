@@ -10,6 +10,7 @@ import { WEBHOOK_ORDER_NORMALIZERS } from './interfaces/webhook-normalizer.inter
 import { PhoneService } from '../../shared/services/phone.service';
 import { WebhookDispatchService } from './webhook-dispatch.service';
 import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service';
+import { StandaloneManualOrderNormalizer } from './normalizers/standalone-manual-order.normalizer';
 
 @Module({
   imports: [
@@ -27,23 +28,14 @@ import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service
 
     // --- Normalizers (add new platforms here) ---
     ShopifyOrderNormalizer,
+    StandaloneManualOrderNormalizer,
     {
       provide: WEBHOOK_ORDER_NORMALIZERS,
       useFactory: (
         shopify: ShopifyOrderNormalizer,
-        // When adding new platforms, inject them here:
-        // salla: SallaOrderNormalizer,
-        // woo: WooCommerceOrderNormalizer,
-      ) => [
-        shopify,
-        // salla,
-        // woo,
-      ],
-      inject: [
-        ShopifyOrderNormalizer,
-        // SallaOrderNormalizer,
-        // WooCommerceOrderNormalizer,
-      ],
+        standalone: StandaloneManualOrderNormalizer,
+      ) => [shopify, standalone],
+      inject: [ShopifyOrderNormalizer, StandaloneManualOrderNormalizer],
     },
   ],
   exports: [

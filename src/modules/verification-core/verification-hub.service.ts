@@ -23,12 +23,21 @@ type HandleNewOrderResult = SkippedResult | ProcessedResult;
 type SyntheticTestResult =
   | SkippedResult
   | (ProcessedResult & {
-      deliveryStatus: 'sent' | 'failed' | 'plan_limit_reached' | 'skipped';
+      deliveryStatus:
+        | 'sent'
+        | 'failed'
+        | 'plan_limit_reached'
+        | 'skipped'
+        | 'outcome_unknown';
       reason?: string;
     });
 type PreparedVerification = {
   order: Awaited<ReturnType<OrdersRepository['create']>>;
-  verification: { id: string };
+  verification: {
+    id: string;
+    status?: string | null;
+    lastSentAt?: string | null;
+  };
   existing: boolean;
 };
 
@@ -85,6 +94,19 @@ export class VerificationHubService {
     if ('skipped' in prepared) return prepared;
     const { order, verification } = prepared;
     if (prepared.existing) {
+      if (integration.platformType === 'standalone') {
+        const reopened =
+          await this.verificationsRepo.reopenRetryableInitialFailure(
+            verification.id,
+            order.orgId,
+          );
+        if (
+          reopened ||
+          (verification.status === 'pending' && !verification.lastSentAt)
+        ) {
+          await this.dispatchInitialSend(verification, order, integration);
+        }
+      }
       return { orderId: order.id, verificationId: verification.id };
     }
 
@@ -385,12 +407,16 @@ export class VerificationHubService {
       };
     }
 
-    const verification = await this.verificationsRepo.create({
+    const created = await this.verificationsRepo.createForOrderIfAbsent({
       orgId: order.orgId,
       orderId: order.id,
       status: 'pending',
     });
-    return { order, verification, existing: false };
+    return {
+      order,
+      verification: created.verification,
+      existing: !created.created,
+    };
   }
 
   /**

@@ -109,6 +109,20 @@ export class ManualOrderIngestionRepository {
             'The accepted manual order is missing',
           );
         }
+        if (
+          existingEvent.orderId &&
+          existingEvent.orderId !== existingOrder.id
+        ) {
+          throw new ManualOrderAcceptanceStateError(
+            'The accepted manual-order event is linked to another order',
+          );
+        }
+        if (!existingEvent.orderId) {
+          await tx
+            .update(webhookEvents)
+            .set({ orderId: existingOrder.id })
+            .where(eq(webhookEvents.id, existingEvent.id));
+        }
         return {
           eventId: existingEvent.id,
           order: existingOrder,
@@ -128,6 +142,10 @@ export class ManualOrderIngestionRepository {
           'The generated manual order identity already exists',
         );
       }
+      await tx
+        .update(webhookEvents)
+        .set({ orderId: createdOrder.id })
+        .where(eq(webhookEvents.id, insertedEvent.id));
       return {
         eventId: insertedEvent.id,
         order: createdOrder,

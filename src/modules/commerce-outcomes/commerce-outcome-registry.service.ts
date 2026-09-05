@@ -65,14 +65,18 @@ export class CommerceOutcomeRegistryService {
       });
     }
 
-    if (order.integration.isActive !== true) {
+    const adapter = this.adaptersByPlatform.get(order.integration.platformType);
+
+    if (
+      order.integration.isActive !== true &&
+      (adapter?.requiresActiveConnection ?? true)
+    ) {
       return this.complete(command, {
         status: 'permanent_failure',
         errorCode: 'integration_inactive',
       });
     }
 
-    const adapter = this.adaptersByPlatform.get(order.integration.platformType);
     if (!adapter) {
       return this.complete(command, {
         status: 'unsupported',

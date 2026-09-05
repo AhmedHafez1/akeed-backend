@@ -19,6 +19,8 @@ export class OrdersRepository {
       where: eq(orders.id, orderId),
       with: {
         integration: true,
+        verifications: { with: { messageDispatches: true } },
+        webhookEvents: true,
       },
     });
   }
@@ -60,7 +62,14 @@ export class OrdersRepository {
   ): Promise<
     Array<
       typeof orders.$inferSelect & {
-        verifications: Array<typeof schema.verifications.$inferSelect>;
+        verifications: Array<
+          typeof schema.verifications.$inferSelect & {
+            messageDispatches: Array<
+              typeof schema.verificationMessageDispatches.$inferSelect
+            >;
+          }
+        >;
+        webhookEvents: Array<typeof schema.webhookEvents.$inferSelect>;
       }
     >
   > {
@@ -83,7 +92,8 @@ export class OrdersRepository {
     return await this.db.query.orders.findMany({
       where: and(...conditions),
       with: {
-        verifications: true,
+        verifications: { with: { messageDispatches: true } },
+        webhookEvents: true,
       },
       orderBy: (orders, { desc }) => [desc(orders.createdAt), desc(orders.id)],
       limit,

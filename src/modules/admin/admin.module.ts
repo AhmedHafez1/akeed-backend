@@ -10,9 +10,11 @@ import { AdminStoresService } from './admin-stores.service';
 import { StandalonePilotController } from './standalone-pilot.controller';
 import { StandalonePilotRepository } from './standalone-pilot.repository';
 import { StandalonePilotService } from './standalone-pilot.service';
+import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
+import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
 
 @Module({
-  imports: [AuthModule, DatabaseModule],
+  imports: [AuthModule, DatabaseModule, WebhookQueueModule],
   controllers: [AdminController, StandalonePilotController],
   providers: [
     AdminAccessGuard,
@@ -22,6 +24,7 @@ import { StandalonePilotService } from './standalone-pilot.service';
     AdminHealthRuleService,
     StandalonePilotRepository,
     StandalonePilotService,
+    MessageDispatchResolutionService,
   ],
 })
 export class AdminModule {}

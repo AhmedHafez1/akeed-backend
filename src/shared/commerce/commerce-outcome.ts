@@ -52,6 +52,7 @@ export type CommerceOutcomeDispatchResult = CommerceOutcomeOperationResult &
 export interface CommerceOutcomeAdapter {
   readonly platformType: PlatformType;
   readonly capabilities: ReadonlySet<CommerceOutcomeAction>;
+  readonly requiresActiveConnection: boolean;
   execute(
     request: CommerceOutcomeAdapterRequest,
   ): Promise<CommerceOutcomeOperationResult>;

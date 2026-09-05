@@ -14,6 +14,7 @@ import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifec
 import { AdminAccessAuditRepository } from './repositories/admin-access-audit.repository';
 import { StandaloneOrganizationProvisioningRepository } from './repositories/standalone-organization-provisioning.repository';
 import { ManualOrderIngestionRepository } from './repositories/manual-order-ingestion.repository';
+import { VerificationMessageDispatchesRepository } from './repositories/verification-message-dispatches.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -31,6 +32,7 @@ import { ManualOrderIngestionRepository } from './repositories/manual-order-inge
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,
+    VerificationMessageDispatchesRepository,
   ],
   exports: [
     drizzleProvider,
@@ -46,6 +48,7 @@ import { ManualOrderIngestionRepository } from './repositories/manual-order-inge
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,
+    VerificationMessageDispatchesRepository,
   ],
 })
 export class DatabaseModule {}

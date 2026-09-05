@@ -32,6 +32,20 @@ export const verificationStatus = pgEnum('verification_status', [
   'no_reply',
 ]);
 
+export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
+  'initial',
+  'follow_up',
+  'legacy_unknown',
+]);
+
+export const verificationDispatchState = pgEnum('verification_dispatch_state', [
+  'ready',
+  'sending',
+  'accepted',
+  'rejected',
+  'outcome_unknown',
+]);
+
 export const integrationDefaultLanguage = pgEnum(
   'integration_default_language',
   ['en', 'ar', 'auto'],
@@ -614,6 +628,7 @@ export const verifications = pgTable(
       name: 'verifications_org_id_fkey',
     }).onDelete('cascade'),
     unique('unique_active_verification_per_order').on(table.orderId),
+    unique('verifications_id_org_id_key').on(table.id, table.orgId),
     pgPolicy('Service role updates verifications', {
       as: 'permissive',
       for: 'all',
@@ -627,6 +642,109 @@ export const verifications = pgTable(
       to: ['authenticated'],
       using: sql`(org_id = get_user_org_id())`,
       withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+  ],
+);
+
+export const verificationMessageDispatches = pgTable(
+  'verification_message_dispatches',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    dispatchKey: text('dispatch_key').notNull(),
+    kind: verificationDispatchKind().notNull(),
+    state: verificationDispatchState().default('ready').notNull(),
+    senderKind: text('sender_kind').default('akeed_system').notNull(),
+    templateName: text('template_name'),
+    languageCode: text('language_code'),
+    providerMessageId: text('provider_message_id'),
+    usagePeriodStart: date('usage_period_start', { mode: 'string' }),
+    usageReserved: boolean('usage_reserved').default(false).notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    lastErrorCode: text('last_error_code'),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    acceptedAt: timestamp('accepted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    deliveredAt: timestamp('delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    readAt: timestamp('read_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    failedAt: timestamp('failed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    metadata: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+  },
+  (table) => [
+    unique('verification_message_dispatches_dispatch_key_key').on(
+      table.dispatchKey,
+    ),
+    uniqueIndex('verification_message_dispatches_provider_message_id_key')
+      .on(table.providerMessageId)
+      .where(sql`${table.providerMessageId} IS NOT NULL`),
+    index('idx_verification_message_dispatches_verification').on(
+      table.verificationId,
+    ),
+    index('idx_verification_message_dispatches_unknown').on(
+      table.state,
+      table.updatedAt,
+    ),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_message_dispatches_verification_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'verification_message_dispatches_integration_id_fkey',
+    }),
+    check(
+      'verification_message_dispatches_sender_kind_check',
+      sql`${table.senderKind} = 'akeed_system'`,
+    ),
+    check(
+      'verification_message_dispatches_attempt_count_check',
+      sql`${table.attemptCount} >= 0`,
+    ),
+    pgPolicy('Service role manages verification message dispatches', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('Multi-tenant verification message dispatches', {
+      as: 'permissive',
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
     }),
   ],
 );
@@ -652,6 +770,7 @@ export const webhookEvents = pgTable(
     storeDomain: text('store_domain').notNull(),
     orgId: uuid('org_id'),
     integrationId: uuid('integration_id'),
+    orderId: uuid('order_id'),
     status: webhookEventStatus('status').default('pending').notNull(),
     rawPayload: jsonb('raw_payload').notNull(),
     dispatchRequired: boolean('dispatch_required').default(false).notNull(),
@@ -726,6 +845,14 @@ export const webhookEvents = pgTable(
       foreignColumns: [integrations.id, integrations.orgId],
       name: 'webhook_events_integration_id_fkey',
     }),
+    foreignKey({
+      columns: [table.orderId, table.orgId],
+      foreignColumns: [orders.id, orders.orgId],
+      name: 'webhook_events_order_id_fkey',
+    }),
+    uniqueIndex('webhook_events_order_id_key')
+      .on(table.orderId)
+      .where(sql`${table.orderId} IS NOT NULL`),
     unique('webhook_events_source_idempotency_key').on(
       table.platform,
       table.storeDomain,

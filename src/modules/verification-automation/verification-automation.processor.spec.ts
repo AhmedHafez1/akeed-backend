@@ -280,20 +280,16 @@ describe('VerificationAutomationProcessor', () => {
       expect(orderTaggingPort.addOrderTag).toHaveBeenCalledTimes(1);
     });
 
-    it('US-06-02: accepted follow-up with failed message persistence can be sent again on retry', async () => {
+    it('delegates accepted follow-up persistence to the dispatch ledger', async () => {
       const { processor, verificationSendService, verificationsRepo } = setup();
       verificationSendService.sendFollowUp.mockResolvedValue({
         status: 'sent',
         waMessageId: 'accepted-follow-up',
       });
-      verificationsRepo.markFollowUpSent.mockRejectedValueOnce(
-        new Error('write failed'),
-      );
       const job = buildJob(VerificationAutomationJobType.FOLLOW_UP);
-      await expect(processor.process(job)).rejects.toThrow('write failed');
-      await processor.process(job);
-      expect(verificationSendService.sendFollowUp).toHaveBeenCalledTimes(2);
-      expect(verificationsRepo.markFollowUpSent).toHaveBeenCalledTimes(2);
+      await expect(processor.process(job)).resolves.toBeUndefined();
+      expect(verificationSendService.sendFollowUp).toHaveBeenCalledTimes(1);
+      expect(verificationsRepo.markFollowUpSent).not.toHaveBeenCalled();
     });
   });
   describe('integration eligibility', () => {
@@ -539,10 +535,7 @@ describe('VerificationAutomationProcessor', () => {
         buildJob(VerificationAutomationJobType.FOLLOW_UP),
       );
 
-      expect(verificationsRepo.markFollowUpSent).toHaveBeenCalledWith(
-        'ver-1',
-        'wamid-2',
-      );
+      expect(verificationsRepo.markFollowUpSent).not.toHaveBeenCalled();
     });
 
     it('processes now instead of silently completing when quiet-hours token is unavailable', async () => {

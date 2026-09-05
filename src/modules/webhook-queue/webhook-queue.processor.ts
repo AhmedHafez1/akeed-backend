@@ -267,7 +267,17 @@ export class WebhookQueueProcessor extends WorkerHost {
       return false;
     }
 
-    await this.verificationHub.handleNewOrder(normalizedOrder, integration);
+    const result = await this.verificationHub.handleNewOrder(
+      normalizedOrder,
+      integration,
+    );
+    if ('skipped' in result) {
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        result.reason,
+      );
+      return false;
+    }
     return true;
   }
 }

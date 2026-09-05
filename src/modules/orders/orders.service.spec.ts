@@ -58,6 +58,12 @@ describe('OrdersService manual creation', () => {
   const dispatcher = {
     dispatchById: jest.fn<Promise<string>, [string]>(),
   };
+  const webhookEvents = {
+    resetForRedispatch: jest.fn(),
+  };
+  const orderEligibility = {
+    evaluateOrderForVerification: jest.fn(),
+  };
   let service: OrdersService;
 
   beforeEach(() => {
@@ -83,6 +89,8 @@ describe('OrdersService manual creation', () => {
       phone as never,
       entitlements as never,
       dispatcher as never,
+      webhookEvents as never,
+      orderEligibility as never,
     );
   });
 
@@ -278,5 +286,222 @@ describe('OrdersService manual creation', () => {
       response: { code: 'MANUAL_ORDER_ACCEPTANCE_FAILED' },
     });
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrdersService manual verification lifecycle', () => {
+  const user: AuthenticatedUser = {
+    userId: 'owner-1',
+    orgId: 'org-1',
+    role: 'owner',
+    source: 'supabase',
+  };
+  const integration = {
+    id: 'int-1',
+    orgId: 'org-1',
+    platformType: 'standalone',
+    isActive: true,
+    onboardingStatus: 'completed',
+    isAutoVerifyEnabled: true,
+  };
+
+  function setup(orderOverrides: Record<string, unknown> = {}) {
+    const order = {
+      id: 'order-1',
+      orgId: 'org-1',
+      integrationId: 'int-1',
+      externalOrderId: 'manual-1',
+      orderNumber: 'A-1',
+      customerPhone: '+201001234567',
+      customerName: 'Customer',
+      customerEmail: null,
+      totalPrice: '100.00',
+      currency: 'EGP',
+      paymentMethod: 'cash_on_delivery',
+      rawPayload: {},
+      createdAt: '2026-09-05T00:00:00.000Z',
+      integration,
+      verifications: [],
+      webhookEvents: [
+        {
+          id: 'event-1',
+          platform: 'standalone',
+          jobType: 'order.create',
+          status: 'skipped',
+          lastError: 'plan_limit_reached',
+        },
+      ],
+      ...orderOverrides,
+    };
+    const orders = {
+      findById: jest.fn().mockResolvedValue(order),
+      findByOrg: jest.fn().mockResolvedValue([order]),
+    };
+    const billing = {
+      hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
+    };
+    const dispatcher = { dispatchById: jest.fn() };
+    const events = {
+      resetForRedispatch: jest.fn().mockResolvedValue({ id: 'event-1' }),
+    };
+    const eligibility = {
+      evaluateOrderForVerification: jest.fn().mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      }),
+    };
+    const service = new OrdersService(
+      orders as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      billing as never,
+      dispatcher as never,
+      events as never,
+      eligibility as never,
+    );
+    return { service, orders, billing, dispatcher, events, eligibility };
+  }
+
+  it.each([
+    ['non_cod_payment_method', 'ineligible', false],
+    ['missing_payment_signal', 'ineligible', false],
+    ['plan_limit_reached', 'blocked', true],
+    ['integration_inactive', 'blocked', true],
+    ['normalisation_failed', 'failed', false],
+  ])(
+    'exposes %s as a stable %s lifecycle',
+    async (reason, status, retryable) => {
+      const { service } = setup({
+        webhookEvents: [
+          {
+            id: 'event-1',
+            platform: 'standalone',
+            jobType: 'order.create',
+            status: 'skipped',
+            lastError: reason,
+          },
+        ],
+      });
+
+      await expect(service.listByOrg('org-1', {})).resolves.toMatchObject({
+        data: [
+          {
+            lifecycle: {
+              status,
+              reason,
+              verification_id: null,
+              retryable,
+            },
+          },
+        ],
+      });
+    },
+  );
+
+  it('redispatches a recovered blocked Standalone order', async () => {
+    const { service, events, dispatcher } = setup();
+
+    await expect(
+      service.retryManualOrderVerification(user, 'order-1'),
+    ).resolves.toEqual({
+      orderId: 'order-1',
+      lifecycle: {
+        status: 'accepted',
+        reason: null,
+        verification_id: null,
+        retryable: false,
+      },
+      duplicate: false,
+    });
+    expect(events.resetForRedispatch).toHaveBeenCalledWith({
+      id: 'event-1',
+      orderId: 'order-1',
+    });
+    expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
+  });
+
+  it('returns an idempotent duplicate while processing', async () => {
+    const { service, events } = setup({
+      webhookEvents: [
+        {
+          id: 'event-1',
+          platform: 'standalone',
+          jobType: 'order.create',
+          status: 'processing',
+          lastError: null,
+        },
+      ],
+    });
+    await expect(
+      service.retryManualOrderVerification(user, 'order-1'),
+    ).resolves.toMatchObject({ duplicate: true });
+    expect(events.resetForRedispatch).not.toHaveBeenCalled();
+  });
+
+  it('blocks merchant retry while provider review is required', async () => {
+    const { service } = setup({
+      verifications: [
+        {
+          id: 'verification-1',
+          status: 'failed',
+          metadata: { reason: 'provider_outcome_unknown' },
+          messageDispatches: [{ state: 'outcome_unknown' }],
+        },
+      ],
+    });
+    await expect(
+      service.retryManualOrderVerification(user, 'order-1'),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_RETRY_REVIEW_REQUIRED' },
+    });
+  });
+
+  it('does not preserve a stale review reason after ledger acceptance', async () => {
+    const { service } = setup({
+      verifications: [
+        {
+          id: 'verification-1',
+          status: 'sent',
+          metadata: { reason: 'provider_outcome_unknown' },
+          messageDispatches: [{ state: 'accepted' }],
+        },
+      ],
+    });
+
+    await expect(service.listByOrg('org-1', {})).resolves.toMatchObject({
+      data: [
+        {
+          lifecycle: {
+            status: 'sent',
+            reason: null,
+            verification_id: 'verification-1',
+            retryable: false,
+          },
+        },
+      ],
+    });
+  });
+
+  it('enforces role and organization isolation', async () => {
+    const { service, orders } = setup();
+    await expect(
+      service.retryManualOrderVerification(
+        { ...user, role: 'viewer' },
+        'order-1',
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_RETRY_ROLE_REQUIRED' },
+    });
+    orders.findById.mockResolvedValue({
+      ...(await orders.findById('order-1')),
+      orgId: 'org-2',
+    });
+    await expect(
+      service.retryManualOrderVerification(user, 'order-1'),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_NOT_FOUND' },
+    });
   });
 });

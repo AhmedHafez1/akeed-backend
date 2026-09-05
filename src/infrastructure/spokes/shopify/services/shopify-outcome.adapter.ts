@@ -11,6 +11,7 @@ import { ShopifyApiService } from './shopify-api.service';
 export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
   readonly platformType = 'shopify';
   readonly capabilities = new Set(COMMERCE_OUTCOME_ACTIONS);
+  readonly requiresActiveConnection = true;
 
   constructor(private readonly shopify: ShopifyApiService) {}
 

@@ -9,6 +9,7 @@ import {
   orders,
   verifications,
   adminStoreLifecycles,
+  verificationMessageDispatches,
 } from './schema';
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -29,6 +30,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   webhookEvents: many(webhookEvents),
   orders: many(orders),
   verifications: many(verifications),
+  verificationMessageDispatches: many(verificationMessageDispatches),
   adminStoreLifecycles: many(adminStoreLifecycles),
 }));
 
@@ -47,6 +49,7 @@ export const integrationsRelations = relations(
     orders: many(orders),
     webhookEvents: many(webhookEvents),
     adminStoreLifecycles: many(adminStoreLifecycles),
+    verificationMessageDispatches: many(verificationMessageDispatches),
   }),
 );
 
@@ -74,18 +77,41 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
     references: [organizations.id],
   }),
   verifications: many(verifications),
+  webhookEvents: many(webhookEvents),
 }));
 
-export const verificationsRelations = relations(verifications, ({ one }) => ({
-  order: one(orders, {
-    fields: [verifications.orderId],
-    references: [orders.id],
+export const verificationsRelations = relations(
+  verifications,
+  ({ one, many }) => ({
+    order: one(orders, {
+      fields: [verifications.orderId],
+      references: [orders.id],
+    }),
+    organization: one(organizations, {
+      fields: [verifications.orgId],
+      references: [organizations.id],
+    }),
+    messageDispatches: many(verificationMessageDispatches),
   }),
-  organization: one(organizations, {
-    fields: [verifications.orgId],
-    references: [organizations.id],
+);
+
+export const verificationMessageDispatchesRelations = relations(
+  verificationMessageDispatches,
+  ({ one }) => ({
+    verification: one(verifications, {
+      fields: [verificationMessageDispatches.verificationId],
+      references: [verifications.id],
+    }),
+    integration: one(integrations, {
+      fields: [verificationMessageDispatches.integrationId],
+      references: [integrations.id],
+    }),
+    organization: one(organizations, {
+      fields: [verificationMessageDispatches.orgId],
+      references: [organizations.id],
+    }),
   }),
-}));
+);
 
 export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
   organization: one(organizations, {
@@ -95,6 +121,10 @@ export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
   integration: one(integrations, {
     fields: [webhookEvents.integrationId],
     references: [integrations.id],
+  }),
+  order: one(orders, {
+    fields: [webhookEvents.orderId],
+    references: [orders.id],
   }),
 }));
 

@@ -53,6 +53,7 @@ function buildAdapter(
 } {
   return {
     platformType,
+    requiresActiveConnection: platformType !== 'standalone',
     capabilities: new Set(capabilities),
     execute: jest.fn().mockResolvedValue(result),
   };
@@ -114,6 +115,19 @@ describe('CommerceOutcomeRegistryService', () => {
       reason: 'adapter_not_registered',
     });
     expect(adapter.execute).not.toHaveBeenCalled();
+  });
+
+  it('allows a local-only Standalone adapter after source deactivation', async () => {
+    findForOutcomeDispatch.mockResolvedValue(
+      buildOrder({}, { platformType: 'standalone', isActive: false }),
+    );
+    const adapter = buildAdapter('standalone');
+
+    await expect(createService([adapter]).dispatch(command)).resolves.toEqual({
+      ...command,
+      status: 'applied',
+    });
+    expect(adapter.execute).toHaveBeenCalledTimes(1);
   });
 
   it('returns an explicit unsupported result without calling an incapable adapter', async () => {

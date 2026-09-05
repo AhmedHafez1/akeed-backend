@@ -12,6 +12,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
+import { VerificationMessageDispatchesRepository } from '../../database/repositories/verification-message-dispatches.repository';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -20,6 +21,7 @@ export class WhatsAppWebhookService {
   constructor(
     private verificationsRepo: VerificationsRepository,
     private verificationHub: VerificationHubService,
+    private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
@@ -160,11 +162,46 @@ export class WhatsAppWebhookService {
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
 
-      const rows = await this.verificationsRepo.updateStatusByWamid(
-        wamid,
-        typedStatus,
-        statusObj.timestamp,
-      );
+      const dispatch =
+        await this.messageDispatches.findByProviderMessageId(wamid);
+      if (dispatch) {
+        const occurredAt = statusObj.timestamp
+          ? new Date(Number(statusObj.timestamp) * 1000).toISOString()
+          : new Date().toISOString();
+        await this.messageDispatches.recordProviderStatus(
+          dispatch.id,
+          typedStatus as 'delivered' | 'read' | 'failed',
+          occurredAt,
+        );
+      }
+      const rows = dispatch
+        ? dispatch.kind === 'follow_up'
+          ? []
+          : await this.verificationsRepo.updateStatus(
+              dispatch.verificationId,
+              typedStatus,
+              undefined,
+              statusObj.timestamp,
+            )
+        : await this.verificationsRepo.updateStatusByWamid(
+            wamid,
+            typedStatus,
+            statusObj.timestamp,
+          );
+
+      if (dispatch?.kind === 'follow_up') {
+        this.logger.log(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-status',
+            outcome: 'success',
+            wamid,
+            verificationId: dispatch.verificationId,
+            status: typedStatus,
+            messageKind: dispatch.kind,
+          }),
+        );
+        continue;
+      }
 
       if (rows.length > 0) {
         this.logger.log(
@@ -175,7 +212,10 @@ export class WhatsAppWebhookService {
             status: typedStatus,
           }),
         );
-        if (typedStatus === 'delivered' || typedStatus === 'read') {
+        if (
+          (typedStatus === 'delivered' || typedStatus === 'read') &&
+          rows[0]
+        ) {
           await this.adminLifecycles?.recordMessageStatus({
             verificationId: rows[0].id,
             status: typedStatus,

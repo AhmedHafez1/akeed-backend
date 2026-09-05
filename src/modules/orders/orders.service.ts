@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
@@ -39,6 +40,13 @@ import type {
   CreateManualOrderDto,
   CreateManualOrderResponseDto,
 } from './dto/create-manual-order.dto';
+import type {
+  ManualOrderLifecycleDto,
+  RetryManualOrderVerificationResponseDto,
+} from './dto/dashboard.dto';
+import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
+import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
+import { integrations } from '../../infrastructure/database/schema';
 
 @Injectable()
 export class OrdersService {
@@ -52,6 +60,8 @@ export class OrdersService {
     private readonly phoneService: PhoneService,
     private readonly billingEntitlements: BillingEntitlementService,
     private readonly dispatcher: WebhookDispatchService,
+    private readonly webhookEvents: WebhookEventsRepository,
+    private readonly orderEligibility: OrderEligibilityService,
   ) {}
 
   async createManualOrder(
@@ -275,8 +285,108 @@ export class OrdersService {
         currency: order.currency ?? null,
         created_at: order.createdAt ?? null,
         verification_status: order.verifications?.[0]?.status ?? null,
+        lifecycle: this.resolveLifecycle(order),
       })),
       next_cursor: nextCursor,
+    };
+  }
+
+  async retryManualOrderVerification(
+    user: AuthenticatedUser,
+    orderId: string,
+  ): Promise<RetryManualOrderVerificationResponseDto> {
+    assertOrganizationWriteAllowed(user.role, {
+      code: 'MANUAL_ORDER_RETRY_ROLE_REQUIRED',
+      message: 'Owner or admin role is required to retry verification.',
+    });
+    const order = await this.ordersRepo.findById(orderId);
+    if (!order || order.orgId !== user.orgId) {
+      throw new NotFoundException({
+        code: 'MANUAL_ORDER_NOT_FOUND',
+        message: 'Manual order not found.',
+      });
+    }
+    const integration = order.integration;
+    if (!integration || integration.platformType !== 'standalone') {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_UNSUPPORTED',
+        message: 'Verification retry is available only for Standalone orders.',
+      });
+    }
+    const lifecycle = this.resolveLifecycle(order);
+    if (lifecycle.status === 'review_required') {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_REVIEW_REQUIRED',
+        message: 'Provider outcome must be reviewed before retrying.',
+        lifecycle,
+      });
+    }
+    if (['accepted', 'processing', 'pending'].includes(lifecycle.status)) {
+      return {
+        orderId,
+        ...(lifecycle.verification_id
+          ? { verificationId: lifecycle.verification_id }
+          : {}),
+        lifecycle,
+        duplicate: true,
+      };
+    }
+    if (!lifecycle.retryable) {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_NOT_ALLOWED',
+        message: 'This order lifecycle cannot be retried.',
+        lifecycle,
+      });
+    }
+    const readinessReason = this.retryReadinessReason(order, integration);
+    if (readinessReason) {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_BLOCKED',
+        message: 'The Standalone source is not ready for verification.',
+        reason: readinessReason,
+        lifecycle,
+      });
+    }
+    const availability = await this.billingEntitlements.hasAvailableSlot({
+      id: integration.id,
+      orgId: integration.orgId,
+    });
+    if (!availability.available) {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_BLOCKED',
+        message: 'Verification entitlement is not currently available.',
+        reason: availability.reason,
+        lifecycle,
+      });
+    }
+    const event = order.webhookEvents.find(
+      (candidate) =>
+        candidate.platform === 'standalone' &&
+        candidate.jobType === 'order.create',
+    );
+    if (!event) {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_STATE_INVALID',
+        message: 'The durable processing event is missing.',
+      });
+    }
+    const reset = await this.webhookEvents.resetForRedispatch({
+      id: event.id,
+      orderId: order.id,
+    });
+    if (reset) await this.dispatcher.dispatchById(event.id);
+    return {
+      orderId,
+      ...(lifecycle.verification_id
+        ? { verificationId: lifecycle.verification_id }
+        : {}),
+      lifecycle: {
+        status: 'accepted',
+        reason: null,
+        verification_id: lifecycle.verification_id,
+        retryable: false,
+      },
+      duplicate: !reset,
     };
   }
 
@@ -327,5 +437,167 @@ export class OrdersService {
 
   private manualExternalOrderId(idempotencyKey: string): string {
     return `manual-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 40)}`;
+  }
+
+  private resolveLifecycle(order: {
+    verifications: Array<{
+      id: string;
+      status: string | null;
+      metadata: unknown;
+      messageDispatches?: Array<{ state: string }>;
+    }>;
+    webhookEvents: Array<{ status: string; lastError: string | null }>;
+  }): ManualOrderLifecycleDto {
+    const verification = order.verifications[0];
+    if (verification) {
+      const reason = this.metadataReason(verification.metadata);
+      const dispatches = verification.messageDispatches ?? [];
+      if (
+        dispatches.some((dispatch) => dispatch.state === 'outcome_unknown') ||
+        (dispatches.length === 0 && reason === 'provider_outcome_unknown')
+      ) {
+        return {
+          status: 'review_required',
+          reason: 'provider_outcome_unknown',
+          verification_id: verification.id,
+          retryable: false,
+        };
+      }
+      const visibleReason =
+        dispatches.length > 0 && reason === 'provider_outcome_unknown'
+          ? null
+          : reason;
+      const retryableReasons = new Set([
+        'plan_limit_reached',
+        'integration_inactive',
+        'billing_not_active',
+        'provider_not_accepted',
+      ]);
+      if (
+        verification.status === 'failed' &&
+        retryableReasons.has(visibleReason ?? '')
+      ) {
+        return {
+          status: 'blocked',
+          reason: visibleReason,
+          verification_id: verification.id,
+          retryable: true,
+        };
+      }
+      return {
+        status: (verification.status ??
+          'pending') as ManualOrderLifecycleDto['status'],
+        reason: visibleReason,
+        verification_id: verification.id,
+        retryable: false,
+      };
+    }
+    const event = order.webhookEvents[0];
+    if (!event) {
+      return {
+        status: 'accepted',
+        reason: null,
+        verification_id: null,
+        retryable: false,
+      };
+    }
+    if (event.status === 'pending') {
+      return {
+        status: 'accepted',
+        reason: event.lastError,
+        verification_id: null,
+        retryable: false,
+      };
+    }
+    if (event.status === 'processing') {
+      return {
+        status: 'processing',
+        reason: event.lastError,
+        verification_id: null,
+        retryable: false,
+      };
+    }
+    const reason = event.lastError;
+    if (
+      reason === 'non_cod_payment_method' ||
+      reason === 'missing_payment_signal'
+    ) {
+      return {
+        status: 'ineligible',
+        reason,
+        verification_id: null,
+        retryable: false,
+      };
+    }
+    const blockedReasons = new Set([
+      'integration_inactive',
+      'billing_not_active',
+      'plan_limit_reached',
+      'auto_verify_disabled',
+      'onboarding_incomplete',
+    ]);
+    if (reason && blockedReasons.has(reason)) {
+      return {
+        status: 'blocked',
+        reason,
+        verification_id: null,
+        retryable: true,
+      };
+    }
+    return {
+      status: 'failed',
+      reason,
+      verification_id: null,
+      retryable: Boolean(reason?.startsWith('dispatch_terminal:')),
+    };
+  }
+
+  private metadataReason(metadata: unknown): string | null {
+    if (!metadata || typeof metadata !== 'object') return null;
+    const reason = (metadata as Record<string, unknown>).reason;
+    return typeof reason === 'string' ? reason : null;
+  }
+
+  private retryReadinessReason(
+    order: {
+      orgId: string;
+      integrationId: string;
+      externalOrderId: string;
+      orderNumber: string | null;
+      customerPhone: string;
+      customerName: string | null;
+      totalPrice: string | null;
+      currency: string | null;
+      paymentMethod: string | null;
+      rawPayload: unknown;
+    },
+    integration: typeof integrations.$inferSelect,
+  ): string | null {
+    if (!integration.isActive) return 'integration_inactive';
+    if (integration.onboardingStatus !== 'completed')
+      return 'onboarding_incomplete';
+    if (!integration.isAutoVerifyEnabled) return 'auto_verify_disabled';
+    const paymentSignals = order.paymentMethod ? [order.paymentMethod] : [];
+    const eligibility = this.orderEligibility.evaluateOrderForVerification({
+      order: {
+        orgId: order.orgId,
+        integrationId: order.integrationId,
+        externalOrderId: order.externalOrderId,
+        orderNumber: order.orderNumber ?? undefined,
+        customerPhone: order.customerPhone,
+        customerName: order.customerName ?? undefined,
+        totalPrice: order.totalPrice ?? '',
+        currency: order.currency ?? '',
+        paymentMethod: order.paymentMethod ?? '',
+        paymentSignals,
+        codStatus: classifyCodStatus(paymentSignals),
+        rawPayload:
+          order.rawPayload && typeof order.rawPayload === 'object'
+            ? (order.rawPayload as Record<string, unknown>)
+            : {},
+      },
+      integration,
+    });
+    return eligibility.eligible ? null : eligibility.reason;
   }
 }

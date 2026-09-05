@@ -253,10 +253,6 @@ export class VerificationAutomationProcessor extends WorkerHost {
     );
 
     if (outcome.status === 'sent') {
-      await this.verificationsRepo.markFollowUpSent(
-        verification.id,
-        outcome.waMessageId!,
-      );
       this.logger.log(
         buildBackendLog(VerificationAutomationProcessor.name, {
           action: 'verification-automation-follow-up',

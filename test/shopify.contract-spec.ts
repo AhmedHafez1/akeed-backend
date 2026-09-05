@@ -75,6 +75,11 @@ describe('Shopify isolated PostgreSQL contract', () => {
     )) {
       await client.unsafe(statement.replaceAll('"public".', `"${namespace}".`));
     }
+    // The current repository selects the additive E04 linkage column. This
+    // Shopify-only fixture has no orders table and deliberately leaves it null.
+    await client.unsafe(
+      `ALTER TABLE "${namespace}"."webhook_events" ADD COLUMN "order_id" uuid`,
+    );
   });
 
   afterAll(async () => {

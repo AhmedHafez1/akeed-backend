@@ -19,7 +19,7 @@ import {
   type CommerceOutcomeAdapter,
 } from '../../shared/commerce/commerce-outcome';
 
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -98,10 +98,18 @@ function createMocks() {
   const verificationsRepo = {
     findByOrderId: jest.fn(),
     create: jest.fn(),
+    createForOrderIfAbsent: jest.fn(),
+    reopenRetryableInitialFailure: jest.fn().mockResolvedValue(false),
     updateStatus: jest.fn(),
     findById: jest.fn(),
     updateByIdForOrg: jest.fn(),
   };
+  verificationsRepo.createForOrderIfAbsent.mockImplementation(
+    async (values: unknown) => ({
+      verification: await verificationsRepo.create(values),
+      created: true,
+    }),
+  );
 
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
@@ -110,6 +118,7 @@ function createMocks() {
 
   const registryTestAdapter: CommerceOutcomeAdapter = {
     platformType: 'shopify',
+    requiresActiveConnection: true,
     capabilities: new Set(COMMERCE_OUTCOME_ACTIONS),
     execute: jest.fn(async ({ action, connection, externalOrderId }) => {
       if (!connection.platformStoreUrl || !connection.accessToken) {
@@ -224,6 +233,10 @@ describe('VerificationHubService', () => {
       const callback = new WhatsAppWebhookService(
         verificationsRepo as never,
         service,
+        {
+          findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
+          recordProviderStatus: jest.fn(),
+        } as never,
       );
       await expect(
         callback.processIncoming({
@@ -877,6 +890,52 @@ describe('VerificationHubService', () => {
       });
       expect(verificationsRepo.create).not.toHaveBeenCalled();
       expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+    });
+
+    it('safely reschedules a pending Standalone initial send after queue recovery', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+        automationProducer,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+      ordersRepo.findBySourceExternalId.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue({
+        id: 'ver-existing',
+        orgId: 'org-1',
+        status: 'pending',
+        lastSentAt: null,
+      });
+
+      await service.handleNewOrder(
+        buildOrder(),
+        buildIntegration({
+          platformType: 'standalone',
+          platformStoreUrl: 'standalone:org-1',
+          billingStatus: 'not_required',
+          sendDelayMinutes: 15,
+        }),
+      );
+
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(automationProducer.enqueueInitialSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          verificationId: 'ver-existing',
+          orgId: 'org-1',
+          dueAt: expect.any(Date) as Date,
+        }),
+      );
     });
 
     it('reuses existing order but creates new verification when none exists', async () => {
