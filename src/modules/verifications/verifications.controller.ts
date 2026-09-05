@@ -67,6 +67,7 @@ export class VerificationsController {
             permissions: {
               can_send_test_verification: canWrite,
               can_cancel_orders: canWrite,
+              can_create_manual_order: canWrite,
             },
           }
         : undefined,

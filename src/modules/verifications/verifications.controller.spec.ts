@@ -72,6 +72,7 @@ describe('Cancellation response compatibility bridge', () => {
         permissions: {
           can_send_test_verification: allowed,
           can_cancel_orders: allowed,
+          can_create_manual_order: allowed,
         },
       },
     });
