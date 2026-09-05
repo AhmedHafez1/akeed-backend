@@ -1,7 +1,9 @@
 import type { Server } from 'node:http';
 import { type ExecutionContext, type INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { SecurityMiddleware } from '../../shared/middleware/security.middleware';
 import {
   DualAuthGuard,
   type AuthenticatedUser,
@@ -78,6 +80,10 @@ describe('OrdersController manual order HTTP contract', () => {
       })
       .compile();
     app = module.createNestApplication();
+    const securityMiddleware = new SecurityMiddleware(
+      new ConfigService({ CORS_ALLOWED_ORIGINS: 'http://localhost:3001' }),
+    );
+    app.use(securityMiddleware.use.bind(securityMiddleware));
     await app.init();
   });
 
@@ -85,9 +91,51 @@ describe('OrdersController manual order HTTP contract', () => {
     await app.close();
   });
 
+  it.each(['http://localhost:3001', 'https://test-store.myshopify.com'])(
+    'allows the manual order browser preflight from %s',
+    async (origin) => {
+      const requestHeaders = [
+        'authorization',
+        'content-type',
+        'idempotency-key',
+        'ngrok-skip-browser-warning',
+      ];
+      await request(app.getHttpServer())
+        .options('/api/orders')
+        .set('Origin', origin)
+        .set('Access-Control-Request-Method', 'POST')
+        .set('Access-Control-Request-Headers', requestHeaders.join(', '))
+        .expect(200)
+        .expect('Access-Control-Allow-Origin', origin)
+        .expect('Access-Control-Allow-Credentials', 'true')
+        .expect('Access-Control-Allow-Methods', /\bPOST\b/)
+        .expect((response) => {
+          const allowedHeaders = response.get('Access-Control-Allow-Headers');
+          expect(allowedHeaders?.toLowerCase().split(/,\s*/)).toEqual(
+            expect.arrayContaining(requestHeaders),
+          );
+        });
+      expect(service.createManualOrder).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not allow a preflight from an untrusted origin', async () => {
+    await request(app.getHttpServer())
+      .options('/api/orders')
+      .set('Origin', 'https://untrusted.example')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'idempotency-key')
+      .expect(200)
+      .expect((response) => {
+        expect(response.get('Access-Control-Allow-Origin')).toBeUndefined();
+      });
+    expect(service.createManualOrder).not.toHaveBeenCalled();
+  });
+
   it('returns 202 accepted and strips forged authority fields', async () => {
     await request(app.getHttpServer())
       .post('/api/orders')
+      .set('Origin', 'http://localhost:3001')
       .set('Idempotency-Key', 'submission-key-123')
       .send({
         customerPhone: ' +201001234567 ',
@@ -103,6 +151,7 @@ describe('OrdersController manual order HTTP contract', () => {
         billingStatus: 'active',
         isActive: true,
       })
+      .expect('Access-Control-Allow-Origin', 'http://localhost:3001')
       .expect(202, {
         orderId: 'order-1',
         status: 'accepted',

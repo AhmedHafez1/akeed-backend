@@ -8,6 +8,8 @@ Last updated: 2026-09-05
 
 The caller must generate one stable `Idempotency-Key` for a logical form submission and reuse it for every retry. The value must contain 8–128 ASCII letters, numbers, dots, underscores, colons, or hyphens. A UUID is recommended. Never reuse a key for an edited submission.
 
+Cross-origin browser submissions require an `OPTIONS /api/orders` preflight. The security middleware allows `Idempotency-Key` alongside the authentication and content headers for allowed origins. If this header is missing from `Access-Control-Allow-Headers`, the browser blocks the POST and the form enters its network-failure retry state.
+
 ```http
 POST /api/orders
 Authorization: Bearer <session token>

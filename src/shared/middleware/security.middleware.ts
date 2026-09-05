@@ -152,7 +152,7 @@ export class SecurityMiddleware implements NestMiddleware {
     );
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning, x-shopify-access-token',
+      'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning, x-shopify-access-token, Idempotency-Key',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
