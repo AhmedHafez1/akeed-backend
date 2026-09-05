@@ -32,9 +32,11 @@
     "test:contract:standalone-provisioning": "jest --config ./test/jest-standalone-provisioning-contract.json --runInBand",
     "test:contract:standalone-pilots": "jest --config ./test/jest-standalone-pilot-contract.json --runInBand",
     "test:contract:manual-orders": "jest --config ./test/jest-manual-order-ingestion-contract.json --runInBand",
+    "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",
     "test:gate:e03": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e03-release-gate.ps1",
+    "test:gate:e04": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e04-release-gate.ps1",
     "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts"
   },
   "dependencies": {

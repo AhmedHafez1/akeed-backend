@@ -1,9 +1,110 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { eq, and, inArray, lt, or, sql } from 'drizzle-orm';
+import { eq, and, gte, inArray, lt, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
-import { orders } from '../schema';
+import {
+  integrations,
+  orders,
+  verificationMessageDispatches,
+  verifications,
+  webhookEvents,
+} from '../schema';
+
+const retryableVerificationReasons = [
+  'plan_limit_reached',
+  'integration_inactive',
+  'billing_not_active',
+  'provider_not_accepted',
+] as const;
+
+const blockedEventReasons = [
+  'integration_inactive',
+  'billing_not_active',
+  'plan_limit_reached',
+  'auto_verify_disabled',
+  'onboarding_incomplete',
+] as const;
+
+const dispatchCount = sql<number>`(
+  SELECT count(*)::int
+  FROM ${verificationMessageDispatches}
+  WHERE ${verificationMessageDispatches.verificationId} = ${verifications.id}
+)`;
+
+const hasUnknownDispatch = sql<boolean>`EXISTS (
+  SELECT 1
+  FROM ${verificationMessageDispatches}
+  WHERE ${verificationMessageDispatches.verificationId} = ${verifications.id}
+    AND ${verificationMessageDispatches.state} = 'outcome_unknown'
+)`;
+
+const verificationReason = sql<
+  string | null
+>`${verifications.metadata}->>'reason'`;
+
+const dashboardLifecycleStatus = sql<string>`CASE
+  WHEN ${verifications.id} IS NOT NULL THEN CASE
+    WHEN ${hasUnknownDispatch}
+      OR (${dispatchCount} = 0 AND ${verificationReason} = 'provider_outcome_unknown')
+      THEN 'review_required'
+    WHEN ${verifications.status} = 'failed'
+      AND ${verificationReason} IN (${sql.join(
+        retryableVerificationReasons.map((reason) => sql`${reason}`),
+        sql`, `,
+      )})
+      THEN 'blocked'
+    ELSE COALESCE(${verifications.status}::text, 'pending')
+  END
+  WHEN ${webhookEvents.id} IS NULL OR ${webhookEvents.status} = 'pending'
+    THEN 'accepted'
+  WHEN ${webhookEvents.status} = 'processing' THEN 'processing'
+  WHEN ${webhookEvents.lastError} IN ('non_cod_payment_method', 'missing_payment_signal')
+    THEN 'ineligible'
+  WHEN ${webhookEvents.lastError} IN (${sql.join(
+    blockedEventReasons.map((reason) => sql`${reason}`),
+    sql`, `,
+  )})
+    THEN 'blocked'
+  ELSE 'failed'
+END`;
+
+const dashboardLifecycleReason = sql<string | null>`CASE
+  WHEN ${verifications.id} IS NOT NULL THEN CASE
+    WHEN ${hasUnknownDispatch}
+      OR (${dispatchCount} = 0 AND ${verificationReason} = 'provider_outcome_unknown')
+      THEN 'provider_outcome_unknown'
+    WHEN ${dispatchCount} > 0 AND ${verificationReason} = 'provider_outcome_unknown'
+      THEN NULL
+    ELSE ${verificationReason}
+  END
+  ELSE ${webhookEvents.lastError}
+END`;
+
+const dashboardLifecycleRetryable = sql<boolean>`CASE
+  WHEN ${verifications.id} IS NOT NULL THEN
+    ${verifications.status} = 'failed'
+    AND NOT ${hasUnknownDispatch}
+    AND ${verificationReason} IN (${sql.join(
+      retryableVerificationReasons.map((reason) => sql`${reason}`),
+      sql`, `,
+    )})
+  WHEN ${webhookEvents.id} IS NULL OR ${webhookEvents.status} IN ('pending', 'processing')
+    THEN false
+  WHEN ${webhookEvents.lastError} IN (${sql.join(
+    blockedEventReasons.map((reason) => sql`${reason}`),
+    sql`, `,
+  )}) THEN true
+  ELSE COALESCE(${webhookEvents.lastError} LIKE 'dispatch_terminal:%', false)
+END`;
+
+export interface DashboardOrderQuery {
+  startAt: string;
+  endAt: string;
+  statuses?: string[];
+  cursor?: { createdAt: string; id: string };
+  limit?: number;
+}
 
 @Injectable()
 export class OrdersRepository {
@@ -98,6 +199,132 @@ export class OrdersRepository {
       orderBy: (orders, { desc }) => [desc(orders.createdAt), desc(orders.id)],
       limit,
     });
+  }
+
+  private dashboardConditions(orgId: string, query: DashboardOrderQuery) {
+    return [
+      eq(orders.orgId, orgId),
+      gte(orders.createdAt, query.startAt),
+      lt(orders.createdAt, query.endAt),
+      query.statuses?.length
+        ? inArray(dashboardLifecycleStatus, query.statuses)
+        : undefined,
+    ].filter(Boolean);
+  }
+
+  async findDashboardByOrg(orgId: string, query: DashboardOrderQuery) {
+    const conditions = this.dashboardConditions(orgId, query);
+    if (query.cursor) {
+      conditions.push(
+        or(
+          lt(orders.createdAt, query.cursor.createdAt),
+          and(
+            sql`${orders.createdAt} = ${query.cursor.createdAt}`,
+            lt(orders.id, query.cursor.id),
+          ),
+        ),
+      );
+    }
+
+    return await this.db
+      .select({
+        id: orders.id,
+        orgId: orders.orgId,
+        integrationId: orders.integrationId,
+        externalOrderId: orders.externalOrderId,
+        orderNumber: orders.orderNumber,
+        customerPhone: orders.customerPhone,
+        customerName: orders.customerName,
+        customerEmail: orders.customerEmail,
+        totalPrice: orders.totalPrice,
+        currency: orders.currency,
+        isTest: orders.isTest,
+        createdAt: orders.createdAt,
+        platformType: integrations.platformType,
+        verificationId: verifications.id,
+        verificationStatus: verifications.status,
+        verificationMetadata: verifications.metadata,
+        lastSentAt: verifications.lastSentAt,
+        deliveredAt: verifications.deliveredAt,
+        readAt: verifications.readAt,
+        confirmedAt: verifications.confirmedAt,
+        canceledAt: verifications.canceledAt,
+        expiredAt: verifications.expiredAt,
+        noReplyAt: verifications.noReplyAt,
+        followUpAttempts: verifications.followUpAttempts,
+        followUpSentAt: verifications.followUpSentAt,
+        lifecycleStatus: dashboardLifecycleStatus,
+        lifecycleReason: dashboardLifecycleReason,
+        lifecycleRetryable: dashboardLifecycleRetryable,
+      })
+      .from(orders)
+      .innerJoin(integrations, eq(integrations.id, orders.integrationId))
+      .leftJoin(verifications, eq(verifications.orderId, orders.id))
+      .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(and(...conditions))
+      .orderBy(sql`${orders.createdAt} DESC`, sql`${orders.id} DESC`)
+      .limit(query.limit ?? 50);
+  }
+
+  async countDashboardByOrg(
+    orgId: string,
+    query: DashboardOrderQuery,
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(orders)
+      .innerJoin(integrations, eq(integrations.id, orders.integrationId))
+      .leftJoin(verifications, eq(verifications.orderId, orders.id))
+      .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(and(...this.dashboardConditions(orgId, query)));
+    return row?.count ?? 0;
+  }
+
+  async getDashboardStatsByOrg(
+    orgId: string,
+    query: Pick<DashboardOrderQuery, 'startAt' | 'endAt'>,
+  ) {
+    const [row] = await this.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        inProgress: sql<number>`count(*) FILTER (WHERE ${dashboardLifecycleStatus} IN ('accepted', 'processing', 'pending', 'sent', 'delivered', 'read'))::int`,
+        needsAttention: sql<number>`count(*) FILTER (WHERE ${dashboardLifecycleStatus} IN ('ineligible', 'blocked', 'failed', 'expired', 'no_reply', 'review_required'))::int`,
+        confirmedOrders: sql<number>`count(*) FILTER (WHERE ${dashboardLifecycleStatus} = 'confirmed')::int`,
+        canceledOrders: sql<number>`count(*) FILTER (WHERE ${dashboardLifecycleStatus} = 'canceled')::int`,
+        pending: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'pending')::int`,
+        failed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'failed')::int`,
+        awaitingReply: sql<number>`count(*) FILTER (WHERE ${verifications.status} IN ('sent', 'delivered', 'read', 'no_reply'))::int`,
+        sent: sql<number>`count(${verifications.lastSentAt})::int`,
+        delivered: sql<number>`count(${verifications.deliveredAt})::int`,
+        read: sql<number>`count(${verifications.readAt})::int`,
+        confirmed: sql<number>`count(${verifications.confirmedAt})::int`,
+        canceled: sql<number>`count(${verifications.canceledAt})::int`,
+        customerCanceled: sql<number>`count(*) FILTER (WHERE ${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer'))::int`,
+        followUpsSent: sql<number>`COALESCE(sum(${verifications.followUpAttempts}), 0)::int`,
+      })
+      .from(orders)
+      .innerJoin(integrations, eq(integrations.id, orders.integrationId))
+      .leftJoin(verifications, eq(verifications.orderId, orders.id))
+      .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(and(...this.dashboardConditions(orgId, query)));
+
+    return {
+      total: row?.total ?? 0,
+      inProgress: row?.inProgress ?? 0,
+      needsAttention: row?.needsAttention ?? 0,
+      confirmedOrders: row?.confirmedOrders ?? 0,
+      canceledOrders: row?.canceledOrders ?? 0,
+      pending: row?.pending ?? 0,
+      failed: row?.failed ?? 0,
+      awaitingReply: row?.awaitingReply ?? 0,
+      sent: row?.sent ?? 0,
+      delivered: row?.delivered ?? 0,
+      read: row?.read ?? 0,
+      confirmed: row?.confirmed ?? 0,
+      canceled: row?.canceled ?? 0,
+      customerCanceled: row?.customerCanceled ?? 0,
+      followUpsSent: row?.followUpsSent ?? 0,
+    };
   }
 
   async findByOrgAndPhone(

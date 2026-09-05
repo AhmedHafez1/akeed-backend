@@ -17,9 +17,13 @@ import {
   ManualOrderPayloadConflictError,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import {
+  DashboardDateRange,
+  DashboardSourceState,
   GetOrdersQueryDto,
+  MANUAL_ORDER_LIFECYCLE_STATUSES,
   OrderListItemDto,
   PaginatedResponse,
+  StandaloneDashboardStatsDto,
 } from './dto/dashboard.dto';
 import { decodeCursor, encodeCursor } from './services/pagination.helpers';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
@@ -47,6 +51,18 @@ import type {
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { integrations } from '../../infrastructure/database/schema';
+import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import type { CommerceOutcomeOperationResult } from '../../shared/commerce/commerce-outcome';
+import {
+  resolveDashboardDateRangeBounds,
+  resolveDashboardTimezone,
+} from './services/dashboard-date-range';
+
+const DEFAULT_DASHBOARD_DATE_RANGE: DashboardDateRange = 'last_30_days';
+const DEFAULT_REPORTING_TIMEZONE = 'UTC';
+const DEFAULT_AVG_SHIPPING_COST = 3;
+const DEFAULT_SHIPPING_CURRENCY = 'USD';
+type IntegrationRecord = typeof integrations.$inferSelect;
 
 @Injectable()
 export class OrdersService {
@@ -62,6 +78,7 @@ export class OrdersService {
     private readonly dispatcher: WebhookDispatchService,
     private readonly webhookEvents: WebhookEventsRepository,
     private readonly orderEligibility: OrderEligibilityService,
+    private readonly commerceOutcomes: CommerceOutcomeRegistryService,
   ) {}
 
   async createManualOrder(
@@ -259,11 +276,27 @@ export class OrdersService {
   ): Promise<PaginatedResponse<OrderListItemDto>> {
     const limit = query.limit ?? 50;
     const cursor = decodeCursor(query.cursor);
-
-    const orders = await this.ordersRepo.findByOrg(orgId, {
+    const statuses = this.parseLifecycleStatuses(query.status);
+    const dateRange = query.date_range ?? DEFAULT_DASHBOARD_DATE_RANGE;
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const reportingSource = this.resolveReportingSource(integrations);
+    const reportingTimezone = resolveDashboardTimezone(
+      reportingSource?.timezone ?? DEFAULT_REPORTING_TIMEZONE,
+    );
+    const period = resolveDashboardDateRangeBounds(
+      dateRange,
+      reportingTimezone,
+    );
+    const dashboardQuery = {
+      ...period,
+      statuses,
       cursor,
       limit: limit + 1,
-    });
+    };
+    const [orders, totalCount] = await Promise.all([
+      this.ordersRepo.findDashboardByOrg(orgId, dashboardQuery),
+      this.ordersRepo.countDashboardByOrg(orgId, dashboardQuery),
+    ]);
 
     const hasMore = orders.length > limit;
     const items = hasMore ? orders.slice(0, limit) : orders;
@@ -284,10 +317,138 @@ export class OrdersService {
         total_price: order.totalPrice ? String(order.totalPrice) : null,
         currency: order.currency ?? null,
         created_at: order.createdAt ?? null,
-        verification_status: order.verifications?.[0]?.status ?? null,
-        lifecycle: this.resolveLifecycle(order),
+        is_test: order.isTest,
+        source: {
+          integration_id: order.integrationId,
+          platform_type: order.platformType,
+        },
+        verification_status: order.verificationStatus ?? null,
+        verification: order.verificationId
+          ? {
+              id: order.verificationId,
+              status: order.verificationStatus ?? 'pending',
+              capabilities: [
+                {
+                  action: 'merchant_no_reply_cancellation' as const,
+                  supported:
+                    !order.isTest &&
+                    this.commerceOutcomes.supports(
+                      order.platformType,
+                      'merchant_no_reply_cancellation',
+                    ),
+                },
+              ],
+              ...(this.readCancellationOperation(order.verificationMetadata)
+                ? {
+                    cancellation_operation: this.readCancellationOperation(
+                      order.verificationMetadata,
+                    ),
+                  }
+                : {}),
+              last_sent_at: order.lastSentAt ?? null,
+              delivered_at: order.deliveredAt ?? null,
+              read_at: order.readAt ?? null,
+              confirmed_at: order.confirmedAt ?? null,
+              canceled_at: order.canceledAt ?? null,
+              expired_at: order.expiredAt ?? null,
+              no_reply_at: order.noReplyAt ?? null,
+              follow_up_attempts: order.followUpAttempts ?? 0,
+              follow_up_sent_at: order.followUpSentAt ?? null,
+            }
+          : null,
+        lifecycle: {
+          status: order.lifecycleStatus as ManualOrderLifecycleDto['status'],
+          reason: order.lifecycleReason,
+          verification_id: order.verificationId,
+          retryable: order.lifecycleRetryable,
+        },
       })),
       next_cursor: nextCursor,
+      total_count: totalCount,
+      page_context: {
+        source: this.resolveDashboardSourceState(integrations),
+        reporting_timezone: reportingTimezone,
+        automation: this.resolveDashboardAutomationSettings(reportingSource),
+      },
+    };
+  }
+
+  async getDashboardStatsByOrg(
+    orgId: string,
+    dateRange: DashboardDateRange = DEFAULT_DASHBOARD_DATE_RANGE,
+  ): Promise<StandaloneDashboardStatsDto> {
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const reportingSource = this.resolveReportingSource(integrations);
+    const reportingTimezone = resolveDashboardTimezone(
+      reportingSource?.timezone ?? DEFAULT_REPORTING_TIMEZONE,
+    );
+    const period = resolveDashboardDateRangeBounds(
+      dateRange,
+      reportingTimezone,
+    );
+    const [counts, usage] = await Promise.all([
+      this.ordersRepo.getDashboardStatsByOrg(orgId, period),
+      reportingSource
+        ? this.billingEntitlements.readEntitlement(reportingSource)
+        : Promise.resolve({
+            consumedCount: 0,
+            includedLimit: 0,
+            periodStart: null,
+            periodEnd: null,
+          }),
+    ]);
+    const shipping = this.resolveShippingSettings(reportingSource);
+    const replyRate = counts.sent
+      ? Number(
+          (
+            ((counts.confirmed + counts.customerCanceled) / counts.sent) *
+            100
+          ).toFixed(1),
+        )
+      : 0;
+    const confirmationRate = counts.sent
+      ? Number(((counts.confirmed / counts.sent) * 100).toFixed(1))
+      : 0;
+
+    return {
+      date_range: dateRange,
+      reporting_timezone: reportingTimezone,
+      source: this.resolveDashboardSourceState(integrations),
+      automation: this.resolveDashboardAutomationSettings(reportingSource),
+      order_totals: {
+        total: counts.total,
+        in_progress: counts.inProgress,
+        needs_attention: counts.needsAttention,
+        confirmed: counts.confirmedOrders,
+        canceled: counts.canceledOrders,
+      },
+      verification_totals: {
+        pending: counts.pending,
+        failed: counts.failed,
+        awaiting_reply: counts.awaitingReply,
+        confirmed: counts.confirmed,
+        canceled: counts.canceled,
+        customer_canceled: counts.customerCanceled,
+        sent: counts.sent,
+        delivered: counts.delivered,
+        read: counts.read,
+        follow_ups_sent: counts.followUpsSent,
+        reply_rate: replyRate,
+        confirmation_rate: confirmationRate,
+      },
+      usage: {
+        used: usage.consumedCount,
+        limit: usage.includedLimit,
+        period_start: usage.periodStart,
+        period_end: usage.periodEnd,
+      },
+      savings: {
+        avg_shipping_cost: shipping.avgShippingCost,
+        currency: shipping.currency,
+        money_saved: Number(
+          (counts.canceled * shipping.avgShippingCost).toFixed(2),
+        ),
+      },
     };
   }
 
@@ -556,6 +717,87 @@ export class OrdersService {
     if (!metadata || typeof metadata !== 'object') return null;
     const reason = (metadata as Record<string, unknown>).reason;
     return typeof reason === 'string' ? reason : null;
+  }
+
+  private parseLifecycleStatuses(input?: string): string[] | undefined {
+    if (!input) return undefined;
+    const statuses = input
+      .split(',')
+      .map((status) => status.trim().toLowerCase())
+      .filter(Boolean);
+    const allowed = new Set<string>(MANUAL_ORDER_LIFECYCLE_STATUSES);
+    const invalid = statuses.filter((status) => !allowed.has(status));
+    if (invalid.length) {
+      throw new BadRequestException({
+        code: 'DASHBOARD_STATUS_INVALID',
+        message: `Invalid lifecycle status: ${invalid.join(', ')}`,
+      });
+    }
+    return statuses.length ? [...new Set(statuses)] : undefined;
+  }
+
+  private resolveReportingSource(
+    sources: IntegrationRecord[],
+  ): IntegrationRecord | undefined {
+    return sources.find((source) => source.isActive === true) ?? sources[0];
+  }
+
+  private resolveDashboardSourceState(
+    sources: IntegrationRecord[],
+  ): DashboardSourceState {
+    const active = sources.find((source) => source.isActive === true);
+    const source = active ?? sources[0];
+    return {
+      status: active ? 'connected' : source ? 'disconnected' : 'not_connected',
+      integration_id: source?.id ?? null,
+      platform_type: source?.platformType ?? null,
+    };
+  }
+
+  private resolveDashboardAutomationSettings(source?: IntegrationRecord) {
+    return {
+      is_auto_verify_enabled: source?.isAutoVerifyEnabled ?? false,
+      follow_up_enabled: source?.followUpEnabled ?? false,
+      quiet_hours_enabled: source?.quietHoursEnabled ?? false,
+    };
+  }
+
+  private resolveShippingSettings(source?: IntegrationRecord) {
+    const parsedCost = Number(
+      source?.avgShippingCost ?? DEFAULT_AVG_SHIPPING_COST,
+    );
+    return {
+      currency:
+        source?.shippingCurrency?.trim().toUpperCase() ??
+        DEFAULT_SHIPPING_CURRENCY,
+      avgShippingCost:
+        Number.isFinite(parsedCost) && parsedCost >= 0
+          ? Number(parsedCost.toFixed(2))
+          : DEFAULT_AVG_SHIPPING_COST,
+    };
+  }
+
+  private readCancellationOperation(
+    metadata: unknown,
+  ): CommerceOutcomeOperationResult | undefined {
+    if (!metadata || typeof metadata !== 'object') return undefined;
+    const value = (metadata as Record<string, unknown>).commerceCancellation;
+    if (!value || typeof value !== 'object') return undefined;
+    const operation = value as Record<string, unknown>;
+    if (operation.status === 'applied') return { status: 'applied' };
+    if (operation.status === 'accepted_without_reference') {
+      return { status: 'accepted_without_reference' };
+    }
+    if (
+      operation.status === 'pending_provider_operation' &&
+      typeof operation.providerOperationId === 'string'
+    ) {
+      return {
+        status: 'pending_provider_operation',
+        providerOperationId: operation.providerOperationId,
+      };
+    }
+    return undefined;
   }
 
   private retryReadinessReason(

@@ -17,6 +17,14 @@ export type DashboardDateRange = (typeof DASHBOARD_DATE_RANGE_VALUES)[number];
 export class GetOrdersQueryDto {
   @IsOptional()
   @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsIn(DASHBOARD_DATE_RANGE_VALUES)
+  date_range?: DashboardDateRange;
+
+  @IsOptional()
+  @IsString()
   cursor?: string;
 
   @IsOptional()
@@ -88,7 +96,30 @@ export interface OrderListItemDto {
   total_price: string | null;
   currency: string | null;
   created_at: string | null;
+  is_test: boolean;
+  source: {
+    integration_id: string;
+    platform_type: string;
+  };
   verification_status: string | null;
+  verification: {
+    id: string;
+    status: string;
+    capabilities: {
+      action: CommerceOutcomeAction;
+      supported: boolean;
+    }[];
+    cancellation_operation?: CommerceOutcomeOperationResult;
+    last_sent_at: string | null;
+    delivered_at: string | null;
+    read_at: string | null;
+    confirmed_at: string | null;
+    canceled_at: string | null;
+    expired_at: string | null;
+    no_reply_at: string | null;
+    follow_up_attempts: number;
+    follow_up_sent_at: string | null;
+  } | null;
   lifecycle: ManualOrderLifecycleDto;
 }
 
@@ -129,8 +160,10 @@ export interface RetryManualOrderVerificationResponseDto {
 export interface PaginatedResponse<T> {
   data: T[];
   next_cursor: string | null;
+  total_count?: number;
   page_context?: {
     source: DashboardSourceState;
+    reporting_timezone?: string;
     automation: {
       is_auto_verify_enabled: boolean;
       follow_up_enabled: boolean;
@@ -140,8 +173,29 @@ export interface PaginatedResponse<T> {
       can_send_test_verification: boolean;
       can_cancel_orders: boolean;
       can_create_manual_order: boolean;
+      can_retry_verifications?: boolean;
     };
   };
+}
+
+export interface StandaloneDashboardStatsDto {
+  date_range: DashboardDateRange;
+  reporting_timezone: string;
+  source: DashboardSourceState;
+  automation: VerificationStatsDto['automation'];
+  order_totals: {
+    total: number;
+    in_progress: number;
+    needs_attention: number;
+    confirmed: number;
+    canceled: number;
+  };
+  verification_totals: VerificationStatsDto['totals'];
+  usage: VerificationStatsDto['usage'] & {
+    period_start: string | null;
+    period_end: string | null;
+  };
+  savings: VerificationStatsDto['savings'];
 }
 
 export interface VerificationStatsDto {

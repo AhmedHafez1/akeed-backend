@@ -26,6 +26,8 @@ describe('OrdersController manual order HTTP contract', () => {
   const service = {
     createManualOrder: jest.fn(),
     listByOrg: jest.fn(),
+    getDashboardStatsByOrg: jest.fn(),
+    retryManualOrderVerification: jest.fn(),
   };
   const user: AuthenticatedUser = {
     userId: 'user-1',
@@ -36,11 +38,31 @@ describe('OrdersController manual order HTTP contract', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    user.role = 'owner';
     service.createManualOrder.mockResolvedValue({
       orderId: 'order-1',
       status: 'accepted',
       duplicate: false,
     });
+    service.listByOrg.mockResolvedValue({
+      data: [],
+      next_cursor: null,
+      total_count: 0,
+      page_context: {
+        source: {
+          status: 'connected',
+          integration_id: 'int-1',
+          platform_type: 'standalone',
+        },
+        reporting_timezone: 'Africa/Cairo',
+        automation: {
+          is_auto_verify_enabled: true,
+          follow_up_enabled: true,
+          quiet_hours_enabled: false,
+        },
+      },
+    });
+    service.getDashboardStatsByOrg.mockResolvedValue({ date_range: 'today' });
     const module = await Test.createTestingModule({
       controllers: [OrdersController],
       providers: [{ provide: OrdersService, useValue: service }],
@@ -132,4 +154,71 @@ describe('OrdersController manual order HTTP contract', () => {
       expect(service.createManualOrder).not.toHaveBeenCalled();
     },
   );
+
+  it('validates and forwards list filters with owner action permissions', async () => {
+    const response = await request(app.getHttpServer())
+      .get(
+        '/api/orders?date_range=today&status=accepted%2Cconfirmed&cursor=cursor-1&limit=25',
+      )
+      .expect(200);
+
+    expect(service.listByOrg).toHaveBeenCalledWith('org-1', {
+      date_range: 'today',
+      status: 'accepted,confirmed',
+      cursor: 'cursor-1',
+      limit: 25,
+    });
+    expect(response.body as unknown).toMatchObject({
+      page_context: {
+        permissions: {
+          can_send_test_verification: true,
+          can_cancel_orders: true,
+          can_create_manual_order: true,
+          can_retry_verifications: true,
+        },
+      },
+    });
+  });
+
+  it('keeps viewers read-only in page context', async () => {
+    user.role = 'viewer';
+
+    const response = await request(app.getHttpServer())
+      .get('/api/orders')
+      .expect(200);
+
+    expect(response.body as unknown).toMatchObject({
+      page_context: {
+        permissions: {
+          can_send_test_verification: false,
+          can_cancel_orders: false,
+          can_create_manual_order: false,
+          can_retry_verifications: false,
+        },
+      },
+    });
+  });
+
+  it.each([
+    ['/api/orders?date_range=week'],
+    ['/api/orders?limit=0'],
+    ['/api/orders?limit=101'],
+  ])('rejects invalid list query %s', async (url) => {
+    await request(app.getHttpServer()).get(url).expect(400);
+    expect(service.listByOrg).not.toHaveBeenCalled();
+  });
+
+  it('returns standalone stats for the selected reporting range', async () => {
+    service.getDashboardStatsByOrg.mockResolvedValueOnce({
+      date_range: 'last_7_days',
+    });
+    await request(app.getHttpServer())
+      .get('/api/orders/stats?date_range=last_7_days')
+      .expect(200, { stats: { date_range: 'last_7_days' } });
+
+    expect(service.getDashboardStatsByOrg).toHaveBeenCalledWith(
+      'org-1',
+      'last_7_days',
+    );
+  });
 });

@@ -5,6 +5,7 @@ import {
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import { OrdersService } from './orders.service';
+import { encodeCursor } from './services/pagination.helpers';
 
 describe('OrdersService manual creation', () => {
   const source = {
@@ -91,6 +92,7 @@ describe('OrdersService manual creation', () => {
       dispatcher as never,
       webhookEvents as never,
       orderEligibility as never,
+      {} as never,
     );
   });
 
@@ -333,12 +335,112 @@ describe('OrdersService manual verification lifecycle', () => {
       ],
       ...orderOverrides,
     };
+    const verification = order.verifications[0] as
+      | {
+          id: string;
+          status: string;
+          metadata?: { reason?: string };
+          messageDispatches?: Array<{ state: string }>;
+        }
+      | undefined;
+    const event = order.webhookEvents[0] as
+      | { status: string; lastError: string | null }
+      | undefined;
+    const reason = verification?.metadata?.reason ?? event?.lastError ?? null;
+    const hasUnknownDispatch = verification?.messageDispatches?.some(
+      (dispatch) => dispatch.state === 'outcome_unknown',
+    );
+    const retryableReasons = new Set([
+      'plan_limit_reached',
+      'integration_inactive',
+      'billing_not_active',
+      'provider_not_accepted',
+    ]);
+    const blockedEventReasons = new Set([
+      'integration_inactive',
+      'billing_not_active',
+      'plan_limit_reached',
+      'auto_verify_disabled',
+      'onboarding_incomplete',
+    ]);
+    const lifecycleStatus = verification
+      ? hasUnknownDispatch ||
+        (!verification.messageDispatches?.length &&
+          reason === 'provider_outcome_unknown')
+        ? 'review_required'
+        : verification.status === 'failed' && retryableReasons.has(reason ?? '')
+          ? 'blocked'
+          : verification.status
+      : !event || event.status === 'pending'
+        ? 'accepted'
+        : event.status === 'processing'
+          ? 'processing'
+          : ['non_cod_payment_method', 'missing_payment_signal'].includes(
+                reason ?? '',
+              )
+            ? 'ineligible'
+            : blockedEventReasons.has(reason ?? '')
+              ? 'blocked'
+              : 'failed';
+    const dashboardOrder = {
+      ...order,
+      platformType: 'standalone',
+      isTest: false,
+      verificationId: verification?.id ?? null,
+      verificationStatus: verification?.status ?? null,
+      verificationMetadata: verification?.metadata ?? null,
+      lastSentAt: null,
+      deliveredAt: null,
+      readAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      expiredAt: null,
+      noReplyAt: null,
+      followUpAttempts: 0,
+      followUpSentAt: null,
+      lifecycleStatus,
+      lifecycleReason:
+        reason === 'provider_outcome_unknown' &&
+        verification?.messageDispatches?.length
+          ? null
+          : reason,
+      lifecycleRetryable:
+        lifecycleStatus === 'blocked' ||
+        Boolean(reason?.startsWith('dispatch_terminal:')),
+    };
     const orders = {
       findById: jest.fn().mockResolvedValue(order),
-      findByOrg: jest.fn().mockResolvedValue([order]),
+      findDashboardByOrg: jest.fn().mockResolvedValue([dashboardOrder]),
+      countDashboardByOrg: jest.fn().mockResolvedValue(1),
+      getDashboardStatsByOrg: jest.fn().mockResolvedValue({
+        total: 4,
+        inProgress: 1,
+        needsAttention: 1,
+        confirmedOrders: 1,
+        canceledOrders: 1,
+        pending: 1,
+        failed: 1,
+        awaitingReply: 1,
+        sent: 4,
+        delivered: 3,
+        read: 2,
+        confirmed: 1,
+        canceled: 1,
+        customerCanceled: 1,
+        followUpsSent: 2,
+      }),
+    };
+    const integrations = {
+      findByOrg: jest.fn().mockResolvedValue([integration]),
     };
     const billing = {
       hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
+      readEntitlement: jest.fn().mockResolvedValue({
+        consumedCount: 12,
+        includedLimit: 100,
+        periodStart: '2026-09-01T00:00:00.000Z',
+        periodEnd: '2026-10-01T00:00:00.000Z',
+      }),
     };
     const dispatcher = { dispatchById: jest.fn() };
     const events = {
@@ -352,7 +454,7 @@ describe('OrdersService manual verification lifecycle', () => {
     };
     const service = new OrdersService(
       orders as never,
-      {} as never,
+      integrations as never,
       {} as never,
       {} as never,
       {} as never,
@@ -360,8 +462,18 @@ describe('OrdersService manual verification lifecycle', () => {
       dispatcher as never,
       events as never,
       eligibility as never,
+      { supports: jest.fn().mockReturnValue(true) } as never,
     );
-    return { service, orders, billing, dispatcher, events, eligibility };
+    return {
+      service,
+      dashboardOrder,
+      orders,
+      integrations,
+      billing,
+      dispatcher,
+      events,
+      eligibility,
+    };
   }
 
   it.each([
@@ -481,6 +593,148 @@ describe('OrdersService manual verification lifecycle', () => {
           },
         },
       ],
+    });
+  });
+
+  it('passes exact lifecycle filters and a stable cursor to the shared projection', async () => {
+    const { service, orders } = setup();
+    const cursor = encodeCursor({
+      createdAt: '2026-09-04T12:00:00.000Z',
+      id: 'order-2',
+    });
+
+    const result = await service.listByOrg('org-1', {
+      status: 'accepted, confirmed,accepted',
+      date_range: 'today',
+      cursor,
+      limit: 25,
+    });
+
+    expect(orders.findDashboardByOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.objectContaining({
+        statuses: ['accepted', 'confirmed'],
+        cursor: {
+          createdAt: '2026-09-04T12:00:00.000Z',
+          id: 'order-2',
+        },
+        limit: 26,
+      }),
+    );
+    expect(orders.countDashboardByOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.objectContaining({ statuses: ['accepted', 'confirmed'] }),
+    );
+    expect(result.total_count).toBe(1);
+  });
+
+  it('rejects unknown lifecycle filters before querying orders', async () => {
+    const { service, orders } = setup();
+
+    await expect(
+      service.listByOrg('org-1', { status: 'confirmed,provider_error' }),
+    ).rejects.toMatchObject({
+      response: { code: 'DASHBOARD_STATUS_INVALID' },
+    });
+    expect(orders.findDashboardByOrg).not.toHaveBeenCalled();
+    expect(orders.countDashboardByOrg).not.toHaveBeenCalled();
+  });
+
+  it('builds the next cursor from the last returned row without changing total_count', async () => {
+    const { service, dashboardOrder, orders } = setup();
+    orders.findDashboardByOrg.mockResolvedValueOnce([
+      dashboardOrder,
+      {
+        ...dashboardOrder,
+        id: 'order-older',
+        createdAt: '2026-09-04T00:00:00.000Z',
+      },
+    ]);
+    orders.countDashboardByOrg.mockResolvedValueOnce(9);
+
+    const result = await service.listByOrg('org-1', { limit: 1 });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.total_count).toBe(9);
+    expect(result.next_cursor).toBe(
+      encodeCursor({
+        id: dashboardOrder.id,
+        createdAt: dashboardOrder.createdAt,
+      }),
+    );
+  });
+
+  it('uses the newest inactive source timezone and retains disconnected history', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
+    try {
+      const { service, orders, integrations } = setup();
+      integrations.findByOrg.mockResolvedValueOnce([
+        { ...integration, isActive: false, timezone: 'Asia/Riyadh' },
+      ]);
+
+      const result = await service.listByOrg('org-1', {
+        date_range: 'today',
+      });
+
+      expect(result.page_context).toMatchObject({
+        reporting_timezone: 'Asia/Riyadh',
+        source: { status: 'disconnected', integration_id: 'int-1' },
+      });
+      expect(orders.findDashboardByOrg).toHaveBeenCalledWith(
+        'org-1',
+        expect.objectContaining({
+          startAt: '2026-05-09T21:00:00.000Z',
+          endAt: '2026-05-10T21:00:00.000Z',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconciles order and verification totals while keeping billing usage range-independent', async () => {
+    const { service, orders, billing } = setup();
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
+    let today: Awaited<ReturnType<typeof service.getDashboardStatsByOrg>>;
+    let sevenDays: Awaited<ReturnType<typeof service.getDashboardStatsByOrg>>;
+    try {
+      today = await service.getDashboardStatsByOrg('org-1', 'today');
+      sevenDays = await service.getDashboardStatsByOrg('org-1', 'last_7_days');
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(today).toMatchObject({
+      order_totals: {
+        total: 4,
+        in_progress: 1,
+        needs_attention: 1,
+        confirmed: 1,
+        canceled: 1,
+      },
+      verification_totals: {
+        sent: 4,
+        reply_rate: 50,
+        confirmation_rate: 25,
+      },
+      usage: {
+        used: 12,
+        limit: 100,
+        period_start: '2026-09-01T00:00:00.000Z',
+        period_end: '2026-10-01T00:00:00.000Z',
+      },
+      savings: { money_saved: 3 },
+    });
+    expect(sevenDays.usage).toEqual(today.usage);
+    expect(orders.getDashboardStatsByOrg).toHaveBeenCalledTimes(2);
+    expect(billing.readEntitlement).toHaveBeenCalledTimes(2);
+    expect(orders.getDashboardStatsByOrg).toHaveBeenNthCalledWith(1, 'org-1', {
+      startAt: '2026-05-10T00:00:00.000Z',
+      endAt: '2026-05-11T00:00:00.000Z',
+    });
+    expect(orders.getDashboardStatsByOrg).toHaveBeenNthCalledWith(2, 'org-1', {
+      startAt: '2026-05-04T00:00:00.000Z',
+      endAt: '2026-05-11T00:00:00.000Z',
     });
   });
 
