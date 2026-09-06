@@ -29,7 +29,7 @@ describe('OrdersController manual order HTTP contract', () => {
     createManualOrder: jest.fn(),
     listByOrg: jest.fn(),
     getDashboardStatsByOrg: jest.fn(),
-    retryManualOrderVerification: jest.fn(),
+    retryOrderVerification: jest.fn(),
   };
   const user: AuthenticatedUser = {
     userId: 'user-1',

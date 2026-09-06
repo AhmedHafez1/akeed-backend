@@ -285,6 +285,34 @@ export class WebhookEventsRepository {
       .where(sql`${webhookEvents.id} = ${id}`);
   }
 
+  /**
+   * Attach a processed event to the order it produced.
+   *
+   * Manual ingestion writes the link inside its acceptance transaction, but a
+   * webhook creates its order later, inside the worker. Without this link a
+   * webhook-created order has no durable event to re-dispatch, so merchant
+   * retry could never work for it.
+   *
+   * A partial unique index allows one event per order, so the write is
+   * conditional on both sides and silently yields if the order is already
+   * claimed.
+   */
+  async linkOrder(id: string, orderId: string): Promise<boolean> {
+    const rows = await this.db
+      .update(webhookEvents)
+      .set({ orderId, updatedAt: new Date().toISOString() })
+      .where(
+        sql`${webhookEvents.id} = ${id}
+          AND ${webhookEvents.orderId} IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM ${webhookEvents} AS claimed
+            WHERE claimed.order_id = ${orderId}
+          )`,
+      )
+      .returning({ id: webhookEvents.id });
+    return rows.length === 1;
+  }
+
   async resetForRedispatch(params: {
     id: string;
     orderId: string;

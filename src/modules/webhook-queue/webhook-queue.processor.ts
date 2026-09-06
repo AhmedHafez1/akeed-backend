@@ -271,6 +271,31 @@ export class WebhookQueueProcessor extends WorkerHost {
       normalizedOrder,
       integration,
     );
+
+    // Attach the event to its order so the merchant-facing lifecycle and retry
+    // work the same way for every platform. Manual ingestion links at accept
+    // time; a webhook only learns its order id here.
+    if (result.orderId) {
+      try {
+        await this.webhookEventsRepo.linkOrder(
+          data.webhookEventId,
+          result.orderId,
+        );
+      } catch (error) {
+        // The link only powers merchant retry and the lifecycle projection.
+        // Losing it must never fail an order that verified successfully.
+        this.logger.warn(
+          buildBackendLog(WebhookQueueProcessor.name, {
+            action: 'webhook-event-order-link',
+            outcome: 'failure',
+            webhookEventId: data.webhookEventId,
+            orderId: result.orderId,
+            ...normalizeError(error),
+          }),
+        );
+      }
+    }
+
     if ('skipped' in result) {
       await this.webhookEventsRepo.markSkipped(
         data.webhookEventId,

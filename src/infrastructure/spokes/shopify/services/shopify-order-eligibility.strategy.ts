@@ -1,105 +1,37 @@
 import { Injectable } from '@nestjs/common';
-import { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
-import { OrderEligibilityResult } from '../../../../modules/verification-core/order-eligibility.types';
-import { OrderEligibilityStrategy } from '../../../../modules/verification-core/strategies/order-eligibility.strategy';
 import {
-  appendPaymentSignal,
-  isCashOnDeliveryPaymentSignal,
-  normalizePaymentSignal,
-} from '../../../../shared/commerce/payment-signals';
+  collectNormalizedPaymentSignals,
+  resolveCodEligibility,
+  resolveDeclaredCodStatus,
+} from '../../../../modules/verification-core/cod-eligibility';
+import type { OrderEligibilityResult } from '../../../../modules/verification-core/order-eligibility.types';
+import type { OrderEligibilityStrategy } from '../../../../modules/verification-core/strategies/order-eligibility.strategy';
+import { appendPaymentSignal } from '../../../../shared/commerce/payment-signals';
+import type { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
+import { collectShopifyGatewaySignals } from './shopify-payment-signals';
 
+/**
+ * Shopify reports payment through gateways and transactions on the raw order
+ * payload, so eligibility re-reads them rather than trusting only the
+ * normalized `paymentSignals` — orders persisted before signal collection
+ * existed still carry the evidence in their raw payload.
+ *
+ * `assumeCodWhenPaymentMissing` is deliberately not honoured here: a Shopify
+ * order always reports a gateway, so an absent signal means the payload was
+ * unreadable, not that the order is cash-on-delivery.
+ */
 @Injectable()
 export class ShopifyOrderEligibilityStrategy implements OrderEligibilityStrategy {
-  readonly platform = 'shopify';
+  readonly platform = 'shopify' as const;
 
   evaluateOrderForVerification(order: NormalizedOrder): OrderEligibilityResult {
-    if (order.codStatus === 'cod') {
-      const matchedSignal = order.paymentSignals
-        ?.map(normalizePaymentSignal)
-        .find(isCashOnDeliveryPaymentSignal);
-      return {
-        eligible: true,
-        reason: 'cod_match',
-        ...(matchedSignal ? { matchedSignal } : {}),
-      };
-    }
-    if (order.codStatus === 'non_cod') {
-      return { eligible: false, reason: 'non_cod_payment_method' };
-    }
+    const declared = resolveDeclaredCodStatus(order);
+    if (declared) return declared;
 
-    const paymentSignals = this.collectShopifyPaymentSignals(order);
-
-    if (paymentSignals.length === 0) {
-      return { eligible: false, reason: 'missing_payment_signal' };
-    }
-
-    const codSignal = paymentSignals.find((signal) =>
-      isCashOnDeliveryPaymentSignal(signal),
-    );
-
-    if (codSignal) {
-      return {
-        eligible: true,
-        reason: 'cod_match',
-        matchedSignal: codSignal,
-      };
-    }
-
-    return { eligible: false, reason: 'non_cod_payment_method' };
-  }
-
-  private collectShopifyPaymentSignals(order: NormalizedOrder): string[] {
-    const signals: string[] = [];
-    for (const signal of order.paymentSignals ?? []) {
+    const signals = collectNormalizedPaymentSignals(order);
+    for (const signal of collectShopifyGatewaySignals(order.rawPayload)) {
       appendPaymentSignal(signals, signal);
     }
-    appendPaymentSignal(signals, order.paymentMethod);
-
-    const raw =
-      order.rawPayload &&
-      typeof order.rawPayload === 'object' &&
-      !Array.isArray(order.rawPayload)
-        ? order.rawPayload
-        : null;
-
-    if (!raw) {
-      return signals;
-    }
-
-    const paymentGatewayNames = raw['payment_gateway_names'];
-    if (Array.isArray(paymentGatewayNames)) {
-      for (const gatewayName of paymentGatewayNames) {
-        appendPaymentSignal(
-          signals,
-          typeof gatewayName === 'string' ? gatewayName : undefined,
-        );
-      }
-    }
-
-    appendPaymentSignal(
-      signals,
-      typeof raw['gateway'] === 'string' ? raw['gateway'] : undefined,
-    );
-
-    const transactions = raw['transactions'];
-    if (Array.isArray(transactions)) {
-      for (const transaction of transactions) {
-        if (
-          !transaction ||
-          typeof transaction !== 'object' ||
-          Array.isArray(transaction)
-        ) {
-          continue;
-        }
-
-        const gateway = (transaction as Record<string, unknown>)['gateway'];
-        appendPaymentSignal(
-          signals,
-          typeof gateway === 'string' ? gateway : '',
-        );
-      }
-    }
-
-    return signals;
+    return resolveCodEligibility(signals);
   }
 }

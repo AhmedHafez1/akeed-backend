@@ -485,7 +485,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Billing webhook service        | `infrastructure/spokes/shopify/services/shopify-billing-webhook.service.ts`  | Billing status updates, uninstall handling.                                 |
 | GDPR webhook service           | `infrastructure/spokes/shopify/services/shopify-gdpr-webhook.service.ts`     | Data export, customer redact, shop redact.                                  |
 | Shopify API service            | `infrastructure/spokes/shopify/services/shopify-api.service.ts`              | GraphQL operations: tags, cancel, billing, shop metadata.                   |
-| Shopify order normalizer       | `infrastructure/spokes/shopify/services/shopify-order.normalizer.ts`         | Converts Shopify order JSON to `NormalizedOrder`.                           |
+| Shopify order normalizer       | `modules/webhook-queue/normalizers/shopify-order.normalizer.ts`               | Converts Shopify order JSON to `NormalizedOrder`.                           |
 | WhatsApp service               | `infrastructure/spokes/meta/whatsapp.service.ts`                             | Template sends via Meta Cloud API.                                          |
 | WhatsApp webhook controller    | `infrastructure/spokes/meta/whatsapp.webhook.controller.ts`                  | Subscription verification + incoming message handler.                       |
 | WhatsApp webhook service       | `infrastructure/spokes/meta/whatsapp.webhook.service.ts`                     | Customer reply parsing, status update processing.                           |
@@ -503,7 +503,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Verification send service      | `modules/verification-core/verification-send.service.ts`                     | WhatsApp send for initial and follow-up, billing reservation/release.       |
 | Billing entitlement service    | `modules/verification-core/billing-entitlement.service.ts`                   | Plan limit checks, slot reservation/release, period computation.            |
 | Order eligibility service      | `modules/verification-core/order-eligibility.service.ts`                     | Routes to platform-specific COD detection strategy.                         |
-| Shopify eligibility strategy   | `modules/verification-core/strategies/shopify-order-eligibility.strategy.ts` | Multi-signal COD payment detection with Arabic support.                     |
+| Shopify eligibility strategy   | `infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy.ts` | Multi-signal COD payment detection with Arabic support.                     |
 | Messaging port                 | `shared/ports/messaging.port.ts`                                             | Interface for template-based messaging.                                     |
 | Order admin port               | `shared/ports/order-admin.port.ts`                                           | Interface for order cancellation.                                           |
 | Order tagging port             | `shared/ports/order-tagging.port.ts`                                         | Interface for order tag management.                                         |

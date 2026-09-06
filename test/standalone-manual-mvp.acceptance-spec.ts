@@ -942,7 +942,7 @@ describe('US-04-05 Standalone manual MVP acceptance composition', () => {
     ).expect(202);
     harness.user.orgId = 'other-org';
     await expect(
-      harness.ordersService.retryManualOrderVerification(
+      harness.ordersService.retryOrderVerification(
         harness.user,
         response.body.orderId,
       ),

@@ -364,13 +364,17 @@ describe('OrdersService manual verification lifecycle', () => {
       'onboarding_incomplete',
     ]);
     const lifecycleStatus = verification
-      ? hasUnknownDispatch ||
-        (!verification.messageDispatches?.length &&
-          reason === 'provider_outcome_unknown')
-        ? 'review_required'
-        : verification.status === 'failed' && retryableReasons.has(reason ?? '')
-          ? 'blocked'
-          : verification.status
+      ? verification.status === 'confirmed' ||
+        verification.status === 'canceled'
+        ? verification.status
+        : hasUnknownDispatch ||
+            (!verification.messageDispatches?.length &&
+              reason === 'provider_outcome_unknown')
+          ? 'review_required'
+          : verification.status === 'failed' &&
+              retryableReasons.has(reason ?? '')
+            ? 'blocked'
+            : verification.status
       : !event || event.status === 'pending'
         ? 'accepted'
         : event.status === 'processing'
@@ -410,6 +414,7 @@ describe('OrdersService manual verification lifecycle', () => {
     };
     const orders = {
       findById: jest.fn().mockResolvedValue(order),
+      findDashboardOrderById: jest.fn().mockResolvedValue(dashboardOrder),
       findDashboardByOrg: jest.fn().mockResolvedValue([dashboardOrder]),
       countDashboardByOrg: jest.fn().mockResolvedValue(1),
       getDashboardStatsByOrg: jest.fn().mockResolvedValue({
@@ -516,7 +521,7 @@ describe('OrdersService manual verification lifecycle', () => {
     const { service, events, dispatcher } = setup();
 
     await expect(
-      service.retryManualOrderVerification(user, 'order-1'),
+      service.retryOrderVerification(user, 'order-1'),
     ).resolves.toEqual({
       orderId: 'order-1',
       lifecycle: {
@@ -527,6 +532,34 @@ describe('OrdersService manual verification lifecycle', () => {
       },
       duplicate: false,
     });
+    expect(events.resetForRedispatch).toHaveBeenCalledWith({
+      id: 'event-1',
+      orderId: 'order-1',
+    });
+    expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
+  });
+
+  it('redispatches a blocked Shopify order through the same neutral path', async () => {
+    const { service, events, dispatcher } = setup({
+      integration: {
+        ...integration,
+        platformType: 'shopify',
+        platformStoreUrl: 'demo.myshopify.com',
+      },
+      webhookEvents: [
+        {
+          id: 'event-1',
+          platform: 'shopify',
+          jobType: 'order.create',
+          status: 'skipped',
+          lastError: 'plan_limit_reached',
+        },
+      ],
+    });
+
+    await expect(
+      service.retryOrderVerification(user, 'order-1'),
+    ).resolves.toMatchObject({ orderId: 'order-1', duplicate: false });
     expect(events.resetForRedispatch).toHaveBeenCalledWith({
       id: 'event-1',
       orderId: 'order-1',
@@ -547,7 +580,7 @@ describe('OrdersService manual verification lifecycle', () => {
       ],
     });
     await expect(
-      service.retryManualOrderVerification(user, 'order-1'),
+      service.retryOrderVerification(user, 'order-1'),
     ).resolves.toMatchObject({ duplicate: true });
     expect(events.resetForRedispatch).not.toHaveBeenCalled();
   });
@@ -564,7 +597,7 @@ describe('OrdersService manual verification lifecycle', () => {
       ],
     });
     await expect(
-      service.retryManualOrderVerification(user, 'order-1'),
+      service.retryOrderVerification(user, 'order-1'),
     ).rejects.toMatchObject({
       response: { code: 'MANUAL_ORDER_RETRY_REVIEW_REQUIRED' },
     });
@@ -741,10 +774,7 @@ describe('OrdersService manual verification lifecycle', () => {
   it('enforces role and organization isolation', async () => {
     const { service, orders } = setup();
     await expect(
-      service.retryManualOrderVerification(
-        { ...user, role: 'viewer' },
-        'order-1',
-      ),
+      service.retryOrderVerification({ ...user, role: 'viewer' }, 'order-1'),
     ).rejects.toMatchObject({
       response: { code: 'MANUAL_ORDER_RETRY_ROLE_REQUIRED' },
     });
@@ -753,7 +783,7 @@ describe('OrdersService manual verification lifecycle', () => {
       orgId: 'org-2',
     });
     await expect(
-      service.retryManualOrderVerification(user, 'order-1'),
+      service.retryOrderVerification(user, 'order-1'),
     ).rejects.toMatchObject({
       response: { code: 'MANUAL_ORDER_NOT_FOUND' },
     });

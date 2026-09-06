@@ -6,24 +6,11 @@ import { and, eq, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import { verifications } from '../schema';
-
-/**
- * Terminal statuses that must never be overwritten by later webhook events
- * (delivery/read/failed). Note: `no_reply` is also protected from webhook
- * status updates but can still be overridden by customer button replies.
- */
-const TERMINAL_STATUSES: VerificationStatus[] = ['confirmed', 'canceled'];
-
-/**
- * Statuses that webhook delivery/read/failed events must not overwrite.
- * This is a superset of TERMINAL_STATUSES — it additionally blocks
- * late webhook events from reverting a no_reply escalation.
- */
-const WEBHOOK_PROTECTED_STATUSES: VerificationStatus[] = [
-  'confirmed',
-  'canceled',
-  'no_reply',
-];
+import {
+  RETRYABLE_VERIFICATION_REASONS,
+  TERMINAL_STATUSES,
+  WEBHOOK_PROTECTED_STATUSES,
+} from '../../../shared/verification/verification-lifecycle';
 
 /**
  * Converts a Meta webhook Unix-epoch string (seconds) to an ISO-8601 string.
@@ -136,12 +123,10 @@ export class VerificationsRepository {
           AND ${verifications.orgId} = ${orgId}
           AND ${verifications.status} = 'failed'
           AND ${verifications.lastSentAt} IS NULL
-          AND COALESCE(${verifications.metadata}->>'reason', '') IN (
-            'plan_limit_reached',
-            'integration_inactive',
-            'billing_not_active',
-            'provider_not_accepted'
-          )`,
+          AND COALESCE(${verifications.metadata}->>'reason', '') IN (${sql.join(
+            RETRYABLE_VERIFICATION_REASONS.map((reason) => sql`${reason}`),
+            sql`, `,
+          )})`,
       )
       .returning({ id: verifications.id });
     return rows.length === 1;
@@ -431,24 +416,31 @@ export class VerificationsRepository {
 
   /**
    * Update a verification by its primary key, scoped to an organization.
+   *
+   * When the payload changes `status`, the terminal guard applies: a customer
+   * who already confirmed or canceled cannot be walked backwards by a late
+   * send-failure projection. Metadata-only updates are unaffected.
    */
   async updateByIdForOrg(
     verificationId: string,
     orgId: string,
     updates: Partial<typeof verifications.$inferInsert>,
   ) {
+    const conditions = [
+      eq(verifications.id, verificationId),
+      eq(verifications.orgId, orgId),
+    ];
+    if (updates.status !== undefined) {
+      conditions.push(notInArray(verifications.status, TERMINAL_STATUSES));
+    }
+
     const [result] = await this.db
       .update(verifications)
       .set({
         ...updates,
         updatedAt: new Date().toISOString(),
       })
-      .where(
-        and(
-          eq(verifications.id, verificationId),
-          eq(verifications.orgId, orgId),
-        ),
-      )
+      .where(and(...conditions))
       .returning();
     return result;
   }

@@ -10,21 +10,10 @@ import {
   verifications,
   webhookEvents,
 } from '../schema';
-
-const retryableVerificationReasons = [
-  'plan_limit_reached',
-  'integration_inactive',
-  'billing_not_active',
-  'provider_not_accepted',
-] as const;
-
-const blockedEventReasons = [
-  'integration_inactive',
-  'billing_not_active',
-  'plan_limit_reached',
-  'auto_verify_disabled',
-  'onboarding_incomplete',
-] as const;
+import {
+  BLOCKED_EVENT_REASONS as blockedEventReasons,
+  RETRYABLE_VERIFICATION_REASONS as retryableVerificationReasons,
+} from '../../../shared/verification/verification-lifecycle';
 
 const dispatchCount = sql<number>`(
   SELECT count(*)::int
@@ -45,6 +34,10 @@ const verificationReason = sql<
 
 const dashboardLifecycleStatus = sql<string>`CASE
   WHEN ${verifications.id} IS NOT NULL THEN CASE
+    -- A customer reply is the final word. It outranks an unresolved dispatch
+    -- so a confirmed order never surfaces as 'review_required'.
+    WHEN ${verifications.status} IN ('confirmed', 'canceled')
+      THEN ${verifications.status}::text
     WHEN ${hasUnknownDispatch}
       OR (${dispatchCount} = 0 AND ${verificationReason} = 'provider_outcome_unknown')
       THEN 'review_required'
@@ -71,6 +64,8 @@ END`;
 
 const dashboardLifecycleReason = sql<string | null>`CASE
   WHEN ${verifications.id} IS NOT NULL THEN CASE
+    -- A resolved verification has no outstanding reason to report.
+    WHEN ${verifications.status} IN ('confirmed', 'canceled') THEN NULL
     WHEN ${hasUnknownDispatch}
       OR (${dispatchCount} = 0 AND ${verificationReason} = 'provider_outcome_unknown')
       THEN 'provider_outcome_unknown'
@@ -199,6 +194,37 @@ export class OrdersRepository {
       orderBy: (orders, { desc }) => [desc(orders.createdAt), desc(orders.id)],
       limit,
     });
+  }
+
+  /**
+   * Load a single order with the same lifecycle projection the dashboard uses.
+   *
+   * The retry endpoint reads this instead of recomputing the lifecycle in
+   * TypeScript, so a merchant can never be offered a retry the dashboard does
+   * not show — or refused one it does.
+   */
+  async findDashboardOrderById(orderId: string, orgId: string) {
+    const [row] = await this.db
+      .select({
+        id: orders.id,
+        orgId: orders.orgId,
+        integrationId: orders.integrationId,
+        externalOrderId: orders.externalOrderId,
+        isTest: orders.isTest,
+        platformType: integrations.platformType,
+        verificationId: verifications.id,
+        verificationStatus: verifications.status,
+        lifecycleStatus: dashboardLifecycleStatus,
+        lifecycleReason: dashboardLifecycleReason,
+        lifecycleRetryable: dashboardLifecycleRetryable,
+      })
+      .from(orders)
+      .innerJoin(integrations, eq(integrations.id, orders.integrationId))
+      .leftJoin(verifications, eq(verifications.orderId, orders.id))
+      .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(and(eq(orders.id, orderId), eq(orders.orgId, orgId)))
+      .limit(1);
+    return row;
   }
 
   private dashboardConditions(orgId: string, query: DashboardOrderQuery) {

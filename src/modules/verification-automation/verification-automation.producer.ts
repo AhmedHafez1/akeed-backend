@@ -7,6 +7,7 @@ import {
   VerificationAutomationJobPayload,
   VerificationAutomationJobType,
 } from './verification-automation.constants';
+import { DEFAULT_QUEUE_JOB_OPTIONS } from '../../shared/queue/job-options';
 
 interface ScheduleParams {
   verificationId: string;
@@ -73,10 +74,7 @@ export class VerificationAutomationProducer {
     await this.queue.add(jobType, payload, {
       jobId,
       delay,
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3_000 },
-      removeOnComplete: { age: 7 * 24 * 3_600, count: 10_000 },
-      removeOnFail: { age: 30 * 24 * 3_600, count: 50_000 },
+      ...DEFAULT_QUEUE_JOB_OPTIONS,
     });
 
     this.logger.log(

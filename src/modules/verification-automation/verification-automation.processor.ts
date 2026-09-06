@@ -21,14 +21,9 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import { AUTOMATION_FINAL_STATUSES } from '../../shared/verification/verification-lifecycle';
 
-const TERMINAL_OR_FINAL_STATUSES = [
-  'confirmed',
-  'canceled',
-  'failed',
-  'expired',
-  'no_reply',
-] as const;
+const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
 
 @Processor(VERIFICATION_AUTOMATION_QUEUE_NAME, { concurrency: 5 })
 @Injectable()
@@ -144,35 +139,11 @@ export class VerificationAutomationProcessor extends WorkerHost {
         integration: ctx.integration,
         baselineSentAt: outcome.sentAt ? new Date(outcome.sentAt) : new Date(),
       });
-    } else if (outcome.status === 'plan_limit_reached') {
-      await this.verificationsRepo.updateByIdForOrg(
+    } else {
+      await this.verificationHub.applyInitialSendFailure(
         ctx.verification.id,
         ctx.verification.orgId,
-        {
-          status: 'failed',
-          metadata: {
-            reason: 'plan_limit_reached',
-            kind: 'initial',
-          },
-        },
-      );
-    } else if (
-      outcome.status === 'skipped' &&
-      (outcome.reason === 'integration_inactive' ||
-        outcome.reason === 'billing_not_active' ||
-        outcome.reason === 'missing_linked_integration' ||
-        outcome.reason === 'source_identity_mismatch')
-    ) {
-      await this.verificationsRepo.updateByIdForOrg(
-        ctx.verification.id,
-        ctx.verification.orgId,
-        {
-          status: 'failed',
-          metadata: {
-            reason: outcome.reason,
-            kind: 'initial',
-          },
-        },
+        outcome,
       );
     }
   }

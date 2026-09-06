@@ -29,6 +29,24 @@ describe('E02 platform-neutral verification core release gate', () => {
     }
   });
 
+  it('keeps production verification-core files free of platform branching', () => {
+    const directory = resolve(__dirname);
+    const productionFiles = readdirSync(directory).filter(
+      (name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'),
+    );
+
+    // Once an order is normalized, the core must behave identically for every
+    // commerce source. Platform-specific behaviour belongs in a spoke behind
+    // one of the registries, never in a branch here.
+    for (const file of productionFiles) {
+      const source = readFileSync(resolve(directory, file), 'utf8');
+      expect(source).not.toMatch(/platformType\s*[=!]==/);
+      expect(source).not.toMatch(
+        /'(shopify|standalone|salla|zid|woocommerce|easyorders)'/,
+      );
+    }
+  });
+
   it('processes and synchronizes a standalone order using registry test ports only', async () => {
     const integration = {
       id: 'integration-neutral',

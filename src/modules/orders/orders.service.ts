@@ -64,6 +64,24 @@ const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 type IntegrationRecord = typeof integrations.$inferSelect;
 
+/**
+ * Payment signals captured when the order was ingested.
+ *
+ * Manual ingestion stores the canonical order under `rawPayload.order`; reading
+ * them back keeps a retry's eligibility decision identical to the original
+ * ingestion's, instead of re-deriving it from `paymentMethod` alone.
+ */
+function readStoredPaymentSignals(rawPayload: unknown): string[] {
+  if (!rawPayload || typeof rawPayload !== 'object') return [];
+  const order = (rawPayload as Record<string, unknown>).order;
+  if (!order || typeof order !== 'object') return [];
+  const signals = (order as Record<string, unknown>).paymentSignals;
+  if (!Array.isArray(signals)) return [];
+  return signals.filter(
+    (signal): signal is string => typeof signal === 'string',
+  );
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -452,7 +470,17 @@ export class OrdersService {
     };
   }
 
-  async retryManualOrderVerification(
+  /**
+   * Re-dispatch the durable ingestion event for an order whose verification is
+   * blocked on a merchant-resolvable reason.
+   *
+   * Platform-neutral by construction: both webhook-created and manually created
+   * orders own a `webhook_events` row, and `resetForRedispatch` + `dispatchById`
+   * carry no platform semantics. The lifecycle is read from the same SQL
+   * projection the dashboard renders, so the merchant is never offered a retry
+   * the table does not show.
+   */
+  async retryOrderVerification(
     user: AuthenticatedUser,
     orderId: string,
   ): Promise<RetryManualOrderVerificationResponseDto> {
@@ -468,13 +496,23 @@ export class OrdersService {
       });
     }
     const integration = order.integration;
-    if (!integration || integration.platformType !== 'standalone') {
+    if (!integration) {
       throw new ConflictException({
-        code: 'MANUAL_ORDER_RETRY_UNSUPPORTED',
-        message: 'Verification retry is available only for Standalone orders.',
+        code: 'MANUAL_ORDER_RETRY_STATE_INVALID',
+        message: 'The order is not linked to a commerce source.',
       });
     }
-    const lifecycle = this.resolveLifecycle(order);
+    const projected = await this.ordersRepo.findDashboardOrderById(
+      orderId,
+      user.orgId,
+    );
+    const lifecycle: ManualOrderLifecycleDto = {
+      status: (projected?.lifecycleStatus ??
+        'accepted') as ManualOrderLifecycleDto['status'],
+      reason: projected?.lifecycleReason ?? null,
+      verification_id: projected?.verificationId ?? null,
+      retryable: projected?.lifecycleRetryable ?? false,
+    };
     if (lifecycle.status === 'review_required') {
       throw new ConflictException({
         code: 'MANUAL_ORDER_RETRY_REVIEW_REQUIRED',
@@ -521,9 +559,7 @@ export class OrdersService {
       });
     }
     const event = order.webhookEvents.find(
-      (candidate) =>
-        candidate.platform === 'standalone' &&
-        candidate.jobType === 'order.create',
+      (candidate) => candidate.jobType === 'order.create',
     );
     if (!event) {
       throw new ConflictException({
@@ -598,125 +634,6 @@ export class OrdersService {
 
   private manualExternalOrderId(idempotencyKey: string): string {
     return `manual-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 40)}`;
-  }
-
-  private resolveLifecycle(order: {
-    verifications: Array<{
-      id: string;
-      status: string | null;
-      metadata: unknown;
-      messageDispatches?: Array<{ state: string }>;
-    }>;
-    webhookEvents: Array<{ status: string; lastError: string | null }>;
-  }): ManualOrderLifecycleDto {
-    const verification = order.verifications[0];
-    if (verification) {
-      const reason = this.metadataReason(verification.metadata);
-      const dispatches = verification.messageDispatches ?? [];
-      if (
-        dispatches.some((dispatch) => dispatch.state === 'outcome_unknown') ||
-        (dispatches.length === 0 && reason === 'provider_outcome_unknown')
-      ) {
-        return {
-          status: 'review_required',
-          reason: 'provider_outcome_unknown',
-          verification_id: verification.id,
-          retryable: false,
-        };
-      }
-      const visibleReason =
-        dispatches.length > 0 && reason === 'provider_outcome_unknown'
-          ? null
-          : reason;
-      const retryableReasons = new Set([
-        'plan_limit_reached',
-        'integration_inactive',
-        'billing_not_active',
-        'provider_not_accepted',
-      ]);
-      if (
-        verification.status === 'failed' &&
-        retryableReasons.has(visibleReason ?? '')
-      ) {
-        return {
-          status: 'blocked',
-          reason: visibleReason,
-          verification_id: verification.id,
-          retryable: true,
-        };
-      }
-      return {
-        status: (verification.status ??
-          'pending') as ManualOrderLifecycleDto['status'],
-        reason: visibleReason,
-        verification_id: verification.id,
-        retryable: false,
-      };
-    }
-    const event = order.webhookEvents[0];
-    if (!event) {
-      return {
-        status: 'accepted',
-        reason: null,
-        verification_id: null,
-        retryable: false,
-      };
-    }
-    if (event.status === 'pending') {
-      return {
-        status: 'accepted',
-        reason: event.lastError,
-        verification_id: null,
-        retryable: false,
-      };
-    }
-    if (event.status === 'processing') {
-      return {
-        status: 'processing',
-        reason: event.lastError,
-        verification_id: null,
-        retryable: false,
-      };
-    }
-    const reason = event.lastError;
-    if (
-      reason === 'non_cod_payment_method' ||
-      reason === 'missing_payment_signal'
-    ) {
-      return {
-        status: 'ineligible',
-        reason,
-        verification_id: null,
-        retryable: false,
-      };
-    }
-    const blockedReasons = new Set([
-      'integration_inactive',
-      'billing_not_active',
-      'plan_limit_reached',
-      'auto_verify_disabled',
-      'onboarding_incomplete',
-    ]);
-    if (reason && blockedReasons.has(reason)) {
-      return {
-        status: 'blocked',
-        reason,
-        verification_id: null,
-        retryable: true,
-      };
-    }
-    return {
-      status: 'failed',
-      reason,
-      verification_id: null,
-      retryable: Boolean(reason?.startsWith('dispatch_terminal:')),
-    };
-  }
-
-  private metadataReason(metadata: unknown): string | null {
-    if (!metadata || typeof metadata !== 'object') return null;
-    const reason = (metadata as Record<string, unknown>).reason;
-    return typeof reason === 'string' ? reason : null;
   }
 
   private parseLifecycleStatuses(input?: string): string[] | undefined {
@@ -819,7 +736,11 @@ export class OrdersService {
     if (integration.onboardingStatus !== 'completed')
       return 'onboarding_incomplete';
     if (!integration.isAutoVerifyEnabled) return 'auto_verify_disabled';
-    const paymentSignals = order.paymentMethod ? [order.paymentMethod] : [];
+    const paymentSignals: string[] = [];
+    for (const signal of readStoredPaymentSignals(order.rawPayload)) {
+      appendPaymentSignal(paymentSignals, signal);
+    }
+    appendPaymentSignal(paymentSignals, order.paymentMethod ?? undefined);
     const eligibility = this.orderEligibility.evaluateOrderForVerification({
       order: {
         orgId: order.orgId,

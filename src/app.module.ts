@@ -24,6 +24,7 @@ import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
 import { DatabaseModule } from './infrastructure/database';
 import { AdminModule } from './modules/admin/admin.module';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
+import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
 
 @Module({
   imports: [
@@ -49,12 +50,7 @@ import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outc
         connection: {
           url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
         },
-        defaultJobOptions: {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 3_000 },
-          removeOnComplete: { age: 7 * 24 * 3_600 },
-          removeOnFail: { age: 30 * 24 * 3_600 },
-        },
+        defaultJobOptions: DEFAULT_QUEUE_JOB_OPTIONS,
       }),
     }),
     VerificationCoreModule.register({

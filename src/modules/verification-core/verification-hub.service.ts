@@ -10,6 +10,7 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
+import { isSendFailureReason } from '../../shared/verification/verification-lifecycle';
 import {
   buildBackendLog,
   normalizeError,
@@ -17,7 +18,7 @@ import {
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
-type SkippedResult = { skipped: true; reason: string };
+type SkippedResult = { skipped: true; reason: string; orderId?: string };
 type ProcessedResult = { orderId: string; verificationId: string };
 type HandleNewOrderResult = SkippedResult | ProcessedResult;
 type SyntheticTestResult =
@@ -94,18 +95,21 @@ export class VerificationHubService {
     if ('skipped' in prepared) return prepared;
     const { order, verification } = prepared;
     if (prepared.existing) {
-      if (integration.platformType === 'standalone') {
-        const reopened =
-          await this.verificationsRepo.reopenRetryableInitialFailure(
-            verification.id,
-            order.orgId,
-          );
-        if (
-          reopened ||
-          (verification.status === 'pending' && !verification.lastSentAt)
-        ) {
-          await this.dispatchInitialSend(verification, order, integration);
-        }
+      // A re-delivered or merchant-retried ingestion event may resume a
+      // verification that never actually sent. Both guards below are status
+      // based, and the dispatch ledger keys one logical send per verification,
+      // so this is safe for every platform: an already-sent verification is
+      // never re-sent.
+      const reopened =
+        await this.verificationsRepo.reopenRetryableInitialFailure(
+          verification.id,
+          order.orgId,
+        );
+      if (
+        reopened ||
+        (verification.status === 'pending' && !verification.lastSentAt)
+      ) {
+        await this.dispatchInitialSend(verification, order, integration);
       }
       return { orderId: order.id, verificationId: verification.id };
     }
@@ -140,25 +144,7 @@ export class VerificationHubService {
       verification.id,
     );
 
-    if (delivery.status === 'plan_limit_reached') {
-      await this.markInitialSendFailed(
-        verification.id,
-        order.orgId,
-        delivery.reason ?? 'plan_limit_reached',
-      );
-    } else if (
-      delivery.status === 'skipped' &&
-      (delivery.reason === 'integration_inactive' ||
-        delivery.reason === 'billing_not_active' ||
-        delivery.reason === 'missing_linked_integration' ||
-        delivery.reason === 'source_identity_mismatch')
-    ) {
-      await this.markInitialSendFailed(
-        verification.id,
-        order.orgId,
-        delivery.reason,
-      );
-    }
+    await this.applyInitialSendFailure(verification.id, order.orgId, delivery);
 
     return {
       orderId: order.id,
@@ -404,6 +390,7 @@ export class VerificationHubService {
       return {
         skipped: true,
         reason: slotCheck.reason ?? 'plan_limit_reached',
+        orderId: order.id,
       };
     }
 
@@ -472,32 +459,44 @@ export class VerificationHubService {
           ? new Date(sendOutcome.sentAt)
           : new Date(),
       });
-    } else if (sendOutcome.status === 'plan_limit_reached') {
-      await this.markInitialSendFailed(
-        verification.id,
-        order.orgId,
-        'plan_limit_reached',
-      );
-    } else if (
-      sendOutcome.status === 'skipped' &&
-      (sendOutcome.reason === 'integration_inactive' ||
-        sendOutcome.reason === 'billing_not_active' ||
-        sendOutcome.reason === 'missing_linked_integration' ||
-        sendOutcome.reason === 'source_identity_mismatch')
-    ) {
-      await this.markInitialSendFailed(
-        verification.id,
-        order.orgId,
-        sendOutcome.reason,
-      );
+      return;
     }
+
+    await this.applyInitialSendFailure(
+      verification.id,
+      order.orgId,
+      sendOutcome,
+    );
   }
 
-  private async markInitialSendFailed(
+  /**
+   * Projects a non-delivering initial send outcome onto the verification.
+   *
+   * Shared by the immediate send path, the synthetic test path and the
+   * automation processor so the outcome-to-status mapping exists once. Outcomes
+   * that are neither a plan-limit rejection nor a recognised send failure leave
+   * the verification untouched for a later retry.
+   */
+  async applyInitialSendFailure(
     verificationId: string,
     orgId: string,
-    reason: string,
+    outcome: { status: string; reason?: string },
   ): Promise<void> {
+    let reason: string | undefined;
+    if (outcome.status === 'plan_limit_reached') {
+      // Always the canonical constant: the retry taxonomy
+      // (reopenRetryableInitialFailure, the dashboard lifecycle projection)
+      // matches this reason by exact string, so a decorated variant such as
+      // `plan_limit:1000/1000` would silently make the order unretryable.
+      reason = 'plan_limit_reached';
+    } else if (
+      outcome.status === 'skipped' &&
+      isSendFailureReason(outcome.reason)
+    ) {
+      reason = outcome.reason;
+    }
+    if (!reason) return;
+
     await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
       status: 'failed',
       metadata: { reason, kind: 'initial' },

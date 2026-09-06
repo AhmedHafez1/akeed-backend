@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, notInArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
+import { TERMINAL_STATUSES } from '../../../shared/verification/verification-lifecycle';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import {
@@ -11,6 +12,26 @@ import {
   verificationMessageDispatches,
   verifications,
 } from '../schema';
+
+/**
+ * Projects a lifecycle status onto a verification without regressing a
+ * terminal one.
+ *
+ * The dispatch ledger records facts about the outbound message (it was
+ * accepted, it was rejected). Those facts stay true even when the customer has
+ * already replied, so the surrounding columns must still be written — but the
+ * `status` column must not walk a `confirmed`/`canceled` row backwards.
+ *
+ * Expressed as a CASE rather than a WHERE guard on purpose: a WHERE guard
+ * would drop `wa_message_id`, `last_sent_at` and `attempts` along with the
+ * status, losing the ledger record of a message that really was sent.
+ */
+function statusUnlessTerminal(status: VerificationStatus) {
+  return sql`CASE
+    WHEN ${verifications.status} IN ('confirmed', 'canceled') THEN ${verifications.status}
+    ELSE ${status}::verification_status
+  END`;
+}
 
 export type DispatchKind = 'initial' | 'follow_up';
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
@@ -341,7 +362,7 @@ export class VerificationMessageDispatchesRepository {
       await tx
         .update(verifications)
         .set({
-          status: 'failed',
+          status: statusUnlessTerminal('failed'),
           metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_not_accepted', kind: dispatch.kind })}::jsonb`,
           updatedAt: now,
         })
@@ -360,6 +381,9 @@ export class VerificationMessageDispatchesRepository {
       updatedAt: params.sentAt,
     };
     if (dispatch.kind === 'follow_up') {
+      // A follow-up must never repoint `wa_message_id` on a verification the
+      // customer has already answered, or later delivery/read webhooks would
+      // resolve against a terminal row.
       await tx
         .update(verifications)
         .set({
@@ -367,14 +391,19 @@ export class VerificationMessageDispatchesRepository {
           followUpSentAt: params.sentAt,
           followUpAttempts: sql`${verifications.followUpAttempts} + 1`,
         })
-        .where(eq(verifications.id, dispatch.verificationId));
+        .where(
+          and(
+            eq(verifications.id, dispatch.verificationId),
+            notInArray(verifications.status, TERMINAL_STATUSES),
+          ),
+        );
       return;
     }
     await tx
       .update(verifications)
       .set({
         ...common,
-        status: 'sent' as VerificationStatus,
+        status: statusUnlessTerminal('sent'),
         lastSentAt: params.sentAt,
         attempts: sql`COALESCE(${verifications.attempts}, 0) + 1`,
         metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind'`,

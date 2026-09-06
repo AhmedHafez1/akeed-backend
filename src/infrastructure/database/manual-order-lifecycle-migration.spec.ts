@@ -2,13 +2,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('US-04-03 migration contract', () => {
+  // Normalize line endings: on a Windows checkout with `core.autocrlf=true`
+  // the migration lands with CRLF, which would never match the multi-line
+  // assertions below.
   const sql = readFileSync(
     resolve(
       __dirname,
       '../../../drizzle/0028_manual_order_lifecycle_dispatch_ledger.sql',
     ),
     'utf8',
-  );
+  ).replace(/\r\n/g, '\n');
 
   it('links only matching Standalone manual events through tenant-safe identity', () => {
     expect(sql).toContain(`event."platform" = 'standalone'`);

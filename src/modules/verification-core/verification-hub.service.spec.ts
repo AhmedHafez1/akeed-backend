@@ -549,9 +549,12 @@ describe('VerificationHubService', () => {
         buildIntegration(),
       );
 
+      // The order id rides along so the ingestion worker can still link the
+      // durable event to it — a plan-limited order must remain retryable.
       expect(result).toEqual({
         skipped: true,
         reason: 'plan_limit_reached',
+        orderId: 'order-db-1',
       });
       expect(verificationsRepo.create).not.toHaveBeenCalled();
     });

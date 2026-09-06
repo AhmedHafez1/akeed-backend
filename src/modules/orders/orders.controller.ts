@@ -114,10 +114,10 @@ export class OrdersController {
 
   @Post(':orderId/verification/retry')
   @HttpCode(HttpStatus.ACCEPTED)
-  async retryManualOrderVerification(
+  async retryOrderVerification(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId') orderId: string,
   ): Promise<RetryManualOrderVerificationResponseDto> {
-    return this.ordersService.retryManualOrderVerification(user, orderId);
+    return this.ordersService.retryOrderVerification(user, orderId);
   }
 }

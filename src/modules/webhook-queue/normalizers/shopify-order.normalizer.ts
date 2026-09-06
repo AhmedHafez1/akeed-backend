@@ -8,6 +8,7 @@ import {
   appendPaymentSignal,
   classifyCodStatus,
 } from '../../../shared/commerce/payment-signals';
+import { collectShopifyGatewaySignals } from '../../../infrastructure/spokes/shopify/services/shopify-payment-signals';
 
 /**
  * Converts a raw Shopify order webhook payload into a NormalizedOrder.
@@ -74,13 +75,8 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
   ): string[] {
     const signals: string[] = [];
     appendPaymentSignal(signals, paymentMethod);
-    for (const gatewayName of payload.payment_gateway_names ?? []) {
-      appendPaymentSignal(signals, gatewayName);
-    }
-    appendPaymentSignal(signals, payload.gateway);
-    for (const transaction of payload.transactions ?? []) {
-      if (!transaction || typeof transaction !== 'object') continue;
-      appendPaymentSignal(signals, transaction.gateway);
+    for (const gatewaySignal of collectShopifyGatewaySignals(payload)) {
+      appendPaymentSignal(signals, gatewaySignal);
     }
     return signals;
   }

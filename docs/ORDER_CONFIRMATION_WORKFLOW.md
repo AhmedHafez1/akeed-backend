@@ -39,7 +39,7 @@ Out of scope:
 | Status      | Meaning                                                                            | Main writer                                         |
 | ----------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `pending`   | Verification record exists, but the first WhatsApp template has not been sent yet. | `VerificationHubService`                            |
-| `sent`      | Initial WhatsApp verification template was sent successfully.                      | `VerificationSendService`                           |
+| `sent`      | Initial WhatsApp verification template was sent successfully.                      | `VerificationMessageDispatchesRepository`           |
 | `delivered` | Meta reported delivery for the current WhatsApp message id.                        | `WhatsAppWebhookService`                            |
 | `read`      | Meta reported the message was read.                                                | `WhatsAppWebhookService`                            |
 | `confirmed` | Customer pressed the confirm button.                                               | `WhatsAppWebhookService`                            |
@@ -54,6 +54,23 @@ Protected behavior:
 - `no_reply` is protected from late delivery/read/failed webhooks.
 - A customer reply can still override `no_reply` if the merchant has not already canceled the order.
 - If `merchantCanceledAt` is set, later customer replies are ignored.
+
+Terminal protection is enforced at every writer, not only in
+`VerificationsRepository.updateStatus`:
+
+- `VerificationMessageDispatchesRepository` projects provider acceptance and
+  rejection through a SQL `CASE` that preserves an existing terminal status. The
+  send facts (`wa_message_id`, `last_sent_at`, `attempts`) are still recorded,
+  because the message really was sent. This matters most for the admin
+  `outcome_unknown` resolution path, which can run long after a customer replied.
+- `VerificationsRepository.updateByIdForOrg` applies the terminal guard whenever
+  the payload changes `status`.
+- The dashboard lifecycle projection resolves `confirmed`/`canceled` ahead of
+  `review_required` and `blocked`, so a settled order is never displayed as
+  needing attention.
+
+Shared vocabulary for these rules lives in
+`src/shared/verification/verification-lifecycle.ts`.
 
 ## Merchant Controls
 

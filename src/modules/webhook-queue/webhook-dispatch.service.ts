@@ -13,6 +13,7 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import { WEBHOOK_QUEUE_NAME, WebhookJobType } from './webhook-queue.constants';
+import { DEFAULT_QUEUE_JOB_OPTIONS } from '../../shared/queue/job-options';
 
 export type DispatchOutcome = 'dispatched' | 'not_claimed' | 'failed';
 
@@ -81,10 +82,7 @@ export class WebhookDispatchService {
 
       await this.queue.add(event.jobType, payload, {
         jobId: `webhook-event-${event.id}-dispatch-${event.dispatchAttempts}`,
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 3_000 },
-        removeOnComplete: { age: 7 * 24 * 3_600, count: 10_000 },
-        removeOnFail: { age: 30 * 24 * 3_600, count: 50_000 },
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
       });
       await this.events.markDispatched(event.id);
       return 'dispatched';

@@ -68,6 +68,7 @@ export class VerificationsController {
               can_send_test_verification: canWrite,
               can_cancel_orders: canWrite,
               can_create_manual_order: canWrite,
+              can_retry_verifications: canWrite,
             },
           }
         : undefined,
