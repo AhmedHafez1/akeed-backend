@@ -1,7 +1,5 @@
-import type {
-  CommerceOutcomeAction,
-  CommerceOutcomeOperationResult,
-} from '../../../shared/commerce/commerce-outcome';
+import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
+import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -13,27 +11,6 @@ export const DASHBOARD_DATE_RANGE_VALUES = [
 ] as const;
 
 export type DashboardDateRange = (typeof DASHBOARD_DATE_RANGE_VALUES)[number];
-
-export class GetOrdersQueryDto {
-  @IsOptional()
-  @IsString()
-  status?: string;
-
-  @IsOptional()
-  @IsIn(DASHBOARD_DATE_RANGE_VALUES)
-  date_range?: DashboardDateRange;
-
-  @IsOptional()
-  @IsString()
-  cursor?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
-}
 
 export class GetVerificationsQueryDto {
   @IsOptional()
@@ -63,10 +40,16 @@ export class GetVerificationStatsQueryDto {
 }
 
 export interface VerificationListItemDto {
-  capabilities: { action: CommerceOutcomeAction; supported: boolean }[];
+  capabilities: VerificationRowCapability[];
   cancellation_operation?: CommerceOutcomeOperationResult;
   id: string;
   status: string;
+  /**
+   * Why the verification is in its current state, when a send/dispatch path
+   * recorded one. Carries the explanation without inventing a status word for
+   * it — the status vocabulary stays the nine the database can hold.
+   */
+  reason: string | null;
   order_id: string;
   order_number: string | null;
   is_test: boolean;
@@ -86,44 +69,18 @@ export interface VerificationListItemDto {
   follow_up_sent_at: string | null;
 }
 
-export interface OrderListItemDto {
-  id: string;
-  order_number: string | null;
-  external_order_id: string;
-  customer_name: string | null;
-  customer_phone: string;
-  customer_email: string | null;
-  total_price: string | null;
-  currency: string | null;
-  created_at: string | null;
-  is_test: boolean;
-  source: {
-    integration_id: string;
-    platform_type: string;
-  };
-  verification_status: string | null;
-  verification: {
-    id: string;
-    status: string;
-    capabilities: {
-      action: CommerceOutcomeAction;
-      supported: boolean;
-    }[];
-    cancellation_operation?: CommerceOutcomeOperationResult;
-    last_sent_at: string | null;
-    delivered_at: string | null;
-    read_at: string | null;
-    confirmed_at: string | null;
-    canceled_at: string | null;
-    expired_at: string | null;
-    no_reply_at: string | null;
-    follow_up_attempts: number;
-    follow_up_sent_at: string | null;
-  } | null;
-  lifecycle: ManualOrderLifecycleDto;
-}
-
-export const MANUAL_ORDER_LIFECYCLE_STATUSES = [
+/**
+ * States the retry endpoint distinguishes when deciding whether a re-send is
+ * safe.
+ *
+ * Not a merchant-facing vocabulary: the dashboard renders only the nine values
+ * the `verification_status` enum can hold. The five extra members here
+ * (`accepted`, `processing`, `ineligible`, `blocked`, `review_required`)
+ * describe an order that has not reached a verification yet, or one whose
+ * dispatch outcome is unresolved — distinctions retry safety needs and the UI
+ * does not.
+ */
+export const RETRY_GUARD_STATUSES = [
   'accepted',
   'processing',
   'ineligible',
@@ -140,11 +97,10 @@ export const MANUAL_ORDER_LIFECYCLE_STATUSES = [
   'review_required',
 ] as const;
 
-export type ManualOrderLifecycleStatus =
-  (typeof MANUAL_ORDER_LIFECYCLE_STATUSES)[number];
+export type RetryGuardStatus = (typeof RETRY_GUARD_STATUSES)[number];
 
-export interface ManualOrderLifecycleDto {
-  status: ManualOrderLifecycleStatus;
+export interface RetryGuardStateDto {
+  status: RetryGuardStatus;
   reason: string | null;
   verification_id: string | null;
   retryable: boolean;
@@ -153,7 +109,7 @@ export interface ManualOrderLifecycleDto {
 export interface RetryManualOrderVerificationResponseDto {
   orderId: string;
   verificationId?: string;
-  lifecycle: ManualOrderLifecycleDto;
+  lifecycle: RetryGuardStateDto;
   duplicate: boolean;
 }
 
@@ -178,28 +134,10 @@ export interface PaginatedResponse<T> {
   };
 }
 
-export interface StandaloneDashboardStatsDto {
-  date_range: DashboardDateRange;
-  reporting_timezone: string;
-  source: DashboardSourceState;
-  automation: VerificationStatsDto['automation'];
-  order_totals: {
-    total: number;
-    in_progress: number;
-    needs_attention: number;
-    confirmed: number;
-    canceled: number;
-  };
-  verification_totals: VerificationStatsDto['totals'];
-  usage: VerificationStatsDto['usage'] & {
-    period_start: string | null;
-    period_end: string | null;
-  };
-  savings: VerificationStatsDto['savings'];
-}
-
 export interface VerificationStatsDto {
   date_range: DashboardDateRange;
+  /** IANA zone the date range was bucketed in; clients format rows with it. */
+  reporting_timezone: string;
   source: DashboardSourceState;
   automation: {
     is_auto_verify_enabled: boolean;
@@ -207,6 +145,9 @@ export interface VerificationStatsDto {
     quiet_hours_enabled: boolean;
   };
   totals: {
+    total: number;
+    in_progress: number;
+    needs_attention: number;
     pending: number;
     failed: number;
     awaiting_reply: number;
@@ -223,6 +164,8 @@ export interface VerificationStatsDto {
   usage: {
     used: number;
     limit: number;
+    period_start: string | null;
+    period_end: string | null;
   };
   savings: {
     avg_shipping_cost: number;

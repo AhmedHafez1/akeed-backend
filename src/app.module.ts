@@ -25,6 +25,7 @@ import { DatabaseModule } from './infrastructure/database';
 import { AdminModule } from './modules/admin/admin.module';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
 import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
+import { validateEnv } from './shared/config/env-validation';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
       envFilePath: !process.env.NODE_ENV
         ? '.env'
         : `.env.${process.env.NODE_ENV}`,
+      validate: validateEnv,
     }),
     ThrottlerModule.forRoot({
       throttlers: [

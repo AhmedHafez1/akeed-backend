@@ -240,8 +240,17 @@ Two buttons are attached to every template:
 **Customer reply processing:**
 
 1. Extract button payload from `message.button.payload` or `message.interactive.button_reply.id`.
-2. Parse action: `confirm_{id}` → `confirmed`, `cancel_{id}` → `canceled`.
-3. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
+2. Parse action: `confirm_{id}` → `confirmed`, `cancel_{id}` → `canceled`. Exactly
+   one underscore is required — verification ids are UUIDs and never contain one,
+   so a payload with more segments did not come from an Akeed template.
+3. A customer who types instead of tapping is also handled: `message.text.body`
+   is matched against the accepted yes/no answers in
+   `src/shared/verification/customer-reply-intent.ts` (Arabic, English and
+   digits), and the verification is located via `message.context.id` — the wamid
+   of the template being replied to — against `verifications.wa_message_id`.
+   Anything ambiguous resolves to no intent and is logged as
+   `unresolved_reply` rather than guessed at.
+4. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
 4. Update verification status in database.
 5. Set `cancellationSource: 'customer'` for customer-initiated cancellations.
 6. Call `VerificationHubService.finalizeVerification()` → dispatch the customer outcome through the registry. Shopify adds the existing tag; customer cancellation never calls remote order cancellation.
@@ -528,7 +537,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Method | Endpoint             | Auth                    | Purpose                                       |
 | ------ | -------------------- | ----------------------- | --------------------------------------------- |
 | `GET`  | `/webhooks/whatsapp` | `WA_VERIFY_TOKEN` check | Meta subscription verification challenge.     |
-| `POST` | `/webhooks/whatsapp` | None (Meta-initiated)   | Customer replies and delivery status updates. |
+| `POST` | `/webhooks/whatsapp` | `MetaWebhookSignatureGuard` (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body, timing-safe) | Customer replies and delivery status updates. |
 
 ### Outbound API Calls
 

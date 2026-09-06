@@ -13,6 +13,11 @@ import {
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
 import { VerificationMessageDispatchesRepository } from '../../database/repositories/verification-message-dispatches.repository';
+import {
+  CustomerReplyIntent,
+  resolveButtonPayload,
+  resolveReplyText,
+} from '../../../shared/verification/customer-reply-intent';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -46,14 +51,38 @@ export class WhatsAppWebhookService {
   }
 
   private async handleIncoming(payload: WhatsAppWebhookPayloadDto) {
+    const entries = payload.entry ?? [];
+    const messageCount = entries.reduce(
+      (total, entry) =>
+        total +
+        (entry.changes ?? []).reduce(
+          (sum, change) => sum + (change.value?.messages?.length ?? 0),
+          0,
+        ),
+      0,
+    );
+    const statusCount = entries.reduce(
+      (total, entry) =>
+        total +
+        (entry.changes ?? []).reduce(
+          (sum, change) => sum + (change.value?.statuses?.length ?? 0),
+          0,
+        ),
+      0,
+    );
+
+    // Counts, not just "we got something": a subscription that delivers
+    // statuses but no messages (or the reverse) is a Meta-side field
+    // configuration problem, and this is the line that tells them apart.
     this.logger.log(
       buildBackendLog(WhatsAppWebhookService.name, {
         action: 'whatsapp-webhook-receive',
         outcome: 'success',
+        messageCount,
+        statusCount,
       }),
     );
 
-    const entries = payload.entry ?? [];
     for (const entry of entries) {
       const changes = entry.changes ?? [];
       for (const change of changes) {
@@ -66,24 +95,70 @@ export class WhatsAppWebhookService {
     }
   }
 
+  /**
+   * Resolve which verification a customer reply is answering, and what it says.
+   *
+   * Two routes, in order of trustworthiness:
+   *  - a quick-reply button carries the verification id in its own payload;
+   *  - a free-text answer carries nothing, so it is matched by `context.id`,
+   *    the wamid of the template the customer replied to.
+   *
+   * Anything that resolves to neither is returned as `null` and logged by the
+   * caller, so an unhandled reply shape stops being invisible.
+   */
+  private async resolveReply(message: WhatsAppMessageDto): Promise<{
+    verificationId: string;
+    intent: CustomerReplyIntent;
+    via: 'button' | 'text';
+  } | null> {
+    const buttonPayload =
+      message.button?.payload ?? message.interactive?.button_reply?.id;
+    if (buttonPayload) {
+      const resolved = resolveButtonPayload(buttonPayload);
+      if (resolved) {
+        return {
+          verificationId: resolved.verificationId,
+          intent: resolved.intent,
+          via: 'button',
+        };
+      }
+    }
+
+    const body = message.text?.body;
+    const contextWamid = message.context?.id;
+    if (!body || !contextWamid) return null;
+
+    const intent = resolveReplyText(body);
+    if (!intent) return null;
+
+    const verification =
+      await this.verificationsRepo.findByWaMessageId(contextWamid);
+    if (!verification) return null;
+
+    return { verificationId: verification.id, intent, via: 'text' };
+  }
+
   private async handleMessages(messages: WhatsAppMessageDto[]) {
     for (const message of messages) {
-      if (message.type !== 'button' && message.type !== 'interactive') continue;
+      const resolved = await this.resolveReply(message);
+      if (!resolved) {
+        this.logger.warn(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            messageType: message.type,
+            hasButtonPayload: Boolean(
+              message.button?.payload ?? message.interactive?.button_reply?.id,
+            ),
+            hasText: Boolean(message.text?.body),
+            hasContext: Boolean(message.context?.id),
+            reason: 'unresolved_reply',
+          }),
+        );
+        continue;
+      }
 
-      const buttonPayload =
-        message.button?.payload ?? message.interactive?.button_reply?.id;
-      if (!buttonPayload) continue;
-
-      const parts = buttonPayload.split('_');
-      if (parts.length !== 2) continue;
-
-      const action = parts[0].toLowerCase();
-      const verificationId = parts[1];
-
-      let newStatus: 'confirmed' | 'canceled' | null = null;
-      if (action === 'confirm' || action === 'yes') newStatus = 'confirmed';
-      if (action === 'cancel' || action === 'no') newStatus = 'canceled';
-      if (!newStatus) continue;
+      const { verificationId, intent: newStatus, via } = resolved;
 
       // Block customer reply if merchant already canceled (no_reply escalation)
       const existing = await this.verificationsRepo.findById(verificationId);
@@ -120,6 +195,7 @@ export class WhatsAppWebhookService {
             outcome: 'success',
             verificationId,
             status: newStatus,
+            via,
           }),
         );
         await this.verificationHub.finalizeVerification(
@@ -140,6 +216,7 @@ export class WhatsAppWebhookService {
             outcome: 'skipped',
             verificationId,
             status: newStatus,
+            via,
             reason: 'already_terminal_or_not_found',
           }),
         );

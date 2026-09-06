@@ -36,6 +36,8 @@ export class VerificationsRepository {
     endAt: string,
   ): Promise<{
     total: number;
+    inProgress: number;
+    needsAttention: number;
     pending: number;
     failed: number;
     awaitingReply: number;
@@ -50,6 +52,10 @@ export class VerificationsRepository {
     const [row] = await this.db
       .select({
         total: sql<number>`count(*)::int`,
+        // Rolled up here so both dashboards read one definition of "still
+        // moving" and "needs me", instead of each summing statuses its own way.
+        inProgress: sql<number>`count(CASE WHEN ${verifications.status} IN ('pending', 'sent', 'delivered', 'read') THEN 1 END)::int`,
+        needsAttention: sql<number>`count(CASE WHEN ${verifications.status} IN ('failed', 'expired', 'no_reply') THEN 1 END)::int`,
         pending: sql<number>`count(CASE WHEN ${verifications.status} = 'pending' THEN 1 END)::int`,
         failed: sql<number>`count(CASE WHEN ${verifications.status} = 'failed' THEN 1 END)::int`,
         awaitingReply: sql<number>`count(CASE WHEN ${verifications.status} IN ('sent', 'delivered', 'read', 'no_reply') THEN 1 END)::int`,
@@ -72,6 +78,8 @@ export class VerificationsRepository {
 
     return {
       total: row?.total ?? 0,
+      inProgress: row?.inProgress ?? 0,
+      needsAttention: row?.needsAttention ?? 0,
       pending: row?.pending ?? 0,
       failed: row?.failed ?? 0,
       awaitingReply: row?.awaitingReply ?? 0,
@@ -144,6 +152,20 @@ export class VerificationsRepository {
     });
   }
 
+  /**
+   * Find a verification by the provider message id of its most recent outbound
+   * message.
+   *
+   * Used to resolve a customer reply that carries no verification id of its own
+   * — a free-text answer — via the `context.id` wamid of the template it
+   * replies to.
+   */
+  async findByWaMessageId(wamid: string) {
+    return await this.db.query.verifications.findFirst({
+      where: eq(verifications.waMessageId, wamid),
+    });
+  }
+
   async findByOrg(
     orgId: string,
     statuses?: VerificationStatus[],
@@ -169,14 +191,7 @@ export class VerificationsRepository {
   > {
     const limit = opts?.limit ?? 50;
 
-    const conditions = [
-      eq(verifications.orgId, orgId),
-      period ? gte(verifications.createdAt, period.startAt) : undefined,
-      period ? lt(verifications.createdAt, period.endAt) : undefined,
-      statuses && statuses.length > 0
-        ? inArray(verifications.status, statuses)
-        : undefined,
-    ].filter(Boolean);
+    const conditions = this.buildOrgListConditions(orgId, statuses, period);
 
     if (opts?.cursor) {
       conditions.push(
@@ -213,6 +228,42 @@ export class VerificationsRepository {
       ],
       limit,
     });
+  }
+
+  /**
+   * Count the verifications a `findByOrg` call would return, ignoring the
+   * cursor.
+   *
+   * Shares `buildOrgListConditions` with the list query so the total the
+   * dashboard shows can never describe a different filter than the rows.
+   */
+  async countByOrg(
+    orgId: string,
+    statuses?: VerificationStatus[],
+    period?: { startAt: string; endAt: string },
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({ value: sql<number>`count(*)::int` })
+      .from(verifications)
+      .where(and(...this.buildOrgListConditions(orgId, statuses, period)));
+
+    return row?.value ?? 0;
+  }
+
+  /** Org + date-range + status filter shared by the list and count queries. */
+  private buildOrgListConditions(
+    orgId: string,
+    statuses?: VerificationStatus[],
+    period?: { startAt: string; endAt: string },
+  ) {
+    return [
+      eq(verifications.orgId, orgId),
+      period ? gte(verifications.createdAt, period.startAt) : undefined,
+      period ? lt(verifications.createdAt, period.endAt) : undefined,
+      statuses && statuses.length > 0
+        ? inArray(verifications.status, statuses)
+        : undefined,
+    ].filter(Boolean);
   }
 
   /**

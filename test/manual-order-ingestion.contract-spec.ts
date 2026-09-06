@@ -391,7 +391,11 @@ describe('manual order ingestion PostgreSQL contract', () => {
     ).resolves.toHaveLength(0);
   });
 
-  it('reconciles tenant-scoped lifecycle lists, filters, pagination, tests, and stats', async () => {
+  it('projects tenant-scoped retry-guard state for every order shape', async () => {
+    // The dashboard list no longer speaks these states — it renders only the
+    // nine `verification_status` values. They survive here because retry
+    // safety still needs them: a queued order must not read as a failure, and
+    // an unresolved dispatch must block a re-send.
     const sourceA = await createSource();
     const sourceB = await createSource();
     const specifications: Array<{
@@ -403,71 +407,66 @@ describe('manual order ingestion PostgreSQL contract', () => {
         | 'failed'
         | 'skipped';
       reason: string | null;
-      isTest?: boolean;
-      verificationStatus?:
-        | 'pending'
-        | 'sent'
-        | 'delivered'
-        | 'read'
-        | 'confirmed'
-        | 'canceled'
-        | 'expired'
-        | 'failed'
-        | 'no_reply';
+      verificationStatus?: 'confirmed' | 'failed' | 'no_reply';
+      expectedStatus: string;
+      expectedRetryable: boolean;
     }> = [
-      { key: 'accepted', eventStatus: 'pending', reason: null },
-      { key: 'processing', eventStatus: 'processing', reason: null },
+      {
+        key: 'accepted',
+        eventStatus: 'pending',
+        reason: null,
+        expectedStatus: 'accepted',
+        expectedRetryable: false,
+      },
+      {
+        key: 'processing',
+        eventStatus: 'processing',
+        reason: null,
+        expectedStatus: 'processing',
+        expectedRetryable: false,
+      },
       {
         key: 'ineligible',
         eventStatus: 'skipped',
         reason: 'non_cod_payment_method',
+        expectedStatus: 'ineligible',
+        expectedRetryable: false,
       },
       {
-        key: 'blocked-test',
+        key: 'blocked',
         eventStatus: 'skipped',
         reason: 'plan_limit_reached',
-        isTest: true,
+        expectedStatus: 'blocked',
+        expectedRetryable: true,
       },
       {
         key: 'confirmed',
         eventStatus: 'completed',
         reason: null,
         verificationStatus: 'confirmed',
-      },
-      {
-        key: 'canceled',
-        eventStatus: 'completed',
-        reason: null,
-        verificationStatus: 'canceled',
-      },
-      {
-        key: 'no-reply',
-        eventStatus: 'completed',
-        reason: null,
-        verificationStatus: 'no_reply',
+        expectedStatus: 'confirmed',
+        expectedRetryable: false,
       },
       {
         key: 'review',
         eventStatus: 'completed',
         reason: null,
         verificationStatus: 'failed',
+        expectedStatus: 'review_required',
+        expectedRetryable: false,
       },
     ];
 
-    for (const [index, specification] of specifications.entries()) {
+    const orderIds = new Map<string, string>();
+    for (const specification of specifications) {
       const accepted = await repository.accept(
         acceptanceInput(
           sourceA.orgId,
           sourceA.integrationId,
-          `dashboard-${specification.key}`,
+          `retry-guard-${specification.key}`,
         ),
       );
-      const createdAt = `2026-05-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`;
-      await client`
-        UPDATE orders
-        SET created_at = ${createdAt}, is_test = ${specification.isTest ?? false}
-        WHERE id = ${accepted.order.id}
-      `;
+      orderIds.set(specification.key, accepted.order.id);
       await client`
         UPDATE webhook_events
         SET status = ${specification.eventStatus}::webhook_event_status,
@@ -477,28 +476,11 @@ describe('manual order ingestion PostgreSQL contract', () => {
 
       if (specification.verificationStatus) {
         const [verification] = await client<{ id: string }[]>`
-          INSERT INTO verifications (
-            org_id,
-            order_id,
-            status,
-            last_sent_at,
-            confirmed_at,
-            canceled_at,
-            no_reply_at,
-            follow_up_attempts,
-            cancellation_source,
-            metadata
-          )
+          INSERT INTO verifications (org_id, order_id, status, metadata)
           VALUES (
             ${sourceA.orgId},
             ${accepted.order.id},
             ${specification.verificationStatus}::verification_status,
-            ${createdAt},
-            ${specification.verificationStatus === 'confirmed' ? createdAt : null},
-            ${specification.verificationStatus === 'canceled' ? createdAt : null},
-            ${specification.verificationStatus === 'no_reply' ? createdAt : null},
-            ${specification.verificationStatus === 'no_reply' ? 1 : 0},
-            ${specification.verificationStatus === 'canceled' ? 'merchant' : null},
             ${JSON.stringify(
               specification.key === 'review'
                 ? { reason: 'provider_outcome_unknown' }
@@ -510,18 +492,13 @@ describe('manual order ingestion PostgreSQL contract', () => {
         if (specification.key === 'review') {
           await client`
             INSERT INTO verification_message_dispatches (
-              org_id,
-              integration_id,
-              verification_id,
-              dispatch_key,
-              kind,
-              state
+              org_id, integration_id, verification_id, dispatch_key, kind, state
             )
             VALUES (
               ${sourceA.orgId},
               ${sourceA.integrationId},
               ${verification.id},
-              'dashboard-review-dispatch',
+              'retry-guard-review-dispatch',
               'initial',
               'outcome_unknown'
             )
@@ -530,103 +507,21 @@ describe('manual order ingestion PostgreSQL contract', () => {
       }
     }
 
-    const endEdge = await repository.accept(
-      acceptanceInput(sourceA.orgId, sourceA.integrationId, 'dashboard-end'),
-    );
-    await client`
-      UPDATE orders SET created_at = '2026-06-01T00:00:00.000Z'
-      WHERE id = ${endEdge.order.id}
-    `;
-    const otherTenant = await repository.accept(
-      acceptanceInput(sourceB.orgId, sourceB.integrationId, 'dashboard-other'),
-    );
-    await client`
-      UPDATE orders SET created_at = '2026-05-05T12:00:00.000Z'
-      WHERE id = ${otherTenant.order.id}
-    `;
+    for (const specification of specifications) {
+      const row = await dashboardRepository.findDashboardOrderById(
+        orderIds.get(specification.key)!,
+        sourceA.orgId,
+      );
+      expect(row?.retryGuardStatus).toBe(specification.expectedStatus);
+      expect(row?.retryGuardRetryable).toBe(specification.expectedRetryable);
+    }
 
-    const range = {
-      startAt: '2026-05-01T00:00:00.000Z',
-      endAt: '2026-06-01T00:00:00.000Z',
-    };
-    const firstPage = await dashboardRepository.findDashboardByOrg(
-      sourceA.orgId,
-      { ...range, limit: 3 },
-    );
-    const secondPage = await dashboardRepository.findDashboardByOrg(
-      sourceA.orgId,
-      {
-        ...range,
-        cursor: {
-          createdAt: firstPage[2].createdAt ?? '',
-          id: firstPage[2].id,
-        },
-        limit: 10,
-      },
-    );
-    const needsAttention = await dashboardRepository.findDashboardByOrg(
-      sourceA.orgId,
-      {
-        ...range,
-        statuses: [
-          'ineligible',
-          'blocked',
-          'failed',
-          'expired',
-          'no_reply',
-          'review_required',
-        ],
-      },
-    );
-    const total = await dashboardRepository.countDashboardByOrg(
-      sourceA.orgId,
-      range,
-    );
-    const stats = await dashboardRepository.getDashboardStatsByOrg(
-      sourceA.orgId,
-      range,
-    );
-
-    expect(firstPage).toHaveLength(3);
-    expect(secondPage).toHaveLength(5);
-    expect(
-      new Set([...firstPage, ...secondPage].map(({ id }) => id)).size,
-    ).toBe(8);
-    expect(total).toBe(8);
-    expect(
-      needsAttention.map(({ lifecycleStatus }) => lifecycleStatus).sort(),
-    ).toEqual(['blocked', 'ineligible', 'no_reply', 'review_required']);
-    expect(
-      needsAttention.find(
-        ({ lifecycleStatus }) => lifecycleStatus === 'blocked',
-      )?.isTest,
-    ).toBe(true);
-    const allRows = [...firstPage, ...secondPage];
-    expect(
-      allRows.find(({ lifecycleStatus }) => lifecycleStatus === 'blocked')
-        ?.lifecycleRetryable,
-    ).toBe(true);
-    expect(
-      allRows.find(({ lifecycleStatus }) => lifecycleStatus === 'processing')
-        ?.lifecycleRetryable,
-    ).toBe(false);
-    expect(
-      allRows.find(
-        ({ lifecycleStatus }) => lifecycleStatus === 'review_required',
-      )?.lifecycleRetryable,
-    ).toBe(false);
-    expect(stats).toMatchObject({
-      total: 8,
-      inProgress: 2,
-      needsAttention: 4,
-      confirmedOrders: 1,
-      canceledOrders: 1,
-      failed: 1,
-      sent: 4,
-      confirmed: 1,
-      canceled: 1,
-      customerCanceled: 0,
-      followUpsSent: 1,
-    });
+    // Another tenant asking for the same order id gets nothing back.
+    await expect(
+      dashboardRepository.findDashboardOrderById(
+        orderIds.get('accepted')!,
+        sourceB.orgId,
+      ),
+    ).resolves.toBeUndefined();
   });
 });

@@ -129,6 +129,25 @@ Any exceptional intervention requires an approved support or migration ticket, n
   - `WA_BUSINESS_ACCOUNT_ID`
   - `WA_ACCESS_TOKEN`
   - `WA_VERIFY_TOKEN`
+  - `META_APP_SECRET`
+
+`META_APP_SECRET` is the App Secret from the Meta app dashboard (App settings >
+Basic). It signs every inbound webhook. **If it does not match, the signature
+guard rejects every delivery, read and reply callback**, and the symptom is not
+an error the merchant can see — verifications simply sit at `sent` forever with
+`confirmed_at` null. `validateEnv` (`src/shared/config/env-validation.ts`)
+therefore refuses to boot when any of these are missing, or when
+`META_APP_SECRET` is still the `.env.example` placeholder outside development.
+
+The Meta app must also have the **`messages`** webhook field subscribed —
+delivery/read statuses and inbound customer replies both arrive on that one
+field. To tell the failure modes apart, grep the backend log for:
+
+- `meta-webhook-request-received` — Meta reached this host at all.
+- `meta-signature-verify` with `outcome: failure` — reached us and was rejected
+  (wrong `META_APP_SECRET`).
+- `whatsapp-webhook-receive` with `messageCount` / `statusCount` — accepted, and
+  how much of each kind arrived.
 
 ## Redis (Job Queue)
 

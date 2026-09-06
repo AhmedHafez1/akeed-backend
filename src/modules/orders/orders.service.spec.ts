@@ -5,7 +5,6 @@ import {
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import { OrdersService } from './orders.service';
-import { encodeCursor } from './services/pagination.helpers';
 
 describe('OrdersService manual creation', () => {
   const source = {
@@ -363,7 +362,7 @@ describe('OrdersService manual verification lifecycle', () => {
       'auto_verify_disabled',
       'onboarding_incomplete',
     ]);
-    const lifecycleStatus = verification
+    const retryGuardStatus = verification
       ? verification.status === 'confirmed' ||
         verification.status === 'canceled'
         ? verification.status
@@ -402,38 +401,19 @@ describe('OrdersService manual verification lifecycle', () => {
       noReplyAt: null,
       followUpAttempts: 0,
       followUpSentAt: null,
-      lifecycleStatus,
-      lifecycleReason:
+      retryGuardStatus,
+      retryGuardReason:
         reason === 'provider_outcome_unknown' &&
         verification?.messageDispatches?.length
           ? null
           : reason,
-      lifecycleRetryable:
-        lifecycleStatus === 'blocked' ||
+      retryGuardRetryable:
+        retryGuardStatus === 'blocked' ||
         Boolean(reason?.startsWith('dispatch_terminal:')),
     };
     const orders = {
       findById: jest.fn().mockResolvedValue(order),
       findDashboardOrderById: jest.fn().mockResolvedValue(dashboardOrder),
-      findDashboardByOrg: jest.fn().mockResolvedValue([dashboardOrder]),
-      countDashboardByOrg: jest.fn().mockResolvedValue(1),
-      getDashboardStatsByOrg: jest.fn().mockResolvedValue({
-        total: 4,
-        inProgress: 1,
-        needsAttention: 1,
-        confirmedOrders: 1,
-        canceledOrders: 1,
-        pending: 1,
-        failed: 1,
-        awaitingReply: 1,
-        sent: 4,
-        delivered: 3,
-        read: 2,
-        confirmed: 1,
-        canceled: 1,
-        customerCanceled: 1,
-        followUpsSent: 2,
-      }),
     };
     const integrations = {
       findByOrg: jest.fn().mockResolvedValue([integration]),
@@ -480,42 +460,6 @@ describe('OrdersService manual verification lifecycle', () => {
       eligibility,
     };
   }
-
-  it.each([
-    ['non_cod_payment_method', 'ineligible', false],
-    ['missing_payment_signal', 'ineligible', false],
-    ['plan_limit_reached', 'blocked', true],
-    ['integration_inactive', 'blocked', true],
-    ['normalisation_failed', 'failed', false],
-  ])(
-    'exposes %s as a stable %s lifecycle',
-    async (reason, status, retryable) => {
-      const { service } = setup({
-        webhookEvents: [
-          {
-            id: 'event-1',
-            platform: 'standalone',
-            jobType: 'order.create',
-            status: 'skipped',
-            lastError: reason,
-          },
-        ],
-      });
-
-      await expect(service.listByOrg('org-1', {})).resolves.toMatchObject({
-        data: [
-          {
-            lifecycle: {
-              status,
-              reason,
-              verification_id: null,
-              retryable,
-            },
-          },
-        ],
-      });
-    },
-  );
 
   it('redispatches a recovered blocked Standalone order', async () => {
     const { service, events, dispatcher } = setup();
@@ -604,6 +548,10 @@ describe('OrdersService manual verification lifecycle', () => {
   });
 
   it('does not preserve a stale review reason after ledger acceptance', async () => {
+    // The verification still carries `provider_outcome_unknown` from the
+    // attempt that stalled, but the ledger has since accepted the send. The
+    // guard must read the ledger, not the stale metadata, or a delivered
+    // message would be held for review forever.
     const { service } = setup({
       verifications: [
         {
@@ -615,159 +563,10 @@ describe('OrdersService manual verification lifecycle', () => {
       ],
     });
 
-    await expect(service.listByOrg('org-1', {})).resolves.toMatchObject({
-      data: [
-        {
-          lifecycle: {
-            status: 'sent',
-            reason: null,
-            verification_id: 'verification-1',
-            retryable: false,
-          },
-        },
-      ],
-    });
-  });
-
-  it('passes exact lifecycle filters and a stable cursor to the shared projection', async () => {
-    const { service, orders } = setup();
-    const cursor = encodeCursor({
-      createdAt: '2026-09-04T12:00:00.000Z',
-      id: 'order-2',
-    });
-
-    const result = await service.listByOrg('org-1', {
-      status: 'accepted, confirmed,accepted',
-      date_range: 'today',
-      cursor,
-      limit: 25,
-    });
-
-    expect(orders.findDashboardByOrg).toHaveBeenCalledWith(
-      'org-1',
-      expect.objectContaining({
-        statuses: ['accepted', 'confirmed'],
-        cursor: {
-          createdAt: '2026-09-04T12:00:00.000Z',
-          id: 'order-2',
-        },
-        limit: 26,
-      }),
-    );
-    expect(orders.countDashboardByOrg).toHaveBeenCalledWith(
-      'org-1',
-      expect.objectContaining({ statuses: ['accepted', 'confirmed'] }),
-    );
-    expect(result.total_count).toBe(1);
-  });
-
-  it('rejects unknown lifecycle filters before querying orders', async () => {
-    const { service, orders } = setup();
-
     await expect(
-      service.listByOrg('org-1', { status: 'confirmed,provider_error' }),
+      service.retryOrderVerification(user, 'order-1'),
     ).rejects.toMatchObject({
-      response: { code: 'DASHBOARD_STATUS_INVALID' },
-    });
-    expect(orders.findDashboardByOrg).not.toHaveBeenCalled();
-    expect(orders.countDashboardByOrg).not.toHaveBeenCalled();
-  });
-
-  it('builds the next cursor from the last returned row without changing total_count', async () => {
-    const { service, dashboardOrder, orders } = setup();
-    orders.findDashboardByOrg.mockResolvedValueOnce([
-      dashboardOrder,
-      {
-        ...dashboardOrder,
-        id: 'order-older',
-        createdAt: '2026-09-04T00:00:00.000Z',
-      },
-    ]);
-    orders.countDashboardByOrg.mockResolvedValueOnce(9);
-
-    const result = await service.listByOrg('org-1', { limit: 1 });
-
-    expect(result.data).toHaveLength(1);
-    expect(result.total_count).toBe(9);
-    expect(result.next_cursor).toBe(
-      encodeCursor({
-        id: dashboardOrder.id,
-        createdAt: dashboardOrder.createdAt,
-      }),
-    );
-  });
-
-  it('uses the newest inactive source timezone and retains disconnected history', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
-    try {
-      const { service, orders, integrations } = setup();
-      integrations.findByOrg.mockResolvedValueOnce([
-        { ...integration, isActive: false, timezone: 'Asia/Riyadh' },
-      ]);
-
-      const result = await service.listByOrg('org-1', {
-        date_range: 'today',
-      });
-
-      expect(result.page_context).toMatchObject({
-        reporting_timezone: 'Asia/Riyadh',
-        source: { status: 'disconnected', integration_id: 'int-1' },
-      });
-      expect(orders.findDashboardByOrg).toHaveBeenCalledWith(
-        'org-1',
-        expect.objectContaining({
-          startAt: '2026-05-09T21:00:00.000Z',
-          endAt: '2026-05-10T21:00:00.000Z',
-        }),
-      );
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('reconciles order and verification totals while keeping billing usage range-independent', async () => {
-    const { service, orders, billing } = setup();
-    jest.useFakeTimers().setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
-    let today: Awaited<ReturnType<typeof service.getDashboardStatsByOrg>>;
-    let sevenDays: Awaited<ReturnType<typeof service.getDashboardStatsByOrg>>;
-    try {
-      today = await service.getDashboardStatsByOrg('org-1', 'today');
-      sevenDays = await service.getDashboardStatsByOrg('org-1', 'last_7_days');
-    } finally {
-      jest.useRealTimers();
-    }
-
-    expect(today).toMatchObject({
-      order_totals: {
-        total: 4,
-        in_progress: 1,
-        needs_attention: 1,
-        confirmed: 1,
-        canceled: 1,
-      },
-      verification_totals: {
-        sent: 4,
-        reply_rate: 50,
-        confirmation_rate: 25,
-      },
-      usage: {
-        used: 12,
-        limit: 100,
-        period_start: '2026-09-01T00:00:00.000Z',
-        period_end: '2026-10-01T00:00:00.000Z',
-      },
-      savings: { money_saved: 3 },
-    });
-    expect(sevenDays.usage).toEqual(today.usage);
-    expect(orders.getDashboardStatsByOrg).toHaveBeenCalledTimes(2);
-    expect(billing.readEntitlement).toHaveBeenCalledTimes(2);
-    expect(orders.getDashboardStatsByOrg).toHaveBeenNthCalledWith(1, 'org-1', {
-      startAt: '2026-05-10T00:00:00.000Z',
-      endAt: '2026-05-11T00:00:00.000Z',
-    });
-    expect(orders.getDashboardStatsByOrg).toHaveBeenNthCalledWith(2, 'org-1', {
-      startAt: '2026-05-04T00:00:00.000Z',
-      endAt: '2026-05-11T00:00:00.000Z',
+      response: { code: 'MANUAL_ORDER_RETRY_NOT_ALLOWED' },
     });
   });
 

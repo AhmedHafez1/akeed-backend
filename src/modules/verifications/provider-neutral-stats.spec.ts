@@ -46,7 +46,7 @@ describe('integration-scoped dashboard entitlement usage', () => {
   it('uses the active source plan rather than adding quotas or trusting an old row limit', async () => {
     const { service, repository } = setup();
     const result = await service.getStatsByOrg('org-1', {});
-    expect(result.usage).toEqual({ used: 12, limit: 30 });
+    expect(result.usage).toMatchObject({ used: 12, limit: 30 });
     expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalledWith(
       expect.objectContaining({ integrationId: 'int-1' }),
     );
@@ -54,7 +54,12 @@ describe('integration-scoped dashboard entitlement usage', () => {
   it('keeps historical funnel totals when no current source is active, without inventing a quota', async () => {
     const { service, repository } = setup([]);
     const result = await service.getStatsByOrg('org-1', {});
-    expect(result.usage).toEqual({ used: 0, limit: 0 });
+    expect(result.usage).toEqual({
+      used: 0,
+      limit: 0,
+      period_start: null,
+      period_end: null,
+    });
     expect(result.totals).toMatchObject({ confirmed: 3, canceled: 2 });
     expect(result.source.status).toBe('not_connected');
     expect(result.automation).toMatchObject({
@@ -72,7 +77,12 @@ describe('integration-scoped dashboard entitlement usage', () => {
       platform_type: 'standalone',
     });
     expect(result.totals).toMatchObject({ confirmed: 3, canceled: 2 });
-    expect(result.usage).toEqual({ used: 0, limit: 0 });
+    expect(result.usage).toEqual({
+      used: 0,
+      limit: 0,
+      period_start: null,
+      period_end: null,
+    });
     expect(repository.getEntitlementSource).not.toHaveBeenCalled();
   });
   it('rejects ambiguous active sources', async () => {

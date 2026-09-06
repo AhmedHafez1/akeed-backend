@@ -734,6 +734,7 @@ describe('Dashboard cancellation capabilities', () => {
             order: { orgId: 'org-1', integrationId: 'int-1' },
           },
         ]),
+        countByOrg: jest.fn().mockResolvedValue(1),
       };
       const integration = {
         id: 'int-1',
@@ -762,6 +763,9 @@ describe('Dashboard cancellation capabilities', () => {
           action: 'merchant_no_reply_cancellation',
           supported: kind === 'shopify',
         },
+        // A `no_reply` verification is never retryable, whatever the source —
+        // retry is reserved for resolvable send failures.
+        { action: 'retry_verification', supported: false },
       ]);
       expect(JSON.stringify(result)).not.toContain('accessToken');
     },

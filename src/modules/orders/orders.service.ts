@@ -16,16 +16,7 @@ import {
   ManualOrderIngestionRepository,
   ManualOrderPayloadConflictError,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
-import {
-  DashboardDateRange,
-  DashboardSourceState,
-  GetOrdersQueryDto,
-  MANUAL_ORDER_LIFECYCLE_STATUSES,
-  OrderListItemDto,
-  PaginatedResponse,
-  StandaloneDashboardStatsDto,
-} from './dto/dashboard.dto';
-import { decodeCursor, encodeCursor } from './services/pagination.helpers';
+import { DashboardSourceState } from './dto/dashboard.dto';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { PhoneService } from '../../shared/services/phone.service';
@@ -45,7 +36,7 @@ import type {
   CreateManualOrderResponseDto,
 } from './dto/create-manual-order.dto';
 import type {
-  ManualOrderLifecycleDto,
+  RetryGuardStateDto,
   RetryManualOrderVerificationResponseDto,
 } from './dto/dashboard.dto';
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
@@ -53,13 +44,8 @@ import { OrderEligibilityService } from '../verification-core/order-eligibility.
 import { integrations } from '../../infrastructure/database/schema';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import type { CommerceOutcomeOperationResult } from '../../shared/commerce/commerce-outcome';
-import {
-  resolveDashboardDateRangeBounds,
-  resolveDashboardTimezone,
-} from './services/dashboard-date-range';
+import {} from './services/dashboard-date-range';
 
-const DEFAULT_DASHBOARD_DATE_RANGE: DashboardDateRange = 'last_30_days';
-const DEFAULT_REPORTING_TIMEZONE = 'UTC';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 type IntegrationRecord = typeof integrations.$inferSelect;
@@ -288,188 +274,6 @@ export class OrdersService {
     };
   }
 
-  async listByOrg(
-    orgId: string,
-    query: GetOrdersQueryDto,
-  ): Promise<PaginatedResponse<OrderListItemDto>> {
-    const limit = query.limit ?? 50;
-    const cursor = decodeCursor(query.cursor);
-    const statuses = this.parseLifecycleStatuses(query.status);
-    const dateRange = query.date_range ?? DEFAULT_DASHBOARD_DATE_RANGE;
-    const integrations = await this.integrationsRepo.findByOrg(orgId);
-    const reportingSource = this.resolveReportingSource(integrations);
-    const reportingTimezone = resolveDashboardTimezone(
-      reportingSource?.timezone ?? DEFAULT_REPORTING_TIMEZONE,
-    );
-    const period = resolveDashboardDateRangeBounds(
-      dateRange,
-      reportingTimezone,
-    );
-    const dashboardQuery = {
-      ...period,
-      statuses,
-      cursor,
-      limit: limit + 1,
-    };
-    const [orders, totalCount] = await Promise.all([
-      this.ordersRepo.findDashboardByOrg(orgId, dashboardQuery),
-      this.ordersRepo.countDashboardByOrg(orgId, dashboardQuery),
-    ]);
-
-    const hasMore = orders.length > limit;
-    const items = hasMore ? orders.slice(0, limit) : orders;
-
-    const nextCursor =
-      hasMore && items.length > 0
-        ? encodeCursor(items[items.length - 1])
-        : null;
-
-    return {
-      data: items.map((order) => ({
-        id: order.id,
-        order_number: order.orderNumber ?? null,
-        external_order_id: order.externalOrderId,
-        customer_name: order.customerName ?? null,
-        customer_phone: order.customerPhone,
-        customer_email: order.customerEmail ?? null,
-        total_price: order.totalPrice ? String(order.totalPrice) : null,
-        currency: order.currency ?? null,
-        created_at: order.createdAt ?? null,
-        is_test: order.isTest,
-        source: {
-          integration_id: order.integrationId,
-          platform_type: order.platformType,
-        },
-        verification_status: order.verificationStatus ?? null,
-        verification: order.verificationId
-          ? {
-              id: order.verificationId,
-              status: order.verificationStatus ?? 'pending',
-              capabilities: [
-                {
-                  action: 'merchant_no_reply_cancellation' as const,
-                  supported:
-                    !order.isTest &&
-                    this.commerceOutcomes.supports(
-                      order.platformType,
-                      'merchant_no_reply_cancellation',
-                    ),
-                },
-              ],
-              ...(this.readCancellationOperation(order.verificationMetadata)
-                ? {
-                    cancellation_operation: this.readCancellationOperation(
-                      order.verificationMetadata,
-                    ),
-                  }
-                : {}),
-              last_sent_at: order.lastSentAt ?? null,
-              delivered_at: order.deliveredAt ?? null,
-              read_at: order.readAt ?? null,
-              confirmed_at: order.confirmedAt ?? null,
-              canceled_at: order.canceledAt ?? null,
-              expired_at: order.expiredAt ?? null,
-              no_reply_at: order.noReplyAt ?? null,
-              follow_up_attempts: order.followUpAttempts ?? 0,
-              follow_up_sent_at: order.followUpSentAt ?? null,
-            }
-          : null,
-        lifecycle: {
-          status: order.lifecycleStatus as ManualOrderLifecycleDto['status'],
-          reason: order.lifecycleReason,
-          verification_id: order.verificationId,
-          retryable: order.lifecycleRetryable,
-        },
-      })),
-      next_cursor: nextCursor,
-      total_count: totalCount,
-      page_context: {
-        source: this.resolveDashboardSourceState(integrations),
-        reporting_timezone: reportingTimezone,
-        automation: this.resolveDashboardAutomationSettings(reportingSource),
-      },
-    };
-  }
-
-  async getDashboardStatsByOrg(
-    orgId: string,
-    dateRange: DashboardDateRange = DEFAULT_DASHBOARD_DATE_RANGE,
-  ): Promise<StandaloneDashboardStatsDto> {
-    const integrations = await this.integrationsRepo.findByOrg(orgId);
-    const reportingSource = this.resolveReportingSource(integrations);
-    const reportingTimezone = resolveDashboardTimezone(
-      reportingSource?.timezone ?? DEFAULT_REPORTING_TIMEZONE,
-    );
-    const period = resolveDashboardDateRangeBounds(
-      dateRange,
-      reportingTimezone,
-    );
-    const [counts, usage] = await Promise.all([
-      this.ordersRepo.getDashboardStatsByOrg(orgId, period),
-      reportingSource
-        ? this.billingEntitlements.readEntitlement(reportingSource)
-        : Promise.resolve({
-            consumedCount: 0,
-            includedLimit: 0,
-            periodStart: null,
-            periodEnd: null,
-          }),
-    ]);
-    const shipping = this.resolveShippingSettings(reportingSource);
-    const replyRate = counts.sent
-      ? Number(
-          (
-            ((counts.confirmed + counts.customerCanceled) / counts.sent) *
-            100
-          ).toFixed(1),
-        )
-      : 0;
-    const confirmationRate = counts.sent
-      ? Number(((counts.confirmed / counts.sent) * 100).toFixed(1))
-      : 0;
-
-    return {
-      date_range: dateRange,
-      reporting_timezone: reportingTimezone,
-      source: this.resolveDashboardSourceState(integrations),
-      automation: this.resolveDashboardAutomationSettings(reportingSource),
-      order_totals: {
-        total: counts.total,
-        in_progress: counts.inProgress,
-        needs_attention: counts.needsAttention,
-        confirmed: counts.confirmedOrders,
-        canceled: counts.canceledOrders,
-      },
-      verification_totals: {
-        pending: counts.pending,
-        failed: counts.failed,
-        awaiting_reply: counts.awaitingReply,
-        confirmed: counts.confirmed,
-        canceled: counts.canceled,
-        customer_canceled: counts.customerCanceled,
-        sent: counts.sent,
-        delivered: counts.delivered,
-        read: counts.read,
-        follow_ups_sent: counts.followUpsSent,
-        reply_rate: replyRate,
-        confirmation_rate: confirmationRate,
-      },
-      usage: {
-        used: usage.consumedCount,
-        limit: usage.includedLimit,
-        period_start: usage.periodStart,
-        period_end: usage.periodEnd,
-      },
-      savings: {
-        avg_shipping_cost: shipping.avgShippingCost,
-        currency: shipping.currency,
-        money_saved: Number(
-          (counts.canceled * shipping.avgShippingCost).toFixed(2),
-        ),
-      },
-    };
-  }
-
   /**
    * Re-dispatch the durable ingestion event for an order whose verification is
    * blocked on a merchant-resolvable reason.
@@ -506,12 +310,12 @@ export class OrdersService {
       orderId,
       user.orgId,
     );
-    const lifecycle: ManualOrderLifecycleDto = {
-      status: (projected?.lifecycleStatus ??
-        'accepted') as ManualOrderLifecycleDto['status'],
-      reason: projected?.lifecycleReason ?? null,
+    const lifecycle: RetryGuardStateDto = {
+      status: (projected?.retryGuardStatus ??
+        'accepted') as RetryGuardStateDto['status'],
+      reason: projected?.retryGuardReason ?? null,
       verification_id: projected?.verificationId ?? null,
-      retryable: projected?.lifecycleRetryable ?? false,
+      retryable: projected?.retryGuardRetryable ?? false,
     };
     if (lifecycle.status === 'review_required') {
       throw new ConflictException({
@@ -634,23 +438,6 @@ export class OrdersService {
 
   private manualExternalOrderId(idempotencyKey: string): string {
     return `manual-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 40)}`;
-  }
-
-  private parseLifecycleStatuses(input?: string): string[] | undefined {
-    if (!input) return undefined;
-    const statuses = input
-      .split(',')
-      .map((status) => status.trim().toLowerCase())
-      .filter(Boolean);
-    const allowed = new Set<string>(MANUAL_ORDER_LIFECYCLE_STATUSES);
-    const invalid = statuses.filter((status) => !allowed.has(status));
-    if (invalid.length) {
-      throw new BadRequestException({
-        code: 'DASHBOARD_STATUS_INVALID',
-        message: `Invalid lifecycle status: ${invalid.join(', ')}`,
-      });
-    }
-    return statuses.length ? [...new Set(statuses)] : undefined;
   }
 
   private resolveReportingSource(

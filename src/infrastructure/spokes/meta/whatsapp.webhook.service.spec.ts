@@ -49,6 +49,23 @@ function interactivePayload(
   });
 }
 
+function textPayload(
+  body: string,
+  contextWamid?: string,
+  timestamp = '1700000000',
+): WhatsAppWebhookPayloadDto {
+  return wrap({
+    messages: [
+      {
+        type: 'text',
+        text: { body },
+        ...(contextWamid ? { context: { id: contextWamid } } : {}),
+        timestamp,
+      },
+    ],
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -56,6 +73,7 @@ function interactivePayload(
 function createMocks() {
   const verificationsRepo = {
     findById: jest.fn(),
+    findByWaMessageId: jest.fn().mockResolvedValue(undefined),
     updateStatus: jest.fn().mockResolvedValue([{ id: 'v1' }]),
     updateStatusByWamid: jest.fn().mockResolvedValue([{ id: 'v1' }]),
   };
@@ -384,6 +402,83 @@ describe('WhatsAppWebhookService', () => {
   });
 
   // ---- Interactive button replies ----
+
+  // ---- Free-text replies (no quick-reply button tapped) ----
+
+  describe('free-text replies', () => {
+    it.each([
+      ['نعم', 'confirmed'],
+      ['تأكيد', 'confirmed'],
+      ['Yes', 'confirmed'],
+      ['1', 'confirmed'],
+      ['لا', 'canceled'],
+      ['إلغاء', 'canceled'],
+      ['Cancel', 'canceled'],
+      ['2', 'canceled'],
+    ])('resolves %s to %s via the replied-to message', async (body, status) => {
+      const { service, verificationsRepo, verificationHub } = createMocks();
+      verificationsRepo.findByWaMessageId.mockResolvedValue({ id: 'v1' });
+
+      await service.processIncoming(textPayload(body, 'wamid_template'));
+
+      expect(verificationsRepo.findByWaMessageId).toHaveBeenCalledWith(
+        'wamid_template',
+      );
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'v1',
+        status,
+        undefined,
+        '1700000000',
+        status === 'canceled' ? { cancellationSource: 'customer' } : {},
+      );
+      expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
+        'v1',
+        status,
+      );
+    });
+
+    it('ignores a text reply that carries no context to match on', async () => {
+      const { service, verificationsRepo } = createMocks();
+
+      await service.processIncoming(textPayload('نعم'));
+
+      expect(verificationsRepo.findByWaMessageId).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('ignores an answer that is neither a yes nor a no', async () => {
+      const { service, verificationsRepo } = createMocks();
+
+      await service.processIncoming(
+        textPayload('when will it arrive?', 'wamid_template'),
+      );
+
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('ignores a reply whose context matches no verification', async () => {
+      const { service, verificationsRepo } = createMocks();
+      verificationsRepo.findByWaMessageId.mockResolvedValue(undefined);
+
+      await service.processIncoming(textPayload('نعم', 'wamid_unknown'));
+
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('lets a merchant cancellation outrank a late text confirmation', async () => {
+      const { service, verificationsRepo, verificationHub } = createMocks();
+      verificationsRepo.findByWaMessageId.mockResolvedValue({ id: 'v1' });
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'v1',
+        merchantCanceledAt: '2026-09-05T10:00:00.000Z',
+      });
+
+      await service.processIncoming(textPayload('نعم', 'wamid_template'));
+
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(verificationHub.finalizeVerification).not.toHaveBeenCalled();
+    });
+  });
 
   describe('interactive button replies', () => {
     it('should handle interactive button_reply confirm', async () => {

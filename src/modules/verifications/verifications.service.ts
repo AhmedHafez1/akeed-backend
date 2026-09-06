@@ -21,6 +21,15 @@ import {
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
 import { VerificationStatus } from '../../shared/interfaces/verification.interface';
+import {
+  canRetryVerification,
+  readVerificationReason,
+  type VerificationRowCapability,
+} from '../../shared/verification/verification-row-actions';
+import {
+  resolveDashboardDateRangeBounds,
+  resolveDashboardTimezone,
+} from '../orders/services/dashboard-date-range';
 
 import {
   decodeCursor,
@@ -51,6 +60,7 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
 ];
 
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
+const DEFAULT_REPORTING_TIMEZONE = 'UTC';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 const DEFAULT_QUIET_HOURS_ENABLED = false;
@@ -58,6 +68,8 @@ type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {
   total: number;
+  inProgress: number;
+  needsAttention: number;
   pending: number;
   failed: number;
   awaitingReply: number;
@@ -88,22 +100,24 @@ export class VerificationsService {
   ): Promise<PaginatedResponse<VerificationListItemDto>> {
     const statuses = this.parseStatuses(query.status);
     const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
-    const now = new Date();
-    const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
     const limit = query.limit ?? 50;
     const cursor = decodeCursor(query.cursor);
 
-    const [verifications, integrations] = await Promise.all([
-      this.verificationsRepo.findByOrg(
-        orgId,
-        statuses,
-        {
-          startAt: filterPeriod.startAt,
-          endAt: filterPeriod.endAt,
-        },
-        { cursor, limit: limit + 1 },
-      ),
-      this.integrationsRepo.findByOrg(orgId),
+    // The reporting timezone has to be known before the date range can be
+    // resolved, so this read is not part of the parallel batch below.
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const reportingTimezone = this.resolveReportingTimezone(integrations);
+    const filterPeriod = resolveDashboardDateRangeBounds(
+      dateRange,
+      reportingTimezone,
+    );
+
+    const [verifications, totalCount] = await Promise.all([
+      this.verificationsRepo.findByOrg(orgId, statuses, filterPeriod, {
+        cursor,
+        limit: limit + 1,
+      }),
+      this.verificationsRepo.countByOrg(orgId, statuses, filterPeriod),
     ]);
     const activeIntegrations = integrations.filter(
       (integration) => integration.isActive === true,
@@ -119,29 +133,17 @@ export class VerificationsService {
 
     return {
       data: items.map((verification) => ({
-        capabilities: [
-          {
-            action: 'merchant_no_reply_cancellation',
-            supported:
-              !this.isSyntheticOrder(verification.order) &&
-              verification.order?.orgId === orgId &&
-              activeIntegrations.some(
-                (integration) =>
-                  integration.id === verification.order?.integrationId &&
-                  integration.orgId === orgId &&
-                  integration.isActive === true &&
-                  this.commerceOutcomes.supports(
-                    integration.platformType,
-                    'merchant_no_reply_cancellation',
-                  ),
-              ),
-          },
-        ],
+        capabilities: this.resolveRowCapabilities(
+          verification,
+          orgId,
+          activeIntegrations,
+        ),
         cancellation_operation: this.readCancellationOperation(
           verification.metadata,
         ),
         id: verification.id,
         status: verification.status ?? 'pending',
+        reason: readVerificationReason(verification.metadata),
         order_id: verification.orderId,
         order_number: verification.order?.orderNumber ?? null,
         is_test: this.isSyntheticOrder(verification.order),
@@ -163,11 +165,79 @@ export class VerificationsService {
         follow_up_sent_at: verification.followUpSentAt ?? null,
       })),
       next_cursor: nextCursor,
+      total_count: totalCount,
       page_context: {
         source: this.resolveDashboardSourceState(integrations),
+        reporting_timezone: reportingTimezone,
         automation: this.resolveDashboardAutomationSettings(activeIntegrations),
       },
     };
+  }
+
+  /**
+   * Row actions the merchant may take, reported as capabilities rather than
+   * inferred by the client from the status.
+   *
+   * Both dashboard skins render their action set straight from this list, so
+   * an action can never be offered in one runtime mode and missing in the
+   * other, and a new platform opts in by supporting the outcome rather than by
+   * a UI change.
+   */
+  private resolveRowCapabilities(
+    verification: {
+      status: VerificationStatus | null;
+      metadata: unknown;
+      order?: {
+        orgId?: string;
+        integrationId?: string | null;
+        isTest?: boolean | null;
+        externalOrderId?: string | null;
+      } | null;
+    },
+    orgId: string,
+    activeIntegrations: IntegrationRecord[],
+  ): VerificationRowCapability[] {
+    const ownedByOrg =
+      !this.isSyntheticOrder(verification.order) &&
+      verification.order?.orgId === orgId;
+    const integration = activeIntegrations.find(
+      (candidate) =>
+        candidate.id === verification.order?.integrationId &&
+        candidate.orgId === orgId &&
+        candidate.isActive === true,
+    );
+
+    return [
+      {
+        action: 'merchant_no_reply_cancellation',
+        supported:
+          ownedByOrg &&
+          integration !== undefined &&
+          this.commerceOutcomes.supports(
+            integration.platformType,
+            'merchant_no_reply_cancellation',
+          ),
+      },
+      {
+        action: 'retry_verification',
+        supported:
+          ownedByOrg &&
+          integration !== undefined &&
+          canRetryVerification(
+            verification.status,
+            readVerificationReason(verification.metadata),
+          ),
+      },
+    ];
+  }
+
+  private resolveReportingTimezone(integrations: IntegrationRecord[]): string {
+    const source =
+      integrations.find((integration) => integration.isActive === true) ??
+      integrations[0];
+    return resolveDashboardTimezone(
+      source?.timezone ?? DEFAULT_REPORTING_TIMEZONE,
+    );
   }
 
   async getStatsByOrg(
@@ -175,18 +245,20 @@ export class VerificationsService {
     query: GetVerificationStatsQueryDto,
   ): Promise<VerificationStatsDto> {
     const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
-    const now = new Date();
 
-    const filterPeriod = this.resolveDateRangeBounds(dateRange, now);
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const reportingTimezone = this.resolveReportingTimezone(integrations);
+    const filterPeriod = resolveDashboardDateRangeBounds(
+      dateRange,
+      reportingTimezone,
+    );
 
-    const [filteredCounts, integrations] = await Promise.all([
-      this.verificationsRepo.getFunnelCountsByOrgAndPeriod(
+    const filteredCounts =
+      await this.verificationsRepo.getFunnelCountsByOrgAndPeriod(
         orgId,
         filterPeriod.startAt,
         filterPeriod.endAt,
-      ),
-      this.integrationsRepo.findByOrg(orgId),
-    ]);
+      );
     const activeIntegrations = integrations.filter(
       (integration) => integration.isActive === true,
     );
@@ -197,7 +269,12 @@ export class VerificationsService {
       );
     const usage = activeIntegrations[0]
       ? await this.billingEntitlements.readEntitlement(activeIntegrations[0])
-      : { consumedCount: 0, includedLimit: 0 };
+      : {
+          consumedCount: 0,
+          includedLimit: 0,
+          periodStart: null,
+          periodEnd: null,
+        };
     const replyRate = this.calculateReplyRate(filteredCounts);
     const confirmationRate = this.calculateConfirmationRate(filteredCounts);
     const usageLimit = usage.includedLimit;
@@ -211,9 +288,13 @@ export class VerificationsService {
 
     return {
       date_range: dateRange,
+      reporting_timezone: reportingTimezone,
       source: this.resolveDashboardSourceState(integrations),
       automation: automationSettings,
       totals: {
+        total: filteredCounts.total,
+        in_progress: filteredCounts.inProgress,
+        needs_attention: filteredCounts.needsAttention,
         pending: filteredCounts.pending,
         failed: filteredCounts.failed,
         awaiting_reply: filteredCounts.awaitingReply,
@@ -230,6 +311,8 @@ export class VerificationsService {
       usage: {
         used: usage.consumedCount,
         limit: usageLimit,
+        period_start: usage.periodStart ?? null,
+        period_end: usage.periodEnd ?? null,
       },
       savings: {
         avg_shipping_cost: shippingSettings.avgShippingCost,
@@ -489,44 +572,6 @@ export class VerificationsService {
     }
 
     return Number(((counts.confirmed / counts.sent) * 100).toFixed(1));
-  }
-
-  private resolveDateRangeBounds(
-    dateRange: DashboardDateRange,
-    now: Date,
-  ): { startAt: string; endAt: string } {
-    const end = this.getStartOfNextUtcDay(now);
-    const currentDayStart = this.getStartOfUtcDay(now);
-    const start = new Date(currentDayStart);
-
-    if (dateRange === 'last_7_days') {
-      start.setUTCDate(start.getUTCDate() - 6);
-    } else if (dateRange === 'last_30_days') {
-      start.setUTCDate(start.getUTCDate() - 29);
-    } else if (dateRange === 'last_3_months') {
-      start.setUTCDate(start.getUTCDate() - 89);
-    }
-
-    return {
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
-    };
-  }
-
-  private getStartOfUtcDay(date: Date): Date {
-    return new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-    );
-  }
-
-  private getStartOfNextUtcDay(date: Date): Date {
-    return new Date(
-      Date.UTC(
-        date.getUTCFullYear(),
-        date.getUTCMonth(),
-        date.getUTCDate() + 1,
-      ),
-    );
   }
 
   /**

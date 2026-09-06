@@ -20,7 +20,29 @@ export class WhatsAppInteractiveDto {
   button_reply?: WhatsAppInteractiveButtonReplyDto;
 }
 
+export class WhatsAppTextDto {
+  @IsOptional()
+  @IsString()
+  body?: string;
+}
+
+export class WhatsAppContextDto {
+  /** wamid of the message this one replies to. */
+  @IsOptional()
+  @IsString()
+  id?: string;
+}
+
 export class WhatsAppMessageDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  /** Sender's phone number in E.164 without the leading `+`. */
+  @IsOptional()
+  @IsString()
+  from?: string;
+
   @IsOptional()
   @IsString()
   type?: string;
@@ -31,6 +53,11 @@ export class WhatsAppMessageDto {
 
   @IsOptional()
   @ValidateNested()
+  @Type(() => WhatsAppContextDto)
+  context?: WhatsAppContextDto;
+
+  @IsOptional()
+  @ValidateNested()
   @Type(() => WhatsAppButtonDto)
   button?: WhatsAppButtonDto;
 
@@ -38,6 +65,11 @@ export class WhatsAppMessageDto {
   @ValidateNested()
   @Type(() => WhatsAppInteractiveDto)
   interactive?: WhatsAppInteractiveDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppTextDto)
+  text?: WhatsAppTextDto;
 }
 
 export class WhatsAppStatusDto {

@@ -25,8 +25,21 @@ export class MetaWebhookSignatureGuard implements CanActivate {
     const signatureHeader = req.headers['x-hub-signature-256'] as string;
     const requestId = this.getRequestId(req);
 
+    // Logged before any verification so that "Meta never called us" and "Meta
+    // called and we rejected it" are distinguishable in the logs. Without this
+    // line a signature mismatch is silent from the caller's point of view: the
+    // webhook simply appears dead.
+    this.logger.log(
+      buildBackendLog(MetaWebhookSignatureGuard.name, {
+        action: 'meta-webhook-request-received',
+        outcome: 'success',
+        requestId,
+        hasSignatureHeader: Boolean(signatureHeader),
+      }),
+    );
+
     if (!signatureHeader) {
-      this.logger.warn(
+      this.logger.error(
         buildBackendLog(MetaWebhookSignatureGuard.name, {
           action: 'meta-signature-verify',
           outcome: 'failure',
@@ -39,7 +52,7 @@ export class MetaWebhookSignatureGuard implements CanActivate {
 
     const { rawBody } = req;
     if (!rawBody) {
-      this.logger.warn(
+      this.logger.error(
         buildBackendLog(MetaWebhookSignatureGuard.name, {
           action: 'meta-signature-verify',
           outcome: 'failure',
@@ -60,7 +73,7 @@ export class MetaWebhookSignatureGuard implements CanActivate {
     const receivedBuffer = Buffer.from(signatureHeader, 'utf8');
 
     if (expectedBuffer.length !== receivedBuffer.length) {
-      this.logger.warn(
+      this.logger.error(
         buildBackendLog(MetaWebhookSignatureGuard.name, {
           action: 'meta-signature-verify',
           outcome: 'failure',
@@ -72,7 +85,7 @@ export class MetaWebhookSignatureGuard implements CanActivate {
     }
 
     if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
-      this.logger.warn(
+      this.logger.error(
         buildBackendLog(MetaWebhookSignatureGuard.name, {
           action: 'meta-signature-verify',
           outcome: 'failure',

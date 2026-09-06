@@ -225,7 +225,25 @@ export class VerificationMessageDispatchesRepository {
         .where(eq(verificationMessageDispatches.id, params.dispatchId))
         .for('update');
       if (!dispatch) return undefined;
-      if (dispatch.state === 'accepted') return dispatch;
+
+      // Project first, on every path that represents an accepted send —
+      // including a dispatch already marked `accepted`.
+      //
+      // The ledger and the verification are written in this one transaction, so
+      // they cannot diverge going forward; but rows that diverged before this
+      // (migration 0028 backfilled `accepted` dispatches without touching
+      // `verifications.status`) used to be frozen here forever, because the
+      // early return skipped the projection and no later send would retry it.
+      // The projection is idempotent and terminal-guarded, so re-running it can
+      // only ever pull a lagging row forward.
+      if (dispatch.state === 'accepted') {
+        await this.projectAcceptedVerification(tx, dispatch, {
+          // Preserve the original acceptance facts; this is a repair, not a resend.
+          providerMessageId: dispatch.providerMessageId ?? params.providerMessageId,
+          sentAt: dispatch.acceptedAt ?? params.sentAt,
+        });
+        return dispatch;
+      }
       if (
         dispatch.state !== 'sending' &&
         dispatch.state !== 'outcome_unknown'

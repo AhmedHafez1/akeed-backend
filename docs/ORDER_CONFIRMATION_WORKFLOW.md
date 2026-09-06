@@ -141,15 +141,25 @@ Cross-field rules:
 | ------- | --------------------------------- | -------------------- | ---------------------------------------------------- |
 | `POST`  | `/webhooks/shopify/orders-create` | Shopify HMAC         | Ingest Shopify order creation webhook.               |
 | `GET`   | `/webhooks/whatsapp`              | Verify token query   | Meta webhook verification challenge.                 |
-| `POST`  | `/webhooks/whatsapp`              | Meta webhook payload | Receive WhatsApp replies and message status events.  |
+| `POST`  | `/webhooks/whatsapp`              | Meta HMAC signature  | Receive WhatsApp replies and message status events.  |
 | `GET`   | `/api/onboarding/state`           | `DualAuthGuard`      | Load current integration controls and billing state. |
 | `PATCH` | `/api/onboarding/settings`        | `DualAuthGuard`      | Update merchant controls.                            |
 | `GET`   | `/api/onboarding/billing/plans`   | `DualAuthGuard`      | Load Shopify billing plan options.                   |
 | `POST`  | `/api/onboarding/billing`         | `DualAuthGuard`      | Start Shopify billing flow.                          |
-| `GET`   | `/api/verifications`              | `DualAuthGuard`      | List verification rows for the dashboard.            |
+| `GET`   | `/api/verifications`              | `DualAuthGuard`      | List verification rows for the dashboard (both runtime modes). |
 | `GET`   | `/api/verifications/stats`        | `DualAuthGuard`      | Load dashboard KPIs.                                 |
 | `POST`  | `/api/verifications/test`         | `DualAuthGuard`      | Send a test verification message.                    |
 | `POST`  | `/api/verifications/:id/cancel`   | `DualAuthGuard`      | Merchant cancellation for `no_reply` verifications.  |
+| `POST`  | `/api/orders`                     | `DualAuthGuard`      | Create a manual (Standalone) order for verification. |
+| `POST`  | `/api/orders/:id/verification/retry` | `DualAuthGuard`   | Re-send a retryable failed verification.             |
+
+`GET /api/orders` and `GET /api/orders/stats` were removed. Both runtime modes
+read `/api/verifications` and `/api/verifications/stats`, so there is one status
+vocabulary — the nine `verification_status` values — rather than the wider
+14-value order projection the standalone dashboard used to render. The extra
+states (`accepted`, `processing`, `ineligible`, `blocked`, `review_required`)
+survive only inside `OrdersRepository.findDashboardOrderById`, where retry
+safety needs them; they are never returned to a client.
 
 ## Data Model Reference
 
