@@ -204,6 +204,13 @@
       "when": 1788566400000,
       "tag": "0028_manual_order_lifecycle_dispatch_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788652800000,
+      "tag": "0029_repair_verification_status_from_dispatch_ledger",
+      "breakpoints": true
     }
   ]
 }

@@ -56,7 +56,12 @@ function createMocks() {
         acceptedAt: null,
       },
     }),
-    markAccepted: jest.fn().mockResolvedValue(undefined),
+    // Resolves to the accepted ledger row. An `undefined` return means the
+    // verification projection did not run, which the service must not report
+    // as a successful send.
+    markAccepted: jest
+      .fn()
+      .mockResolvedValue({ id: 'dispatch-1', state: 'accepted' }),
     markOutcomeUnknown: jest.fn().mockResolvedValue(undefined),
   };
   const messagingPort = {
@@ -111,6 +116,7 @@ describe('VerificationSendService', () => {
     messageDispatches.claim.mockResolvedValue({
       outcome: 'accepted',
       dispatch: {
+        id: 'dispatch-1',
         providerMessageId: 'existing-wamid',
         acceptedAt: '2026-09-05T10:00:00.000Z',
       },
@@ -122,6 +128,56 @@ describe('VerificationSendService', () => {
       sentAt: '2026-09-05T10:00:00.000Z',
     });
     expect(messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
+    // Nothing new goes out, but the acceptance is re-projected: this is the
+    // only moment that can pull a verification whose status lagged the ledger
+    // back into agreement, which is what left rows reading `pending` after
+    // their message had been delivered and read.
+    expect(messageDispatches.markAccepted).toHaveBeenCalledWith({
+      dispatchId: 'dispatch-1',
+      providerMessageId: 'existing-wamid',
+      sentAt: '2026-09-05T10:00:00.000Z',
+    });
+  });
+
+  it('still reports the past send when repairing the projection fails', async () => {
+    const { service, messageDispatches } = createMocks();
+    messageDispatches.claim.mockResolvedValue({
+      outcome: 'accepted',
+      dispatch: {
+        id: 'dispatch-1',
+        providerMessageId: 'existing-wamid',
+        acceptedAt: '2026-09-05T10:00:00.000Z',
+      },
+    });
+    messageDispatches.markAccepted.mockRejectedValue(new Error('db down'));
+
+    // The message really was accepted earlier; a failed repair must not
+    // retroactively turn that into an error the caller acts on.
+    await expect(service.sendInitial('ver-1')).resolves.toEqual({
+      status: 'sent',
+      waMessageId: 'existing-wamid',
+      sentAt: '2026-09-05T10:00:00.000Z',
+    });
+  });
+
+  it('does not claim a send when acceptance could not be projected', async () => {
+    const { service, messageDispatches, verificationsRepo } = createMocks();
+    // `undefined` means the ledger row was in a state the acceptance could not
+    // apply to, so the verification projection never ran. Reporting `sent` here
+    // is what let a real send leave the row at `pending` with no wa_message_id
+    // — which then also broke the delivery and read webhooks, since they
+    // resolve against that id.
+    messageDispatches.markAccepted.mockResolvedValue(undefined);
+
+    await expect(service.sendInitial('ver-1')).resolves.toEqual({
+      status: 'outcome_unknown',
+      reason: 'provider_outcome_unknown',
+    });
+    expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
+      'dispatch-1',
+      'acceptance_persistence_failed',
+    );
+    expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalled();
   });
 
   it.each([

@@ -142,7 +142,7 @@ export class VerificationsService {
           verification.metadata,
         ),
         id: verification.id,
-        status: verification.status ?? 'pending',
+        status: verification.status,
         reason: readVerificationReason(verification.metadata),
         order_id: verification.orderId,
         order_number: verification.order?.orderNumber ?? null,

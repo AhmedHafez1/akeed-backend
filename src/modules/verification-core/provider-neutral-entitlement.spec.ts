@@ -67,7 +67,12 @@ describe('provider-neutral entitlement boundary', () => {
         }
         return { outcome: 'claimed', dispatch: { id: 'dispatch-1' } };
       }),
-      markAccepted: jest.fn(),
+      // Must resolve to the accepted ledger row: `undefined` now means the
+      // verification projection did not run, and the send reports
+      // `outcome_unknown` instead of claiming a send that left no trace.
+      markAccepted: jest
+        .fn()
+        .mockResolvedValue({ id: 'dispatch-1', state: 'accepted' }),
       markOutcomeUnknown: jest.fn(),
     };
     const sender = new VerificationSendService(

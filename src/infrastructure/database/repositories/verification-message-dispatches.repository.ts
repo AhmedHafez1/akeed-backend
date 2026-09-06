@@ -33,6 +33,22 @@ function statusUnlessTerminal(status: VerificationStatus) {
   END`;
 }
 
+/**
+ * Raise a verification to `sent` only when it is still claiming nothing was
+ * sent.
+ *
+ * Unlike {@link statusUnlessTerminal}, this never moves a row backwards. It is
+ * for writes that prove *a* message reached the provider without proving it is
+ * the newest one — repairing a lagging projection, or recording an accepted
+ * follow-up. A row already at `delivered`/`read`/`no_reply` keeps the further
+ * state it earned.
+ */
+const sentFloor = sql`CASE
+  WHEN ${verifications.status} IS NULL OR ${verifications.status} = 'pending'
+    THEN 'sent'::verification_status
+  ELSE ${verifications.status}
+END`;
+
 export type DispatchKind = 'initial' | 'follow_up';
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
 
@@ -239,8 +255,10 @@ export class VerificationMessageDispatchesRepository {
       if (dispatch.state === 'accepted') {
         await this.projectAcceptedVerification(tx, dispatch, {
           // Preserve the original acceptance facts; this is a repair, not a resend.
-          providerMessageId: dispatch.providerMessageId ?? params.providerMessageId,
+          providerMessageId:
+            dispatch.providerMessageId ?? params.providerMessageId,
           sentAt: dispatch.acceptedAt ?? params.sentAt,
+          repair: true,
         });
         return dispatch;
       }
@@ -392,7 +410,7 @@ export class VerificationMessageDispatchesRepository {
   private async projectAcceptedVerification(
     tx: Parameters<Parameters<typeof this.db.transaction>[0]>[0],
     dispatch: DispatchRecord,
-    params: { providerMessageId: string; sentAt: string },
+    params: { providerMessageId: string; sentAt: string; repair?: boolean },
   ): Promise<void> {
     const common = {
       waMessageId: params.providerMessageId,
@@ -401,11 +419,18 @@ export class VerificationMessageDispatchesRepository {
     if (dispatch.kind === 'follow_up') {
       // A follow-up must never repoint `wa_message_id` on a verification the
       // customer has already answered, or later delivery/read webhooks would
-      // resolve against a terminal row.
+      // resolve against a terminal row — hence the terminal guard below.
+      //
+      // It does still carry a `sent` floor: an accepted follow-up proves a
+      // message reached the provider, so the row must not be left claiming
+      // nothing has been sent. `sentFloor` only lifts `pending`/NULL, so a row
+      // already at `delivered`/`read`/`no_reply` keeps the further state it
+      // earned.
       await tx
         .update(verifications)
         .set({
           ...common,
+          status: sentFloor,
           followUpSentAt: params.sentAt,
           followUpAttempts: sql`${verifications.followUpAttempts} + 1`,
         })
@@ -417,13 +442,21 @@ export class VerificationMessageDispatchesRepository {
         );
       return;
     }
+    // A fresh send restarts the lifecycle, so it sets `sent` outright. A repair
+    // re-states an acceptance that already happened, so it may only raise a
+    // floor — walking a `delivered`/`read` row back to `sent` would replace one
+    // wrong answer with another — and it must not inflate the attempt count.
     await tx
       .update(verifications)
       .set({
         ...common,
-        status: statusUnlessTerminal('sent'),
-        lastSentAt: params.sentAt,
-        attempts: sql`COALESCE(${verifications.attempts}, 0) + 1`,
+        status: params.repair ? sentFloor : statusUnlessTerminal('sent'),
+        lastSentAt: params.repair
+          ? sql`COALESCE(${verifications.lastSentAt}, ${params.sentAt})`
+          : params.sentAt,
+        ...(params.repair
+          ? {}
+          : { attempts: sql`COALESCE(${verifications.attempts}, 0) + 1` }),
         metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind'`,
       })
       .where(eq(verifications.id, dispatch.verificationId));

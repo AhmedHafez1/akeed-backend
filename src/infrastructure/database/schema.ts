@@ -541,7 +541,7 @@ export const verifications = pgTable(
       .notNull(),
     orgId: uuid('org_id').notNull(),
     orderId: uuid('order_id').notNull(),
-    status: verificationStatus().default('pending'),
+    status: verificationStatus().default('pending').notNull(),
     waMessageId: text('wa_message_id'),
     templateName: text('template_name').default('cod_verification'),
     languageCode: text('language_code').default('ar'),

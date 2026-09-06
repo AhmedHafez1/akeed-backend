@@ -127,7 +127,11 @@ describe('WhatsAppWebhookService', () => {
       expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
     });
 
-    it('records a follow-up callback without changing the verification status', async () => {
+    it('advances the verification on a follow-up callback', async () => {
+      // A delivered or read receipt on the reminder is the same evidence as one
+      // on the initial message: the customer received and opened something. The
+      // terminal guard inside `updateStatus` is what stops a late follow-up
+      // receipt from disturbing a verification the customer already answered.
       const { service, verificationsRepo, messageDispatches } = createMocks();
       messageDispatches.findByProviderMessageId.mockResolvedValue({
         id: 'dispatch-2',
@@ -138,7 +142,13 @@ describe('WhatsAppWebhookService', () => {
       await service.processIncoming(statusPayload('wamid_follow_up', 'read'));
 
       expect(messageDispatches.recordProviderStatus).toHaveBeenCalledTimes(1);
-      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'v1',
+        'read',
+        undefined,
+        '1700000000',
+      );
+      // Resolved through the ledger, never by re-pointing at the wamid index.
       expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
     });
 

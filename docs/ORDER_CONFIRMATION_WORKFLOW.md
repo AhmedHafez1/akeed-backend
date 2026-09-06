@@ -48,6 +48,42 @@ Out of scope:
 | `failed`    | Initial send failed or plan limit blocked the initial send.                        | `VerificationSendService`, `VerificationHubService` |
 | `expired`   | Reserved enum value for lifecycle compatibility.                                   | Not actively automated in this workflow             |
 
+### The `pending` invariant
+
+> A verification may hold `pending` **only** while no message has been accepted by the
+> provider. Once an accepted dispatch with a `provider_message_id` exists, the row is at
+> least `sent`.
+
+`verification_message_dispatches` is the source of truth for *"did we message this
+customer"*; `verifications.status` is a projection of it and must never contradict it.
+This matters more than the other statuses because `pending` is a claim the merchant acts
+on — it says nobody has been contacted, so a merchant who sees it phones the customer
+themselves or holds a shippable COD order. It also feeds the `pending` KPI and the reply
+and confirmation rates, so a wrong `pending` makes the product under-report its own
+results while a message quota has already been billed.
+
+Three rules keep the projection honest, and changes near the send path must preserve them:
+
+- `markAccepted` projects on **every** accepted path, including a dispatch already in
+  `accepted` state. It used to return early there, which permanently froze any row whose
+  projection had been missed — those rows are never re-sent, so nothing else could reach
+  them. The repair is idempotent and only ever raises a floor (`sentFloor`), so it cannot
+  drag a `delivered`/`read` row backwards or disturb a terminal one.
+- `VerificationSendService` treats an `undefined` return from `markAccepted` as a failure,
+  not a send. That return means the projection did not run, so the row would keep both
+  `pending` and a null `wa_message_id` — and the null id then silently breaks the delivery
+  and read webhooks, which resolve against it.
+- An accepted **follow-up** also carries the `sent` floor, and its delivery/read receipts
+  advance the verification like any other. The terminal guard in
+  `VerificationsRepository.updateStatus` is what protects a verification the customer
+  already answered; dropping follow-up receipts entirely just discarded real evidence.
+
+Migration `0029_repair_verification_status_from_dispatch_ledger.sql` restored the
+invariant for rows that had already drifted, advancing each to the furthest state its
+ledger row can prove (`read` > `delivered` > `sent`) and backfilling the timestamps and
+`wa_message_id` with `COALESCE`. `verifications.status` is now `NOT NULL`, so the read
+path no longer has a `?? 'pending'` fallback presenting "unknown" as "not sent yet".
+
 Protected behavior:
 
 - Terminal statuses `confirmed` and `canceled` are not overwritten by later status webhooks.

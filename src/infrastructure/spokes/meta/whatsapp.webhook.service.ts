@@ -251,34 +251,24 @@ export class WhatsAppWebhookService {
           occurredAt,
         );
       }
+      // A follow-up receipt is evidence like any other: if the reminder was
+      // delivered or read, the customer did receive and open a message, and the
+      // row must say so. The concern this used to guard against — a late
+      // follow-up receipt disturbing a verification the customer already
+      // answered — is enforced one level down, where `updateStatus` refuses to
+      // overwrite `confirmed`, `canceled` or `no_reply` for any non-reply status.
       const rows = dispatch
-        ? dispatch.kind === 'follow_up'
-          ? []
-          : await this.verificationsRepo.updateStatus(
-              dispatch.verificationId,
-              typedStatus,
-              undefined,
-              statusObj.timestamp,
-            )
+        ? await this.verificationsRepo.updateStatus(
+            dispatch.verificationId,
+            typedStatus,
+            undefined,
+            statusObj.timestamp,
+          )
         : await this.verificationsRepo.updateStatusByWamid(
             wamid,
             typedStatus,
             statusObj.timestamp,
           );
-
-      if (dispatch?.kind === 'follow_up') {
-        this.logger.log(
-          buildBackendLog(WhatsAppWebhookService.name, {
-            action: 'whatsapp-webhook-handle-status',
-            outcome: 'success',
-            wamid,
-            verificationId: dispatch.verificationId,
-            status: typedStatus,
-            messageKind: dispatch.kind,
-          }),
-        );
-        continue;
-      }
 
       if (rows.length > 0) {
         this.logger.log(
@@ -287,6 +277,7 @@ export class WhatsAppWebhookService {
             outcome: 'success',
             wamid,
             status: typedStatus,
+            ...(dispatch ? { messageKind: dispatch.kind } : {}),
           }),
         );
         if (

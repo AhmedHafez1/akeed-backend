@@ -16,6 +16,8 @@ type DispatchOverrides = Partial<{
   state: string;
   usageReserved: boolean;
   usagePeriodStart: string | null;
+  providerMessageId: string | null;
+  acceptedAt: string | null;
 }>;
 
 function dispatchRow(overrides: DispatchOverrides = {}) {
@@ -24,6 +26,8 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     state = 'sending',
     usageReserved = false,
     usagePeriodStart = null,
+    providerMessageId = null,
+    acceptedAt = null,
   } = overrides;
   // Column order must match the `verification_message_dispatches` table.
   return [
@@ -37,13 +41,13 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     'akeed_system', // sender_kind
     'cod_verification', // template_name
     'ar', // language_code
-    null, // provider_message_id
+    providerMessageId, // provider_message_id
     usagePeriodStart, // usage_period_start
     usageReserved,
     0, // attempt_count
     null, // last_error_code
     null, // lease_until
-    null, // accepted_at
+    acceptedAt, // accepted_at
     null, // delivered_at
     null, // read_at
     null, // failed_at
@@ -131,8 +135,73 @@ describe('VerificationMessageDispatchesRepository terminal-state protection', ()
     expect(update.params).toEqual(
       expect.arrayContaining(['confirmed', 'canceled']),
     );
-    // A follow-up never advances the lifecycle status.
-    expect(update.query).not.toMatch(/set[^]*"status" =/);
+    // A follow-up carries a floor, not an assignment: an accepted reminder
+    // proves a message went out, so the row must not keep claiming `pending`,
+    // but a row already at `delivered`/`read` keeps the further state it earned.
+    expect(update.query).toMatch(
+      /"status" = CASE\s+WHEN "verifications"\."status" IS NULL OR "verifications"\."status" = 'pending'\s+THEN 'sent'::verification_status\s+ELSE "verifications"\."status"/,
+    );
+  });
+
+  it('repairs a verification left behind by an already-accepted dispatch', async () => {
+    // The reported bug: the ledger says the message was accepted, the
+    // verification still says `pending`, and because the dispatch is already
+    // `accepted` no send will ever run again to fix it. `markAccepted` must
+    // project on this path instead of returning early, or the row stays wrong
+    // forever and the merchant is told nobody was contacted.
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      providerMessageId: 'wamid-original',
+      acceptedAt: '2026-05-15T00:10:00.000Z',
+    });
+
+    await repository.markAccepted({
+      dispatchId: 'dispatch-1',
+      providerMessageId: 'wamid-ignored',
+      sentAt: '2026-06-01T00:00:00.000Z',
+    });
+
+    const [update] = verificationUpdates(statements);
+    expect(update).toBeDefined();
+
+    // A floor, never an assignment: a row that already reached `delivered` or
+    // `read` must not be dragged back to `sent` by the repair.
+    expect(update.query).toMatch(
+      /"status" = CASE\s+WHEN "verifications"\."status" IS NULL OR "verifications"\."status" = 'pending'\s+THEN 'sent'::verification_status\s+ELSE "verifications"\."status"/,
+    );
+
+    // The original acceptance facts are restored, not today's clock, and the
+    // attempt counter is untouched — nothing new was actually sent.
+    expect(update.params).toEqual(
+      expect.arrayContaining(['wamid-original', '2026-05-15T00:10:00.000Z']),
+    );
+    expect(update.params).not.toEqual(
+      expect.arrayContaining(['wamid-ignored']),
+    );
+    expect(update.query).not.toContain(
+      'COALESCE("verifications"."attempts", 0) + 1',
+    );
+  });
+
+  it('leaves the ledger row alone while repairing the projection', async () => {
+    // The repair must not restamp `accepted_at` or re-resolve the dispatch;
+    // only the lagging verification projection is being corrected.
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      providerMessageId: 'wamid-original',
+      acceptedAt: '2026-05-15T00:10:00.000Z',
+    });
+
+    await repository.markAccepted({
+      dispatchId: 'dispatch-1',
+      providerMessageId: 'wamid-ignored',
+      sentAt: '2026-06-01T00:00:00.000Z',
+    });
+
+    const ledgerUpdates = statements.filter((statement) =>
+      statement.query.includes('update "verification_message_dispatches" set'),
+    );
+    expect(ledgerUpdates).toHaveLength(0);
   });
 
   it('does not regress a terminal status when a dispatch is resolved as not accepted', async () => {

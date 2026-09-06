@@ -195,10 +195,38 @@ export class VerificationSendService {
       };
     }
     if (dispatchClaim.outcome === 'accepted') {
+      const providerMessageId = dispatchClaim.dispatch.providerMessageId;
+      const acceptedAt = dispatchClaim.dispatch.acceptedAt;
+      // The ledger already records an accepted send, so nothing new goes out.
+      // Re-run the acceptance projection anyway: if the verification's own
+      // status lagged behind the ledger (the historical failure mode, and what
+      // made rows read `pending` after their message had been delivered and
+      // read), this is the only moment that can pull it back into agreement.
+      if (providerMessageId) {
+        try {
+          await this.messageDispatches.markAccepted({
+            dispatchId: dispatchClaim.dispatch.id,
+            providerMessageId,
+            sentAt: acceptedAt ?? new Date().toISOString(),
+          });
+        } catch (error) {
+          // A failed repair must not turn a successful past send into an error;
+          // the row simply stays as it was and the next attempt tries again.
+          this.logger.warn(
+            buildBackendLog('VerificationSendService', {
+              action: 'sendOnce.repairAcceptedProjection',
+              outcome: 'retry',
+              verificationId: verification.id,
+              kind,
+              ...normalizeError(error),
+            }),
+          );
+        }
+      }
       return {
         status: 'sent',
-        waMessageId: dispatchClaim.dispatch.providerMessageId ?? undefined,
-        sentAt: dispatchClaim.dispatch.acceptedAt ?? undefined,
+        waMessageId: providerMessageId ?? undefined,
+        sentAt: acceptedAt ?? undefined,
       };
     }
     if (dispatchClaim.outcome === 'busy') {
@@ -267,11 +295,38 @@ export class VerificationSendService {
     const sentAt = new Date().toISOString();
 
     try {
-      await this.messageDispatches.markAccepted({
+      const accepted = await this.messageDispatches.markAccepted({
         dispatchId: dispatchClaim.dispatch.id,
         providerMessageId: waMessageId,
         sentAt,
       });
+      // `undefined` means the ledger row was in a state the acceptance could not
+      // be applied to, so the verification projection did not run either.
+      // Reporting `sent` here is what previously let a real send leave the row
+      // at `pending` with no `wa_message_id` — which also broke the delivery and
+      // read webhooks, since they resolve against that id.
+      if (!accepted) {
+        this.logger.error(
+          buildBackendLog('VerificationSendService', {
+            action: 'sendOnce.persistAcceptance',
+            outcome: 'failure',
+            verificationId: verification.id,
+            kind,
+            errorCode: 'dispatch_not_acceptable',
+          }),
+        );
+        await this.markProviderOutcomeUnknown(
+          dispatchClaim.dispatch.id,
+          verification.id,
+          verification.orgId,
+          kind,
+          'acceptance_persistence_failed',
+        );
+        return {
+          status: 'outcome_unknown',
+          reason: 'provider_outcome_unknown',
+        };
+      }
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
