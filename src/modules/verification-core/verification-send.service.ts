@@ -294,38 +294,46 @@ export class VerificationSendService {
 
     const sentAt = new Date().toISOString();
 
+    // Past this point the provider has given us a message id, so the message
+    // was sent. Everything below is bookkeeping: it may fail, but it must never
+    // rewrite that fact into a failure — doing so is what left verifications
+    // `failed`/`pending` with a NULL `wa_message_id`, breaking the delivery and
+    // read webhooks (they resolve against that id) and zeroing every
+    // `last_sent_at`-derived dashboard metric.
     try {
       const accepted = await this.messageDispatches.markAccepted({
         dispatchId: dispatchClaim.dispatch.id,
         providerMessageId: waMessageId,
         sentAt,
       });
-      // `undefined` means the ledger row was in a state the acceptance could not
-      // be applied to, so the verification projection did not run either.
-      // Reporting `sent` here is what previously let a real send leave the row
-      // at `pending` with no `wa_message_id` — which also broke the delivery and
-      // read webhooks, since they resolve against that id.
-      if (!accepted) {
+      if (accepted.outcome !== 'accepted') {
         this.logger.error(
           buildBackendLog('VerificationSendService', {
             action: 'sendOnce.persistAcceptance',
             outcome: 'failure',
             verificationId: verification.id,
             kind,
-            errorCode: 'dispatch_not_acceptable',
+            dispatchId: dispatchClaim.dispatch.id,
+            errorCode:
+              accepted.outcome === 'not_found'
+                ? 'dispatch_row_missing'
+                : 'dispatch_not_acceptable',
+            ...(accepted.outcome === 'unacceptable_state'
+              ? {
+                  dispatchState: accepted.state,
+                  attemptCount: accepted.attemptCount,
+                }
+              : {}),
           }),
         );
-        await this.markProviderOutcomeUnknown(
+        await this.recordAcceptanceOutsideLedger(
           dispatchClaim.dispatch.id,
           verification.id,
-          verification.orgId,
           kind,
-          'acceptance_persistence_failed',
+          waMessageId,
+          sentAt,
         );
-        return {
-          status: 'outcome_unknown',
-          reason: 'provider_outcome_unknown',
-        };
+        return { status: 'sent', waMessageId, sentAt };
       }
     } catch (error) {
       this.logger.error(
@@ -334,22 +342,84 @@ export class VerificationSendService {
           outcome: 'failure',
           verificationId: verification.id,
           kind,
+          dispatchId: dispatchClaim.dispatch.id,
           ...normalizeError(error),
         }),
       );
-      await this.markProviderOutcomeUnknown(
+      await this.recordAcceptanceOutsideLedger(
         dispatchClaim.dispatch.id,
         verification.id,
-        verification.orgId,
         kind,
-        'acceptance_persistence_failed',
+        waMessageId,
+        sentAt,
       );
-      return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
+      return { status: 'sent', waMessageId, sentAt };
     }
 
     return { status: 'sent', waMessageId, sentAt };
   }
 
+  /**
+   * Salvages a send whose acceptance could not be written to the dispatch
+   * ledger.
+   *
+   * The ledger goes to `outcome_unknown` so the anomaly is visible to staff and
+   * the lease-reclaim path will not re-send it, while the verification still
+   * receives the acceptance the provider actually confirmed. If staff later
+   * resolve the dispatch as accepted, `markAccepted`'s repair path re-runs the
+   * same idempotent projection; if they reject it, that is a decision made on
+   * the evidence rather than a silent guess made here.
+   */
+  private async recordAcceptanceOutsideLedger(
+    dispatchId: string,
+    verificationId: string,
+    kind: SendKind,
+    waMessageId: string,
+    sentAt: string,
+  ): Promise<void> {
+    try {
+      await this.messageDispatches.markOutcomeUnknown(
+        dispatchId,
+        'acceptance_persistence_failed',
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog('VerificationSendService', {
+          action: 'recordAcceptanceOutsideLedger.markUnknown',
+          outcome: 'failure',
+          dispatchId,
+          verificationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+    try {
+      await this.messageDispatches.projectAcceptanceWithoutLedger({
+        verificationId,
+        kind,
+        providerMessageId: waMessageId,
+        sentAt,
+      });
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog('VerificationSendService', {
+          action: 'recordAcceptanceOutsideLedger.projection',
+          outcome: 'failure',
+          dispatchId,
+          verificationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Records a send that never produced a provider message id.
+   *
+   * Only for the genuinely ambiguous cases — the provider call threw, or
+   * returned no `wamid`. A send that *did* get a message id is not a failure
+   * and must go through {@link recordAcceptanceOutsideLedger} instead.
+   */
   private async markProviderOutcomeUnknown(
     dispatchId: string,
     verificationId: string,

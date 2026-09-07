@@ -499,7 +499,24 @@ export class VerificationHubService {
     ) {
       reason = outcome.reason;
     }
-    if (!reason) return;
+    if (!reason) {
+      // `outcome_unknown` and transient skips (`dispatch_in_progress`) land
+      // here. Leaving the verification untouched is correct — the send path
+      // owns those projections — but returning silently made a stranded row
+      // look like a clean success in the logs, which is how these went
+      // unnoticed at `pending`.
+      this.logger.warn(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-initial-send-unhandled',
+          outcome: 'skipped',
+          orgId,
+          verificationId,
+          status: outcome.status,
+          reason: outcome.reason ?? 'unspecified',
+        }),
+      );
+      return;
+    }
 
     await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
       status: 'failed',

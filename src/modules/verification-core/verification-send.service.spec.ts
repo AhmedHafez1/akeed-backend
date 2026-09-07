@@ -2,6 +2,7 @@ import {
   resolveEntitlement,
   type EntitlementSource,
 } from '../../shared/billing/entitlement';
+import type { DispatchAcceptanceResult } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { VerificationSendService } from './verification-send.service';
 
 const baseIntegration = {
@@ -56,13 +57,15 @@ function createMocks() {
         acceptedAt: null,
       },
     }),
-    // Resolves to the accepted ledger row. An `undefined` return means the
-    // verification projection did not run, which the service must not report
-    // as a successful send.
-    markAccepted: jest
-      .fn()
-      .mockResolvedValue({ id: 'dispatch-1', state: 'accepted' }),
+    // Discriminated on purpose: anything other than `accepted` tells the
+    // service the ledger could not record the acceptance, and which of the
+    // causes fired.
+    markAccepted: jest.fn().mockResolvedValue({
+      outcome: 'accepted',
+      dispatch: { id: 'dispatch-1', state: 'accepted' },
+    }),
     markOutcomeUnknown: jest.fn().mockResolvedValue(undefined),
+    projectAcceptanceWithoutLedger: jest.fn().mockResolvedValue(undefined),
   };
   const messagingPort = {
     sendVerificationTemplate: jest
@@ -160,24 +163,61 @@ describe('VerificationSendService', () => {
     });
   });
 
-  it('does not claim a send when acceptance could not be projected', async () => {
-    const { service, messageDispatches, verificationsRepo } = createMocks();
-    // `undefined` means the ledger row was in a state the acceptance could not
-    // apply to, so the verification projection never ran. Reporting `sent` here
-    // is what let a real send leave the row at `pending` with no wa_message_id
-    // — which then also broke the delivery and read webhooks, since they
-    // resolve against that id.
-    messageDispatches.markAccepted.mockResolvedValue(undefined);
+  const unacceptableLedger: [string, DispatchAcceptanceResult][] = [
+    ['a missing ledger row', { outcome: 'not_found' }],
+    [
+      'an unacceptable ledger state',
+      { outcome: 'unacceptable_state', state: 'ready', attemptCount: 1 },
+    ],
+  ];
 
-    await expect(service.sendInitial('ver-1')).resolves.toEqual({
-      status: 'outcome_unknown',
-      reason: 'provider_outcome_unknown',
+  it.each(unacceptableLedger)(
+    'still records the acceptance when the ledger reports %s',
+    async (_label, acceptance) => {
+      const { service, messageDispatches, verificationsRepo } = createMocks();
+      // The provider handed back a wamid, so the message really was sent.
+      // Rewriting that into `failed` is what left rows at `pending`/`failed`
+      // with a NULL wa_message_id — which then also broke the delivery and
+      // read webhooks, since they resolve against that id, and zeroed every
+      // `last_sent_at`-derived dashboard metric.
+      messageDispatches.markAccepted.mockResolvedValue(acceptance);
+
+      const result = await service.sendInitial('ver-1');
+      expect(result).toMatchObject({
+        status: 'sent',
+        waMessageId: 'wamid-1',
+      });
+      expect(typeof result.sentAt).toBe('string');
+      expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
+        'dispatch-1',
+        'acceptance_persistence_failed',
+      );
+      expect(
+        messageDispatches.projectAcceptanceWithoutLedger,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          verificationId: 'ver-1',
+          kind: 'initial',
+          providerMessageId: 'wamid-1',
+        }),
+      );
+      // The send is not a failure, so nothing may stamp the row `failed`.
+      expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
+    },
+  );
+
+  it('records the acceptance when the ledger write throws', async () => {
+    const { service, messageDispatches, verificationsRepo } = createMocks();
+    messageDispatches.markAccepted.mockRejectedValue(new Error('db down'));
+
+    await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+      waMessageId: 'wamid-1',
     });
-    expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
-      'dispatch-1',
-      'acceptance_persistence_failed',
-    );
-    expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalled();
+    expect(
+      messageDispatches.projectAcceptanceWithoutLedger,
+    ).toHaveBeenCalledTimes(1);
+    expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
   });
 
   it.each([

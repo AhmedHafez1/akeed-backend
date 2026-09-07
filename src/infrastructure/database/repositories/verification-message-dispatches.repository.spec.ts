@@ -1,5 +1,7 @@
+import { getTableColumns } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import * as schema from '../index';
+import { integrations } from '../schema';
 import { VerificationMessageDispatchesRepository } from './verification-message-dispatches.repository';
 
 /**
@@ -18,6 +20,8 @@ type DispatchOverrides = Partial<{
   usagePeriodStart: string | null;
   providerMessageId: string | null;
   acceptedAt: string | null;
+  attemptCount: number;
+  leaseUntil: string | null;
 }>;
 
 function dispatchRow(overrides: DispatchOverrides = {}) {
@@ -28,6 +32,8 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     usagePeriodStart = null,
     providerMessageId = null,
     acceptedAt = null,
+    attemptCount = 0,
+    leaseUntil = null,
   } = overrides;
   // Column order must match the `verification_message_dispatches` table.
   return [
@@ -44,9 +50,9 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     providerMessageId, // provider_message_id
     usagePeriodStart, // usage_period_start
     usageReserved,
-    0, // attempt_count
+    attemptCount, // attempt_count
     null, // last_error_code
-    null, // lease_until
+    leaseUntil, // lease_until
     acceptedAt, // accepted_at
     null, // delivered_at
     null, // read_at
@@ -86,6 +92,133 @@ function verificationUpdates(
     statement.query.includes('update "verifications" set'),
   );
 }
+
+/**
+ * An entitled Standalone source, built from the live column order so the
+ * fixture cannot drift out of sync with the schema.
+ */
+function integrationRow() {
+  const values: Record<string, unknown> = {
+    id: 'integration-1',
+    org_id: 'org-1',
+    platform_type: 'standalone',
+    is_active: true,
+    billing_status: 'not_required',
+    billing_plan_id: 'starter',
+    billing_activated_at: '2026-05-01T00:00:00.000Z',
+  };
+  return Object.values(getTableColumns(integrations)).map(
+    (column) => values[column.name] ?? null,
+  );
+}
+
+/**
+ * Like {@link buildRepository}, but answers the `integrations` lookup that the
+ * claim path makes so entitlement resolves.
+ */
+function buildClaimRepository(overrides: DispatchOverrides = {}) {
+  const statements: { query: string; params: unknown[] }[] = [];
+  const execute = jest.fn((query: string, params: unknown[]) => {
+    statements.push({ query, params });
+    if (!query.trimStart().startsWith('select')) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (query.includes('from "integrations"')) {
+      return Promise.resolve({ rows: [integrationRow()] });
+    }
+    return Promise.resolve({ rows: [dispatchRow(overrides)] });
+  });
+  const session = drizzle(execute as never, { schema });
+  const db = {
+    transaction: (callback: (tx: unknown) => unknown) => callback(session),
+  };
+  const repository = new VerificationMessageDispatchesRepository(db as never);
+  return { repository, statements };
+}
+
+function dispatchUpdates(statements: { query: string; params: unknown[] }[]) {
+  return statements.filter((statement) =>
+    statement.query.includes('update "verification_message_dispatches" set'),
+  );
+}
+
+const EXPIRED_LEASE = '2026-05-15T00:00:00.000Z';
+
+/**
+ * An expired lease means the worker holding the send died before it recorded an
+ * acceptance. Parking the dispatch at `outcome_unknown` stranded the
+ * verification at `pending` for good: every later claim then returned early
+ * without sending, and only staff resolution could free it.
+ */
+describe('VerificationMessageDispatchesRepository lease reclaim', () => {
+  const claimParams = {
+    orgId: 'org-1',
+    integrationId: 'integration-1',
+    verificationId: 'verification-1',
+    kind: 'initial' as const,
+    templateName: 'cod_verification',
+    languageCode: 'ar',
+    leaseUntil: '2999-01-01T00:00:00.000Z',
+  };
+
+  it('re-claims a send whose lease expired instead of parking it', async () => {
+    const { repository, statements } = buildClaimRepository({
+      state: 'sending',
+      leaseUntil: EXPIRED_LEASE,
+      attemptCount: 1,
+      usageReserved: true,
+      usagePeriodStart: '2026-05-01T00:00:00.000Z',
+    });
+
+    const result = await repository.claim(claimParams);
+
+    expect(result.outcome).toBe('claimed');
+    const updates = dispatchUpdates(statements);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].query).toContain('"state" = $');
+    // The reclaim keeps the reason the previous attempt was abandoned; it is
+    // the only trace that this send is a retry rather than a first try.
+    expect(updates[0].params).toContain('dispatch_lease_expired');
+    expect(updates[0].params).toContain('sending');
+    // The usage was reserved by the original claim, so re-claiming must not
+    // charge the merchant a second time for one logical send.
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('integration_monthly_usage'),
+      ),
+    ).toBe(false);
+  });
+
+  it('parks the dispatch once the reclaim budget is spent', async () => {
+    const { repository, statements } = buildClaimRepository({
+      state: 'sending',
+      leaseUntil: EXPIRED_LEASE,
+      attemptCount: 2,
+      usageReserved: true,
+    });
+
+    const result = await repository.claim(claimParams);
+
+    expect(result.outcome).toBe('outcome_unknown');
+    const updates = dispatchUpdates(statements);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].params).toContain('outcome_unknown');
+  });
+
+  it('leaves a dispatch alone while its lease is still live', async () => {
+    const { repository, statements } = buildClaimRepository({
+      state: 'sending',
+      leaseUntil: '2999-01-01T00:00:00.000Z',
+      attemptCount: 1,
+      usageReserved: true,
+    });
+
+    const result = await repository.claim(claimParams);
+
+    expect(result.outcome).toBe('busy');
+    expect(dispatchUpdates(statements)).toHaveLength(0);
+  });
+});
 
 describe('VerificationMessageDispatchesRepository terminal-state protection', () => {
   it('does not regress a terminal status when an initial send is accepted', async () => {

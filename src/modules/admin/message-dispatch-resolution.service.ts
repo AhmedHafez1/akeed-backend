@@ -49,7 +49,7 @@ export class MessageDispatchResolutionService {
         providerMessageId: input.providerMessageId!,
         sentAt: acceptedAt,
       });
-      if (!updated)
+      if (updated.outcome !== 'accepted')
         throw new ConflictException('Dispatch could not be resolved');
       const verification = dispatch.verification;
       const integration = verification?.order?.integration;

@@ -39,6 +39,14 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   'integration_inactive',
   'billing_not_active',
   'provider_not_accepted',
+  // The provider call threw or returned no message id, so nothing proves a
+  // message went out. Omitting this stranded the row permanently: merchant
+  // retry and event redelivery both match `metadata.reason` against this list,
+  // so a `failed`/`provider_outcome_unknown` verification could never be
+  // reopened. The `last_sent_at IS NULL` guard on
+  // `reopenRetryableInitialFailure` is what stops a send that *did* reach the
+  // provider from being repeated.
+  'provider_outcome_unknown',
 ] as const;
 
 /**

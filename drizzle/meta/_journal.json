@@ -211,6 +211,13 @@
       "when": 1788652800000,
       "tag": "0029_repair_verification_status_from_dispatch_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788825600000,
+      "tag": "0030_repair_stranded_dispatch_send_facts",
+      "breakpoints": true
     }
   ]
 }

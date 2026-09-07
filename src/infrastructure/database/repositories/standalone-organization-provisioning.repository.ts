@@ -3,6 +3,10 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
+import {
+  STANDALONE_BILLING_STATUS,
+  STANDALONE_DEFAULT_PLAN_ID,
+} from '../../../shared/billing/billing-plan';
 import { integrations, memberships, organizations } from '../schema';
 
 export interface StandaloneOrganizationProvisioningResult {
@@ -44,6 +48,7 @@ export async function provisionStandaloneSourceForOrganization(
     .for('update');
   if (!organization) throw new Error('Standalone organization was not found');
   const sourceIdentity = buildStandaloneSourceIdentity(orgId);
+  const now = new Date().toISOString();
   const [insertedSource] = await tx
     .insert(integrations)
     .values({
@@ -56,6 +61,16 @@ export async function provisionStandaloneSourceForOrganization(
       isAutoVerifyEnabled: false,
       assumeCodWhenPaymentMissing: false,
       onboardingStatus: 'pending',
+      // Standalone tenants have no external billing to settle, but
+      // `resolveEntitlement` still requires all three columns before it will
+      // grant a plan — unlike Shopify, it has no default-plan fallback. Leaving
+      // them NULL gave every self-serve standalone source `includedLimit: 0`
+      // and blocked its sends with `billing_not_active`. Same grant the admin
+      // pilot flow backfills, applied at provisioning time.
+      billingStatus: STANDALONE_BILLING_STATUS,
+      billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
+      billingActivatedAt: now,
+      billingStatusUpdatedAt: now,
     })
     .onConflictDoNothing({
       target: [integrations.platformType, integrations.platformStoreUrl],

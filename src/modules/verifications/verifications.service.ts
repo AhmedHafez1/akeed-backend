@@ -543,24 +543,33 @@ export class VerificationsService {
    * Merchant no-reply cancellations are excluded from the numerator.
    */
   private calculateReplyRate(counts: VerificationStatusCounts): number {
-    if (counts.sent === 0) {
-      return 0;
-    }
-
-    return Number(
-      (
-        ((counts.confirmed + counts.customerCanceled) / counts.sent) *
-        100
-      ).toFixed(1),
+    return this.percentageOfSent(
+      counts.confirmed + counts.customerCanceled,
+      counts.sent,
     );
   }
 
   private calculateConfirmationRate(counts: VerificationStatusCounts): number {
-    if (counts.sent === 0) {
+    return this.percentageOfSent(counts.confirmed, counts.sent);
+  }
+
+  /**
+   * Expresses an outcome count as a share of the messages that were sent.
+   *
+   * The numerator and the denominator are counted off different columns
+   * (`confirmed_at`/`canceled_at` against `last_sent_at`), so a row carrying a
+   * customer's reply but no recorded send drags the ratio above 100% — which
+   * is how the dashboard came to advertise a 150% reply rate. Rows like that
+   * are a data defect, not a real outcome, and the send path is fixed so they
+   * cannot recur; but a percentage of sends is bounded by definition, so this
+   * refuses to render an impossible number regardless of what the columns say.
+   */
+  private percentageOfSent(outcomeCount: number, sent: number): number {
+    if (sent <= 0) {
       return 0;
     }
 
-    return Number(((counts.confirmed / counts.sent) * 100).toFixed(1));
+    return Number(Math.min((outcomeCount / sent) * 100, 100).toFixed(1));
   }
 
   /**

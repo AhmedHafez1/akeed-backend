@@ -16,6 +16,10 @@ import {
   buildStandaloneSourceIdentity,
   provisionStandaloneSourceForOrganization,
 } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import {
+  STANDALONE_BILLING_STATUS,
+  STANDALONE_DEFAULT_PLAN_ID,
+} from '../../shared/billing/billing-plan';
 import { evaluateStandalonePilot } from './standalone-pilot.policy';
 import type {
   PilotApplyResult,
@@ -342,8 +346,8 @@ export class StandalonePilotRepository {
             const integrationId = sourceResult.integration.id;
             const now = new Date().toISOString();
             const after = {
-              billingPlanId: 'starter' as const,
-              billingStatus: 'not_required',
+              billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
+              billingStatus: STANDALONE_BILLING_STATUS,
               billingActivatedAt: existingSource?.billingActivatedAt ?? now,
               billingStatusUpdatedAt: now,
             };

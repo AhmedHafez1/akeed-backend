@@ -9,7 +9,7 @@ describe('MessageDispatchResolutionService', () => {
       kind: 'initial',
       integrationId: 'int-1',
       verificationId: 'verification-1',
-      providerMessageId: null,
+      providerMessageId: null as string | null,
       verification: {
         id: 'verification-1',
         orgId: 'org-1',
@@ -28,7 +28,10 @@ describe('MessageDispatchResolutionService', () => {
     };
     const dispatches = {
       findById: jest.fn().mockResolvedValue(dispatch),
-      markAccepted: jest.fn().mockResolvedValue({ state: 'accepted' }),
+      markAccepted: jest.fn().mockResolvedValue({
+        outcome: 'accepted',
+        dispatch: { state: 'accepted' },
+      }),
       resolveNotAccepted: jest.fn().mockResolvedValue({ state: 'rejected' }),
     };
     const events = {

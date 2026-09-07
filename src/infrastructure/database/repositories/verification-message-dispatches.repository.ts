@@ -51,6 +51,47 @@ END`;
 
 export type DispatchKind = 'initial' | 'follow_up';
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
+export type DispatchState = DispatchRecord['state'];
+
+/**
+ * How many times one logical send may be re-claimed after its lease expires.
+ *
+ * An expired lease proves the previous worker died before it recorded an
+ * acceptance, but not whether it died before or after reaching the provider —
+ * so every reclaim risks a duplicate message to the customer. One retry buys
+ * back the overwhelmingly common case (the process was interrupted mid-send)
+ * without letting an ambiguous dispatch loop; past the cap it goes to staff
+ * resolution instead.
+ */
+const MAX_LEASE_RECLAIM_ATTEMPTS = 2;
+
+/**
+ * A write target that may be either the pool or an open transaction, so the
+ * acceptance projection can run inside `markAccepted`'s transaction or on its
+ * own when the ledger write itself could not be applied.
+ */
+type DispatchWriter =
+  | PostgresJsDatabase<typeof schema>
+  | Parameters<
+      Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
+    >[0];
+
+/**
+ * Outcome of applying a provider acceptance to the ledger.
+ *
+ * Deliberately discriminated rather than `DispatchRecord | undefined`: the
+ * caller has to log *why* an acceptance could not be applied, and the four
+ * causes (row gone, wrong state, and the two acceptable states) used to
+ * collapse into one indistinguishable `undefined`.
+ */
+export type DispatchAcceptanceResult =
+  | { outcome: 'accepted'; dispatch: DispatchRecord }
+  | { outcome: 'not_found' }
+  | {
+      outcome: 'unacceptable_state';
+      state: DispatchState;
+      attemptCount: number;
+    };
 
 export type DispatchClaimResult =
   | { outcome: 'claimed'; dispatch: DispatchRecord }
@@ -120,6 +161,12 @@ export class VerificationMessageDispatchesRepository {
       if (dispatch.state === 'outcome_unknown') {
         return { outcome: 'outcome_unknown' as const, dispatch };
       }
+      // An expired lease is the only signal that the worker holding this send
+      // died before it could record an acceptance. Re-claiming it here is what
+      // lets the verification leave `pending`: parking it at `outcome_unknown`
+      // stranded the row for good, because every later claim then returned
+      // early without sending and only staff resolution could free it.
+      let reclaimedFromExpiredLease = false;
       if (dispatch.state === 'sending') {
         if (
           !dispatch.leaseUntil ||
@@ -127,17 +174,23 @@ export class VerificationMessageDispatchesRepository {
         ) {
           return { outcome: 'busy' as const, dispatch };
         }
-        const [unknown] = await tx
-          .update(verificationMessageDispatches)
-          .set({
-            state: 'outcome_unknown',
-            lastErrorCode: 'dispatch_lease_expired',
-            leaseUntil: null,
-            updatedAt: now,
-          })
-          .where(eq(verificationMessageDispatches.id, dispatch.id))
-          .returning();
-        return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+        if (dispatch.attemptCount >= MAX_LEASE_RECLAIM_ATTEMPTS) {
+          const [unknown] = await tx
+            .update(verificationMessageDispatches)
+            .set({
+              state: 'outcome_unknown',
+              lastErrorCode: 'dispatch_lease_expired',
+              leaseUntil: null,
+              updatedAt: now,
+            })
+            .where(eq(verificationMessageDispatches.id, dispatch.id))
+            .returning();
+          return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+        }
+        // Falls through to the claim below. `usageReserved` is already true, so
+        // the reservation block is skipped and the merchant is not charged
+        // twice for the same logical send.
+        reclaimedFromExpiredLease = true;
       }
 
       const [source] = await tx
@@ -219,7 +272,11 @@ export class VerificationMessageDispatchesRepository {
             dispatch.usagePeriodStart ?? entitlement.periodStart,
           usageReserved: true,
           attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
-          lastErrorCode: null,
+          // Keep the reason the previous attempt was abandoned; it is the only
+          // trace that this send is a reclaim rather than a first try.
+          lastErrorCode: reclaimedFromExpiredLease
+            ? 'dispatch_lease_expired'
+            : null,
           leaseUntil: params.leaseUntil,
           updatedAt: now,
         })
@@ -233,14 +290,14 @@ export class VerificationMessageDispatchesRepository {
     dispatchId: string;
     providerMessageId: string;
     sentAt: string;
-  }): Promise<DispatchRecord | undefined> {
+  }): Promise<DispatchAcceptanceResult> {
     return this.db.transaction(async (tx) => {
       const [dispatch] = await tx
         .select()
         .from(verificationMessageDispatches)
         .where(eq(verificationMessageDispatches.id, params.dispatchId))
         .for('update');
-      if (!dispatch) return undefined;
+      if (!dispatch) return { outcome: 'not_found' as const };
 
       // Project first, on every path that represents an accepted send —
       // including a dispatch already marked `accepted`.
@@ -260,13 +317,17 @@ export class VerificationMessageDispatchesRepository {
           sentAt: dispatch.acceptedAt ?? params.sentAt,
           repair: true,
         });
-        return dispatch;
+        return { outcome: 'accepted' as const, dispatch };
       }
       if (
         dispatch.state !== 'sending' &&
         dispatch.state !== 'outcome_unknown'
       ) {
-        return undefined;
+        return {
+          outcome: 'unacceptable_state' as const,
+          state: dispatch.state,
+          attemptCount: dispatch.attemptCount,
+        };
       }
       await this.projectAcceptedVerification(tx, dispatch, params);
       const [updated] = await tx
@@ -283,8 +344,35 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, dispatch.id))
         .returning();
-      return updated;
+      return { outcome: 'accepted' as const, dispatch: updated };
     });
+  }
+
+  /**
+   * Records a provider acceptance on the verification when the ledger write
+   * could not be applied to it.
+   *
+   * The provider returned a message id, so the message really was sent.
+   * Discarding that used to leave the row `failed` with a NULL
+   * `wa_message_id` — which also broke the delivery and read webhooks (they
+   * resolve against that id) and zeroed every `last_sent_at`-derived dashboard
+   * metric. The ledger anomaly is real and still recorded separately, but it
+   * must not overwrite what the provider already told us.
+   */
+  async projectAcceptanceWithoutLedger(params: {
+    verificationId: string;
+    kind: DispatchKind;
+    providerMessageId: string;
+    sentAt: string;
+  }): Promise<void> {
+    await this.projectAcceptedVerification(
+      this.db,
+      { verificationId: params.verificationId, kind: params.kind },
+      {
+        providerMessageId: params.providerMessageId,
+        sentAt: params.sentAt,
+      },
+    );
   }
 
   async markOutcomeUnknown(
@@ -408,8 +496,8 @@ export class VerificationMessageDispatchesRepository {
   }
 
   private async projectAcceptedVerification(
-    tx: Parameters<Parameters<typeof this.db.transaction>[0]>[0],
-    dispatch: DispatchRecord,
+    tx: DispatchWriter,
+    dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'>,
     params: { providerMessageId: string; sentAt: string; repair?: boolean },
   ): Promise<void> {
     const common = {

@@ -51,6 +51,18 @@ const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
 
 export const DEFAULT_BILLING_PLAN_ID: BillingPlanId = 'starter';
 
+/**
+ * Entitlement grant for a Standalone source.
+ *
+ * Standalone tenants settle no external billing, but `resolveEntitlement` still
+ * demands a status, a valid plan and an activation anchor before it hands out a
+ * limit — there is no default-plan fallback for them the way there is for
+ * Shopify. Provisioning and the admin pilot grant must agree on these exact
+ * values, so they live here rather than being restated at each write site.
+ */
+export const STANDALONE_BILLING_STATUS = 'not_required';
+export const STANDALONE_DEFAULT_PLAN_ID: BillingPlanId = 'starter';
+
 export function isBillingPlanId(value: string): value is BillingPlanId {
   return BILLING_PLAN_IDS.includes(value as BillingPlanId);
 }

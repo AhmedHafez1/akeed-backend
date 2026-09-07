@@ -174,6 +174,22 @@ describe('VerificationsService', () => {
       ).toBe(0);
     });
 
+    it('never advertises more replies than sends', () => {
+      // Replies and sends are counted off different columns, so a row carrying
+      // a customer's answer but no recorded send used to push this past 100 —
+      // the dashboard rendered a 150% reply rate. A share of sends is bounded
+      // by definition, whatever the columns say.
+      expect(
+        callReplyRate(service, {
+          total: 3,
+          confirmed: 2,
+          canceled: 1,
+          customerCanceled: 1,
+          sent: 2,
+        }),
+      ).toBe(100);
+    });
+
     it('should return correct reply rate using sent denominator and customerCanceled', () => {
       expect(
         callReplyRate(service, {
@@ -265,6 +281,16 @@ describe('VerificationsService', () => {
           sent: 0,
         }),
       ).toBe(0);
+    });
+
+    it('never advertises more confirmations than sends', () => {
+      expect(
+        callConfirmationRate(service, {
+          total: 2,
+          confirmed: 2,
+          sent: 1,
+        }),
+      ).toBe(100);
     });
 
     it('should return correct confirmation rate using sent denominator', () => {
