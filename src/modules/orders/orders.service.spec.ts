@@ -91,7 +91,6 @@ describe('OrdersService manual creation', () => {
       dispatcher as never,
       webhookEvents as never,
       orderEligibility as never,
-      {} as never,
     );
   });
 
@@ -447,7 +446,6 @@ describe('OrdersService manual verification lifecycle', () => {
       dispatcher as never,
       events as never,
       eligibility as never,
-      { supports: jest.fn().mockReturnValue(true) } as never,
     );
     return {
       service,

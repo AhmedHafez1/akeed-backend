@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import {
   appendPaymentSignal,
   classifyCodStatus,
@@ -15,6 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
   readonly platform: PlatformType = 'standalone';
 
+  private readonly logger = new Logger(StandaloneManualOrderNormalizer.name);
+
   normalizeOrder(
     rawPayload: Record<string, unknown>,
     integrationId: string,
@@ -27,7 +30,7 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
       rawPayload.submissionFingerprint.trim() === '' ||
       !isRecord(rawPayload.order)
     ) {
-      return null;
+      return this.reject(orgId, integrationId, 'invalid_envelope');
     }
     const order = rawPayload.order;
     const requiredStrings = [
@@ -41,7 +44,7 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
         (value) => typeof value !== 'string' || value.trim() === '',
       )
     ) {
-      return null;
+      return this.reject(orgId, integrationId, 'missing_required_field');
     }
     if (
       (order.orderNumber !== undefined &&
@@ -51,14 +54,14 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
         order.customerName !== null &&
         typeof order.customerName !== 'string')
     ) {
-      return null;
+      return this.reject(orgId, integrationId, 'invalid_optional_field_type');
     }
     if (
       order.paymentMethod !== undefined &&
       order.paymentMethod !== null &&
       typeof order.paymentMethod !== 'string'
     ) {
-      return null;
+      return this.reject(orgId, integrationId, 'invalid_payment_method_type');
     }
     const paymentSignals: string[] = [];
     appendPaymentSignal(
@@ -82,5 +85,18 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
       codStatus: classifyCodStatus(paymentSignals),
       rawPayload,
     };
+  }
+
+  private reject(orgId: string, integrationId: string, reason: string): null {
+    this.logger.warn(
+      buildBackendLog(StandaloneManualOrderNormalizer.name, {
+        action: 'normalizeOrder',
+        outcome: 'skipped',
+        orgId,
+        integrationId,
+        reason,
+      }),
+    );
+    return null;
   }
 }

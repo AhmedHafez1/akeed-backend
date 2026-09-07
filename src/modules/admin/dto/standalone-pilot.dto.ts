@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -13,6 +13,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { TrimString } from '../../../shared/validation/trim.transform';
 
 export class StandalonePilotListDto {
   @IsOptional() @IsUUID() cursor?: string;
@@ -30,9 +31,7 @@ export class StandalonePilotPreviewDto {
 
 export class StandalonePilotApplyDto {
   @IsUUID() previewId!: string;
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @TrimString()
   @IsString()
   @MinLength(1)
   @MaxLength(500)

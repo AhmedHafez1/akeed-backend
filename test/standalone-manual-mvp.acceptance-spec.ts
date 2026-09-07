@@ -638,7 +638,6 @@ async function createHarness(): Promise<AcceptanceHarness> {
     dispatcher as never,
     eventRepo as never,
     eligibility,
-    commerceOutcomes,
   );
   const processor = new WebhookQueueProcessor(
     [new StandaloneManualOrderNormalizer()],

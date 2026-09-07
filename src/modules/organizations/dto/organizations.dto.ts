@@ -1,13 +1,11 @@
-import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { TrimString } from '../../../shared/validation/trim.transform';
 
 export class CreateOrganizationDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @TrimString()
   name!: string;
 }
 

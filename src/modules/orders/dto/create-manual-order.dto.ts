@@ -10,15 +10,10 @@ import {
 } from 'class-validator';
 import { ONBOARDING_SHIPPING_CURRENCIES } from '../../onboarding/dto/onboarding.dto';
 import { normalizePaymentSignal } from '../../../shared/commerce/payment-signals';
-
-function trim(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim() : value;
-}
-
-function trimOptional(value: unknown): unknown {
-  const normalized = trim(value);
-  return normalized === '' ? undefined : normalized;
-}
+import {
+  TrimString,
+  TrimOptionalString,
+} from '../../../shared/validation/trim.transform';
 
 function normalizeCurrency(value: unknown): unknown {
   return typeof value === 'string' ? value.trim().toUpperCase() : value;
@@ -29,26 +24,26 @@ function normalizePaymentMethod(value: unknown): unknown {
 }
 
 export class CreateManualOrderDto {
-  @Transform(({ value }) => trim(value))
+  @TrimString()
   @IsString({ message: 'customerPhone must be a string.' })
   @IsNotEmpty({ message: 'customerPhone is required.' })
   @MinLength(7, { message: 'customerPhone is invalid.' })
   @MaxLength(20, { message: 'customerPhone is invalid.' })
   customerPhone!: string;
 
-  @Transform(({ value }) => trimOptional(value))
+  @TrimOptionalString()
   @IsOptional()
   @IsString({ message: 'customerName must be a string.' })
   @MaxLength(255, { message: 'customerName must not exceed 255 characters.' })
   customerName?: string;
 
-  @Transform(({ value }) => trimOptional(value))
+  @TrimOptionalString()
   @IsOptional()
   @IsString({ message: 'orderNumber must be a string.' })
   @MaxLength(100, { message: 'orderNumber must not exceed 100 characters.' })
   orderNumber?: string;
 
-  @Transform(({ value }) => trim(value))
+  @TrimString()
   @IsString({ message: 'totalPrice must be a decimal string.' })
   @Matches(
     /^(?=.{1,13}$)(?!0+(?:\.0{1,2})?$)(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/,

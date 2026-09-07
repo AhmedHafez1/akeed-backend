@@ -16,7 +16,6 @@ import {
   ManualOrderIngestionRepository,
   ManualOrderPayloadConflictError,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
-import { DashboardSourceState } from './dto/dashboard.dto';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { PhoneService } from '../../shared/services/phone.service';
@@ -42,13 +41,6 @@ import type {
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { integrations } from '../../infrastructure/database/schema';
-import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
-import type { CommerceOutcomeOperationResult } from '../../shared/commerce/commerce-outcome';
-import {} from './services/dashboard-date-range';
-
-const DEFAULT_AVG_SHIPPING_COST = 3;
-const DEFAULT_SHIPPING_CURRENCY = 'USD';
-type IntegrationRecord = typeof integrations.$inferSelect;
 
 /**
  * Payment signals captured when the order was ingested.
@@ -82,7 +74,6 @@ export class OrdersService {
     private readonly dispatcher: WebhookDispatchService,
     private readonly webhookEvents: WebhookEventsRepository,
     private readonly orderEligibility: OrderEligibilityService,
-    private readonly commerceOutcomes: CommerceOutcomeRegistryService,
   ) {}
 
   async createManualOrder(
@@ -438,70 +429,6 @@ export class OrdersService {
 
   private manualExternalOrderId(idempotencyKey: string): string {
     return `manual-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 40)}`;
-  }
-
-  private resolveReportingSource(
-    sources: IntegrationRecord[],
-  ): IntegrationRecord | undefined {
-    return sources.find((source) => source.isActive === true) ?? sources[0];
-  }
-
-  private resolveDashboardSourceState(
-    sources: IntegrationRecord[],
-  ): DashboardSourceState {
-    const active = sources.find((source) => source.isActive === true);
-    const source = active ?? sources[0];
-    return {
-      status: active ? 'connected' : source ? 'disconnected' : 'not_connected',
-      integration_id: source?.id ?? null,
-      platform_type: source?.platformType ?? null,
-    };
-  }
-
-  private resolveDashboardAutomationSettings(source?: IntegrationRecord) {
-    return {
-      is_auto_verify_enabled: source?.isAutoVerifyEnabled ?? false,
-      follow_up_enabled: source?.followUpEnabled ?? false,
-      quiet_hours_enabled: source?.quietHoursEnabled ?? false,
-    };
-  }
-
-  private resolveShippingSettings(source?: IntegrationRecord) {
-    const parsedCost = Number(
-      source?.avgShippingCost ?? DEFAULT_AVG_SHIPPING_COST,
-    );
-    return {
-      currency:
-        source?.shippingCurrency?.trim().toUpperCase() ??
-        DEFAULT_SHIPPING_CURRENCY,
-      avgShippingCost:
-        Number.isFinite(parsedCost) && parsedCost >= 0
-          ? Number(parsedCost.toFixed(2))
-          : DEFAULT_AVG_SHIPPING_COST,
-    };
-  }
-
-  private readCancellationOperation(
-    metadata: unknown,
-  ): CommerceOutcomeOperationResult | undefined {
-    if (!metadata || typeof metadata !== 'object') return undefined;
-    const value = (metadata as Record<string, unknown>).commerceCancellation;
-    if (!value || typeof value !== 'object') return undefined;
-    const operation = value as Record<string, unknown>;
-    if (operation.status === 'applied') return { status: 'applied' };
-    if (operation.status === 'accepted_without_reference') {
-      return { status: 'accepted_without_reference' };
-    }
-    if (
-      operation.status === 'pending_provider_operation' &&
-      typeof operation.providerOperationId === 'string'
-    ) {
-      return {
-        status: 'pending_provider_operation',
-        providerOperationId: operation.providerOperationId,
-      };
-    }
-    return undefined;
   }
 
   private retryReadinessReason(
