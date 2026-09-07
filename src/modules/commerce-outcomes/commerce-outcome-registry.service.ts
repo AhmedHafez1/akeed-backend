@@ -12,6 +12,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
 
 @Injectable()
 export class CommerceOutcomeRegistryService {
@@ -91,7 +92,7 @@ export class CommerceOutcomeRegistryService {
       });
     }
 
-    if (order.isTest || order.externalOrderId.startsWith('akeed-test-')) {
+    if (isSyntheticOrder(order)) {
       return this.complete(command, { status: 'applied' });
     }
 

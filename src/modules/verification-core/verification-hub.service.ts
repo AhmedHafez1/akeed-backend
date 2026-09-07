@@ -12,6 +12,10 @@ import { VerificationAutomationProducer } from '../verification-automation/verif
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isSendFailureReason } from '../../shared/verification/verification-lifecycle';
 import {
+  isSyntheticOrder,
+  isSyntheticTestOrderId,
+} from '../../shared/commerce/synthetic-order';
+import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
@@ -70,7 +74,7 @@ export class VerificationHubService {
       return { skipped: true, reason: skipReason };
     }
 
-    const isTestOrder = orderData.externalOrderId.startsWith('akeed-test-');
+    const isTestOrder = isSyntheticTestOrderId(orderData.externalOrderId);
     if (!isTestOrder) {
       await this.adminLifecycles?.markMilestone(
         integration.id,
@@ -231,7 +235,7 @@ export class VerificationHubService {
     if (!order || order.orgId !== verification.orgId) return;
 
     if (
-      !this.isSyntheticOrder(order) &&
+      !isSyntheticOrder(order) &&
       (status === 'confirmed' || status === 'canceled')
     ) {
       await this.synchronizeExternalOrder(
@@ -559,16 +563,7 @@ export class VerificationHubService {
       currency: orderData.currency,
       paymentMethod: orderData.paymentMethod,
       rawPayload: orderData.rawPayload,
-      isTest: orderData.externalOrderId.startsWith('akeed-test-'),
+      isTest: isSyntheticTestOrderId(orderData.externalOrderId),
     };
-  }
-
-  private isSyntheticOrder(order: {
-    isTest?: boolean | null;
-    externalOrderId?: string | null;
-  }): boolean {
-    return Boolean(
-      order.isTest === true || order.externalOrderId?.startsWith('akeed-test-'),
-    );
   }
 }

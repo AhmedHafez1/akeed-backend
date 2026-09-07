@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import {
-  appendPaymentSignal,
   classifyCodStatus,
+  collectPaymentSignals,
 } from '../../../shared/commerce/payment-signals';
 import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
 import type { NormalizedOrder } from '../../../shared/interfaces/order.interface';
@@ -63,9 +63,8 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
     ) {
       return this.reject(orgId, integrationId, 'invalid_payment_method_type');
     }
-    const paymentSignals: string[] = [];
-    appendPaymentSignal(
-      paymentSignals,
+    const paymentSignals = collectPaymentSignals(
+      undefined,
       typeof order.paymentMethod === 'string' ? order.paymentMethod : undefined,
     );
     return {

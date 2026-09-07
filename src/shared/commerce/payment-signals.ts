@@ -30,3 +30,20 @@ export function classifyCodStatus(signals: readonly string[]): CodStatus {
   if (signals.length === 0) return 'unknown';
   return signals.some(isCashOnDeliveryPaymentSignal) ? 'cod' : 'non_cod';
 }
+
+/**
+ * Builds a normalized payment-signal list from whatever evidence a source
+ * already collected plus its declared payment method, so every call site
+ * assembles signals the same way instead of re-implementing the append loop.
+ */
+export function collectPaymentSignals(
+  existingSignals: readonly unknown[] | undefined,
+  paymentMethod?: unknown,
+): string[] {
+  const signals: string[] = [];
+  for (const signal of existingSignals ?? []) {
+    appendPaymentSignal(signals, signal);
+  }
+  appendPaymentSignal(signals, paymentMethod);
+  return signals;
+}

@@ -14,6 +14,11 @@ import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/re
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { integrations } from '../../infrastructure/database/schema';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
+import { SYNTHETIC_TEST_ORDER_ID_PREFIX } from '../../shared/commerce/synthetic-order';
+import {
+  resolveFallbackActiveIntegration,
+  resolveShopifyLinkedIntegration,
+} from '../../shared/commerce/current-integration-resolver';
 
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
 type IntegrationRecord = typeof integrations.$inferSelect;
@@ -61,7 +66,7 @@ export class TestVerificationService {
     const integration = await this.resolveCurrentSource(user);
 
     const timestamp = Date.now();
-    const testOrderId = `akeed-test-${randomUUID()}`;
+    const testOrderId = `${SYNTHETIC_TEST_ORDER_ID_PREFIX}${randomUUID()}`;
     const defaultCurrency =
       typeof integration.shippingCurrency === 'string' &&
       integration.shippingCurrency.trim().length > 0
@@ -129,19 +134,19 @@ export class TestVerificationService {
     user: AuthenticatedUser,
   ): Promise<IntegrationRecord> {
     if (user.source === 'shopify' && user.shop) {
-      const source = await this.integrationsRepo.findByOrgAndPlatformDomain(
-        user.orgId,
-        user.shop,
-        'shopify',
+      const resolution = await resolveShopifyLinkedIntegration(
+        this.integrationsRepo,
+        { orgId: user.orgId, shopDomain: user.shop, requireActive: true },
       );
-      if (source?.isActive) return source;
+      if (resolution.outcome === 'found') return resolution.integration;
       this.throwSourceUnavailable('The Shopify source is not active.');
     }
 
-    const activeSources = await this.integrationsRepo.findActiveByOrg(
+    const resolution = await resolveFallbackActiveIntegration(
+      this.integrationsRepo,
       user.orgId,
     );
-    if (activeSources.length > 1) {
+    if (resolution.outcome === 'ambiguous') {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
@@ -149,16 +154,10 @@ export class TestVerificationService {
         code: 'TEST_VERIFICATION_SOURCE_AMBIGUOUS',
       });
     }
+    if (resolution.outcome === 'found') return resolution.integration;
 
-    const source = activeSources[0];
-    if (source) return source;
-
-    const existingSources = await this.integrationsRepo.findByOrg(user.orgId);
-    const hasInactiveSource = existingSources.some(
-      (candidate) => candidate.isActive === false,
-    );
     this.throwSourceUnavailable(
-      hasInactiveSource
+      resolution.hasInactiveSource
         ? 'The current commerce source is inactive.'
         : 'An active commerce source is required to send a test message.',
     );

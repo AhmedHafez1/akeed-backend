@@ -34,6 +34,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import {
+  resolveFallbackActiveIntegration,
+  resolveShopifyLinkedIntegration,
+} from '../../shared/commerce/current-integration-resolver';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
@@ -196,48 +200,42 @@ export class OnboardingStateService {
     user: AuthenticatedUser,
   ): Promise<IntegrationRecord> {
     if (user.shop) {
-      const byShop = await this.integrationsRepo.findByOrgAndPlatformDomain(
-        user.orgId,
-        user.shop,
-        'shopify',
+      const resolution = await resolveShopifyLinkedIntegration(
+        this.integrationsRepo,
+        { orgId: user.orgId, shopDomain: user.shop, requireActive: false },
       );
-
-      if (!byShop) {
+      if (resolution.outcome === 'not_found') {
         throw new NotFoundException(
           `Shopify integration not found for shop: ${user.shop}`,
         );
       }
-
-      return byShop;
+      return resolution.integration;
     }
 
-    const sources = await this.integrationsRepo.findActiveByOrg(user.orgId);
-    if (sources.length > 1)
+    const resolution = await resolveFallbackActiveIntegration(
+      this.integrationsRepo,
+      user.orgId,
+    );
+    if (resolution.outcome === 'ambiguous') {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
         message: 'Multiple active commerce sources require staff review',
         code: 'ONBOARDING_SOURCE_AMBIGUOUS',
       });
-    const fallback = sources[0];
-    if (!fallback) {
-      const existingSources = await this.integrationsRepo.findByOrg(user.orgId);
-      const hasInactiveSource = existingSources.some(
-        (source) => source.isActive === false,
-      );
-      throw new NotFoundException({
-        statusCode: 404,
-        error: 'Not Found',
-        message: hasInactiveSource
-          ? 'Commerce source is inactive'
-          : 'Commerce source was not found',
-        code: hasInactiveSource
-          ? 'ONBOARDING_SOURCE_INACTIVE'
-          : 'ONBOARDING_SOURCE_MISSING',
-      });
     }
+    if (resolution.outcome === 'found') return resolution.integration;
 
-    return fallback;
+    throw new NotFoundException({
+      statusCode: 404,
+      error: 'Not Found',
+      message: resolution.hasInactiveSource
+        ? 'Commerce source is inactive'
+        : 'Commerce source was not found',
+      code: resolution.hasInactiveSource
+        ? 'ONBOARDING_SOURCE_INACTIVE'
+        : 'ONBOARDING_SOURCE_MISSING',
+    });
   }
 
   async prefillStoreNameIfMissing(

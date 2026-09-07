@@ -23,6 +23,7 @@ import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-numbe
 import {
   appendPaymentSignal,
   classifyCodStatus,
+  collectPaymentSignals,
 } from '../../shared/commerce/payment-signals';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
@@ -450,11 +451,10 @@ export class OrdersService {
     if (integration.onboardingStatus !== 'completed')
       return 'onboarding_incomplete';
     if (!integration.isAutoVerifyEnabled) return 'auto_verify_disabled';
-    const paymentSignals: string[] = [];
-    for (const signal of readStoredPaymentSignals(order.rawPayload)) {
-      appendPaymentSignal(paymentSignals, signal);
-    }
-    appendPaymentSignal(paymentSignals, order.paymentMethod ?? undefined);
+    const paymentSignals = collectPaymentSignals(
+      readStoredPaymentSignals(order.rawPayload),
+      order.paymentMethod ?? undefined,
+    );
     const eligibility = this.orderEligibility.evaluateOrderForVerification({
       order: {
         orgId: order.orgId,

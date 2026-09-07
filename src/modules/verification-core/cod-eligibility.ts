@@ -1,5 +1,5 @@
 import {
-  appendPaymentSignal,
+  collectPaymentSignals,
   isCashOnDeliveryPaymentSignal,
   normalizePaymentSignal,
 } from '../../shared/commerce/payment-signals';
@@ -76,10 +76,5 @@ export function resolveDeclaredCodStatus(
 export function collectNormalizedPaymentSignals(
   order: NormalizedOrder,
 ): string[] {
-  const signals: string[] = [];
-  for (const signal of order.paymentSignals ?? []) {
-    appendPaymentSignal(signals, signal);
-  }
-  appendPaymentSignal(signals, order.paymentMethod);
-  return signals;
+  return collectPaymentSignals(order.paymentSignals, order.paymentMethod);
 }
