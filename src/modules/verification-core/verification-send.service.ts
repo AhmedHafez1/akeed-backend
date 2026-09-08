@@ -15,13 +15,18 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
-import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import {
+  buildDispatchKey,
+  VerificationMessageDispatchesRepository,
+  type DispatchAcceptanceResult,
+} from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 
 export type SendKind = 'initial' | 'follow_up';
 
 export interface SendOutcome {
   status:
     | 'sent'
+    | 'sent_untracked'
     | 'failed'
     | 'plan_limit_reached'
     | 'skipped'
@@ -30,6 +35,30 @@ export interface SendOutcome {
   waMessageId?: string;
   sentAt?: string;
 }
+
+/**
+ * Everything needed to find this send again once something has gone wrong with
+ * it. Carried through every failure log so an occurrence stays investigable
+ * after the fact, including when the row it names is no longer reachable.
+ */
+interface SendIdentity {
+  orgId: string;
+  orderId: string;
+  verificationId: string;
+  kind: SendKind;
+  dispatchId: string;
+  dispatchKey: string;
+  waMessageId: string;
+}
+
+const ACCEPTANCE_FAILURE_CODES: Record<
+  Exclude<DispatchAcceptanceResult['outcome'], 'accepted'>,
+  string
+> = {
+  not_found: 'dispatch_row_missing',
+  verification_missing: 'verification_row_missing',
+  unacceptable_state: 'dispatch_not_acceptable',
+};
 
 interface ResolvedContext {
   verification: NonNullable<
@@ -208,6 +237,8 @@ export class VerificationSendService {
             dispatchId: dispatchClaim.dispatch.id,
             providerMessageId,
             sentAt: acceptedAt ?? new Date().toISOString(),
+            verificationId: verification.id,
+            kind,
           });
         } catch (error) {
           // A failed repair must not turn a successful past send into an error;
@@ -245,7 +276,12 @@ export class VerificationSendService {
         to: order.customerPhone,
         customerName: order.customerName,
         storeName: integration.storeName,
-        orderNumber: order.externalOrderId,
+        // The merchant-facing reference, not the source's internal identifier.
+        // `externalOrderId` is a dedupe key -- a Shopify order id, or the
+        // `manual-<hash>` synthesised from an idempotency key -- so sending it
+        // showed customers an opaque string instead of the order they placed.
+        // It stays as the fallback for rows whose number was never captured.
+        orderNumber: order.orderNumber?.trim() || order.externalOrderId,
         totalPrice: `${order.totalPrice} ${order.currency ?? ''}`.trim(),
         verificationId: verification.id,
         preferredLanguage: integration.defaultLanguage,
@@ -300,24 +336,36 @@ export class VerificationSendService {
     // `failed`/`pending` with a NULL `wa_message_id`, breaking the delivery and
     // read webhooks (they resolve against that id) and zeroing every
     // `last_sent_at`-derived dashboard metric.
+    // Identity of the send, restated for every diagnostic below. The dispatch
+    // id alone was not enough to investigate a failure after the fact: without
+    // the tenant, the order and the logical dispatch key there is nothing to
+    // query the ledger by once the row itself is unreachable.
+    const sendIdentity = {
+      orgId: verification.orgId,
+      orderId: order.id,
+      verificationId: verification.id,
+      kind,
+      dispatchId: dispatchClaim.dispatch.id,
+      dispatchKey: buildDispatchKey(verification.id, kind),
+      waMessageId,
+    };
+
     try {
       const accepted = await this.messageDispatches.markAccepted({
         dispatchId: dispatchClaim.dispatch.id,
         providerMessageId: waMessageId,
         sentAt,
+        verificationId: verification.id,
+        kind,
       });
       if (accepted.outcome !== 'accepted') {
         this.logger.error(
           buildBackendLog('VerificationSendService', {
             action: 'sendOnce.persistAcceptance',
             outcome: 'failure',
-            verificationId: verification.id,
-            kind,
-            dispatchId: dispatchClaim.dispatch.id,
-            errorCode:
-              accepted.outcome === 'not_found'
-                ? 'dispatch_row_missing'
-                : 'dispatch_not_acceptable',
+            ...sendIdentity,
+            errorCode: ACCEPTANCE_FAILURE_CODES[accepted.outcome],
+            acceptanceOutcome: accepted.outcome,
             ...(accepted.outcome === 'unacceptable_state'
               ? {
                   dispatchState: accepted.state,
@@ -326,34 +374,18 @@ export class VerificationSendService {
               : {}),
           }),
         );
-        await this.recordAcceptanceOutsideLedger(
-          dispatchClaim.dispatch.id,
-          verification.id,
-          kind,
-          waMessageId,
-          sentAt,
-        );
-        return { status: 'sent', waMessageId, sentAt };
+        return this.salvageAcceptance(sendIdentity, sentAt);
       }
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
           action: 'sendOnce.persistAcceptance',
           outcome: 'failure',
-          verificationId: verification.id,
-          kind,
-          dispatchId: dispatchClaim.dispatch.id,
+          ...sendIdentity,
           ...normalizeError(error),
         }),
       );
-      await this.recordAcceptanceOutsideLedger(
-        dispatchClaim.dispatch.id,
-        verification.id,
-        kind,
-        waMessageId,
-        sentAt,
-      );
-      return { status: 'sent', waMessageId, sentAt };
+      return this.salvageAcceptance(sendIdentity, sentAt);
     }
 
     return { status: 'sent', waMessageId, sentAt };
@@ -369,48 +401,76 @@ export class VerificationSendService {
    * resolve the dispatch as accepted, `markAccepted`'s repair path re-runs the
    * same idempotent projection; if they reject it, that is a decision made on
    * the evidence rather than a silent guess made here.
+   *
+   * Both writes are row-guarded, so both can match nothing. When the salvage
+   * lands on no row and the verification itself is gone, the message reached
+   * the customer and nothing in the database records it. Reporting that as
+   * `sent` is what kept it invisible: the caller went on to schedule follow-up
+   * and escalation work against a row that no longer existed. It returns
+   * `sent_untracked` instead -- still not a failure, because the customer was
+   * messaged, but never something to build more automation on top of.
    */
-  private async recordAcceptanceOutsideLedger(
-    dispatchId: string,
-    verificationId: string,
-    kind: SendKind,
-    waMessageId: string,
+  private async salvageAcceptance(
+    identity: SendIdentity,
     sentAt: string,
-  ): Promise<void> {
+  ): Promise<SendOutcome> {
+    let ledgerParked = 0;
     try {
-      await this.messageDispatches.markOutcomeUnknown(
-        dispatchId,
+      ledgerParked = await this.messageDispatches.markOutcomeUnknown(
+        identity.dispatchId,
         'acceptance_persistence_failed',
       );
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
-          action: 'recordAcceptanceOutsideLedger.markUnknown',
+          action: 'salvageAcceptance.markUnknown',
           outcome: 'failure',
-          dispatchId,
-          verificationId,
+          ...identity,
           ...normalizeError(error),
         }),
       );
     }
+
+    let projectedRows = 0;
     try {
-      await this.messageDispatches.projectAcceptanceWithoutLedger({
-        verificationId,
-        kind,
-        providerMessageId: waMessageId,
-        sentAt,
-      });
+      projectedRows =
+        await this.messageDispatches.projectAcceptanceWithoutLedger({
+          verificationId: identity.verificationId,
+          kind: identity.kind,
+          providerMessageId: identity.waMessageId,
+          sentAt,
+        });
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
-          action: 'recordAcceptanceOutsideLedger.projection',
+          action: 'salvageAcceptance.projection',
           outcome: 'failure',
-          dispatchId,
-          verificationId,
+          ...identity,
           ...normalizeError(error),
         }),
       );
     }
+
+    if (ledgerParked > 0 || projectedRows > 0) {
+      return { status: 'sent', waMessageId: identity.waMessageId, sentAt };
+    }
+
+    this.logger.error(
+      buildBackendLog('VerificationSendService', {
+        action: 'sendOnce.orphanedSend',
+        outcome: 'failure',
+        ...identity,
+        errorCode: 'send_not_recorded',
+        ledgerParked,
+        projectedRows,
+      }),
+    );
+    return {
+      status: 'sent_untracked',
+      reason: 'send_not_recorded',
+      waMessageId: identity.waMessageId,
+      sentAt,
+    };
   }
 
   /**
@@ -418,7 +478,7 @@ export class VerificationSendService {
    *
    * Only for the genuinely ambiguous cases — the provider call threw, or
    * returned no `wamid`. A send that *did* get a message id is not a failure
-   * and must go through {@link recordAcceptanceOutsideLedger} instead.
+   * and must go through {@link salvageAcceptance} instead.
    */
   private async markProviderOutcomeUnknown(
     dispatchId: string,

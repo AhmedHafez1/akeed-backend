@@ -84,9 +84,17 @@ function createMocks() {
     addOrderTag: jest.fn(),
   };
 
+  const billingEntitlements = {
+    readEntitlement: jest.fn().mockResolvedValue({
+      consumedCount: 4,
+      includedLimit: 30,
+      periodEnd: '2026-10-01T00:00:00.000Z',
+    }),
+  };
+
   const service = new VerificationsService(
     verificationsRepo as any,
-    null as any,
+    billingEntitlements as any,
     null as any,
     ordersRepo as any,
     new CommerceOutcomeRegistryService(
@@ -98,7 +106,14 @@ function createMocks() {
     ),
   );
 
-  return { service, verificationsRepo, ordersRepo, orderAdmin, orderTagging };
+  return {
+    service,
+    verificationsRepo,
+    ordersRepo,
+    orderAdmin,
+    orderTagging,
+    billingEntitlements,
+  };
 }
 
 function buildVerification(overrides: Record<string, unknown> = {}) {
@@ -778,7 +793,13 @@ describe('Dashboard cancellation capabilities', () => {
       ]);
       const service = new VerificationsService(
         repo as never,
-        {} as never,
+        {
+          readEntitlement: jest.fn().mockResolvedValue({
+            consumedCount: 0,
+            includedLimit: 30,
+            periodEnd: null,
+          }),
+        } as never,
         integrations as never,
         {} as never,
         registry,
@@ -793,6 +814,14 @@ describe('Dashboard cancellation capabilities', () => {
         // retry is reserved for resolvable send failures.
         { action: 'retry_verification', supported: false },
       ]);
+      if (kind === 'standalone') {
+        expect(result.page_context?.usage).toEqual({
+          used: 0,
+          limit: 30,
+          remaining: 30,
+          period_end: null,
+        });
+      }
       expect(JSON.stringify(result)).not.toContain('accessToken');
     },
   );

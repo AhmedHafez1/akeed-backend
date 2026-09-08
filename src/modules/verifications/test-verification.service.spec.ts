@@ -178,22 +178,25 @@ describe('TestVerificationService', () => {
     expect(integrations.findByOrgAndPlatformDomain).not.toHaveBeenCalled();
   });
 
-  it('reports provider failure instead of claiming the test was sent', async () => {
-    const { service, hub } = setup();
-    hub.handleSyntheticTestOrder.mockResolvedValue({
-      orderId: 'order-1',
-      verificationId: 'verification-1',
-      deliveryStatus: 'failed',
-      reason: 'send_error',
-    });
+  it.each(['failed', 'sent_untracked'] as const)(
+    'reports %s as provider failure instead of claiming the test was sent',
+    async (deliveryStatus) => {
+      const { service, hub } = setup();
+      hub.handleSyntheticTestOrder.mockResolvedValue({
+        orderId: 'order-1',
+        verificationId: 'verification-1',
+        deliveryStatus,
+        reason: 'send_error',
+      });
 
-    await service
-      .sendTestVerification(standaloneUser, '+201001234567')
-      .then(() => fail('Expected provider failure to be rejected'))
-      .catch((error: unknown) =>
-        expectCode(error, 'TEST_VERIFICATION_PROVIDER_FAILED'),
-      );
-  });
+      await service
+        .sendTestVerification(standaloneUser, '+201001234567')
+        .then(() => fail('Expected provider failure to be rejected'))
+        .catch((error: unknown) =>
+          expectCode(error, 'TEST_VERIFICATION_PROVIDER_FAILED'),
+        );
+    },
+  );
 
   it('preserves the shared quota result', async () => {
     const { service, hub } = setup();

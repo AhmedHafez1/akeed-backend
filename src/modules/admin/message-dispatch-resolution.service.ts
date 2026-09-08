@@ -48,6 +48,10 @@ export class MessageDispatchResolutionService {
         dispatchId,
         providerMessageId: input.providerMessageId!,
         sentAt: acceptedAt,
+        verificationId: dispatch.verificationId,
+        // `legacy_unknown` has no logical dispatch key, so it cannot take part
+        // in the key-based recovery; resolution then falls back to the id alone.
+        kind: dispatch.kind === 'legacy_unknown' ? undefined : dispatch.kind,
       });
       if (updated.outcome !== 'accepted')
         throw new ConflictException('Dispatch could not be resolved');

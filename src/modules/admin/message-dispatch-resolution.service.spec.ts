@@ -75,6 +75,8 @@ describe('MessageDispatchResolutionService', () => {
       dispatchId: 'dispatch-1',
       providerMessageId: 'wamid-verified',
       sentAt: expect.any(String) as string,
+      verificationId: 'verification-1',
+      kind: 'initial',
     });
     expect(verificationHub.scheduleFollowUpAndEscalation).toHaveBeenCalledWith(
       expect.objectContaining({

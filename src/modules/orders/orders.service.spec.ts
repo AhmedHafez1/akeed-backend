@@ -17,6 +17,7 @@ describe('OrdersService manual creation', () => {
     billingPlanId: 'starter',
     billingStatus: 'not_required',
     billingActivatedAt: '2026-09-01T00:00:00.000Z',
+    isAutoVerifyEnabled: true,
   };
   const payload = {
     customerPhone: '+201001234567',
@@ -54,6 +55,15 @@ describe('OrdersService manual creation', () => {
       { allowed: boolean; reason: string | null },
       [unknown, unknown]
     >(),
+    hasAvailableSlot: jest.fn<
+      Promise<{
+        available: boolean;
+        reason: string | null;
+        consumedCount: number;
+        includedLimit: number;
+      }>,
+      [unknown]
+    >(),
   };
   const dispatcher = {
     dispatchById: jest.fn<Promise<string>, [string]>(),
@@ -73,6 +83,12 @@ describe('OrdersService manual creation', () => {
     entitlements.evaluateAccess.mockReturnValue({
       allowed: true,
       reason: null,
+    });
+    entitlements.hasAvailableSlot.mockResolvedValue({
+      available: true,
+      reason: null,
+      consumedCount: 4,
+      includedLimit: 30,
     });
     manualOrders.accept.mockResolvedValue({
       eventId: 'event-1',
@@ -221,6 +237,40 @@ describe('OrdersService manual creation', () => {
       response: {
         code: 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
         reason: 'billing_not_active',
+      },
+    });
+    expect(manualOrders.accept).not.toHaveBeenCalled();
+  });
+
+  it('rejects creation when automatic verification is disabled', async () => {
+    integrations.findActiveByOrg.mockResolvedValue([
+      { ...source, isAutoVerifyEnabled: false },
+    ]);
+
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED' },
+    });
+    expect(entitlements.hasAvailableSlot).not.toHaveBeenCalled();
+    expect(manualOrders.accept).not.toHaveBeenCalled();
+  });
+
+  it('rejects creation when the included plan limit is reached', async () => {
+    entitlements.hasAvailableSlot.mockResolvedValue({
+      available: false,
+      reason: 'plan_limit_reached',
+      consumedCount: 30,
+      includedLimit: 30,
+    });
+
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'MANUAL_ORDER_PLAN_LIMIT_REACHED',
+        consumedCount: 30,
+        includedLimit: 30,
       },
     });
     expect(manualOrders.accept).not.toHaveBeenCalled();

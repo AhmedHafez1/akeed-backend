@@ -55,6 +55,24 @@ describe('StandaloneManualOrderNormalizer', () => {
   });
 
   it.each([
+    ['customerName', undefined],
+    ['customerName', '   '],
+    ['orderNumber', undefined],
+    ['orderNumber', '   '],
+  ])('rejects an envelope with %s set to %p', (field, value) => {
+    expect(
+      normalizer.normalizeOrder(
+        {
+          ...payload,
+          order: { ...payload.order, [field]: value },
+        },
+        'source-1',
+        'org-1',
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
     [undefined, 'unknown'],
     ['', 'unknown'],
     ['card', 'non_cod'],

@@ -33,8 +33,13 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
       return this.reject(orgId, integrationId, 'invalid_envelope');
     }
     const order = rawPayload.order;
+    // `orderNumber` and `customerName` moved up from the optional block. They
+    // are what the customer's message is built from, so an envelope missing
+    // either one has nothing worth sending and must not reach the send path.
     const requiredStrings = [
       order.externalOrderId,
+      order.orderNumber,
+      order.customerName,
       order.customerPhone,
       order.totalPrice,
       order.currency,
@@ -45,16 +50,6 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
       )
     ) {
       return this.reject(orgId, integrationId, 'missing_required_field');
-    }
-    if (
-      (order.orderNumber !== undefined &&
-        order.orderNumber !== null &&
-        typeof order.orderNumber !== 'string') ||
-      (order.customerName !== undefined &&
-        order.customerName !== null &&
-        typeof order.customerName !== 'string')
-    ) {
-      return this.reject(orgId, integrationId, 'invalid_optional_field_type');
     }
     if (
       order.paymentMethod !== undefined &&
@@ -71,11 +66,9 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
       orgId,
       integrationId,
       externalOrderId: order.externalOrderId as string,
-      orderNumber:
-        typeof order.orderNumber === 'string' ? order.orderNumber : undefined,
+      orderNumber: order.orderNumber as string,
       customerPhone: order.customerPhone as string,
-      customerName:
-        typeof order.customerName === 'string' ? order.customerName : undefined,
+      customerName: order.customerName as string,
       totalPrice: order.totalPrice as string,
       currency: order.currency as string,
       paymentMethod:

@@ -97,9 +97,10 @@ describe('WhatsAppService', () => {
           // Must resolve to the accepted ledger row: an `undefined` return now
           // means the verification projection did not run, and the send path
           // reports `outcome_unknown` rather than claiming a successful send.
-          markAccepted: jest
-            .fn()
-            .mockResolvedValue({ id: 'dispatch-1', state: 'accepted' }),
+          markAccepted: jest.fn().mockResolvedValue({
+            outcome: 'accepted',
+            dispatch: { id: 'dispatch-1', state: 'accepted' },
+          }),
           markOutcomeUnknown: jest.fn(),
         } as never,
         messaging,

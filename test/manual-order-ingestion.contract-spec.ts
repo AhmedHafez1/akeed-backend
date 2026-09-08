@@ -55,7 +55,12 @@ function acceptanceInput(
     ingestionType: 'manual',
     schemaVersion: 1,
     submissionFingerprint: fingerprint,
-    order: { customerPhone: '+201001234567', totalPrice: '125.50' },
+    order: {
+      customerPhone: '+201001234567',
+      customerName: 'Customer',
+      orderNumber: `ORDER-${key}`,
+      totalPrice: '125.50',
+    },
   };
   return {
     event: {
@@ -70,7 +75,9 @@ function acceptanceInput(
       orgId,
       integrationId,
       externalOrderId: `manual-${key}`,
+      orderNumber: `ORDER-${key}`,
       customerPhone: '+201001234567',
+      customerName: 'Customer',
       totalPrice: '125.50',
       currency: 'EGP',
       paymentMethod: 'cash_on_delivery',

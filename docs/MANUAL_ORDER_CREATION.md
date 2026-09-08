@@ -26,7 +26,9 @@ Content-Type: application/json
 }
 ```
 
-`customerName` and `orderNumber` are optional. Amounts are positive decimal strings with at most two fractional digits. Currency uses the onboarding currency allowlist. Phone and payment method values are normalized by the backend.
+`customerName` and `orderNumber` are required and must be non-blank after trimming. Amounts are positive decimal strings with at most two fractional digits. Currency uses the onboarding currency allowlist. Phone and payment method values are normalized by the backend.
+
+Acceptance requires the source to have automatic verification enabled and at least one included verification left in the current period. Both were previously checked only after acceptance, inside the worker, so an order could be accepted with `202` and then silently never verified.
 
 Successful durable acceptance returns HTTP `202`:
 
@@ -52,18 +54,20 @@ Accepted and duplicate responses show the durable order ID and an accepted/proce
 
 ## Stable error codes
 
-| Code                                    | Meaning                                                                |
-| --------------------------------------- | ---------------------------------------------------------------------- |
-| `MANUAL_ORDER_VALIDATION_FAILED`        | Body or key format is invalid; inspect `fieldErrors`.                  |
-| `MANUAL_ORDER_IDEMPOTENCY_KEY_REQUIRED` | The required retry key header is missing.                              |
-| `MANUAL_ORDER_IDEMPOTENCY_CONFLICT`     | The key already identifies different normalized content.               |
-| `MANUAL_ORDER_ROLE_REQUIRED`            | The current membership is not owner/admin.                             |
-| `MANUAL_ORDER_SOURCE_UNAVAILABLE`       | No active source is available for this organization.                   |
-| `MANUAL_ORDER_SOURCE_AMBIGUOUS`         | More than one active source exists; support investigation is required. |
-| `MANUAL_ORDER_SOURCE_UNSUPPORTED`       | The active source is not Standalone.                                   |
-| `MANUAL_ORDER_SETUP_INCOMPLETE`         | Standalone onboarding is incomplete.                                   |
-| `MANUAL_ORDER_ENTITLEMENT_REQUIRED`     | The Standalone source is not currently entitled.                       |
-| `MANUAL_ORDER_ACCEPTANCE_FAILED`        | Atomic durable acceptance failed; retry with the same key.             |
+| Code                                    | Meaning                                                                                                           |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `MANUAL_ORDER_VALIDATION_FAILED`        | Body or key format is invalid; inspect `fieldErrors`.                                                             |
+| `MANUAL_ORDER_IDEMPOTENCY_KEY_REQUIRED` | The required retry key header is missing.                                                                         |
+| `MANUAL_ORDER_IDEMPOTENCY_CONFLICT`     | The key already identifies different normalized content.                                                          |
+| `MANUAL_ORDER_ROLE_REQUIRED`            | The current membership is not owner/admin.                                                                        |
+| `MANUAL_ORDER_SOURCE_UNAVAILABLE`       | No active source is available for this organization.                                                              |
+| `MANUAL_ORDER_SOURCE_AMBIGUOUS`         | More than one active source exists; support investigation is required.                                            |
+| `MANUAL_ORDER_SOURCE_UNSUPPORTED`       | The active source is not Standalone.                                                                              |
+| `MANUAL_ORDER_SETUP_INCOMPLETE`         | Standalone onboarding is incomplete.                                                                              |
+| `MANUAL_ORDER_ENTITLEMENT_REQUIRED`     | The Standalone source is not currently entitled.                                                                  |
+| `MANUAL_ORDER_AUTO_VERIFY_DISABLED`     | Automatic verification is switched off for the source.                                                            |
+| `MANUAL_ORDER_PLAN_LIMIT_REACHED`       | The included verifications for this period are used up; the response carries `consumedCount` and `includedLimit`. |
+| `MANUAL_ORDER_ACCEPTANCE_FAILED`        | Atomic durable acceptance failed; retry with the same key.                                                        |
 
 ## Persistence and recovery
 

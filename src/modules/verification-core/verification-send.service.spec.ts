@@ -31,18 +31,20 @@ function createMocks() {
     }),
     updateByIdForOrg: jest.fn(),
   };
+  const order = {
+    integrationId: 'int-1',
+    id: 'order-1',
+    orgId: 'org-1',
+    customerPhone: '+966500000000',
+    customerName: 'Sara',
+    externalOrderId: 'ext-1',
+    orderNumber: '1117' as string | null | undefined,
+    totalPrice: '100.00',
+    currency: 'SAR',
+    integration: baseIntegration,
+  };
   const ordersRepo = {
-    findById: jest.fn().mockResolvedValue({
-      integrationId: 'int-1',
-      id: 'order-1',
-      orgId: 'org-1',
-      customerPhone: '+966500000000',
-      customerName: 'Sara',
-      externalOrderId: 'ext-1',
-      totalPrice: '100.00',
-      currency: 'SAR',
-      integration: baseIntegration,
-    }),
+    findById: jest.fn().mockResolvedValue(order),
   };
   const billingEntitlementService = {
     evaluateAccess: (source: EntitlementSource, identity = source) =>
@@ -64,8 +66,8 @@ function createMocks() {
       outcome: 'accepted',
       dispatch: { id: 'dispatch-1', state: 'accepted' },
     }),
-    markOutcomeUnknown: jest.fn().mockResolvedValue(undefined),
-    projectAcceptanceWithoutLedger: jest.fn().mockResolvedValue(undefined),
+    markOutcomeUnknown: jest.fn().mockResolvedValue(1),
+    projectAcceptanceWithoutLedger: jest.fn().mockResolvedValue(1),
   };
   const messagingPort = {
     sendVerificationTemplate: jest
@@ -81,6 +83,7 @@ function createMocks() {
   );
   return {
     service,
+    order,
     verificationsRepo,
     ordersRepo,
     messageDispatches,
@@ -89,6 +92,64 @@ function createMocks() {
 }
 
 describe('VerificationSendService', () => {
+  // The customer reads this value. `externalOrderId` is a dedupe key -- a raw
+  // Shopify order id, or the `manual-<hash>` synthesised from an idempotency
+  // key -- so sending it named something the customer has never seen.
+  const orderReferences: [string, string | null | undefined, string][] = [
+    ['the merchant-facing number when present', '1117', '1117'],
+    ['the source id when the number is blank', '   ', 'ext-1'],
+    ['the source id when the number is null', null, 'ext-1'],
+    ['the source id when the number is absent', undefined, 'ext-1'],
+  ];
+
+  it.each(orderReferences)(
+    'sends %s',
+    async (_label, orderNumber, expected) => {
+      const { service, order, ordersRepo, messagingPort } = createMocks();
+      ordersRepo.findById.mockResolvedValue({ ...order, orderNumber });
+
+      await service.sendInitial('ver-1');
+
+      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({ orderNumber: expected }),
+      );
+    },
+  );
+
+  it('reports an untracked send when nothing could record the acceptance', async () => {
+    const { service, messageDispatches, verificationsRepo } = createMocks();
+    messageDispatches.markAccepted.mockResolvedValue({
+      outcome: 'verification_missing',
+    });
+    // Both salvage writes are row-guarded, so both legitimately match nothing
+    // once the verification is gone -- and its cascade takes the dispatch with
+    // it. Reporting `sent` here is what let the caller schedule follow-up and
+    // escalation work against a row that no longer existed.
+    messageDispatches.markOutcomeUnknown.mockResolvedValue(0);
+    messageDispatches.projectAcceptanceWithoutLedger.mockResolvedValue(0);
+    await expect(service.sendInitial('ver-1')).resolves.toEqual({
+      status: 'sent_untracked',
+      reason: 'send_not_recorded',
+      waMessageId: 'wamid-1',
+      sentAt: expect.any(String) as string,
+    });
+    // The customer was messaged, so nothing may stamp the send as a failure.
+    expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
+  });
+
+  it('still reports a plain send when a terminal row simply refuses the projection', async () => {
+    const { service, messageDispatches } = createMocks();
+    messageDispatches.markAccepted.mockResolvedValue({ outcome: 'not_found' });
+    messageDispatches.projectAcceptanceWithoutLedger.mockResolvedValue(0);
+
+    // A follow-up projection is terminal-guarded on purpose, so zero rows on a
+    // verification that still exists is expected, not an orphaned send.
+    await expect(service.sendFollowUp('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+      waMessageId: 'wamid-1',
+    });
+  });
+
   it.each(['sendInitial', 'sendFollowUp'] as const)(
     'claims the logical %s dispatch before sending and persists acceptance',
     async (method) => {
@@ -110,6 +171,8 @@ describe('VerificationSendService', () => {
         dispatchId: 'dispatch-1',
         providerMessageId: 'wamid-1',
         sentAt: expect.any(String) as string,
+        verificationId: 'ver-1',
+        kind: method === 'sendInitial' ? 'initial' : 'follow_up',
       });
     },
   );
@@ -139,6 +202,8 @@ describe('VerificationSendService', () => {
       dispatchId: 'dispatch-1',
       providerMessageId: 'existing-wamid',
       sentAt: '2026-09-05T10:00:00.000Z',
+      verificationId: 'ver-1',
+      kind: 'initial',
     });
   });
 

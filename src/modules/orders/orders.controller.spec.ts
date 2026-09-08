@@ -173,7 +173,17 @@ describe('OrdersController manual order HTTP contract', () => {
   });
 
   it.each([
-    [{}, ['customerPhone', 'totalPrice', 'currency', 'paymentMethod']],
+    [
+      {},
+      [
+        'customerPhone',
+        'customerName',
+        'orderNumber',
+        'totalPrice',
+        'currency',
+        'paymentMethod',
+      ],
+    ],
     [
       {
         customerPhone: 'bad',
@@ -181,7 +191,25 @@ describe('OrdersController manual order HTTP contract', () => {
         currency: 'XYZ',
         paymentMethod: '',
       },
-      ['customerPhone', 'totalPrice', 'currency', 'paymentMethod'],
+      [
+        'customerPhone',
+        'customerName',
+        'orderNumber',
+        'totalPrice',
+        'currency',
+        'paymentMethod',
+      ],
+    ],
+    [
+      {
+        customerPhone: '+201001234567',
+        customerName: '   ',
+        orderNumber: '   ',
+        totalPrice: '125.50',
+        currency: 'EGP',
+        paymentMethod: 'cash_on_delivery',
+      },
+      ['customerName', 'orderNumber'],
     ],
   ])(
     'returns stable field errors before calling the service',

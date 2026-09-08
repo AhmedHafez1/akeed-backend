@@ -2,7 +2,6 @@ import { Transform } from 'class-transformer';
 import {
   IsIn,
   IsNotEmpty,
-  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -10,10 +9,7 @@ import {
 } from 'class-validator';
 import { ONBOARDING_SHIPPING_CURRENCIES } from '../../onboarding/dto/onboarding.dto';
 import { normalizePaymentSignal } from '../../../shared/commerce/payment-signals';
-import {
-  TrimString,
-  TrimOptionalString,
-} from '../../../shared/validation/trim.transform';
+import { TrimString } from '../../../shared/validation/trim.transform';
 
 function normalizeCurrency(value: unknown): unknown {
   return typeof value === 'string' ? value.trim().toUpperCase() : value;
@@ -31,17 +27,21 @@ export class CreateManualOrderDto {
   @MaxLength(20, { message: 'customerPhone is invalid.' })
   customerPhone!: string;
 
-  @TrimOptionalString()
-  @IsOptional()
+  // Both of these were optional. They are required now because they are the
+  // only human-readable identity the customer gets: the WhatsApp template
+  // greets the name and quotes the order reference, and with neither captured
+  // the message named an internal identifier nobody recognises.
+  @TrimString()
   @IsString({ message: 'customerName must be a string.' })
+  @IsNotEmpty({ message: 'customerName is required.' })
   @MaxLength(255, { message: 'customerName must not exceed 255 characters.' })
-  customerName?: string;
+  customerName!: string;
 
-  @TrimOptionalString()
-  @IsOptional()
+  @TrimString()
   @IsString({ message: 'orderNumber must be a string.' })
+  @IsNotEmpty({ message: 'orderNumber is required.' })
   @MaxLength(100, { message: 'orderNumber must not exceed 100 characters.' })
-  orderNumber?: string;
+  orderNumber!: string;
 
   @TrimString()
   @IsString({ message: 'totalPrice must be a decimal string.' })

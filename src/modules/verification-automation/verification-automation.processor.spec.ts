@@ -750,5 +750,43 @@ describe('VerificationAutomationProcessor', () => {
       expect(verificationSendService.sendInitial).toHaveBeenCalledWith('ver-1');
       expect(verificationHub.scheduleFollowUpAndEscalation).toHaveBeenCalled();
     });
+
+    it('does not schedule follow-up work for an untracked send', async () => {
+      const {
+        processor,
+        verificationsRepo,
+        ordersRepo,
+        verificationSendService,
+        verificationHub,
+      } = createMocks();
+
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'pending',
+      });
+      ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
+        id: 'order-1',
+        externalOrderId: 'ext-1',
+        integration: baseIntegration,
+      });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent_untracked',
+        reason: 'send_not_recorded',
+        waMessageId: 'wamid-orphaned',
+      });
+
+      await processor.process(
+        buildJob(VerificationAutomationJobType.INITIAL_SEND),
+      );
+
+      expect(
+        verificationHub.scheduleFollowUpAndEscalation,
+      ).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
+    });
   });
 });

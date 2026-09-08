@@ -85,6 +85,57 @@ function buildRepository(overrides: DispatchOverrides = {}) {
   return { repository, statements };
 }
 
+function buildAcceptanceRecoveryRepository(options: {
+  recoverByDispatchKey: boolean;
+  verificationExists: boolean;
+}) {
+  const statements: { query: string; params: unknown[] }[] = [];
+  let dispatchSelectCount = 0;
+  const execute = jest.fn((query: string, params: unknown[]) => {
+    statements.push({ query, params });
+    if (
+      query.trimStart().startsWith('select') &&
+      query.includes('from "verification_message_dispatches"')
+    ) {
+      dispatchSelectCount += 1;
+      return Promise.resolve({
+        rows:
+          dispatchSelectCount === 2 && options.recoverByDispatchKey
+            ? [dispatchRow()]
+            : [],
+      });
+    }
+    if (
+      query.trimStart().startsWith('select') &&
+      query.includes('from "verifications"')
+    ) {
+      return Promise.resolve({
+        rows: options.verificationExists ? [['verification-1']] : [],
+      });
+    }
+    if (query.includes('update "verification_message_dispatches" set')) {
+      return Promise.resolve({
+        rows: [
+          dispatchRow({
+            state: 'accepted',
+            providerMessageId: 'wamid-recovered',
+            acceptedAt: '2026-05-15T00:10:00.000Z',
+          }),
+        ],
+      });
+    }
+    return Promise.resolve({ rows: [] });
+  });
+  const session = drizzle(execute as never, { schema });
+  const db = {
+    transaction: (callback: (tx: unknown) => unknown) => callback(session),
+  };
+  return {
+    repository: new VerificationMessageDispatchesRepository(db as never),
+    statements,
+  };
+}
+
 function verificationUpdates(
   statements: { query: string; params: unknown[] }[],
 ) {
@@ -143,6 +194,47 @@ function dispatchUpdates(statements: { query: string; params: unknown[] }[]) {
 }
 
 const EXPIRED_LEASE = '2026-05-15T00:00:00.000Z';
+
+describe('VerificationMessageDispatchesRepository acceptance recovery', () => {
+  const acceptance = {
+    dispatchId: 'stale-dispatch-id',
+    verificationId: 'verification-1',
+    kind: 'initial' as const,
+    providerMessageId: 'wamid-recovered',
+    sentAt: '2026-05-15T00:10:00.000Z',
+  };
+
+  it('recovers an id miss through the stable dispatch key', async () => {
+    const { repository, statements } = buildAcceptanceRecoveryRepository({
+      recoverByDispatchKey: true,
+      verificationExists: true,
+    });
+
+    await expect(repository.markAccepted(acceptance)).resolves.toMatchObject({
+      outcome: 'accepted',
+    });
+
+    const dispatchSelects = statements.filter(
+      ({ query }) =>
+        query.trimStart().startsWith('select') &&
+        query.includes('from "verification_message_dispatches"'),
+    );
+    expect(dispatchSelects).toHaveLength(2);
+    expect(dispatchSelects[1].query).toContain('"dispatch_key"');
+    expect(dispatchSelects[1].params).toContain('verification-1:initial:1');
+  });
+
+  it('distinguishes a deleted verification from a missing dispatch row', async () => {
+    const { repository } = buildAcceptanceRecoveryRepository({
+      recoverByDispatchKey: false,
+      verificationExists: false,
+    });
+
+    await expect(repository.markAccepted(acceptance)).resolves.toEqual({
+      outcome: 'verification_missing',
+    });
+  });
+});
 
 /**
  * An expired lease means the worker holding the send died before it recorded an

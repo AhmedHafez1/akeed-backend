@@ -14,6 +14,7 @@ import { integrations } from '../../infrastructure/database/schema';
 import {
   DashboardDateRange,
   DashboardSourceState,
+  DashboardUsageBudgetDto,
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
   PaginatedResponse,
@@ -108,21 +109,22 @@ export class VerificationsService {
     // resolved, so this read is not part of the parallel batch below.
     const integrations = await this.integrationsRepo.findByOrg(orgId);
     const reportingTimezone = this.resolveReportingTimezone(integrations);
+    const activeIntegrations = integrations.filter(
+      (integration) => integration.isActive === true,
+    );
     const filterPeriod = resolveDashboardDateRangeBounds(
       dateRange,
       reportingTimezone,
     );
 
-    const [verifications, totalCount] = await Promise.all([
+    const [verifications, totalCount, usage] = await Promise.all([
       this.verificationsRepo.findByOrg(orgId, statuses, filterPeriod, {
         cursor,
         limit: limit + 1,
       }),
       this.verificationsRepo.countByOrg(orgId, statuses, filterPeriod),
+      this.resolvePageUsage(activeIntegrations),
     ]);
-    const activeIntegrations = integrations.filter(
-      (integration) => integration.isActive === true,
-    );
 
     const hasMore = verifications.length > limit;
     const items = hasMore ? verifications.slice(0, limit) : verifications;
@@ -171,7 +173,39 @@ export class VerificationsService {
         source: this.resolveDashboardSourceState(integrations),
         reporting_timezone: reportingTimezone,
         automation: this.resolveDashboardAutomationSettings(activeIntegrations),
+        usage,
       },
+    };
+  }
+
+  /**
+   * Included-verification budget for the source this page is showing.
+   *
+   * Served on the listing rather than only on `/stats` so the client can decide
+   * whether to offer order creation from the same response that already tells
+   * it whether the merchant is allowed to create one -- previously the
+   * permission was known and the budget was not, so the action stayed enabled
+   * at the limit and failed only after the merchant had filled the form.
+   *
+   * Reports nothing when there is no single active source; that ambiguity is
+   * already surfaced through `source`, and inventing a zero budget here would
+   * read as "limit reached".
+   */
+  private async resolvePageUsage(
+    activeIntegrations: (typeof integrations.$inferSelect)[],
+  ): Promise<DashboardUsageBudgetDto | undefined> {
+    const source =
+      activeIntegrations.length === 1 ? activeIntegrations[0] : null;
+    if (!source) return undefined;
+    const entitlement = await this.billingEntitlements.readEntitlement(source);
+    return {
+      used: entitlement.consumedCount,
+      limit: entitlement.includedLimit,
+      remaining: Math.max(
+        entitlement.includedLimit - entitlement.consumedCount,
+        0,
+      ),
+      period_end: entitlement.periodEnd ?? null,
     };
   }
 

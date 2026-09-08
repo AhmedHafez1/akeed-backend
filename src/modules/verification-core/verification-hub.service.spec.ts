@@ -655,6 +655,46 @@ describe('VerificationHubService', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('does not schedule or project a failure for an untracked send', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        orderEligibilityService,
+        verificationSendService,
+        automationProducer,
+      } = createMocks();
+
+      orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
+        eligible: true,
+        reason: 'cod_match',
+      });
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+      });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent_untracked',
+        reason: 'send_not_recorded',
+        waMessageId: 'wamid-orphaned',
+      });
+
+      await service.handleNewOrder(buildOrder(), buildIntegration());
+
+      expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
+    });
+
     it('queues initial send when sendDelayMinutes is 0 but quiet hours are active', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-05-01T03:00:00.000Z'));
 

@@ -139,13 +139,15 @@ export class VerificationAutomationProcessor extends WorkerHost {
         integration: ctx.integration,
         baselineSentAt: outcome.sentAt ? new Date(outcome.sentAt) : new Date(),
       });
-    } else {
-      await this.verificationHub.applyInitialSendFailure(
-        ctx.verification.id,
-        ctx.verification.orgId,
-        outcome,
-      );
+      return;
     }
+    if (outcome.status === 'sent_untracked') return;
+
+    await this.verificationHub.applyInitialSendFailure(
+      ctx.verification.id,
+      ctx.verification.orgId,
+      outcome,
+    );
   }
 
   // ───────────────────────────────────────────────────────────────────────

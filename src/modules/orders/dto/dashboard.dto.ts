@@ -113,6 +113,21 @@ export interface RetryManualOrderVerificationResponseDto {
   duplicate: boolean;
 }
 
+/**
+ * Included verifications left in the current period.
+ *
+ * Reported alongside the permissions because the client needs both to decide
+ * whether creating an order is offered at all: a merchant may hold the
+ * permission and still have nothing left to spend it on. `remaining` is
+ * pre-computed so no caller has to rediscover that it clamps at zero.
+ */
+export interface DashboardUsageBudgetDto {
+  used: number;
+  limit: number;
+  remaining: number;
+  period_end: string | null;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   next_cursor: string | null;
@@ -131,6 +146,7 @@ export interface PaginatedResponse<T> {
       can_create_manual_order: boolean;
       can_retry_verifications?: boolean;
     };
+    usage?: DashboardUsageBudgetDto;
   };
 }
 

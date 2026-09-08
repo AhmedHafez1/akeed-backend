@@ -36,6 +36,7 @@ import {
   type ManualOrderAcceptanceResult,
 } from '../src/infrastructure/database/repositories/manual-order-ingestion.repository';
 import type {
+  DispatchAcceptanceResult,
   DispatchClaimResult,
   DispatchRecord,
 } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
@@ -453,15 +454,29 @@ async function createHarness(): Promise<AcceptanceHarness> {
       store.dispatches.set(dispatchKey, dispatch);
       return { outcome: 'claimed', dispatch };
     },
+    // Mirrors DispatchAcceptanceResult. Returning the bare row here -- which
+    // this double did until the repository grew a discriminated result -- makes
+    // `accepted.outcome !== 'accepted'` true for every send, so the whole
+    // acceptance path silently took its salvage branch.
     markAccepted: async (params: {
       dispatchId: string;
       providerMessageId: string;
       sentAt: string;
-    }) => {
+      verificationId?: string;
+      kind?: 'initial' | 'follow_up';
+    }): Promise<DispatchAcceptanceResult> => {
       const dispatch = [...store.dispatches.values()].find(
         (candidate) => candidate.id === params.dispatchId,
       );
-      if (!dispatch) return undefined;
+      if (!dispatch) {
+        if (
+          params.verificationId &&
+          !store.verifications.get(params.verificationId)
+        ) {
+          return { outcome: 'verification_missing' };
+        }
+        return { outcome: 'not_found' };
+      }
       (dispatch as unknown as { state: string }).state = 'accepted';
       (dispatch as unknown as { providerMessageId: string }).providerMessageId =
         params.providerMessageId;
@@ -472,13 +487,13 @@ async function createHarness(): Promise<AcceptanceHarness> {
         verification.lastSentAt = params.sentAt;
         verification.attempts += 1;
       }
-      return dispatch;
+      return { outcome: 'accepted', dispatch };
     },
     markOutcomeUnknown: async (dispatchId: string, errorCode: string) => {
       const dispatch = [...store.dispatches.values()].find(
         (candidate) => candidate.id === dispatchId,
       );
-      if (!dispatch) return;
+      if (!dispatch) return 0;
       (dispatch as unknown as { state: string }).state = 'outcome_unknown';
       (dispatch as unknown as { lastErrorCode: string }).lastErrorCode =
         errorCode;
@@ -491,6 +506,7 @@ async function createHarness(): Promise<AcceptanceHarness> {
           kind: dispatch.kind,
         };
       }
+      return 1;
     },
     findByProviderMessageId: async (providerMessageId: string) =>
       [...store.dispatches.values()].find(

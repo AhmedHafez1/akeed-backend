@@ -30,6 +30,7 @@ type SyntheticTestResult =
   | (ProcessedResult & {
       deliveryStatus:
         | 'sent'
+        | 'sent_untracked'
         | 'failed'
         | 'plan_limit_reached'
         | 'skipped'
@@ -463,6 +464,14 @@ export class VerificationHubService {
           ? new Date(sendOutcome.sentAt)
           : new Date(),
       });
+      return;
+    }
+
+    if (sendOutcome.status === 'sent_untracked') {
+      // The message reached the customer, but nothing in the database records
+      // it -- so there is no row to schedule follow-up or escalation against,
+      // and no failure to project either. The send path has already logged the
+      // orphan with everything needed to investigate it.
       return;
     }
 

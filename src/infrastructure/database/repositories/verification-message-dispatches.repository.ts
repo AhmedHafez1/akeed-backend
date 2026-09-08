@@ -50,6 +50,19 @@ const sentFloor = sql`CASE
 END`;
 
 export type DispatchKind = 'initial' | 'follow_up';
+
+/**
+ * The logical identity of one send: a verification, a kind, and an attempt
+ * generation. Unlike the surrogate primary key it can be derived from what the
+ * caller already knows, which is what makes an acceptance recoverable when the
+ * id it was handed no longer resolves.
+ */
+export function buildDispatchKey(
+  verificationId: string,
+  kind: DispatchKind,
+): string {
+  return `${verificationId}:${kind}:1`;
+}
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
 export type DispatchState = DispatchRecord['state'];
 
@@ -83,10 +96,16 @@ type DispatchWriter =
  * caller has to log *why* an acceptance could not be applied, and the four
  * causes (row gone, wrong state, and the two acceptable states) used to
  * collapse into one indistinguishable `undefined`.
+ *
+ * `verification_missing` is separated from `not_found` because the two demand
+ * different responses. A missing ledger row can still be salvaged onto the
+ * verification; a missing verification means the cascade took both, nothing is
+ * left to write to, and the send that already reached the customer is orphaned.
  */
 export type DispatchAcceptanceResult =
   | { outcome: 'accepted'; dispatch: DispatchRecord }
   | { outcome: 'not_found' }
+  | { outcome: 'verification_missing' }
   | {
       outcome: 'unacceptable_state';
       state: DispatchState;
@@ -122,7 +141,7 @@ export class VerificationMessageDispatchesRepository {
     languageCode: string;
     leaseUntil: string;
   }): Promise<DispatchClaimResult> {
-    const dispatchKey = `${params.verificationId}:${params.kind}:1`;
+    const dispatchKey = buildDispatchKey(params.verificationId, params.kind);
     const now = new Date().toISOString();
 
     return this.db.transaction(async (tx) => {
@@ -290,14 +309,46 @@ export class VerificationMessageDispatchesRepository {
     dispatchId: string;
     providerMessageId: string;
     sentAt: string;
+    verificationId?: string;
+    kind?: DispatchKind;
   }): Promise<DispatchAcceptanceResult> {
     return this.db.transaction(async (tx) => {
-      const [dispatch] = await tx
+      let [dispatch] = await tx
         .select()
         .from(verificationMessageDispatches)
         .where(eq(verificationMessageDispatches.id, params.dispatchId))
         .for('update');
-      if (!dispatch) return { outcome: 'not_found' as const };
+      if (!dispatch && params.verificationId && params.kind) {
+        // The id missed, but a dispatch is also addressable by its logical key,
+        // which the caller can always rebuild. Recovering here turns a stale or
+        // superseded id -- something this side can repair -- into a normal
+        // acceptance instead of an orphaned send.
+        [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            eq(
+              verificationMessageDispatches.dispatchKey,
+              buildDispatchKey(params.verificationId, params.kind),
+            ),
+          )
+          .for('update');
+      }
+      if (!dispatch) {
+        // Neither key resolves. If the verification is gone too, the cascade on
+        // its foreign key is the explanation and there is nothing left to write
+        // to -- say so, rather than reporting an indistinguishable missing row.
+        if (params.verificationId) {
+          const [verification] = await tx
+            .select({ id: verifications.id })
+            .from(verifications)
+            .where(eq(verifications.id, params.verificationId));
+          if (!verification) {
+            return { outcome: 'verification_missing' as const };
+          }
+        }
+        return { outcome: 'not_found' as const };
+      }
 
       // Project first, on every path that represents an accepted send —
       // including a dispatch already marked `accepted`.
@@ -364,8 +415,8 @@ export class VerificationMessageDispatchesRepository {
     kind: DispatchKind;
     providerMessageId: string;
     sentAt: string;
-  }): Promise<void> {
-    await this.projectAcceptedVerification(
+  }): Promise<number> {
+    return this.projectAcceptedVerification(
       this.db,
       { verificationId: params.verificationId, kind: params.kind },
       {
@@ -375,11 +426,13 @@ export class VerificationMessageDispatchesRepository {
     );
   }
 
+  /** Returns how many dispatch rows were parked, so a no-op is not mistaken
+   * for a successful write. */
   async markOutcomeUnknown(
     dispatchId: string,
     errorCode: string,
-  ): Promise<void> {
-    await this.db
+  ): Promise<number> {
+    const rows = await this.db
       .update(verificationMessageDispatches)
       .set({
         state: 'outcome_unknown',
@@ -392,7 +445,9 @@ export class VerificationMessageDispatchesRepository {
           eq(verificationMessageDispatches.id, dispatchId),
           eq(verificationMessageDispatches.state, 'sending'),
         ),
-      );
+      )
+      .returning({ id: verificationMessageDispatches.id });
+    return rows.length;
   }
 
   async findByProviderMessageId(providerMessageId: string) {
@@ -499,7 +554,7 @@ export class VerificationMessageDispatchesRepository {
     tx: DispatchWriter,
     dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'>,
     params: { providerMessageId: string; sentAt: string; repair?: boolean },
-  ): Promise<void> {
+  ): Promise<number> {
     const common = {
       waMessageId: params.providerMessageId,
       updatedAt: params.sentAt,
@@ -514,7 +569,7 @@ export class VerificationMessageDispatchesRepository {
       // nothing has been sent. `sentFloor` only lifts `pending`/NULL, so a row
       // already at `delivered`/`read`/`no_reply` keeps the further state it
       // earned.
-      await tx
+      const followUpRows = await tx
         .update(verifications)
         .set({
           ...common,
@@ -527,14 +582,15 @@ export class VerificationMessageDispatchesRepository {
             eq(verifications.id, dispatch.verificationId),
             notInArray(verifications.status, TERMINAL_STATUSES),
           ),
-        );
-      return;
+        )
+        .returning({ id: verifications.id });
+      return followUpRows.length;
     }
     // A fresh send restarts the lifecycle, so it sets `sent` outright. A repair
     // re-states an acceptance that already happened, so it may only raise a
     // floor — walking a `delivered`/`read` row back to `sent` would replace one
     // wrong answer with another — and it must not inflate the attempt count.
-    await tx
+    const initialRows = await tx
       .update(verifications)
       .set({
         ...common,
@@ -547,6 +603,8 @@ export class VerificationMessageDispatchesRepository {
           : { attempts: sql`COALESCE(${verifications.attempts}, 0) + 1` }),
         metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind'`,
       })
-      .where(eq(verifications.id, dispatch.verificationId));
+      .where(eq(verifications.id, dispatch.verificationId))
+      .returning({ id: verifications.id });
+    return initialRows.length;
   }
 }

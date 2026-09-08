@@ -130,15 +130,52 @@ export class OrdersService {
         reason: entitlement.reason,
       });
     }
+    if (!source.isAutoVerifyEnabled) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Enable automatic verification before creating an order.',
+        code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED',
+      });
+    }
+    // `evaluateAccess` above is a policy check and never reads usage, so a
+    // source at its included limit passed every gate and was accepted with a
+    // 202 whose verification the worker then silently skipped. The merchant had
+    // no way to learn that from the response. The retry endpoint below already
+    // makes this check; the create endpoint has to make it too.
+    //
+    // Advisory by design: the transactional truth still lives in the dispatch
+    // claim, which is what actually reserves the slot.
+    const availability = await this.billingEntitlements.hasAvailableSlot({
+      id: source.id,
+      orgId: user.orgId,
+    });
+    if (!availability.available) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message:
+          availability.reason === 'plan_limit_reached'
+            ? 'The included verifications for this period are used up.'
+            : 'An active Standalone entitlement is required.',
+        code:
+          availability.reason === 'plan_limit_reached'
+            ? 'MANUAL_ORDER_PLAN_LIMIT_REACHED'
+            : 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
+        reason: availability.reason,
+        consumedCount: availability.consumedCount,
+        includedLimit: availability.includedLimit,
+      });
+    }
 
     const totalPrice = Number(payload.totalPrice).toFixed(2);
     const paymentSignals: string[] = [];
     appendPaymentSignal(paymentSignals, payload.paymentMethod);
     const canonicalOrder = {
       externalOrderId: this.manualExternalOrderId(idempotencyKey),
-      orderNumber: payload.orderNumber ?? null,
+      orderNumber: payload.orderNumber,
       customerPhone,
-      customerName: payload.customerName ?? null,
+      customerName: payload.customerName,
       totalPrice,
       currency: payload.currency,
       paymentMethod: payload.paymentMethod,
