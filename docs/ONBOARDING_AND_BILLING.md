@@ -192,15 +192,16 @@ Usage is tracked in the `integration_monthly_usage` table:
 
 | Field           | Purpose                                         |
 | --------------- | ----------------------------------------------- |
-| `consumedCount` | Number of WhatsApp sends attempted this period. |
+| `consumedCount` | Number of currently billable WhatsApp sends this period. |
 | `includedLimit` | Plan's included confirmations for this period.  |
 | `blockedCount`  | Sends blocked because the limit was reached.    |
 
 Rules:
 
-- Usage is consumed when a WhatsApp send is attempted, not when a verification row is created.
+- Usage is reserved when a WhatsApp send is attempted, not when a verification row is created.
 - Delayed initial sends consume only when the automation worker sends the message.
-- Failed sends release the usage reservation.
+- Failed initial and follow-up sends release the usage reservation. Duplicate failure callbacks do not release it twice.
+- An unknown provider outcome is refunded while it is shown as failed; if staff later proves acceptance, the original-period usage is restored.
 - Follow-up messages consume from included monthly confirmations.
 - When the limit is reached, new sends are blocked until the period renews or the merchant upgrades.
 - Plan changes reset usage counters to start a fresh period.

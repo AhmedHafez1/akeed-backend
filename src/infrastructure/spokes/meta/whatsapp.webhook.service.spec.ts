@@ -152,6 +152,26 @@ describe('WhatsAppWebhookService', () => {
       expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
     });
 
+    it.each(['initial', 'follow_up'] as const)(
+      'records a Meta failure against the %s dispatch ledger entry',
+      async (kind) => {
+        const { service, messageDispatches } = createMocks();
+        messageDispatches.findByProviderMessageId.mockResolvedValue({
+          id: `dispatch-${kind}`,
+          kind,
+          verificationId: 'v1',
+        });
+
+        await service.processIncoming(statusPayload('wamid_failed', 'failed'));
+
+        expect(messageDispatches.recordProviderStatus).toHaveBeenCalledWith(
+          `dispatch-${kind}`,
+          'failed',
+          '2023-11-14T22:13:20.000Z',
+        );
+      },
+    );
+
     it('should update status to delivered via wamid', async () => {
       const { service, verificationsRepo } = createMocks();
 

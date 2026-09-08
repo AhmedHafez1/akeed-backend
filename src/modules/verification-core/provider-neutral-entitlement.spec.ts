@@ -75,6 +75,13 @@ describe('provider-neutral entitlement boundary', () => {
         dispatch: { id: 'dispatch-1', state: 'accepted' },
       }),
       markOutcomeUnknown: jest.fn(),
+      markFailedProviderOutcome: jest.fn().mockImplementation(async () => {
+        await repository.releaseMonthlyVerificationSlot({
+          integrationId: source.id,
+          periodStart: '2026-05-01',
+        });
+        return 1;
+      }),
     };
     const sender = new VerificationSendService(
       verifications as never,
@@ -143,7 +150,7 @@ describe('provider-neutral entitlement boundary', () => {
     },
   );
 
-  it('retains the original reservation when provider acceptance is unknown', async () => {
+  it('releases the original reservation when provider acceptance is unknown', async () => {
     const { sender, repository, messaging } = setup();
     messaging.sendVerificationTemplate.mockRejectedValue(
       new Error('synthetic failure'),
@@ -151,6 +158,9 @@ describe('provider-neutral entitlement boundary', () => {
     expect(await sender.sendFollowUp('ver-1')).toMatchObject({
       status: 'outcome_unknown',
     });
-    expect(repository.releaseMonthlyVerificationSlot).not.toHaveBeenCalled();
+    expect(repository.releaseMonthlyVerificationSlot).toHaveBeenCalledWith({
+      integrationId: source.id,
+      periodStart: '2026-05-01',
+    });
   });
 });

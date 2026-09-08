@@ -229,9 +229,10 @@ Plan limits are defined in `akeed-backend/src/modules/onboarding/onboarding.serv
 
 Usage principles:
 
-- Usage is consumed when a WhatsApp send is attempted, not when a verification row is created.
+- Usage is reserved when a WhatsApp send is attempted, not when a verification row is created.
 - Delayed initial sends consume only when the delayed worker sends the message.
-- Failed sends release the usage reservation.
+- Failed initial and follow-up sends release the usage reservation exactly once.
+- Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
 - Dashboard usage shows consumed count and included limit for the current billing period.

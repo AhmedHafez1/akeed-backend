@@ -380,6 +380,13 @@ export class VerificationMessageDispatchesRepository {
           attemptCount: dispatch.attemptCount,
         };
       }
+      const restoreReleasedUsage =
+        dispatch.state === 'outcome_unknown' &&
+        !dispatch.usageReserved &&
+        dispatch.usagePeriodStart !== null;
+      if (restoreReleasedUsage) {
+        await this.restoreReservedUsage(tx, dispatch, params.sentAt);
+      }
       await this.projectAcceptedVerification(tx, dispatch, params);
       const [updated] = await tx
         .update(verificationMessageDispatches)
@@ -389,6 +396,7 @@ export class VerificationMessageDispatchesRepository {
           acceptedAt: params.sentAt,
           resolvedAt:
             dispatch.state === 'outcome_unknown' ? params.sentAt : null,
+          usageReserved: restoreReleasedUsage ? true : dispatch.usageReserved,
           lastErrorCode: null,
           leaseUntil: null,
           updatedAt: params.sentAt,
@@ -450,6 +458,64 @@ export class VerificationMessageDispatchesRepository {
     return rows.length;
   }
 
+  /**
+   * Records a provider call that produced no message id and refunds its usage.
+   *
+   * The dispatch remains `outcome_unknown` because the absence of a provider
+   * id is not proof that no message was sent. Usage follows the merchant-facing
+   * lifecycle, though: while the verification is failed, the reservation is
+   * released. A later staff resolution as accepted restores it in
+   * {@link markAccepted}.
+   */
+  async markFailedProviderOutcome(
+    dispatchId: string,
+    errorCode: string,
+  ): Promise<number> {
+    const now = new Date().toISOString();
+    return this.db.transaction(async (tx) => {
+      const [dispatch] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, dispatchId))
+        .for('update');
+      if (!dispatch || dispatch.state !== 'sending') return 0;
+
+      await this.releaseReservedUsage(tx, dispatch, now);
+      const [updated] = await tx
+        .update(verificationMessageDispatches)
+        .set({
+          state: 'outcome_unknown',
+          usageReserved: false,
+          lastErrorCode: errorCode,
+          leaseUntil: null,
+          updatedAt: now,
+        })
+        .where(eq(verificationMessageDispatches.id, dispatch.id))
+        .returning({ id: verificationMessageDispatches.id });
+
+      if (dispatch.kind === 'initial') {
+        await tx
+          .update(verifications)
+          .set({
+            status: statusUnlessTerminal('failed'),
+            metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_outcome_unknown', kind: 'initial' })}::jsonb`,
+            updatedAt: now,
+          })
+          .where(eq(verifications.id, dispatch.verificationId));
+      } else if (dispatch.kind === 'follow_up') {
+        await tx
+          .update(verifications)
+          .set({
+            metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ follow_up_failed: 'provider_outcome_unknown', follow_up_failed_at: now })}::jsonb`,
+            updatedAt: now,
+          })
+          .where(eq(verifications.id, dispatch.verificationId));
+      }
+
+      return updated ? 1 : 0;
+    });
+  }
+
   async findByProviderMessageId(providerMessageId: string) {
     return this.db.query.verificationMessageDispatches.findFirst({
       where: eq(
@@ -464,12 +530,32 @@ export class VerificationMessageDispatchesRepository {
     status: 'delivered' | 'read' | 'failed',
     occurredAt: string,
   ): Promise<void> {
+    if (status === 'failed') {
+      await this.db.transaction(async (tx) => {
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.id, dispatchId))
+          .for('update');
+        if (!dispatch) return;
+
+        await this.releaseReservedUsage(tx, dispatch, occurredAt);
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            failedAt: dispatch.failedAt ?? occurredAt,
+            usageReserved: false,
+            updatedAt: occurredAt,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatch.id));
+      });
+      return;
+    }
+
     const updates =
       status === 'delivered'
         ? { deliveredAt: occurredAt }
-        : status === 'read'
-          ? { deliveredAt: occurredAt, readAt: occurredAt }
-          : { failedAt: occurredAt };
+        : { deliveredAt: occurredAt, readAt: occurredAt };
     await this.db
       .update(verificationMessageDispatches)
       .set({ ...updates, updatedAt: occurredAt })
@@ -606,5 +692,55 @@ export class VerificationMessageDispatchesRepository {
       .where(eq(verifications.id, dispatch.verificationId))
       .returning({ id: verifications.id });
     return initialRows.length;
+  }
+
+  private async releaseReservedUsage(
+    tx: DispatchWriter,
+    dispatch: Pick<
+      DispatchRecord,
+      'integrationId' | 'usagePeriodStart' | 'usageReserved'
+    >,
+    occurredAt: string,
+  ): Promise<void> {
+    if (!dispatch.usageReserved || !dispatch.usagePeriodStart) return;
+    const released = await tx
+      .update(integrationMonthlyUsage)
+      .set({
+        consumedCount: sql`GREATEST(${integrationMonthlyUsage.consumedCount} - 1, 0)`,
+        updatedAt: occurredAt,
+      })
+      .where(
+        and(
+          eq(integrationMonthlyUsage.integrationId, dispatch.integrationId),
+          eq(integrationMonthlyUsage.periodStart, dispatch.usagePeriodStart),
+        ),
+      )
+      .returning({ id: integrationMonthlyUsage.id });
+    if (released.length === 0) {
+      throw new Error('Usage row missing while refunding failed dispatch');
+    }
+  }
+
+  private async restoreReservedUsage(
+    tx: DispatchWriter,
+    dispatch: Pick<DispatchRecord, 'integrationId' | 'usagePeriodStart'>,
+    occurredAt: string,
+  ): Promise<void> {
+    const restored = await tx
+      .update(integrationMonthlyUsage)
+      .set({
+        consumedCount: sql`${integrationMonthlyUsage.consumedCount} + 1`,
+        updatedAt: occurredAt,
+      })
+      .where(
+        and(
+          eq(integrationMonthlyUsage.integrationId, dispatch.integrationId),
+          eq(integrationMonthlyUsage.periodStart, dispatch.usagePeriodStart!),
+        ),
+      )
+      .returning({ id: integrationMonthlyUsage.id });
+    if (restored.length === 0) {
+      throw new Error('Usage row missing while restoring accepted dispatch');
+    }
   }
 }

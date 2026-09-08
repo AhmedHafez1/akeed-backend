@@ -218,6 +218,13 @@
       "when": 1788825600000,
       "tag": "0030_repair_stranded_dispatch_send_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788912000000,
+      "tag": "0031_refund_failed_verification_usage",
+      "breakpoints": true
     }
   ]
 }

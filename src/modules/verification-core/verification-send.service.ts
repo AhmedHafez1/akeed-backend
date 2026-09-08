@@ -301,8 +301,6 @@ export class VerificationSendService {
       await this.markProviderOutcomeUnknown(
         dispatchClaim.dispatch.id,
         verification.id,
-        verification.orgId,
-        kind,
         'provider_exception',
       );
       return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
@@ -321,8 +319,6 @@ export class VerificationSendService {
       await this.markProviderOutcomeUnknown(
         dispatchClaim.dispatch.id,
         verification.id,
-        verification.orgId,
-        kind,
         'missing_provider_message_id',
       );
       return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
@@ -484,39 +480,19 @@ export class VerificationSendService {
   private async markProviderOutcomeUnknown(
     dispatchId: string,
     verificationId: string,
-    orgId: string,
-    kind: SendKind,
     errorCode: string,
   ): Promise<void> {
     try {
-      await this.messageDispatches.markOutcomeUnknown(dispatchId, errorCode);
+      await this.messageDispatches.markFailedProviderOutcome(
+        dispatchId,
+        errorCode,
+      );
     } catch (error) {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
           action: 'markProviderOutcomeUnknown',
           outcome: 'failure',
           dispatchId,
-          verificationId,
-          ...normalizeError(error),
-        }),
-      );
-    }
-    try {
-      await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
-        status: kind === 'initial' ? 'failed' : undefined,
-        metadata:
-          kind === 'initial'
-            ? { reason: 'provider_outcome_unknown', kind }
-            : {
-                follow_up_failed: 'provider_outcome_unknown',
-                follow_up_failed_at: new Date().toISOString(),
-              },
-      });
-    } catch (error) {
-      this.logger.error(
-        buildBackendLog('VerificationSendService', {
-          action: 'markProviderOutcomeUnknownProjection',
-          outcome: 'failure',
           verificationId,
           ...normalizeError(error),
         }),

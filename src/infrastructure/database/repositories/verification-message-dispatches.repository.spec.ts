@@ -75,12 +75,25 @@ function buildRepository(overrides: DispatchOverrides = {}) {
     if (query.trimStart().startsWith('select')) {
       return Promise.resolve({ rows: [dispatchRow(overrides)] });
     }
+    if (
+      query.includes('update "integration_monthly_usage" set') &&
+      query.trimEnd().endsWith('returning "id"')
+    ) {
+      return Promise.resolve({ rows: [['usage-1']] });
+    }
+    if (
+      query.includes('update "verification_message_dispatches" set') &&
+      query.trimEnd().endsWith('returning "id"')
+    ) {
+      return Promise.resolve({ rows: [['dispatch-1']] });
+    }
     return Promise.resolve({ rows: [] });
   });
   const session = drizzle(execute as never, { schema });
-  const db = {
-    transaction: (callback: (tx: unknown) => unknown) => callback(session),
-  };
+  const db = Object.assign(session, {
+    transaction: (callback: (tx: typeof session) => unknown) =>
+      callback(session),
+  });
   const repository = new VerificationMessageDispatchesRepository(db as never);
   return { repository, statements };
 }
@@ -309,6 +322,176 @@ describe('VerificationMessageDispatchesRepository lease reclaim', () => {
 
     expect(result.outcome).toBe('busy');
     expect(dispatchUpdates(statements)).toHaveLength(0);
+  });
+});
+
+describe('VerificationMessageDispatchesRepository usage refunds', () => {
+  const periodStart = '2026-05-01';
+
+  it.each(['initial', 'follow_up'] as const)(
+    'atomically refunds a failed %s provider call and projects its failure',
+    async (kind) => {
+      const { repository, statements } = buildRepository({
+        kind,
+        usageReserved: true,
+        usagePeriodStart: periodStart,
+      });
+
+      await expect(
+        repository.markFailedProviderOutcome(
+          'dispatch-1',
+          'provider_exception',
+        ),
+      ).resolves.toBe(1);
+
+      const [usageUpdate] = statements.filter((statement) =>
+        statement.query.includes('update "integration_monthly_usage" set'),
+      );
+      expect(usageUpdate?.query).toContain(
+        'GREATEST("integration_monthly_usage"."consumed_count" - 1, 0)',
+      );
+      expect(usageUpdate?.params).toEqual(
+        expect.arrayContaining(['integration-1', periodStart]),
+      );
+
+      const [dispatchUpdate] = dispatchUpdates(statements);
+      expect(dispatchUpdate.params).toEqual(
+        expect.arrayContaining([
+          'outcome_unknown',
+          false,
+          'provider_exception',
+        ]),
+      );
+
+      const [verificationUpdate] = verificationUpdates(statements);
+      expect(verificationUpdate).toBeDefined();
+      if (kind === 'initial') {
+        expect(verificationUpdate.params).toContain('failed');
+        expect(verificationUpdate.params).toContain(
+          JSON.stringify({
+            reason: 'provider_outcome_unknown',
+            kind: 'initial',
+          }),
+        );
+      } else {
+        expect(verificationUpdate.query).not.toContain(
+          "'failed'::verification_status",
+        );
+        expect(verificationUpdate.params).toEqual(
+          expect.arrayContaining([expect.stringContaining('follow_up_failed')]),
+        );
+      }
+    },
+  );
+
+  it('does not refund an already released provider failure twice', async () => {
+    const { repository, statements } = buildRepository({
+      usageReserved: false,
+      usagePeriodStart: periodStart,
+    });
+
+    await repository.markFailedProviderOutcome(
+      'dispatch-1',
+      'provider_exception',
+    );
+
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('update "integration_monthly_usage" set'),
+      ),
+    ).toBe(false);
+  });
+
+  it('refunds a Meta failed status exactly once', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      usageReserved: true,
+      usagePeriodStart: periodStart,
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+    );
+
+    const usageUpdates = statements.filter((statement) =>
+      statement.query.includes('update "integration_monthly_usage" set'),
+    );
+    expect(usageUpdates).toHaveLength(1);
+    expect(usageUpdates[0].query).toContain('GREATEST');
+    const [dispatchUpdate] = dispatchUpdates(statements);
+    expect(dispatchUpdate.params).toEqual(
+      expect.arrayContaining([false, '2026-05-15T03:00:00.000Z']),
+    );
+  });
+
+  it('does not decrement usage for a duplicate Meta failure', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      usageReserved: false,
+      usagePeriodStart: periodStart,
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+    );
+
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('update "integration_monthly_usage" set'),
+      ),
+    ).toBe(false);
+  });
+
+  it('restores a refunded unknown dispatch when staff resolves it as accepted', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'outcome_unknown',
+      usageReserved: false,
+      usagePeriodStart: periodStart,
+    });
+
+    await expect(
+      repository.markAccepted({
+        dispatchId: 'dispatch-1',
+        providerMessageId: 'wamid-resolved',
+        sentAt: '2026-05-15T04:00:00.000Z',
+      }),
+    ).resolves.toMatchObject({ outcome: 'accepted' });
+
+    const [usageUpdate] = statements.filter((statement) =>
+      statement.query.includes('update "integration_monthly_usage" set'),
+    );
+    expect(usageUpdate.query).toContain(
+      '"integration_monthly_usage"."consumed_count" + 1',
+    );
+    expect(usageUpdate.params).toEqual(
+      expect.arrayContaining(['integration-1', periodStart]),
+    );
+    const [dispatchUpdate] = dispatchUpdates(statements);
+    expect(dispatchUpdate.params).toContain(true);
+  });
+
+  it('keeps successful provider statuses counted', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      usageReserved: true,
+      usagePeriodStart: periodStart,
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'delivered',
+      '2026-05-15T03:00:00.000Z',
+    );
+
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('update "integration_monthly_usage" set'),
+      ),
+    ).toBe(false);
   });
 });
 

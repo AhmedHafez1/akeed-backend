@@ -67,6 +67,7 @@ function createMocks() {
       dispatch: { id: 'dispatch-1', state: 'accepted' },
     }),
     markOutcomeUnknown: jest.fn().mockResolvedValue(1),
+    markFailedProviderOutcome: jest.fn().mockResolvedValue(1),
     projectAcceptanceWithoutLedger: jest.fn().mockResolvedValue(1),
   };
   const messagingPort = {
@@ -286,11 +287,33 @@ describe('VerificationSendService', () => {
   });
 
   it.each([
-    ['provider exception', new Error('timeout')],
-    ['missing provider message id', { messages: [] }],
+    [
+      'initial provider exception',
+      'sendInitial' as const,
+      new Error('timeout'),
+      'provider_exception',
+    ],
+    [
+      'initial missing provider message id',
+      'sendInitial' as const,
+      { messages: [] },
+      'missing_provider_message_id',
+    ],
+    [
+      'follow-up provider exception',
+      'sendFollowUp' as const,
+      new Error('timeout'),
+      'provider_exception',
+    ],
+    [
+      'follow-up missing provider message id',
+      'sendFollowUp' as const,
+      { messages: [] },
+      'missing_provider_message_id',
+    ],
   ])(
-    'marks %s as unknown and retains its reservation',
-    async (_label, result) => {
+    'marks %s as unknown and releases its reservation',
+    async (_label, method, result, errorCode) => {
       const { service, messageDispatches, messagingPort, verificationsRepo } =
         createMocks();
       if (result instanceof Error) {
@@ -299,22 +322,16 @@ describe('VerificationSendService', () => {
         messagingPort.sendVerificationTemplate.mockResolvedValue(result);
       }
 
-      await expect(service.sendInitial('ver-1')).resolves.toEqual({
+      await expect(service[method]('ver-1')).resolves.toEqual({
         status: 'outcome_unknown',
         reason: 'provider_outcome_unknown',
       });
-      expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
+      expect(messageDispatches.markFailedProviderOutcome).toHaveBeenCalledWith(
         'dispatch-1',
-        expect.any(String),
+        errorCode,
       );
-      expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
-        'ver-1',
-        'org-1',
-        expect.objectContaining({
-          status: 'failed',
-          metadata: { reason: 'provider_outcome_unknown', kind: 'initial' },
-        }),
-      );
+      expect(messageDispatches.markOutcomeUnknown).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
     },
   );
 
