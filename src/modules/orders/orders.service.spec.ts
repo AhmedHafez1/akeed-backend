@@ -317,14 +317,50 @@ describe('OrdersService manual creation', () => {
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
   });
 
-  it('returns accepted after a queue failure because the intent is durable', async () => {
+  it('refuses to report success when the queue rejects the dispatch', async () => {
     dispatcher.dispatchById.mockRejectedValue(new Error('Redis unavailable'));
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_DISPATCH_FAILED' },
+    });
+  });
+
+  it('refuses to report success when the dispatch is never claimed', async () => {
+    // The silent case: `dispatchById` reports this by returning, not throwing,
+    // so an accepted order used to answer 202 with a verification that would
+    // never be created.
+    dispatcher.dispatchById.mockResolvedValue('not_claimed');
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_DISPATCH_FAILED' },
+    });
+  });
+
+  it('keeps the accepted order durable so the same Idempotency-Key can retry', async () => {
+    dispatcher.dispatchById.mockResolvedValue('failed');
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_DISPATCH_FAILED' },
+    });
+    // The acceptance transaction committed before dispatch was attempted; the
+    // retry must reuse it rather than create a second order.
+    expect(manualOrders.accept).toHaveBeenCalledTimes(1);
+
+    manualOrders.accept.mockResolvedValue({
+      eventId: 'event-1',
+      order: { id: 'order-1' },
+      duplicate: true,
+    });
+    dispatcher.dispatchById.mockResolvedValue('dispatched');
     await expect(
       service.createManualOrder(owner, 'submission-key-123', payload),
     ).resolves.toEqual({
       orderId: 'order-1',
       status: 'accepted',
-      duplicate: false,
+      duplicate: true,
     });
   });
 
@@ -476,7 +512,9 @@ describe('OrdersService manual verification lifecycle', () => {
         periodEnd: '2026-10-01T00:00:00.000Z',
       }),
     };
-    const dispatcher = { dispatchById: jest.fn() };
+    const dispatcher = {
+      dispatchById: jest.fn().mockResolvedValue('dispatched'),
+    };
     const events = {
       resetForRedispatch: jest.fn().mockResolvedValue({ id: 'event-1' }),
     };

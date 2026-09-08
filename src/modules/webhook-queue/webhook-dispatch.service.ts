@@ -58,7 +58,10 @@ export class WebhookDispatchService {
       this.staleBefore,
       this.maxDispatchAttempts,
     );
-    if (!claimed) return 'not_claimed';
+    if (!claimed) {
+      await this.logNotClaimed(eventId);
+      return 'not_claimed';
+    }
     return this.dispatchClaimed(claimed);
   }
 
@@ -81,7 +84,7 @@ export class WebhookDispatchService {
       };
 
       await this.queue.add(event.jobType, payload, {
-        jobId: `webhook-event-${event.id}-dispatch-${event.dispatchAttempts}`,
+        jobId: this.jobId(event),
         ...DEFAULT_QUEUE_JOB_OPTIONS,
       });
       await this.events.markDispatched(event.id);
@@ -98,7 +101,7 @@ export class WebhookDispatchService {
           event.id,
           message,
           terminal,
-          terminal ? null : new Date(Date.now() + retryDelayMs).toISOString(),
+          terminal ? null : retryDelayMs,
         );
       } catch (recordError) {
         this.logger.error(
@@ -124,6 +127,59 @@ export class WebhookDispatchService {
       );
       return 'failed';
     }
+  }
+
+  /**
+   * `resetForRedispatch` rewinds `dispatchAttempts` to 0, so the next claim
+   * lands back on 1 and rebuilds the jobId the first dispatch already used.
+   * `removeOnComplete` keeps completed jobs for 7 days and BullMQ treats an
+   * `add` with an existing jobId as a no-op, so merchant retry silently
+   * enqueued nothing while `markDispatched` still recorded a dispatch.
+   *
+   * `dispatchLeaseUntil` is written fresh by every successful claim, which
+   * makes it the natural per-claim discriminator. Re-processing a duplicate is
+   * harmless -- `claimForProcessing` and `createForOrderIfAbsent` are both
+   * idempotent -- whereas losing a job is not.
+   */
+  private jobId(event: WebhookEvent): string {
+    const claimToken = event.dispatchLeaseUntil
+      ? Date.parse(event.dispatchLeaseUntil)
+      : Date.now();
+    return `webhook-event-${event.id}-dispatch-${event.dispatchAttempts}-${claimToken}`;
+  }
+
+  /**
+   * A claim that does not match is the one dispatch outcome that used to
+   * produce no output at all, which is how accepted orders disappeared without
+   * a single log line. Re-read the row so the reason is in the log rather than
+   * inferred from a code trace.
+   */
+  private async logNotClaimed(eventId: string): Promise<void> {
+    let event: WebhookEvent | undefined;
+    try {
+      event = await this.events.findById(eventId);
+    } catch {
+      // The diagnostic read must never mask the dispatch outcome.
+    }
+    this.logger.warn(
+      buildBackendLog(WebhookDispatchService.name, {
+        action: 'webhook-dispatch',
+        outcome: 'skipped',
+        reason: 'not_claimed',
+        webhookEventId: eventId,
+        ...(event
+          ? {
+              status: event.status,
+              dispatchRequired: event.dispatchRequired,
+              dispatchAttempts: event.dispatchAttempts,
+              dispatchedAt: event.dispatchedAt,
+              nextDispatchAt: event.nextDispatchAt,
+              dispatchLeaseUntil: event.dispatchLeaseUntil,
+              processingLeaseUntil: event.processingLeaseUntil,
+            }
+          : { detail: 'event_not_found' }),
+      }),
+    );
   }
 
   private safeErrorMessage(error: unknown): string {

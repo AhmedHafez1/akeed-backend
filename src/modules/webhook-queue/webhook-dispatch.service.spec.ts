@@ -14,6 +14,7 @@ function event(overrides: Record<string, unknown> = {}) {
     rawPayload: { id: 'order-1' },
     receivedAt: '2026-09-03T00:00:00.000Z',
     dispatchAttempts: 1,
+    dispatchLeaseUntil: '2026-09-03T00:00:30.000Z',
     ...overrides,
   };
 }
@@ -24,6 +25,7 @@ function setup() {
     claimForDispatch: jest.fn().mockResolvedValue(event()),
     markDispatched: jest.fn(),
     markDispatchFailed: jest.fn(),
+    findById: jest.fn().mockResolvedValue(event()),
   };
   const service = new WebhookDispatchService(
     queue as never,
@@ -34,7 +36,7 @@ function setup() {
 }
 
 describe('WebhookDispatchService', () => {
-  it('uses an atomic database claim and a stable event-based BullMQ job ID', async () => {
+  it('uses an atomic database claim and a per-claim BullMQ job ID', async () => {
     const { service, queue, events } = setup();
     await expect(service.dispatchById('event-1')).resolves.toBe('dispatched');
     expect(events.claimForDispatch).toHaveBeenCalledWith(
@@ -47,7 +49,7 @@ describe('WebhookDispatchService', () => {
       WebhookJobType.ORDER_CREATE,
       expect.objectContaining({ webhookEventId: 'event-1' }),
       expect.objectContaining({
-        jobId: 'webhook-event-event-1-dispatch-1',
+        jobId: `webhook-event-event-1-dispatch-1-${Date.parse('2026-09-03T00:00:30.000Z')}`,
       }),
     );
     expect(events.markDispatched).toHaveBeenCalledWith('event-1');
@@ -75,8 +77,47 @@ describe('WebhookDispatchService', () => {
       'event-1',
       'redis unavailable',
       false,
-      expect.any(String),
+      expect.any(Number),
     );
+  });
+
+  it('never lets an unclaimed dispatch pass silently', async () => {
+    const { service, events } = setup();
+    events.claimForDispatch.mockResolvedValue(null);
+    const warn = jest
+      .spyOn(service['logger'], 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(service.dispatchById('event-1')).resolves.toBe('not_claimed');
+
+    expect(events.findById).toHaveBeenCalledWith('event-1');
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = String(warn.mock.calls[0][0]);
+    expect(logged).toContain('"action":"webhook-dispatch"');
+    expect(logged).toContain('"reason":"not_claimed"');
+    expect(logged).toContain('"webhookEventId":"event-1"');
+  });
+
+  it('gives each claim of the same event a distinct job ID so a re-dispatch cannot be deduped', async () => {
+    const { service, queue, events } = setup();
+    // `resetForRedispatch` rewinds dispatchAttempts, so a retry re-uses the
+    // original attempt number; only the fresh lease distinguishes the claims.
+    events.claimForDispatch
+      .mockResolvedValueOnce(
+        event({ dispatchLeaseUntil: '2026-09-03T00:00:30.000Z' }),
+      )
+      .mockResolvedValueOnce(
+        event({ dispatchLeaseUntil: '2026-09-03T01:00:30.000Z' }),
+      );
+
+    await service.dispatchById('event-1');
+    await service.dispatchById('event-1');
+
+    const jobIds = queue.add.mock.calls.map(
+      (call: [string, unknown, { jobId: string }]) => call[2].jobId,
+    );
+    expect(jobIds).toHaveLength(2);
+    expect(new Set(jobIds).size).toBe(2);
   });
 
   it('records a terminal dispatch failure when the retry limit is reached', async () => {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
@@ -47,6 +47,43 @@ export class ManualOrderIngestionRepository {
   async accept(
     input: ManualOrderAcceptanceInput,
   ): Promise<ManualOrderAcceptanceResult> {
+    const result = await this.runAcceptance(input);
+    await this.assertPersisted(result);
+    return result;
+  }
+
+  /**
+   * Read the acceptance back on a fresh connection before we report success.
+   *
+   * A driver that resolves a transaction Postgres later rolled back returns
+   * real `RETURNING` ids for rows that do not exist, so every downstream signal
+   * -- the 202, the order id, the dispatch -- looks correct while the order is
+   * gone. That is not hypothetical: it is the defect this guard was written
+   * for. Nothing else on the accept path can observe it, because every other
+   * check reads values the doomed transaction produced.
+   *
+   * One primary-key lookup per accepted order, and it converts the worst
+   * failure mode we have seen (silent data loss reported as success) into a
+   * retryable 503.
+   */
+  private async assertPersisted(
+    result: ManualOrderAcceptanceResult,
+  ): Promise<void> {
+    const [row] = await this.db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.id, result.order.id))
+      .limit(1);
+    if (!row) {
+      throw new ManualOrderAcceptanceStateError(
+        `The accepted manual order ${result.order.id} was not persisted; the transaction did not commit`,
+      );
+    }
+  }
+
+  private async runAcceptance(
+    input: ManualOrderAcceptanceInput,
+  ): Promise<ManualOrderAcceptanceResult> {
     return this.db.transaction(async (tx) => {
       const [insertedEvent] = await tx
         .insert(webhookEvents)
@@ -59,7 +96,7 @@ export class ManualOrderIngestionRepository {
           integrationId: input.event.integrationId,
           rawPayload: input.event.rawPayload,
           dispatchRequired: true,
-          nextDispatchAt: new Date().toISOString(),
+          nextDispatchAt: sql`NOW()`,
           status: 'pending',
         })
         .onConflictDoNothing({

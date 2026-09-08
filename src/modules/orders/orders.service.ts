@@ -26,7 +26,10 @@ import {
   collectPaymentSignals,
 } from '../../shared/commerce/payment-signals';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
-import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
+import {
+  DispatchOutcome,
+  WebhookDispatchService,
+} from '../webhook-queue/webhook-dispatch.service';
 import {
   buildBackendLog,
   normalizeError,
@@ -250,8 +253,13 @@ export class OrdersService {
       });
     }
 
+    // `dispatchById` reports 'not_claimed' and 'failed' by returning them, not
+    // by throwing. Discarding the return value meant an order whose job never
+    // reached the queue still answered 202 "accepted" and logged success, which
+    // is why these failures were invisible from both the UI and the logs.
+    let outcome: DispatchOutcome;
     try {
-      await this.dispatcher.dispatchById(acceptance.eventId);
+      outcome = await this.dispatcher.dispatchById(acceptance.eventId);
     } catch (error) {
       this.logger.error(
         buildBackendLog(OrdersService.name, {
@@ -264,6 +272,30 @@ export class OrdersService {
           ...normalizeError(error),
         }),
       );
+      outcome = 'failed';
+    }
+    if (outcome !== 'dispatched') {
+      this.logger.error(
+        buildBackendLog(OrdersService.name, {
+          action: 'manual-order-dispatch',
+          outcome: 'failure',
+          reason: outcome,
+          orgId: user.orgId,
+          integrationId: source.id,
+          orderId: acceptance.order.id,
+          webhookEventId: acceptance.eventId,
+        }),
+      );
+      // The order and its event are committed, so retrying with the same
+      // Idempotency-Key takes the duplicate branch of `accept()` and
+      // re-dispatches that same event. The retry cannot create a second order.
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        message:
+          'The order was saved but its verification could not be queued. Retry safely.',
+        code: 'MANUAL_ORDER_DISPATCH_FAILED',
+      });
     }
 
     let verificationId: string | undefined;
@@ -404,7 +436,29 @@ export class OrdersService {
       id: event.id,
       orderId: order.id,
     });
-    if (reset) await this.dispatcher.dispatchById(event.id);
+    if (reset) {
+      const outcome = await this.dispatcher.dispatchById(event.id);
+      if (outcome !== 'dispatched') {
+        this.logger.error(
+          buildBackendLog(OrdersService.name, {
+            action: 'manual-order-retry-dispatch',
+            outcome: 'failure',
+            reason: outcome,
+            orgId: user.orgId,
+            integrationId: integration.id,
+            orderId: order.id,
+            webhookEventId: event.id,
+          }),
+        );
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          error: 'Service Unavailable',
+          message:
+            'The verification could not be queued for retry. Retry safely.',
+          code: 'MANUAL_ORDER_DISPATCH_FAILED',
+        });
+      }
+    }
     return {
       orderId,
       ...(lifecycle.verification_id

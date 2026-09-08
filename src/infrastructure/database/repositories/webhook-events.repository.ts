@@ -3,7 +3,7 @@ import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql, eq } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
-import { webhookEvents } from '../schema';
+import { orders, verifications, webhookEvents } from '../schema';
 
 interface WebhookEventInsert {
   platform: string;
@@ -99,6 +99,36 @@ export class WebhookEventsRepository {
     return rows[0];
   }
 
+  /**
+   * The single definition of "this event still needs dispatching".
+   *
+   * `findRecoverable` sweeps with it and `claimForDispatch` claims with it. If
+   * the two ever disagree the reconciler reports candidates it cannot claim, or
+   * worse, stops reporting events that are genuinely stuck -- so they share one
+   * fragment rather than two copies that have to be kept in step by hand.
+   */
+  private recoverablePredicate(
+    staleBefore: string,
+    maxDispatchAttempts: number,
+  ) {
+    return sql`${webhookEvents.dispatchRequired} = true
+      AND ${webhookEvents.dispatchAttempts} < ${maxDispatchAttempts}
+      AND (
+        (${webhookEvents.status} = 'pending'
+          AND ${webhookEvents.dispatchedAt} IS NULL
+          AND (${webhookEvents.nextDispatchAt} IS NULL OR ${webhookEvents.nextDispatchAt} <= NOW())
+          AND (${webhookEvents.dispatchLeaseUntil} IS NULL OR ${webhookEvents.dispatchLeaseUntil} <= NOW()))
+        OR
+        (${webhookEvents.status} = 'processing'
+          AND ((${webhookEvents.processingLeaseUntil} IS NOT NULL AND ${webhookEvents.processingLeaseUntil} <= NOW())
+            OR (${webhookEvents.processingLeaseUntil} IS NULL AND ${webhookEvents.updatedAt} <= ${staleBefore})))
+        OR
+        (${webhookEvents.status} = 'pending'
+          AND ${webhookEvents.dispatchedAt} IS NOT NULL
+          AND ${webhookEvents.dispatchedAt} <= ${staleBefore})
+      )`;
+  }
+
   async findRecoverable(
     limit: number,
     staleBefore: string,
@@ -107,22 +137,43 @@ export class WebhookEventsRepository {
     return (await this.db
       .select()
       .from(webhookEvents)
-      .where(
-        sql`${webhookEvents.dispatchRequired} = true
-          AND ${webhookEvents.dispatchAttempts} < ${maxDispatchAttempts}
-          AND (
-            (${webhookEvents.status} = 'pending'
-              AND ${webhookEvents.dispatchedAt} IS NULL
-              AND (${webhookEvents.nextDispatchAt} IS NULL OR ${webhookEvents.nextDispatchAt} <= NOW())
-              AND (${webhookEvents.dispatchLeaseUntil} IS NULL OR ${webhookEvents.dispatchLeaseUntil} <= NOW()))
-            OR
-            (${webhookEvents.status} = 'processing'
-              AND ((${webhookEvents.processingLeaseUntil} IS NOT NULL AND ${webhookEvents.processingLeaseUntil} <= NOW())
-                OR (${webhookEvents.processingLeaseUntil} IS NULL AND ${webhookEvents.updatedAt} <= ${staleBefore})))
-          )`,
-      )
+      .where(this.recoverablePredicate(staleBefore, maxDispatchAttempts))
       .orderBy(webhookEvents.receivedAt)
       .limit(limit)) as WebhookEvent[];
+  }
+
+  /**
+   * Orders that were accepted but have no verification and no terminal event.
+   *
+   * The event-level sweep above can only recover events whose own bookkeeping
+   * says they are stuck. This pass asks the question the merchant actually
+   * cares about -- "was this order verified?" -- so an order stranded by a hole
+   * we have not thought of is still picked up.
+   *
+   * `completed`, `skipped` and `failed` are excluded deliberately: a skip is a
+   * decision (plan limit reached, source inactive, identity mismatch), not a
+   * fault, and re-driving those would loop forever.
+   */
+  async findOrdersMissingVerification(
+    limit: number,
+    olderThan: string,
+  ): Promise<Array<{ eventId: string; orderId: string }>> {
+    const rows = await this.db
+      .select({ eventId: webhookEvents.id, orderId: orders.id })
+      .from(orders)
+      .innerJoin(
+        webhookEvents,
+        sql`${webhookEvents.orderId} = ${orders.id} AND ${webhookEvents.jobType} = 'order.create'`,
+      )
+      .leftJoin(verifications, sql`${verifications.orderId} = ${orders.id}`)
+      .where(
+        sql`${verifications.id} IS NULL
+          AND ${webhookEvents.status} NOT IN ('completed', 'skipped', 'failed')
+          AND ${orders.createdAt} <= ${olderThan}`,
+      )
+      .orderBy(orders.createdAt)
+      .limit(limit);
+    return rows as Array<{ eventId: string; orderId: string }>;
   }
 
   async claimForDispatch(
@@ -143,18 +194,7 @@ export class WebhookEventsRepository {
       })
       .where(
         sql`${webhookEvents.id} = ${id}
-          AND ${webhookEvents.dispatchRequired} = true
-          AND ${webhookEvents.dispatchAttempts} < ${maxDispatchAttempts}
-          AND (
-            (${webhookEvents.status} = 'pending'
-              AND ${webhookEvents.dispatchedAt} IS NULL
-              AND (${webhookEvents.nextDispatchAt} IS NULL OR ${webhookEvents.nextDispatchAt} <= NOW())
-              AND (${webhookEvents.dispatchLeaseUntil} IS NULL OR ${webhookEvents.dispatchLeaseUntil} <= NOW()))
-            OR
-            (${webhookEvents.status} = 'processing'
-              AND ((${webhookEvents.processingLeaseUntil} IS NOT NULL AND ${webhookEvents.processingLeaseUntil} <= NOW())
-                OR (${webhookEvents.processingLeaseUntil} IS NULL AND ${webhookEvents.updatedAt} <= ${staleBefore})))
-          )`,
+          AND ${this.recoverablePredicate(staleBefore, maxDispatchAttempts)}`,
       )
       .returning()) as WebhookEvent[];
 
@@ -175,11 +215,17 @@ export class WebhookEventsRepository {
       .where(eq(webhookEvents.id, id));
   }
 
+  /**
+   * `retryDelayMs` rather than a timestamp: the value is compared against the
+   * database's `NOW()` by the claim predicate, so the database has to be the
+   * one that computes it. An app clock running ahead of Postgres would
+   * otherwise park the row in the future and stall its own retry.
+   */
   async markDispatchFailed(
     id: string,
     error: string,
     terminal: boolean,
-    nextDispatchAt: string | null,
+    retryDelayMs: number | null,
   ): Promise<void> {
     await this.db
       .update(webhookEvents)
@@ -188,7 +234,10 @@ export class WebhookEventsRepository {
         lastDispatchError: error,
         lastError: terminal ? `dispatch_terminal:${error}` : undefined,
         dispatchLeaseUntil: null,
-        nextDispatchAt,
+        nextDispatchAt:
+          retryDelayMs === null
+            ? null
+            : sql`NOW() + make_interval(secs => ${retryDelayMs / 1000})`,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(webhookEvents.id, id));
@@ -324,7 +373,7 @@ export class WebhookEventsRepository {
         status: 'pending',
         dispatchAttempts: 0,
         lastDispatchError: null,
-        nextDispatchAt: now,
+        nextDispatchAt: sql`NOW()`,
         dispatchLeaseUntil: null,
         dispatchedAt: null,
         processingLeaseUntil: null,
