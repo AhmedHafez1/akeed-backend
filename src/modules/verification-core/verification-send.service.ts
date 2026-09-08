@@ -336,6 +336,7 @@ export class VerificationSendService {
     // `failed`/`pending` with a NULL `wa_message_id`, breaking the delivery and
     // read webhooks (they resolve against that id) and zeroing every
     // `last_sent_at`-derived dashboard metric.
+
     // Identity of the send, restated for every diagnostic below. The dispatch
     // id alone was not enough to investigate a failure after the fact: without
     // the tenant, the order and the logical dispatch key there is nothing to
