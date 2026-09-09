@@ -1,0 +1,15 @@
+{
+  "provenance": "synthetic",
+  "capturedAt": null,
+  "query": {
+    "hmac": null
+  },
+  "body": {
+    "type": "TOKEN",
+    "obj": {
+      "id": 990001,
+      "token": "REDACTED_BY_FIXTURE",
+      "masked_pan": "xxxx-2346"
+    }
+  }
+}

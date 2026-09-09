@@ -46,6 +46,16 @@ const REDACTED_KEYS = new Set([
   'wa_access_token',
   'shopify_api_secret',
   'supabase_anon_key',
+  // A hosted-checkout URL carries the provider client secret in its query, so
+  // the whole URL is a credential rather than a location.
+  'checkout_url',
+  'checkouturl',
+  'public_key',
+  'publickey',
+  // Card metadata a payment callback carries. Masked by the provider, but
+  // still cardholder data we have no reason to write down.
+  'pan',
+  'source_data',
 ]);
 
 function redact(value: unknown): unknown {
