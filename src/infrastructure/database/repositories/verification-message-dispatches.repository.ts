@@ -10,7 +10,6 @@ import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
   creditAccounts,
-  integrationMonthlyUsage,
   orders,
   integrations,
   verificationMessageDispatches,
@@ -531,13 +530,18 @@ export class VerificationMessageDispatchesRepository {
   }
 
   /**
-   * Records a provider call that produced no message id and refunds its usage.
+   * Records a provider call that produced no message id.
    *
    * The dispatch remains `outcome_unknown` because the absence of a provider
-   * id is not proof that no message was sent. Usage follows the merchant-facing
-   * lifecycle, though: while the verification is failed, the reservation is
-   * released. A later staff resolution as accepted restores it in
-   * {@link markAccepted}.
+   * id is not proof that no message was sent.
+   *
+   * The two accounting systems answer that ambiguity differently, on purpose.
+   * Periodic usage follows the merchant-facing lifecycle: while the
+   * verification is failed the reservation is released, and a later staff
+   * resolution as accepted restores it in {@link markAccepted}. A prepaid
+   * credit hold is kept instead -- releasing it would hand back a credit for a
+   * message that may well have been delivered -- and only an audited staff
+   * resolution consumes or releases it.
    */
   async markFailedProviderOutcome(
     dispatchId: string,
@@ -783,27 +787,8 @@ export class VerificationMessageDispatchesRepository {
           staffAudit?.userId,
         );
       }
-      if (
-        dispatch.accountingMode !== 'prepaid_credit' &&
-        dispatch.usageReserved &&
-        dispatch.usagePeriodStart
-      ) {
-        await tx
-          .update(integrationMonthlyUsage)
-          .set({
-            consumedCount: sql`GREATEST(${integrationMonthlyUsage.consumedCount} - 1, 0)`,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(integrationMonthlyUsage.integrationId, dispatch.integrationId),
-              eq(
-                integrationMonthlyUsage.periodStart,
-                dispatch.usagePeriodStart,
-              ),
-            ),
-          );
-      }
+      if (dispatch.accountingMode !== 'prepaid_credit')
+        await this.accounting.periodic.release(tx, dispatch, now);
       const [updated] = await tx
         .update(verificationMessageDispatches)
         .set({

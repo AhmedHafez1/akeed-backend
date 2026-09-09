@@ -1,9 +1,14 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import type { CreditTransaction } from '../credit-transaction';
 import { creditLedgerEntries, verificationMessageDispatches } from '../schema';
-import { CreditAccountingRepository } from './credit-accounting.repository';
+import {
+  CreditAccountingRepository,
+  CreditInvariantError,
+  CreditVersionConflictError,
+} from './credit-accounting.repository';
 import { creditDenial } from '../../../shared/billing/credit-eligibility';
+import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 
 type Dispatch = typeof verificationMessageDispatches.$inferSelect;
 
@@ -17,13 +22,40 @@ export function reconciliationRequired(): never {
 
 @Injectable()
 export class PrepaidCreditAccounting {
+  private readonly logger = new Logger(PrepaidCreditAccounting.name);
+
   constructor(readonly repository: CreditAccountingRepository) {}
 
+  /**
+   * Locks the account and converts the three states that mean "this tenant's
+   * accounting cannot be trusted right now" into a reconciliation conflict.
+   *
+   * Only those three. Catching everything turned a dropped connection or a
+   * serialization failure into a 409 that reads as a permanent tenant problem,
+   * and discarded the invariant report -- the one artefact that says which
+   * side of the projection drifted. Transport failures must stay transport
+   * failures so the caller can retry them.
+   */
   async lock(tx: CreditTransaction, orgId: string) {
     try {
       return await this.repository.lockAccount(tx, orgId);
-    } catch {
-      return reconciliationRequired();
+    } catch (error) {
+      if (error instanceof CreditInvariantError)
+        this.logger.error(
+          buildBackendLog(PrepaidCreditAccounting.name, {
+            action: 'lockAccount',
+            outcome: 'failure',
+            errorCode: 'credit_projection_mismatch',
+            ...error.report,
+          }),
+        );
+      if (
+        error instanceof CreditInvariantError ||
+        error instanceof CreditVersionConflictError ||
+        (error instanceof Error && error.message === 'Credit account not found')
+      )
+        return reconciliationRequired();
+      throw error;
     }
   }
 
