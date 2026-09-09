@@ -77,8 +77,8 @@ Each story is an independent implementation patch/commit series. Do not mix work
 
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [US-04.5-01 — Establish the credit and payment domain](US-04.5-01-credit-and-payment-domain-foundation.md) | P0 | Technical enabler | [US-04-05](../04-standalone-manual-order-mvp/US-04-05-manual-mvp-merchant-acceptance.md) | Backlog |
-| 2 | [US-04.5-02 — Approve merchants and grant launch credits](US-04.5-02-approval-and-one-time-grant.md) | P0 | Feature | [US-04.5-01](US-04.5-01-credit-and-payment-domain-foundation.md) | Backlog |
+| 1 | [US-04.5-01 — Establish the credit and payment domain](US-04.5-01-credit-and-payment-domain-foundation.md) | P0 | Technical enabler | [US-04-05](../04-standalone-manual-order-mvp/US-04-05-manual-mvp-merchant-acceptance.md) | Done |
+| 2 | [US-04.5-02 — Approve merchants and grant launch credits](US-04.5-02-approval-and-one-time-grant.md) | P0 | Feature | [US-04.5-01](US-04.5-01-credit-and-payment-domain-foundation.md) | Done |
 | 3 | [US-04.5-03 — Account for Standalone message usage](US-04.5-03-provider-neutral-usage-accounting.md) | P0 | Technical enabler | [US-04.5-02](US-04.5-02-approval-and-one-time-grant.md) | Backlog |
 | 4 | [US-04.5-04 — Buy credits through Paymob safely](US-04.5-04-paymob-checkout-and-callbacks.md) | P0 | Feature | [US-04.5-03](US-04.5-03-provider-neutral-usage-accounting.md) | Backlog |
 | 5 | [US-04.5-05 — Use the merchant billing experience](US-04.5-05-merchant-billing-experience.md) | P0 | Feature | [US-04.5-04](US-04.5-04-paymob-checkout-and-callbacks.md) | Backlog |
