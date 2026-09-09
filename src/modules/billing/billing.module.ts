@@ -9,6 +9,9 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { BillingController } from './billing.controller';
 import { BillingRepository } from './billing.repository';
 import { BillingService } from './billing.service';
+import { PaymentCallbackService } from './payment-callback.service';
+import { PaymentsCallbackController } from './payments-callback.controller';
+import { PaymentCallbackRateLimitGuard } from '../../shared/guards/payment-callback-rate-limit.guard';
 
 export interface BillingModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -30,9 +33,15 @@ export class BillingModule {
     return {
       module: BillingModule,
       imports: [ConfigModule, DatabaseModule, ...(options.imports ?? [])],
-      controllers: [BillingController],
-      providers: [BillingService, BillingRepository, ...(options.ports ?? [])],
-      exports: [BillingService],
+      controllers: [BillingController, PaymentsCallbackController],
+      providers: [
+        BillingService,
+        BillingRepository,
+        PaymentCallbackService,
+        PaymentCallbackRateLimitGuard,
+        ...(options.ports ?? []),
+      ],
+      exports: [BillingService, PaymentCallbackService],
     };
   }
 }
