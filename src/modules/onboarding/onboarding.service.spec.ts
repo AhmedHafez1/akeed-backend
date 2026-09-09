@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OnboardingService } from './onboarding.service';
 
@@ -85,7 +86,10 @@ describe('OnboardingService', () => {
       const service = new OnboardingService(
         onboardingState as any,
         billingService as any,
-        new BillingEntitlementService(monthlyUsageRepo as never),
+        new BillingEntitlementService(
+          monthlyUsageRepo as never,
+          usageAccountingFixture(),
+        ),
         { readStatus: jest.fn().mockResolvedValue(null) } as never,
       );
 

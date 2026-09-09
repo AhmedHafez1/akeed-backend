@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from 'contracts/usage-accounting-fixture';
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
 
 import type { Server } from 'node:http';
@@ -418,7 +419,10 @@ async function createHarness(): Promise<AcceptanceHarness> {
       includedLimit: 30,
     }),
   };
-  const billing = new BillingEntitlementService(usageRepo as never);
+  const billing = new BillingEntitlementService(
+    usageRepo as never,
+    usageAccountingFixture(),
+  );
 
   const dispatchRepo = {
     claim: async (params: {

@@ -1,3 +1,5 @@
+import { UsageAccountingRouter } from '../../infrastructure/database/repositories/usage-accounting.router';
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Test } from '@nestjs/testing';
@@ -110,6 +112,10 @@ describe('E02 platform-neutral verification core release gate', () => {
     };
     const module = await Test.createTestingModule({
       providers: [
+        {
+          provide: UsageAccountingRouter,
+          useValue: usageAccountingFixture({ enabled: true }),
+        },
         VerificationHubService,
         CommerceOutcomeRegistryService,
         OrderEligibilityService,

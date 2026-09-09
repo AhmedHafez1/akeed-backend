@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from './contracts/usage-accounting-fixture';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -44,7 +45,10 @@ const client = postgres(isolatedDatabaseUrl(), {
 const repository = new IntegrationMonthlyUsageRepository(
   drizzle(client, { schema }),
 );
-const service = new BillingEntitlementService(repository);
+const service = new BillingEntitlementService(
+  repository,
+  usageAccountingFixture(),
+);
 const identity = { id: randomUUID(), orgId: randomUUID() };
 let created = false;
 

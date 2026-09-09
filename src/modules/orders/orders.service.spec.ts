@@ -115,7 +115,7 @@ describe('OrdersService manual creation', () => {
 
   it('refuses manual creation while credit approval is pending', async () => {
     creditApproval.resolveDenial.mockResolvedValue(
-      'standalone_approval_required',
+      'STANDALONE_APPROVAL_REQUIRED',
     );
 
     await expect(
@@ -123,7 +123,7 @@ describe('OrdersService manual creation', () => {
     ).rejects.toMatchObject({
       response: {
         code: 'STANDALONE_APPROVAL_REQUIRED',
-        reason: 'standalone_approval_required',
+        reason: 'STANDALONE_APPROVAL_REQUIRED',
       },
     });
     expect(manualOrders.accept).not.toHaveBeenCalled();

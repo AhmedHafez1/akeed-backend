@@ -117,7 +117,7 @@ function buildAcceptanceRecoveryRepository(options: {
     ) {
       return Promise.resolve({
         rows:
-          query.includes('\"dispatch_key\" =') && options.recoverByDispatchKey
+          query.includes('"dispatch_key" =') && options.recoverByDispatchKey
             ? [dispatchRow()]
             : [],
       });

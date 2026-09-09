@@ -1,3 +1,4 @@
+import { isCreditDenialCode } from '../../shared/billing/credit-eligibility';
 import {
   BadGatewayException,
   BadRequestException,
@@ -172,12 +173,17 @@ export class TestVerificationService {
         code: 'TEST_VERIFICATION_ENTITLEMENT_REQUIRED',
       });
     }
-    if (reason === 'standalone_approval_required') {
+    if (
+      reason === 'standalone_approval_required' ||
+      isCreditDenialCode(reason)
+    ) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
         message: 'Akeed staff have not approved this account yet.',
-        code: 'STANDALONE_APPROVAL_REQUIRED',
+        code: isCreditDenialCode(reason)
+          ? reason
+          : 'STANDALONE_APPROVAL_REQUIRED',
         reason,
       });
     }

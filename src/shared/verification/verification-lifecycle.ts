@@ -39,6 +39,7 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   'integration_inactive',
   'billing_not_active',
   'provider_not_accepted',
+  'provider_delivery_failed',
   // The provider call threw or returned no message id, so nothing proves a
   // message went out. Omitting this stranded the row permanently: merchant
   // retry and event redelivery both match `metadata.reason` against this list,
@@ -50,6 +51,11 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   // Staff approval is pending. The merchant cannot resolve it themselves, but
   // it is temporary and the verification must be reopenable once it commits.
   'standalone_approval_required',
+  'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_SUSPENDED',
+  'CREDIT_DEBT_OUTSTANDING',
+  'INSUFFICIENT_CREDITS',
+  'PAYMENT_PENDING_RECONCILIATION',
 ] as const;
 
 /**
@@ -64,6 +70,11 @@ export const BLOCKED_EVENT_REASONS = [
   'auto_verify_disabled',
   'onboarding_incomplete',
   'standalone_approval_required',
+  'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_SUSPENDED',
+  'CREDIT_DEBT_OUTSTANDING',
+  'INSUFFICIENT_CREDITS',
+  'PAYMENT_PENDING_RECONCILIATION',
 ] as const;
 
 /**
@@ -76,6 +87,11 @@ export const SEND_FAILURE_REASONS = [
   'missing_linked_integration',
   'source_identity_mismatch',
   'standalone_approval_required',
+  'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_SUSPENDED',
+  'CREDIT_DEBT_OUTSTANDING',
+  'INSUFFICIENT_CREDITS',
+  'PAYMENT_PENDING_RECONCILIATION',
 ] as const;
 
 /** Statuses at which the automation pipeline stops scheduling further work. */

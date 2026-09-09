@@ -1,3 +1,4 @@
+import type { CreditDenialCode } from './credit-eligibility';
 import {
   DEFAULT_BILLING_PLAN_ID,
   isBillingPlanId,
@@ -54,7 +55,11 @@ export interface EntitlementAvailability {
   available: boolean;
   consumedCount: number;
   includedLimit: number;
-  reason: EntitlementDenialReason | 'plan_limit_reached' | null;
+  reason:
+    | EntitlementDenialReason
+    | CreditDenialCode
+    | 'plan_limit_reached'
+    | null;
 }
 
 export function resolveEntitlement(
@@ -79,10 +84,11 @@ export function resolveEntitlement(
     if (!isBillingStatusActive(source.billingStatus))
       reason = 'billing_not_active';
   } else if (
-    source.billingStatus?.trim().toLowerCase() !== 'not_required' ||
-    !validPlan ||
-    !source.billingActivatedAt ||
-    !Number.isFinite(new Date(source.billingActivatedAt).getTime())
+    source.platformType !== 'standalone' &&
+    (source.billingStatus?.trim().toLowerCase() !== 'not_required' ||
+      !validPlan ||
+      !source.billingActivatedAt ||
+      !Number.isFinite(new Date(source.billingActivatedAt).getTime()))
   ) {
     reason = 'billing_not_active';
   }

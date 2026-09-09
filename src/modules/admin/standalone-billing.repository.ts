@@ -19,10 +19,6 @@ import {
   buildStandaloneSourceIdentity,
   provisionStandaloneSourceForOrganization,
 } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
-import {
-  STANDALONE_BILLING_STATUS,
-  STANDALONE_DEFAULT_PLAN_ID,
-} from '../../shared/billing/billing-plan';
 import { evaluateStandaloneApproval } from './standalone-billing.policy';
 import type {
   ApprovalApplyResult,
@@ -403,25 +399,13 @@ export class StandaloneBillingRepository {
                 );
             const integrationId = sourceResult.integration.id;
             const now = new Date().toISOString();
-            // Transitional: Standalone sends still consume monthly usage until
-            // US-04.5-03 routes them through the credit ledger, and that reader
-            // needs the plan columns. Approval is what grants them now, instead
-            // of provisioning.
             const after = {
-              billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
-              billingStatus: STANDALONE_BILLING_STATUS,
-              billingActivatedAt: existingSource?.billingActivatedAt ?? now,
-              billingStatusUpdatedAt: now,
+              billingPlanId: existingSource?.billingPlanId ?? null,
+              billingStatus: existingSource?.billingStatus ?? null,
+              billingActivatedAt: existingSource?.billingActivatedAt ?? null,
+              billingStatusUpdatedAt:
+                existingSource?.billingStatusUpdatedAt ?? null,
             };
-            await tx
-              .update(integrations)
-              .set({ ...after, updatedAt: now })
-              .where(
-                and(
-                  eq(integrations.id, integrationId),
-                  eq(integrations.orgId, entry.orgId),
-                ),
-              );
             const postedBalance = account.postedBalance + freeGrantQuantity;
             await this.credits.insertLedgerEntry(tx, {
               orgId: entry.orgId,

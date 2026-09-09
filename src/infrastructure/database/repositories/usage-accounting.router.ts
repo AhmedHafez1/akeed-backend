@@ -23,6 +23,10 @@ export class UsageAccountingRouter {
     private readonly config: ConfigService,
   ) {}
 
+  isEnabled(): boolean {
+    return readStandaloneCreditBillingConfig(this.config).enabled;
+  }
+
   mode(platformType: string): 'prepaid_credit' | 'periodic_plan' {
     return platformType === 'standalone' ? 'prepaid_credit' : 'periodic_plan';
   }

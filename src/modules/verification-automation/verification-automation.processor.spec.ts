@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import type { EntitlementSource } from '../../shared/billing/entitlement';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
@@ -46,15 +47,19 @@ function createMocks() {
       } as never,
       [new ShopifyOutcomeAdapter(orderTaggingPort as never)],
     ),
-    new BillingEntitlementService({
-      getEntitlementSource: async () => {
-        const result = (await ordersRepo.findById()) as
-          | { integration?: EntitlementSource }
-          | undefined;
-        return result?.integration;
-      },
-      getIntegrationUsageForPeriod: () => Promise.resolve({ consumedCount: 0 }),
-    } as never),
+    new BillingEntitlementService(
+      {
+        getEntitlementSource: async () => {
+          const result = (await ordersRepo.findById()) as
+            | { integration?: EntitlementSource }
+            | undefined;
+          return result?.integration;
+        },
+        getIntegrationUsageForPeriod: () =>
+          Promise.resolve({ consumedCount: 0 }),
+      } as never,
+      usageAccountingFixture(),
+    ),
   );
 
   return {

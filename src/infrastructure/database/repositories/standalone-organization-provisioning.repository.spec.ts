@@ -52,15 +52,15 @@ describe('standalone provisioning entitlement grant', () => {
   });
 
   it.each(['billingStatus', 'billingPlanId', 'billingActivatedAt'] as const)(
-    'blocks sending when provisioning omits %s',
+    'leaves credit eligibility to accounting when provisioning omits %s',
     (column) => {
       const entitlement = resolveEntitlement(
         { ...provisionedSource, [column]: null },
         identity,
       );
 
-      expect(entitlement.reason).toBe('billing_not_active');
-      expect(entitlement.allowed).toBe(false);
+      expect(entitlement.reason).toBeNull();
+      expect(entitlement.allowed).toBe(true);
     },
   );
 

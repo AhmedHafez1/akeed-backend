@@ -1,3 +1,4 @@
+import { isCreditDenialCode } from '../../shared/billing/credit-eligibility';
 import {
   BadRequestException,
   ConflictException,
@@ -164,8 +165,9 @@ export class OrdersService {
           availability.reason === 'plan_limit_reached'
             ? 'The included verifications for this period are used up.'
             : 'An active Standalone entitlement is required.',
-        code:
-          availability.reason === 'plan_limit_reached'
+        code: isCreditDenialCode(availability.reason)
+          ? availability.reason
+          : availability.reason === 'plan_limit_reached'
             ? 'MANUAL_ORDER_PLAN_LIMIT_REACHED'
             : 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
         reason: availability.reason,
@@ -421,7 +423,9 @@ export class OrdersService {
     });
     if (!availability.available) {
       throw new ConflictException({
-        code: 'MANUAL_ORDER_RETRY_BLOCKED',
+        code: isCreditDenialCode(availability.reason)
+          ? availability.reason
+          : 'MANUAL_ORDER_RETRY_BLOCKED',
         message: 'Verification entitlement is not currently available.',
         reason: availability.reason,
         lifecycle,
@@ -482,14 +486,17 @@ export class OrdersService {
    * Read-only order and verification access stays open while approval is
    * pending; only the billable actions are refused.
    */
-  private async assertCreditApproved(source: { orgId: string }): Promise<void> {
+  private async assertCreditApproved(source: {
+    orgId: string;
+    platformType: string;
+  }): Promise<void> {
     const denial = await this.creditApproval.resolveDenial(source);
     if (!denial) return;
     throw new ConflictException({
       statusCode: 409,
       error: 'Conflict',
-      message: 'Akeed staff have not approved this account yet.',
-      code: 'STANDALONE_APPROVAL_REQUIRED',
+      message: 'Credit is not available for this action.',
+      code: denial,
       reason: denial,
     });
   }

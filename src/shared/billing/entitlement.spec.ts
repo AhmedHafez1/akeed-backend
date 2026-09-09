@@ -48,11 +48,14 @@ describe('provider-neutral entitlement policy', () => {
     { billingPlanId: 'unknown' },
     { billingActivatedAt: null },
     { billingActivatedAt: 'invalid' },
-  ])('does not infer manual provisioning from %j', (overrides) => {
-    expect(
-      resolveEntitlement({ ...source, ...overrides }, source, now),
-    ).toMatchObject({ allowed: false, reason: 'billing_not_active' });
-  });
+  ])(
+    'leaves prepaid credit eligibility independent of legacy plan fields %j',
+    (overrides) => {
+      expect(
+        resolveEntitlement({ ...source, ...overrides }, source, now),
+      ).toMatchObject({ allowed: true, reason: null });
+    },
+  );
 
   it('rejects missing, mismatched, and inactive sources', () => {
     expect(resolveEntitlement(undefined, source, now).reason).toBe(

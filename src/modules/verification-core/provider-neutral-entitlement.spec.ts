@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationSendService } from './verification-send.service';
 import type { EntitlementSource } from '../../shared/billing/entitlement';
@@ -7,7 +8,7 @@ import type { EntitlementSource } from '../../shared/billing/entitlement';
 const source: EntitlementSource = {
   id: 'int-1',
   orgId: 'org-1',
-  platformType: 'standalone',
+  platformType: 'woocommerce',
   isActive: true,
   billingStatus: 'not_required',
   billingPlanId: 'starter',
@@ -31,7 +32,10 @@ describe('provider-neutral entitlement boundary', () => {
       }),
       releaseMonthlyVerificationSlot: jest.fn(),
     };
-    const service = new BillingEntitlementService(repository as never);
+    const service = new BillingEntitlementService(
+      repository as never,
+      usageAccountingFixture(),
+    );
     const messaging = {
       sendVerificationTemplate: jest
         .fn()
@@ -119,7 +123,7 @@ describe('provider-neutral entitlement boundary', () => {
     });
   });
 
-  it('sends a provisioned manual verification without a Shopify dependency', async () => {
+  it('sends a periodic commerce verification without a Shopify dependency', async () => {
     const { sender, repository, messaging } = setup();
     expect(await sender.sendInitial('ver-1')).toMatchObject({ status: 'sent' });
     expect(repository.reserveMonthlyVerificationSlot).toHaveBeenCalledWith({

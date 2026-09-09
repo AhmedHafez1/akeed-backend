@@ -1,3 +1,4 @@
+import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -122,6 +123,7 @@ export interface RetryManualOrderVerificationResponseDto {
  * pre-computed so no caller has to rediscover that it clamps at zero.
  */
 export interface DashboardUsageBudgetDto {
+  credit_denial?: CreditDenialCode | null;
   used: number;
   limit: number;
   remaining: number;

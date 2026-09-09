@@ -205,7 +205,11 @@ export class VerificationsService {
         entitlement.includedLimit - entitlement.consumedCount,
         0,
       ),
-      period_end: entitlement.periodEnd ?? null,
+      period_end:
+        'credits' in entitlement ? null : (entitlement.periodEnd ?? null),
+      ...('creditDenial' in entitlement
+        ? { credit_denial: entitlement.creditDenial }
+        : {}),
     };
   }
 

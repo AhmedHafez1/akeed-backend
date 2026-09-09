@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { BillingEntitlementService } from './billing-entitlement.service';
 
 describe('BillingEntitlementService', () => {
@@ -6,7 +7,10 @@ describe('BillingEntitlementService', () => {
 
     beforeEach(() => {
       // Instantiate with null dependencies — only testing pure method
-      service = new BillingEntitlementService(null as any);
+      service = new BillingEntitlementService(
+        null as any,
+        usageAccountingFixture(),
+      );
     });
 
     it('returns 1st of current month when no activation date', () => {

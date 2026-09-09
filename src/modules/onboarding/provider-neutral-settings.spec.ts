@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import type { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
 import { type ExecutionContext, type INestApplication } from '@nestjs/common';
@@ -119,7 +120,7 @@ describe('manual entitlement HTTP boundary', () => {
     const service = new OnboardingService(
       state,
       billing,
-      new BillingEntitlementService(usage as never),
+      new BillingEntitlementService(usage as never, usageAccountingFixture()),
       { readStatus: () => Promise.resolve(approvalStatus) } as never,
     );
     const module = await Test.createTestingModule({
@@ -153,7 +154,7 @@ describe('manual entitlement HTTP boundary', () => {
         billingStatus: 'not_required',
         billingManagement: { mode: 'manual', canManageBilling: false },
       },
-      billing: { plans: [], usage: { used: 12, limit: 30 } },
+      billing: { plans: [], usage: { used: 0, limit: 30 } },
     });
     await request(app.getHttpServer())
       .get('/api/onboarding/billing/plans')
@@ -169,9 +170,7 @@ describe('manual entitlement HTTP boundary', () => {
     ])
       expect(call).not.toHaveBeenCalled();
     expect(repository.updateById).not.toHaveBeenCalled();
-    expect(usage.getIntegrationUsageForPeriod).toHaveBeenCalledWith(
-      expect.objectContaining({ integrationId: 'int-1' }),
-    );
+    expect(usage.getIntegrationUsageForPeriod).not.toHaveBeenCalled();
   });
 
   it.each(['starter', 'pro'])(
@@ -298,7 +297,7 @@ describe('manual entitlement HTTP boundary', () => {
     });
   });
 
-  it('reports entitlement blockers without discarding saved settings', async () => {
+  it('completes approved credit setup without requiring legacy plan fields', async () => {
     source = {
       ...source,
       onboardingStatus: 'pending',
@@ -319,15 +318,8 @@ describe('manual entitlement HTTP boundary', () => {
       .expect(200);
     await request(app.getHttpServer())
       .post('/api/onboarding/complete')
-      .expect(409)
-      .expect(({ body }) => {
-        expect(body).toMatchObject({
-          code: 'ONBOARDING_BLOCKED',
-          blockedReasons: ['pilot_entitlement_missing'],
-        });
-      });
+      .expect(201);
     expect(source.storeName).toBe('Saved before activation');
-    expect(source.onboardingStatus).toBe('pending');
   });
 
   it('blocks completion with STANDALONE_APPROVAL_REQUIRED while approval is pending', async () => {

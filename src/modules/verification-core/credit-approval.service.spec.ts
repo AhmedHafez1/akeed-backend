@@ -27,9 +27,18 @@ function build(
   environment: Record<string, string>,
   status?: 'pending_approval' | 'active' | 'suspended',
 ) {
-  const getSummary = jest
-    .fn()
-    .mockResolvedValue(status ? { orgId: 'org-1', status } : undefined);
+  const getSummary = jest.fn().mockResolvedValue(
+    status
+      ? {
+          orgId: 'org-1',
+          status,
+          postedBalance: 30,
+          availableCredits: 30,
+          debtCredits: 0,
+          heldCredits: 0,
+        }
+      : undefined,
+  );
   const credits = { getSummary } as unknown as CreditAccountingRepository;
   const service = new CreditApprovalService(
     credits,
@@ -42,11 +51,25 @@ function build(
 }
 
 describe('CreditApprovalService', () => {
-  it('never reads an account while credit billing is disabled', async () => {
+  it('never reads credit tables for Shopify', async () => {
+    const { service, getSummary } = build(ENABLED);
+    expect(
+      await service.resolveDenial({ orgId: 'org-1', platformType: 'shopify' }),
+    ).toBeNull();
+    expect(
+      await service.readStatus({ orgId: 'org-1', platformType: 'shopify' }),
+    ).toBeNull();
+    expect(getSummary).not.toHaveBeenCalled();
+  });
+  it('leaves the advisory approval gate inert while disabled', async () => {
     const { service, getSummary } = build({}, 'pending_approval');
 
-    await expect(service.readStatus({ orgId: 'org-1' })).resolves.toBeNull();
-    await expect(service.resolveDenial({ orgId: 'org-1' })).resolves.toBeNull();
+    await expect(
+      service.readStatus({ orgId: 'org-1', platformType: 'standalone' }),
+    ).resolves.toBeNull();
+    await expect(
+      service.resolveDenial({ orgId: 'org-1', platformType: 'standalone' }),
+    ).resolves.toBeNull();
     expect(getSummary).not.toHaveBeenCalled();
   });
 
@@ -55,10 +78,12 @@ describe('CreditApprovalService', () => {
    * billing, so a Shopify organization without one keeps its plan entitlement
    * and is never blocked here.
    */
-  it('allows an organization that has no credit account', async () => {
+  it('requires approval when the Standalone account is missing', async () => {
     const { service } = build(ENABLED);
 
-    await expect(service.isApproved({ orgId: 'org-1' })).resolves.toBe(true);
+    await expect(
+      service.isApproved({ orgId: 'org-1', platformType: 'standalone' }),
+    ).resolves.toBe(false);
   });
 
   it.each(['pending_approval', 'suspended'] as const)(
@@ -66,8 +91,12 @@ describe('CreditApprovalService', () => {
     async (status) => {
       const { service } = build(ENABLED, status);
 
-      await expect(service.resolveDenial({ orgId: 'org-1' })).resolves.toBe(
-        CREDIT_APPROVAL_REQUIRED_REASON,
+      await expect(
+        service.resolveDenial({ orgId: 'org-1', platformType: 'standalone' }),
+      ).resolves.toBe(
+        status === 'suspended'
+          ? 'CREDIT_ACCOUNT_SUSPENDED'
+          : CREDIT_APPROVAL_REQUIRED_REASON,
       );
     },
   );
@@ -75,9 +104,11 @@ describe('CreditApprovalService', () => {
   it('allows an active account', async () => {
     const { service } = build(ENABLED, 'active');
 
-    await expect(service.readStatus({ orgId: 'org-1' })).resolves.toBe(
-      'active',
-    );
-    await expect(service.resolveDenial({ orgId: 'org-1' })).resolves.toBeNull();
+    await expect(
+      service.readStatus({ orgId: 'org-1', platformType: 'standalone' }),
+    ).resolves.toBe('active');
+    await expect(
+      service.resolveDenial({ orgId: 'org-1', platformType: 'standalone' }),
+    ).resolves.toBeNull();
   });
 });

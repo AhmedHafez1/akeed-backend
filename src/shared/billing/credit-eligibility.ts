@@ -17,3 +17,20 @@ export function creditDenial(
   if (summary.availableCredits < 1) return 'INSUFFICIENT_CREDITS';
   return null;
 }
+
+export function usesPrepaidCredits(source: { platformType: string }): boolean {
+  return source.platformType === 'standalone';
+}
+
+export function isCreditDenialCode(value: unknown): value is CreditDenialCode {
+  return (
+    typeof value === 'string' &&
+    [
+      'STANDALONE_APPROVAL_REQUIRED',
+      'CREDIT_ACCOUNT_SUSPENDED',
+      'CREDIT_DEBT_OUTSTANDING',
+      'INSUFFICIENT_CREDITS',
+      'PAYMENT_PENDING_RECONCILIATION',
+    ].includes(value)
+  );
+}

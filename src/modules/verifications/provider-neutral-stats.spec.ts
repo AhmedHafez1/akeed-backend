@@ -1,3 +1,4 @@
+import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { VerificationsService } from './verifications.service';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 
@@ -33,7 +34,10 @@ describe('integration-scoped dashboard entitlement usage', () => {
         .fn()
         .mockResolvedValue({ consumedCount: 12, includedLimit: 2500 }),
     };
-    const entitlements = new BillingEntitlementService(repository as never);
+    const entitlements = new BillingEntitlementService(
+      repository as never,
+      usageAccountingFixture(),
+    );
     const service = new VerificationsService(
       verifications as never,
       entitlements,
@@ -43,13 +47,11 @@ describe('integration-scoped dashboard entitlement usage', () => {
     );
     return { service, repository };
   }
-  it('uses the active source plan rather than adding quotas or trusting an old row limit', async () => {
+  it('uses prepaid availability without reading the legacy monthly quota', async () => {
     const { service, repository } = setup();
     const result = await service.getStatsByOrg('org-1', {});
-    expect(result.usage).toMatchObject({ used: 12, limit: 30 });
-    expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalledWith(
-      expect.objectContaining({ integrationId: 'int-1' }),
-    );
+    expect(result.usage).toMatchObject({ used: 0, limit: 30 });
+    expect(repository.getIntegrationUsageForPeriod).not.toHaveBeenCalled();
   });
   it('keeps historical funnel totals when no current source is active, without inventing a quota', async () => {
     const { service, repository } = setup([]);

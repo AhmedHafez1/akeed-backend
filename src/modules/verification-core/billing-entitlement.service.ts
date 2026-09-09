@@ -1,3 +1,4 @@
+import { UsageAccountingRouter } from '../../infrastructure/database/repositories/usage-accounting.router';
 import { Injectable } from '@nestjs/common';
 import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
 import {
@@ -12,6 +13,7 @@ import { getBillingPeriodStart } from '../../shared/billing/billing-period';
 export class BillingEntitlementService {
   constructor(
     private readonly monthlyUsageRepository: IntegrationMonthlyUsageRepository,
+    private readonly accounting?: UsageAccountingRouter,
   ) {}
 
   evaluateAccess(
@@ -25,6 +27,22 @@ export class BillingEntitlementService {
     const source =
       await this.monthlyUsageRepository.getEntitlementSource(identity);
     const entitlement = resolveEntitlement(source, identity);
+    const accounting = this.accounting;
+    if (
+      source &&
+      accounting &&
+      accounting.mode(source.platformType) === 'prepaid_credit'
+    ) {
+      const availability = await accounting.readAvailability(source.orgId);
+      return {
+        ...entitlement,
+        planId: null,
+        includedLimit: availability.includedLimit,
+        consumedCount: availability.consumedCount,
+        credits: availability.credits,
+        creditDenial: availability.reason,
+      };
+    }
     const usage = source
       ? await this.monthlyUsageRepository.getIntegrationUsageForPeriod({
           integrationId: identity.id,
@@ -37,6 +55,24 @@ export class BillingEntitlementService {
   async hasAvailableSlot(
     identity: EntitlementIdentity,
   ): Promise<EntitlementAvailability> {
+    const source =
+      await this.monthlyUsageRepository.getEntitlementSource(identity);
+    const access = resolveEntitlement(source, identity);
+    const accounting = this.accounting;
+    if (
+      source &&
+      accounting &&
+      accounting.mode(source.platformType) === 'prepaid_credit'
+    ) {
+      if (!access.allowed)
+        return {
+          available: false,
+          reason: access.reason,
+          consumedCount: 0,
+          includedLimit: 0,
+        };
+      return accounting.readAvailability(source.orgId);
+    }
     const entitlement = await this.readEntitlement(identity);
     const available =
       entitlement.allowed &&
