@@ -2,7 +2,9 @@ import { UsageAccountingRouter } from './usage-accounting.router';
 import { getTableColumns } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import * as schema from '../index';
-import { integrations } from '../schema';
+import { creditAccounts, integrations } from '../schema';
+import { CreditAccountingRepository } from './credit-accounting.repository';
+import { PrepaidCreditAccounting } from './prepaid-credit-accounting';
 import { VerificationMessageDispatchesRepository } from './verification-message-dispatches.repository';
 
 /**
@@ -17,10 +19,14 @@ import { VerificationMessageDispatchesRepository } from './verification-message-
 type DispatchOverrides = Partial<{
   kind: 'initial' | 'follow_up';
   state: string;
+  accountingMode: 'periodic_plan' | 'prepaid_credit';
   usageReserved: boolean;
   usagePeriodStart: string | null;
   providerMessageId: string | null;
   acceptedAt: string | null;
+  deliveredAt: string | null;
+  readAt: string | null;
+  failedAt: string | null;
   attemptCount: number;
   leaseUntil: string | null;
 }>;
@@ -29,10 +35,14 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
   const {
     kind = 'initial',
     state = 'sending',
+    accountingMode = 'periodic_plan',
     usageReserved = false,
     usagePeriodStart = null,
     providerMessageId = null,
     acceptedAt = null,
+    deliveredAt = null,
+    readAt = null,
+    failedAt = null,
     attemptCount = 0,
     leaseUntil = null,
   } = overrides;
@@ -44,7 +54,7 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     'verification-1', // verification_id
     'verification-1:initial:1', // dispatch_key
     1,
-    'periodic_plan',
+    accountingMode,
     kind,
     state,
     'akeed_system', // sender_kind
@@ -57,9 +67,9 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     null, // last_error_code
     leaseUntil, // lease_until
     acceptedAt, // accepted_at
-    null, // delivered_at
-    null, // read_at
-    null, // failed_at
+    deliveredAt, // delivered_at
+    readAt, // read_at
+    failedAt, // failed_at
     null, // resolved_at
     {}, // metadata
     '2026-05-15T00:00:00.000Z', // created_at
@@ -168,7 +178,7 @@ function verificationUpdates(
  * An entitled Standalone source, built from the live column order so the
  * fixture cannot drift out of sync with the schema.
  */
-function integrationRow() {
+function integrationRow(overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     id: 'integration-1',
     org_id: 'org-1',
@@ -177,8 +187,25 @@ function integrationRow() {
     billing_status: 'active',
     billing_plan_id: 'starter',
     billing_activated_at: '2026-05-01T00:00:00.000Z',
+    ...overrides,
   };
   return Object.values(getTableColumns(integrations)).map(
+    (column) => values[column.name] ?? null,
+  );
+}
+
+/** An approved, solvent credit account carrying exactly the one hold below. */
+function creditAccountRow() {
+  const values: Record<string, unknown> = {
+    org_id: 'org-1',
+    status: 'active',
+    posted_balance: 0,
+    held_credits: 1,
+    version: 3,
+    created_at: '2026-05-01T00:00:00.000Z',
+    updated_at: '2026-05-01T00:00:00.000Z',
+  };
+  return Object.values(getTableColumns(creditAccounts)).map(
     (column) => values[column.name] ?? null,
   );
 }
@@ -639,5 +666,141 @@ describe('VerificationMessageDispatchesRepository terminal-state protection', ()
         JSON.stringify({ reason: 'provider_not_accepted', kind: 'initial' }),
       ]),
     );
+  });
+});
+
+/**
+ * A Standalone dispatch on prepaid credits, with the credit account and its
+ * invariant check answered so the accounting lock succeeds.
+ */
+function buildPrepaidRepository(overrides: DispatchOverrides = {}) {
+  const statements: { query: string; params: unknown[] }[] = [];
+  const execute = jest.fn((query: string, params: unknown[]) => {
+    statements.push({ query, params });
+    if (!query.trimStart().startsWith('select')) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (query.includes('from "integrations"')) {
+      return Promise.resolve({
+        rows: [integrationRow({ platform_type: 'standalone' })],
+      });
+    }
+    // The invariant report is a projection, not `select *`; it is the only
+    // credit-account read that aggregates the ledger and the held reservations.
+    if (query.includes('COALESCE(sum(')) {
+      return Promise.resolve({ rows: [['org-1', 0, 1, '0', '1']] });
+    }
+    if (query.includes('from "credit_accounts"')) {
+      return Promise.resolve({ rows: [creditAccountRow()] });
+    }
+    return Promise.resolve({
+      rows: [dispatchRow({ accountingMode: 'prepaid_credit', ...overrides })],
+    });
+  });
+  const session = drizzle(execute as never, { schema });
+  const db = Object.assign(session, {
+    transaction: (callback: (tx: typeof session) => unknown) =>
+      callback(session),
+  });
+  const repository = new VerificationMessageDispatchesRepository(
+    db as never,
+    new UsageAccountingRouter(
+      new PrepaidCreditAccounting(
+        new CreditAccountingRepository(session as never),
+      ),
+      {} as never,
+    ),
+  );
+  return { repository, statements };
+}
+
+function creditWrites(statements: { query: string; params: unknown[] }[]) {
+  return statements.filter(
+    (statement) =>
+      statement.query.includes('insert into "credit_ledger_entries"') ||
+      statement.query.includes('update "credit_reservations" set') ||
+      statement.query.includes('update "credit_accounts" set'),
+  );
+}
+
+/**
+ * A send whose acceptance could not be persisted is salvaged at
+ * `outcome_unknown` while keeping its provider message id and its credit hold
+ * (see `VerificationSendService.salvageAcceptance`). Meta still reports on that
+ * message id. Refusing those receipts threw out of the status handler, which
+ * abandoned the rest of the batch and left Meta retrying the same payload.
+ */
+describe('VerificationMessageDispatchesRepository prepaid provider statuses', () => {
+  it.each(['delivered', 'read'] as const)(
+    'records a %s receipt for a salvaged dispatch without moving credits',
+    async (status) => {
+      const { repository, statements } = buildPrepaidRepository({
+        state: 'outcome_unknown',
+        providerMessageId: 'wamid-salvaged',
+      });
+
+      await expect(
+        repository.recordProviderStatus(
+          'dispatch-1',
+          status,
+          '2026-05-15T03:00:00.000Z',
+        ),
+      ).resolves.toBeDefined();
+
+      expect(creditWrites(statements)).toHaveLength(0);
+      expect(verificationUpdates(statements)).toHaveLength(1);
+    },
+  );
+
+  it('records a failed receipt for a salvaged dispatch without reversing an unposted consumption', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'outcome_unknown',
+      providerMessageId: 'wamid-salvaged',
+    });
+
+    await expect(
+      repository.recordProviderStatus(
+        'dispatch-1',
+        'failed',
+        '2026-05-15T03:00:00.000Z',
+      ),
+    ).resolves.toBeDefined();
+
+    expect(creditWrites(statements)).toHaveLength(0);
+    const [dispatchUpdate] = dispatchUpdates(statements);
+    expect(dispatchUpdate.params).toContain('2026-05-15T03:00:00.000Z');
+  });
+
+  it('still fails closed for a state that cannot hold a provider message id', async () => {
+    const { repository } = buildPrepaidRepository({
+      state: 'rejected',
+      providerMessageId: 'wamid-impossible',
+    });
+
+    await expect(
+      repository.recordProviderStatus(
+        'dispatch-1',
+        'delivered',
+        '2026-05-15T03:00:00.000Z',
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'PAYMENT_PENDING_RECONCILIATION' },
+    });
+  });
+
+  it('skips the projection when a parked dispatch has no provider message id', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'outcome_unknown',
+    });
+
+    await expect(
+      repository.recordProviderStatus(
+        'dispatch-1',
+        'delivered',
+        '2026-05-15T03:00:00.000Z',
+      ),
+    ).resolves.toEqual({ verificationRows: [] });
+
+    expect(verificationUpdates(statements)).toHaveLength(0);
   });
 });

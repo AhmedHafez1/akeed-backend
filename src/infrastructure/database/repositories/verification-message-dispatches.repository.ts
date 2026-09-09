@@ -602,7 +602,21 @@ export class VerificationMessageDispatchesRepository {
         .for('update');
       if (!dispatch) return;
       if (dispatch.accountingMode === 'prepaid_credit') {
-        if (dispatch.state !== 'accepted') reconciliationRequired();
+        // `outcome_unknown` is reachable *with* a provider message id: a send
+        // whose acceptance could not be persisted is salvaged there by
+        // `VerificationSendService.salvageAcceptance`, keeping the credit held
+        // for staff resolution. Its receipts are real facts about a message the
+        // customer received, so they must still be recorded — refusing them
+        // threw out of the Meta status handler, which abandoned every remaining
+        // status in the batch and made Meta retry the same payload forever.
+        //
+        // No credit moves on that path: nothing was consumed, so there is
+        // nothing to reverse, and the hold stays until staff resolve it.
+        if (
+          dispatch.state !== 'accepted' &&
+          dispatch.state !== 'outcome_unknown'
+        )
+          reconciliationRequired();
         if (status === 'failed') {
           if (dispatch.failedAt) return { verificationRows: [] };
           if (
@@ -612,7 +626,8 @@ export class VerificationMessageDispatchesRepository {
               new Date(occurredAt) < new Date(dispatch.acceptedAt))
           )
             return { verificationRows: [] };
-          await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
+          if (dispatch.state === 'accepted')
+            await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
         } else if (dispatch.failedAt) {
           return { verificationRows: [] };
         }
@@ -641,6 +656,10 @@ export class VerificationMessageDispatchesRepository {
           .where(eq(verificationMessageDispatches.id, dispatch.id));
       }
       if (dispatch.accountingMode === 'prepaid_credit') {
+        // The projection resolves against the provider message id, so a dispatch
+        // parked without one has no verification row to address. The receipt is
+        // still recorded above; there is simply nothing to project it onto.
+        if (!dispatch.providerMessageId) return { verificationRows: [] };
         const verificationRows = await tx
           .update(verifications)
           .set({
@@ -667,7 +686,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
-              eq(verifications.waMessageId, dispatch.providerMessageId!),
+              eq(verifications.waMessageId, dispatch.providerMessageId),
               notInArray(verifications.status, [
                 'confirmed',
                 'canceled',

@@ -105,6 +105,57 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
     await balance(source.orgId, 1, 1);
   });
 
+  it('records receipts for a salvaged ambiguous send without moving credits', async () => {
+    const source = await merchant(2);
+    const input = await verification(source);
+    const dispatch = await claim(input);
+    const providerMessageId = randomUUID();
+    // Reproduce `VerificationSendService.salvageAcceptance`: the provider
+    // returned a message id, persisting the acceptance failed, so the dispatch
+    // parks at `outcome_unknown` while the credit stays held. Meta still
+    // reports delivery on that message id, and refusing those receipts threw
+    // out of the status handler and stalled the whole webhook batch.
+    expect(
+      await dispatches.markOutcomeUnknown(
+        dispatch.id,
+        'acceptance_persistence_failed',
+        providerMessageId,
+      ),
+    ).toBe(1);
+    await dispatches.projectAcceptanceWithoutLedger({
+      verificationId: input.verificationId,
+      kind: input.kind,
+      providerMessageId,
+      sentAt: new Date().toISOString(),
+    });
+
+    const delivered = await dispatches.recordProviderStatus(
+      dispatch.id,
+      'delivered',
+      new Date().toISOString(),
+    );
+    expect(delivered?.verificationRows).toHaveLength(1);
+    const failed = await dispatches.recordProviderStatus(
+      dispatch.id,
+      'failed',
+      new Date().toISOString(),
+    );
+    expect(failed?.verificationRows).toHaveLength(1);
+    // Nothing was ever posted, so there is nothing to reverse: the hold stands
+    // and the ledger carries only the opening grant.
+    await balance(source.orgId, 2, 1);
+    expect(
+      await db
+        .select()
+        .from(creditLedgerEntries)
+        .where(eq(creditLedgerEntries.orgId, source.orgId)),
+    ).toMatchObject([{ type: 'free_grant' }]);
+
+    // Staff resolution is still the only thing that settles the hold.
+    await acceptance(dispatch, providerMessageId);
+    await balance(source.orgId, 1, 0);
+  });
+
   it('releases confirmed rejection without posting and advances the immutable generation', async () => {
     const source = await merchant(1);
     const input = await verification(source);
