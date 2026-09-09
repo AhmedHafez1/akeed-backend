@@ -241,11 +241,16 @@ export class WhatsAppWebhookService {
 
       const dispatch =
         await this.messageDispatches.findByProviderMessageId(wamid);
+      let creditProjection: Awaited<
+        ReturnType<
+          VerificationMessageDispatchesRepository['recordProviderStatus']
+        >
+      >;
       if (dispatch) {
         const occurredAt = statusObj.timestamp
           ? new Date(Number(statusObj.timestamp) * 1000).toISOString()
           : new Date().toISOString();
-        await this.messageDispatches.recordProviderStatus(
+        creditProjection = await this.messageDispatches.recordProviderStatus(
           dispatch.id,
           typedStatus as 'delivered' | 'read' | 'failed',
           occurredAt,
@@ -257,18 +262,20 @@ export class WhatsAppWebhookService {
       // follow-up receipt disturbing a verification the customer already
       // answered — is enforced one level down, where `updateStatus` refuses to
       // overwrite `confirmed`, `canceled` or `no_reply` for any non-reply status.
-      const rows = dispatch
-        ? await this.verificationsRepo.updateStatus(
-            dispatch.verificationId,
-            typedStatus,
-            undefined,
-            statusObj.timestamp,
-          )
-        : await this.verificationsRepo.updateStatusByWamid(
-            wamid,
-            typedStatus,
-            statusObj.timestamp,
-          );
+      const rows =
+        creditProjection?.verificationRows ??
+        (dispatch
+          ? await this.verificationsRepo.updateStatus(
+              dispatch.verificationId,
+              typedStatus,
+              undefined,
+              statusObj.timestamp,
+            )
+          : await this.verificationsRepo.updateStatusByWamid(
+              wamid,
+              typedStatus,
+              statusObj.timestamp,
+            ));
 
       if (rows.length > 0) {
         this.logger.log(

@@ -1,3 +1,4 @@
+import { ConfirmedMessageRejection } from '../../../shared/ports/messaging.port';
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -191,6 +192,13 @@ export class WhatsAppService {
           ...normalizeError(error),
         }),
       );
+      if (
+        isAxiosError<{ error?: { code?: number } }>(error) &&
+        [400, 401, 403, 404, 422].includes(error.response?.status ?? 0) &&
+        Number.isInteger(error.response?.data?.error?.code)
+      ) {
+        throw new ConfirmedMessageRejection('provider_rejected');
+      }
       throw new Error(`WhatsApp send failed: ${context}`);
     }
   }

@@ -1,3 +1,4 @@
+import { UsageAccountingRouter } from './usage-accounting.router';
 import { getTableColumns } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import * as schema from '../index';
@@ -43,6 +44,7 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     'verification-1', // verification_id
     'verification-1:initial:1', // dispatch_key
     1,
+    'periodic_plan',
     kind,
     state,
     'akeed_system', // sender_kind
@@ -95,7 +97,10 @@ function buildRepository(overrides: DispatchOverrides = {}) {
     transaction: (callback: (tx: typeof session) => unknown) =>
       callback(session),
   });
-  const repository = new VerificationMessageDispatchesRepository(db as never);
+  const repository = new VerificationMessageDispatchesRepository(
+    db as never,
+    new UsageAccountingRouter({} as never, {} as never),
+  );
   return { repository, statements };
 }
 
@@ -104,17 +109,15 @@ function buildAcceptanceRecoveryRepository(options: {
   verificationExists: boolean;
 }) {
   const statements: { query: string; params: unknown[] }[] = [];
-  let dispatchSelectCount = 0;
   const execute = jest.fn((query: string, params: unknown[]) => {
     statements.push({ query, params });
     if (
       query.trimStart().startsWith('select') &&
       query.includes('from "verification_message_dispatches"')
     ) {
-      dispatchSelectCount += 1;
       return Promise.resolve({
         rows:
-          dispatchSelectCount === 2 && options.recoverByDispatchKey
+          query.includes('\"dispatch_key\" =') && options.recoverByDispatchKey
             ? [dispatchRow()]
             : [],
       });
@@ -145,7 +148,10 @@ function buildAcceptanceRecoveryRepository(options: {
     transaction: (callback: (tx: unknown) => unknown) => callback(session),
   };
   return {
-    repository: new VerificationMessageDispatchesRepository(db as never),
+    repository: new VerificationMessageDispatchesRepository(
+      db as never,
+      new UsageAccountingRouter({} as never, {} as never),
+    ),
     statements,
   };
 }
@@ -166,9 +172,9 @@ function integrationRow() {
   const values: Record<string, unknown> = {
     id: 'integration-1',
     org_id: 'org-1',
-    platform_type: 'standalone',
+    platform_type: 'shopify',
     is_active: true,
-    billing_status: 'not_required',
+    billing_status: 'active',
     billing_plan_id: 'starter',
     billing_activated_at: '2026-05-01T00:00:00.000Z',
   };
@@ -197,7 +203,10 @@ function buildClaimRepository(overrides: DispatchOverrides = {}) {
   const db = {
     transaction: (callback: (tx: unknown) => unknown) => callback(session),
   };
-  const repository = new VerificationMessageDispatchesRepository(db as never);
+  const repository = new VerificationMessageDispatchesRepository(
+    db as never,
+    new UsageAccountingRouter({} as never, {} as never),
+  );
   return { repository, statements };
 }
 
@@ -233,7 +242,7 @@ describe('VerificationMessageDispatchesRepository acceptance recovery', () => {
         query.trimStart().startsWith('select') &&
         query.includes('from "verification_message_dispatches"'),
     );
-    expect(dispatchSelects).toHaveLength(2);
+    expect(dispatchSelects).toHaveLength(4);
     expect(dispatchSelects[1].query).toContain('"dispatch_key"');
     expect(dispatchSelects[1].params).toContain('verification-1:initial:1');
   });

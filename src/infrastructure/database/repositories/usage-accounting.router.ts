@@ -1,3 +1,4 @@
+import { PeriodicPlanAccounting } from './periodic-plan-accounting';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -16,6 +17,7 @@ import { PrepaidCreditAccounting } from './prepaid-credit-accounting';
 
 @Injectable()
 export class UsageAccountingRouter {
+  readonly periodic = new PeriodicPlanAccounting();
   constructor(
     readonly prepaid: PrepaidCreditAccounting,
     private readonly config: ConfigService,
@@ -23,6 +25,28 @@ export class UsageAccountingRouter {
 
   mode(platformType: string): 'prepaid_credit' | 'periodic_plan' {
     return platformType === 'standalone' ? 'prepaid_credit' : 'periodic_plan';
+  }
+
+  async readAvailability(orgId: string) {
+    const summary = await this.prepaid.repository.getSummary(orgId);
+    let reason = !readStandaloneCreditBillingConfig(this.config).enabled
+      ? ('PAYMENT_PENDING_RECONCILIATION' as const)
+      : creditDenial(summary);
+    if (!reason) {
+      const invariant = await this.prepaid.repository.checkInvariant(orgId);
+      if (
+        !invariant?.consistent ||
+        (await this.prepaid.repository.hasUnresolvedLegacySends(orgId))
+      )
+        reason = 'PAYMENT_PENDING_RECONCILIATION';
+    }
+    return {
+      available: reason === null,
+      reason,
+      consumedCount: summary?.heldCredits ?? 0,
+      includedLimit: Math.max(summary?.postedBalance ?? 0, 0),
+      credits: summary,
+    };
   }
 
   async newHoldDenial(

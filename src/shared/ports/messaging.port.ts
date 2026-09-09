@@ -14,3 +14,9 @@ export interface MessagingPort {
     templateSelection?: Partial<CodTemplateSelection>;
   }): Promise<{ messages?: Array<{ id: string }> }>;
 }
+
+export class ConfirmedMessageRejection extends Error {
+  constructor(readonly code: string) {
+    super('The messaging provider confirmed rejection.');
+  }
+}

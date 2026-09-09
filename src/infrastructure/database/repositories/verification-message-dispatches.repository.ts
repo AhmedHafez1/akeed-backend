@@ -1,13 +1,17 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, notInArray, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { CreditTransaction } from '../credit-transaction';
+import { UsageAccountingRouter } from './usage-accounting.router';
+import { reconciliationRequired } from './prepaid-credit-accounting';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { TERMINAL_STATUSES } from '../../../shared/verification/verification-lifecycle';
-import * as schema from '../index';
-import { DRIZZLE } from '../database.provider';
+import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
+  adminAccessAudit,
+  creditAccounts,
   integrationMonthlyUsage,
+  orders,
   integrations,
   verificationMessageDispatches,
   verifications,
@@ -92,10 +96,8 @@ const MAX_LEASE_RECLAIM_ATTEMPTS = 2;
  * own when the ledger write itself could not be applied.
  */
 type DispatchWriter =
-  | PostgresJsDatabase<typeof schema>
-  | Parameters<
-      Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
-    >[0];
+  | DrizzleDB
+  | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 /**
  * Outcome of applying a provider acceptance to the ledger.
@@ -137,7 +139,8 @@ export type DispatchClaimResult =
 export class VerificationMessageDispatchesRepository {
   constructor(
     @Inject(DRIZZLE)
-    private readonly db: PostgresJsDatabase<typeof schema>,
+    private readonly db: DrizzleDB,
+    private readonly accounting: UsageAccountingRouter,
   ) {}
 
   async claim(params: {
@@ -153,6 +156,29 @@ export class VerificationMessageDispatchesRepository {
     const now = new Date().toISOString();
 
     return this.db.transaction(async (tx) => {
+      const [source] = await tx
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.id, params.integrationId),
+            eq(integrations.orgId, params.orgId),
+          ),
+        )
+        .for('update');
+
+      if (
+        source &&
+        this.accounting.mode(source.platformType) === 'prepaid_credit'
+      ) {
+        if (!source.isActive)
+          return {
+            outcome: 'blocked' as const,
+            reason: 'integration_inactive',
+          };
+        return this.claimPrepaid(tx, params);
+      }
+
       await tx
         .insert(verificationMessageDispatches)
         .values({
@@ -220,16 +246,6 @@ export class VerificationMessageDispatchesRepository {
         reclaimedFromExpiredLease = true;
       }
 
-      const [source] = await tx
-        .select()
-        .from(integrations)
-        .where(
-          and(
-            eq(integrations.id, params.integrationId),
-            eq(integrations.orgId, params.orgId),
-          ),
-        )
-        .for('update');
       const entitlement = resolveEntitlement(source, {
         id: params.integrationId,
         orgId: params.orgId,
@@ -242,51 +258,19 @@ export class VerificationMessageDispatchesRepository {
       }
 
       if (!dispatch.usageReserved) {
-        await tx
-          .insert(integrationMonthlyUsage)
-          .values({
-            orgId: params.orgId,
-            integrationId: params.integrationId,
-            periodStart: entitlement.periodStart,
-            includedLimit: entitlement.includedLimit,
-          })
-          .onConflictDoNothing();
-        const [usage] = await tx
-          .select()
-          .from(integrationMonthlyUsage)
-          .where(
-            and(
-              eq(integrationMonthlyUsage.integrationId, params.integrationId),
-              eq(integrationMonthlyUsage.periodStart, entitlement.periodStart),
-            ),
-          )
-          .for('update');
-        if (!usage)
-          throw new Error('Usage row missing after reservation upsert');
-        if (usage.consumedCount >= entitlement.includedLimit) {
-          await tx
-            .update(integrationMonthlyUsage)
-            .set({
-              blockedCount: sql`${integrationMonthlyUsage.blockedCount} + 1`,
-              includedLimit: entitlement.includedLimit,
-              updatedAt: now,
-            })
-            .where(eq(integrationMonthlyUsage.id, usage.id));
+        const reservation = await this.accounting.periodic.reserve(
+          tx,
+          { ...params, id: params.integrationId },
+          entitlement,
+          now,
+        );
+        if (!reservation.allowed)
           return {
             outcome: 'blocked' as const,
-            reason: 'plan_limit_reached',
-            consumedCount: usage.consumedCount,
-            includedLimit: entitlement.includedLimit,
+            reason: reservation.reason,
+            consumedCount: reservation.consumedCount,
+            includedLimit: reservation.includedLimit,
           };
-        }
-        await tx
-          .update(integrationMonthlyUsage)
-          .set({
-            consumedCount: sql`${integrationMonthlyUsage.consumedCount} + 1`,
-            includedLimit: entitlement.includedLimit,
-            updatedAt: now,
-          })
-          .where(eq(integrationMonthlyUsage.id, usage.id));
       }
 
       const [claimed] = await tx
@@ -319,100 +303,167 @@ export class VerificationMessageDispatchesRepository {
     sentAt: string;
     verificationId?: string;
     kind?: DispatchKind;
+    generation?: number;
+    staffAudit?: { userId: string; reason: string };
   }): Promise<DispatchAcceptanceResult> {
-    return this.db.transaction(async (tx) => {
-      let [dispatch] = await tx
-        .select()
-        .from(verificationMessageDispatches)
-        .where(eq(verificationMessageDispatches.id, params.dispatchId))
-        .for('update');
-      if (!dispatch && params.verificationId && params.kind) {
-        // The id missed, but a dispatch is also addressable by its logical key,
-        // which the caller can always rebuild. Recovering here turns a stale or
-        // superseded id -- something this side can repair -- into a normal
-        // acceptance instead of an orphaned send.
-        [dispatch] = await tx
+    return this.withDispatchTransaction(
+      params.dispatchId,
+      async (tx) => {
+        let [dispatch] = await tx
           .select()
           .from(verificationMessageDispatches)
-          .where(
-            eq(
-              verificationMessageDispatches.dispatchKey,
-              buildDispatchKey(params.verificationId, params.kind),
-            ),
-          )
+          .where(eq(verificationMessageDispatches.id, params.dispatchId))
           .for('update');
-      }
-      if (!dispatch) {
-        // Neither key resolves. If the verification is gone too, the cascade on
-        // its foreign key is the explanation and there is nothing left to write
-        // to -- say so, rather than reporting an indistinguishable missing row.
-        if (params.verificationId) {
-          const [verification] = await tx
-            .select({ id: verifications.id })
-            .from(verifications)
-            .where(eq(verifications.id, params.verificationId));
-          if (!verification) {
-            return { outcome: 'verification_missing' as const };
-          }
+        if (!dispatch && params.verificationId && params.kind) {
+          // The id missed, but a dispatch is also addressable by its logical key,
+          // which the caller can always rebuild. Recovering here turns a stale or
+          // superseded id -- something this side can repair -- into a normal
+          // acceptance instead of an orphaned send.
+          [dispatch] = await tx
+            .select()
+            .from(verificationMessageDispatches)
+            .where(
+              eq(
+                verificationMessageDispatches.dispatchKey,
+                buildDispatchKey(
+                  params.verificationId,
+                  params.kind,
+                  params.generation,
+                ),
+              ),
+            )
+            .for('update');
         }
-        return { outcome: 'not_found' as const };
-      }
+        if (!dispatch) {
+          // Neither key resolves. If the verification is gone too, the cascade on
+          // its foreign key is the explanation and there is nothing left to write
+          // to -- say so, rather than reporting an indistinguishable missing row.
+          if (params.verificationId) {
+            const [verification] = await tx
+              .select({ id: verifications.id })
+              .from(verifications)
+              .where(eq(verifications.id, params.verificationId));
+            if (!verification) {
+              return { outcome: 'verification_missing' as const };
+            }
+          }
+          return { outcome: 'not_found' as const };
+        }
 
-      // Project first, on every path that represents an accepted send —
-      // including a dispatch already marked `accepted`.
-      //
-      // The ledger and the verification are written in this one transaction, so
-      // they cannot diverge going forward; but rows that diverged before this
-      // (migration 0028 backfilled `accepted` dispatches without touching
-      // `verifications.status`) used to be frozen here forever, because the
-      // early return skipped the projection and no later send would retry it.
-      // The projection is idempotent and terminal-guarded, so re-running it can
-      // only ever pull a lagging row forward.
-      if (dispatch.state === 'accepted') {
-        await this.projectAcceptedVerification(tx, dispatch, {
-          // Preserve the original acceptance facts; this is a repair, not a resend.
-          providerMessageId:
-            dispatch.providerMessageId ?? params.providerMessageId,
-          sentAt: dispatch.acceptedAt ?? params.sentAt,
-          repair: true,
-        });
-        return { outcome: 'accepted' as const, dispatch };
-      }
-      if (
-        dispatch.state !== 'sending' &&
-        dispatch.state !== 'outcome_unknown'
-      ) {
-        return {
-          outcome: 'unacceptable_state' as const,
-          state: dispatch.state,
-          attemptCount: dispatch.attemptCount,
-        };
-      }
-      const restoreReleasedUsage =
-        dispatch.state === 'outcome_unknown' &&
-        !dispatch.usageReserved &&
-        dispatch.usagePeriodStart !== null;
-      if (restoreReleasedUsage) {
-        await this.restoreReservedUsage(tx, dispatch, params.sentAt);
-      }
-      await this.projectAcceptedVerification(tx, dispatch, params);
-      const [updated] = await tx
-        .update(verificationMessageDispatches)
-        .set({
-          state: 'accepted',
-          providerMessageId: params.providerMessageId,
-          acceptedAt: params.sentAt,
-          resolvedAt:
-            dispatch.state === 'outcome_unknown' ? params.sentAt : null,
-          usageReserved: restoreReleasedUsage ? true : dispatch.usageReserved,
-          lastErrorCode: null,
-          leaseUntil: null,
-          updatedAt: params.sentAt,
-        })
-        .where(eq(verificationMessageDispatches.id, dispatch.id))
-        .returning();
-      return { outcome: 'accepted' as const, dispatch: updated };
-    });
+        // Project first, on every path that represents an accepted send —
+        // including a dispatch already marked `accepted`.
+        //
+        // The ledger and the verification are written in this one transaction, so
+        // they cannot diverge going forward; but rows that diverged before this
+        // (migration 0028 backfilled `accepted` dispatches without touching
+        // `verifications.status`) used to be frozen here forever, because the
+        // early return skipped the projection and no later send would retry it.
+        // The projection is idempotent and terminal-guarded, so re-running it can
+        // only ever pull a lagging row forward.
+        if (dispatch.state === 'accepted') {
+          if (
+            (params.staffAudit ||
+              dispatch.accountingMode === 'prepaid_credit') &&
+            dispatch.providerMessageId !== params.providerMessageId
+          )
+            throw new ConflictException('Dispatch resolution conflict');
+          if (dispatch.accountingMode === 'prepaid_credit') {
+            await this.accounting.prepaid.transition(
+              tx,
+              dispatch,
+              'consume',
+              params.staffAudit?.userId,
+            );
+            const [newer] = await tx
+              .select({ id: verificationMessageDispatches.id })
+              .from(verificationMessageDispatches)
+              .where(
+                and(
+                  eq(
+                    verificationMessageDispatches.verificationId,
+                    dispatch.verificationId,
+                  ),
+                  eq(verificationMessageDispatches.kind, dispatch.kind),
+                  sql`${verificationMessageDispatches.generation} > ${dispatch.generation}`,
+                ),
+              )
+              .limit(1);
+            if (newer || dispatch.failedAt)
+              return { outcome: 'accepted' as const, dispatch };
+          }
+          await this.projectAcceptedVerification(tx, dispatch, {
+            // Preserve the original acceptance facts; this is a repair, not a resend.
+            providerMessageId:
+              dispatch.providerMessageId ?? params.providerMessageId,
+            sentAt: dispatch.acceptedAt ?? params.sentAt,
+            repair: true,
+          });
+          return { outcome: 'accepted' as const, dispatch };
+        }
+        if (
+          dispatch.state !== 'sending' &&
+          dispatch.state !== 'outcome_unknown'
+        ) {
+          return {
+            outcome: 'unacceptable_state' as const,
+            state: dispatch.state,
+            attemptCount: dispatch.attemptCount,
+          };
+        }
+        if (dispatch.accountingMode === 'prepaid_credit') {
+          if (
+            dispatch.providerMessageId &&
+            dispatch.providerMessageId !== params.providerMessageId
+          )
+            reconciliationRequired();
+          await this.accounting.prepaid.transition(
+            tx,
+            dispatch,
+            'consume',
+            params.staffAudit?.userId,
+          );
+        }
+        const restoreReleasedUsage =
+          dispatch.accountingMode !== 'prepaid_credit' &&
+          dispatch.state === 'outcome_unknown' &&
+          !dispatch.usageReserved &&
+          dispatch.usagePeriodStart !== null;
+        if (restoreReleasedUsage) {
+          await this.accounting.periodic.restore(tx, dispatch, params.sentAt);
+        }
+        await this.projectAcceptedVerification(tx, dispatch, params);
+        const [updated] = await tx
+          .update(verificationMessageDispatches)
+          .set({
+            state: 'accepted',
+            providerMessageId: params.providerMessageId,
+            acceptedAt: params.sentAt,
+            resolvedAt:
+              dispatch.state === 'outcome_unknown' ? params.sentAt : null,
+            usageReserved: restoreReleasedUsage ? true : dispatch.usageReserved,
+            lastErrorCode: null,
+            leaseUntil: null,
+            updatedAt: params.sentAt,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatch.id))
+          .returning();
+        if (params.staffAudit)
+          await this.auditResolution(
+            tx,
+            dispatch,
+            'accepted',
+            params.staffAudit,
+          );
+        return { outcome: 'accepted' as const, dispatch: updated };
+      },
+      params.verificationId && params.kind
+        ? buildDispatchKey(
+            params.verificationId,
+            params.kind,
+            params.generation,
+          )
+        : undefined,
+    );
   }
 
   /**
@@ -447,11 +498,13 @@ export class VerificationMessageDispatchesRepository {
   async markOutcomeUnknown(
     dispatchId: string,
     errorCode: string,
+    providerMessageId?: string,
   ): Promise<number> {
     const rows = await this.db
       .update(verificationMessageDispatches)
       .set({
         state: 'outcome_unknown',
+        ...(providerMessageId ? { providerMessageId } : {}),
         lastErrorCode: errorCode,
         leaseUntil: null,
         updatedAt: new Date().toISOString(),
@@ -480,7 +533,7 @@ export class VerificationMessageDispatchesRepository {
     errorCode: string,
   ): Promise<number> {
     const now = new Date().toISOString();
-    return this.db.transaction(async (tx) => {
+    return this.withDispatchTransaction(dispatchId, async (tx) => {
       const [dispatch] = await tx
         .select()
         .from(verificationMessageDispatches)
@@ -488,7 +541,8 @@ export class VerificationMessageDispatchesRepository {
         .for('update');
       if (!dispatch || dispatch.state !== 'sending') return 0;
 
-      await this.releaseReservedUsage(tx, dispatch, now);
+      if (dispatch.accountingMode !== 'prepaid_credit')
+        await this.accounting.periodic.release(tx, dispatch, now);
       const [updated] = await tx
         .update(verificationMessageDispatches)
         .set({
@@ -537,17 +591,35 @@ export class VerificationMessageDispatchesRepository {
     dispatchId: string,
     status: 'delivered' | 'read' | 'failed',
     occurredAt: string,
-  ): Promise<void> {
-    if (status === 'failed') {
-      await this.db.transaction(async (tx) => {
-        const [dispatch] = await tx
-          .select()
-          .from(verificationMessageDispatches)
-          .where(eq(verificationMessageDispatches.id, dispatchId))
-          .for('update');
-        if (!dispatch) return;
-
-        await this.releaseReservedUsage(tx, dispatch, occurredAt);
+  ): Promise<
+    { verificationRows: (typeof verifications.$inferSelect)[] } | undefined
+  > {
+    return this.withDispatchTransaction(dispatchId, async (tx) => {
+      const [dispatch] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, dispatchId))
+        .for('update');
+      if (!dispatch) return;
+      if (dispatch.accountingMode === 'prepaid_credit') {
+        if (dispatch.state !== 'accepted') reconciliationRequired();
+        if (status === 'failed') {
+          if (dispatch.failedAt) return { verificationRows: [] };
+          if (
+            dispatch.readAt ||
+            dispatch.deliveredAt ||
+            (dispatch.acceptedAt &&
+              new Date(occurredAt) < new Date(dispatch.acceptedAt))
+          )
+            return { verificationRows: [] };
+          await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
+        } else if (dispatch.failedAt) {
+          return { verificationRows: [] };
+        }
+      }
+      if (status === 'failed') {
+        if (dispatch.accountingMode !== 'prepaid_credit')
+          await this.accounting.periodic.release(tx, dispatch, occurredAt);
         await tx
           .update(verificationMessageDispatches)
           .set({
@@ -556,18 +628,77 @@ export class VerificationMessageDispatchesRepository {
             updatedAt: occurredAt,
           })
           .where(eq(verificationMessageDispatches.id, dispatch.id));
-      });
-      return;
-    }
+      } else {
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            deliveredAt: dispatch.deliveredAt ?? occurredAt,
+            ...(status === 'read'
+              ? { readAt: dispatch.readAt ?? occurredAt }
+              : {}),
+            updatedAt: occurredAt,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatch.id));
+      }
+      if (dispatch.accountingMode === 'prepaid_credit') {
+        const verificationRows = await tx
+          .update(verifications)
+          .set({
+            status:
+              status === 'failed'
+                ? 'failed'
+                : status === 'read'
+                  ? 'read'
+                  : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
+            ...(status === 'failed'
+              ? {
+                  metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || '{"reason":"provider_delivery_failed"}'::jsonb`,
+                }
+              : status === 'read'
+                ? {
+                    readAt: occurredAt,
+                    deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                  }
+                : {
+                    deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                  }),
+            updatedAt: occurredAt,
+          })
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              eq(verifications.waMessageId, dispatch.providerMessageId!),
+              notInArray(verifications.status, [
+                'confirmed',
+                'canceled',
+                'no_reply',
+              ]),
+            ),
+          )
+          .returning();
+        return { verificationRows };
+      }
+    });
+  }
 
-    const updates =
-      status === 'delivered'
-        ? { deliveredAt: occurredAt }
-        : { deliveredAt: occurredAt, readAt: occurredAt };
-    await this.db
-      .update(verificationMessageDispatches)
-      .set({ ...updates, updatedAt: occurredAt })
-      .where(eq(verificationMessageDispatches.id, dispatchId));
+  async isLatestGeneration(id: string): Promise<boolean> {
+    const dispatch = await this.findById(id);
+    if (!dispatch) return false;
+    const [newer] = await this.db
+      .select({ id: verificationMessageDispatches.id })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(
+            verificationMessageDispatches.verificationId,
+            dispatch.verificationId,
+          ),
+          eq(verificationMessageDispatches.kind, dispatch.kind),
+          sql`${verificationMessageDispatches.generation} > ${dispatch.generation}`,
+        ),
+      )
+      .limit(1);
+    return !newer;
   }
 
   async findUnknownById(id: string) {
@@ -593,9 +724,13 @@ export class VerificationMessageDispatchesRepository {
     });
   }
 
-  async resolveNotAccepted(id: string): Promise<DispatchRecord | undefined> {
+  async resolveNotAccepted(
+    id: string,
+    staffAudit?: { userId: string; reason: string },
+    confirmedRejection = false,
+  ): Promise<DispatchRecord | undefined> {
     const now = new Date().toISOString();
-    return this.db.transaction(async (tx) => {
+    return this.withDispatchTransaction(id, async (tx) => {
       const [dispatch] = await tx
         .select()
         .from(verificationMessageDispatches)
@@ -603,8 +738,26 @@ export class VerificationMessageDispatchesRepository {
         .for('update');
       if (!dispatch) return undefined;
       if (dispatch.state === 'rejected') return dispatch;
-      if (dispatch.state !== 'outcome_unknown') return undefined;
-      if (dispatch.usageReserved && dispatch.usagePeriodStart) {
+      if (
+        dispatch.state !== 'outcome_unknown' &&
+        !(confirmedRejection && dispatch.state === 'sending')
+      )
+        return undefined;
+      if (dispatch.accountingMode === 'prepaid_credit') {
+        if (dispatch.providerMessageId)
+          throw new ConflictException('Provider acceptance already recorded');
+        await this.accounting.prepaid.transition(
+          tx,
+          dispatch,
+          'release',
+          staffAudit?.userId,
+        );
+      }
+      if (
+        dispatch.accountingMode !== 'prepaid_credit' &&
+        dispatch.usageReserved &&
+        dispatch.usagePeriodStart
+      ) {
         await tx
           .update(integrationMonthlyUsage)
           .set({
@@ -640,7 +793,201 @@ export class VerificationMessageDispatchesRepository {
           updatedAt: now,
         })
         .where(eq(verifications.id, dispatch.verificationId));
+      if (staffAudit)
+        await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
       return updated;
+    });
+  }
+
+  private async claimPrepaid(
+    tx: CreditTransaction,
+    params: Parameters<VerificationMessageDispatchesRepository['claim']>[0],
+  ): Promise<DispatchClaimResult> {
+    const [linked] = await tx
+      .select({ id: verifications.id })
+      .from(verifications)
+      .innerJoin(orders, eq(orders.id, verifications.orderId))
+      .where(
+        and(
+          eq(verifications.id, params.verificationId),
+          eq(verifications.orgId, params.orgId),
+          eq(orders.orgId, params.orgId),
+          eq(orders.integrationId, params.integrationId),
+        ),
+      );
+    if (!linked) throw new ConflictException('Dispatch identity mismatch');
+    const [account] = await tx
+      .select({ orgId: creditAccounts.orgId })
+      .from(creditAccounts)
+      .where(eq(creditAccounts.orgId, params.orgId));
+    if (!account)
+      return { outcome: 'blocked', reason: 'STANDALONE_APPROVAL_REQUIRED' };
+    await this.accounting.prepaid.lock(tx, params.orgId);
+    let [dispatch] = await tx
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.orgId, params.orgId),
+          eq(
+            verificationMessageDispatches.verificationId,
+            params.verificationId,
+          ),
+          eq(verificationMessageDispatches.kind, params.kind),
+        ),
+      )
+      .orderBy(desc(verificationMessageDispatches.generation))
+      .limit(1)
+      .for('update');
+    if (dispatch && dispatch.integrationId !== params.integrationId)
+      throw new Error('Dispatch identity mismatch');
+    if (dispatch?.state === 'outcome_unknown')
+      return { outcome: 'outcome_unknown', dispatch };
+    if (dispatch?.state === 'accepted' && !dispatch.failedAt)
+      return { outcome: 'accepted', dispatch };
+    if (dispatch?.state === 'sending') {
+      if (!dispatch.leaseUntil || new Date(dispatch.leaseUntil) > new Date())
+        return { outcome: 'busy', dispatch };
+      const [unknown] = await tx
+        .update(verificationMessageDispatches)
+        .set({
+          state: 'outcome_unknown',
+          leaseUntil: null,
+          lastErrorCode: 'dispatch_lease_expired',
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(verificationMessageDispatches.id, dispatch.id))
+        .returning();
+      return { outcome: 'outcome_unknown', dispatch: unknown };
+    }
+    const denial = await this.accounting.newHoldDenial(tx, params.orgId);
+    if (denial) return { outcome: 'blocked', reason: denial };
+    const previous = dispatch;
+    if (previous && previous.state !== 'ready') {
+      if (
+        previous.state !== 'rejected' &&
+        !(
+          previous.state === 'accepted' &&
+          previous.failedAt &&
+          !previous.deliveredAt &&
+          !previous.readAt
+        )
+      )
+        reconciliationRequired();
+      if (previous.accountingMode === 'prepaid_credit')
+        await this.accounting.prepaid.assertReleased(tx, previous);
+      else if (previous.usageReserved) reconciliationRequired();
+    }
+    const generation =
+      previous && previous.state !== 'ready'
+        ? previous.generation + 1
+        : (previous?.generation ?? 1);
+    const dispatchKey = buildDispatchKey(
+      params.verificationId,
+      params.kind,
+      generation,
+    );
+    if (!previous || previous.state !== 'ready') {
+      [dispatch] = await tx
+        .insert(verificationMessageDispatches)
+        .values({
+          orgId: params.orgId,
+          integrationId: params.integrationId,
+          verificationId: params.verificationId,
+          dispatchKey,
+          generation,
+          accountingMode: 'prepaid_credit',
+          kind: params.kind,
+          state: 'ready',
+          templateName: params.templateName,
+          languageCode: params.languageCode,
+        })
+        .returning();
+    } else if (previous.accountingMode !== 'prepaid_credit') {
+      if (
+        previous.attemptCount ||
+        previous.usageReserved ||
+        previous.usagePeriodStart
+      )
+        reconciliationRequired();
+      [dispatch] = await tx
+        .update(verificationMessageDispatches)
+        .set({ accountingMode: 'prepaid_credit' })
+        .where(eq(verificationMessageDispatches.id, previous.id))
+        .returning();
+    }
+    await this.accounting.prepaid.hold(tx, dispatch);
+    const [claimed] = await tx
+      .update(verificationMessageDispatches)
+      .set({
+        state: 'sending',
+        templateName: params.templateName,
+        languageCode: params.languageCode,
+        usageReserved: false,
+        usagePeriodStart: null,
+        attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
+        lastErrorCode: null,
+        leaseUntil: params.leaseUntil,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(verificationMessageDispatches.id, dispatch.id))
+      .returning();
+    return { outcome: 'claimed', dispatch: claimed };
+  }
+
+  private withDispatchTransaction<T>(
+    id: string,
+    work: (tx: CreditTransaction) => Promise<T>,
+    fallbackKey?: string,
+  ): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      let [dispatch] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, id));
+      if (!dispatch && fallbackKey)
+        [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.dispatchKey, fallbackKey));
+      if (dispatch?.accountingMode === 'prepaid_credit') {
+        const [source] = await tx
+          .select()
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.id, dispatch.integrationId),
+              eq(integrations.orgId, dispatch.orgId),
+            ),
+          )
+          .for('update');
+        if (!source || source.platformType !== 'standalone')
+          reconciliationRequired();
+        await this.accounting.prepaid.lock(tx, dispatch.orgId);
+      }
+      return work(tx);
+    });
+  }
+
+  private async auditResolution(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+    resolution: 'accepted' | 'not_accepted',
+    actor: { userId: string; reason: string },
+  ) {
+    await tx.insert(adminAccessAudit).values({
+      userId: actor.userId,
+      action: 'message-dispatch.resolve',
+      outcome: 'allowed',
+      targetIntegrationId: dispatch.integrationId,
+      metadata: {
+        dispatchId: dispatch.id,
+        verificationId: dispatch.verificationId,
+        kind: dispatch.kind,
+        generation: dispatch.generation,
+        resolution,
+        reason: actor.reason.trim(),
+      },
     });
   }
 
@@ -669,7 +1016,9 @@ export class VerificationMessageDispatchesRepository {
           ...common,
           status: sentFloor,
           followUpSentAt: params.sentAt,
-          followUpAttempts: sql`${verifications.followUpAttempts} + 1`,
+          ...(params.repair
+            ? {}
+            : { followUpAttempts: sql`${verifications.followUpAttempts} + 1` }),
         })
         .where(
           and(
@@ -700,55 +1049,5 @@ export class VerificationMessageDispatchesRepository {
       .where(eq(verifications.id, dispatch.verificationId))
       .returning({ id: verifications.id });
     return initialRows.length;
-  }
-
-  private async releaseReservedUsage(
-    tx: DispatchWriter,
-    dispatch: Pick<
-      DispatchRecord,
-      'integrationId' | 'usagePeriodStart' | 'usageReserved'
-    >,
-    occurredAt: string,
-  ): Promise<void> {
-    if (!dispatch.usageReserved || !dispatch.usagePeriodStart) return;
-    const released = await tx
-      .update(integrationMonthlyUsage)
-      .set({
-        consumedCount: sql`GREATEST(${integrationMonthlyUsage.consumedCount} - 1, 0)`,
-        updatedAt: occurredAt,
-      })
-      .where(
-        and(
-          eq(integrationMonthlyUsage.integrationId, dispatch.integrationId),
-          eq(integrationMonthlyUsage.periodStart, dispatch.usagePeriodStart),
-        ),
-      )
-      .returning({ id: integrationMonthlyUsage.id });
-    if (released.length === 0) {
-      throw new Error('Usage row missing while refunding failed dispatch');
-    }
-  }
-
-  private async restoreReservedUsage(
-    tx: DispatchWriter,
-    dispatch: Pick<DispatchRecord, 'integrationId' | 'usagePeriodStart'>,
-    occurredAt: string,
-  ): Promise<void> {
-    const restored = await tx
-      .update(integrationMonthlyUsage)
-      .set({
-        consumedCount: sql`${integrationMonthlyUsage.consumedCount} + 1`,
-        updatedAt: occurredAt,
-      })
-      .where(
-        and(
-          eq(integrationMonthlyUsage.integrationId, dispatch.integrationId),
-          eq(integrationMonthlyUsage.periodStart, dispatch.usagePeriodStart!),
-        ),
-      )
-      .returning({ id: integrationMonthlyUsage.id });
-    if (restored.length === 0) {
-      throw new Error('Usage row missing while restoring accepted dispatch');
-    }
   }
 }

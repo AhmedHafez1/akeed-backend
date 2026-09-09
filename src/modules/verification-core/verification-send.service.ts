@@ -1,3 +1,4 @@
+import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   buildBackendLog,
@@ -7,6 +8,7 @@ import { OrdersRepository } from '../../infrastructure/database/repositories/ord
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import {
   MESSAGING_PORT,
+  ConfirmedMessageRejection,
   type MessagingPort,
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
@@ -17,7 +19,6 @@ import {
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
 import {
-  buildDispatchKey,
   VerificationMessageDispatchesRepository,
   type DispatchAcceptanceResult,
 } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
@@ -49,6 +50,7 @@ interface SendIdentity {
   kind: SendKind;
   dispatchId: string;
   dispatchKey: string;
+  generation: number;
   waMessageId: string;
 }
 
@@ -79,7 +81,7 @@ type ContextLoadResult =
         | 'source_identity_mismatch'
         | 'integration_inactive'
         | 'billing_not_active'
-        | 'standalone_approval_required';
+        | CreditDenialCode;
     };
 
 /**
@@ -257,6 +259,7 @@ export class VerificationSendService {
             sentAt: acceptedAt ?? new Date().toISOString(),
             verificationId: verification.id,
             kind,
+            generation: dispatchClaim.dispatch.generation,
           });
         } catch (error) {
           // A failed repair must not turn a successful past send into an error;
@@ -316,6 +319,17 @@ export class VerificationSendService {
           ...errInfo,
         }),
       );
+      if (
+        error instanceof ConfirmedMessageRejection &&
+        dispatchClaim.dispatch.accountingMode === 'prepaid_credit'
+      ) {
+        await this.messageDispatches.resolveNotAccepted(
+          dispatchClaim.dispatch.id,
+          undefined,
+          true,
+        );
+        return { status: 'failed', reason: 'provider_not_accepted' };
+      }
       await this.markProviderOutcomeUnknown(
         dispatchClaim.dispatch.id,
         verification.id,
@@ -361,7 +375,8 @@ export class VerificationSendService {
       verificationId: verification.id,
       kind,
       dispatchId: dispatchClaim.dispatch.id,
-      dispatchKey: buildDispatchKey(verification.id, kind),
+      dispatchKey: dispatchClaim.dispatch.dispatchKey,
+      generation: dispatchClaim.dispatch.generation,
       waMessageId,
     };
 
@@ -372,6 +387,7 @@ export class VerificationSendService {
         sentAt,
         verificationId: verification.id,
         kind,
+        generation: dispatchClaim.dispatch.generation,
       });
       if (accepted.outcome !== 'accepted') {
         this.logger.error(
@@ -434,6 +450,7 @@ export class VerificationSendService {
       ledgerParked = await this.messageDispatches.markOutcomeUnknown(
         identity.dispatchId,
         'acceptance_persistence_failed',
+        identity.waMessageId,
       );
     } catch (error) {
       this.logger.error(

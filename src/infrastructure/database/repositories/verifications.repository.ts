@@ -5,7 +5,11 @@ import * as schema from '../index';
 import { and, eq, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
-import { verifications } from '../schema';
+import {
+  verifications,
+  verificationMessageDispatches,
+  creditReservations,
+} from '../schema';
 import {
   RETRYABLE_VERIFICATION_REASONS,
   TERMINAL_STATUSES,
@@ -130,7 +134,15 @@ export class VerificationsRepository {
         sql`${verifications.id} = ${id}
           AND ${verifications.orgId} = ${orgId}
           AND ${verifications.status} = 'failed'
-          AND ${verifications.lastSentAt} IS NULL
+          AND (${verifications.lastSentAt} IS NULL OR EXISTS (
+            SELECT 1 FROM ${verificationMessageDispatches} AS dispatch
+            JOIN ${creditReservations} AS reservation ON reservation.dispatch_id = dispatch.id AND reservation.org_id = dispatch.org_id
+            WHERE dispatch.verification_id = ${verifications.id} AND dispatch.org_id = ${verifications.orgId}
+              AND dispatch.kind = 'initial' AND dispatch.accounting_mode = 'prepaid_credit'
+              AND dispatch.state = 'accepted' AND dispatch.failed_at IS NOT NULL
+              AND reservation.status = 'released'
+              AND NOT EXISTS (SELECT 1 FROM ${verificationMessageDispatches} AS newer WHERE newer.verification_id = dispatch.verification_id AND newer.kind = dispatch.kind AND newer.generation > dispatch.generation)
+          ))
           AND COALESCE(${verifications.metadata}->>'reason', '') IN (${sql.join(
             RETRYABLE_VERIFICATION_REASONS.map((reason) => sql`${reason}`),
             sql`, `,

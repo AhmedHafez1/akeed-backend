@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type {
   CreditAccountStatus,
   CreditSummary,
@@ -10,6 +10,8 @@ import {
   creditAccounts,
   creditLedgerEntries,
   creditReservations,
+  verificationMessageDispatches,
+  integrations,
 } from '../schema';
 
 export interface CreditInvariantReport {
@@ -59,6 +61,29 @@ export class CreditAccountingRepository {
       .from(creditAccounts)
       .where(eq(creditAccounts.orgId, orgId));
     return account ? this.summary(account) : undefined;
+  }
+
+  async hasUnresolvedLegacySends(orgId: string): Promise<boolean> {
+    const [legacy] = await this.db
+      .select({ id: verificationMessageDispatches.id })
+      .from(verificationMessageDispatches)
+      .innerJoin(
+        integrations,
+        eq(integrations.id, verificationMessageDispatches.integrationId),
+      )
+      .where(
+        and(
+          eq(integrations.platformType, 'standalone'),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationMessageDispatches.accountingMode, 'periodic_plan'),
+          inArray(verificationMessageDispatches.state, [
+            'sending',
+            'outcome_unknown',
+          ]),
+        ),
+      )
+      .limit(1);
+    return Boolean(legacy);
   }
 
   summary(account: Account): CreditSummary {

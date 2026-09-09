@@ -33,6 +33,7 @@ describe('MessageDispatchResolutionService', () => {
         dispatch: { state: 'accepted' },
       }),
       resolveNotAccepted: jest.fn().mockResolvedValue({ state: 'rejected' }),
+      isLatestGeneration: jest.fn().mockResolvedValue(true),
     };
     const events = {
       resetForRedispatch: jest.fn().mockResolvedValue({ id: 'event-1' }),
@@ -45,7 +46,6 @@ describe('MessageDispatchResolutionService', () => {
       events as never,
       webhookDispatcher as never,
       verificationHub as never,
-      audit as never,
     );
     return {
       service,
@@ -77,6 +77,11 @@ describe('MessageDispatchResolutionService', () => {
       sentAt: expect.any(String) as string,
       verificationId: 'verification-1',
       kind: 'initial',
+      generation: undefined,
+      staffAudit: {
+        userId: 'staff-1',
+        reason: 'Confirmed in Meta delivery logs',
+      },
     });
     expect(verificationHub.scheduleFollowUpAndEscalation).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,17 +89,7 @@ describe('MessageDispatchResolutionService', () => {
         orgId: 'org-1',
       }),
     );
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'staff-1',
-        targetIntegrationId: 'int-1',
-        metadata: expect.objectContaining({
-          dispatchId: 'dispatch-1',
-          resolution: 'accepted',
-          reason: 'Confirmed in Meta delivery logs',
-        }) as unknown,
-      }),
-    );
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('releases a rejected outcome once and redispatches the durable event', async () => {
@@ -103,7 +98,10 @@ describe('MessageDispatchResolutionService', () => {
       resolution: 'not_accepted',
       reason: 'No matching message exists in provider logs',
     });
-    expect(dispatches.resolveNotAccepted).toHaveBeenCalledWith('dispatch-1');
+    expect(dispatches.resolveNotAccepted).toHaveBeenCalledWith('dispatch-1', {
+      userId: 'staff-1',
+      reason: 'No matching message exists in provider logs',
+    });
     expect(events.resetForRedispatch).toHaveBeenCalledWith({
       id: 'event-1',
       orderId: 'order-1',

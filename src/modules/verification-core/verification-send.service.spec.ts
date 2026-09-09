@@ -258,6 +258,7 @@ describe('VerificationSendService', () => {
       expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
         'dispatch-1',
         'acceptance_persistence_failed',
+        'wamid-1',
       );
       expect(
         messageDispatches.projectAcceptanceWithoutLedger,
