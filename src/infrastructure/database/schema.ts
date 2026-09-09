@@ -657,6 +657,7 @@ export const verificationMessageDispatches = pgTable(
     integrationId: uuid('integration_id').notNull(),
     verificationId: uuid('verification_id').notNull(),
     dispatchKey: text('dispatch_key').notNull(),
+    generation: integer('generation').notNull().default(1),
     kind: verificationDispatchKind().notNull(),
     state: verificationDispatchState().default('ready').notNull(),
     senderKind: text('sender_kind').default('akeed_system').notNull(),
@@ -702,6 +703,25 @@ export const verificationMessageDispatches = pgTable(
     }).defaultNow(),
   },
   (table) => [
+    check('dispatch_generation_positive', sql`generation > 0`),
+    unique('dispatch_id_org_key').on(table.id, table.orgId),
+    unique('dispatch_billable_identity_key').on(
+      table.verificationId,
+      table.kind,
+      table.generation,
+    ),
+    unique('dispatch_reservation_identity_key').on(
+      table.id,
+      table.orgId,
+      table.verificationId,
+      table.kind,
+      table.generation,
+    ),
+    uniqueIndex('dispatch_one_active_generation')
+      .on(table.verificationId, table.kind)
+      .where(
+        sql`state IN ('ready', 'sending', 'outcome_unknown') OR (state = 'accepted' AND failed_at IS NULL)`,
+      ),
     unique('verification_message_dispatches_dispatch_key_key').on(
       table.dispatchKey,
     ),
@@ -1034,3 +1054,511 @@ export const adminFunnelMonthly = pgTable(
     }),
   ],
 );
+
+export const creditAccountStatus = pgEnum('credit_account_status', [
+  'pending_approval',
+  'active',
+  'suspended',
+]);
+export const creditReservationStatus = pgEnum('credit_reservation_status', [
+  'held',
+  'consumed',
+  'released',
+]);
+export const creditLedgerType = pgEnum('credit_ledger_type', [
+  'free_grant',
+  'purchase',
+  'consumption',
+  'failure_reversal',
+  'refund_reversal',
+  'chargeback_reversal',
+  'chargeback_reinstatement',
+  'staff_adjustment',
+]);
+export const paymentPurchaseStatus = pgEnum('payment_purchase_status', [
+  'pending',
+  'successful',
+  'failed',
+  'canceled',
+  'expired',
+  'refunded',
+]);
+export const paymentDisputeStatus = pgEnum('payment_dispute_status', [
+  'none',
+  'open',
+  'lost',
+  'won',
+]);
+export const creditAccounts = pgTable(
+  'credit_accounts',
+  {
+    orgId: uuid('org_id').primaryKey(),
+    status: creditAccountStatus('status').notNull().default('pending_approval'),
+    postedBalance: integer('posted_balance').notNull().default(0),
+    heldCredits: integer('held_credits').notNull().default(0),
+    approvedBy: uuid('approved_by'),
+    approvedAt: timestamp('approved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    approvalReason: text('approval_reason'),
+    version: integer('version').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'credit_accounts_org_id_fkey',
+    }),
+    check('credit_accounts_held_credits_check', sql`held_credits >= 0`),
+    check('credit_accounts_version_check', sql`version >= 0`),
+    check(
+      'credit_account_approval_check',
+      sql`((approved_by IS NULL AND approved_at IS NULL AND approval_reason IS NULL) OR (approved_by IS NOT NULL AND approved_at IS NOT NULL AND approval_reason IS NOT NULL AND length(trim(approval_reason)) > 0))`,
+    ),
+    index('credit_account_status_idx').on(table.status),
+    pgPolicy('credit_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('credit_tenant_read', {
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`org_id = get_user_org_id()`,
+    }),
+  ],
+).enableRLS();
+export const paymentPurchases = pgTable(
+  'payment_purchases',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    orgId: uuid('org_id').notNull(),
+    reference: text('reference').notNull(),
+    provider: text('provider').notNull(),
+    mode: text('mode').notNull(),
+    requestKey: text('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    quantity: integer('quantity').notNull(),
+    unitPriceMinor: integer('unit_price_minor').notNull(),
+    totalMinor: integer('total_minor').notNull(),
+    currency: text('currency').notNull(),
+    status: paymentPurchaseStatus('status').notNull().default('pending'),
+    disputeStatus: paymentDisputeStatus('dispute_status')
+      .notNull()
+      .default('none'),
+    providerIntentionId: text('provider_intention_id'),
+    providerOrderId: text('provider_order_id'),
+    providerTransactionId: text('provider_transaction_id'),
+    checkoutExpiresAt: timestamp('checkout_expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    reconciliationRequired: boolean('reconciliation_required')
+      .notNull()
+      .default(false),
+    reconciliationCode: text('reconciliation_code'),
+    reconciliationAttempts: integer('reconciliation_attempts')
+      .notNull()
+      .default(0),
+    nextReconciliationAt: timestamp('next_reconciliation_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [creditAccounts.orgId],
+      name: 'payment_purchases_org_id_fkey',
+    }),
+    unique('payment_purchases_reference_key').on(table.reference),
+    check(
+      'payment_purchases_reference_check',
+      sql`length(trim(reference)) > 0`,
+    ),
+    check(
+      'payment_purchases_provider_check',
+      sql`provider ~ '^[a-z][a-z0-9_]{0,63}$'`,
+    ),
+    check('payment_purchases_mode_check', sql`mode IN ('test', 'live')`),
+    check(
+      'payment_purchases_request_key_check',
+      sql`length(trim(request_key)) > 0`,
+    ),
+    check(
+      'payment_purchases_request_hash_check',
+      sql`request_hash ~ '^[a-f0-9]{64}$'`,
+    ),
+    check('payment_purchases_quantity_check', sql`quantity > 0`),
+    check(
+      'payment_purchases_unit_price_minor_check',
+      sql`unit_price_minor > 0`,
+    ),
+    check('payment_purchases_total_minor_check', sql`total_minor > 0`),
+    check('payment_purchases_currency_check', sql`currency ~ '^[A-Z]{3}$'`),
+    check(
+      'payment_purchases_reconciliation_code_check',
+      sql`reconciliation_code ~ '^[a-z0-9_]{1,80}$'`,
+    ),
+    check(
+      'payment_purchases_reconciliation_attempts_check',
+      sql`reconciliation_attempts >= 0`,
+    ),
+    unique('payment_purchase_id_org_key').on(table.id, table.orgId),
+    unique('payment_purchase_request_key').on(table.orgId, table.requestKey),
+    check(
+      'payment_purchase_total_check',
+      sql`(quantity::bigint * unit_price_minor::bigint = total_minor)`,
+    ),
+    check(
+      'payment_purchase_refund_check',
+      sql`(refunded_minor >= 0 AND refunded_minor <= total_minor)`,
+    ),
+    check(
+      'payment_purchase_provider_ids_check',
+      sql`((provider_intention_id IS NULL OR length(trim(provider_intention_id)) > 0) AND (provider_order_id IS NULL OR length(trim(provider_order_id)) > 0) AND (provider_transaction_id IS NULL OR length(trim(provider_transaction_id)) > 0))`,
+    ),
+    uniqueIndex('payment_purchase_intention_key')
+      .on(table.provider, table.providerIntentionId)
+      .where(sql`provider_intention_id IS NOT NULL`),
+    uniqueIndex('payment_purchase_order_key')
+      .on(table.provider, table.providerOrderId)
+      .where(sql`provider_order_id IS NOT NULL`),
+    uniqueIndex('payment_purchase_transaction_key')
+      .on(table.provider, table.providerTransactionId)
+      .where(sql`provider_transaction_id IS NOT NULL`),
+    index('payment_purchase_history_idx').on(
+      table.orgId,
+      table.createdAt,
+      table.id,
+    ),
+    index('payment_purchase_reconciliation_idx')
+      .on(table.nextReconciliationAt, table.createdAt)
+      .where(sql`status = 'pending' OR reconciliation_required`),
+    pgPolicy('credit_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('credit_tenant_read', {
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`org_id = get_user_org_id()`,
+    }),
+  ],
+).enableRLS();
+export const creditReservations = pgTable(
+  'credit_reservations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    orgId: uuid('org_id').notNull(),
+    dispatchId: uuid('dispatch_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    kind: verificationDispatchKind('kind').notNull(),
+    generation: integer('generation').notNull(),
+    quantity: integer('quantity').notNull(),
+    billableKey: text('billable_key').notNull(),
+    status: creditReservationStatus('status').notNull().default('held'),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    resolutionCode: text('resolution_code'),
+    resolvedBy: uuid('resolved_by'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [creditAccounts.orgId],
+      name: 'credit_reservations_org_id_fkey',
+    }),
+    check(
+      'credit_reservations_kind_check',
+      sql`kind IN ('initial', 'follow_up')`,
+    ),
+    check('credit_reservations_generation_check', sql`generation > 0`),
+    check('credit_reservations_quantity_check', sql`quantity > 0`),
+    check(
+      'credit_reservations_billable_key_check',
+      sql`length(trim(billable_key)) > 0`,
+    ),
+    check(
+      'credit_reservations_resolution_code_check',
+      sql`resolution_code ~ '^[a-z0-9_]{1,80}$'`,
+    ),
+    unique('credit_reservation_id_org_key').on(table.id, table.orgId),
+    unique('credit_reservation_dispatch_key').on(table.dispatchId),
+    unique('credit_reservation_billable_key').on(
+      table.orgId,
+      table.billableKey,
+    ),
+    unique('credit_reservation_identity_key').on(
+      table.verificationId,
+      table.kind,
+      table.generation,
+    ),
+    foreignKey({
+      columns: [
+        table.dispatchId,
+        table.orgId,
+        table.verificationId,
+        table.kind,
+        table.generation,
+      ],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+        verificationMessageDispatches.verificationId,
+        verificationMessageDispatches.kind,
+        verificationMessageDispatches.generation,
+      ],
+      name: 'credit_reservation_dispatch_fk',
+    }),
+    check(
+      'credit_reservation_resolution_check',
+      sql`((status = 'held' AND resolved_at IS NULL AND resolution_code IS NULL AND resolved_by IS NULL) OR (status <> 'held' AND resolved_at IS NOT NULL AND resolution_code IS NOT NULL))`,
+    ),
+    index('credit_reservation_held_idx')
+      .on(table.orgId, table.createdAt)
+      .where(sql`status = 'held'`),
+    pgPolicy('credit_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('credit_tenant_read', {
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`org_id = get_user_org_id()`,
+    }),
+  ],
+).enableRLS();
+export const creditLedgerEntries = pgTable(
+  'credit_ledger_entries',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    orgId: uuid('org_id').notNull(),
+    type: creditLedgerType('type').notNull(),
+    quantity: integer('quantity').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    reservationId: uuid('reservation_id'),
+    dispatchId: uuid('dispatch_id'),
+    purchaseId: uuid('purchase_id'),
+    sourceLedgerEntryId: uuid('source_ledger_entry_id'),
+    sourceReference: text('source_reference'),
+    actorId: uuid('actor_id'),
+    reason: text('reason').notNull(),
+    postedBalanceBefore: integer('posted_balance_before').notNull(),
+    postedBalanceAfter: integer('posted_balance_after').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [creditAccounts.orgId],
+      name: 'credit_ledger_entries_org_id_fkey',
+    }),
+    check('credit_ledger_entries_quantity_check', sql`quantity <> 0`),
+    check(
+      'credit_ledger_entries_idempotency_key_check',
+      sql`length(trim(idempotency_key)) > 0`,
+    ),
+    check('credit_ledger_entries_reason_check', sql`length(trim(reason)) > 0`),
+    unique('credit_ledger_id_org_key').on(table.id, table.orgId),
+    unique('credit_ledger_idempotency_key').on(
+      table.orgId,
+      table.idempotencyKey,
+    ),
+    foreignKey({
+      columns: [table.reservationId, table.orgId],
+      foreignColumns: [creditReservations.id, creditReservations.orgId],
+      name: 'credit_ledger_reservation_fk',
+    }),
+    foreignKey({
+      columns: [table.dispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+      name: 'credit_ledger_dispatch_fk',
+    }),
+    foreignKey({
+      columns: [table.purchaseId, table.orgId],
+      foreignColumns: [paymentPurchases.id, paymentPurchases.orgId],
+      name: 'credit_ledger_purchase_fk',
+    }),
+    foreignKey({
+      columns: [table.sourceLedgerEntryId, table.orgId],
+      foreignColumns: [table.id, table.orgId],
+      name: 'credit_ledger_source_fk',
+    }),
+    check(
+      'credit_ledger_projection_check',
+      sql`(posted_balance_before::bigint + quantity::bigint = posted_balance_after)`,
+    ),
+    check(
+      'credit_ledger_sign_check',
+      sql`((type IN ('free_grant', 'purchase', 'failure_reversal', 'chargeback_reinstatement') AND quantity > 0) OR (type IN ('consumption', 'refund_reversal', 'chargeback_reversal') AND quantity < 0) OR type = 'staff_adjustment')`,
+    ),
+    check(
+      'credit_ledger_source_check',
+      sql`(
+    (type IN ('free_grant', 'staff_adjustment') AND reservation_id IS NULL AND dispatch_id IS NULL AND purchase_id IS NULL AND source_ledger_entry_id IS NULL AND source_reference IS NULL AND actor_id IS NOT NULL)
+    OR (type = 'purchase' AND purchase_id IS NOT NULL AND reservation_id IS NULL AND dispatch_id IS NULL AND source_ledger_entry_id IS NULL AND source_reference IS NULL)
+    OR (type = 'consumption' AND reservation_id IS NOT NULL AND dispatch_id IS NOT NULL AND purchase_id IS NULL AND source_ledger_entry_id IS NULL AND source_reference IS NULL)
+    OR (type = 'failure_reversal' AND reservation_id IS NOT NULL AND dispatch_id IS NOT NULL AND purchase_id IS NULL AND source_ledger_entry_id IS NOT NULL AND source_reference IS NULL)
+    OR (type IN ('refund_reversal', 'chargeback_reversal', 'chargeback_reinstatement') AND purchase_id IS NOT NULL AND reservation_id IS NULL AND dispatch_id IS NULL AND source_ledger_entry_id IS NOT NULL AND source_reference IS NOT NULL AND length(trim(source_reference)) > 0)
+  )`,
+    ),
+    uniqueIndex('credit_ledger_free_grant_key')
+      .on(table.orgId)
+      .where(sql`type = 'free_grant'`),
+    uniqueIndex('credit_ledger_purchase_key')
+      .on(table.purchaseId)
+      .where(sql`type = 'purchase'`),
+    uniqueIndex('credit_ledger_reservation_source_key')
+      .on(table.reservationId, table.type)
+      .where(sql`type IN ('consumption', 'failure_reversal')`),
+    uniqueIndex('credit_ledger_reversal_source_key')
+      .on(table.purchaseId, table.type, table.sourceReference)
+      .where(
+        sql`type IN ('refund_reversal', 'chargeback_reversal', 'chargeback_reinstatement')`,
+      ),
+    index('credit_ledger_history_idx').on(
+      table.orgId,
+      table.createdAt,
+      table.id,
+    ),
+    pgPolicy('credit_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy('credit_tenant_read', {
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`org_id = get_user_org_id()`,
+    }),
+  ],
+).enableRLS();
+export const paymentProviderEvents = pgTable(
+  'payment_provider_events',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    orgId: uuid('org_id'),
+    purchaseId: uuid('purchase_id'),
+    provider: text('provider').notNull(),
+    providerIntentionId: text('provider_intention_id'),
+    providerOrderId: text('provider_order_id'),
+    providerTransactionId: text('provider_transaction_id'),
+    fingerprint: text('fingerprint').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    verified: boolean('verified').notNull().default(false),
+    resultCode: text('result_code').notNull(),
+    errorCode: text('error_code'),
+    retryCount: integer('retry_count').notNull().default(0),
+    nextRetryAt: timestamp('next_retry_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    receivedAt: timestamp('received_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    processedAt: timestamp('processed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      'payment_provider_events_provider_check',
+      sql`provider ~ '^[a-z][a-z0-9_]{0,63}$'`,
+    ),
+    check(
+      'payment_provider_events_fingerprint_check',
+      sql`fingerprint ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'payment_provider_events_payload_hash_check',
+      sql`payload_hash ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'payment_provider_events_result_code_check',
+      sql`result_code ~ '^[a-z0-9_]{1,80}$'`,
+    ),
+    check(
+      'payment_provider_events_error_code_check',
+      sql`error_code ~ '^[a-z0-9_]{1,80}$'`,
+    ),
+    check('payment_provider_events_retry_count_check', sql`retry_count >= 0`),
+    unique('payment_event_fingerprint_key').on(
+      table.provider,
+      table.fingerprint,
+    ),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [creditAccounts.orgId],
+      name: 'payment_event_org_fk',
+    }),
+    foreignKey({
+      columns: [table.purchaseId, table.orgId],
+      foreignColumns: [paymentPurchases.id, paymentPurchases.orgId],
+      name: 'payment_event_purchase_fk',
+    }),
+    check(
+      'payment_event_tenant_check',
+      sql`(purchase_id IS NULL OR org_id IS NOT NULL)`,
+    ),
+    index('payment_event_retry_idx')
+      .on(table.nextRetryAt, table.receivedAt)
+      .where(sql`processed_at IS NULL`),
+    index('payment_event_purchase_idx').on(
+      table.orgId,
+      table.purchaseId,
+      table.receivedAt,
+    ),
+    pgPolicy('credit_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();

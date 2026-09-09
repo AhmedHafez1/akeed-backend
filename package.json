@@ -37,7 +37,8 @@
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",
     "test:gate:e03": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e03-release-gate.ps1",
     "test:gate:e04": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e04-release-gate.ps1",
-    "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts"
+    "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts",
+    "test:contract:credit-foundation": "jest --config ./test/jest-credit-foundation-contract.json --runInBand"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

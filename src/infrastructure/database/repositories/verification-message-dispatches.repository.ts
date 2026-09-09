@@ -60,8 +60,16 @@ export type DispatchKind = 'initial' | 'follow_up';
 export function buildDispatchKey(
   verificationId: string,
   kind: DispatchKind,
+  generation = 1,
 ): string {
-  return `${verificationId}:${kind}:1`;
+  if (
+    !Number.isSafeInteger(generation) ||
+    generation < 1 ||
+    generation > 2147483647
+  ) {
+    throw new Error('Dispatch generation must be a positive database integer');
+  }
+  return `${verificationId}:${kind}:${generation}`;
 }
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
 export type DispatchState = DispatchRecord['state'];

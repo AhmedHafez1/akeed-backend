@@ -209,6 +209,7 @@ describe('manual order ingestion PostgreSQL contract', () => {
         integration_id uuid NOT NULL,
         verification_id uuid NOT NULL,
         dispatch_key text NOT NULL UNIQUE,
+        generation integer NOT NULL DEFAULT 1,
         kind verification_dispatch_kind NOT NULL,
         state verification_dispatch_state DEFAULT 'ready' NOT NULL,
         sender_kind text DEFAULT 'akeed_system' NOT NULL,

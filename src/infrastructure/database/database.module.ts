@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { drizzleProvider } from './database.provider';
+import { CreditAccountingRepository } from './repositories/credit-accounting.repository';
+import { PaymentPurchasesRepository } from './repositories/payment-purchases.repository';
 
 import { OrdersRepository } from './repositories/orders.repository';
 import { VerificationsRepository } from './repositories/verifications.repository';
@@ -19,6 +21,8 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
 @Module({
   imports: [ConfigModule],
   providers: [
+    CreditAccountingRepository,
+    PaymentPurchasesRepository,
     drizzleProvider,
     OrdersRepository,
     VerificationsRepository,
@@ -35,6 +39,8 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
     VerificationMessageDispatchesRepository,
   ],
   exports: [
+    CreditAccountingRepository,
+    PaymentPurchasesRepository,
     drizzleProvider,
     OrdersRepository,
     VerificationsRepository,

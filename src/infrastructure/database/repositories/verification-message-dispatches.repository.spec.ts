@@ -42,6 +42,7 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     'integration-1', // integration_id
     'verification-1', // verification_id
     'verification-1:initial:1', // dispatch_key
+    1,
     kind,
     state,
     'akeed_system', // sender_kind

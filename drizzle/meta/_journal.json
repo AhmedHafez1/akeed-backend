@@ -225,6 +225,13 @@
       "when": 1788912000000,
       "tag": "0031_refund_failed_verification_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788998400000,
+      "tag": "0032_credit_and_payment_domain_foundation",
+      "breakpoints": true
     }
   ]
 }
