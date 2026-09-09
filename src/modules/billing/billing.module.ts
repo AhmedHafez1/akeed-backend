@@ -10,6 +10,7 @@ import { BillingController } from './billing.controller';
 import { BillingRepository } from './billing.repository';
 import { BillingService } from './billing.service';
 import { PaymentCallbackService } from './payment-callback.service';
+import { PaymentReconciliationService } from './payment-reconciliation.service';
 import { PaymentsCallbackController } from './payments-callback.controller';
 import { PaymentCallbackRateLimitGuard } from '../../shared/guards/payment-callback-rate-limit.guard';
 
@@ -38,10 +39,15 @@ export class BillingModule {
         BillingService,
         BillingRepository,
         PaymentCallbackService,
+        PaymentReconciliationService,
         PaymentCallbackRateLimitGuard,
         ...(options.ports ?? []),
       ],
-      exports: [BillingService, PaymentCallbackService],
+      exports: [
+        BillingService,
+        PaymentCallbackService,
+        PaymentReconciliationService,
+      ],
     };
   }
 }

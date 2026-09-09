@@ -49,6 +49,7 @@ import {
   type PurchasePricing,
 } from './billing.types';
 import { BillingRepository } from './billing.repository';
+import { PaymentReconciliationService } from './payment-reconciliation.service';
 import type {
   CreatePurchaseResponseDto,
   CreditSummaryResponseDto,
@@ -82,6 +83,7 @@ export class BillingService {
     private readonly purchases: PaymentPurchasesRepository,
     private readonly billing: BillingRepository,
     private readonly integrations: IntegrationsRepository,
+    private readonly reconciliation: PaymentReconciliationService,
     @Inject(PAYMENTS_PORT) private readonly payments: PaymentsPort,
   ) {}
 
@@ -199,10 +201,32 @@ export class BillingService {
     };
   }
 
+  /**
+   * Reads one purchase, and takes the chance to recover a stale one.
+   *
+   * The merchant's own polling is what drives inquiry: a purchase whose
+   * checkout window has passed with no callback is asked about here, rate
+   * limited by its own `next_reconciliation_at` so repeated polling cannot turn
+   * into repeated provider calls. The recovery is best effort -- a provider
+   * that is down must not make a merchant's billing page fail.
+   */
   async readPurchase(
     user: AuthenticatedUser,
     reference: string,
   ): Promise<PurchaseDetailDto> {
+    try {
+      await this.reconciliation.reconcile(user.orgId, reference);
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(BillingService.name, {
+          action: 'billing-purchase-reconcile',
+          outcome: 'failure',
+          orgId: user.orgId,
+          reference,
+          ...normalizeError(error),
+        }),
+      );
+    }
     const purchase = await this.purchases.findDetailForOrganization(
       user.orgId,
       reference,

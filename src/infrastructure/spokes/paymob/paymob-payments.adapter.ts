@@ -17,12 +17,17 @@ import {
 import type {
   CheckoutResult,
   CreateCheckoutInput,
+  NormalizedProviderEvent,
   PaymentInquiryResult,
   PaymentReference,
   PaymentsPort,
   PurchaseStatus,
 } from '../../../shared/ports/payments.port';
-import { PAYMOB_PROVIDER, paymobSignal } from './paymob-status.mapper';
+import {
+  mapPaymobCallback,
+  PAYMOB_PROVIDER,
+  paymobSignal,
+} from './paymob-status.mapper';
 
 /** One provider call must not outlive the merchant's patience. */
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -252,6 +257,22 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
     if (!Number.isSafeInteger(amountMinor) || !currency)
       return { outcome: 'unknown', code: 'unreadable_inquiry_response' };
 
+    // Normalized through the same mapper the callback uses, so the fingerprint
+    // is identical and whichever arrival lands second is a proven replay.
+    let event: NormalizedProviderEvent;
+    try {
+      event = mapPaymobCallback(
+        { type: 'TRANSACTION', obj: transaction },
+        {
+          source: 'inquiry',
+          mode: this.settings().mode,
+          reference: input.reference,
+        },
+      );
+    } catch {
+      return { outcome: 'unknown', code: 'unreadable_inquiry_response' };
+    }
+
     const signal = paymobSignal(transaction as never);
     const status: PurchaseStatus =
       signal === 'success'
@@ -280,6 +301,7 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
       totalMinor: amountMinor,
       currency: currency.toUpperCase(),
       refundedMinor: Number(transaction.refunded_amount_cents) || 0,
+      event,
     };
   }
 

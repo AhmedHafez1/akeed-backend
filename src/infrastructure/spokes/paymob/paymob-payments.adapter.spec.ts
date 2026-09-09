@@ -201,6 +201,14 @@ describe('PaymobPaymentsAdapter.createCheckout', () => {
   });
 });
 
+/** Fields every real inquiry response carries and the mapper requires. */
+const inquiryBase = {
+  integration_id: 'card1',
+  created_at: '2026-09-09T10:15:30.123456',
+  currency: 'EGP',
+  amount_cents: 20000,
+};
+
 describe('PaymobPaymentsAdapter.inquire', () => {
   const reference = { reference: checkout.reference };
 
@@ -209,12 +217,11 @@ describe('PaymobPaymentsAdapter.inquire', () => {
       of(
         response({
           transaction: {
+            ...inquiryBase,
             id: 720001,
             order: { id: 510001 },
             success: true,
             pending: false,
-            amount_cents: 20000,
-            currency: 'EGP',
           },
         }),
       ),
@@ -237,12 +244,7 @@ describe('PaymobPaymentsAdapter.inquire', () => {
     const post = jest.fn(() =>
       of(
         response({
-          transaction: {
-            id: 1,
-            amount_cents: 20000,
-            currency: 'EGP',
-            ...flags,
-          },
+          transaction: { ...inquiryBase, id: 1, ...flags },
         }),
       ),
     );
@@ -266,12 +268,7 @@ describe('PaymobPaymentsAdapter.inquire', () => {
       .mockReturnValueOnce(
         of(
           response({
-            transaction: {
-              id: 1,
-              amount_cents: 20000,
-              currency: 'EGP',
-              success: true,
-            },
+            transaction: { ...inquiryBase, id: 1, success: true },
           }),
         ),
       );

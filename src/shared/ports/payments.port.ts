@@ -45,6 +45,16 @@ export type PaymentInquiryResult =
       totalMinor: number;
       currency: string;
       refundedMinor: number;
+      /**
+       * The same fact the provider's callback would carry, normalized by the
+       * same code path.
+       *
+       * Returning it here rather than reconstructing it upstream is what gives
+       * an inquiry and a callback for one transaction an identical
+       * fingerprint, so whichever lands second is a proven replay instead of a
+       * second grant.
+       */
+      event: NormalizedProviderEvent;
     }
   | { outcome: 'not_found' | 'unknown'; code: string };
 

@@ -104,6 +104,32 @@ export class PaymentPurchasesRepository {
     return purchase;
   }
 
+  /** Everything the inquiry path needs to decide whether to ask, and what. */
+  async findReconciliationTarget(orgId: string, reference: string) {
+    const [purchase] = await this.db
+      .select({
+        id: paymentPurchases.id,
+        orgId: paymentPurchases.orgId,
+        reference: paymentPurchases.reference,
+        status: paymentPurchases.status,
+        checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
+        reconciliationRequired: paymentPurchases.reconciliationRequired,
+        reconciliationAttempts: paymentPurchases.reconciliationAttempts,
+        nextReconciliationAt: paymentPurchases.nextReconciliationAt,
+        providerIntentionId: paymentPurchases.providerIntentionId,
+        providerOrderId: paymentPurchases.providerOrderId,
+        providerTransactionId: paymentPurchases.providerTransactionId,
+      })
+      .from(paymentPurchases)
+      .where(
+        and(
+          eq(paymentPurchases.orgId, orgId),
+          eq(paymentPurchases.reference, reference),
+        ),
+      );
+    return purchase;
+  }
+
   /**
    * Locks the purchase a provider event names.
    *

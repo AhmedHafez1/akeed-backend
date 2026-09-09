@@ -119,6 +119,9 @@ function setup(
   const db = {
     transaction: (work: (tx: unknown) => unknown) => work({}),
   };
+  const reconciliation = {
+    reconcile: jest.fn().mockResolvedValue({ outcome: 'not_eligible' }),
+  };
   const service = new BillingService(
     db as never,
     overrides.config ?? enabledConfig,
@@ -126,9 +129,18 @@ function setup(
     purchases as never,
     billing as never,
     integrations as never,
+    reconciliation as never,
     payments as never,
   );
-  return { service, credits, purchases, billing, integrations, payments };
+  return {
+    service,
+    credits,
+    purchases,
+    billing,
+    integrations,
+    payments,
+    reconciliation,
+  };
 }
 
 describe('BillingService.readCredits', () => {
@@ -422,6 +434,32 @@ describe('BillingService reads', () => {
     expect(Object.keys(detail)).not.toContain('providerOrderId');
     expect(Object.keys(detail)).not.toContain('providerTransactionId');
     expect(Object.keys(detail)).not.toContain('nextReconciliationAt');
+  });
+
+  it('asks the provider about a stale purchase while the merchant polls it', async () => {
+    const { service, reconciliation, purchases } = setup();
+    purchases.findDetailForOrganization.mockResolvedValue({
+      ...purchaseRow,
+      reconciliationRequired: true,
+    });
+    await service.readPurchase(owner, purchaseRow.reference);
+    expect(reconciliation.reconcile).toHaveBeenCalledWith(
+      'org-1',
+      purchaseRow.reference,
+    );
+  });
+
+  it('still answers when the provider inquiry fails', async () => {
+    // A provider outage must not take the merchant's billing page with it.
+    const { service, reconciliation, purchases } = setup();
+    reconciliation.reconcile.mockRejectedValue(new Error('provider down'));
+    purchases.findDetailForOrganization.mockResolvedValue({
+      ...purchaseRow,
+      reconciliationRequired: true,
+    });
+    await expect(
+      service.readPurchase(owner, purchaseRow.reference),
+    ).resolves.toMatchObject({ reference: purchaseRow.reference });
   });
 
   it('rejects a malformed cursor rather than silently serving page one', async () => {

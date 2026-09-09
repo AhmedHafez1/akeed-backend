@@ -137,6 +137,15 @@ export function paymobFingerprint(
 export interface PaymobMappingOptions {
   source: ProviderEventSource;
   mode: PaymentMode;
+  /**
+   * The reference the caller already knows.
+   *
+   * Only for an inquiry, which was made *by* reference: the answer is about a
+   * purchase we named, so it is not something the payload has to prove. A
+   * callback never passes this -- an unsolicited event that cannot say which
+   * purchase it belongs to must stay unmatched.
+   */
+  reference?: string;
 }
 
 export function mapPaymobCallback(
@@ -148,7 +157,7 @@ export function mapPaymobCallback(
     throw new UnsupportedPaymobEventError(type);
   const transaction = record(envelope.obj) as unknown as PaymobTransaction;
 
-  const reference = specialReference(transaction);
+  const reference = specialReference(transaction) ?? options.reference;
   const amountMinor = integer(transaction.amount_cents);
   const currency = text(transaction.currency);
   const integrationId = text(transaction.integration_id);
