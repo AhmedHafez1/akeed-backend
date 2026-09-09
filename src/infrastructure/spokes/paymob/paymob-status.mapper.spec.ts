@@ -6,7 +6,13 @@ import {
   paymobErrorCode,
   UnsupportedPaymobEventError,
 } from './paymob-status.mapper';
-import { PROVIDER_CODE_PATTERN } from '../../../modules/billing/billing.types';
+
+/**
+ * The shape `payment_provider_events.error_code` is CHECK-constrained to.
+ * Restated here rather than imported: the spoke must not depend on the billing
+ * module, and this is a database contract either way.
+ */
+const PROVIDER_CODE_PATTERN = /^[a-z0-9_]{1,80}$/;
 
 const FIXTURES = join(__dirname, 'fixtures');
 

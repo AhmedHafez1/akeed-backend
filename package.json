@@ -32,6 +32,7 @@
     "test:contract:standalone-provisioning": "jest --config ./test/jest-standalone-provisioning-contract.json --runInBand",
     "test:contract:standalone-approval": "jest --config ./test/jest-standalone-approval-contract.json --runInBand",
     "test:contract:manual-orders": "jest --config ./test/jest-manual-order-ingestion-contract.json --runInBand",
+    "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
