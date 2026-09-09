@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
-import type { CreditSummary } from '../../../shared/ports/credit-accounting.port';
+import type {
+  CreditAccountStatus,
+  CreditSummary,
+} from '../../../shared/ports/credit-accounting.port';
 import type { CreditTransaction, CreditWriter } from '../credit-transaction';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
@@ -121,6 +124,11 @@ export class CreditAccountingRepository {
     return account;
   }
 
+  /**
+   * The account's version trigger demands exactly one increment per update, so
+   * a status or approval change has to travel with the projection it belongs
+   * to rather than following it in a second statement.
+   */
   async updateProjection(
     tx: CreditTransaction,
     input: {
@@ -128,6 +136,8 @@ export class CreditAccountingRepository {
       expectedVersion: number;
       postedBalance: number;
       heldCredits: number;
+      status?: CreditAccountStatus;
+      approval?: { approvedBy: string; approvedAt: string; reason: string };
     },
   ): Promise<Account> {
     const [account] = await tx
@@ -135,6 +145,14 @@ export class CreditAccountingRepository {
       .set({
         postedBalance: input.postedBalance,
         heldCredits: input.heldCredits,
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.approval
+          ? {
+              approvedBy: input.approval.approvedBy,
+              approvedAt: input.approval.approvedAt,
+              approvalReason: input.approval.reason,
+            }
+          : {}),
         version: sql`${creditAccounts.version} + 1`,
         updatedAt: new Date().toISOString(),
       })

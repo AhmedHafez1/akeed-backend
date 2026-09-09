@@ -91,20 +91,23 @@ npm run db:push
     - `business`: public-facing Scale plan, `$49.99`/month, 2,500 WhatsApp confirmations/month.
   - Plans do not include usage-based Shopify billing line items. When the included limit is reached, sending stops until renewal or upgrade.
 
-## Standalone Pilot Activation
+## Standalone Credit Approval
 
-- Keep `STANDALONE_PILOT_ACTIVATION_ENABLED=false` during ordinary deployments. Staff can still list accounts and create read-only previews.
-- Set it to `true` only for a reviewed activation batch after migration `0027_standalone_pilot_permissions.sql` and the deployed database-grant checks pass.
-- The existing `ADMIN_CONTROL_TOWER_ENABLED` and `ADMIN_REQUIRE_AAL2` controls also apply. Enabling pilot activation does not bypass the staff role or MFA requirements.
-- Return the flag to `false` after the approved batch. See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) for preflight, reconciliation, and rollback steps.
+`STANDALONE_CREDIT_APPROVAL_ENABLED` replaces the retired `STANDALONE_PILOT_ACTIVATION_ENABLED`. It gates `POST /api/admin/standalone-billing/approvals/apply` only; staff can always list accounts and take read-only previews.
+
+- Keep `STANDALONE_CREDIT_APPROVAL_ENABLED=false` during ordinary deployments and set it to `true` only for a reviewed approval batch, then return it to `false`.
+- The existing `ADMIN_CONTROL_TOWER_ENABLED` and `ADMIN_REQUIRE_AAL2` controls also apply. Enabling approval does not bypass the staff role or MFA requirements.
+- `STANDALONE_CREDIT_BILLING_ENABLED` is a separate switch. While it is `true`, Standalone provisioning stops writing the Starter/`not_required` entitlement and leaves a `pending_approval` credit account behind; approval is what grants the entitlement and the one-time `free_grant` of `STANDALONE_FREE_GRANT` credits. While it is `false`, provisioning behaves as before and the credit ledger is bookkeeping only.
+- Approval is exactly-once at the database boundary: the ledger key is `standalone-free-grant:<orgId>:v1`, and `credit_ledger_free_grant_key` allows one `free_grant` row per organization. Never delete a committed grant or reset merchant history as a rollback; disable further apply instead.
+- See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) for the pilot history this replaced, and the dated `US-04.5-02` evidence for approval preflight, reconciliation and rollback steps.
 
 ### Standalone source eligibility and support policy
 
-Standalone provisioning is eligible only for a confirmed Supabase user without a membership, or for an approved pilot organization that has no commerce source. A retry may reuse the organization's existing active Standalone source. The operation must preserve the authenticated user's deterministic first-membership selection and may create only an owner membership for a new organization.
+Standalone provisioning is eligible only for a confirmed Supabase user without a membership, or for a staff-approved organization that has no commerce source. A retry may reuse the organization's existing active Standalone source. The operation must preserve the authenticated user's deterministic first-membership selection and may create only an owner membership for a new organization.
 
 An organization is not eligible when it owns any Shopify or other native commerce source, including an inactive historical source. It is also not eligible when it has multiple active sources or other ambiguous ownership. Support must not deactivate, replace, relabel, or convert a source to make provisioning pass. Source switching and implicit legacy repair are outside the Standalone MVP.
 
-Before migration or pilot activation, report legacy multiple-active-source conflicts with:
+Before migration or staff approval, report legacy multiple-active-source conflicts with:
 
 ```sql
 SELECT
@@ -120,7 +123,7 @@ ORDER BY org_id;
 
 Migration `0026_standalone_source_provisioning.sql` deliberately aborts while these conflicts exist. Record the reported organization and source identifiers; never continue by editing application data ad hoc.
 
-Any exceptional intervention requires an approved support or migration ticket, named operator, reason, timestamp, and before/after source snapshots. Use a separately reviewed migration or runbook with explicit rollback. Rollback means disabling pilot activation or reverting the application release while retaining organizations, memberships, integrations, entitlements, audit rows, and usage history; it does not mean deleting or converting sources.
+Any exceptional intervention requires an approved support or migration ticket, named operator, reason, timestamp, and before/after source snapshots. Use a separately reviewed migration or runbook with explicit rollback. Rollback means disabling credit approval or reverting the application release while retaining organizations, memberships, integrations, entitlements, audit rows, and usage history; it does not mean deleting or converting sources.
 
 ## WhatsApp (Meta) Configuration
 

@@ -1,0 +1,14 @@
+{
+  "rootDir": "..",
+  "testRegex": "test/standalone-approval\\.contract-spec\\.ts$",
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "transform": {
+    "^.+\\.ts$": "ts-jest"
+  },
+  "testEnvironment": "node",
+  "testTimeout": 45000
+}

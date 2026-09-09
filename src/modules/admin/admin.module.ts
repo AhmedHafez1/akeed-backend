@@ -7,23 +7,23 @@ import { AdminFunnelService } from './admin-funnel.service';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import { AdminQueryRepository } from './admin-query.repository';
 import { AdminStoresService } from './admin-stores.service';
-import { StandalonePilotController } from './standalone-pilot.controller';
-import { StandalonePilotRepository } from './standalone-pilot.repository';
-import { StandalonePilotService } from './standalone-pilot.service';
+import { StandaloneBillingController } from './standalone-billing.controller';
+import { StandaloneBillingRepository } from './standalone-billing.repository';
+import { StandaloneBillingService } from './standalone-billing.service';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
 
 @Module({
   imports: [AuthModule, DatabaseModule, WebhookQueueModule],
-  controllers: [AdminController, StandalonePilotController],
+  controllers: [AdminController, StandaloneBillingController],
   providers: [
     AdminAccessGuard,
     AdminQueryRepository,
     AdminStoresService,
     AdminFunnelService,
     AdminHealthRuleService,
-    StandalonePilotRepository,
-    StandalonePilotService,
+    StandaloneBillingRepository,
+    StandaloneBillingService,
     MessageDispatchResolutionService,
   ],
 })
