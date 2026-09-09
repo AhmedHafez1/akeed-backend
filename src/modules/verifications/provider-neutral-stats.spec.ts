@@ -12,7 +12,10 @@ describe('integration-scoped dashboard entitlement usage', () => {
     billingPlanId: 'starter',
     billingActivatedAt: '2026-05-01T00:00:00Z',
   };
-  function setup(sources = [source]) {
+  function setup(
+    sources = [source],
+    accounting = usageAccountingFixture({ enabled: true }),
+  ) {
     const verifications = {
       getFunnelCountsByOrgAndPeriod: jest.fn().mockResolvedValue({
         total: 5,
@@ -36,7 +39,7 @@ describe('integration-scoped dashboard entitlement usage', () => {
     };
     const entitlements = new BillingEntitlementService(
       repository as never,
-      usageAccountingFixture(),
+      accounting,
     );
     const service = new VerificationsService(
       verifications as never,
@@ -52,6 +55,17 @@ describe('integration-scoped dashboard entitlement usage', () => {
     const result = await service.getStatsByOrg('org-1', {});
     expect(result.usage).toMatchObject({ used: 0, limit: 30 });
     expect(repository.getIntegrationUsageForPeriod).not.toHaveBeenCalled();
+  });
+  it('falls back to the monthly quota while credit billing is switched off', async () => {
+    // E04.5 ships dark. Until the feature is enabled a Standalone source keeps
+    // reading the periodic plan it shipped with in E04, rather than a credit
+    // balance nobody has been granted yet.
+    const { service, repository } = setup([source], usageAccountingFixture());
+    const result = await service.getStatsByOrg('org-1', {});
+    // The Starter plan limit, counted from the monthly usage row rather than a
+    // credit balance.
+    expect(result.usage).toMatchObject({ used: 12, limit: 30 });
+    expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalled();
   });
   it('keeps historical funnel totals when no current source is active, without inventing a quota', async () => {
     const { service, repository } = setup([]);

@@ -268,7 +268,8 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
   it('finishes holds despite later debt, suspension and feature disablement', async () => {
     const source = await merchant(2);
     const first = await claim(await verification(source));
-    const second = await claim(await verification(source));
+    const secondInput = await verification(source);
+    const second = await claim(secondInput);
     await harness.adjust(source.orgId, -3);
     const input = await verification(source);
     expect(await dispatches.claim(input)).toMatchObject({
@@ -286,10 +287,20 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
     });
     await harness.disabled.resolveNotAccepted(second.id, undefined, true);
     await balance(source.orgId, -2, 0);
+    // Rolling the feature back returns a Standalone source to the periodic plan
+    // it shipped with rather than blocking it behind a reconciliation code, so
+    // a fresh send is refused by that plan's own limit and takes no hold.
     expect(await harness.disabled.claim(input)).toMatchObject({
+      outcome: 'blocked',
+      reason: 'plan_limit_reached',
+    });
+    // A dispatch already bound to credits is never re-billed on the monthly
+    // plan; it stays parked for reconciliation instead.
+    expect(await harness.disabled.claim(secondInput)).toMatchObject({
       outcome: 'blocked',
       reason: 'PAYMENT_PENDING_RECONCILIATION',
     });
+    await balance(source.orgId, -2, 0);
   });
 
   it('blocks cutover until legacy ambiguity is reviewed without retroactive charging', async () => {

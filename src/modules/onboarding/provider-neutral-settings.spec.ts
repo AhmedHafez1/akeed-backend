@@ -120,7 +120,10 @@ describe('manual entitlement HTTP boundary', () => {
     const service = new OnboardingService(
       state,
       billing,
-      new BillingEntitlementService(usage as never, usageAccountingFixture()),
+      new BillingEntitlementService(
+        usage as never,
+        usageAccountingFixture({ enabled: true }),
+      ),
       { readStatus: () => Promise.resolve(approvalStatus) } as never,
     );
     const module = await Test.createTestingModule({

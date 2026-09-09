@@ -214,6 +214,17 @@ export class VerificationMessageDispatchesRepository {
       if (dispatch.state === 'outcome_unknown') {
         return { outcome: 'outcome_unknown' as const, dispatch };
       }
+      // A row already bound to prepaid credits owns a reservation and a ledger
+      // identity. Reaching here means credit billing was switched off after the
+      // row was created, and re-claiming it would reserve monthly usage for a
+      // send the credit system is still accounting for. Park it for staff
+      // instead of billing it twice on two systems.
+      if (dispatch.accountingMode === 'prepaid_credit') {
+        return {
+          outcome: 'blocked' as const,
+          reason: 'PAYMENT_PENDING_RECONCILIATION',
+        };
+      }
       // An expired lease is the only signal that the worker holding this send
       // died before it could record an acceptance. Re-claiming it here is what
       // lets the verification leave `pending`: parking it at `outcome_unknown`

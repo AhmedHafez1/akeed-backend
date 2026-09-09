@@ -6,8 +6,11 @@ export function usageAccountingFixture(
   const enabled = options.enabled ?? false;
   return {
     isEnabled: () => enabled,
+    // Mirrors the real router: with credit billing off a Standalone source
+    // stays on the periodic plan it shipped with, so this fixture reproduces a
+    // dark deploy rather than denying every Standalone action.
     mode: (platform: string) =>
-      platform === 'standalone' ? 'prepaid_credit' : 'periodic_plan',
+      platform === 'standalone' && enabled ? 'prepaid_credit' : 'periodic_plan',
     readAvailability: jest.fn().mockResolvedValue({
       available: enabled,
       reason: enabled ? null : 'PAYMENT_PENDING_RECONCILIATION',
