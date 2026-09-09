@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type {
   CreditAccountStatus,
+  CreditLedgerType,
   CreditSummary,
 } from '../../../shared/ports/credit-accounting.port';
 import type { CreditTransaction, CreditWriter } from '../credit-transaction';
@@ -215,6 +216,75 @@ export class CreditAccountingRepository {
         ),
       );
     return entry;
+  }
+
+  /**
+   * The ledger entry a reversal must point at.
+   *
+   * `guard_credit_ledger_source` refuses a reversal whose source is the wrong
+   * type, belongs to another purchase, or -- for a reinstatement -- does not
+   * carry the same `source_reference` and the exactly opposite quantity. So the
+   * source is looked up rather than assumed.
+   */
+  async findPurchaseLedgerEntry(
+    tx: CreditTransaction,
+    orgId: string,
+    purchaseId: string,
+    type: CreditLedgerType,
+    sourceReference?: string,
+  ) {
+    const [entry] = await tx
+      .select()
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.orgId, orgId),
+          eq(creditLedgerEntries.purchaseId, purchaseId),
+          eq(creditLedgerEntries.type, type),
+          sourceReference
+            ? eq(creditLedgerEntries.sourceReference, sourceReference)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    return entry;
+  }
+
+  /**
+   * How many credits this purchase has already had taken back or returned,
+   * split by cause so a chargeback win reinstates only what the chargeback
+   * took and leaves a refund reversed.
+   */
+  async readPurchaseReversals(
+    tx: CreditTransaction,
+    orgId: string,
+    purchaseId: string,
+  ) {
+    const rows = await tx
+      .select({
+        type: creditLedgerEntries.type,
+        total: sql<string>`COALESCE(sum(abs(${creditLedgerEntries.quantity})), 0)::text`,
+      })
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.orgId, orgId),
+          eq(creditLedgerEntries.purchaseId, purchaseId),
+          inArray(creditLedgerEntries.type, [
+            'refund_reversal',
+            'chargeback_reversal',
+            'chargeback_reinstatement',
+          ]),
+        ),
+      )
+      .groupBy(creditLedgerEntries.type);
+    const total = (type: CreditLedgerType) =>
+      Number(rows.find((row) => row.type === type)?.total ?? 0);
+    return {
+      refundReversedCredits: total('refund_reversal'),
+      chargebackReversedCredits: total('chargeback_reversal'),
+      chargebackReinstatedCredits: total('chargeback_reinstatement'),
+    };
   }
 
   async insertReservation(tx: CreditTransaction, input: Reservation) {

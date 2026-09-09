@@ -73,6 +73,53 @@ export class PaymentPurchasesRepository {
     return purchase;
   }
 
+  /** Adds the reconciliation flag a merchant's polling page needs to see. */
+  async findDetailForOrganization(orgId: string, reference: string) {
+    const [purchase] = await this.db
+      .select({
+        reference: paymentPurchases.reference,
+        quantity: paymentPurchases.quantity,
+        unitPriceMinor: paymentPurchases.unitPriceMinor,
+        totalMinor: paymentPurchases.totalMinor,
+        currency: paymentPurchases.currency,
+        status: paymentPurchases.status,
+        disputeStatus: paymentPurchases.disputeStatus,
+        refundedMinor: paymentPurchases.refundedMinor,
+        checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
+        createdAt: paymentPurchases.createdAt,
+        // The boolean, never the code: a reconciliation code names an internal
+        // anomaly and is for staff tooling.
+        reconciliationRequired: paymentPurchases.reconciliationRequired,
+        nextReconciliationAt: paymentPurchases.nextReconciliationAt,
+        providerOrderId: paymentPurchases.providerOrderId,
+        providerTransactionId: paymentPurchases.providerTransactionId,
+      })
+      .from(paymentPurchases)
+      .where(
+        and(
+          eq(paymentPurchases.orgId, orgId),
+          eq(paymentPurchases.reference, reference),
+        ),
+      );
+    return purchase;
+  }
+
+  /**
+   * Locks the purchase a provider event names.
+   *
+   * The reference is the only identifier both sides agree on before any
+   * provider id is bound, and the row lock is what serializes two deliveries of
+   * the same callback into one grant.
+   */
+  async lockByReference(tx: CreditTransaction, reference: string) {
+    const [purchase] = await tx
+      .select()
+      .from(paymentPurchases)
+      .where(eq(paymentPurchases.reference, reference))
+      .for('update');
+    return purchase;
+  }
+
   async createPending(tx: CreditTransaction, input: NewPaymentPurchase) {
     const [inserted] = await tx
       .insert(paymentPurchases)

@@ -23,6 +23,10 @@ import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
 import { DatabaseModule } from './infrastructure/database';
 import { AdminModule } from './modules/admin/admin.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { PaymobModule } from './infrastructure/spokes/paymob/paymob.module';
+import { PaymobPaymentsAdapter } from './infrastructure/spokes/paymob/paymob-payments.adapter';
+import { PAYMENTS_PORT } from './shared/ports/payments.port';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
 import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
 import { validateEnv } from './shared/config/env-validation';
@@ -83,6 +87,13 @@ import { validateEnv } from './shared/config/env-validation';
     DatabaseModule,
     AdminModule,
     CommerceOutcomeModule,
+    // The payment provider reaches billing as a port binding, so nothing in
+    // the billing module names Paymob and a second processor is a new spoke
+    // plus one line here.
+    BillingModule.register({
+      imports: [PaymobModule],
+      ports: [{ provide: PAYMENTS_PORT, useExisting: PaymobPaymentsAdapter }],
+    }),
   ],
   controllers: [AppController],
   providers: [
