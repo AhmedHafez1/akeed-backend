@@ -1,3 +1,5 @@
+import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accounting';
+import { UsageAccountingRouter } from './repositories/usage-accounting.router';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { drizzleProvider } from './database.provider';
@@ -22,6 +24,8 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
   imports: [ConfigModule],
   providers: [
     CreditAccountingRepository,
+    PrepaidCreditAccounting,
+    UsageAccountingRouter,
     PaymentPurchasesRepository,
     drizzleProvider,
     OrdersRepository,
@@ -40,6 +44,8 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
   ],
   exports: [
     CreditAccountingRepository,
+    PrepaidCreditAccounting,
+    UsageAccountingRouter,
     PaymentPurchasesRepository,
     drizzleProvider,
     OrdersRepository,

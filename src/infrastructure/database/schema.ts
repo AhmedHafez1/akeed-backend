@@ -658,6 +658,10 @@ export const verificationMessageDispatches = pgTable(
     verificationId: uuid('verification_id').notNull(),
     dispatchKey: text('dispatch_key').notNull(),
     generation: integer('generation').notNull().default(1),
+    accountingMode: text('accounting_mode')
+      .$type<'periodic_plan' | 'prepaid_credit'>()
+      .notNull()
+      .default('periodic_plan'),
     kind: verificationDispatchKind().notNull(),
     state: verificationDispatchState().default('ready').notNull(),
     senderKind: text('sender_kind').default('akeed_system').notNull(),
@@ -704,6 +708,10 @@ export const verificationMessageDispatches = pgTable(
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
+    check(
+      'dispatch_accounting_mode_check',
+      sql`accounting_mode IN ('periodic_plan', 'prepaid_credit')`,
+    ),
     unique('dispatch_id_org_key').on(table.id, table.orgId),
     unique('dispatch_billable_identity_key').on(
       table.verificationId,
