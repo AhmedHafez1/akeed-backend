@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
@@ -7,7 +8,9 @@ import {
   STANDALONE_BILLING_STATUS,
   STANDALONE_DEFAULT_PLAN_ID,
 } from '../../../shared/billing/billing-plan';
+import { readStandaloneCreditBillingConfig } from '../../../shared/config/standalone-credit-billing.config';
 import { integrations, memberships, organizations } from '../schema';
+import { ensurePendingCreditAccount } from './credit-accounting.repository';
 
 export interface StandaloneOrganizationProvisioningResult {
   organization: typeof organizations.$inferSelect;
@@ -37,9 +40,19 @@ export type StandaloneProvisioningTransaction = Parameters<
   Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
 >[0];
 
+export interface StandaloneSourceProvisioningOptions {
+  /**
+   * Writes the Starter/`not_required` entitlement at provisioning time. Credit
+   * billing moves that grant to staff approval, so it is off whenever
+   * `STANDALONE_CREDIT_BILLING_ENABLED` is set.
+   */
+  grantEntitlement: boolean;
+}
+
 export async function provisionStandaloneSourceForOrganization(
   tx: StandaloneProvisioningTransaction,
   orgId: string,
+  options: StandaloneSourceProvisioningOptions,
 ) {
   const [organization] = await tx
     .select({ id: organizations.id })
@@ -47,8 +60,22 @@ export async function provisionStandaloneSourceForOrganization(
     .where(eq(organizations.id, orgId))
     .for('update');
   if (!organization) throw new Error('Standalone organization was not found');
+  await ensurePendingCreditAccount(tx, orgId);
   const sourceIdentity = buildStandaloneSourceIdentity(orgId);
   const now = new Date().toISOString();
+  const entitlement = options.grantEntitlement
+    ? {
+        billingStatus: STANDALONE_BILLING_STATUS,
+        billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
+        billingActivatedAt: now,
+        billingStatusUpdatedAt: now,
+      }
+    : {
+        billingStatus: null,
+        billingPlanId: null,
+        billingActivatedAt: null,
+        billingStatusUpdatedAt: null,
+      };
   const [insertedSource] = await tx
     .insert(integrations)
     .values({
@@ -65,12 +92,12 @@ export async function provisionStandaloneSourceForOrganization(
       // `resolveEntitlement` still requires all three columns before it will
       // grant a plan — unlike Shopify, it has no default-plan fallback. Leaving
       // them NULL gave every self-serve standalone source `includedLimit: 0`
-      // and blocked its sends with `billing_not_active`. Same grant the admin
-      // pilot flow backfills, applied at provisioning time.
-      billingStatus: STANDALONE_BILLING_STATUS,
-      billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
-      billingActivatedAt: now,
-      billingStatusUpdatedAt: now,
+      // and blocked its sends with `billing_not_active`.
+      //
+      // Under credit billing that grant is exactly what staff approval is for,
+      // so the columns stay NULL here and the approval transaction writes them
+      // together with the launch grant.
+      ...entitlement,
     })
     .onConflictDoNothing({
       target: [integrations.platformType, integrations.platformStoreUrl],
@@ -100,7 +127,10 @@ export async function provisionStandaloneSourceForOrganization(
 
 @Injectable()
 export class StandaloneOrganizationProvisioningRepository {
-  constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>,
+    private readonly config: ConfigService,
+  ) {}
 
   async provision(
     userId: string,
@@ -196,7 +226,10 @@ export class StandaloneOrganizationProvisioningRepository {
         });
 
       const { integration, sourceCreated } =
-        await provisionStandaloneSourceForOrganization(tx, organization.id);
+        await provisionStandaloneSourceForOrganization(tx, organization.id, {
+          grantEntitlement: !readStandaloneCreditBillingConfig(this.config)
+            .enabled,
+        });
 
       return {
         organization,

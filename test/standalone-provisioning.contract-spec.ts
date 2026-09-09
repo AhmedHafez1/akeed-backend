@@ -8,6 +8,7 @@ import {
   StandaloneOrganizationProvisioningRepository,
   StandaloneSourceConflictError,
 } from '../src/infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 
 function isolatedDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -41,6 +42,7 @@ const client = postgres(isolatedDatabaseUrl(), {
 });
 const repository = new StandaloneOrganizationProvisioningRepository(
   drizzle(client, { schema }),
+  standaloneCreditBillingConfigService(),
 );
 let created = false;
 
@@ -67,6 +69,18 @@ describe('standalone source provisioning PostgreSQL contract', () => {
         role text DEFAULT 'owner',
         created_at timestamptz DEFAULT now(),
         UNIQUE (org_id, user_id)
+      );
+      CREATE TABLE credit_accounts (
+        org_id uuid PRIMARY KEY REFERENCES organizations(id),
+        status text NOT NULL DEFAULT 'pending_approval',
+        posted_balance integer NOT NULL DEFAULT 0,
+        held_credits integer NOT NULL DEFAULT 0,
+        approved_by uuid,
+        approved_at timestamptz,
+        approval_reason text,
+        version integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE TABLE integrations (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

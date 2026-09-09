@@ -46,6 +46,22 @@ function publicHostname(hostname: string): boolean {
   );
 }
 
+/**
+ * Reads the object `validateEnv` already parsed at startup. Runtime code must
+ * never re-derive billing settings from raw environment strings.
+ */
+export function readStandaloneCreditBillingConfig(config: {
+  get<T>(key: string): T | undefined;
+}): StandaloneCreditBillingConfig {
+  const billing = config.get<StandaloneCreditBillingConfig>(
+    STANDALONE_CREDIT_BILLING_CONFIG,
+  );
+  if (!billing) {
+    throw new Error('Standalone billing configuration was not validated');
+  }
+  return billing;
+}
+
 export function parseStandaloneCreditBillingConfig(
   config: Record<string, unknown>,
 ): StandaloneCreditBillingConfig {

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { CreditSummary } from '../../../shared/ports/credit-accounting.port';
-import type { CreditTransaction } from '../credit-transaction';
+import type { CreditTransaction, CreditWriter } from '../credit-transaction';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   creditAccounts,
@@ -28,6 +28,18 @@ export class CreditVersionConflictError extends Error {
   constructor() {
     super('Credit account version changed or account was not found');
   }
+}
+
+/**
+ * Seeds the pending account a Standalone organization is approved from. Exposed
+ * as a free function so the provisioning transaction, which has no container to
+ * inject a repository from, writes it through the same statement staff paths do.
+ */
+export async function ensurePendingCreditAccount(
+  tx: CreditWriter,
+  orgId: string,
+): Promise<void> {
+  await tx.insert(creditAccounts).values({ orgId }).onConflictDoNothing();
 }
 
 type Account = typeof creditAccounts.$inferSelect;
@@ -84,8 +96,8 @@ export class CreditAccountingRepository {
     };
   }
 
-  async ensurePendingAccount(tx: CreditTransaction, orgId: string) {
-    await tx.insert(creditAccounts).values({ orgId }).onConflictDoNothing();
+  async ensurePendingAccount(tx: CreditWriter, orgId: string): Promise<void> {
+    await ensurePendingCreditAccount(tx, orgId);
   }
 
   async lockAccount(tx: CreditTransaction, orgId: string): Promise<Account> {

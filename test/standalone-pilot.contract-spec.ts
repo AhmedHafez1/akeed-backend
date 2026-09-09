@@ -9,6 +9,7 @@ import {
   StandaloneOrganizationProvisioningRepository,
   buildStandaloneOrganizationSlug,
 } from '../src/infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 import { evaluateStandalonePilot } from '../src/modules/admin/standalone-pilot.policy';
 import { StandalonePilotRepository } from '../src/modules/admin/standalone-pilot.repository';
 
@@ -43,7 +44,10 @@ const client = postgres(isolatedDatabaseUrl(), {
 });
 const database = drizzle(client, { schema });
 const repository = new StandalonePilotRepository(database);
-const provisioning = new StandaloneOrganizationProvisioningRepository(database);
+const provisioning = new StandaloneOrganizationProvisioningRepository(
+  database,
+  standaloneCreditBillingConfigService(),
+);
 const usageRepository = new IntegrationMonthlyUsageRepository(database);
 let created = false;
 
@@ -82,6 +86,18 @@ describe('Standalone pilot PostgreSQL contract', () => {
     await client.unsafe(`
       CREATE TABLE organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, slug text NOT NULL UNIQUE, plan_type text DEFAULT 'free', wa_phone_number_id text, wa_business_account_id text, wa_access_token text, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());
       CREATE TABLE memberships (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id), user_id uuid NOT NULL, role text DEFAULT 'owner', created_at timestamptz DEFAULT now(), UNIQUE(org_id,user_id));
+      CREATE TABLE credit_accounts (
+        org_id uuid PRIMARY KEY REFERENCES organizations(id),
+        status text NOT NULL DEFAULT 'pending_approval',
+        posted_balance integer NOT NULL DEFAULT 0,
+        held_credits integer NOT NULL DEFAULT 0,
+        approved_by uuid,
+        approved_at timestamptz,
+        approval_reason text,
+        version integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
       CREATE TABLE integrations (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id), platform_type text NOT NULL, platform_store_url text NOT NULL,
         access_token text, expires_at timestamptz, webhook_secret text, is_active boolean DEFAULT true, last_synced_at timestamptz, metadata jsonb DEFAULT '{}'::jsonb,

@@ -342,7 +342,13 @@ export class StandalonePilotRepository {
             const existingSource = snapshot.sources[0];
             const sourceResult = existingSource
               ? { integration: existingSource, sourceCreated: false }
-              : await provisionStandaloneSourceForOrganization(tx, entry.orgId);
+              : await provisionStandaloneSourceForOrganization(
+                  tx,
+                  entry.orgId,
+                  {
+                    grantEntitlement: true,
+                  },
+                );
             const integrationId = sourceResult.integration.id;
             const now = new Date().toISOString();
             const after = {
