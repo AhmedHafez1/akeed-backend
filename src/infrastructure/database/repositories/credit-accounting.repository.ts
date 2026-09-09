@@ -73,6 +73,12 @@ export class CreditAccountingRepository {
     };
   }
 
+  /**
+   * Both subqueries alias their table and qualify the outer column. Drizzle
+   * renders a column reference inside a select-list `sql` fragment unqualified,
+   * which turned `WHERE org_id = org_id` into a tautology and summed every
+   * organization's ledger into every account's report.
+   */
   async checkInvariant(
     orgId: string,
     reader: DrizzleDB | CreditTransaction = this.db,
@@ -82,8 +88,8 @@ export class CreditAccountingRepository {
         orgId: creditAccounts.orgId,
         postedBalance: creditAccounts.postedBalance,
         heldCredits: creditAccounts.heldCredits,
-        ledgerBalance: sql<string>`(SELECT COALESCE(sum(quantity), 0)::text FROM ${creditLedgerEntries} WHERE org_id = ${creditAccounts.orgId})`,
-        reservationHolds: sql<string>`(SELECT COALESCE(sum(quantity), 0)::text FROM ${creditReservations} WHERE org_id = ${creditAccounts.orgId} AND status = 'held')`,
+        ledgerBalance: sql<string>`(SELECT COALESCE(sum(entry.quantity), 0)::text FROM ${creditLedgerEntries} AS entry WHERE entry.org_id = ${creditAccounts}.org_id)`,
+        reservationHolds: sql<string>`(SELECT COALESCE(sum(reservation.quantity), 0)::text FROM ${creditReservations} AS reservation WHERE reservation.org_id = ${creditAccounts}.org_id AND reservation.status = 'held')`,
       })
       .from(creditAccounts)
       .where(eq(creditAccounts.orgId, orgId));

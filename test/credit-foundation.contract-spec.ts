@@ -719,6 +719,25 @@ describe('US-04.5-01 disposable PostgreSQL foundation', () => {
       });
     }));
 
+  it('scopes the invariant report to the requested organization', async () =>
+    isolated(async (tx) => {
+      await grant(tx, { orgId: otherOrgId });
+
+      expect(await credit.checkInvariant(otherOrgId, tx)).toMatchObject({
+        ledgerBalance: '30',
+        consistent: false,
+      });
+      expect(await credit.checkInvariant(orgId, tx)).toMatchObject({
+        ledgerBalance: '0',
+        reservationHolds: '0',
+        consistent: true,
+      });
+      await expect(credit.lockAccount(tx, orgId)).resolves.toMatchObject({
+        orgId,
+        postedBalance: 0,
+      });
+    }));
+
   it.each(['ready', 'sending', 'outcome_unknown', 'accepted'] as const)(
     'blocks a later generation after %s',
     async (state) =>
