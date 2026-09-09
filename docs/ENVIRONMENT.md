@@ -125,6 +125,43 @@ Migration `0026_standalone_source_provisioning.sql` deliberately aborts while th
 
 Any exceptional intervention requires an approved support or migration ticket, named operator, reason, timestamp, and before/after source snapshots. Use a separately reviewed migration or runbook with explicit rollback. Rollback means disabling credit approval or reverting the application release while retaining organizations, memberships, integrations, entitlements, audit rows, and usage history; it does not mean deleting or converting sources.
 
+## Standalone Paymob Billing
+
+`STANDALONE_CREDIT_BILLING_ENABLED` is the single switch. While it is `false` the deployment is dark: `UsageAccountingRouter.mode()` keeps Standalone sources on the periodic plan they shipped with in E04, no `PAYMOB_*` value is read, and the merchant billing APIs refuse a purchase with `BILLING_DISABLED`. Nothing about the credit tables changes, so a rollback is the same switch in reverse — holds already taken settle through credits, because settlement follows the `accounting_mode` persisted on each dispatch rather than the flag.
+
+Setting it to `true` makes every variable below required and validated at startup. Validation is deliberately strict: a placeholder value, a hostname that reads as a sandbox in `live` mode, credentials or a query string in a URL, or a key whose embedded `test`/`live` marker disagrees with `PAYMOB_MODE` all abort boot rather than reaching a payment.
+
+| Variable | Notes |
+| --- | --- |
+| `PAYMOB_MODE` | `test` or `live`. Live requires public HTTPS hostnames throughout. |
+| `PAYMOB_BASE_URL` | Paymob API origin. Every outbound call is built from this; there is no hard-coded host. |
+| `PAYMOB_CALLBACK_URL` | Processed callback. The pathname **must** be `/api/webhooks/payments/paymob`, which is where the controller is mounted. |
+| `PAYMOB_RETURN_URL` | Where the browser lands after checkout. Context only — a redirect never grants credits. |
+| `PAYMOB_SECRET_KEY` | Server-only. Sent as `Authorization: Token <secret>`. |
+| `PAYMOB_HMAC_SECRET` | Server-only. Verifies the processed callback. |
+| `PAYMOB_PUBLIC_KEY` | Reaches the browser inside the hosted checkout URL. |
+| `PAYMOB_CARD_INTEGRATION_ID` | Online card integration. |
+| `PAYMOB_WALLET_INTEGRATION_ID` | Mobile wallet (Vodafone Cash). Must differ from the card integration. |
+| `PAYMOB_CHECKOUT_EXPIRATION_SECONDS` | Intention lifetime; also the local `checkout_expires_at`. |
+
+Pricing is server-owned and never read from a request: `STANDALONE_CREDIT_PRICE_MINOR` (200 piastres), `STANDALONE_PURCHASE_MIN` (100), `STANDALONE_PURCHASE_MAX` (5000), `STANDALONE_PURCHASE_STEP` (50), `STANDALONE_LOW_BALANCE_THRESHOLD` (10). Startup rejects a min/max that are not ordered multiples of the step, or a maximum total that would overflow the integer money columns.
+
+### Handling secrets
+
+- `PAYMOB_SECRET_KEY` and `PAYMOB_HMAC_SECRET` are server-only and never leave the process. The structured logger redacts them by key name, and provider error bodies are reduced to a name and message before they are logged.
+- The hosted-checkout URL embeds the intention client secret in its query, so the whole URL is a credential. It is returned once to the merchant who created the purchase, never persisted, never logged, and never present in any list or detail response. An idempotent replay of the same `Idempotency-Key` therefore answers `checkoutUrl: null` with `CHECKOUT_URL_ALREADY_ISSUED`; a fresh attempt needs a fresh key.
+- Akeed stores no PAN, CVV, wallet credential or reusable token. Card metadata that arrives on a callback is redacted from logs and only its hash is persisted.
+
+### Callback configuration
+
+Configure the processed callback on **both** the card and the mobile-wallet integration records in the Paymob dashboard, pointing at `PAYMOB_CALLBACK_URL`. The per-intention `notification_url` is sent as well, but Paymob documents it as card-only, so the dashboard setting is what makes wallet callbacks arrive.
+
+Do not enable Vodafone Cash traffic until a wallet callback has been captured in sandbox. Its payload shape is unverified, and the HMAC field order is a provider contract detail — see `src/infrastructure/spokes/paymob/fixtures/README.md` for the capture procedure. The response (browser) callback is never authority for a grant; only the verified processed callback is.
+
+### Recovery
+
+A checkout whose response was lost leaves the purchase `pending` with `reconciliation_required`. Polling `GET /api/billing/purchases/:reference` triggers a rate-limited inquiry against the same reference, and the inquiry result flows through the same ingestion path as a callback with the same fingerprint — so whichever arrives second is a proven replay and cannot grant twice. A purchase is marked `expired` only when an inquiry confirms no success; a missing callback alone never expires one.
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:

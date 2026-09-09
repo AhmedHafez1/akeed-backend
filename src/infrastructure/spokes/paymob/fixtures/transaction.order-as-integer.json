@@ -31,6 +31,11 @@
       },
       "data": {
         "message": "Approved"
+      },
+      "payment_key_claims": {
+        "extra": {
+          "special_reference": "akd_99999999999999999999999999992222"
+        }
       }
     }
   }

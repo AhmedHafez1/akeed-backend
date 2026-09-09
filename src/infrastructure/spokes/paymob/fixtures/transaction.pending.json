@@ -21,7 +21,7 @@
       "has_parent_transaction": false,
       "order": {
         "id": 510004,
-        "merchant_order_id": null
+        "merchant_order_id": "akd_4444444444444444444444444444dddd"
       },
       "created_at": "2026-09-09T10:15:30.123456",
       "currency": "EGP",
@@ -34,6 +34,11 @@
       },
       "data": {
         "message": "Approved"
+      },
+      "payment_key_claims": {
+        "extra": {
+          "special_reference": "akd_4444444444444444444444444444dddd"
+        }
       }
     }
   }
