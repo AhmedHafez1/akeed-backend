@@ -89,6 +89,7 @@ describe('WhatsAppService', () => {
         verifications as never,
         orders as never,
         entitlement as never,
+        { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
         {
           claim: jest.fn().mockResolvedValue({
             outcome: 'claimed',

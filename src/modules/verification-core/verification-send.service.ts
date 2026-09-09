@@ -11,6 +11,7 @@ import {
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import { CreditApprovalService } from './credit-approval.service';
 import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
@@ -77,7 +78,8 @@ type ContextLoadResult =
         | 'missing_linked_integration'
         | 'source_identity_mismatch'
         | 'integration_inactive'
-        | 'billing_not_active';
+        | 'billing_not_active'
+        | 'standalone_approval_required';
     };
 
 /**
@@ -102,6 +104,7 @@ export class VerificationSendService {
     private readonly verificationsRepo: VerificationsRepository,
     private readonly ordersRepo: OrdersRepository,
     private readonly billingEntitlementService: BillingEntitlementService,
+    private readonly creditApproval: CreditApprovalService,
     private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
   ) {}
@@ -160,6 +163,21 @@ export class VerificationSendService {
         }),
       );
       return { context: null, reason: access.reason };
+    }
+
+    const approvalDenial = await this.creditApproval.resolveDenial(integration);
+    if (approvalDenial) {
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'loadContext.creditApproval',
+          outcome: 'skipped',
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId,
+          reason: approvalDenial,
+        }),
+      );
+      return { context: null, reason: approvalDenial };
     }
 
     return { context: { verification, order, integration } };

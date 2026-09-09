@@ -1,3 +1,4 @@
+import type { CreditAccountStatus } from '../../../shared/ports/credit-accounting.port';
 import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
 import type { BillingManagement } from '../../../shared/billing/entitlement';
 import {
@@ -61,6 +62,7 @@ export type AutomationTimezone = (typeof AUTOMATION_TIMEZONES)[number];
 
 export const STANDALONE_SETUP_BLOCKED_REASONS = [
   'source_invalid',
+  'approval_required',
   'pilot_entitlement_missing',
   'merchant_name_missing',
   'language_invalid',
@@ -195,6 +197,7 @@ export interface OnboardingStateDto {
   standaloneSetup: {
     canComplete: boolean;
     blockedReasons: StandaloneSetupBlockedReason[];
+    approvalStatus: CreditAccountStatus | null;
   } | null;
 }
 

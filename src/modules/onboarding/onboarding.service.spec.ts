@@ -86,6 +86,7 @@ describe('OnboardingService', () => {
         onboardingState as any,
         billingService as any,
         new BillingEntitlementService(monthlyUsageRepo as never),
+        { readStatus: jest.fn().mockResolvedValue(null) } as never,
       );
 
       const result = await service.getSettings({

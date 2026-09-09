@@ -13,6 +13,7 @@ import {
   type AuthenticatedUser,
 } from '../auth/guards/dual-auth.guard';
 import type { integrations } from '../../infrastructure/database/schema';
+import type { OnboardingStateDto } from './dto/onboarding.dto';
 
 describe('manual entitlement HTTP boundary', () => {
   let app: INestApplication<Server>;
@@ -20,6 +21,7 @@ describe('manual entitlement HTTP boundary', () => {
   let activeSources: (typeof source)[];
   let user: AuthenticatedUser;
   let completionWriteCount: number;
+  let approvalStatus: 'pending_approval' | 'active' | 'suspended' | null;
   const provider = {
     getShopName: jest.fn(),
     createRecurringApplicationCharge: jest.fn(),
@@ -46,6 +48,7 @@ describe('manual entitlement HTTP boundary', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    approvalStatus = null;
     source = {
       id: 'int-1',
       orgId: 'org-1',
@@ -117,6 +120,7 @@ describe('manual entitlement HTTP boundary', () => {
       state,
       billing,
       new BillingEntitlementService(usage as never),
+      { readStatus: () => Promise.resolve(approvalStatus) } as never,
     );
     const module = await Test.createTestingModule({
       controllers: [OnboardingController, SettingsController],
@@ -324,6 +328,40 @@ describe('manual entitlement HTTP boundary', () => {
       });
     expect(source.storeName).toBe('Saved before activation');
     expect(source.onboardingStatus).toBe('pending');
+  });
+
+  it('blocks completion with STANDALONE_APPROVAL_REQUIRED while approval is pending', async () => {
+    approvalStatus = 'pending_approval';
+    source = {
+      ...source,
+      onboardingStatus: 'pending',
+      storeName: 'Waiting merchant',
+      billingPlanId: null,
+      billingStatus: null,
+      billingActivatedAt: null,
+    };
+    activeSources = [source];
+
+    await request(app.getHttpServer())
+      .get('/api/onboarding/state')
+      .expect(200)
+      .expect(({ body }: { body: { state: OnboardingStateDto } }) => {
+        expect(body.state.standaloneSetup).toMatchObject({
+          canComplete: false,
+          blockedReasons: ['approval_required'],
+          approvalStatus: 'pending_approval',
+        });
+      });
+    await request(app.getHttpServer())
+      .post('/api/onboarding/complete')
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          code: 'STANDALONE_APPROVAL_REQUIRED',
+          approvalStatus: 'pending_approval',
+        });
+      });
+    expect(completionWriteCount).toBe(0);
   });
 
   it('completes valid Standalone setup idempotently', async () => {

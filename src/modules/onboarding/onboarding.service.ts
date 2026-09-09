@@ -4,6 +4,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import { CreditApprovalService } from '../verification-core/credit-approval.service';
+import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import { getBillingManagement } from '../../shared/billing/entitlement';
 import { integrations } from '../../infrastructure/database/schema';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
@@ -43,6 +45,7 @@ export class OnboardingService {
     private readonly onboardingState: OnboardingStateService,
     private readonly billingService: BillingService,
     private readonly billingEntitlements: BillingEntitlementService,
+    private readonly creditApproval: CreditApprovalService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -74,7 +77,7 @@ export class OnboardingService {
     ]);
 
     return {
-      state: this.buildState(user, hydratedIntegration),
+      state: await this.buildState(user, hydratedIntegration),
       billing: {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
@@ -104,7 +107,7 @@ export class OnboardingService {
     this.assertCanUpdateConfiguration(user);
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
-    const currentState = this.buildState(user, integration);
+    const currentState = await this.buildState(user, integration);
 
     if (currentState.isOnboardingComplete) {
       return { state: currentState };
@@ -113,6 +116,16 @@ export class OnboardingService {
     const blockedReasons = currentState.standaloneSetup?.blockedReasons ?? [
       'source_invalid',
     ];
+    if (blockedReasons.includes('approval_required')) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Akeed staff have not approved this account yet.',
+        code: 'STANDALONE_APPROVAL_REQUIRED',
+        blockedReasons,
+        approvalStatus: currentState.standaloneSetup?.approvalStatus ?? null,
+      });
+    }
     if (blockedReasons.length > 0) {
       throw new ConflictException({
         statusCode: 409,
@@ -201,16 +214,17 @@ export class OnboardingService {
     };
   }
 
-  private buildState(
+  private async buildState(
     user: AuthenticatedUser,
     integration: IntegrationRecord,
-  ): OnboardingStateDto {
+  ): Promise<OnboardingStateDto> {
     const state = this.onboardingState.toState(integration);
     const canUpdateConfiguration = this.canUpdateConfiguration(user);
-    const blockedReasons =
-      integration.platformType === 'standalone'
-        ? this.getStandaloneBlockedReasons(integration)
-        : [];
+    const standalone = integration.platformType === 'standalone';
+    const approvalStatus = await this.creditApproval.readStatus(integration);
+    const blockedReasons = standalone
+      ? this.getStandaloneBlockedReasons(integration, approvalStatus)
+      : [];
 
     return {
       ...state,
@@ -219,25 +233,30 @@ export class OnboardingService {
         canCompleteOnboarding:
           user.source === 'supabase' && canUpdateConfiguration,
       },
-      standaloneSetup:
-        integration.platformType === 'standalone'
-          ? {
-              canComplete: blockedReasons.length === 0,
-              blockedReasons,
-            }
-          : null,
+      standaloneSetup: standalone
+        ? {
+            canComplete: blockedReasons.length === 0,
+            blockedReasons,
+            approvalStatus,
+          }
+        : null,
     };
   }
 
   private getStandaloneBlockedReasons(
     integration: IntegrationRecord,
+    approvalStatus: CreditAccountStatus | null,
   ): StandaloneSetupBlockedReason[] {
     const reasons: StandaloneSetupBlockedReason[] = [];
     if (integration.platformType !== 'standalone' || !integration.isActive) {
       reasons.push('source_invalid');
     }
 
-    if (!this.billingEntitlements.evaluateAccess(integration).allowed) {
+    // Under credit billing the entitlement is deliberately absent until staff
+    // approve, so reporting both reasons would just be noise.
+    if (approvalStatus !== null && approvalStatus !== 'active') {
+      reasons.push('approval_required');
+    } else if (!this.billingEntitlements.evaluateAccess(integration).allowed) {
       reasons.push('pilot_entitlement_missing');
     }
 

@@ -47,6 +47,9 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   // `reopenRetryableInitialFailure` is what stops a send that *did* reach the
   // provider from being repeated.
   'provider_outcome_unknown',
+  // Staff approval is pending. The merchant cannot resolve it themselves, but
+  // it is temporary and the verification must be reopenable once it commits.
+  'standalone_approval_required',
 ] as const;
 
 /**
@@ -60,6 +63,7 @@ export const BLOCKED_EVENT_REASONS = [
   'plan_limit_reached',
   'auto_verify_disabled',
   'onboarding_incomplete',
+  'standalone_approval_required',
 ] as const;
 
 /**
@@ -71,6 +75,7 @@ export const SEND_FAILURE_REASONS = [
   'billing_not_active',
   'missing_linked_integration',
   'source_identity_mismatch',
+  'standalone_approval_required',
 ] as const;
 
 /** Statuses at which the automation pipeline stops scheduling further work. */

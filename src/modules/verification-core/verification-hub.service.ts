@@ -7,6 +7,7 @@ import { integrations, orders } from '../../infrastructure/database/schema';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import { CreditApprovalService } from './credit-approval.service';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
@@ -58,6 +59,7 @@ export class VerificationHubService {
     private orderEligibilityService: OrderEligibilityService,
     private verificationSendService: VerificationSendService,
     private readonly billingEntitlementService: BillingEntitlementService,
+    private readonly creditApproval: CreditApprovalService,
     private readonly automationProducer: VerificationAutomationProducer,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
@@ -67,7 +69,7 @@ export class VerificationHubService {
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
   ): Promise<HandleNewOrderResult> {
-    const skipReason = this.validateIntegrationCanVerify(
+    const skipReason = await this.validateIntegrationCanVerify(
       orderData,
       integration,
     );
@@ -128,7 +130,7 @@ export class VerificationHubService {
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
   ): Promise<SyntheticTestResult> {
-    const sourceReason = this.validateSyntheticTestSource(
+    const sourceReason = await this.validateSyntheticTestSource(
       orderData,
       integration,
     );
@@ -256,10 +258,10 @@ export class VerificationHubService {
    * Returns a skip reason string if the integration is not eligible for
    * verification, or `null` if processing should continue.
    */
-  private validateIntegrationCanVerify(
+  private async validateIntegrationCanVerify(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
-  ): string | null {
+  ): Promise<string | null> {
     const eligibility =
       this.orderEligibilityService.evaluateOrderForVerification({
         order: orderData,
@@ -312,16 +314,18 @@ export class VerificationHubService {
       return 'onboarding_incomplete';
     }
 
-    return this.billingEntitlementService.evaluateAccess(integration, {
-      id: orderData.integrationId,
-      orgId: orderData.orgId,
-    }).reason;
+    return (
+      this.billingEntitlementService.evaluateAccess(integration, {
+        id: orderData.integrationId,
+        orgId: orderData.orgId,
+      }).reason ?? (await this.creditApproval.resolveDenial(integration))
+    );
   }
 
-  private validateSyntheticTestSource(
+  private async validateSyntheticTestSource(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
-  ): string | null {
+  ): Promise<string | null> {
     if (
       orderData.orgId !== integration.orgId ||
       orderData.integrationId !== integration.id
@@ -332,10 +336,12 @@ export class VerificationHubService {
     if (integration.onboardingStatus !== 'completed') {
       return 'onboarding_incomplete';
     }
-    return this.billingEntitlementService.evaluateAccess(integration, {
-      id: orderData.integrationId,
-      orgId: orderData.orgId,
-    }).reason;
+    return (
+      this.billingEntitlementService.evaluateAccess(integration, {
+        id: orderData.integrationId,
+        orgId: orderData.orgId,
+      }).reason ?? (await this.creditApproval.resolveDenial(integration))
+    );
   }
 
   private async findOrCreateOrder(orderData: NormalizedOrder) {

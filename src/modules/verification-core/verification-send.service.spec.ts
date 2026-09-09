@@ -79,6 +79,7 @@ function createMocks() {
     verificationsRepo as never,
     ordersRepo as never,
     billingEntitlementService as never,
+    { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
     messageDispatches as never,
     messagingPort as never,
   );

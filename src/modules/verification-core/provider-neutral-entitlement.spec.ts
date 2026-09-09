@@ -87,6 +87,7 @@ describe('provider-neutral entitlement boundary', () => {
       verifications as never,
       orders as never,
       service,
+      { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
       dispatches as never,
       messaging,
     );

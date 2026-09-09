@@ -50,6 +50,7 @@ describe('OrdersService manual creation', () => {
     >(),
   };
   const phone = { standardize: jest.fn<string, [string]>() };
+  const creditApproval = { resolveDenial: jest.fn() };
   const entitlements = {
     evaluateAccess: jest.fn<
       { allowed: boolean; reason: string | null },
@@ -90,6 +91,7 @@ describe('OrdersService manual creation', () => {
       consumedCount: 4,
       includedLimit: 30,
     });
+    creditApproval.resolveDenial.mockResolvedValue(null);
     manualOrders.accept.mockResolvedValue({
       eventId: 'event-1',
       order: { id: 'order-1' },
@@ -104,10 +106,27 @@ describe('OrdersService manual creation', () => {
       manualOrders as never,
       phone as never,
       entitlements as never,
+      creditApproval as never,
       dispatcher as never,
       webhookEvents as never,
       orderEligibility as never,
     );
+  });
+
+  it('refuses manual creation while credit approval is pending', async () => {
+    creditApproval.resolveDenial.mockResolvedValue(
+      'standalone_approval_required',
+    );
+
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload as never),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STANDALONE_APPROVAL_REQUIRED',
+        reason: 'standalone_approval_required',
+      },
+    });
+    expect(manualOrders.accept).not.toHaveBeenCalled();
   });
 
   it.each(['owner', 'admin'] as const)(
@@ -277,6 +296,7 @@ describe('OrdersService manual creation', () => {
   });
 
   it('replays a matching accepted order and returns a later verification id', async () => {
+    creditApproval.resolveDenial.mockResolvedValue(null);
     manualOrders.accept.mockResolvedValue({
       eventId: 'event-1',
       order: { id: 'order-1' },
@@ -349,6 +369,7 @@ describe('OrdersService manual creation', () => {
     // retry must reuse it rather than create a second order.
     expect(manualOrders.accept).toHaveBeenCalledTimes(1);
 
+    creditApproval.resolveDenial.mockResolvedValue(null);
     manualOrders.accept.mockResolvedValue({
       eventId: 'event-1',
       order: { id: 'order-1' },
@@ -531,6 +552,7 @@ describe('OrdersService manual verification lifecycle', () => {
       {} as never,
       {} as never,
       billing as never,
+      { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
       dispatcher as never,
       events as never,
       eligibility as never,

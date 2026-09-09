@@ -180,6 +180,7 @@ function createMocks() {
     orderEligibilityService as any,
     verificationSendService as any,
     billingEntitlementService as any,
+    { resolveDenial: jest.fn().mockResolvedValue(null) } as any,
     automationProducer as any,
   );
 

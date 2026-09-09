@@ -172,6 +172,15 @@ export class TestVerificationService {
         code: 'TEST_VERIFICATION_ENTITLEMENT_REQUIRED',
       });
     }
+    if (reason === 'standalone_approval_required') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Akeed staff have not approved this account yet.',
+        code: 'STANDALONE_APPROVAL_REQUIRED',
+        reason,
+      });
+    }
     if (reason === 'onboarding_incomplete') {
       throw new BadRequestException({
         statusCode: 400,
