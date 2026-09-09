@@ -1,6 +1,6 @@
-import { usageAccountingFixture } from 'contracts/usage-accounting-fixture';
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
 
+import { usageAccountingFixture } from './contracts/usage-accounting-fixture';
 import type { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
 import {
@@ -494,16 +494,43 @@ async function createHarness(): Promise<AcceptanceHarness> {
       }
       return { outcome: 'accepted', dispatch };
     },
-    markOutcomeUnknown: async (dispatchId: string, errorCode: string) => {
+    // Parks a send that already produced a provider message id. Like the
+    // repository, it records the anomaly on the dispatch only -- the
+    // verification keeps whatever the salvage projection wrote.
+    markOutcomeUnknown: async (
+      dispatchId: string,
+      errorCode: string,
+      providerMessageId?: string,
+    ) => {
       const dispatch = [...store.dispatches.values()].find(
         (candidate) => candidate.id === dispatchId,
       );
-      if (!dispatch) return 0;
+      if (!dispatch || dispatch.state !== 'sending') return 0;
       (dispatch as unknown as { state: string }).state = 'outcome_unknown';
       (dispatch as unknown as { lastErrorCode: string }).lastErrorCode =
         errorCode;
+      if (providerMessageId)
+        (
+          dispatch as unknown as { providerMessageId: string }
+        ).providerMessageId = providerMessageId;
+      return 1;
+    },
+    // The provider call produced no message id at all: the reservation is
+    // refunded and the verification is projected as failed but reviewable.
+    markFailedProviderOutcome: async (
+      dispatchId: string,
+      errorCode: string,
+    ) => {
+      const dispatch = [...store.dispatches.values()].find(
+        (candidate) => candidate.id === dispatchId,
+      );
+      if (!dispatch || dispatch.state !== 'sending') return 0;
+      (dispatch as unknown as { state: string }).state = 'outcome_unknown';
+      (dispatch as unknown as { lastErrorCode: string }).lastErrorCode =
+        errorCode;
+      store.usageCount = Math.max(store.usageCount - 1, 0);
       const verification = store.verifications.get(dispatch.verificationId);
-      if (verification) {
+      if (verification && dispatch.kind === 'initial') {
         verification.status = 'failed';
         verification.metadata = {
           ...verification.metadata,
@@ -629,12 +656,16 @@ async function createHarness(): Promise<AcceptanceHarness> {
     },
   };
   const dispatcher = {
+    // `dispatchById` reports success by returning 'dispatched'; anything else is
+    // a queue failure the caller answers 503 for. Returning nothing made every
+    // manual order in this suite look undispatched.
     dispatchById: async () => {
       store.dispatchCalls += 1;
       if (store.queueFailure) {
         store.queueFailure = false;
         throw new Error('Synthetic Redis unavailable');
       }
+      return 'dispatched' as const;
     },
   };
   const eventRepo = {
@@ -695,7 +726,9 @@ async function createHarness(): Promise<AcceptanceHarness> {
       },
     })
     .compile();
-  const app = module.createNestApplication<Server>();
+  // The generic names the *application* type, not the underlying server, so
+  // `<Server>` left `app` typed as a bare http.Server and broke every use of it.
+  const app = module.createNestApplication<INestApplication<Server>>();
   await app.init();
 
   return {
@@ -841,14 +874,29 @@ describe('US-04-05 Standalone manual MVP acceptance composition', () => {
 
   it('keeps durable acceptance recoverable after Redis failure and ignores repeated worker delivery', async () => {
     harness.store.queueFailure = true;
+    // The order and its event commit before the queue call, so the acceptance is
+    // durable — but an order whose job never reached the queue must not answer
+    // 202. It reports 503 and stays retryable; the same Idempotency-Key then
+    // takes the duplicate branch and re-dispatches the very same event.
+    const failed = await submitManualOrder(
+      harness.app,
+      'manual-redis-recovery',
+    ).expect(503);
+    expect(failed.body.code).toBe('MANUAL_ORDER_DISPATCH_FAILED');
+    const event = requireEvent(harness.store);
+    expect(harness.store.dispatchCalls).toBe(1);
+    expect(harness.store.events.get(event.id)?.status).toBe('pending');
+
     const response = await submitManualOrder(
       harness.app,
       'manual-redis-recovery',
     ).expect(202);
-    const event = requireEvent(harness.store);
-    expect(response.body.status).toBe('accepted');
-    expect(harness.store.dispatchCalls).toBe(1);
-    expect(harness.store.events.get(event.id)?.status).toBe('pending');
+    expect(response.body).toMatchObject({
+      status: 'accepted',
+      duplicate: true,
+    });
+    expect(harness.store.dispatchCalls).toBe(2);
+    expect(harness.store.events.size).toBe(1);
 
     await harness.processor.process(createJob(event));
     await harness.processor.process(createJob(event));
