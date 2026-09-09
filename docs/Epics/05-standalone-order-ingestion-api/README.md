@@ -3,7 +3,7 @@
 - **Horizon:** NEXT
 - **Status:** Backlog
 - **Stories:** 6
-- **Prerequisite epics:** [E04 — Standalone Manual Order MVP](../04-standalone-manual-order-mvp/README.md)
+- **Prerequisite epics:** [E04.5 — Standalone Paymob Usage-Based Billing MVP](../04.5-standalone-paymob-usage-billing/README.md)
 - **Roadmap:** [Expansion backlog](../README.md)
 
 ## Business objective
@@ -22,7 +22,7 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [US-05-01 — Manage integration API keys securely](US-05-01-integration-api-key-lifecycle.md) | P0 | Feature | [US-04-05](../04-standalone-manual-order-mvp/US-04-05-manual-mvp-merchant-acceptance.md) | Backlog |
+| 1 | [US-05-01 — Manage integration API keys securely](US-05-01-integration-api-key-lifecycle.md) | P0 | Feature | [US-04.5-08](../04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md) | Backlog |
 | 2 | [US-05-02 — Accept orders through the Standalone ingestion API](US-05-02-authenticated-order-ingestion-endpoint.md) | P0 | Feature | [US-05-01](../05-standalone-order-ingestion-api/US-05-01-integration-api-key-lifecycle.md) | Backlog |
 | 3 | [US-05-03 — Make API retries idempotent and conflict-safe](US-05-03-idempotency-and-conflict-handling.md) | P0 | Technical enabler | [US-05-02](../05-standalone-order-ingestion-api/US-05-02-authenticated-order-ingestion-endpoint.md) | Backlog |
 | 4 | [US-05-04 — Add API abuse controls and safe operational errors](US-05-04-api-abuse-controls-and-audit.md) | P0 | Technical enabler | [US-05-03](../05-standalone-order-ingestion-api/US-05-03-idempotency-and-conflict-handling.md) | Backlog |

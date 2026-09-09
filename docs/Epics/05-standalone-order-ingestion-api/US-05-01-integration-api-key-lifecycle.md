@@ -6,7 +6,7 @@
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-04-05](../04-standalone-manual-order-mvp/US-04-05-manual-mvp-merchant-acceptance.md)
+- **Dependencies:** [US-04.5-08](../04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md)
 
 ## User story and value
 
