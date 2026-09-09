@@ -1,3 +1,4 @@
+import { PeriodicPlanAccounting } from './repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accounting';
 import { UsageAccountingRouter } from './repositories/usage-accounting.router';
 import { Module } from '@nestjs/common';
@@ -24,6 +25,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
   imports: [ConfigModule],
   providers: [
     CreditAccountingRepository,
+    PeriodicPlanAccounting,
     PrepaidCreditAccounting,
     UsageAccountingRouter,
     PaymentPurchasesRepository,
@@ -44,6 +46,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
   ],
   exports: [
     CreditAccountingRepository,
+    PeriodicPlanAccounting,
     PrepaidCreditAccounting,
     UsageAccountingRouter,
     PaymentPurchasesRepository,

@@ -1,4 +1,5 @@
 import { UsageAccountingRouter } from './usage-accounting.router';
+import { PeriodicPlanAccounting } from './periodic-plan-accounting';
 import { getTableColumns } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import * as schema from '../index';
@@ -109,7 +110,11 @@ function buildRepository(overrides: DispatchOverrides = {}) {
   });
   const repository = new VerificationMessageDispatchesRepository(
     db as never,
-    new UsageAccountingRouter({} as never, {} as never),
+    new UsageAccountingRouter(
+      {} as never,
+      new PeriodicPlanAccounting(),
+      {} as never,
+    ),
   );
   return { repository, statements };
 }
@@ -160,7 +165,11 @@ function buildAcceptanceRecoveryRepository(options: {
   return {
     repository: new VerificationMessageDispatchesRepository(
       db as never,
-      new UsageAccountingRouter({} as never, {} as never),
+      new UsageAccountingRouter(
+        {} as never,
+        new PeriodicPlanAccounting(),
+        {} as never,
+      ),
     ),
     statements,
   };
@@ -232,7 +241,11 @@ function buildClaimRepository(overrides: DispatchOverrides = {}) {
   };
   const repository = new VerificationMessageDispatchesRepository(
     db as never,
-    new UsageAccountingRouter({} as never, {} as never),
+    new UsageAccountingRouter(
+      {} as never,
+      new PeriodicPlanAccounting(),
+      {} as never,
+    ),
   );
   return { repository, statements };
 }
@@ -708,6 +721,7 @@ function buildPrepaidRepository(overrides: DispatchOverrides = {}) {
       new PrepaidCreditAccounting(
         new CreditAccountingRepository(session as never),
       ),
+      new PeriodicPlanAccounting(),
       {} as never,
     ),
   );

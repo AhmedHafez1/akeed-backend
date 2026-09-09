@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { CreditTransaction } from '../credit-transaction';
 import { integrationMonthlyUsage } from '../schema';
@@ -7,6 +8,7 @@ import type {
 } from '../../../shared/billing/entitlement';
 import type { DispatchRecord } from './verification-message-dispatches.repository';
 
+@Injectable()
 export class PeriodicPlanAccounting {
   async reserve(
     tx: CreditTransaction,

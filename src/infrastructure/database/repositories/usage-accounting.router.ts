@@ -17,9 +17,9 @@ import { PrepaidCreditAccounting } from './prepaid-credit-accounting';
 
 @Injectable()
 export class UsageAccountingRouter {
-  readonly periodic = new PeriodicPlanAccounting();
   constructor(
     readonly prepaid: PrepaidCreditAccounting,
+    readonly periodic: PeriodicPlanAccounting,
     private readonly config: ConfigService,
   ) {}
 

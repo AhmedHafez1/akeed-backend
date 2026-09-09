@@ -8,6 +8,7 @@ import postgres from 'postgres';
 import * as tables from '../../src/infrastructure/database/schema';
 import * as relations from '../../src/infrastructure/database/relations';
 import { CreditAccountingRepository } from '../../src/infrastructure/database/repositories/credit-accounting.repository';
+import { PeriodicPlanAccounting } from '../../src/infrastructure/database/repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from '../../src/infrastructure/database/repositories/prepaid-credit-accounting';
 import { UsageAccountingRouter } from '../../src/infrastructure/database/repositories/usage-accounting.router';
 import { VerificationMessageDispatchesRepository } from '../../src/infrastructure/database/repositories/verification-message-dispatches.repository';
@@ -53,11 +54,16 @@ export function creditUsageHarness() {
     PAYMOB_WALLET_INTEGRATION_ID: 'wallet1',
     PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '900',
   });
-  const router = new UsageAccountingRouter(prepaid, config);
+  const periodic = new PeriodicPlanAccounting();
+  const router = new UsageAccountingRouter(prepaid, periodic, config);
   const dispatches = new VerificationMessageDispatchesRepository(db, router);
   const disabled = new VerificationMessageDispatchesRepository(
     db,
-    new UsageAccountingRouter(prepaid, standaloneCreditBillingConfigService()),
+    new UsageAccountingRouter(
+      prepaid,
+      periodic,
+      standaloneCreditBillingConfigService(),
+    ),
   );
 
   async function scaffold(table: PgTable) {

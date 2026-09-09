@@ -1,4 +1,13 @@
-export const CREDIT_ACCOUNTING_PORT = Symbol('CREDIT_ACCOUNTING_PORT');
+/**
+ * Shared vocabulary for the prepaid credit domain.
+ *
+ * The runtime seam is `UsageAccountingRouter`, which picks between
+ * `PrepaidCreditAccounting` and `PeriodicPlanAccounting`. Both take the
+ * dispatch row itself, because a hold, a consumption and a reversal are all
+ * identified by the same `(verification, kind, generation)` dispatch identity
+ * the ledger and the reservation are keyed on. This file holds the types that
+ * cross module boundaries, not a second description of that seam.
+ */
 
 export type CreditAccountStatus = 'pending_approval' | 'active' | 'suspended';
 export type CreditReservationStatus = 'held' | 'consumed' | 'released';
@@ -22,6 +31,7 @@ export interface CreditSummary {
   version: number;
 }
 
+/** The billable identity of one send, shared by the dispatch, the reservation and the ledger. */
 export interface BillableIdentity {
   orgId: string;
   integrationId: string;
@@ -29,62 +39,4 @@ export interface BillableIdentity {
   dispatchId: string;
   kind: 'initial' | 'follow_up';
   generation: number;
-}
-
-export interface CreditOperation {
-  orgId: string;
-  idempotencyKey: string;
-  actorId?: string;
-  reason: string;
-}
-
-export interface CreditResolution extends CreditOperation {
-  reservationId: string;
-}
-
-export type CreditMutationResult = {
-  outcome: 'applied' | 'duplicate';
-  summary: CreditSummary;
-  reservationId?: string;
-  ledgerEntryId?: string;
-};
-
-export interface CreditAccountingPort<Transaction> {
-  hold(
-    transaction: Transaction,
-    input: BillableIdentity & { quantity: number },
-  ): Promise<CreditMutationResult>;
-  consume(
-    transaction: Transaction,
-    input: CreditResolution & { providerMessageId: string },
-  ): Promise<CreditMutationResult>;
-  release(
-    transaction: Transaction,
-    input: CreditResolution,
-  ): Promise<CreditMutationResult>;
-  reverse(
-    transaction: Transaction,
-    input: CreditOperation & {
-      sourceLedgerEntryId: string;
-      sourceReference?: string;
-      type:
-        | 'failure_reversal'
-        | 'refund_reversal'
-        | 'chargeback_reversal'
-        | 'chargeback_reinstatement';
-      quantity: number;
-    },
-  ): Promise<CreditMutationResult>;
-  grant(
-    transaction: Transaction,
-    input: CreditOperation &
-      (
-        | { type: 'free_grant'; quantity: number; actorId: string }
-        | { type: 'purchase'; quantity: number; purchaseId: string }
-      ),
-  ): Promise<CreditMutationResult>;
-  adjust(
-    transaction: Transaction,
-    input: CreditOperation & { actorId: string; quantity: number },
-  ): Promise<CreditMutationResult>;
 }
