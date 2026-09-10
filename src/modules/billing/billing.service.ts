@@ -54,6 +54,7 @@ import type {
   CreatePurchaseResponseDto,
   CreditSummaryResponseDto,
   LedgerEntryDto,
+  LedgerReasonCode,
   PagedResponseDto,
   PurchaseDetailDto,
   PurchaseSummaryDto,
@@ -61,6 +62,17 @@ import type {
 import type { LedgerQueryDto, PageQueryDto } from './dto/billing.dto';
 
 const DEFAULT_PAGE = 25;
+
+const LEDGER_REASON_CODES: Record<LedgerEntryDto['type'], LedgerReasonCode> = {
+  free_grant: 'launch_grant',
+  purchase: 'payment_verified',
+  consumption: 'message_accepted',
+  failure_reversal: 'delivery_failure_restored',
+  refund_reversal: 'refund_reversed',
+  chargeback_reversal: 'chargeback_reversed',
+  chargeback_reinstatement: 'chargeback_reinstated',
+  staff_adjustment: 'staff_adjustment',
+};
 
 /**
  * Merchant-facing billing.
@@ -142,6 +154,7 @@ export class BillingService {
       summary,
     });
     return {
+      billingEnabled: pricing.enabled,
       status: summary?.status ?? 'not_provisioned',
       postedBalance: summary?.postedBalance ?? 0,
       heldCredits: summary?.heldCredits ?? 0,
@@ -178,7 +191,27 @@ export class BillingService {
       type: query.type,
     });
     const page = paginate(rows, limit);
-    return { items: page.items, nextCursor: page.nextCursor, limit };
+    return {
+      items: page.items.map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        quantity: entry.quantity,
+        actorType:
+          entry.type === 'free_grant' || entry.type === 'staff_adjustment'
+            ? entry.actorId
+              ? 'akeed_staff'
+              : 'system'
+            : entry.type === 'consumption' || entry.type === 'failure_reversal'
+              ? 'meta'
+              : 'paymob',
+        reasonCode: LEDGER_REASON_CODES[entry.type],
+        postedBalanceAfter: entry.postedBalanceAfter,
+        createdAt: entry.createdAt,
+        purchaseRef: entry.purchaseRef,
+      })),
+      nextCursor: page.nextCursor,
+      limit,
+    };
   }
 
   async listPurchases(
@@ -243,10 +276,7 @@ export class BillingService {
     // Rebuilt field by field rather than filtered: the row also carries the
     // provider identifiers and the next-inquiry schedule, and a later column
     // must not join the response by default.
-    return {
-      ...this.summarize(purchase),
-      reconciliationRequired: purchase.reconciliationRequired,
-    };
+    return this.summarize(purchase);
   }
 
   /**
@@ -470,8 +500,10 @@ export class BillingService {
     totalMinor: number;
     currency: string;
     refundedMinor: number;
+    reconciliationRequired: boolean;
     checkoutExpiresAt: string | null;
     createdAt: string;
+    updatedAt: string;
   }): PurchaseSummaryDto {
     return {
       reference: purchase.reference,
@@ -482,8 +514,10 @@ export class BillingService {
       totalMinor: purchase.totalMinor,
       currency: purchase.currency,
       refundedMinor: purchase.refundedMinor,
+      reconciliationRequired: purchase.reconciliationRequired,
       checkoutExpiresAt: purchase.checkoutExpiresAt,
       createdAt: purchase.createdAt,
+      updatedAt: purchase.updatedAt,
     };
   }
 }

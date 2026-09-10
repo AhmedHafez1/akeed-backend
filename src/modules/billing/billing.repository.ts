@@ -42,7 +42,7 @@ export class BillingRepository {
         id: creditLedgerEntries.id,
         type: creditLedgerEntries.type,
         quantity: creditLedgerEntries.quantity,
-        reason: creditLedgerEntries.reason,
+        actorId: creditLedgerEntries.actorId,
         postedBalanceAfter: creditLedgerEntries.postedBalanceAfter,
         createdAt: creditLedgerEntries.createdAt,
         purchaseRef: paymentPurchases.reference,
@@ -90,8 +90,10 @@ export class BillingRepository {
         totalMinor: paymentPurchases.totalMinor,
         currency: paymentPurchases.currency,
         refundedMinor: paymentPurchases.refundedMinor,
+        reconciliationRequired: paymentPurchases.reconciliationRequired,
         checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
         createdAt: paymentPurchases.createdAt,
+        updatedAt: paymentPurchases.updatedAt,
       })
       .from(paymentPurchases)
       .where(

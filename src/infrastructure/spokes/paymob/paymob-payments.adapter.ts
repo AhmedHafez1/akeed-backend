@@ -112,6 +112,8 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
    */
   async createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult> {
     const paymob = this.settings();
+    const redirectionUrl = new URL(paymob.returnUrl);
+    redirectionUrl.searchParams.set('purchaseRef', input.reference);
     const body = {
       amount: input.totalMinor,
       currency: input.currency,
@@ -119,7 +121,7 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
       special_reference: input.reference,
       expiration: paymob.checkoutExpirationSeconds,
       notification_url: paymob.callbackUrl,
-      redirection_url: paymob.returnUrl,
+      redirection_url: redirectionUrl.toString(),
       billing_data: BILLING_PLACEHOLDER,
       items: [
         {

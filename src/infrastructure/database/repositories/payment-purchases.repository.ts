@@ -87,6 +87,7 @@ export class PaymentPurchasesRepository {
         refundedMinor: paymentPurchases.refundedMinor,
         checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
         createdAt: paymentPurchases.createdAt,
+        updatedAt: paymentPurchases.updatedAt,
         // The boolean, never the code: a reconciliation code names an internal
         // anomaly and is for staff tooling.
         reconciliationRequired: paymentPurchases.reconciliationRequired,

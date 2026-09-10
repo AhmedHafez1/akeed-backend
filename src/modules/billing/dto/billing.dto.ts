@@ -53,6 +53,7 @@ export class CreatePurchaseDto {
 }
 
 export interface CreditSummaryResponseDto {
+  billingEnabled: boolean;
   status: 'pending_approval' | 'active' | 'suspended' | 'not_provisioned';
   postedBalance: number;
   heldCredits: number;
@@ -66,11 +67,24 @@ export interface CreditSummaryResponseDto {
   purchaseDenialReason: PurchaseDenialCode | null;
 }
 
+export type LedgerActorType = 'akeed_staff' | 'meta' | 'paymob' | 'system';
+
+export type LedgerReasonCode =
+  | 'chargeback_reinstated'
+  | 'chargeback_reversed'
+  | 'delivery_failure_restored'
+  | 'launch_grant'
+  | 'message_accepted'
+  | 'payment_verified'
+  | 'refund_reversed'
+  | 'staff_adjustment';
+
 export interface LedgerEntryDto {
   id: string;
   type: CreditLedgerType;
   quantity: number;
-  reason: string;
+  actorType: LedgerActorType;
+  reasonCode: LedgerReasonCode;
   postedBalanceAfter: number;
   createdAt: string;
   purchaseRef: string | null;
@@ -85,13 +99,13 @@ export interface PurchaseSummaryDto {
   totalMinor: number;
   currency: string;
   refundedMinor: number;
+  reconciliationRequired: boolean;
   checkoutExpiresAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface PurchaseDetailDto extends PurchaseSummaryDto {
-  reconciliationRequired: boolean;
-}
+export type PurchaseDetailDto = PurchaseSummaryDto;
 
 export interface CreatePurchaseResponseDto extends PurchaseSummaryDto {
   /**

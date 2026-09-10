@@ -43,8 +43,10 @@ const purchaseRow = {
   totalMinor: 20000,
   currency: 'EGP',
   refundedMinor: 0,
+  reconciliationRequired: false,
   checkoutExpiresAt: '2026-09-09T10:30:00.000Z',
   createdAt: '2026-09-09T10:15:00.000Z',
+  updatedAt: '2026-09-09T10:16:00.000Z',
 };
 
 const created: CheckoutResult = {
@@ -147,6 +149,7 @@ describe('BillingService.readCredits', () => {
   it('returns price, range and threshold from configuration only', async () => {
     const { service } = setup();
     await expect(service.readCredits(owner)).resolves.toMatchObject({
+      billingEnabled: true,
       status: 'active',
       availableCredits: 30,
       lowBalanceThreshold: 10,
@@ -197,6 +200,18 @@ describe('BillingService.readCredits', () => {
       status: 'not_provisioned',
       canPurchase: false,
       purchaseDenialReason: 'STANDALONE_APPROVAL_REQUIRED',
+    });
+  });
+
+  it('exposes the global billing switch without hiding read-only balances', async () => {
+    const { service } = setup({
+      config: standaloneCreditBillingConfigService(),
+    });
+    await expect(service.readCredits(owner)).resolves.toMatchObject({
+      billingEnabled: false,
+      availableCredits: 30,
+      canPurchase: false,
+      purchaseDenialReason: 'BILLING_DISABLED',
     });
   });
 });
@@ -485,7 +500,52 @@ describe('BillingService reads', () => {
     billing.listPurchases.mockResolvedValue([purchaseRow]);
     const page = await service.listPurchases(owner, {});
     expect(page.items[0]).not.toHaveProperty('id');
-    expect(page.items[0]).toMatchObject({ reference: purchaseRow.reference });
+    expect(page.items[0]).toMatchObject({
+      reference: purchaseRow.reference,
+      updatedAt: purchaseRow.updatedAt,
+      reconciliationRequired: false,
+    });
+  });
+
+  it('maps ledger internals to safe merchant-facing actor and reason codes', async () => {
+    const { service, billing } = setup();
+    billing.listLedger.mockResolvedValue([
+      {
+        id: 'ledger-1',
+        type: 'free_grant',
+        quantity: 30,
+        actorId: 'staff-user-id',
+        reason: 'sensitive staff approval note',
+        postedBalanceAfter: 30,
+        createdAt: '2026-09-09T10:15:00.000Z',
+        purchaseRef: null,
+      },
+      {
+        id: 'ledger-2',
+        type: 'consumption',
+        quantity: -1,
+        actorId: null,
+        reason: 'provider_accepted',
+        postedBalanceAfter: 29,
+        createdAt: '2026-09-09T10:16:00.000Z',
+        purchaseRef: null,
+      },
+    ]);
+
+    const page = await service.listLedger(owner, {});
+
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        actorType: 'akeed_staff',
+        reasonCode: 'launch_grant',
+      }),
+      expect.objectContaining({
+        actorType: 'meta',
+        reasonCode: 'message_accepted',
+      }),
+    ]);
+    expect(page.items[0]).not.toHaveProperty('actorId');
+    expect(page.items[0]).not.toHaveProperty('reason');
   });
 });
 

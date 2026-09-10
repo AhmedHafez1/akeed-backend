@@ -136,7 +136,7 @@ Setting it to `true` makes every variable below required and validated at startu
 | `PAYMOB_MODE` | `test` or `live`. Live requires public HTTPS hostnames throughout. |
 | `PAYMOB_BASE_URL` | Paymob API origin. Every outbound call is built from this; there is no hard-coded host. |
 | `PAYMOB_CALLBACK_URL` | Processed callback. The pathname **must** be `/api/webhooks/payments/paymob`, which is where the controller is mounted. |
-| `PAYMOB_RETURN_URL` | Where the browser lands after checkout. Context only — a redirect never grants credits. |
+| `PAYMOB_RETURN_URL` | Prefer the locale-less Standalone `/billing/return` URL so `NEXT_LOCALE` restores locale. Akeed appends only `purchaseRef`; the redirect is context only and never grants credits. |
 | `PAYMOB_SECRET_KEY` | Server-only. Sent as `Authorization: Token <secret>`. |
 | `PAYMOB_HMAC_SECRET` | Server-only. Verifies the processed callback. |
 | `PAYMOB_PUBLIC_KEY` | Reaches the browser inside the hosted checkout URL. |

@@ -81,7 +81,7 @@ Each story is an independent implementation patch/commit series. Do not mix work
 | 2 | [US-04.5-02 — Approve merchants and grant launch credits](US-04.5-02-approval-and-one-time-grant.md) | P0 | Feature | [US-04.5-01](US-04.5-01-credit-and-payment-domain-foundation.md) | Done |
 | 3 | [US-04.5-03 — Account for Standalone message usage](US-04.5-03-provider-neutral-usage-accounting.md) | P0 | Technical enabler | [US-04.5-02](US-04.5-02-approval-and-one-time-grant.md) | Done |
 | 4 | [US-04.5-04 — Buy credits through Paymob safely](US-04.5-04-paymob-checkout-and-callbacks.md) | P0 | Feature | [US-04.5-03](US-04.5-03-provider-neutral-usage-accounting.md) | Done |
-| 5 | [US-04.5-05 — Use the merchant billing experience](US-04.5-05-merchant-billing-experience.md) | P0 | Feature | [US-04.5-04](US-04.5-04-paymob-checkout-and-callbacks.md) | Backlog |
+| 5 | [US-04.5-05 — Use the merchant billing experience](US-04.5-05-merchant-billing-experience.md) | P0 | Feature | [US-04.5-04](US-04.5-04-paymob-checkout-and-callbacks.md) | Done |
 | 6 | [US-04.5-06 — Operate and reconcile Standalone billing](US-04.5-06-staff-billing-operations.md) | P0 | Operations | [US-04.5-05](US-04.5-05-merchant-billing-experience.md) | Backlog |
 | 7 | [US-04.5-07 — Monitor billing and revenue integrity](US-04.5-07-observability-and-finance-reconciliation.md) | P1 | Operations | [US-04.5-06](US-04.5-06-staff-billing-operations.md) | Backlog |
 | 8 | [US-04.5-08 — Prove sandbox and controlled-production readiness](US-04.5-08-sandbox-and-production-release-gate.md) | P0 | Quality gate | [US-04.5-07](US-04.5-07-observability-and-finance-reconciliation.md) | Backlog |
