@@ -20,6 +20,7 @@ import {
   STANDALONE_BILLING_OPERATIONS_CONFIG,
 } from '../../shared/config/standalone-billing-operations.config';
 import { StandaloneBillingOperatorGuard } from './standalone-billing-operator.guard';
+import { BillingObservabilityService } from './billing-observability.service';
 
 describe('Standalone billing approval staff HTTP boundary', () => {
   let app: INestApplication;
@@ -42,6 +43,16 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     previewRepair: jest.fn().mockResolvedValue({ outcome: 'repairable' }),
     applyRepair: jest.fn().mockResolvedValue({ outcome: 'repaired' }),
   };
+  const observability = {
+    health: jest.fn().mockResolvedValue({ health: { status: 'healthy' } }),
+    listFindings: jest.fn().mockResolvedValue({ rows: [], nextCursor: null }),
+    requestRun: jest.fn().mockResolvedValue({ runId: randomUUID() }),
+    listSettlements: jest
+      .fn()
+      .mockResolvedValue({ rows: [], nextCursor: null }),
+    recordSettlement: jest.fn().mockResolvedValue({ id: randomUUID() }),
+    openFindingsForOrganization: jest.fn().mockResolvedValue([]),
+  };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
   beforeAll(async () => {
@@ -52,6 +63,7 @@ describe('Standalone billing approval staff HTTP boundary', () => {
         StandaloneBillingOperatorGuard,
         { provide: StandaloneBillingService, useValue: billing },
         { provide: StandaloneBillingOperationsService, useValue: operations },
+        { provide: BillingObservabilityService, useValue: observability },
         {
           provide: ConfigService,
           useValue: new ConfigService({
@@ -183,11 +195,161 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       .set('Authorization', 'Bearer staff-aal2')
       .expect(200);
     expect(operations.accountDetail).toHaveBeenCalledWith(staffId, orgId);
+    expect(observability.openFindingsForOrganization).toHaveBeenCalledWith(
+      orgId,
+    );
     expect(response.headers['cache-control']).toBe('private, no-store');
     await http()
       .get('/api/admin/standalone-billing/accounts/not-a-uuid')
       .set('Authorization', 'Bearer staff-aal2')
       .expect(400);
+  });
+
+  it('exposes uncached health, findings and settlement reads to staff', async () => {
+    await http()
+      .get(
+        '/api/admin/standalone-billing/health?from=2026-09-01T00:00:00.000Z&to=2026-10-01T00:00:00.000Z',
+      )
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    expect(observability.health).toHaveBeenCalledWith(
+      '2026-09-01T00:00:00.000Z',
+      '2026-10-01T00:00:00.000Z',
+    );
+    await http()
+      .get(
+        '/api/admin/standalone-billing/reconciliation/findings?status=open&severity=critical&limit=10',
+      )
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(200);
+    await http()
+      .get('/api/admin/standalone-billing/settlements?limit=10')
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(200);
+  });
+
+  it('gates manual runs and settlement evidence to a named operator', async () => {
+    await http()
+      .post('/api/admin/standalone-billing/reconciliation/runs')
+      .set('Authorization', 'Bearer staff-other')
+      .send({ reason: 'Check the current backlog' })
+      .expect(403);
+    await http()
+      .post('/api/admin/standalone-billing/reconciliation/runs')
+      .set('Authorization', 'Bearer staff-aal2')
+      .send({ reason: ' Check the current backlog ', status: 'successful' })
+      .expect(201);
+    expect(observability.requestRun).toHaveBeenCalledWith(
+      staffId,
+      'Check the current backlog',
+      undefined,
+    );
+
+    await http()
+      .post('/api/admin/standalone-billing/settlements')
+      .set('Authorization', 'Bearer staff-aal2')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        providerReportId: 'PAYMOB-2026-09-10',
+        periodStart: '2026-09-09T00:00:00.000Z',
+        periodEnd: '2026-09-10T00:00:00.000Z',
+        settledAt: '2026-09-10T08:00:00.000Z',
+        currency: 'EGP',
+        transactionCount: 1,
+        grossMinor: 20000,
+        refundedMinor: 0,
+        chargebackMinor: 0,
+        feeMinor: 500,
+        vatMinor: 70,
+        netMinor: 19430,
+        evidence: 'Finance ticket FIN-1',
+        reason: 'Record daily settlement',
+        status: 'successful',
+      })
+      .expect(201);
+    const [settlementCall] = observability.recordSettlement.mock.calls[0] as [
+      { settlement: Record<string, unknown> },
+    ];
+    expect(settlementCall.settlement).not.toHaveProperty('status');
+  });
+
+  it.each(['merchant-owner', 'staff-aal1'])(
+    'denies billing health and settlements to %s',
+    async (token) => {
+      await http()
+        .get('/api/admin/standalone-billing/health')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await http()
+        .get('/api/admin/standalone-billing/settlements')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      expect(observability.health).not.toHaveBeenCalled();
+      expect(observability.listSettlements).not.toHaveBeenCalled();
+    },
+  );
+
+  it('lets any staff member read health while writes stay operator-only', async () => {
+    await http()
+      .get('/api/admin/standalone-billing/health')
+      .set('Authorization', 'Bearer staff-other')
+      .expect(200);
+    await http()
+      .post('/api/admin/standalone-billing/settlements')
+      .set('Authorization', 'Bearer staff-other')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(403);
+    expect(observability.recordSettlement).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/health?from=yesterday',
+    '/reconciliation/findings?limit=101',
+    '/reconciliation/findings?severity=low',
+    '/reconciliation/findings?code=DROP%20TABLE',
+    '/reconciliation/findings?cursor=not-a-uuid',
+    '/settlements?limit=0',
+  ])('rejects the malformed read %s', async (path) => {
+    await http()
+      .get(`/api/admin/standalone-billing${path}`)
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(400);
+  });
+
+  it.each([
+    { grossMinor: -1 },
+    { grossMinor: 1.5 },
+    { currency: 'egp' },
+    { periodStart: '09/09/2026' },
+    { supersedesId: 'not-a-uuid' },
+    { evidence: '' },
+    { providerReportId: 'report with spaces' },
+  ])('rejects the settlement body change %o', async (change) => {
+    await http()
+      .post('/api/admin/standalone-billing/settlements')
+      .set('Authorization', 'Bearer staff-aal2')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        providerReportId: 'PAYMOB-2026-09-10',
+        periodStart: '2026-09-09T00:00:00.000Z',
+        periodEnd: '2026-09-10T00:00:00.000Z',
+        settledAt: '2026-09-10T08:00:00.000Z',
+        currency: 'EGP',
+        transactionCount: 1,
+        grossMinor: 20000,
+        refundedMinor: 0,
+        chargebackMinor: 0,
+        feeMinor: 500,
+        vatMinor: 70,
+        netMinor: 19430,
+        evidence: 'Finance ticket FIN-1',
+        reason: 'Record daily settlement',
+        ...change,
+      })
+      .expect(400);
+    expect(observability.recordSettlement).not.toHaveBeenCalled();
   });
   describe('credit adjustments', () => {
     const path = `/api/admin/standalone-billing/accounts/${orgId}/adjustments`;
@@ -466,6 +628,9 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       [
         'GET accounts',
         'GET accounts/:orgId',
+        'GET health',
+        'GET reconciliation/findings',
+        'GET settlements',
         'POST accounts/:orgId/adjustments/apply',
         'POST accounts/:orgId/adjustments/preview',
         'POST accounts/:orgId/projection-repair/apply',
@@ -475,8 +640,10 @@ describe('Standalone billing approval staff HTTP boundary', () => {
         'POST dispatches/:dispatchId/resolve',
         'POST purchases/:purchaseRef/provider-action',
         'POST purchases/:purchaseRef/reconcile',
+        'POST reconciliation/runs',
+        'POST settlements',
       ].sort(),
     );
-    expect(routes.join(' ')).not.toMatch(/success|grant|settle|status/i);
+    expect(routes.join(' ')).not.toMatch(/success|grant|status/i);
   });
 });

@@ -38,6 +38,14 @@ import {
 } from './standalone-billing-operator.guard';
 import { StandaloneBillingOperationsService } from './standalone-billing-operations.service';
 import { StandaloneBillingService } from './standalone-billing.service';
+import {
+  BillingFindingsQueryDto,
+  BillingHealthQueryDto,
+  BillingReconciliationRunDto,
+  BillingSettlementDto,
+  BillingSettlementsQueryDto,
+} from './dto/billing-observability.dto';
+import { BillingObservabilityService } from './billing-observability.service';
 
 /** Writes that change billing state get a tighter budget than reads. */
 const WRITE_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
@@ -62,7 +70,58 @@ export class StandaloneBillingController {
   constructor(
     private readonly billing: StandaloneBillingService,
     private readonly operations: StandaloneBillingOperationsService,
+    private readonly observability: BillingObservabilityService,
   ) {}
+
+  @Get('health')
+  @Header('Cache-Control', 'private, no-store')
+  health(@Query() query: BillingHealthQueryDto) {
+    return this.observability.health(query.from, query.to);
+  }
+
+  @Get('reconciliation/findings')
+  @Header('Cache-Control', 'private, no-store')
+  findings(@Query() query: BillingFindingsQueryDto) {
+    return this.observability.listFindings(query);
+  }
+
+  @Post('reconciliation/runs')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  requestRun(
+    @Req() request: RequestWithAdmin,
+    @Body() body: BillingReconciliationRunDto,
+  ) {
+    return this.observability.requestRun(
+      request.admin.userId,
+      body.reason,
+      readRequestId(request),
+    );
+  }
+
+  @Get('settlements')
+  @Header('Cache-Control', 'private, no-store')
+  settlements(@Query() query: BillingSettlementsQueryDto) {
+    return this.observability.listSettlements(query.limit, query.cursor);
+  }
+
+  @Post('settlements')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  recordSettlement(
+    @Req() request: RequestWithAdmin,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: BillingSettlementDto,
+  ) {
+    return this.observability.recordSettlement({
+      userId: request.admin.userId,
+      idempotencyKey,
+      settlement: body,
+      requestId: readRequestId(request),
+    });
+  }
 
   @Get('accounts')
   @Header('Cache-Control', 'private, no-store')
@@ -75,11 +134,15 @@ export class StandaloneBillingController {
 
   @Get('accounts/:orgId')
   @Header('Cache-Control', 'private, no-store')
-  account(
+  async account(
     @Req() request: RequestWithAdmin,
     @Param('orgId', new ParseUUIDPipe()) orgId: string,
   ) {
-    return this.operations.accountDetail(request.admin.userId, orgId);
+    const [detail, findings] = await Promise.all([
+      this.operations.accountDetail(request.admin.userId, orgId),
+      this.observability.openFindingsForOrganization(orgId),
+    ]);
+    return { ...detail, findings };
   }
 
   @Post('accounts/:orgId/adjustments/preview')
