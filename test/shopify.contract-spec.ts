@@ -301,11 +301,15 @@ describe('Shopify isolated PostgreSQL contract', () => {
     await expect(dispatcher.dispatchById(persisted.id)).resolves.toBe(
       'dispatched',
     );
+    // The job id ends in the claim's lease timestamp so a redispatch after
+    // `resetForRedispatch` never collides with a retained completed job.
     expect(queue.add).toHaveBeenCalledWith(
       WebhookJobType.ORDER_CREATE,
       expect.objectContaining({ webhookEventId: persisted.id }),
       expect.objectContaining({
-        jobId: `webhook-event-${persisted.id}-dispatch-2`,
+        jobId: expect.stringMatching(
+          new RegExp(`^webhook-event-${persisted.id}-dispatch-2-\\d+$`),
+        ) as unknown,
       }),
     );
     await expect(repository.findById(persisted.id)).resolves.toMatchObject({
