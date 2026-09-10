@@ -3,6 +3,10 @@ import {
   parseStandaloneCreditBillingConfig,
   STANDALONE_CREDIT_BILLING_CONFIG,
 } from '../../src/shared/config/standalone-credit-billing.config';
+import {
+  parseStandaloneBillingOperationsConfig,
+  STANDALONE_BILLING_OPERATIONS_CONFIG,
+} from '../../src/shared/config/standalone-billing-operations.config';
 
 /**
  * Builds the same validated billing object `validateEnv` puts on the
@@ -16,6 +20,8 @@ export function standaloneCreditBillingConfigService(
     ...environment,
     [STANDALONE_CREDIT_BILLING_CONFIG]:
       parseStandaloneCreditBillingConfig(environment),
+    [STANDALONE_BILLING_OPERATIONS_CONFIG]:
+      parseStandaloneBillingOperationsConfig(environment),
   };
   return {
     get: (key: string) => values[key],

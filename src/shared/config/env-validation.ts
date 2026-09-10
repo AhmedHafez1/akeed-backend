@@ -2,6 +2,10 @@ import {
   parseStandaloneCreditBillingConfig,
   STANDALONE_CREDIT_BILLING_CONFIG,
 } from './standalone-credit-billing.config';
+import {
+  parseStandaloneBillingOperationsConfig,
+  STANDALONE_BILLING_OPERATIONS_CONFIG,
+} from './standalone-billing-operations.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -90,5 +94,7 @@ export function validateEnv(
     ...config,
     [STANDALONE_CREDIT_BILLING_CONFIG]:
       parseStandaloneCreditBillingConfig(config),
+    [STANDALONE_BILLING_OPERATIONS_CONFIG]:
+      parseStandaloneBillingOperationsConfig(config),
   };
 }

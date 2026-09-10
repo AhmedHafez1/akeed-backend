@@ -31,6 +31,14 @@ import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outc
 import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
 import { validateEnv } from './shared/config/env-validation';
 
+// The payment provider reaches billing as a port binding, so nothing in the
+// billing module names Paymob and a second processor is a new spoke plus one
+// line here.
+const billingModule = BillingModule.register({
+  imports: [PaymobModule],
+  ports: [{ provide: PAYMENTS_PORT, useExisting: PaymobPaymentsAdapter }],
+});
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -85,15 +93,11 @@ import { validateEnv } from './shared/config/env-validation';
     WebhookQueueModule,
     VerificationAutomationModule,
     DatabaseModule,
-    AdminModule,
+    // Staff billing operations drive the same payment services, so they
+    // receive this one billing module instance instead of registering another.
+    AdminModule.register({ imports: [billingModule] }),
     CommerceOutcomeModule,
-    // The payment provider reaches billing as a port binding, so nothing in
-    // the billing module names Paymob and a second processor is a new spoke
-    // plus one line here.
-    BillingModule.register({
-      imports: [PaymobModule],
-      ports: [{ provide: PAYMENTS_PORT, useExisting: PaymobPaymentsAdapter }],
-    }),
+    billingModule,
   ],
   controllers: [AppController],
   providers: [
