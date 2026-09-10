@@ -136,22 +136,44 @@ async function grant(
 
 async function dispatch(
   tx: CreditTransaction,
-  overrides: Partial<
-    typeof schema.verificationMessageDispatches.$inferInsert
-  > = {},
+  overrides: Partial<{
+    orgId: string;
+    integrationId: string;
+    verificationId: string;
+    dispatchKey: string;
+    generation: number;
+    kind: 'initial' | 'follow_up' | 'legacy_unknown';
+    state: 'ready' | 'sending' | 'accepted' | 'rejected' | 'outcome_unknown';
+    failedAt: string | null;
+  }> = {},
 ) {
-  const [result] = await tx
-    .insert(schema.verificationMessageDispatches)
-    .values({
-      orgId,
-      integrationId,
-      verificationId,
-      kind: 'initial',
-      generation: 1,
-      dispatchKey: `${verificationId}:initial:1`,
-      ...overrides,
-    })
-    .returning();
+  const input = {
+    orgId,
+    integrationId,
+    verificationId,
+    kind: 'initial' as const,
+    generation: 1,
+    dispatchKey: `${verificationId}:initial:1`,
+    state: 'ready' as const,
+    failedAt: null,
+    ...overrides,
+  };
+  const [result] = await tx.execute<{
+    id: string;
+    generation: number;
+    state: string;
+  }>(sql`
+    INSERT INTO verification_message_dispatches (
+      org_id, integration_id, verification_id, dispatch_key,
+      generation, kind, state, failed_at
+    ) VALUES (
+      ${input.orgId}, ${input.integrationId}, ${input.verificationId},
+      ${input.dispatchKey}, ${input.generation},
+      ${input.kind}::verification_dispatch_kind,
+      ${input.state}::verification_dispatch_state, ${input.failedAt}
+    )
+    RETURNING id, generation, state
+  `);
   return result;
 }
 
@@ -246,9 +268,10 @@ describe('US-04.5-01 disposable PostgreSQL foundation', () => {
       });
     expect(await db.select().from(schema.creditLedgerEntries)).toHaveLength(0);
     expect(await db.select().from(schema.paymentPurchases)).toHaveLength(0);
-    const [legacy] = await db
-      .select()
-      .from(schema.verificationMessageDispatches);
+    const [legacy] = await client`
+      SELECT id, generation, state
+      FROM verification_message_dispatches
+    `;
     expect(legacy).toMatchObject({
       id: legacyDispatchId,
       generation: 1,
