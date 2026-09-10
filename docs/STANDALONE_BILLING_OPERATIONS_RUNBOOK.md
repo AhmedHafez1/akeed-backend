@@ -29,6 +29,10 @@ Every write takes a reason (required, 500 characters) and is audited with the ac
 | Paymob inquiry | Why it is being asked (merchant report, stale pending purchase) |
 | Refund or dispute evidence | Paymob refund or dispute id, the cumulative refunded total or disputed amount, and the dashboard record it was copied from |
 | Projection repair | Incident reference and what caused the drift |
+| Reconciliation run | Incident, finance close, or investigation reference |
+| Settlement summary/correction | Paymob report id, covered UTC period, settlement timestamp, finance evidence location, and correction reason |
+
+Settlement evidence is access-controlled at its referenced location; the console stores only the bounded evidence reference and never writes it to Railway logs.
 
 ## Reading an account
 
@@ -77,6 +81,62 @@ Reversals can leave the merchant in debt. That blocks new sends until they buy c
 1. Confirm the drift in the yellow alert and find its cause (a manual SQL change, a partial restore). Record the incident.
 2. **Preview repair.** It shows the posted balance rebuilt from the ledger and the held count from held reservations. If it reports contradictory records, stop and escalate.
 3. Enter the reason and **Apply repair**. Only the projection changes; the ledger is never touched. The audit row records before, after, difference, reason, request and actor.
+
+### Run reconciliation
+
+The `billing-reconciliation` queue has one worker and a nightly `30 2 * * *` schedule in `Africa/Cairo`. A named operator may enter a reason and select **Run reconciliation**. Reusing or retrying the same queue job continues the durable run and skips completed target attempts.
+
+Keep `STANDALONE_BILLING_SCHEDULED_INQUIRY_ENABLED=false` during initial rollout. Local ledger, reservation, contradiction, settlement, health, metric, and retention checks still run. Set it to `true` only after Paymob inquiry access has been exercised. Keep `STANDALONE_BILLING_RECONCILIATION_REPORT_ONLY=true` until comparisons are clean; report-only inquiries persist findings but cannot change purchases or credits. The existing account-level staff inquiry remains available regardless of the scheduled-inquiry switch.
+
+### Enter or correct a settlement
+
+1. In **Paymob settlement summaries**, copy the report id, exact covered timestamps, settlement timestamp, EGP transaction count, gross, refunds, chargebacks, fees, VAT, and net. Decimal UI values are converted to integer piastres before submission.
+2. Attach a bounded finance evidence reference and reason. Do not paste the report contents or customer/payment data.
+3. Submit once. A required `Idempotency-Key` makes a network retry safe, and the accepted entry immediately queues reconciliation.
+4. To correct an error, select **Correct revision** on the current effective row. Never edit or delete the original. The correction records `supersedesId` plus the next revision.
+5. A one-piastre or one-transaction difference is a finding. Settlement input never grants credits or changes a purchase.
+
+Net revenue, ARPPU, fees, VAT, and revenue per accepted message show as unavailable unless effective settlement reports fully cover the selected bounded period. All-time is intentionally not claimed complete.
+
+## Outage response
+
+| Failure | Immediate action | Recovery proof |
+| --- | --- | --- |
+| Callback/HMAC spike | Confirm the callback path and clock, preserve a sanitized fingerprint sample, and compare the Paymob HMAC secret without logging it. Never bypass verification. | Valid sandbox callback accepted; invalid HMAC rejected; no duplicate grant. |
+| Callback database failure | Keep returning non-2xx so Paymob retries. Restore PostgreSQL, then reconcile affected references. | Event, purchase, grant, and projection commit atomically once. |
+| Paymob inquiry timeout/rate limit | Leave the `provider_inquiry_deferred` finding open. Scheduled runs skip it until its `nextAttemptAt` (15 minutes, doubling per failure, capped at 24 hours); do not repeatedly click inquiry. | A later bounded inquiry resolves it, or the finding keeps its retry count and next action. |
+| Redis/queue outage | Callbacks continue through synchronous canonical ingestion. Restore Redis, verify scheduler state, then enqueue one named manual run. | One durable run completes and incomplete targets resume without duplicate attempts. |
+| PostgreSQL outage | Stop staff writes and scheduled work; restore the database before replaying callbacks or jobs. | Invariants pass and a full scan completes before unseen findings resolve. |
+| Stale pending payment | Use the existing inquiry. Never expire or grant from elapsed time, screenshots, or settlement input. | Paymob confirms a canonical terminal state or the finding stays open. |
+| Trusted-field mismatch/unknown reference | Quarantine and investigate reference, amount, currency, integration, mode, and ownership. | Matching provider evidence is ingested, or finance resolves without a grant. |
+| Projection mismatch | Stop mutations, inspect contradictions, then use the existing preview/apply repair. | `checkInvariant` passes and the next full scan resolves the finding. |
+| Refund, chargeback, or debt | Follow the provider-evidence procedure; involve finance/support for debt recovery or an approved adjustment. | The original paid batch and immutable reversal/reinstatement entries reconcile. |
+
+Failed or partial full scans never resolve findings that were not seen. Poison findings remain open with their prescribed next action and retry schedule. A run whose worker died is continued by BullMQ's stalled-job redelivery or the next retry of the same job; completed accounts, purchases, signals, and settlement comparisons are skipped, and a purchase already asked about in that run is never asked again.
+
+## Railway alerts and retention
+
+Create Railway log alerts against structured JSON where `action="standalone-billing-alert"`:
+
+| Alert | `alertCode` | Condition |
+| --- | --- | --- |
+| Invalid Paymob HMAC | `invalid_hmac` | At least 5 events in 5 minutes (refusals while billing is disabled are not counted) |
+| Integrity failure | `trusted_data_mismatch`, `callback_failure`, `provider_success_without_grant`, `grant_without_verified_success`, `projection_mismatch`, `source_contradiction`, `duplicate_provider_id`, `duplicate_grant_attempt` | Any event |
+| Paymob slow | `paymob_slow` | Any provider call over 5,000 ms |
+| Paymob degraded | `paymob_error_rate` | Error rate at least 20% across at least 5 attempts in 24 hours |
+| Reconciliation backlog | `reconciliation_backlog` | At least 25 open findings or oldest open finding at least 120 minutes |
+| Finance risk | `refund_state`, `chargeback_state`, `credit_debt`, `refund_dispute_discrepancy`, `settlement_difference` | Any newly opened finding |
+| Stale or deferred payment | `stale_pending`, `provider_inquiry_deferred` | Any newly opened finding |
+
+Reconciliation findings alert once when they open (or reopen), not on every run that sees them again.
+
+Organization and sanitized provider references may be searchable log fields, but never metric dimensions. `standalone-billing-metric-summary` contains bounded counters only. Configure Railway for at least 30 days of searchable log retention.
+
+Nightly cleanup retains completed runs and attempts for 180 days and resolved findings for 365 days. Open findings, settlement reports and corrections, purchases, provider events, ledger entries, and audit rows are never deleted by this cleanup.
+
+## Credential rotation
+
+Rotate Paymob server/public/HMAC keys and integration ids through Railway secrets; never paste them into tickets or logs. During HMAC rotation coordinate the provider cutover so one deployed secret matches the callback. Keep checkout disabled if credentials are uncertain, verify a sandbox intention, callback, inquiry, and refund, and then restore traffic. Rotation does not authorize deletion or rewriting of durable billing evidence.
 
 ## Escalation
 
