@@ -203,6 +203,7 @@ export function paymobBillingHarness(
     // relies on is the one production will have.
     await migrate('0032_credit_and_payment_domain_foundation.sql');
     await migrate('0033_dispatch_accounting_mode.sql');
+    await migrate('0034_billing_observability_and_settlements.sql');
   }
 
   /** An approved Standalone merchant holding `quantity` granted credits. */

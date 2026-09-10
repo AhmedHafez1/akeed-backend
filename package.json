@@ -35,6 +35,7 @@
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
     "test:contract:billing-operations": "jest --config ./test/jest-standalone-billing-operations-contract.json --runInBand",
+    "test:contract:billing-observability": "jest --config ./test/jest-billing-observability-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",

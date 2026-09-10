@@ -1570,3 +1570,249 @@ export const paymentProviderEvents = pgTable(
     }),
   ],
 ).enableRLS();
+
+export const billingSettlementReports = pgTable(
+  'billing_settlement_reports',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    provider: text('provider').notNull().default('paymob'),
+    providerReportId: text('provider_report_id').notNull(),
+    revision: integer('revision').notNull().default(1),
+    supersedesId: uuid('supersedes_id'),
+    periodStart: timestamp('period_start', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    periodEnd: timestamp('period_end', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    settledAt: timestamp('settled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    currency: text('currency').notNull(),
+    transactionCount: integer('transaction_count').notNull(),
+    grossMinor: numeric('gross_minor', { mode: 'number' }).notNull(),
+    refundedMinor: numeric('refunded_minor', { mode: 'number' }).notNull(),
+    chargebackMinor: numeric('chargeback_minor', { mode: 'number' }).notNull(),
+    feeMinor: numeric('fee_minor', { mode: 'number' }).notNull(),
+    vatMinor: numeric('vat_minor', { mode: 'number' }).notNull(),
+    netMinor: numeric('net_minor', { mode: 'number' }).notNull(),
+    actorId: uuid('actor_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    evidence: text('evidence').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.supersedesId],
+      foreignColumns: [table.id],
+      name: 'billing_settlement_reports_supersedes_id_fkey',
+    }),
+    unique('billing_settlement_report_revision_key').on(
+      table.provider,
+      table.providerReportId,
+      table.revision,
+    ),
+    unique('billing_settlement_actor_idempotency_key').on(
+      table.actorId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex('billing_settlement_supersedes_key')
+      .on(table.supersedesId)
+      .where(sql`supersedes_id IS NOT NULL`),
+    index('billing_settlement_period_idx').on(
+      table.periodStart,
+      table.periodEnd,
+      table.createdAt,
+    ),
+    pgPolicy('billing_observability_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const billingReconciliationRuns = pgTable(
+  'billing_reconciliation_runs',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    runKey: text('run_key').notNull(),
+    trigger: text('trigger').notNull(),
+    mode: text('mode').notNull(),
+    status: text('status').notNull().default('queued'),
+    settlementId: uuid('settlement_id').references(
+      () => billingSettlementReports.id,
+    ),
+    triggeredBy: uuid('triggered_by'),
+    reason: text('reason'),
+    candidates: integer('candidates').notNull().default(0),
+    attempted: integer('attempted').notNull().default(0),
+    resolved: integer('resolved').notNull().default(0),
+    deferred: integer('deferred').notNull().default(0),
+    findingsOpened: integer('findings_opened').notNull().default(0),
+    findingsResolved: integer('findings_resolved').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' }),
+    completedAt: timestamp('completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('billing_reconciliation_runs_run_key_key').on(table.runKey),
+    index('billing_reconciliation_run_created_idx').on(
+      table.createdAt,
+      table.id,
+    ),
+    pgPolicy('billing_observability_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const billingReconciliationAttempts = pgTable(
+  'billing_reconciliation_attempts',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => billingReconciliationRuns.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id').references(() => creditAccounts.orgId),
+    purchaseId: uuid('purchase_id'),
+    targetKind: text('target_kind').notNull(),
+    targetKey: text('target_key').notNull(),
+    outcome: text('outcome').notNull(),
+    errorCode: text('error_code'),
+    durationMs: integer('duration_ms').notNull().default(0),
+    attemptedAt: timestamp('attempted_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.purchaseId, table.orgId],
+      foreignColumns: [paymentPurchases.id, paymentPurchases.orgId],
+      name: 'billing_reconciliation_attempt_purchase_fk',
+    }),
+    unique('billing_reconciliation_attempt_target_key').on(
+      table.runId,
+      table.targetKind,
+      table.targetKey,
+    ),
+    index('billing_reconciliation_attempt_retention_idx').on(table.attemptedAt),
+    index('billing_reconciliation_attempt_purchase_idx').on(
+      table.orgId,
+      table.purchaseId,
+      table.attemptedAt,
+    ),
+    pgPolicy('billing_observability_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const billingReconciliationFindings = pgTable(
+  'billing_reconciliation_findings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuid_generate_v4()`),
+    fingerprint: text('fingerprint').notNull(),
+    orgId: uuid('org_id').references(() => creditAccounts.orgId),
+    purchaseId: uuid('purchase_id'),
+    settlementId: uuid('settlement_id').references(
+      () => billingSettlementReports.id,
+    ),
+    code: text('code').notNull(),
+    severity: text('severity').notNull(),
+    status: text('status').notNull().default('open'),
+    firstSeenAt: timestamp('first_seen_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+    occurrenceCount: integer('occurrence_count').notNull().default(1),
+    retryCount: integer('retry_count').notNull().default(0),
+    nextAction: text('next_action').notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    safeContext: jsonb('safe_context').notNull().default({}),
+    lastRunId: uuid('last_run_id').references(
+      () => billingReconciliationRuns.id,
+      { onDelete: 'set null' },
+    ),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('billing_reconciliation_findings_fingerprint_key').on(
+      table.fingerprint,
+    ),
+    foreignKey({
+      columns: [table.purchaseId, table.orgId],
+      foreignColumns: [paymentPurchases.id, paymentPurchases.orgId],
+      name: 'billing_reconciliation_finding_purchase_fk',
+    }),
+    index('billing_reconciliation_finding_queue_idx').on(
+      table.status,
+      table.severity,
+      table.lastSeenAt,
+      table.id,
+    ),
+    index('billing_reconciliation_finding_org_idx').on(
+      table.orgId,
+      table.status,
+      table.lastSeenAt,
+    ),
+    pgPolicy('billing_observability_service_access', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
