@@ -1,5 +1,8 @@
 import { standaloneCreditBillingConfigService } from '../../../test/contracts/standalone-credit-billing-config';
-import { CreditInvariantError } from '../../infrastructure/database/repositories/credit-accounting.repository';
+import {
+  CreditAccountingRepository,
+  CreditInvariantError,
+} from '../../infrastructure/database/repositories/credit-accounting.repository';
 import type {
   DisputeStatus,
   NormalizedProviderEvent,
@@ -112,14 +115,19 @@ function setup(
       .fn()
       .mockResolvedValue({ id: 'ledger-purchase', quantity: 100 }),
   };
+  // The real posting sequence, over the mocked primitives above, so these
+  // specs keep asserting the entry and the projection the service produces.
+  const repository = Object.assign(
+    Object.create(CreditAccountingRepository.prototype) as object,
+    credits,
+  );
+  const locked =
+    overrides.purchase === null
+      ? undefined
+      : { ...purchase, ...overrides.purchase };
   const purchases = {
-    lockByReference: jest
-      .fn()
-      .mockResolvedValue(
-        overrides.purchase === null
-          ? undefined
-          : { ...purchase, ...overrides.purchase },
-      ),
+    lockByReference: jest.fn().mockResolvedValue(locked),
+    lockForOrganization: jest.fn().mockResolvedValue(locked),
     recordEvent:
       overrides.recordEvent ?? jest.fn().mockResolvedValue({ id: 'event-1' }),
     updatePurchase: jest.fn().mockResolvedValue(purchase),
@@ -128,7 +136,7 @@ function setup(
   const service = new PaymentCallbackService(
     db as never,
     config,
-    credits as never,
+    repository as never,
     purchases as never,
   );
   return { service, credits, purchases };
@@ -414,5 +422,238 @@ describe('PaymentCallbackService.ingest', () => {
       Record<string, unknown>,
     ];
     expect(changes).toMatchObject({ status: 'expired' });
+  });
+});
+
+describe('PaymentCallbackService.recordStaffEvidence', () => {
+  const staff = {
+    orgId: 'org-1',
+    reference: purchase.reference,
+    currency: 'EGP',
+    actorId: '00000000-0000-4000-8000-000000000001',
+  };
+
+  it('locks the purchase by organization and reference, never by reference alone', async () => {
+    const { service, purchases } = setup({ purchase: null });
+    const audit = jest.fn();
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          orgId: 'org-2',
+          action: 'refund',
+          providerReference: 'rf-1',
+          amountMinor: 20000,
+        },
+        audit,
+      ),
+    ).resolves.toMatchObject({ outcome: 'not_found' });
+    expect(purchases.lockForOrganization).toHaveBeenCalledWith(
+      {},
+      'org-2',
+      purchase.reference,
+    );
+    expect(purchases.lockByReference).not.toHaveBeenCalled();
+    expect(purchases.recordEvent).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('reverses an exact full refund once, attributed to the staff member', async () => {
+    const { service, credits, purchases } = setup({
+      purchase: { status: 'successful' },
+    });
+    const audit = jest.fn();
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'refund',
+          providerReference: 'rf-1',
+          amountMinor: 20000,
+        },
+        audit,
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'reversed',
+      reversal: { type: 'refund_reversal', quantity: -100 },
+      purchase: { status: 'refunded', refundedMinor: 20000 },
+    });
+    const [, entry] = credits.insertLedgerEntry.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(entry).toMatchObject({
+      type: 'refund_reversal',
+      quantity: -100,
+      actorId: staff.actorId,
+      sourceReference: 'rf-1',
+      idempotencyKey: `refund_reversal:${purchase.reference}:rf-1`,
+      postedBalanceBefore: 30,
+      postedBalanceAfter: -70,
+    });
+    const [, eventRow] = purchases.recordEvent.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(eventRow).toMatchObject({
+      provider: 'akeed_staff',
+      verified: false,
+      resultCode: 'transitioned',
+    });
+    expect(eventRow.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats re-submitted evidence as a no-op', async () => {
+    const { service, credits, purchases } = setup({
+      purchase: { status: 'successful' },
+      recordEvent: jest.fn().mockResolvedValue(undefined),
+    });
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'refund',
+          providerReference: 'rf-1',
+          amountMinor: 20000,
+        },
+        jest.fn(),
+      ),
+    ).resolves.toMatchObject({ outcome: 'duplicate' });
+    expect(credits.insertLedgerEntry).not.toHaveBeenCalled();
+    expect(purchases.updatePurchase).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['currency_mismatch', { currency: 'USD', amountMinor: 20000 }],
+    ['amount_mismatch', { amountMinor: 20001 }],
+  ])(
+    'quarantines evidence with %s and reverses nothing',
+    async (errorCode, override) => {
+      const { service, credits, purchases } = setup({
+        purchase: { status: 'successful' },
+      });
+      await expect(
+        service.recordStaffEvidence(
+          {
+            ...staff,
+            action: 'refund',
+            providerReference: 'rf-1',
+            ...override,
+          },
+          jest.fn(),
+        ),
+      ).resolves.toMatchObject({
+        outcome: 'quarantined',
+        errorCode,
+        reconciliationCode: 'staff_evidence_mismatch',
+      });
+      expect(credits.insertLedgerEntry).not.toHaveBeenCalled();
+      const [, , , , changes] = purchases.updatePurchase.mock
+        .calls[0] as UpdateCall;
+      expect(changes).toEqual({
+        reconciliationRequired: true,
+        reconciliationCode: 'staff_evidence_mismatch',
+      });
+    },
+  );
+
+  it('quarantines a partial dispute rather than approximating it', async () => {
+    const { service, credits } = setup({ purchase: { status: 'successful' } });
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'chargeback_open',
+          providerReference: 'cb-1',
+          amountMinor: 10000,
+        },
+        jest.fn(),
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'quarantined',
+      errorCode: 'dispute_amount_mismatch',
+    });
+    expect(credits.insertLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  it('leaves a non-whole partial refund quarantined without reversing credits', async () => {
+    const { service, credits } = setup({ purchase: { status: 'successful' } });
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'refund',
+          providerReference: 'rf-2',
+          amountMinor: 250,
+        },
+        jest.fn(),
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'quarantined',
+      reconciliationCode: 'partial_refund_not_whole_credit',
+      errorCode: 'partial_refund_not_whole_credit',
+      reversal: null,
+    });
+    expect(credits.insertLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  it('quarantines a refund with no provider identifier', async () => {
+    const { service, credits } = setup({ purchase: { status: 'successful' } });
+    await expect(
+      service.recordStaffEvidence(
+        { ...staff, action: 'refund', amountMinor: 20000 },
+        jest.fn(),
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'quarantined',
+      reconciliationCode: 'refund_reference_missing',
+    });
+    expect(credits.insertLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  it('reinstates what a lost dispute took when it is won', async () => {
+    const { service, credits } = setup({
+      purchase: { status: 'successful', disputeStatus: 'lost' },
+      reversals: {
+        refundReversedCredits: 0,
+        chargebackReversedCredits: 100,
+        chargebackReinstatedCredits: 0,
+      },
+    });
+    credits.findPurchaseLedgerEntry.mockResolvedValue({
+      id: 'ledger-chargeback',
+      quantity: -100,
+    });
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'chargeback_won',
+          providerReference: 'cb-1',
+          amountMinor: 20000,
+        },
+        jest.fn(),
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'reversed',
+      reversal: { type: 'chargeback_reinstatement', quantity: 100 },
+      purchase: { disputeStatus: 'won' },
+    });
+  });
+
+  it('rolls the audit back with the ledger when the audit write fails', async () => {
+    const { service } = setup({ purchase: { status: 'successful' } });
+    await expect(
+      service.recordStaffEvidence(
+        {
+          ...staff,
+          action: 'refund',
+          providerReference: 'rf-1',
+          amountMinor: 20000,
+        },
+        jest.fn().mockRejectedValue(new Error('audit down')),
+      ),
+    ).rejects.toThrow('audit down');
   });
 });

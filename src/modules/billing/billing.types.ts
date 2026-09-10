@@ -27,8 +27,16 @@ export const RECONCILIATION_CODES = [
   'dispute_without_grant',
   'credit_invariant_frozen',
   'inquiry_unresolved',
+  'staff_evidence_mismatch',
 ] as const;
 export type ReconciliationCode = (typeof RECONCILIATION_CODES)[number];
+
+/**
+ * The provider name staff-recorded evidence is stored under. It is never a
+ * processor, so an event under it can never be mistaken for a verified
+ * provider fact.
+ */
+export const STAFF_EVIDENCE_PROVIDER = 'akeed_staff';
 
 /** What ingestion did with a provider event. */
 export const EVENT_RESULT_CODES = [
@@ -54,6 +62,7 @@ export const EVENT_ERROR_CODES = [
   'refund_reference_missing',
   'partial_refund_not_whole_credit',
   'dispute_without_grant',
+  'dispute_amount_mismatch',
 ] as const;
 export type EventErrorCode = (typeof EVENT_ERROR_CODES)[number];
 

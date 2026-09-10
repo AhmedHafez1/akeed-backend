@@ -6,6 +6,7 @@ import type {
 } from '../../shared/ports/payments.port';
 import {
   decidePurchaseTransition,
+  STAFF_SIGNALS,
   type PurchaseSnapshot,
   type PurchaseTransition,
 } from './payment-purchase.policy';
@@ -327,6 +328,53 @@ describe('decidePurchaseTransition', () => {
       ).toMatchObject({
         reversal: null,
         reconciliationCode: 'dispute_without_grant',
+      });
+    });
+  });
+
+  describe('staff evidence', () => {
+    const disputes: DisputeStatus[] = ['none', 'open', 'lost', 'won'];
+    const cases = STATUSES.flatMap((status) =>
+      disputes.flatMap((disputeStatus) =>
+        SIGNALS.map((signal) => [status, disputeStatus, signal] as const),
+      ),
+    );
+
+    it.each(cases)(
+      '%s/%s + %s recorded by staff never grants or settles a payment',
+      (status, disputeStatus, signal) => {
+        const decision = decidePurchaseTransition({
+          current: snapshot({ status, disputeStatus }),
+          signal,
+          source: 'staff_evidence',
+          refundedMinorTotal: 20000,
+          sourceReference: 'ref-1',
+        });
+        expect(decision.grant).toBeNull();
+        if (!STAFF_SIGNALS.has(signal)) {
+          expect(decision).toMatchObject({
+            changed: false,
+            status,
+            rejected: 'not_provider_confirmed',
+          });
+        }
+        if (decision.status !== status)
+          expect(decision.status).toBe('refunded');
+      },
+    );
+
+    it('reverses a whole-credit refund recorded by staff like a callback would', () => {
+      expect(
+        decidePurchaseTransition({
+          current: snapshot({ status: 'successful' }),
+          signal: 'refund',
+          source: 'staff_evidence',
+          refundedMinorTotal: 20000,
+          sourceReference: 'rf-1',
+        }),
+      ).toMatchObject({
+        status: 'refunded',
+        reversal: { type: 'refund_reversal', quantity: -100 },
       });
     });
   });

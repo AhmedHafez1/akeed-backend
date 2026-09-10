@@ -15,6 +15,7 @@ import {
   type NormalizedProviderEvent,
   type PaymentInquiryResult,
   type PaymentsPort,
+  type PurchaseStatus,
 } from '../../shared/ports/payments.port';
 import {
   PaymentCallbackService,
@@ -28,6 +29,13 @@ import {
  */
 const BASE_BACKOFF_MS = 30_000;
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
+
+/** Non-final states a verified success reported by inquiry may still promote. */
+const PROMOTABLE_BY_INQUIRY = new Set<PurchaseStatus>([
+  'failed',
+  'canceled',
+  'expired',
+]);
 
 export type ReconcileOutcome =
   | 'not_eligible'
@@ -64,7 +72,18 @@ export class PaymentReconciliationService {
     @Inject(PAYMENTS_PORT) private readonly payments: PaymentsPort,
   ) {}
 
-  async reconcile(orgId: string, reference: string): Promise<ReconcileResult> {
+  /**
+   * `force` is the staff path. It may ask about a pending purchase still inside
+   * its checkout window, or about a flagged failed/canceled/expired one that a
+   * delayed success could still promote, and it ignores the backoff. It changes
+   * nothing else: the answer still goes through ingestion, and expiry still
+   * needs both an elapsed window and a provider that reports nothing.
+   */
+  async reconcile(
+    orgId: string,
+    reference: string,
+    options: { force?: boolean } = {},
+  ): Promise<ReconcileResult> {
     const purchase = await this.purchases.findReconciliationTarget(
       orgId,
       reference,
@@ -75,16 +94,28 @@ export class PaymentReconciliationService {
     const expired = purchase.checkoutExpiresAt
       ? Date.parse(purchase.checkoutExpiresAt) <= now
       : false;
-    // Only a purchase that is still pending has anything to learn, and only one
-    // that is past its checkout window or already flagged is worth asking about.
-    if (purchase.status !== 'pending') return { outcome: 'not_eligible' };
-    if (!expired && !purchase.reconciliationRequired)
-      return { outcome: 'not_eligible' };
-    if (
-      purchase.nextReconciliationAt &&
-      Date.parse(purchase.nextReconciliationAt) > now
-    )
-      return { outcome: 'not_due' };
+    if (options.force) {
+      if (
+        purchase.status !== 'pending' &&
+        !(
+          purchase.reconciliationRequired &&
+          PROMOTABLE_BY_INQUIRY.has(purchase.status)
+        )
+      )
+        return { outcome: 'not_eligible' };
+    } else {
+      // Only a purchase that is still pending has anything to learn, and only
+      // one that is past its checkout window or already flagged is worth
+      // asking about.
+      if (purchase.status !== 'pending') return { outcome: 'not_eligible' };
+      if (!expired && !purchase.reconciliationRequired)
+        return { outcome: 'not_eligible' };
+      if (
+        purchase.nextReconciliationAt &&
+        Date.parse(purchase.nextReconciliationAt) > now
+      )
+        return { outcome: 'not_due' };
+    }
 
     let result: PaymentInquiryResult;
     try {
@@ -111,7 +142,11 @@ export class PaymentReconciliationService {
       const ingest = await this.callbacks.ingest(result.event);
       return { outcome: 'resolved', ingest };
     }
-    if (result.outcome === 'not_found' && expired) {
+    if (
+      result.outcome === 'not_found' &&
+      expired &&
+      purchase.status === 'pending'
+    ) {
       // The one path that may expire a purchase, and only because the provider
       // was asked and reported nothing.
       const ingest = await this.callbacks.ingest(
@@ -155,7 +190,13 @@ export class PaymentReconciliationService {
    * stale together does not come back as a synchronized wave.
    */
   private async defer(
-    purchase: { orgId: string; id: string; reconciliationAttempts: number },
+    purchase: {
+      orgId: string;
+      id: string;
+      status: PurchaseStatus;
+      reconciliationCode: string | null;
+      reconciliationAttempts: number;
+    },
     code: string,
   ): Promise<ReconcileResult> {
     const attempts = purchase.reconciliationAttempts + 1;
@@ -169,10 +210,15 @@ export class PaymentReconciliationService {
         tx,
         purchase.orgId,
         purchase.id,
-        'pending',
+        purchase.status,
         {
           reconciliationRequired: true,
-          reconciliationCode: 'inquiry_unresolved',
+          // A flagged non-pending purchase keeps the anomaly it was flagged
+          // for; an unanswered inquiry does not explain it away.
+          reconciliationCode:
+            purchase.status === 'pending'
+              ? 'inquiry_unresolved'
+              : (purchase.reconciliationCode ?? 'inquiry_unresolved'),
           reconciliationAttempts: attempts,
           nextReconciliationAt: new Date(Date.now() + delay).toISOString(),
         },

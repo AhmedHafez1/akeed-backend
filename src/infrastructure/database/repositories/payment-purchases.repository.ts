@@ -115,6 +115,7 @@ export class PaymentPurchasesRepository {
         status: paymentPurchases.status,
         checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
         reconciliationRequired: paymentPurchases.reconciliationRequired,
+        reconciliationCode: paymentPurchases.reconciliationCode,
         reconciliationAttempts: paymentPurchases.reconciliationAttempts,
         nextReconciliationAt: paymentPurchases.nextReconciliationAt,
         providerIntentionId: paymentPurchases.providerIntentionId,
@@ -143,6 +144,31 @@ export class PaymentPurchasesRepository {
       .select()
       .from(paymentPurchases)
       .where(eq(paymentPurchases.reference, reference))
+      .for('update');
+    return purchase;
+  }
+
+  /**
+   * Locks a purchase only if it belongs to the named organization.
+   *
+   * Staff paths name both halves, and a reference from another tenant must
+   * lock nothing -- the callback path's reference-only lock would let a staff
+   * request pair one account with someone else's payment.
+   */
+  async lockForOrganization(
+    tx: CreditTransaction,
+    orgId: string,
+    reference: string,
+  ) {
+    const [purchase] = await tx
+      .select()
+      .from(paymentPurchases)
+      .where(
+        and(
+          eq(paymentPurchases.orgId, orgId),
+          eq(paymentPurchases.reference, reference),
+        ),
+      )
       .for('update');
     return purchase;
   }

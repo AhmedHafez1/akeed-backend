@@ -51,6 +51,7 @@ export async function ensurePendingCreditAccount(
 type Account = typeof creditAccounts.$inferSelect;
 type Reservation = typeof creditReservations.$inferInsert;
 type LedgerEntry = typeof creditLedgerEntries.$inferInsert;
+type CreditLedgerEntry = typeof creditLedgerEntries.$inferSelect;
 
 @Injectable()
 export class CreditAccountingRepository {
@@ -148,6 +149,72 @@ export class CreditAccountingRepository {
       throw new Error('Credit account not found');
     }
     return account;
+  }
+
+  /**
+   * Locks the account without demanding that it adds up.
+   *
+   * Only projection repair may take this path: every other writer must refuse
+   * an account whose projection has drifted from its ledger, and repair is the
+   * one operation whose purpose is to bring it back.
+   */
+  async lockAccountForRepair(
+    tx: CreditTransaction,
+    orgId: string,
+  ): Promise<Account | undefined> {
+    const [account] = await tx
+      .select()
+      .from(creditAccounts)
+      .where(eq(creditAccounts.orgId, orgId))
+      .for('update');
+    return account;
+  }
+
+  async assertConsistent(tx: CreditTransaction, orgId: string): Promise<void> {
+    const report = await this.checkInvariant(orgId, tx);
+    if (!report?.consistent)
+      throw new CreditInvariantError(
+        report ?? {
+          orgId,
+          postedBalance: 0,
+          heldCredits: 0,
+          ledgerBalance: '0',
+          reservationHolds: '0',
+          consistent: false,
+        },
+      );
+  }
+
+  /**
+   * Posts one balance change.
+   *
+   * The ledger entry, the projection update and the invariant re-check happen
+   * in the caller's transaction under the account lock, and the before/after
+   * balances are read from the locked row -- never supplied by a caller -- so
+   * `credit_ledger_projection_check` and the projection cannot disagree.
+   */
+  async postLedgerEntry(
+    tx: CreditTransaction,
+    input: Omit<LedgerEntry, 'postedBalanceBefore' | 'postedBalanceAfter'>,
+    locked?: Account,
+  ): Promise<{ entry: CreditLedgerEntry; before: Account; after: Account }> {
+    if (locked && locked.orgId !== input.orgId)
+      throw new Error('Ledger posting does not match the locked account');
+    const before = locked ?? (await this.lockAccount(tx, input.orgId));
+    const postedBalance = before.postedBalance + input.quantity;
+    const entry = await this.insertLedgerEntry(tx, {
+      ...input,
+      postedBalanceBefore: before.postedBalance,
+      postedBalanceAfter: postedBalance,
+    });
+    const after = await this.updateProjection(tx, {
+      orgId: input.orgId,
+      expectedVersion: before.version,
+      postedBalance,
+      heldCredits: before.heldCredits,
+    });
+    await this.assertConsistent(tx, input.orgId);
+    return { entry, before, after };
   }
 
   /**

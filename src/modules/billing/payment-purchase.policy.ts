@@ -33,10 +33,17 @@ export interface PurchaseSnapshot {
   chargebackReinstatedCredits: number;
 }
 
+/**
+ * `staff_evidence` is a staff member recording what the provider reported
+ * about a refund or dispute. It is evidence, not provider authority: it may
+ * only take credits back or reinstate what a dispute took.
+ */
+export type PurchaseEventSource = ProviderEventSource | 'staff_evidence';
+
 export interface PurchaseTransition {
   current: PurchaseSnapshot;
   signal: PurchaseSignal;
-  source: ProviderEventSource;
+  source: PurchaseEventSource;
   /** Cumulative refunded amount reported by the provider, not a delta. */
   refundedMinorTotal?: number;
   /** Provider refund or dispute identifier. */
@@ -88,6 +95,8 @@ const DISPUTES = new Set<PurchaseSignal>([
   'chargeback_lost',
   'chargeback_won',
 ]);
+/** The only signals staff evidence may carry. None of them grants credits. */
+export const STAFF_SIGNALS = new Set<PurchaseSignal>(['refund', ...DISPUTES]);
 /** Only a purchase that was actually granted has credits to take back. */
 const GRANTED = new Set<PurchaseStatus>(['successful', 'refunded']);
 
@@ -120,6 +129,12 @@ export function decidePurchaseTransition(
   input: PurchaseTransition,
 ): PurchaseDecision {
   const { current, signal, source } = input;
+
+  // 0. Staff can record refund and dispute evidence, never a payment outcome.
+  //    A success, decline, cancellation or expiry only ever comes from the
+  //    provider itself.
+  if (source === 'staff_evidence' && !STAFF_SIGNALS.has(signal))
+    return hold(current, 'not_provider_confirmed');
 
   // 1. Expiry is the one transition that needs the provider to be asked, not
   //    to have spoken. A callback -- and certainly a browser redirect -- can

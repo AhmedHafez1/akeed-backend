@@ -242,3 +242,76 @@ describe('PaymentReconciliationService.reconcile', () => {
     expect(purchases.updatePurchase).toHaveBeenCalled();
   });
 });
+
+describe('PaymentReconciliationService.reconcile forced by staff', () => {
+  it('asks about a pending purchase inside its window and ignores the backoff', async () => {
+    const { service, payments } = setup({
+      target: { checkoutExpiresAt: FUTURE, nextReconciliationAt: FUTURE },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, { force: true }),
+    ).resolves.toMatchObject({ outcome: 'resolved' });
+    expect(payments.inquire).toHaveBeenCalledTimes(1);
+  });
+
+  it('never expires a purchase whose window is still open, even when forced', async () => {
+    const { service, callbacks } = setup({
+      target: { checkoutExpiresAt: FUTURE },
+      inquiry: { outcome: 'not_found', code: 'not_found' },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, { force: true }),
+    ).resolves.toMatchObject({ outcome: 'deferred' });
+    expect(callbacks.ingest).not.toHaveBeenCalled();
+  });
+
+  it('asks about a flagged failed purchase a delayed success could promote', async () => {
+    const { service, callbacks } = setup({
+      target: {
+        status: 'failed',
+        reconciliationRequired: true,
+        reconciliationCode: 'provider_rejected',
+      },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, { force: true }),
+    ).resolves.toMatchObject({ outcome: 'resolved' });
+    expect(callbacks.ingest).toHaveBeenCalledWith(providerEvent);
+  });
+
+  it('keeps the original anomaly on a flagged purchase the provider cannot answer for', async () => {
+    const { service, purchases, callbacks } = setup({
+      target: {
+        status: 'failed',
+        reconciliationRequired: true,
+        reconciliationCode: 'provider_rejected',
+      },
+      inquiry: { outcome: 'not_found', code: 'not_found' },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, { force: true }),
+    ).resolves.toMatchObject({ outcome: 'deferred' });
+    expect(callbacks.ingest).not.toHaveBeenCalled();
+    const [, , , expected, changes] = purchases.updatePurchase.mock
+      .calls[0] as [unknown, string, string, string, Record<string, unknown>];
+    expect(expected).toBe('failed');
+    expect(changes).toMatchObject({ reconciliationCode: 'provider_rejected' });
+  });
+
+  it.each([
+    ['successful', true],
+    ['refunded', true],
+    ['failed', false],
+  ])(
+    'refuses a %s purchase (flagged: %s) that inquiry cannot change',
+    async (status, reconciliationRequired) => {
+      const { service, payments } = setup({
+        target: { status, reconciliationRequired },
+      });
+      await expect(
+        service.reconcile('org-1', REFERENCE, { force: true }),
+      ).resolves.toMatchObject({ outcome: 'not_eligible' });
+      expect(payments.inquire).not.toHaveBeenCalled();
+    },
+  );
+});

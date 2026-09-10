@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -17,14 +18,80 @@ import {
 } from '../../infrastructure/database/database.provider';
 import type { CreditTransaction } from '../../infrastructure/database/credit-transaction';
 import type { paymentPurchases } from '../../infrastructure/database/schema';
-import type { NormalizedProviderEvent } from '../../shared/ports/payments.port';
+import type {
+  DisputeStatus,
+  NormalizedProviderEvent,
+  PurchaseStatus,
+} from '../../shared/ports/payments.port';
 import {
   decidePurchaseTransition,
   type LedgerReversal,
+  type PurchaseRejection,
 } from './payment-purchase.policy';
-import type { EventErrorCode, EventResultCode } from './billing.types';
+import {
+  STAFF_EVIDENCE_PROVIDER,
+  type EventErrorCode,
+  type EventResultCode,
+  type ReconciliationCode,
+} from './billing.types';
 
 type Purchase = typeof paymentPurchases.$inferSelect;
+
+export type StaffEvidenceAction =
+  | 'refund'
+  | 'chargeback_open'
+  | 'chargeback_lost'
+  | 'chargeback_won';
+
+export interface StaffEvidenceInput {
+  orgId: string;
+  reference: string;
+  action: StaffEvidenceAction;
+  /** Provider refund or dispute identifier. */
+  providerReference?: string;
+  /**
+   * For a refund, the cumulative amount the provider reports as refunded. For
+   * a dispute, the disputed amount.
+   */
+  amountMinor: number;
+  currency: string;
+  actorId: string;
+}
+
+export interface StaffEvidenceResult {
+  outcome:
+    | 'not_found'
+    | 'duplicate'
+    | 'no_change'
+    | 'transitioned'
+    | 'reversed'
+    | 'quarantined';
+  resultCode: EventResultCode;
+  errorCode?: EventErrorCode;
+  reconciliationCode?: ReconciliationCode | null;
+  rejected?: PurchaseRejection | null;
+  reversal?: { type: LedgerReversal['type']; quantity: number } | null;
+  purchase?: {
+    status: PurchaseStatus;
+    disputeStatus: DisputeStatus;
+    refundedMinor: number;
+  };
+}
+
+const QUARANTINE_ERROR_CODES: Partial<
+  Record<ReconciliationCode, EventErrorCode>
+> = {
+  partial_refund_not_whole_credit: 'partial_refund_not_whole_credit',
+  refund_without_success: 'refund_without_success',
+  refund_reference_missing: 'refund_reference_missing',
+  dispute_without_grant: 'dispute_without_grant',
+};
+
+function quarantineErrorCode(
+  code: ReconciliationCode | null,
+): EventErrorCode | undefined {
+  return code ? QUARANTINE_ERROR_CODES[code] : undefined;
+}
 
 /**
  * What the HTTP layer should answer.
@@ -284,24 +351,14 @@ export class PaymentCallbackService {
     quantity: number,
     reference: string,
   ): Promise<void> {
-    const account = await this.credits.lockAccount(tx, purchase.orgId);
-    await this.credits.insertLedgerEntry(tx, {
+    await this.credits.postLedgerEntry(tx, {
       orgId: purchase.orgId,
       type: 'purchase',
       quantity,
       idempotencyKey: `purchase:${reference}:v1`,
       purchaseId: purchase.id,
       reason: 'provider_payment_verified',
-      postedBalanceBefore: account.postedBalance,
-      postedBalanceAfter: account.postedBalance + quantity,
     });
-    await this.credits.updateProjection(tx, {
-      orgId: purchase.orgId,
-      expectedVersion: account.version,
-      postedBalance: account.postedBalance + quantity,
-      heldCredits: account.heldCredits,
-    });
-    await this.assertConsistent(tx, purchase.orgId);
   }
 
   /**
@@ -318,7 +375,8 @@ export class PaymentCallbackService {
     tx: CreditTransaction,
     purchase: Purchase,
     reversal: LedgerReversal,
-  ): Promise<void> {
+    actorId?: string,
+  ): Promise<number> {
     const sourceType =
       reversal.type === 'chargeback_reinstatement'
         ? 'chargeback_reversal'
@@ -340,8 +398,7 @@ export class PaymentCallbackService {
       reversal.type === 'chargeback_reinstatement'
         ? -source.quantity
         : reversal.quantity;
-    const account = await this.credits.lockAccount(tx, purchase.orgId);
-    await this.credits.insertLedgerEntry(tx, {
+    await this.credits.postLedgerEntry(tx, {
       orgId: purchase.orgId,
       type: reversal.type,
       quantity,
@@ -349,35 +406,224 @@ export class PaymentCallbackService {
       purchaseId: purchase.id,
       sourceLedgerEntryId: source.id,
       sourceReference: reversal.sourceReference,
+      actorId,
       reason: reversal.type,
-      postedBalanceBefore: account.postedBalance,
-      postedBalanceAfter: account.postedBalance + quantity,
     });
-    await this.credits.updateProjection(tx, {
-      orgId: purchase.orgId,
-      expectedVersion: account.version,
-      postedBalance: account.postedBalance + quantity,
-      heldCredits: account.heldCredits,
-    });
-    await this.assertConsistent(tx, purchase.orgId);
+    return quantity;
   }
 
-  private async assertConsistent(
+  /**
+   * Applies refund or dispute evidence a staff member recorded from the
+   * provider's own records.
+   *
+   * It runs the same state machine and the same reversal as a callback, under
+   * the same purchase-then-account lock order, with three differences that
+   * keep it from ever being a way to assert a payment:
+   *
+   * - the purchase is locked by organization *and* reference, so one tenant's
+   *   account cannot be paired with another tenant's payment;
+   * - the policy refuses every signal except refund and dispute ones for this
+   *   source, and a decision that would grant is treated as a defect;
+   * - the event is stored under `akeed_staff`, `verified = false`, with a
+   *   fingerprint over the recorded facts, so re-submitting the same evidence
+   *   is a no-op.
+   *
+   * `audit` runs inside the transaction, so the staff audit row commits or
+   * rolls back with the ledger entry and the projection it describes.
+   */
+  async recordStaffEvidence(
+    input: StaffEvidenceInput,
+    audit: (
+      tx: CreditTransaction,
+      result: StaffEvidenceResult,
+    ) => Promise<void>,
+  ): Promise<StaffEvidenceResult> {
+    return withSerializableRetry(() =>
+      this.db.transaction<StaffEvidenceResult>((tx) =>
+        this.applyStaffEvidence(tx, input, audit),
+      ),
+    );
+  }
+
+  private async applyStaffEvidence(
     tx: CreditTransaction,
-    orgId: string,
-  ): Promise<void> {
-    const report = await this.credits.checkInvariant(orgId, tx);
-    if (!report?.consistent)
-      throw new CreditInvariantError(
-        report ?? {
-          orgId,
-          postedBalance: 0,
-          heldCredits: 0,
-          ledgerBalance: '0',
-          reservationHolds: '0',
-          consistent: false,
+    input: StaffEvidenceInput,
+    audit: (
+      tx: CreditTransaction,
+      result: StaffEvidenceResult,
+    ) => Promise<void>,
+  ): Promise<StaffEvidenceResult> {
+    const purchase = await this.purchases.lockForOrganization(
+      tx,
+      input.orgId,
+      input.reference,
+    );
+    if (!purchase)
+      return { outcome: 'not_found', resultCode: 'unmatched_reference' };
+
+    const providerReference = input.providerReference?.trim() || undefined;
+    const facts = [
+      STAFF_EVIDENCE_PROVIDER,
+      purchase.id,
+      input.action,
+      providerReference ?? '',
+      String(input.amountMinor),
+      input.currency,
+    ].join('|');
+    const event = {
+      orgId: purchase.orgId,
+      purchaseId: purchase.id,
+      provider: STAFF_EVIDENCE_PROVIDER,
+      fingerprint: createHash('sha256').update(facts, 'utf8').digest('hex'),
+      payloadHash: createHash('sha256')
+        .update(`${facts}|${input.actorId}`, 'utf8')
+        .digest('hex'),
+      verified: false,
+      processedAt: new Date().toISOString(),
+    };
+
+    const mismatch = this.evidenceMismatch(input, purchase);
+    if (mismatch) {
+      const recorded = await this.purchases.recordEvent(tx, {
+        ...event,
+        resultCode: 'trusted_data_mismatch',
+        errorCode: mismatch,
+      });
+      const result: StaffEvidenceResult = recorded
+        ? {
+            outcome: 'quarantined',
+            resultCode: 'trusted_data_mismatch',
+            errorCode: mismatch,
+            reconciliationCode: 'staff_evidence_mismatch',
+          }
+        : { outcome: 'duplicate', resultCode: 'duplicate_event' };
+      if (recorded)
+        await this.purchases.updatePurchase(
+          tx,
+          purchase.orgId,
+          purchase.id,
+          purchase.status,
+          {
+            reconciliationRequired: true,
+            reconciliationCode: 'staff_evidence_mismatch',
+          },
+        );
+      await audit(tx, result);
+      return result;
+    }
+
+    const reversals = await this.credits.readPurchaseReversals(
+      tx,
+      purchase.orgId,
+      purchase.id,
+    );
+    const decision = decidePurchaseTransition({
+      current: {
+        status: purchase.status,
+        disputeStatus: purchase.disputeStatus,
+        quantity: purchase.quantity,
+        unitPriceMinor: purchase.unitPriceMinor,
+        totalMinor: purchase.totalMinor,
+        refundedMinor: purchase.refundedMinor,
+        ...reversals,
+      },
+      signal: input.action,
+      source: 'staff_evidence',
+      refundedMinorTotal:
+        input.action === 'refund' ? input.amountMinor : undefined,
+      sourceReference: providerReference,
+    });
+    if (decision.grant)
+      throw new Error('Staff evidence must never grant purchased credits');
+
+    const outcome: StaffEvidenceResult['outcome'] = !decision.changed
+      ? 'no_change'
+      : decision.reversal
+        ? 'reversed'
+        : decision.reconciliationCode
+          ? 'quarantined'
+          : 'transitioned';
+    const errorCode = quarantineErrorCode(decision.reconciliationCode);
+    const resultCode: EventResultCode = decision.changed
+      ? 'transitioned'
+      : 'no_change';
+    const recorded = await this.purchases.recordEvent(tx, {
+      ...event,
+      resultCode,
+      errorCode: outcome === 'quarantined' ? errorCode : undefined,
+    });
+    if (!recorded) {
+      const duplicate: StaffEvidenceResult = {
+        outcome: 'duplicate',
+        resultCode: 'duplicate_event',
+      };
+      await audit(tx, duplicate);
+      return duplicate;
+    }
+
+    let reversedQuantity: number | undefined;
+    if (decision.changed) {
+      await this.purchases.updatePurchase(
+        tx,
+        purchase.orgId,
+        purchase.id,
+        purchase.status,
+        {
+          status: decision.status,
+          disputeStatus: decision.disputeStatus,
+          refundedMinor: decision.refundedMinor,
+          // Evidence only ever raises a flag. An unrelated anomaly already on
+          // the purchase stays for staff to clear.
+          ...(decision.reconciliationCode
+            ? {
+                reconciliationRequired: true,
+                reconciliationCode: decision.reconciliationCode,
+              }
+            : {}),
         },
       );
+      if (decision.reversal)
+        reversedQuantity = await this.reverse(
+          tx,
+          purchase,
+          decision.reversal,
+          input.actorId,
+        );
+    }
+    const result: StaffEvidenceResult = {
+      outcome,
+      resultCode,
+      ...(outcome === 'quarantined' && errorCode ? { errorCode } : {}),
+      reconciliationCode: decision.reconciliationCode,
+      rejected: decision.rejected,
+      reversal:
+        decision.reversal && reversedQuantity !== undefined
+          ? { type: decision.reversal.type, quantity: reversedQuantity }
+          : null,
+      purchase: {
+        status: decision.status,
+        disputeStatus: decision.disputeStatus,
+        refundedMinor: decision.refundedMinor,
+      },
+    };
+    await audit(tx, result);
+    return result;
+  }
+
+  /**
+   * The recorded facts that cannot describe this purchase. A dispute is
+   * all-or-nothing in the ledger, so a partial dispute is left for finance
+   * rather than approximated.
+   */
+  private evidenceMismatch(
+    input: StaffEvidenceInput,
+    purchase: Purchase,
+  ): EventErrorCode | null {
+    if (input.currency !== purchase.currency) return 'currency_mismatch';
+    if (input.amountMinor > purchase.totalMinor) return 'amount_mismatch';
+    if (input.action !== 'refund' && input.amountMinor !== purchase.totalMinor)
+      return 'dispute_amount_mismatch';
+    return null;
   }
 
   /**
