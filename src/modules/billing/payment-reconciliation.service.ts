@@ -14,6 +14,7 @@ import {
   PAYMENTS_PORT,
   type NormalizedProviderEvent,
   type PaymentInquiryResult,
+  type PaymentMode,
   type PaymentsPort,
   type PurchaseStatus,
 } from '../../shared/ports/payments.port';
@@ -205,7 +206,7 @@ export class PaymentReconciliationService {
    */
   private expiryEvent(purchase: {
     reference: string;
-    mode: 'test' | 'live';
+    mode: string;
     currency: string;
   }): NormalizedProviderEvent {
     const { reference } = purchase;
@@ -221,7 +222,8 @@ export class PaymentReconciliationService {
       amountMinor: 0,
       currency: purchase.currency,
       integrationId: 'akeed_inquiry',
-      mode: purchase.mode,
+      // `payment_purchases.mode` is CHECK-constrained to 'test' | 'live'.
+      mode: purchase.mode as PaymentMode,
       fingerprint,
       payloadHash: fingerprint,
     };
