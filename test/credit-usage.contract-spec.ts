@@ -105,7 +105,7 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
     await balance(source.orgId, 1, 1);
   });
 
-  it('records receipts for a salvaged ambiguous send without moving credits', async () => {
+  it('records receipts for salvaged ambiguous sends without moving credits', async () => {
     const source = await merchant(2);
     const input = await verification(source);
     const dispatch = await claim(input);
@@ -135,15 +135,37 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
       new Date().toISOString(),
     );
     expect(delivered?.verificationRows).toHaveLength(1);
+
+    const failedInput = await verification(source);
+    const failedDispatch = await claim(failedInput);
+    const failedProviderMessageId = randomUUID();
+    expect(
+      await dispatches.markOutcomeUnknown(
+        failedDispatch.id,
+        'acceptance_persistence_failed',
+        failedProviderMessageId,
+      ),
+    ).toBe(1);
+    await dispatches.projectAcceptanceWithoutLedger({
+      verificationId: failedInput.verificationId,
+      kind: failedInput.kind,
+      providerMessageId: failedProviderMessageId,
+      sentAt: new Date().toISOString(),
+    });
     const failed = await dispatches.recordProviderStatus(
-      dispatch.id,
+      failedDispatch.id,
       'failed',
       new Date().toISOString(),
     );
     expect(failed?.verificationRows).toHaveLength(1);
+    const [recordedFailedDispatch] = await db
+      .select({ failedAt: verificationMessageDispatches.failedAt })
+      .from(verificationMessageDispatches)
+      .where(eq(verificationMessageDispatches.id, failedDispatch.id));
+    expect(recordedFailedDispatch.failedAt).not.toBeNull();
     // Nothing was ever posted, so there is nothing to reverse: the hold stands
     // and the ledger carries only the opening grant.
-    await balance(source.orgId, 2, 1);
+    await balance(source.orgId, 2, 2);
     expect(
       await db
         .select()
@@ -151,9 +173,11 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
         .where(eq(creditLedgerEntries.orgId, source.orgId)),
     ).toMatchObject([{ type: 'free_grant' }]);
 
-    // Staff resolution is still the only thing that settles the hold.
+    // Staff resolution is still the only thing that settles either hold. The
+    // delivered send can be accepted; the failed receipt remains held for a
+    // separate evidence-backed resolution instead of being guessed away.
     await acceptance(dispatch, providerMessageId);
-    await balance(source.orgId, 1, 0);
+    await balance(source.orgId, 1, 1);
   });
 
   it('releases confirmed rejection without posting and advances the immutable generation', async () => {
