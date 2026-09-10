@@ -162,6 +162,17 @@ Do not enable Vodafone Cash traffic until a wallet callback has been captured in
 
 A checkout whose response was lost leaves the purchase `pending` with `reconciliation_required`. Polling `GET /api/billing/purchases/:reference` triggers a rate-limited inquiry against the same reference, and the inquiry result flows through the same ingestion path as a callback with the same fingerprint — so whichever arrives second is a proven replay and cannot grant twice. A purchase is marked `expired` only when an inquiry confirms no success; a missing callback alone never expires one.
 
+## Standalone Billing Operations (staff console)
+
+Staff inspect and reconcile Standalone credit accounts under `/api/admin/standalone-billing` (see the [operations runbook](STANDALONE_BILLING_OPERATIONS_RUNBOOK.md)). Every route already requires `ADMIN_CONTROL_TOWER_ENABLED`, the Supabase `akeed_role = admin` claim and, with `ADMIN_REQUIRE_AAL2`, an MFA session. Writes need two more settings:
+
+| Variable | Notes |
+| --- | --- |
+| `STANDALONE_BILLING_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, staff can list, open and preview accounts but every apply, dispatch resolution, inquiry and provider-evidence route answers `403 STANDALONE_BILLING_OPERATIONS_DISABLED`. |
+| `STANDALONE_BILLING_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write. Required, and each entry must be a UUID, whenever the switch is `true`; startup fails otherwise. Staff not listed get `403 STANDALONE_BILLING_OPERATOR_REQUIRED`. |
+
+Roll out read-only first (switch off), name operators only after a recovery drill, and roll back by turning the switch off. Nothing is deleted on rollback: ledger entries, purchases, provider events and audit rows all stay.
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:
