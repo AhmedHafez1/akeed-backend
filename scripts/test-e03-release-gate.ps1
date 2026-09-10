@@ -30,7 +30,7 @@ try {
     Invoke-GateStep 'Standalone provisioning and primary-source concurrency' {
         & .\scripts\test-standalone-provisioning-contract.ps1
     }
-    Invoke-GateStep 'Standalone pilot eligibility and audit' {
+    Invoke-GateStep 'Standalone credit approval eligibility and audit' {
         & .\scripts\test-standalone-pilot-contract.ps1
     }
 }

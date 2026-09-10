@@ -18,7 +18,8 @@ try {
     $binding = (& $docker port $containerId 5432/tcp).Trim()
     if ($binding -notmatch '^127\.0\.0\.1:(\d+)$') { throw 'Unexpected test database port binding.' }
     $env:E01_TEST_DATABASE_URL = "postgresql://e01_test:e01-synthetic-only@127.0.0.1:$($Matches[1])/akeed_e01_test"
-    & npm.cmd run test:contract:standalone-pilots
+    # US-04.5-02 replaced the pilot activation contract with credit approval.
+    & npm.cmd run test:contract:standalone-approval
     $testExitCode = $LASTEXITCODE
 }
 finally {
