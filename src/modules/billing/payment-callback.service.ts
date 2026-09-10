@@ -38,6 +38,10 @@ import {
 
 type Purchase = typeof paymentPurchases.$inferSelect;
 
+function bindsTransaction(event: NormalizedProviderEvent): boolean {
+  return event.signal === 'success';
+}
+
 export function paymentEventMismatch(
   event: NormalizedProviderEvent,
   purchase: Purchase,
@@ -75,8 +79,15 @@ export function paymentEventMismatch(
   const bound: [string | null, string | undefined][] = [
     [purchase.providerIntentionId, event.payment.providerIntentionId],
     [purchase.providerOrderId, event.payment.providerOrderId],
-    [purchase.providerTransactionId, event.payment.providerTransactionId],
   ];
+  // The purchase is bound to the one transaction that paid for it. A declined
+  // or pending attempt, a refund and a dispute each carry their own transaction
+  // id, so only a second, different success is an ownership conflict.
+  if (bindsTransaction(event))
+    bound.push([
+      purchase.providerTransactionId,
+      event.payment.providerTransactionId,
+    ]);
   for (const [stored, incoming] of bound)
     if (stored && incoming && stored !== incoming) return 'ownership_mismatch';
   return null;
@@ -340,7 +351,11 @@ export class PaymentCallbackService {
     return paymentEventMismatch(event, purchase, billing);
   }
 
-  /** Fills in identifiers the purchase does not have yet, and only those. */
+  /**
+   * Fills in identifiers the purchase does not have yet, and only those. The
+   * transaction id comes only from a success: binding a declined attempt would
+   * make the customer's successful retry look like someone else's payment.
+   */
   private async bindProviderIds(
     tx: CreditTransaction,
     event: NormalizedProviderEvent,
@@ -353,7 +368,9 @@ export class PaymentCallbackService {
       ...(purchase.providerOrderId || !event.payment.providerOrderId
         ? {}
         : { providerOrderId: event.payment.providerOrderId }),
-      ...(purchase.providerTransactionId || !event.payment.providerTransactionId
+      ...(purchase.providerTransactionId ||
+      !event.payment.providerTransactionId ||
+      !bindsTransaction(event)
         ? {}
         : { providerTransactionId: event.payment.providerTransactionId }),
     };

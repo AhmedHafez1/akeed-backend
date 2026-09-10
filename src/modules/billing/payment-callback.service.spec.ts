@@ -235,6 +235,72 @@ describe('PaymentCallbackService.ingest', () => {
     });
   });
 
+  it.each([
+    ['decline', { signal: 'decline' as const }],
+    ['pending', { signal: 'pending' as const }],
+    [
+      'refund',
+      {
+        signal: 'refund' as const,
+        refundedMinorTotal: 20000,
+        sourceReference: 'txn_refund',
+      },
+    ],
+    [
+      'chargeback',
+      { signal: 'chargeback_open' as const, sourceReference: 'dispute-1' },
+    ],
+  ])(
+    'accepts a %s carrying its own provider transaction id',
+    async (_label, patch) => {
+      const { service } = setup({
+        purchase: {
+          status: 'successful',
+          providerOrderId: 'ord_1',
+          providerTransactionId: 'txn_paid',
+        },
+      });
+      const result = await service.ingest(
+        event({
+          ...patch,
+          payment: {
+            reference: purchase.reference,
+            providerOrderId: 'ord_1',
+            providerTransactionId: 'txn_other',
+          },
+        }),
+      );
+      expect(result).not.toMatchObject({ outcome: 'quarantined' });
+    },
+  );
+
+  it('still quarantines an attempt naming a different order', async () => {
+    const { service } = setup({
+      purchase: { providerOrderId: 'ord_1', providerTransactionId: 'txn_paid' },
+    });
+    await expect(
+      service.ingest(
+        event({
+          signal: 'decline',
+          payment: {
+            reference: purchase.reference,
+            providerOrderId: 'ord_9',
+            providerTransactionId: 'txn_other',
+          },
+        }),
+      ),
+    ).resolves.toMatchObject({ errorCode: 'ownership_mismatch' });
+  });
+
+  it('binds the transaction id only from a success, so a retry after a decline can grant', async () => {
+    const { service, purchases } = setup();
+    await service.ingest(event({ signal: 'decline' }));
+    const declineBind = (
+      purchases.updatePurchase.mock.calls as UpdateCall[]
+    ).find((call) => 'providerOrderId' in call[4]);
+    expect(declineBind?.[4]).toEqual({ providerOrderId: 'ord_1' });
+  });
+
   it('binds provider identifiers the purchase does not have yet', async () => {
     const { service, purchases } = setup();
     await service.ingest(event());
