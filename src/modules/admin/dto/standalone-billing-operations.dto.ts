@@ -62,6 +62,12 @@ export class AdjustmentApplyDto extends ReasonDto {
   @Matches(FINGERPRINT) fingerprint!: string;
 }
 
+/** Carries no balance: the repair recounts its sources under lock. */
+export class RepairApplyDto extends ReasonDto {
+  @IsUUID() previewId!: string;
+  @Matches(FINGERPRINT) fingerprint!: string;
+}
+
 /**
  * Every operation on a dispatch or a purchase names the organization it is
  * performed for, so the service can refuse an identifier from another tenant.

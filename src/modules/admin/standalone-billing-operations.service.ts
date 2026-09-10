@@ -89,6 +89,24 @@ function adjustmentFingerprint(
   });
 }
 
+function repairFingerprint(
+  orgId: string,
+  account: Account,
+  report: ReconciliationReport,
+  ledgerEntries: number,
+): string {
+  return fingerprint({
+    operation: 'projection_repair',
+    orgId,
+    version: account.version,
+    postedBalance: account.postedBalance,
+    heldCredits: account.heldCredits,
+    ledgerBalance: report.ledgerBalance,
+    reservationHolds: report.reservationHolds,
+    ledgerEntries,
+  });
+}
+
 export interface AdjustmentResult {
   outcome: 'applied' | 'duplicate';
   orgId: string;
@@ -541,6 +559,193 @@ export class StandaloneBillingOperationsService {
         'Purchase not found.',
       );
     return { ...result, reference: input.reference };
+  }
+
+  /**
+   * Shows what rebuilding the projection from its sources would change.
+   *
+   * A repair is only offered when there is drift to fix and the ledger and
+   * reservations agree with each other; contradictory source rows are named
+   * and left for escalation, because rebuilding from them would pick a side.
+   */
+  async previewRepair(userId: string, orgId: string, requestId?: string) {
+    const account = await this.repository.readAccount(orgId);
+    const report = account
+      ? await this.repository.readReconciliation(orgId)
+      : undefined;
+    if (!account || !report)
+      staffBillingError(
+        NotFoundException,
+        STAFF_BILLING_ERROR_CODES.accountNotFound,
+        'Credit account not found.',
+      );
+    const ledgerEntries = await this.repository.ledgerCount(orgId);
+    const bound = repairFingerprint(orgId, account, report, ledgerEntries);
+    const outcome = report.contradictions.length
+      ? ('contradictory' as const)
+      : report.consistent
+        ? ('already_consistent' as const)
+        : ('repairable' as const);
+    const previewId =
+      outcome === 'repairable'
+        ? await this.repository.savePreview({
+            userId,
+            action: STAFF_BILLING_ACTIONS.repairPreview,
+            requestId,
+            metadata: { orgId, fingerprint: bound },
+          })
+        : null;
+    return {
+      outcome,
+      previewId,
+      fingerprint: previewId ? bound : null,
+      orgId,
+      evaluatedAt: new Date().toISOString(),
+      reconciliation: report,
+      ledgerEntries,
+      before: projection(account),
+      after: projection({
+        postedBalance: report.ledgerBalance,
+        heldCredits: report.reservationHolds,
+      }),
+    };
+  }
+
+  /**
+   * Rebuilds the projection from the immutable ledger and the held
+   * reservations, under the account lock and a lock on every held
+   * reservation, and records exactly what changed.
+   *
+   * Nothing is posted: the ledger is the authority and stays untouched. Every
+   * other writer takes the account lock first and refuses a drifted account,
+   * so nothing can move the sources between the recount and the write.
+   */
+  async applyRepair(input: {
+    userId: string;
+    orgId: string;
+    previewId: string;
+    fingerprint: string;
+    reason: string;
+    requestId?: string;
+  }) {
+    const preview = await this.repository.readPreview(
+      input.previewId,
+      input.userId,
+      STAFF_BILLING_ACTIONS.repairPreview,
+    );
+    if (
+      !preview ||
+      preview.version !== 1 ||
+      preview.orgId !== input.orgId ||
+      typeof preview.fingerprint !== 'string'
+    )
+      staffBillingError(
+        NotFoundException,
+        STAFF_BILLING_ERROR_CODES.previewNotFound,
+        'Repair preview not found.',
+      );
+    if (preview.fingerprint !== input.fingerprint)
+      staffBillingError(
+        ConflictException,
+        STAFF_BILLING_ERROR_CODES.previewStale,
+        'The repair does not match its preview.',
+      );
+
+    return this.locked(() =>
+      this.db.transaction(async (tx) => {
+        const account = await this.credits.lockAccountForRepair(
+          tx,
+          input.orgId,
+        );
+        if (!account) this.refuse(STAFF_BILLING_ERROR_CODES.accountNotFound);
+        const held = await this.repository.lockHeldReservations(
+          tx,
+          input.orgId,
+        );
+        const prior = await this.repository.findApplied(
+          tx,
+          STAFF_BILLING_ACTIONS.repairApply,
+          'previewId',
+          input.previewId,
+        );
+        if (prior)
+          return {
+            outcome: 'already_applied' as const,
+            orgId: input.orgId,
+            previewId: input.previewId,
+            before: projection({
+              postedBalance: Number(prior.metadata.postedBalanceBefore),
+              heldCredits: Number(prior.metadata.heldCreditsBefore),
+            }),
+            after: projection({
+              postedBalance: Number(prior.metadata.postedBalanceAfter),
+              heldCredits: Number(prior.metadata.heldCreditsAfter),
+            }),
+            appliedAt: prior.createdAt,
+          };
+        const report = await this.repository.readReconciliation(
+          input.orgId,
+          tx,
+        );
+        if (!report) this.refuse(STAFF_BILLING_ERROR_CODES.accountNotFound);
+        if (report.contradictions.length)
+          staffBillingError(
+            ConflictException,
+            STAFF_BILLING_ERROR_CODES.repairContradictory,
+            'Credit source rows contradict each other; the projection cannot be rebuilt from them.',
+            { contradictions: report.contradictions },
+          );
+        const ledgerEntries = await this.repository.ledgerCount(
+          input.orgId,
+          tx,
+        );
+        if (
+          repairFingerprint(input.orgId, account, report, ledgerEntries) !==
+          preview.fingerprint
+        )
+          staffBillingError(
+            ConflictException,
+            STAFF_BILLING_ERROR_CODES.previewStale,
+            'The account changed after the preview; preview again.',
+          );
+        const heldCredits = held.reduce(
+          (total, reservation) => total + reservation.quantity,
+          0,
+        );
+        const repaired = await this.credits.updateProjection(tx, {
+          orgId: input.orgId,
+          expectedVersion: account.version,
+          postedBalance: report.ledgerBalance,
+          heldCredits,
+        });
+        await this.credits.assertConsistent(tx, input.orgId);
+        await this.repository.insertAudit(tx, {
+          userId: input.userId,
+          action: STAFF_BILLING_ACTIONS.repairApply,
+          requestId: input.requestId,
+          metadata: {
+            orgId: input.orgId,
+            previewId: input.previewId,
+            reason: input.reason,
+            ledgerEntries,
+            postedBalanceBefore: account.postedBalance,
+            postedBalanceAfter: repaired.postedBalance,
+            heldCreditsBefore: account.heldCredits,
+            heldCreditsAfter: repaired.heldCredits,
+            postedDifference: repaired.postedBalance - account.postedBalance,
+            heldDifference: repaired.heldCredits - account.heldCredits,
+          },
+        });
+        return {
+          outcome: 'repaired' as const,
+          orgId: input.orgId,
+          previewId: input.previewId,
+          before: projection(account),
+          after: projection(repaired),
+          appliedAt: repaired.updatedAt,
+        };
+      }),
+    );
   }
 
   private async assertMutable(orgId: string) {

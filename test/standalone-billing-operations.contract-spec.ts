@@ -423,6 +423,128 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
     });
   });
 
+  describe('projection repair', () => {
+    const reason = 'Projection drifted after manual SQL in incident INC-7';
+
+    async function repair(orgId: string) {
+      const preview = await operations.previewRepair(OPERATOR, orgId);
+      const apply = () =>
+        operations.applyRepair({
+          userId: OPERATOR,
+          orgId,
+          previewId: preview.previewId!,
+          fingerprint: preview.fingerprint!,
+          reason,
+          requestId: 'req-repair',
+        });
+      return { preview, apply };
+    }
+
+    it('rebuilds a drifted projection from the ledger and held reservations', async () => {
+      const merchant = await harness.merchant(30);
+      await harness.ambiguousSend(merchant);
+      await harness.driftProjection(merchant.orgId, 7);
+      await db
+        .update(creditAccounts)
+        .set({
+          heldCredits: 4,
+          version: sql`${creditAccounts.version} + 1`,
+        })
+        .where(eq(creditAccounts.orgId, merchant.orgId));
+      const ledgerBefore = await harness.ledger(merchant.orgId);
+
+      const { preview, apply } = await repair(merchant.orgId);
+      expect(preview).toMatchObject({
+        outcome: 'repairable',
+        before: { postedBalance: 37, heldCredits: 4 },
+        after: { postedBalance: 30, heldCredits: 1 },
+        reconciliation: { postedDifference: -7, heldDifference: -3 },
+      });
+      await expect(apply()).resolves.toMatchObject({
+        outcome: 'repaired',
+        before: { postedBalance: 37, heldCredits: 4 },
+        after: { postedBalance: 30, heldCredits: 1 },
+      });
+      expect(await credits.checkInvariant(merchant.orgId)).toMatchObject({
+        consistent: true,
+      });
+      expect(await harness.ledger(merchant.orgId)).toEqual(ledgerBefore);
+      const [audit] = (await harness.auditRows(merchant.orgId)).filter(
+        (row) => row.action === 'standalone-billing.projection-repair.apply',
+      );
+      expect(audit).toMatchObject({
+        userId: OPERATOR,
+        requestId: 'req-repair',
+        metadata: expect.objectContaining({
+          reason,
+          postedBalanceBefore: 37,
+          postedBalanceAfter: 30,
+          heldCreditsBefore: 4,
+          heldCreditsAfter: 1,
+          postedDifference: -7,
+          heldDifference: -3,
+        }) as unknown,
+      });
+      await expect(apply()).resolves.toMatchObject({
+        outcome: 'already_applied',
+      });
+      // The account accepts money and sends again.
+      await expect(
+        harness.dispatches.claim(await harness.verification(merchant)),
+      ).resolves.toMatchObject({ outcome: 'claimed' });
+    });
+
+    it('offers nothing to repair on a consistent account', async () => {
+      const merchant = await harness.merchant(30);
+      await expect(
+        operations.previewRepair(OPERATOR, merchant.orgId),
+      ).resolves.toMatchObject({
+        outcome: 'already_consistent',
+        previewId: null,
+      });
+    });
+
+    it('refuses to rebuild from contradictory source rows', async () => {
+      const merchant = await harness.merchant(30);
+      const send = await harness.ambiguousSend(merchant);
+      await harness.driftProjection(merchant.orgId, 2);
+      const { apply } = await repair(merchant.orgId);
+      await db
+        .update(verificationMessageDispatches)
+        .set({ state: 'accepted' })
+        .where(eq(verificationMessageDispatches.id, send.dispatchId));
+      await expect(
+        operations.previewRepair(OPERATOR, merchant.orgId),
+      ).resolves.toMatchObject({ outcome: 'contradictory', previewId: null });
+      await expect(apply()).rejects.toMatchObject({
+        response: {
+          code: 'REPAIR_SOURCE_CONTRADICTORY',
+          contradictions: [
+            expect.objectContaining({
+              code: 'reservation_held_on_settled_dispatch',
+            }),
+          ],
+        },
+      });
+      expect(await harness.account(merchant.orgId)).toMatchObject({
+        postedBalance: 32,
+      });
+    });
+
+    it('refuses a preview made stale by further drift', async () => {
+      const merchant = await harness.merchant(30);
+      await harness.driftProjection(merchant.orgId, 2);
+      const { apply } = await repair(merchant.orgId);
+      await harness.driftProjection(merchant.orgId, 1);
+      await expect(apply()).rejects.toMatchObject({
+        response: { code: 'BILLING_PREVIEW_STALE' },
+      });
+      expect(await harness.account(merchant.orgId)).toMatchObject({
+        postedBalance: 33,
+      });
+    });
+  });
+
   describe('ambiguous send resolution', () => {
     const reason = 'Checked Meta message status with support';
 
@@ -733,8 +855,15 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
         }),
       );
       await harness.balance(merchant.orgId, -60);
-      const [audit] = (await harness.auditRows(merchant.orgId)).filter(
+      const audits = (await harness.auditRows(merchant.orgId)).filter(
         (row) => row.action === 'standalone-billing.purchase.provider-action',
+      );
+      // The duplicate submission is audited too, as the no-op it was.
+      expect(
+        audits.map((row) => (row.metadata as { outcome: string }).outcome),
+      ).toEqual(expect.arrayContaining(['reversed', 'duplicate']));
+      const audit = audits.find(
+        (row) => (row.metadata as { outcome: string }).outcome === 'reversed',
       );
       expect(audit).toMatchObject({
         requestId: 'req-evidence',

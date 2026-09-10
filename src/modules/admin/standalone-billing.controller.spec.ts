@@ -39,6 +39,8 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     resolveDispatch: jest.fn().mockResolvedValue({ outcome: 'rejected' }),
     reconcilePurchase: jest.fn().mockResolvedValue({ outcome: 'deferred' }),
     recordProviderAction: jest.fn().mockResolvedValue({ outcome: 'reversed' }),
+    previewRepair: jest.fn().mockResolvedValue({ outcome: 'repairable' }),
+    applyRepair: jest.fn().mockResolvedValue({ outcome: 'repaired' }),
   };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
@@ -291,10 +293,18 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     });
   });
 
-  describe('dispatch and purchase operations', () => {
+  describe('operator-only writes', () => {
     const dispatchId = randomUUID();
     const reference = 'akd_0123456789abcdef0123456789abcdef';
     const writes = [
+      [
+        `/api/admin/standalone-billing/accounts/${orgId}/projection-repair/apply`,
+        {
+          previewId,
+          fingerprint: 'b'.repeat(64),
+          reason: 'Drift after incident',
+        },
+      ],
       [
         `/api/admin/standalone-billing/dispatches/${dispatchId}/resolve`,
         { orgId, resolution: 'not_accepted', reason: 'Checked with Meta' },
@@ -331,7 +341,7 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     });
 
     it('requires a provider message id to resolve a send as accepted', async () => {
-      const url = writes[0][0];
+      const url = writes[1][0];
       await http()
         .post(url)
         .set('Authorization', 'Bearer staff-aal2')
@@ -361,7 +371,7 @@ describe('Standalone billing approval staff HTTP boundary', () => {
 
     it('never forwards a provider message id with a not-accepted resolution', async () => {
       await http()
-        .post(writes[0][0])
+        .post(writes[1][0])
         .set('Authorization', 'Bearer staff-aal2')
         .send({
           orgId,
@@ -385,19 +395,19 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       { orgId: 'not-a-uuid' },
     ])('rejects provider evidence %o', async (override) => {
       await http()
-        .post(writes[2][0])
+        .post(writes[3][0])
         .set('Authorization', 'Bearer staff-aal2')
-        .send({ ...writes[2][1], ...override })
+        .send({ ...writes[3][1], ...override })
         .expect(400);
       expect(operations.recordProviderAction).not.toHaveBeenCalled();
     });
 
     it('drops any attempt to assert a payment outcome', async () => {
       await http()
-        .post(writes[2][0])
+        .post(writes[3][0])
         .set('Authorization', 'Bearer staff-aal2')
         .send({
-          ...writes[2][1],
+          ...writes[3][1],
           status: 'successful',
           grant: 100,
           quantity: 100,
@@ -410,7 +420,7 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       expect(input).not.toHaveProperty('grant');
       expect(input).not.toHaveProperty('quantity');
       await http()
-        .post(writes[1][0])
+        .post(writes[2][0])
         .set('Authorization', 'Bearer staff-aal2')
         .send({ orgId, reason: 'x', status: 'successful' })
         .expect(201);
@@ -458,6 +468,8 @@ describe('Standalone billing approval staff HTTP boundary', () => {
         'GET accounts/:orgId',
         'POST accounts/:orgId/adjustments/apply',
         'POST accounts/:orgId/adjustments/preview',
+        'POST accounts/:orgId/projection-repair/apply',
+        'POST accounts/:orgId/projection-repair/preview',
         'POST approvals/apply',
         'POST approvals/preview',
         'POST dispatches/:dispatchId/resolve',

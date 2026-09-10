@@ -29,6 +29,7 @@ import {
   DispatchResolveDto,
   ProviderActionDto,
   PurchaseReconcileDto,
+  RepairApplyDto,
 } from './dto/standalone-billing-operations.dto';
 import { StandaloneBillingLoggingInterceptor } from './standalone-billing-logging.interceptor';
 import {
@@ -113,6 +114,38 @@ export class StandaloneBillingController {
       fingerprint: body.fingerprint,
       reason: body.reason,
       idempotencyKey,
+      requestId: readRequestId(request),
+    });
+  }
+
+  @Post('accounts/:orgId/projection-repair/preview')
+  @Header('Cache-Control', 'private, no-store')
+  previewRepair(
+    @Req() request: RequestWithAdmin,
+    @Param('orgId', new ParseUUIDPipe()) orgId: string,
+  ) {
+    return this.operations.previewRepair(
+      request.admin.userId,
+      orgId,
+      readRequestId(request),
+    );
+  }
+
+  @Post('accounts/:orgId/projection-repair/apply')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  applyRepair(
+    @Req() request: RequestWithAdmin,
+    @Param('orgId', new ParseUUIDPipe()) orgId: string,
+    @Body() body: RepairApplyDto,
+  ) {
+    return this.operations.applyRepair({
+      userId: request.admin.userId,
+      orgId,
+      previewId: body.previewId,
+      fingerprint: body.fingerprint,
+      reason: body.reason,
       requestId: readRequestId(request),
     });
   }
