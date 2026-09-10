@@ -22,9 +22,13 @@ import {
   StandaloneApprovalPreviewDto,
   StandaloneBillingAccountsDto,
 } from './dto/standalone-billing.dto';
+import { PurchaseRefParamDto } from '../billing/dto/billing.dto';
 import {
   AdjustmentApplyDto,
   AdjustmentPreviewDto,
+  DispatchResolveDto,
+  ProviderActionDto,
+  PurchaseReconcileDto,
 } from './dto/standalone-billing-operations.dto';
 import { StandaloneBillingLoggingInterceptor } from './standalone-billing-logging.interceptor';
 import {
@@ -109,6 +113,69 @@ export class StandaloneBillingController {
       fingerprint: body.fingerprint,
       reason: body.reason,
       idempotencyKey,
+      requestId: readRequestId(request),
+    });
+  }
+
+  @Post('dispatches/:dispatchId/resolve')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  resolveDispatch(
+    @Req() request: RequestWithAdmin,
+    @Param('dispatchId', new ParseUUIDPipe()) dispatchId: string,
+    @Body() body: DispatchResolveDto,
+  ) {
+    return this.operations.resolveDispatch({
+      userId: request.admin.userId,
+      orgId: body.orgId,
+      dispatchId,
+      resolution: body.resolution,
+      providerMessageId:
+        body.resolution === 'accepted' ? body.providerMessageId : undefined,
+      evidence: body.evidence,
+      reason: body.reason,
+      requestId: readRequestId(request),
+    });
+  }
+
+  @Post('purchases/:purchaseRef/reconcile')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  reconcilePurchase(
+    @Req() request: RequestWithAdmin,
+    @Param() params: PurchaseRefParamDto,
+    @Body() body: PurchaseReconcileDto,
+  ) {
+    return this.operations.reconcilePurchase({
+      userId: request.admin.userId,
+      orgId: body.orgId,
+      reference: params.purchaseRef,
+      reason: body.reason,
+      requestId: readRequestId(request),
+    });
+  }
+
+  @Post('purchases/:purchaseRef/provider-action')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  providerAction(
+    @Req() request: RequestWithAdmin,
+    @Param() params: PurchaseRefParamDto,
+    @Body() body: ProviderActionDto,
+  ) {
+    return this.operations.recordProviderAction({
+      userId: request.admin.userId,
+      orgId: body.orgId,
+      reference: params.purchaseRef,
+      action: body.action,
+      providerReference: body.providerReference,
+      amountMinor: body.amountMinor,
+      currency: body.currency,
+      evidence: body.evidence,
+      reason: body.reason,
       requestId: readRequestId(request),
     });
   }

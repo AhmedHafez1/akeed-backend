@@ -6,6 +6,7 @@ import { StandaloneBillingRepository } from '../../src/modules/admin/standalone-
 import { StandaloneBillingService } from '../../src/modules/admin/standalone-billing.service';
 import { StandaloneBillingOperationsRepository } from '../../src/modules/admin/standalone-billing-operations.repository';
 import { StandaloneBillingOperationsService } from '../../src/modules/admin/standalone-billing-operations.service';
+import { MessageDispatchResolutionService } from '../../src/modules/admin/message-dispatch-resolution.service';
 import { paymobBillingHarness } from './paymob-billing-harness';
 import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
 
@@ -50,11 +51,27 @@ export function billingOperationsHarness() {
     db,
     credits,
   );
+  // Follow-up scheduling and redispatch are queue concerns outside this suite;
+  // they are recorded so a case can assert they were or were not asked for.
+  const verificationHub = { scheduleFollowUpAndEscalation: jest.fn() };
+  const webhookDispatcher = { dispatchById: jest.fn() };
+  const events = { resetForRedispatch: jest.fn().mockResolvedValue(false) };
+  const dispatchResolution = new MessageDispatchResolutionService(
+    dispatches,
+    events as never,
+    webhookDispatcher as never,
+    verificationHub as never,
+  );
   const operations = new StandaloneBillingOperationsService(
     db,
     operationsRepository,
     credits,
     config,
+    dispatches,
+    dispatchResolution,
+    base.purchases,
+    base.callbacks,
+    base.reconciliation,
   );
 
   /** A pending verification the dispatch repository can claim a send for. */
@@ -137,6 +154,8 @@ export function billingOperationsHarness() {
     approvals,
     operationsRepository,
     operations,
+    verificationHub,
+    events,
     verification,
     ambiguousSend,
     driftProjection,

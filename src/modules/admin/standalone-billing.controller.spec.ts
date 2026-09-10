@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import {
   ForbiddenException,
+  RequestMethod,
   ValidationPipe,
   type INestApplication,
 } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -34,6 +36,9 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     accountDetail: jest.fn().mockResolvedValue({ account: null }),
     previewAdjustment: jest.fn().mockResolvedValue({ previewId }),
     applyAdjustment: jest.fn().mockResolvedValue({ outcome: 'applied' }),
+    resolveDispatch: jest.fn().mockResolvedValue({ outcome: 'rejected' }),
+    reconcilePurchase: jest.fn().mockResolvedValue({ outcome: 'deferred' }),
+    recordProviderAction: jest.fn().mockResolvedValue({ outcome: 'reversed' }),
   };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
@@ -284,5 +289,182 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       ]);
       expect(input.userId).toBe(staffId);
     });
+  });
+
+  describe('dispatch and purchase operations', () => {
+    const dispatchId = randomUUID();
+    const reference = 'akd_0123456789abcdef0123456789abcdef';
+    const writes = [
+      [
+        `/api/admin/standalone-billing/dispatches/${dispatchId}/resolve`,
+        { orgId, resolution: 'not_accepted', reason: 'Checked with Meta' },
+      ],
+      [
+        `/api/admin/standalone-billing/purchases/${reference}/reconcile`,
+        { orgId, reason: 'Merchant was charged' },
+      ],
+      [
+        `/api/admin/standalone-billing/purchases/${reference}/provider-action`,
+        {
+          orgId,
+          action: 'refund',
+          providerReference: 'rf-1',
+          amountMinor: 20000,
+          currency: 'EGP',
+          evidence: 'Paymob refund tab',
+          reason: 'Finance confirmed',
+        },
+      ],
+    ] as const;
+
+    it.each(writes)('requires a named operator for %s', async (url, body) => {
+      await http()
+        .post(url)
+        .set('Authorization', 'Bearer staff-other')
+        .send(body)
+        .expect(403);
+      await http()
+        .post(url)
+        .set('Authorization', 'Bearer staff-aal2')
+        .send(body)
+        .expect(201);
+    });
+
+    it('requires a provider message id to resolve a send as accepted', async () => {
+      const url = writes[0][0];
+      await http()
+        .post(url)
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({ orgId, resolution: 'accepted', reason: 'Meta says delivered' })
+        .expect(400);
+      await http()
+        .post(url)
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({
+          orgId,
+          resolution: 'accepted',
+          providerMessageId: 'wamid.HBgLMjAxMDAwMDAwMDAVAgARGBI=',
+          evidence: '  Meta support ticket 55  ',
+          reason: 'Meta says delivered',
+        })
+        .expect(201);
+      expect(operations.resolveDispatch).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          orgId,
+          dispatchId,
+          resolution: 'accepted',
+          providerMessageId: 'wamid.HBgLMjAxMDAwMDAwMDAVAgARGBI=',
+          evidence: 'Meta support ticket 55',
+        }),
+      );
+    });
+
+    it('never forwards a provider message id with a not-accepted resolution', async () => {
+      await http()
+        .post(writes[0][0])
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({
+          orgId,
+          resolution: 'not_accepted',
+          providerMessageId: 'wamid.x',
+          reason: 'Meta has no record',
+        })
+        .expect(201);
+      expect(operations.resolveDispatch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ providerMessageId: undefined }),
+      );
+    });
+
+    it.each([
+      { action: 'success' },
+      { action: 'grant' },
+      { currency: 'egp' },
+      { amountMinor: -1 },
+      { amountMinor: 1.5 },
+      { evidence: '' },
+      { orgId: 'not-a-uuid' },
+    ])('rejects provider evidence %o', async (override) => {
+      await http()
+        .post(writes[2][0])
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({ ...writes[2][1], ...override })
+        .expect(400);
+      expect(operations.recordProviderAction).not.toHaveBeenCalled();
+    });
+
+    it('drops any attempt to assert a payment outcome', async () => {
+      await http()
+        .post(writes[2][0])
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({
+          ...writes[2][1],
+          status: 'successful',
+          grant: 100,
+          quantity: 100,
+        })
+        .expect(201);
+      const [input] = operations.recordProviderAction.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(input).not.toHaveProperty('status');
+      expect(input).not.toHaveProperty('grant');
+      expect(input).not.toHaveProperty('quantity');
+      await http()
+        .post(writes[1][0])
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({ orgId, reason: 'x', status: 'successful' })
+        .expect(201);
+      expect(operations.reconcilePurchase).toHaveBeenCalledWith({
+        userId: staffId,
+        orgId,
+        reference,
+        reason: 'x',
+        requestId: undefined,
+      });
+    });
+
+    it('rejects a malformed purchase reference or dispatch id', async () => {
+      await http()
+        .post('/api/admin/standalone-billing/purchases/not-ours/reconcile')
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({ orgId, reason: 'x' })
+        .expect(400);
+      await http()
+        .post('/api/admin/standalone-billing/dispatches/42/resolve')
+        .set('Authorization', 'Bearer staff-aal2')
+        .send({ orgId, resolution: 'not_accepted', reason: 'x' })
+        .expect(400);
+    });
+  });
+
+  it('exposes exactly the documented staff routes, and none that marks a payment successful', () => {
+    const prototype =
+      StandaloneBillingController.prototype as unknown as Record<
+        string,
+        unknown
+      >;
+    const routes = Object.getOwnPropertyNames(prototype)
+      .filter((name) => name !== 'constructor')
+      .map((name) => {
+        const handler = prototype[name] as object;
+        const method = Reflect.getMetadata(METHOD_METADATA, handler) as number;
+        const route = Reflect.getMetadata(PATH_METADATA, handler) as string;
+        return `${RequestMethod[method]} ${route}`;
+      })
+      .sort();
+    expect(routes).toEqual(
+      [
+        'GET accounts',
+        'GET accounts/:orgId',
+        'POST accounts/:orgId/adjustments/apply',
+        'POST accounts/:orgId/adjustments/preview',
+        'POST approvals/apply',
+        'POST approvals/preview',
+        'POST dispatches/:dispatchId/resolve',
+        'POST purchases/:purchaseRef/provider-action',
+        'POST purchases/:purchaseRef/reconcile',
+      ].sort(),
+    );
+    expect(routes.join(' ')).not.toMatch(/success|grant|settle|status/i);
   });
 });

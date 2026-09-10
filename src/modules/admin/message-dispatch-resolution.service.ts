@@ -22,6 +22,7 @@ export class MessageDispatchResolutionService {
     staffUserId: string,
     dispatchId: string,
     input: MessageDispatchResolutionDto,
+    context: { evidence?: string; requestId?: string } = {},
   ) {
     const dispatch = await this.dispatches.findById(dispatchId);
     if (!dispatch) throw new NotFoundException('Message dispatch not found');
@@ -48,7 +49,7 @@ export class MessageDispatchResolutionService {
         // in the key-based recovery; resolution then falls back to the id alone.
         kind: dispatch.kind === 'legacy_unknown' ? undefined : dispatch.kind,
         generation: dispatch.generation,
-        staffAudit: { userId: staffUserId, reason: input.reason },
+        staffAudit: { userId: staffUserId, reason: input.reason, ...context },
       });
       if (updated.outcome !== 'accepted')
         throw new ConflictException('Dispatch could not be resolved');
@@ -68,6 +69,7 @@ export class MessageDispatchResolutionService {
     const updated = await this.dispatches.resolveNotAccepted(dispatchId, {
       userId: staffUserId,
       reason: input.reason,
+      ...context,
     });
     if (!updated) throw new ConflictException('Dispatch could not be resolved');
     const order = dispatch.verification?.order;

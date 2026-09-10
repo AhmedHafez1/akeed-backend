@@ -193,7 +193,7 @@ export class StandaloneBillingOperationsRepository {
   }
 
   async insertAudit(
-    tx: CreditTransaction,
+    writer: Reader,
     input: {
       userId: string;
       action: string;
@@ -202,7 +202,7 @@ export class StandaloneBillingOperationsRepository {
       metadata: Record<string, unknown>;
     },
   ): Promise<string> {
-    const [row] = await tx
+    const [row] = await writer
       .insert(adminAccessAudit)
       .values({
         userId: input.userId,

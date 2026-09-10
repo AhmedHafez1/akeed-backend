@@ -22,6 +22,15 @@ import {
   CreditVersionConflictError,
 } from '../../infrastructure/database/repositories/credit-accounting.repository';
 import type { CreditTransaction } from '../../infrastructure/database/credit-transaction';
+import { PaymentPurchasesRepository } from '../../infrastructure/database/repositories/payment-purchases.repository';
+import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import {
+  PaymentCallbackService,
+  type StaffEvidenceAction,
+  type StaffEvidenceResult,
+} from '../billing/payment-callback.service';
+import { PaymentReconciliationService } from '../billing/payment-reconciliation.service';
+import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import type { creditAccounts } from '../../infrastructure/database/schema';
 import {
   normalizeIdempotencyKey,
@@ -106,6 +115,11 @@ export class StandaloneBillingOperationsService {
     private readonly repository: StandaloneBillingOperationsRepository,
     private readonly credits: CreditAccountingRepository,
     private readonly config: ConfigService,
+    private readonly dispatches: VerificationMessageDispatchesRepository,
+    private readonly dispatchResolution: MessageDispatchResolutionService,
+    private readonly purchases: PaymentPurchasesRepository,
+    private readonly callbacks: PaymentCallbackService,
+    private readonly reconciliation: PaymentReconciliationService,
   ) {}
 
   access(userId: string): OperationsAccess {
@@ -338,6 +352,202 @@ export class StandaloneBillingOperationsService {
         };
       }),
     );
+  }
+
+  /**
+   * Settles an ambiguous send for one tenant.
+   *
+   * The dispatch must belong to the organization the staff member is working
+   * on -- a dispatch id from any other tenant answers exactly like one that
+   * does not exist -- and must be credit billed. The existing resolver then
+   * consumes or releases the held credit exactly once, under the dispatch
+   * path's own integration-then-account lock order, and schedules the next
+   * attempt only where the retry-generation rules allow one.
+   */
+  async resolveDispatch(input: {
+    userId: string;
+    orgId: string;
+    dispatchId: string;
+    resolution: 'accepted' | 'not_accepted';
+    providerMessageId?: string;
+    evidence?: string;
+    reason: string;
+    requestId?: string;
+  }) {
+    const dispatch = await this.dispatches.findById(input.dispatchId);
+    if (!dispatch || dispatch.orgId !== input.orgId)
+      staffBillingError(
+        NotFoundException,
+        STAFF_BILLING_ERROR_CODES.dispatchNotFound,
+        'Message dispatch not found.',
+      );
+    if (dispatch.accountingMode !== 'prepaid_credit')
+      staffBillingError(
+        ConflictException,
+        STAFF_BILLING_ERROR_CODES.dispatchNotCreditBilled,
+        'This send is not billed through credits.',
+      );
+    await this.assertMutable(input.orgId);
+    const result = await this.locked(() =>
+      this.dispatchResolution.resolve(
+        input.userId,
+        input.dispatchId,
+        {
+          resolution: input.resolution,
+          providerMessageId: input.providerMessageId,
+          reason: input.reason,
+        },
+        { evidence: input.evidence, requestId: input.requestId },
+      ),
+    );
+    return {
+      outcome: result.state,
+      dispatchId: result.dispatchId,
+      duplicate: result.duplicate,
+    };
+  }
+
+  /**
+   * Asks the provider about one purchase, now.
+   *
+   * The inquiry is keyed only by identifiers already stored on the purchase,
+   * and its answer runs through the same verified ingestion a callback does.
+   * There is no input by which staff could name an outcome.
+   */
+  async reconcilePurchase(input: {
+    userId: string;
+    orgId: string;
+    reference: string;
+    reason: string;
+    requestId?: string;
+  }) {
+    const target = await this.purchases.findReconciliationTarget(
+      input.orgId,
+      input.reference,
+    );
+    if (!target)
+      staffBillingError(
+        NotFoundException,
+        STAFF_BILLING_ERROR_CODES.purchaseNotFound,
+        'Purchase not found.',
+      );
+    await this.assertMutable(input.orgId);
+    const result = await this.reconciliation.reconcile(
+      input.orgId,
+      input.reference,
+      { force: true },
+    );
+    if (result.outcome === 'not_eligible')
+      staffBillingError(
+        ConflictException,
+        STAFF_BILLING_ERROR_CODES.purchaseNotEligible,
+        'Only a pending purchase, or a flagged one a delayed success could still settle, can be inquired.',
+        { status: target.status },
+      );
+    const after = await this.purchases.findReconciliationTarget(
+      input.orgId,
+      input.reference,
+    );
+    await this.repository.insertAudit(this.db, {
+      userId: input.userId,
+      action: STAFF_BILLING_ACTIONS.purchaseReconcile,
+      requestId: input.requestId,
+      metadata: {
+        orgId: input.orgId,
+        reference: input.reference,
+        reason: input.reason,
+        outcome: result.outcome,
+        resultCode: result.ingest?.resultCode ?? null,
+        errorCode: result.ingest?.errorCode ?? null,
+        reconciliationCode: after?.reconciliationCode ?? null,
+      },
+    });
+    return {
+      outcome: result.outcome,
+      reference: input.reference,
+      ingest: result.ingest ?? null,
+      purchase: after
+        ? {
+            status: after.status,
+            reconciliationRequired: after.reconciliationRequired,
+            reconciliationCode: after.reconciliationCode,
+            reconciliationAttempts: after.reconciliationAttempts,
+            nextReconciliationAt: after.nextReconciliationAt,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Records refund or dispute evidence staff copied from the provider.
+   *
+   * It can reverse or reinstate purchased credits through the same state
+   * machine a callback uses, and it can quarantine a purchase; it can never
+   * grant, and it never trusts an amount that does not match the purchase.
+   */
+  async recordProviderAction(input: {
+    userId: string;
+    orgId: string;
+    reference: string;
+    action: StaffEvidenceAction;
+    providerReference?: string;
+    amountMinor: number;
+    currency: string;
+    evidence: string;
+    reason: string;
+    requestId?: string;
+  }) {
+    await this.assertMutable(input.orgId);
+    const result = await this.locked(() =>
+      this.callbacks.recordStaffEvidence(
+        {
+          orgId: input.orgId,
+          reference: input.reference,
+          action: input.action,
+          providerReference: input.providerReference,
+          amountMinor: input.amountMinor,
+          currency: input.currency,
+          actorId: input.userId,
+        },
+        async (tx: CreditTransaction, recorded: StaffEvidenceResult) => {
+          await this.repository.insertAudit(tx, {
+            userId: input.userId,
+            action: STAFF_BILLING_ACTIONS.providerAction,
+            requestId: input.requestId,
+            metadata: {
+              orgId: input.orgId,
+              reference: input.reference,
+              providerAction: input.action,
+              providerReference: input.providerReference ?? null,
+              amountMinor: input.amountMinor,
+              currency: input.currency,
+              evidence: input.evidence,
+              reason: input.reason,
+              outcome: recorded.outcome,
+              resultCode: recorded.resultCode,
+              errorCode: recorded.errorCode ?? null,
+              reconciliationCode: recorded.reconciliationCode ?? null,
+              reversalType: recorded.reversal?.type ?? null,
+              reversalQuantity: recorded.reversal?.quantity ?? null,
+            },
+          });
+        },
+      ),
+    );
+    if (result.outcome === 'not_found')
+      staffBillingError(
+        NotFoundException,
+        STAFF_BILLING_ERROR_CODES.purchaseNotFound,
+        'Purchase not found.',
+      );
+    return { ...result, reference: input.reference };
+  }
+
+  private async assertMutable(orgId: string) {
+    const block = mutationBlock(
+      await this.repository.readReconciliation(orgId),
+    );
+    if (block) this.refuse(block);
   }
 
   /**

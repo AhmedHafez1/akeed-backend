@@ -52,6 +52,14 @@ const sentFloor = sql`CASE
   ELSE ${verifications.status}
 END`;
 
+/** The staff member resolving an ambiguous send, and what they relied on. */
+export interface StaffResolutionAudit {
+  userId: string;
+  reason: string;
+  evidence?: string;
+  requestId?: string;
+}
+
 export type DispatchKind = 'initial' | 'follow_up';
 
 /**
@@ -314,7 +322,7 @@ export class VerificationMessageDispatchesRepository {
     verificationId?: string;
     kind?: DispatchKind;
     generation?: number;
-    staffAudit?: { userId: string; reason: string };
+    staffAudit?: StaffResolutionAudit;
   }): Promise<DispatchAcceptanceResult> {
     return this.withDispatchTransaction(
       params.dispatchId,
@@ -760,7 +768,7 @@ export class VerificationMessageDispatchesRepository {
 
   async resolveNotAccepted(
     id: string,
-    staffAudit?: { userId: string; reason: string },
+    staffAudit?: StaffResolutionAudit,
     confirmedRejection = false,
   ): Promise<DispatchRecord | undefined> {
     const now = new Date().toISOString();
@@ -988,20 +996,24 @@ export class VerificationMessageDispatchesRepository {
     tx: CreditTransaction,
     dispatch: DispatchRecord,
     resolution: 'accepted' | 'not_accepted',
-    actor: { userId: string; reason: string },
+    actor: StaffResolutionAudit,
   ) {
     await tx.insert(adminAccessAudit).values({
       userId: actor.userId,
       action: 'message-dispatch.resolve',
       outcome: 'allowed',
+      requestId: actor.requestId,
       targetIntegrationId: dispatch.integrationId,
       metadata: {
         dispatchId: dispatch.id,
+        orgId: dispatch.orgId,
         verificationId: dispatch.verificationId,
         kind: dispatch.kind,
         generation: dispatch.generation,
+        accountingMode: dispatch.accountingMode,
         resolution,
         reason: actor.reason.trim(),
+        ...(actor.evidence ? { evidence: actor.evidence.trim() } : {}),
       },
     });
   }
