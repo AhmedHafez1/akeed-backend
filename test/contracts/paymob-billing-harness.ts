@@ -27,7 +27,12 @@ import { fakePaymentsPort } from './fake-payments-port';
  * fail-closed behaviour is enforced by the database, not by application code.
  * Mocking the database would test the wrong half.
  */
-export function paymobBillingHarness() {
+export function paymobBillingHarness(
+  options: {
+    /** Further tables a suite reads, scaffolded like the ones below. */
+    extraTables?: PgTable[];
+  } = {},
+) {
   const value = process.env.E045_TEST_DATABASE_URL;
   if (!value)
     throw new Error(
@@ -177,6 +182,7 @@ export function paymobBillingHarness() {
       tables.integrationMonthlyUsage,
       tables.adminAccessAudit,
       tables.webhookEvents,
+      ...(options.extraTables ?? []),
     ])
       await scaffold(table);
     const dispatchDdl = readFileSync(

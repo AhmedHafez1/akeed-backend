@@ -4,13 +4,24 @@ import {
   parseStandaloneCreditBillingConfig,
   STANDALONE_CREDIT_BILLING_CONFIG,
 } from '../../shared/config/standalone-credit-billing.config';
+import {
+  parseStandaloneBillingOperationsConfig,
+  STANDALONE_BILLING_OPERATIONS_CONFIG,
+} from '../../shared/config/standalone-billing-operations.config';
 import { StandaloneBillingService } from './standalone-billing.service';
 import type { StandaloneBillingRepository } from './standalone-billing.repository';
+
+const OPERATOR = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 
 function configuration(approvalEnabled?: string): ConfigService {
   return new ConfigService({
     STANDALONE_CREDIT_APPROVAL_ENABLED: approvalEnabled,
     [STANDALONE_CREDIT_BILLING_CONFIG]: parseStandaloneCreditBillingConfig({}),
+    [STANDALONE_BILLING_OPERATIONS_CONFIG]:
+      parseStandaloneBillingOperationsConfig({
+        STANDALONE_BILLING_OPERATIONS_ENABLED: 'true',
+        STANDALONE_BILLING_OPERATOR_IDS: OPERATOR,
+      }),
   });
 }
 
@@ -20,6 +31,7 @@ describe('Standalone credit approval batch orchestration', () => {
     approveOrganization: jest.fn(),
     listOrganizationIds: jest.fn(),
     loadSnapshots: jest.fn(),
+    loadBillingSummaries: jest.fn(),
     savePreview: jest.fn(),
   };
   const service = (approvalEnabled?: string) =>
@@ -116,10 +128,54 @@ describe('Standalone credit approval batch orchestration', () => {
       },
     ]);
 
-    const page = await service('true').list(50, undefined, 'eligible');
+    repository.loadBillingSummaries.mockResolvedValue(
+      new Map([
+        [
+          'org-2',
+          {
+            debtCredits: 0,
+            balanceState: 'ok',
+            projectionConsistent: true,
+            flaggedPurchases: 1,
+            unresolvedHolds: 0,
+            reconciliationRequired: true,
+          },
+        ],
+      ]),
+    );
+
+    const page = await service('true').list('staff', {
+      limit: 50,
+      approval: 'eligible',
+    });
 
     expect(page.rows.map((row) => row.orgId)).toEqual(['org-1']);
+    expect(page.rows[0].billing).toBeNull();
     expect(page.counts).toMatchObject({ eligible: 1, alreadyApproved: 1 });
     expect(page.approvalEnabled).toBe(true);
+    expect(page.operations).toEqual({ enabled: true, operator: false });
+  });
+
+  it('applies credit filters before paging and reports operator access', async () => {
+    repository.listOrganizationIds.mockResolvedValue([]);
+    repository.loadSnapshots.mockResolvedValue([]);
+    repository.loadBillingSummaries.mockResolvedValue(new Map());
+
+    const page = await service('true').list(OPERATOR, {
+      limit: 25,
+      cursor: 'org-0',
+      accountStatus: 'active',
+      balance: 'low',
+      reconciliation: 'required',
+    });
+
+    expect(repository.listOrganizationIds).toHaveBeenCalledWith(
+      25,
+      'org-0',
+      { accountStatus: 'active', balance: 'low', reconciliation: 'required' },
+      10,
+    );
+    expect(page.lowBalanceThreshold).toBe(10);
+    expect(page.operations).toEqual({ enabled: true, operator: true });
   });
 });

@@ -1,6 +1,11 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import {
+  isStandaloneBillingOperator,
+  readStandaloneBillingOperationsConfig,
+} from '../../shared/config/standalone-billing-operations.config';
+import type { AccountFilters } from './standalone-billing-operations.types';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import {
   countApprovalRows,
@@ -34,24 +39,55 @@ export class StandaloneBillingService {
     return readStandaloneCreditBillingConfig(this.config).freeGrant;
   }
 
-  async list(limit = 50, cursor?: string, approval?: ApprovalStatus) {
+  async list(
+    userId: string,
+    query: AccountFilters & {
+      limit?: number;
+      cursor?: string;
+      approval?: ApprovalStatus;
+    } = {},
+  ) {
+    const limit = query.limit ?? 50;
+    const { lowBalanceThreshold } = readStandaloneCreditBillingConfig(
+      this.config,
+    );
     const organizations = await this.repository.listOrganizationIds(
       limit,
-      cursor,
+      query.cursor,
+      {
+        accountStatus: query.accountStatus,
+        balance: query.balance,
+        reconciliation: query.reconciliation,
+      },
+      lowBalanceThreshold,
     );
     const page = organizations.slice(0, limit);
     const freeGrant = this.freeGrantQuantity();
-    const rows = (
-      await this.repository.loadSnapshots(page.map(({ id }) => id))
-    ).map((snapshot) => evaluateStandaloneApproval(snapshot, freeGrant).row);
+    const orgIds = page.map(({ id }) => id);
+    const [snapshots, summaries] = await Promise.all([
+      this.repository.loadSnapshots(orgIds),
+      this.repository.loadBillingSummaries(orgIds, lowBalanceThreshold),
+    ]);
+    const rows = snapshots.map((snapshot) => ({
+      ...evaluateStandaloneApproval(snapshot, freeGrant).row,
+      billing: summaries.get(snapshot.orgId) ?? null,
+    }));
+    const operations = readStandaloneBillingOperationsConfig(this.config);
     return {
-      // The cursor walks organizations, so a filtered page can be shorter than
-      // `limit` while more matches still follow.
-      rows: approval ? rows.filter((row) => row.status === approval) : rows,
+      // The cursor walks organizations, so a page filtered by approval can be
+      // shorter than `limit` while more matches still follow.
+      rows: query.approval
+        ? rows.filter((row) => row.status === query.approval)
+        : rows,
       counts: countApprovalRows(rows),
       nextCursor:
         organizations.length > limit ? (page.at(-1)?.id ?? null) : null,
       approvalEnabled: this.approvalEnabled(),
+      lowBalanceThreshold,
+      operations: {
+        enabled: operations.enabled,
+        operator: isStandaloneBillingOperator(operations, userId),
+      },
     };
   }
 

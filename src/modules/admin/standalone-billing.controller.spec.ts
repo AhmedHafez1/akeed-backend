@@ -10,6 +10,7 @@ import request from 'supertest';
 import { AdminAccessGuard } from './admin-access.guard';
 import { StandaloneBillingController } from './standalone-billing.controller';
 import { StandaloneBillingService } from './standalone-billing.service';
+import { StandaloneBillingOperationsService } from './standalone-billing-operations.service';
 import { TokenValidatorService } from '../auth/services/token-validator.service';
 import { AdminAccessAuditRepository } from '../../infrastructure/database/repositories/admin-access-audit.repository';
 
@@ -23,6 +24,9 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     preview: jest.fn().mockResolvedValue({ previewId }),
     apply: jest.fn().mockResolvedValue({ results: [] }),
   };
+  const operations = {
+    accountDetail: jest.fn().mockResolvedValue({ account: null }),
+  };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
   beforeAll(async () => {
@@ -31,6 +35,7 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       providers: [
         AdminAccessGuard,
         { provide: StandaloneBillingService, useValue: billing },
+        { provide: StandaloneBillingOperationsService, useValue: operations },
         {
           provide: ConfigService,
           useValue: new ConfigService({ ADMIN_CONTROL_TOWER_ENABLED: 'true' }),
@@ -131,4 +136,34 @@ describe('Standalone billing approval staff HTTP boundary', () => {
         .expect(400);
     },
   );
+  it('passes credit filters with the guard principal and rejects unknown ones', async () => {
+    await http()
+      .get(
+        '/api/admin/standalone-billing/accounts?accountStatus=active&balance=debt&reconciliation=required&limit=10',
+      )
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(200);
+    expect(billing.list).toHaveBeenCalledWith(staffId, {
+      accountStatus: 'active',
+      balance: 'debt',
+      reconciliation: 'required',
+      limit: 10,
+    });
+    await http()
+      .get('/api/admin/standalone-billing/accounts?balance=rich')
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(400);
+  });
+  it('reads one account by organization id, uncached', async () => {
+    const response = await http()
+      .get(`/api/admin/standalone-billing/accounts/${orgId}`)
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(200);
+    expect(operations.accountDetail).toHaveBeenCalledWith(staffId, orgId);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    await http()
+      .get('/api/admin/standalone-billing/accounts/not-a-uuid')
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(400);
+  });
 });

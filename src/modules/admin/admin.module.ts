@@ -12,6 +12,9 @@ import { AdminHealthRuleService } from './admin-health-rule.service';
 import { AdminQueryRepository } from './admin-query.repository';
 import { AdminStoresService } from './admin-stores.service';
 import { StandaloneBillingController } from './standalone-billing.controller';
+import { StandaloneBillingLoggingInterceptor } from './standalone-billing-logging.interceptor';
+import { StandaloneBillingOperationsRepository } from './standalone-billing-operations.repository';
+import { StandaloneBillingOperationsService } from './standalone-billing-operations.service';
 import { StandaloneBillingOperatorGuard } from './standalone-billing-operator.guard';
 import { StandaloneBillingRepository } from './standalone-billing.repository';
 import { StandaloneBillingService } from './standalone-billing.service';
@@ -48,6 +51,9 @@ export class AdminModule {
         StandaloneBillingRepository,
         StandaloneBillingService,
         StandaloneBillingOperatorGuard,
+        StandaloneBillingLoggingInterceptor,
+        StandaloneBillingOperationsRepository,
+        StandaloneBillingOperationsService,
         MessageDispatchResolutionService,
       ],
     };
