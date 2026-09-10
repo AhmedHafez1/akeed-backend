@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { standaloneCreditBillingConfigService } from '../../../test/contracts/standalone-credit-billing-config';
 import {
   CreditAccountingRepository,
@@ -422,6 +423,83 @@ describe('PaymentCallbackService.ingest', () => {
       Record<string, unknown>,
     ];
     expect(changes).toMatchObject({ status: 'expired' });
+  });
+});
+
+describe('PaymentCallbackService alerts', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  function alerts(warn: jest.SpyInstance) {
+    return warn.mock.calls
+      .map(([line]) => JSON.parse(line as string) as Record<string, unknown>)
+      .filter((line) => line.action === 'standalone-billing-alert');
+  }
+
+  it.each([
+    [
+      'a quarantined trusted-field mismatch',
+      () => setup({ purchase: null }),
+      'trusted_data_mismatch',
+      'critical',
+    ],
+    [
+      'a redelivered event',
+      () => setup({ recordEvent: jest.fn().mockResolvedValue(undefined) }),
+      'duplicate_grant_attempt',
+      'attention',
+    ],
+  ] as const)(
+    'raises one alert for %s',
+    async (_label, arrange, alertCode, severity) => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      await arrange().service.ingest(event());
+      expect(alerts(warn)).toEqual([
+        expect.objectContaining({
+          alertCode,
+          severity,
+          reference: purchase.reference,
+        }),
+      ]);
+    },
+  );
+
+  it('raises a callback-failure alert and still rethrows for a provider retry', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { service, credits } = setup();
+    credits.updateProjection.mockRejectedValue(
+      new Error('connection to postgres://user:secret@db lost'),
+    );
+    await expect(service.ingest(event())).rejects.toThrow('connection');
+    const [alert] = alerts(warn);
+    expect(alert).toMatchObject({
+      alertCode: 'callback_failure',
+      severity: 'critical',
+      errorName: 'Error',
+    });
+    expect(JSON.stringify(alert)).not.toContain('secret');
+  });
+
+  it('raises a projection-mismatch alert when the account freezes', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { service, credits } = setup();
+    credits.checkInvariant.mockResolvedValue({ consistent: false });
+    await service.ingest(event());
+    expect(alerts(warn)).toEqual([
+      expect.objectContaining({
+        alertCode: 'projection_mismatch',
+        severity: 'critical',
+      }),
+    ]);
+  });
+
+  it('stays quiet on an ordinary grant', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    await setup().service.ingest(event());
+    expect(alerts(warn)).toEqual([]);
   });
 });
 

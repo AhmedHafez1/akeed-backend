@@ -20,6 +20,11 @@ import { StandaloneBillingRepository } from './standalone-billing.repository';
 import { StandaloneBillingService } from './standalone-billing.service';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
+import { BillingReconciliationQueueModule } from './billing-reconciliation-queue.module';
+import { BillingObservabilityRepository } from './billing-observability.repository';
+import { BillingObservabilityService } from './billing-observability.service';
+import { BillingReconciliationProducer } from './billing-reconciliation.producer';
+import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
 
 export interface AdminModuleOptions {
   /**
@@ -39,6 +44,7 @@ export class AdminModule {
         AuthModule,
         DatabaseModule,
         WebhookQueueModule,
+        BillingReconciliationQueueModule,
         ...(options.imports ?? []),
       ],
       controllers: [AdminController, StandaloneBillingController],
@@ -55,6 +61,10 @@ export class AdminModule {
         StandaloneBillingOperationsRepository,
         StandaloneBillingOperationsService,
         MessageDispatchResolutionService,
+        BillingObservabilityRepository,
+        BillingObservabilityService,
+        BillingReconciliationProducer,
+        BillingReconciliationProcessor,
       ],
     };
   }

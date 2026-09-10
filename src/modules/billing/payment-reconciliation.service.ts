@@ -47,6 +47,16 @@ export type ReconcileOutcome =
 export interface ReconcileResult {
   outcome: ReconcileOutcome;
   ingest?: IngestResult;
+  providerEvent?: NormalizedProviderEvent;
+  providerCode?: string;
+}
+
+export interface ReconcileOptions {
+  force?: boolean;
+  /** Scheduled observation may inspect settled purchases as well as pending. */
+  scheduled?: boolean;
+  /** Ask and return the normalized fact without changing canonical state. */
+  reportOnly?: boolean;
 }
 
 /**
@@ -82,7 +92,7 @@ export class PaymentReconciliationService {
   async reconcile(
     orgId: string,
     reference: string,
-    options: { force?: boolean } = {},
+    options: ReconcileOptions = {},
   ): Promise<ReconcileResult> {
     const purchase = await this.purchases.findReconciliationTarget(
       orgId,
@@ -94,7 +104,13 @@ export class PaymentReconciliationService {
     const expired = purchase.checkoutExpiresAt
       ? Date.parse(purchase.checkoutExpiresAt) <= now
       : false;
-    if (options.force) {
+    if (options.scheduled) {
+      if (
+        !['pending', 'successful', 'refunded'].includes(purchase.status) &&
+        !purchase.reconciliationRequired
+      )
+        return { outcome: 'not_eligible' };
+    } else if (options.force) {
       if (
         purchase.status !== 'pending' &&
         !(
@@ -135,18 +151,27 @@ export class PaymentReconciliationService {
           ...normalizeError(error),
         }),
       );
+      if (this.observesOnly(purchase, options))
+        return { outcome: 'deferred', providerCode: 'inquiry_failed' };
       return this.defer(purchase, 'inquiry_failed');
     }
 
     if (result.outcome === 'found') {
+      if (options.reportOnly)
+        return { outcome: 'resolved', providerEvent: result.event };
       const ingest = await this.callbacks.ingest(result.event);
-      return { outcome: 'resolved', ingest };
+      return { outcome: 'resolved', ingest, providerEvent: result.event };
     }
     if (
       result.outcome === 'not_found' &&
       expired &&
       purchase.status === 'pending'
     ) {
+      if (options.reportOnly)
+        return {
+          outcome: 'resolved',
+          providerCode: 'expiry_confirmed',
+        };
       // The one path that may expire a purchase, and only because the provider
       // was asked and reported nothing.
       const ingest = await this.callbacks.ingest(
@@ -154,7 +179,23 @@ export class PaymentReconciliationService {
       );
       return { outcome: 'expired', ingest };
     }
+    if (this.observesOnly(purchase, options))
+      return { outcome: 'deferred', providerCode: result.code };
     return this.defer(purchase, result.code);
+  }
+
+  /**
+   * Report-only inquiries, and scheduled looks at already-settled purchases,
+   * record what they learned elsewhere and never touch the purchase itself.
+   */
+  private observesOnly(
+    purchase: { status: PurchaseStatus },
+    options: ReconcileOptions,
+  ): boolean {
+    return (
+      !!options.reportOnly ||
+      (!!options.scheduled && purchase.status !== 'pending')
+    );
   }
 
   /**

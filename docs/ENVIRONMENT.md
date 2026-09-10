@@ -146,6 +146,27 @@ Setting it to `true` makes every variable below required and validated at startu
 
 Pricing is server-owned and never read from a request: `STANDALONE_CREDIT_PRICE_MINOR` (200 piastres), `STANDALONE_PURCHASE_MIN` (100), `STANDALONE_PURCHASE_MAX` (5000), `STANDALONE_PURCHASE_STEP` (50), `STANDALONE_LOW_BALANCE_THRESHOLD` (10). Startup rejects a min/max that are not ordered multiples of the step, or a maximum total that would overflow the integer money columns.
 
+### Billing integrity reconciliation
+
+The dedicated `billing-reconciliation` BullMQ queue runs one worker at a time. It registers a nightly scheduler for 02:30 Africa/Cairo and also accepts immediate jobs after staff settlement entry or an operator-requested run. These settings are validated at startup:
+
+| Variable | Default | Notes |
+| --- | ---: | --- |
+| `STANDALONE_BILLING_SCHEDULED_INQUIRY_ENABLED` | `false` | Enables Paymob inquiries made by scheduled jobs only. The existing staff inquiry remains available. |
+| `STANDALONE_BILLING_RECONCILIATION_REPORT_ONLY` | `true` | Persists comparisons and findings without changing purchase or credit state. |
+| `STANDALONE_BILLING_RECONCILIATION_CRON` | `30 2 * * *` | Five-field nightly schedule. |
+| `STANDALONE_BILLING_RECONCILIATION_TIMEZONE` | `Africa/Cairo` | IANA timezone used by BullMQ. |
+| `STANDALONE_BILLING_RECONCILIATION_BATCH_SIZE` | `50` | Keyset page size, capped at 100. |
+| `STANDALONE_BILLING_RECONCILIATION_LOOKBACK_DAYS` | `7` | Recent settled/refunded/disputed purchase window. Stale or flagged purchases are checked regardless of age. |
+| `STANDALONE_BILLING_STALE_PENDING_MINUTES` | `30` | Grace period after checkout expiry before a pending purchase is flagged. |
+| `STANDALONE_BILLING_BACKLOG_ALERT_COUNT` | `25` | Open-finding count threshold. |
+| `STANDALONE_BILLING_BACKLOG_ALERT_AGE_MINUTES` | `120` | Oldest-open-finding threshold. |
+| `STANDALONE_BILLING_PAYMOB_SLOW_MS` | `5000` | Slow inquiry threshold. |
+| `STANDALONE_BILLING_PAYMOB_ERROR_RATE_PERCENT` | `20` | Provider degradation threshold. |
+| `STANDALONE_BILLING_PAYMOB_ERROR_RATE_MIN_ATTEMPTS` | `5` | Minimum sample before the error-rate alert applies. |
+
+Keep the two safety switches at their defaults for the initial deploy. Local invariants, settlement comparisons, product/finance metrics, health checks, and retention cleanup continue even while scheduled provider inquiry is disabled.
+
 ### Handling secrets
 
 - `PAYMOB_SECRET_KEY` and `PAYMOB_HMAC_SECRET` are server-only and never leave the process. The structured logger redacts them by key name, and provider error bodies are reduced to a name and message before they are logged.

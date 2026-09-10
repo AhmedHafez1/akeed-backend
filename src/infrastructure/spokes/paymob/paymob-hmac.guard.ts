@@ -108,6 +108,19 @@ export class PaymobHmacGuard implements CanActivate {
         errorCode,
       }),
     );
+    // A disabled feature is configuration, not an attack; every other refusal
+    // counts toward the invalid-HMAC spike alert.
+    if (errorCode !== 'billing_disabled')
+      this.logger.warn(
+        buildBackendLog(PaymobHmacGuard.name, {
+          action: 'standalone-billing-alert',
+          outcome: 'failure',
+          alertCode: 'invalid_hmac',
+          severity: 'attention',
+          requestId,
+          errorCode,
+        }),
+      );
     throw new UnauthorizedException('Invalid Paymob callback signature');
   }
 }

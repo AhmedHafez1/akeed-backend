@@ -6,6 +6,10 @@ import {
   parseStandaloneBillingOperationsConfig,
   STANDALONE_BILLING_OPERATIONS_CONFIG,
 } from './standalone-billing-operations.config';
+import {
+  parseStandaloneBillingObservabilityConfig,
+  STANDALONE_BILLING_OBSERVABILITY_CONFIG,
+} from './standalone-billing-observability.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -96,5 +100,7 @@ export function validateEnv(
       parseStandaloneCreditBillingConfig(config),
     [STANDALONE_BILLING_OPERATIONS_CONFIG]:
       parseStandaloneBillingOperationsConfig(config),
+    [STANDALONE_BILLING_OBSERVABILITY_CONFIG]:
+      parseStandaloneBillingObservabilityConfig(config),
   };
 }

@@ -6,6 +6,7 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import type { StandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { withSerializableRetry } from '../../shared/database/serializable-retry';
 import {
   CreditAccountingRepository,
@@ -36,6 +37,34 @@ import {
 } from './billing.types';
 
 type Purchase = typeof paymentPurchases.$inferSelect;
+
+export function paymentEventMismatch(
+  event: NormalizedProviderEvent,
+  purchase: Purchase,
+  billing: StandaloneCreditBillingConfig,
+): EventErrorCode | null {
+  const integrations = billing.enabled
+    ? [billing.paymob.cardIntegrationId, billing.paymob.walletIntegrationId]
+    : [];
+  if (event.amountMinor !== purchase.totalMinor) return 'amount_mismatch';
+  if (event.currency !== purchase.currency) return 'currency_mismatch';
+  if (!integrations.includes(event.integrationId))
+    return 'integration_mismatch';
+  if (
+    event.mode !== purchase.mode ||
+    (billing.enabled && event.mode !== billing.paymob.mode)
+  )
+    return 'mode_mismatch';
+  if (event.provider !== purchase.provider) return 'ownership_mismatch';
+  const bound: [string | null, string | undefined][] = [
+    [purchase.providerIntentionId, event.payment.providerIntentionId],
+    [purchase.providerOrderId, event.payment.providerOrderId],
+    [purchase.providerTransactionId, event.payment.providerTransactionId],
+  ];
+  for (const [stored, incoming] of bound)
+    if (stored && incoming && stored !== incoming) return 'ownership_mismatch';
+  return null;
+}
 
 export type StaffEvidenceAction =
   | 'refund'
@@ -156,6 +185,14 @@ export class PaymentCallbackService {
           ...(result.errorCode ? { errorCode: result.errorCode } : {}),
         }),
       );
+      if (result.resultCode === 'duplicate_event')
+        this.alert('duplicate_grant_attempt', 'attention', event);
+      // Raised only after commit, so a rolled-back quarantine does not page.
+      if (result.outcome === 'quarantined')
+        this.alert('trusted_data_mismatch', 'critical', event, {
+          resultCode: result.resultCode,
+          ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        });
       return result;
     } catch (error) {
       if (error instanceof CreditInvariantError)
@@ -169,6 +206,9 @@ export class PaymentCallbackService {
           ...normalizeError(error),
         }),
       );
+      this.alert('callback_failure', 'critical', event, {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       // Deliberately rethrown: a transient database failure must answer non-2xx
       // so the provider retries and the grant still happens.
       throw error;
@@ -281,32 +321,7 @@ export class PaymentCallbackService {
     purchase: Purchase,
   ): EventErrorCode | null {
     const billing = readStandaloneCreditBillingConfig(this.config);
-    const integrations = billing.enabled
-      ? [billing.paymob.cardIntegrationId, billing.paymob.walletIntegrationId]
-      : [];
-    if (event.amountMinor !== purchase.totalMinor) return 'amount_mismatch';
-    if (event.currency !== purchase.currency) return 'currency_mismatch';
-    if (!integrations.includes(event.integrationId))
-      return 'integration_mismatch';
-    // Both directions: a live payment must not settle a test purchase, and a
-    // test payment must not settle a live one.
-    if (
-      event.mode !== purchase.mode ||
-      (billing.enabled && event.mode !== billing.paymob.mode)
-    )
-      return 'mode_mismatch';
-    if (event.provider !== purchase.provider) return 'ownership_mismatch';
-    const bound: [string | null, string | undefined][] = [
-      [purchase.providerIntentionId, event.payment.providerIntentionId],
-      [purchase.providerOrderId, event.payment.providerOrderId],
-      [purchase.providerTransactionId, event.payment.providerTransactionId],
-    ];
-    // A bound identifier is immutable; an event naming a different one is
-    // about somebody else's payment.
-    for (const [stored, incoming] of bound)
-      if (stored && incoming && stored !== incoming)
-        return 'ownership_mismatch';
-    return null;
+    return paymentEventMismatch(event, purchase, billing);
   }
 
   /** Fills in identifiers the purchase does not have yet, and only those. */
@@ -701,9 +716,34 @@ export class PaymentCallbackService {
         ...error.report,
       }),
     );
+    this.alert('projection_mismatch', 'critical', event);
     return {
       outcome: 'frozen',
       resultCode: 'credit_invariant_frozen',
     };
+  }
+
+  /**
+   * One structured event per incident for Railway log alerts. References are
+   * searchable fields here, never metric dimensions.
+   */
+  private alert(
+    alertCode: string,
+    severity: 'attention' | 'critical',
+    event: NormalizedProviderEvent,
+    context: Record<string, unknown> = {},
+  ): void {
+    this.logger.warn(
+      buildBackendLog(PaymentCallbackService.name, {
+        action: 'standalone-billing-alert',
+        outcome: 'failure',
+        alertCode,
+        severity,
+        provider: event.provider,
+        source: event.source,
+        reference: event.reference,
+        ...context,
+      }),
+    );
   }
 }

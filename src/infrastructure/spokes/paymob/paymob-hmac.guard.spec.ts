@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ExecutionContext } from '@nestjs/common';
-import { UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { standaloneCreditBillingConfigService } from '../../../../test/contracts/standalone-credit-billing-config';
 import {
   PaymobHmacGuard,
@@ -154,5 +154,51 @@ describe('PaymobHmacGuard', () => {
     const request = callback({ body: token });
     expect(guard.canActivate(contextFor(request))).toBe(true);
     expect(request.paymobEvent?.type).toBe('TOKEN');
+  });
+
+  describe('alerts', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    function alerts(warn: jest.SpyInstance) {
+      return warn.mock.calls
+        .map(([line]) => JSON.parse(line as string) as Record<string, unknown>)
+        .filter((line) => line.action === 'standalone-billing-alert');
+    }
+
+    it('counts each refused signature toward the invalid-HMAC alert, without the digest', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const forged = signPaymobPayload(fixture.body.obj, 'other');
+      const guard = new PaymobHmacGuard(enabled);
+      expect(() =>
+        guard.canActivate(contextFor(callback({ hmac: forged }))),
+      ).toThrow(UnauthorizedException);
+      expect(alerts(warn)).toEqual([
+        {
+          app: 'backend',
+          env: expect.any(String) as unknown,
+          module: 'PaymobHmacGuard',
+          action: 'standalone-billing-alert',
+          outcome: 'failure',
+          alertCode: 'invalid_hmac',
+          severity: 'attention',
+          requestId: 'req-1',
+          errorCode: 'signature_verification_failed',
+        },
+      ]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(forged);
+    });
+
+    it('does not page for a callback refused only because billing is off', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const guard = new PaymobHmacGuard(disabled);
+      expect(() => guard.canActivate(contextFor(callback()))).toThrow(
+        UnauthorizedException,
+      );
+      expect(alerts(warn)).toEqual([]);
+    });
   });
 });

@@ -56,6 +56,31 @@ const REDACTED_KEYS = new Set([
   // still cardholder data we have no reason to write down.
   'pan',
   'source_data',
+  'card_number',
+  'cardnumber',
+  'wallet_number',
+  'walletnumber',
+  'wallet_token',
+  'wallettoken',
+  'msisdn',
+  // Paymob credentials by the names its configuration uses.
+  'secret_key',
+  'secretkey',
+  'hmac_secret',
+  'hmacsecret',
+  'private_key',
+  'privatekey',
+  // Settlement evidence and raw customer/provider material are retained only
+  // in their purpose-built stores. They must never leak into Railway logs.
+  'evidence',
+  'raw_payload',
+  'rawpayload',
+  'phone',
+  'customer_phone',
+  'customerphone',
+  'email',
+  'customer_email',
+  'customeremail',
 ]);
 
 function redact(value: unknown): unknown {

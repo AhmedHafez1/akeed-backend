@@ -315,3 +315,88 @@ describe('PaymentReconciliationService.reconcile forced by staff', () => {
     },
   );
 });
+
+describe('PaymentReconciliationService.reconcile scheduled', () => {
+  const REPORT_ONLY = { scheduled: true, reportOnly: true };
+
+  it('returns a found fact in report-only mode without ingesting it', async () => {
+    const { service, callbacks, purchases } = setup();
+    await expect(
+      service.reconcile('org-1', REFERENCE, REPORT_ONLY),
+    ).resolves.toEqual({ outcome: 'resolved', providerEvent });
+    expect(callbacks.ingest).not.toHaveBeenCalled();
+    expect(purchases.updatePurchase).not.toHaveBeenCalled();
+  });
+
+  it('ingests a found fact canonically in active mode and returns it', async () => {
+    const { service, callbacks } = setup();
+    await expect(
+      service.reconcile('org-1', REFERENCE, { scheduled: true }),
+    ).resolves.toMatchObject({
+      outcome: 'resolved',
+      providerEvent,
+      ingest: { outcome: 'granted' },
+    });
+    expect(callbacks.ingest).toHaveBeenCalledWith(providerEvent);
+  });
+
+  it('confirms an expiry in report-only mode without expiring anything', async () => {
+    const { service, callbacks } = setup({
+      inquiry: { outcome: 'not_found', code: 'not_found' },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, REPORT_ONLY),
+    ).resolves.toEqual({
+      outcome: 'resolved',
+      providerCode: 'expiry_confirmed',
+    });
+    expect(callbacks.ingest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'cannot say',
+      { inquiry: { outcome: 'unknown', code: 'provider_unavailable' } },
+      'provider_unavailable',
+    ],
+    ['throws', { inquireError: new Error('socket timeout') }, 'inquiry_failed'],
+  ] as const)(
+    'defers without writing the purchase when the provider %s in report-only mode',
+    async (_label, overrides, providerCode) => {
+      const { service, purchases } = setup(
+        overrides as Parameters<typeof setup>[0],
+      );
+      await expect(
+        service.reconcile('org-1', REFERENCE, REPORT_ONLY),
+      ).resolves.toEqual({ outcome: 'deferred', providerCode });
+      expect(purchases.updatePurchase).not.toHaveBeenCalled();
+    },
+  );
+
+  it('looks at a settled purchase but never flags it for an unanswered inquiry', async () => {
+    const { service, payments, purchases } = setup({
+      target: { status: 'successful' },
+      inquiry: { outcome: 'unknown', code: 'provider_unavailable' },
+    });
+    await expect(
+      service.reconcile('org-1', REFERENCE, { scheduled: true }),
+    ).resolves.toEqual({
+      outcome: 'deferred',
+      providerCode: 'provider_unavailable',
+    });
+    expect(payments.inquire).toHaveBeenCalledTimes(1);
+    expect(purchases.updatePurchase).not.toHaveBeenCalled();
+  });
+
+  it('ignores the merchant backoff but not an ineligible status', async () => {
+    const due = setup({ target: { nextReconciliationAt: FUTURE } });
+    await due.service.reconcile('org-1', REFERENCE, REPORT_ONLY);
+    expect(due.payments.inquire).toHaveBeenCalledTimes(1);
+
+    const failed = setup({ target: { status: 'failed' } });
+    await expect(
+      failed.service.reconcile('org-1', REFERENCE, REPORT_ONLY),
+    ).resolves.toEqual({ outcome: 'not_eligible' });
+    expect(failed.payments.inquire).not.toHaveBeenCalled();
+  });
+});
