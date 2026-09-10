@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
+import { AuthModule } from '../auth/auth.module';
 import { BillingController } from './billing.controller';
 import { BillingRepository } from './billing.repository';
 import { BillingService } from './billing.service';
@@ -33,7 +34,14 @@ export class BillingModule {
   static register(options: BillingModuleOptions = {}): DynamicModule {
     return {
       module: BillingModule,
-      imports: [ConfigModule, DatabaseModule, ...(options.imports ?? [])],
+      // `AuthModule` supplies the token validator behind the merchant routes'
+      // `DualAuthGuard`; without it the application does not boot.
+      imports: [
+        ConfigModule,
+        DatabaseModule,
+        AuthModule,
+        ...(options.imports ?? []),
+      ],
       controllers: [BillingController, PaymentsCallbackController],
       providers: [
         BillingService,
