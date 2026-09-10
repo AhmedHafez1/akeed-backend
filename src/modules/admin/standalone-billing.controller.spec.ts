@@ -13,10 +13,16 @@ import { StandaloneBillingService } from './standalone-billing.service';
 import { StandaloneBillingOperationsService } from './standalone-billing-operations.service';
 import { TokenValidatorService } from '../auth/services/token-validator.service';
 import { AdminAccessAuditRepository } from '../../infrastructure/database/repositories/admin-access-audit.repository';
+import {
+  parseStandaloneBillingOperationsConfig,
+  STANDALONE_BILLING_OPERATIONS_CONFIG,
+} from '../../shared/config/standalone-billing-operations.config';
+import { StandaloneBillingOperatorGuard } from './standalone-billing-operator.guard';
 
 describe('Standalone billing approval staff HTTP boundary', () => {
   let app: INestApplication;
   const staffId = randomUUID();
+  const otherStaffId = randomUUID();
   const orgId = randomUUID();
   const previewId = randomUUID();
   const billing = {
@@ -26,6 +32,8 @@ describe('Standalone billing approval staff HTTP boundary', () => {
   };
   const operations = {
     accountDetail: jest.fn().mockResolvedValue({ account: null }),
+    previewAdjustment: jest.fn().mockResolvedValue({ previewId }),
+    applyAdjustment: jest.fn().mockResolvedValue({ outcome: 'applied' }),
   };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
@@ -34,11 +42,19 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       controllers: [StandaloneBillingController],
       providers: [
         AdminAccessGuard,
+        StandaloneBillingOperatorGuard,
         { provide: StandaloneBillingService, useValue: billing },
         { provide: StandaloneBillingOperationsService, useValue: operations },
         {
           provide: ConfigService,
-          useValue: new ConfigService({ ADMIN_CONTROL_TOWER_ENABLED: 'true' }),
+          useValue: new ConfigService({
+            ADMIN_CONTROL_TOWER_ENABLED: 'true',
+            [STANDALONE_BILLING_OPERATIONS_CONFIG]:
+              parseStandaloneBillingOperationsConfig({
+                STANDALONE_BILLING_OPERATIONS_ENABLED: 'true',
+                STANDALONE_BILLING_OPERATOR_IDS: staffId,
+              }),
+          }),
         },
         {
           provide: AdminAccessAuditRepository,
@@ -48,10 +64,10 @@ describe('Standalone billing approval staff HTTP boundary', () => {
           provide: TokenValidatorService,
           useValue: {
             validateAdminToken: jest.fn((token: string) => {
-              if (token !== 'staff-aal2')
+              if (token !== 'staff-aal2' && token !== 'staff-other')
                 throw new ForbiddenException('Staff MFA required');
               return {
-                userId: staffId,
+                userId: token === 'staff-aal2' ? staffId : otherStaffId,
                 role: 'admin',
                 aal: 'aal2',
                 source: 'supabase',
@@ -165,5 +181,108 @@ describe('Standalone billing approval staff HTTP boundary', () => {
       .get('/api/admin/standalone-billing/accounts/not-a-uuid')
       .set('Authorization', 'Bearer staff-aal2')
       .expect(400);
+  });
+  describe('credit adjustments', () => {
+    const path = `/api/admin/standalone-billing/accounts/${orgId}/adjustments`;
+    const fingerprint = 'a'.repeat(64);
+
+    it('lets any staff member preview, with only a signed nonzero quantity', async () => {
+      await http()
+        .post(`${path}/preview`)
+        .set('Authorization', 'Bearer staff-other')
+        .send({ quantity: -25 })
+        .expect(201);
+      expect(operations.previewAdjustment).toHaveBeenCalledWith(
+        otherStaffId,
+        orgId,
+        -25,
+        undefined,
+      );
+    });
+
+    it.each([
+      { quantity: 0 },
+      { quantity: 10_001 },
+      { quantity: -10_001 },
+      { quantity: 1.5 },
+    ])('rejects preview body %o', async (body) => {
+      await http()
+        .post(`${path}/preview`)
+        .set('Authorization', 'Bearer staff-aal2')
+        .send(body)
+        .expect(400);
+      expect(operations.previewAdjustment).not.toHaveBeenCalled();
+    });
+
+    it('applies only for a named operator, with the idempotency key and request id', async () => {
+      await http()
+        .post(`${path}/apply`)
+        .set('Authorization', 'Bearer staff-other')
+        .set('Idempotency-Key', 'adjust-key-1')
+        .send({ previewId, fingerprint, reason: 'Goodwill' })
+        .expect(403);
+      expect(operations.applyAdjustment).not.toHaveBeenCalled();
+
+      const response = await http()
+        .post(`${path}/apply`)
+        .set('Authorization', 'Bearer staff-aal2')
+        .set('Idempotency-Key', 'adjust-key-1')
+        .set('X-Request-Id', 'req-7')
+        .send({ previewId, fingerprint, reason: '  Goodwill  ' })
+        .expect(201);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(operations.applyAdjustment).toHaveBeenCalledWith({
+        userId: staffId,
+        orgId,
+        previewId,
+        fingerprint,
+        reason: 'Goodwill',
+        idempotencyKey: 'adjust-key-1',
+        requestId: 'req-7',
+      });
+    });
+
+    it.each([
+      { previewId, fingerprint: 'stale', reason: 'x' },
+      { previewId, fingerprint, reason: ' ' },
+      { previewId: 'not-a-uuid', fingerprint, reason: 'x' },
+    ])('rejects apply body %o', async (body) => {
+      await http()
+        .post(`${path}/apply`)
+        .set('Authorization', 'Bearer staff-aal2')
+        .set('Idempotency-Key', 'adjust-key-1')
+        .send(body)
+        .expect(400);
+      expect(operations.applyAdjustment).not.toHaveBeenCalled();
+    });
+
+    it('never takes a quantity or balance from the browser', async () => {
+      await http()
+        .post(`${path}/apply`)
+        .set('Authorization', 'Bearer staff-aal2')
+        .set('Idempotency-Key', 'adjust-key-1')
+        .send({
+          previewId,
+          fingerprint,
+          reason: 'x',
+          quantity: 5000,
+          postedBalanceAfter: 5000,
+          userId: otherStaffId,
+        })
+        .expect(201);
+      const [input] = operations.applyAdjustment.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(Object.keys(input).sort()).toEqual([
+        'fingerprint',
+        'idempotencyKey',
+        'orgId',
+        'previewId',
+        'reason',
+        'requestId',
+        'userId',
+      ]);
+      expect(input.userId).toBe(staffId);
+    });
   });
 });

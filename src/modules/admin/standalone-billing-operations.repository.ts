@@ -117,6 +117,105 @@ export class StandaloneBillingOperationsRepository {
     });
   }
 
+  /**
+   * Stores a staff preview as an audit row, the same way approval previews
+   * are kept: the row id is the preview id, and apply can only ever read what
+   * the server itself computed.
+   */
+  async savePreview(input: {
+    userId: string;
+    action: string;
+    requestId?: string;
+    metadata: Record<string, unknown>;
+  }): Promise<string> {
+    const [row] = await this.db
+      .insert(adminAccessAudit)
+      .values({
+        userId: input.userId,
+        action: input.action,
+        outcome: 'allowed',
+        requestId: input.requestId,
+        metadata: { version: 1, ...input.metadata },
+      })
+      .returning({ id: adminAccessAudit.id });
+    return row.id;
+  }
+
+  /** A preview only its own author can apply. */
+  async readPreview(
+    previewId: string,
+    userId: string,
+    action: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const [row] = await this.db
+      .select({ metadata: adminAccessAudit.metadata })
+      .from(adminAccessAudit)
+      .where(
+        and(
+          eq(adminAccessAudit.id, previewId),
+          eq(adminAccessAudit.userId, userId),
+          eq(adminAccessAudit.action, action),
+        ),
+      );
+    const metadata = row?.metadata;
+    return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
+      : undefined;
+  }
+
+  /** The audit row an earlier apply wrote for this preview, if any. */
+  async findApplied(
+    tx: CreditTransaction,
+    action: string,
+    field: 'previewId' | 'ledgerEntryId',
+    value: string,
+  ) {
+    const [row] = await tx
+      .select({
+        id: adminAccessAudit.id,
+        metadata: adminAccessAudit.metadata,
+        createdAt: adminAccessAudit.createdAt,
+      })
+      .from(adminAccessAudit)
+      .where(
+        and(
+          eq(adminAccessAudit.action, action),
+          sql`${adminAccessAudit}.metadata->>${field} = ${value}`,
+        ),
+      )
+      .limit(1);
+    return row
+      ? {
+          ...row,
+          metadata: (row.metadata ?? {}) as Record<string, unknown>,
+        }
+      : undefined;
+  }
+
+  async insertAudit(
+    tx: CreditTransaction,
+    input: {
+      userId: string;
+      action: string;
+      requestId?: string;
+      targetIntegrationId?: string;
+      metadata: Record<string, unknown>;
+    },
+  ): Promise<string> {
+    const [row] = await tx
+      .insert(adminAccessAudit)
+      .values({
+        userId: input.userId,
+        action: input.action,
+        outcome: 'allowed',
+        requestId: input.requestId,
+        targetIntegrationId: input.targetIntegrationId,
+        metadata: { version: 1, ...input.metadata },
+      })
+      .returning({ id: adminAccessAudit.id });
+    return row.id;
+  }
+
   async ledgerCount(orgId: string, reader: Reader = this.db) {
     const [row] = await reader
       .select({ count: sql<number>`count(*)::int` })

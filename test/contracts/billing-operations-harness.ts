@@ -51,7 +51,9 @@ export function billingOperationsHarness() {
     credits,
   );
   const operations = new StandaloneBillingOperationsService(
+    db,
     operationsRepository,
+    credits,
     config,
   );
 

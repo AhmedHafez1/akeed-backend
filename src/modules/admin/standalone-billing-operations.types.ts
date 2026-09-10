@@ -102,3 +102,23 @@ export interface OperationsAccess {
   enabled: boolean;
   operator: boolean;
 }
+
+/** Audit actions the staff billing console writes. */
+export const STAFF_BILLING_ACTIONS = {
+  adjustmentPreview: 'standalone-billing.adjustment.preview',
+  adjustmentApply: 'standalone-billing.adjustment.apply',
+  purchaseReconcile: 'standalone-billing.purchase.reconcile',
+  providerAction: 'standalone-billing.purchase.provider-action',
+  repairPreview: 'standalone-billing.projection-repair.preview',
+  repairApply: 'standalone-billing.projection-repair.apply',
+} as const;
+
+/** Largest signed adjustment one staff action may post. */
+export const MAX_ADJUSTMENT_CREDITS = 10_000;
+
+export interface BalanceProjection {
+  postedBalance: number;
+  heldCredits: number;
+  availableCredits: number;
+  debtCredits: number;
+}

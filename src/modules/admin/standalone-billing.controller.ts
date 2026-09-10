@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -21,9 +22,20 @@ import {
   StandaloneApprovalPreviewDto,
   StandaloneBillingAccountsDto,
 } from './dto/standalone-billing.dto';
+import {
+  AdjustmentApplyDto,
+  AdjustmentPreviewDto,
+} from './dto/standalone-billing-operations.dto';
 import { StandaloneBillingLoggingInterceptor } from './standalone-billing-logging.interceptor';
+import {
+  readRequestId,
+  StandaloneBillingOperatorGuard,
+} from './standalone-billing-operator.guard';
 import { StandaloneBillingOperationsService } from './standalone-billing-operations.service';
 import { StandaloneBillingService } from './standalone-billing.service';
+
+/** Writes that change billing state get a tighter budget than reads. */
+const WRITE_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 /**
  * Staff billing console. Every route sits behind `AdminAccessGuard` (feature
@@ -63,6 +75,42 @@ export class StandaloneBillingController {
     @Param('orgId', new ParseUUIDPipe()) orgId: string,
   ) {
     return this.operations.accountDetail(request.admin.userId, orgId);
+  }
+
+  @Post('accounts/:orgId/adjustments/preview')
+  @Header('Cache-Control', 'private, no-store')
+  previewAdjustment(
+    @Req() request: RequestWithAdmin,
+    @Param('orgId', new ParseUUIDPipe()) orgId: string,
+    @Body() body: AdjustmentPreviewDto,
+  ) {
+    return this.operations.previewAdjustment(
+      request.admin.userId,
+      orgId,
+      body.quantity,
+      readRequestId(request),
+    );
+  }
+
+  @Post('accounts/:orgId/adjustments/apply')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(StandaloneBillingOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  applyAdjustment(
+    @Req() request: RequestWithAdmin,
+    @Param('orgId', new ParseUUIDPipe()) orgId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: AdjustmentApplyDto,
+  ) {
+    return this.operations.applyAdjustment({
+      userId: request.admin.userId,
+      orgId,
+      previewId: body.previewId,
+      fingerprint: body.fingerprint,
+      reason: body.reason,
+      idempotencyKey,
+      requestId: readRequestId(request),
+    });
   }
 
   @Post('approvals/preview')

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   billingOperationsHarness,
   OPERATOR,
 } from './contracts/billing-operations-harness';
 import {
+  creditAccounts,
   paymentPurchases,
   verificationMessageDispatches,
 } from '../src/infrastructure/database/schema';
@@ -28,6 +29,15 @@ async function staffAdjust(orgId: string, quantity: number) {
       idempotencyKey: `fixture:${randomUUID()}`,
       actorId: randomUUID(),
       reason: 'Synthetic fixture',
+    }),
+  );
+}
+
+/** Each settlement gets its own provider transaction, as in production. */
+async function settle(reference: string) {
+  return harness.callbacks.ingest(
+    harness.paymob.event(reference, {
+      payment: { providerTransactionId: `txn-${randomUUID()}` },
     }),
   );
 }
@@ -105,7 +115,7 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
         `key-${randomUUID()}`,
         100,
       );
-      await harness.callbacks.ingest(harness.paymob.event(purchase.reference));
+      await settle(purchase.reference);
 
       const detail = await operations.accountDetail(OPERATOR, merchant.orgId);
       expect(detail.account).toMatchObject({
@@ -196,6 +206,219 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
       ).rejects.toMatchObject({
         response: { code: 'BILLING_ACCOUNT_NOT_FOUND' },
       });
+    });
+  });
+
+  describe('credit adjustments', () => {
+    const reason = 'Goodwill credit approved by finance ticket FIN-12';
+
+    async function adjust(
+      orgId: string,
+      quantity: number,
+      key = `adj-${randomUUID()}`,
+    ) {
+      const preview = await operations.previewAdjustment(
+        OPERATOR,
+        orgId,
+        quantity,
+      );
+      const apply = () =>
+        operations.applyAdjustment({
+          userId: OPERATOR,
+          orgId,
+          previewId: preview.previewId,
+          fingerprint: preview.fingerprint,
+          reason,
+          idempotencyKey: key,
+          requestId: 'req-adjust',
+        });
+      return { preview, apply, key };
+    }
+
+    it('posts a positive adjustment with ledger, projection and audit together', async () => {
+      const merchant = await harness.merchant(30);
+      const { preview, apply } = await adjust(merchant.orgId, 20);
+      expect(preview).toMatchObject({
+        before: { postedBalance: 30, availableCredits: 30 },
+        after: { postedBalance: 50, availableCredits: 50 },
+      });
+      await expect(apply()).resolves.toMatchObject({
+        outcome: 'applied',
+        quantity: 20,
+        before: { postedBalance: 30 },
+        after: { postedBalance: 50 },
+      });
+      await harness.balance(merchant.orgId, 50);
+      const entries = (await harness.ledger(merchant.orgId)).filter(
+        (entry) => entry.type === 'staff_adjustment',
+      );
+      expect(entries).toEqual([
+        expect.objectContaining({
+          quantity: 20,
+          actorId: OPERATOR,
+          reason,
+          postedBalanceBefore: 30,
+          postedBalanceAfter: 50,
+        }),
+      ]);
+      const audit = (await harness.auditRows(merchant.orgId)).find(
+        (row) => row.action === 'standalone-billing.adjustment.apply',
+      );
+      expect(audit).toMatchObject({
+        userId: OPERATOR,
+        requestId: 'req-adjust',
+        metadata: expect.objectContaining({
+          quantity: 20,
+          reason,
+          postedBalanceBefore: 30,
+          postedBalanceAfter: 50,
+        }) as unknown,
+      });
+    });
+
+    it('turns a negative adjustment past zero into debt', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, -40);
+      await expect(apply()).resolves.toMatchObject({
+        after: { postedBalance: -10, debtCredits: 10, availableCredits: 0 },
+      });
+      await harness.balance(merchant.orgId, -10);
+    });
+
+    it('answers a repeated or lost-response apply as a no-op', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      await apply();
+      await expect(apply()).resolves.toMatchObject({
+        outcome: 'duplicate',
+        quantity: 5,
+        after: { postedBalance: 35 },
+      });
+      await harness.balance(merchant.orgId, 35);
+    });
+
+    it('serializes two concurrent applies of one preview into one posting', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      const results = await Promise.all([apply(), apply()]);
+      expect(results.map((result) => result.outcome).sort()).toEqual([
+        'applied',
+        'duplicate',
+      ]);
+      await harness.balance(merchant.orgId, 35);
+    });
+
+    it('refuses a second key for a preview and a reused key for another preview', async () => {
+      const merchant = await harness.merchant(30);
+      const first = await adjust(merchant.orgId, 5);
+      await first.apply();
+      await expect(
+        operations.applyAdjustment({
+          userId: OPERATOR,
+          orgId: merchant.orgId,
+          previewId: first.preview.previewId,
+          fingerprint: first.preview.fingerprint,
+          reason,
+          idempotencyKey: `adj-${randomUUID()}`,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'BILLING_PREVIEW_ALREADY_APPLIED' },
+      });
+      const second = await adjust(merchant.orgId, 7, first.key);
+      await expect(second.apply()).rejects.toMatchObject({
+        response: { code: 'BILLING_IDEMPOTENCY_CONFLICT' },
+      });
+      await harness.balance(merchant.orgId, 35);
+    });
+
+    it('refuses a preview made stale by a concurrent send', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      await harness.ambiguousSend(merchant);
+      await expect(apply()).rejects.toMatchObject({
+        response: { code: 'BILLING_PREVIEW_STALE' },
+      });
+      await harness.balance(merchant.orgId, 30);
+    });
+
+    it('refuses a preview made stale by a verified purchase', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      const purchase = await harness.billing.createPurchase(
+        merchant.user,
+        `key-${randomUUID()}`,
+        100,
+      );
+      await settle(purchase.reference);
+      await expect(apply()).rejects.toMatchObject({
+        response: { code: 'BILLING_PREVIEW_STALE' },
+      });
+      await harness.balance(merchant.orgId, 130);
+    });
+
+    it('rolls the ledger entry back when the audit row cannot be written', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      jest
+        .spyOn(harness.operationsRepository, 'insertAudit')
+        .mockRejectedValueOnce(new Error('audit unavailable'));
+      await expect(apply()).rejects.toThrow('audit unavailable');
+      await harness.balance(merchant.orgId, 30);
+      await expect(apply()).resolves.toMatchObject({ outcome: 'applied' });
+      await harness.balance(merchant.orgId, 35);
+    });
+
+    it('blocks adjustments while the projection has drifted', async () => {
+      const merchant = await harness.merchant(30);
+      const { apply } = await adjust(merchant.orgId, 5);
+      await harness.driftProjection(merchant.orgId, 3);
+      await expect(apply()).rejects.toMatchObject({
+        response: { code: 'CREDIT_PROJECTION_MISMATCH' },
+      });
+      await expect(
+        operations.previewAdjustment(OPERATOR, merchant.orgId, 5),
+      ).rejects.toMatchObject({
+        response: { code: 'CREDIT_PROJECTION_MISMATCH' },
+      });
+    });
+
+    it('refuses an account that was never approved', async () => {
+      const merchant = await harness.merchant(0);
+      await db
+        .update(creditAccounts)
+        .set({
+          status: 'pending_approval',
+          version: sql`${creditAccounts.version} + 1`,
+        })
+        .where(eq(creditAccounts.orgId, merchant.orgId));
+      await expect(
+        operations.previewAdjustment(OPERATOR, merchant.orgId, 5),
+      ).rejects.toMatchObject({
+        response: { code: 'BILLING_ACCOUNT_NOT_APPROVED' },
+      });
+    });
+
+    it('never applies a preview for another staff member or tenant', async () => {
+      const merchant = await harness.merchant(30);
+      const other = await harness.merchant(30);
+      const { preview } = await adjust(merchant.orgId, 5);
+      for (const attempt of [
+        { userId: randomUUID(), orgId: merchant.orgId },
+        { userId: OPERATOR, orgId: other.orgId },
+      ])
+        await expect(
+          operations.applyAdjustment({
+            ...attempt,
+            previewId: preview.previewId,
+            fingerprint: preview.fingerprint,
+            reason,
+            idempotencyKey: `adj-${randomUUID()}`,
+          }),
+        ).rejects.toMatchObject({
+          response: { code: 'BILLING_PREVIEW_NOT_FOUND' },
+        });
+      await harness.balance(merchant.orgId, 30);
+      await harness.balance(other.orgId, 30);
     });
   });
 });
