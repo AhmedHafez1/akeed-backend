@@ -59,7 +59,9 @@ export function fakePaymentsPort(): FakePaymentsPort {
     overrides: FakeEventOverrides = {},
   ): NormalizedProviderEvent {
     const signal: PurchaseSignal = overrides.signal ?? 'success';
-    const transactionId = overrides.payment?.providerTransactionId ?? 'txn-1';
+    const transactionId =
+      overrides.payment?.providerTransactionId ??
+      `txn-${createHash('sha256').update(reference).digest('hex').slice(0, 24)}`;
     const parts = [
       'paymob',
       signal,
