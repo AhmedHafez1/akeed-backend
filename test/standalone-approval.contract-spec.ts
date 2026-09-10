@@ -71,7 +71,11 @@ let created = false;
 
 async function createOrganization(
   name: string,
-  options: { source?: boolean; anchor?: string | null } = {},
+  options: {
+    source?: boolean;
+    anchor?: string | null;
+    entitlement?: { planId: string; status: string };
+  } = {},
 ) {
   const orgId = randomUUID();
   const userId = randomUUID();
@@ -81,7 +85,7 @@ async function createOrganization(
   let integrationId: string | undefined;
   if (options.source) {
     integrationId = randomUUID();
-    await client`INSERT INTO integrations (id, org_id, platform_type, platform_store_url, billing_activated_at) VALUES (${integrationId}, ${orgId}, 'standalone', ${`standalone:${orgId}`}, ${options.anchor ?? null})`;
+    await client`INSERT INTO integrations (id, org_id, platform_type, platform_store_url, billing_plan_id, billing_status, billing_activated_at) VALUES (${integrationId}, ${orgId}, 'standalone', ${`standalone:${orgId}`}, ${options.entitlement?.planId ?? null}, ${options.entitlement?.status ?? null}, ${options.anchor ?? null})`;
   }
   return { orgId, userId, integrationId };
 }
@@ -272,8 +276,8 @@ describe('Standalone credit approval PostgreSQL contract', () => {
     const [source] =
       await client`SELECT billing_plan_id, billing_status, billing_activated_at FROM integrations WHERE id = ${account.integrationId!}`;
     expect(source).toMatchObject({
-      billing_plan_id: 'starter',
-      billing_status: 'not_required',
+      billing_plan_id: null,
+      billing_status: null,
     });
     expect(new Date(source.billing_activated_at as string).toISOString()).toBe(
       '2026-08-01T00:00:00.000Z',
@@ -281,6 +285,31 @@ describe('Standalone credit approval PostgreSQL contract', () => {
     const [auditCount] =
       await client`SELECT count(*)::int AS count FROM admin_access_audit WHERE action = 'standalone-billing.approve' AND metadata->>'orgId' = ${account.orgId}`;
     expect(auditCount.count).toBe(1);
+  });
+
+  it('preserves an existing Starter/not-required compatibility entitlement', async () => {
+    const account = await createOrganization('Legacy entitled merchant', {
+      source: true,
+      anchor: '2026-07-01T00:00:00Z',
+      entitlement: { planId: 'starter', status: 'not_required' },
+    });
+    const prepared = await preview(account.orgId);
+
+    expect(await approve(prepared, 'Approved legacy merchant')).toMatchObject({
+      outcome: 'approved',
+      reason: 'activate_source',
+      grantedCredits: FREE_GRANT,
+    });
+    const [source] =
+      await client`SELECT billing_plan_id, billing_status, billing_activated_at FROM integrations WHERE id = ${account.integrationId!}`;
+    expect(source).toMatchObject({
+      billing_plan_id: 'starter',
+      billing_status: 'not_required',
+    });
+    expect(new Date(source.billing_activated_at as string).toISOString()).toBe(
+      '2026-07-01T00:00:00.000Z',
+    );
+    expect(await ledgerRows(account.orgId)).toHaveLength(1);
   });
 
   it('reports an already approved organization without granting a second time', async () => {
