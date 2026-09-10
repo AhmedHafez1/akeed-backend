@@ -43,6 +43,22 @@ export function paymentEventMismatch(
   purchase: Purchase,
   billing: StandaloneCreditBillingConfig,
 ): EventErrorCode | null {
+  if (event.signal === 'expiry_confirmed' && event.source === 'inquiry') {
+    if (
+      event.provider !== 'akeed' ||
+      event.reference !== purchase.reference ||
+      event.payment.reference !== purchase.reference ||
+      event.payment.providerIntentionId ||
+      event.payment.providerOrderId ||
+      event.payment.providerTransactionId
+    )
+      return 'ownership_mismatch';
+    if (event.amountMinor !== 0) return 'amount_mismatch';
+    if (event.currency !== purchase.currency) return 'currency_mismatch';
+    if (event.integrationId !== 'akeed_inquiry') return 'integration_mismatch';
+    if (event.mode !== purchase.mode) return 'mode_mismatch';
+    return null;
+  }
   const integrations = billing.enabled
     ? [billing.paymob.cardIntegrationId, billing.paymob.walletIntegrationId]
     : [];

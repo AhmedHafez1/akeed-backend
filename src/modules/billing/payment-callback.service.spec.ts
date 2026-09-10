@@ -413,7 +413,16 @@ describe('PaymentCallbackService.ingest', () => {
   it('expires a stale purchase when an inquiry confirms it', async () => {
     const { service, purchases } = setup();
     await expect(
-      service.ingest(event({ signal: 'expiry_confirmed', source: 'inquiry' })),
+      service.ingest(
+        event({
+          provider: 'akeed',
+          signal: 'expiry_confirmed',
+          source: 'inquiry',
+          payment: { reference: purchase.reference },
+          amountMinor: 0,
+          integrationId: 'akeed_inquiry',
+        }),
+      ),
     ).resolves.toMatchObject({ outcome: 'transitioned' });
     const [, , , , changes] = purchases.updatePurchase.mock.calls.at(-1) as [
       unknown,
@@ -423,6 +432,28 @@ describe('PaymentCallbackService.ingest', () => {
       Record<string, unknown>,
     ];
     expect(changes).toMatchObject({ status: 'expired' });
+  });
+
+  it('quarantines a malformed internal expiry confirmation', async () => {
+    const { service } = setup();
+    await expect(
+      service.ingest(
+        event({
+          provider: 'akeed',
+          signal: 'expiry_confirmed',
+          source: 'inquiry',
+          payment: {
+            reference: purchase.reference,
+            providerTransactionId: 'unexpected-provider-id',
+          },
+          amountMinor: 0,
+          integrationId: 'akeed_inquiry',
+        }),
+      ),
+    ).resolves.toMatchObject({
+      outcome: 'quarantined',
+      errorCode: 'ownership_mismatch',
+    });
   });
 });
 

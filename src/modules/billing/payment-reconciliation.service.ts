@@ -174,9 +174,7 @@ export class PaymentReconciliationService {
         };
       // The one path that may expire a purchase, and only because the provider
       // was asked and reported nothing.
-      const ingest = await this.callbacks.ingest(
-        this.expiryEvent(purchase.reference),
-      );
+      const ingest = await this.callbacks.ingest(this.expiryEvent(purchase));
       return { outcome: 'expired', ingest };
     }
     if (this.observesOnly(purchase, options))
@@ -205,7 +203,12 @@ export class PaymentReconciliationService {
    * confirmations of the same non-existent payment collapse into one event
    * rather than accumulating.
    */
-  private expiryEvent(reference: string): NormalizedProviderEvent {
+  private expiryEvent(purchase: {
+    reference: string;
+    mode: 'test' | 'live';
+    currency: string;
+  }): NormalizedProviderEvent {
+    const { reference } = purchase;
     const fingerprint = createHash('sha256')
       .update(`inquiry|expiry_confirmed|${reference}`, 'utf8')
       .digest('hex');
@@ -216,9 +219,9 @@ export class PaymentReconciliationService {
       signal: 'expiry_confirmed',
       payment: { reference },
       amountMinor: 0,
-      currency: 'EGP',
+      currency: purchase.currency,
       integrationId: 'akeed_inquiry',
-      mode: 'test',
+      mode: purchase.mode,
       fingerprint,
       payloadHash: fingerprint,
     };

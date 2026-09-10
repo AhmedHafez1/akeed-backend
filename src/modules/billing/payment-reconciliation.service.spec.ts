@@ -27,6 +27,8 @@ function target(overrides: Record<string, unknown> = {}) {
     id: 'purchase-1',
     orgId: 'org-1',
     reference: REFERENCE,
+    mode: 'test',
+    currency: 'EGP',
     status: 'pending',
     checkoutExpiresAt: PAST,
     reconciliationRequired: false,
@@ -158,6 +160,23 @@ describe('PaymentReconciliationService.reconcile', () => {
       reference: REFERENCE,
     });
     expect(event.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('confirms expiry in the purchase mode and currency, not a test default', async () => {
+    const { service, callbacks } = setup({
+      target: { mode: 'live', currency: 'EGP' },
+      inquiry: { outcome: 'not_found', code: 'not_found' },
+    });
+    await service.reconcile('org-1', REFERENCE);
+    const [event] = callbacks.ingest.mock.calls[0] as [NormalizedProviderEvent];
+    expect(event).toMatchObject({
+      provider: 'akeed',
+      mode: 'live',
+      currency: 'EGP',
+      amountMinor: 0,
+      integrationId: 'akeed_inquiry',
+      payment: { reference: REFERENCE },
+    });
   });
 
   it('never expires a purchase whose checkout window is still open', async () => {

@@ -112,6 +112,8 @@ export class PaymentPurchasesRepository {
         id: paymentPurchases.id,
         orgId: paymentPurchases.orgId,
         reference: paymentPurchases.reference,
+        mode: paymentPurchases.mode,
+        currency: paymentPurchases.currency,
         status: paymentPurchases.status,
         checkoutExpiresAt: paymentPurchases.checkoutExpiresAt,
         reconciliationRequired: paymentPurchases.reconciliationRequired,
