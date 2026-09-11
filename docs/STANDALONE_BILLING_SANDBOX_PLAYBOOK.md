@@ -35,10 +35,10 @@ In the SQL below, `<org>` is the merchant organization id.
    PAYMOB_WALLET_INTEGRATION_ID=...
    PAYMOB_RETURN_URL=http://localhost:3001/billing/return
    ```
-   Akeed won't start without the wallet integration id, and it must differ from the card id. Copy it now, but don't test the wallet yet.
+   Paymob enables mobile wallets per account on request, so a new sandbox often has only the card integration. In test mode you can leave `PAYMOB_WALLET_INTEGRATION_ID` empty: checkout then offers cards only. Never put a made-up id there — Paymob rejects the whole checkout for an integration the account doesn't have. Once Paymob enables the wallet, add its id (it must differ from the card id), but don't test the wallet yet. Live mode requires both ids.
 3. Confirm `.env` is not tracked: `git check-ignore .env` must print `.env`.
 
-**Done:** you have the secret key, public key, HMAC secret, card id and wallet id, and `.env` is ignored.
+**Done:** you have the secret key, public key, HMAC secret and card id (plus the wallet id if Paymob has enabled it), and `.env` is ignored.
 
 ## Session 2 — Paymob can reach your laptop
 

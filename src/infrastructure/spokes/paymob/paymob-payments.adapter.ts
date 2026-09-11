@@ -7,7 +7,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
-import { readStandaloneCreditBillingConfig } from '../../../shared/config/standalone-credit-billing.config';
+import {
+  paymobIntegrationIds,
+  readStandaloneCreditBillingConfig,
+} from '../../../shared/config/standalone-credit-billing.config';
 import {
   boundedCall,
   NO_RETRY,
@@ -74,6 +77,16 @@ interface IntentionResponse {
   payment_keys?: unknown;
 }
 
+/**
+ * Paymob reads a number in `payment_methods` as an integration id and a string
+ * as an integration name, so `"5911539"` finds nothing. Configuration keeps ids
+ * as strings (and guarantees digit-only ones are safe integers); only the wire
+ * format turns them back into numbers.
+ */
+function paymentMethod(integration: string): number | string {
+  return /^\d+$/.test(integration) ? Number(integration) : integration;
+}
+
 function text(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim()) return value.trim();
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -117,7 +130,7 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
     const body = {
       amount: input.totalMinor,
       currency: input.currency,
-      payment_methods: [paymob.cardIntegrationId, paymob.walletIntegrationId],
+      payment_methods: paymobIntegrationIds(paymob).map(paymentMethod),
       special_reference: input.reference,
       expiration: paymob.checkoutExpirationSeconds,
       notification_url: paymob.callbackUrl,

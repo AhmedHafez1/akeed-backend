@@ -129,7 +129,7 @@ Any exceptional intervention requires an approved support or migration ticket, n
 
 `STANDALONE_CREDIT_BILLING_ENABLED` is the single switch. While it is `false` the deployment is dark: `UsageAccountingRouter.mode()` keeps Standalone sources on the periodic plan they shipped with in E04, no `PAYMOB_*` value is read, and the merchant billing APIs refuse a purchase with `BILLING_DISABLED`. Nothing about the credit tables changes, so a rollback is the same switch in reverse — holds already taken settle through credits, because settlement follows the `accounting_mode` persisted on each dispatch rather than the flag.
 
-Setting it to `true` makes every variable below required and validated at startup. Validation is deliberately strict: a placeholder value, a hostname that reads as a sandbox in `live` mode, credentials or a query string in a URL, or a key whose embedded `test`/`live` marker disagrees with `PAYMOB_MODE` all abort boot rather than reaching a payment.
+Setting it to `true` makes every variable below required and validated at startup (the one exception is the wallet id in `test` mode, see its row). Validation is deliberately strict: a placeholder value, a hostname that reads as a sandbox in `live` mode, credentials or a query string in a URL, or a key whose embedded `test`/`live` marker disagrees with `PAYMOB_MODE` all abort boot rather than reaching a payment.
 
 | Variable | Notes |
 | --- | --- |
@@ -140,8 +140,8 @@ Setting it to `true` makes every variable below required and validated at startu
 | `PAYMOB_SECRET_KEY` | Server-only. Sent as `Authorization: Token <secret>`. |
 | `PAYMOB_HMAC_SECRET` | Server-only. Verifies the processed callback. |
 | `PAYMOB_PUBLIC_KEY` | Reaches the browser inside the hosted checkout URL. |
-| `PAYMOB_CARD_INTEGRATION_ID` | Online card integration. |
-| `PAYMOB_WALLET_INTEGRATION_ID` | Mobile wallet (Vodafone Cash). Must differ from the card integration. |
+| `PAYMOB_CARD_INTEGRATION_ID` | Online card integration: the numeric id from Developers → Payment Integrations (e.g. `5911539`). Digit-only ids are sent to Paymob as numbers — a string would be looked up as an integration *name* — so leading zeros and values beyond the safe-integer range are rejected at startup. The same rule applies to the wallet id. |
+| `PAYMOB_WALLET_INTEGRATION_ID` | Mobile wallet (Vodafone Cash). Must differ from the card integration. Required in `live`. In `test` it may be left empty: Paymob enables wallets per account on request, so a sandbox can run card-only — checkout then offers only the card integration and a callback naming any other integration is quarantined. |
 | `PAYMOB_CHECKOUT_EXPIRATION_SECONDS` | Intention lifetime; also the local `checkout_expires_at`. |
 
 Pricing is server-owned and never read from a request: `STANDALONE_CREDIT_PRICE_MINOR` (200 piastres), `STANDALONE_PURCHASE_MIN` (100), `STANDALONE_PURCHASE_MAX` (5000), `STANDALONE_PURCHASE_STEP` (50), `STANDALONE_LOW_BALANCE_THRESHOLD` (10). Startup rejects a min/max that are not ordered multiples of the step, or a maximum total that would overflow the integer money columns.

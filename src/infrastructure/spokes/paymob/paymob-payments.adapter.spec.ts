@@ -10,7 +10,7 @@ const PUBLIC_KEY = 'pk_test_public';
 const HMAC_SECRET = 'hmac_test_secret';
 const CLIENT_SECRET = 'cs_test_client_secret_value';
 
-const config = standaloneCreditBillingConfigService({
+const environment = {
   STANDALONE_CREDIT_BILLING_ENABLED: 'true',
   PAYMOB_MODE: 'test',
   PAYMOB_BASE_URL: 'http://localhost:9000',
@@ -22,7 +22,8 @@ const config = standaloneCreditBillingConfigService({
   PAYMOB_CARD_INTEGRATION_ID: 'card1',
   PAYMOB_WALLET_INTEGRATION_ID: 'wallet1',
   PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '900',
-});
+};
+const config = standaloneCreditBillingConfigService(environment);
 
 const checkout = {
   reference: 'akd_1111111111111111111111111111aaaa',
@@ -85,6 +86,47 @@ describe('PaymobPaymentsAdapter.createCheckout', () => {
     });
     expect(options.headers.Authorization).toBe(`Token ${SECRET_KEY}`);
     expect(options.timeout).toBeGreaterThan(0);
+  });
+
+  it('offers only the card integration in a card-only sandbox', async () => {
+    const cardOnly = standaloneCreditBillingConfigService({
+      ...environment,
+      PAYMOB_WALLET_INTEGRATION_ID: '',
+    });
+    const post = jest.fn(() =>
+      of(response({ id: 'int_1', client_secret: CLIENT_SECRET })),
+    );
+    await new PaymobPaymentsAdapter(
+      { post } as unknown as HttpService,
+      cardOnly,
+    ).createCheckout(checkout);
+    const [, body] = post.mock.calls[0] as unknown as [
+      string,
+      { payment_methods: unknown },
+    ];
+    // A method the account does not have makes Paymob refuse the intention.
+    expect(body.payment_methods).toEqual(['card1']);
+  });
+
+  it('sends numeric integration ids as numbers and names as strings', async () => {
+    // Paymob reads a string as an integration *name*: "5911539" finds nothing.
+    const numeric = standaloneCreditBillingConfigService({
+      ...environment,
+      PAYMOB_CARD_INTEGRATION_ID: '5911539',
+      PAYMOB_WALLET_INTEGRATION_ID: 'vodafone-cash',
+    });
+    const post = jest.fn(() =>
+      of(response({ id: 'int_1', client_secret: CLIENT_SECRET })),
+    );
+    await new PaymobPaymentsAdapter(
+      { post } as unknown as HttpService,
+      numeric,
+    ).createCheckout(checkout);
+    const [, body] = post.mock.calls[0] as unknown as [
+      string,
+      { payment_methods: unknown },
+    ];
+    expect(body.payment_methods).toStrictEqual([5911539, 'vodafone-cash']);
   });
 
   it('sends no merchant personal data', async () => {

@@ -1,5 +1,8 @@
 import { validateEnv } from './env-validation';
-import { parseStandaloneCreditBillingConfig } from './standalone-credit-billing.config';
+import {
+  parseStandaloneCreditBillingConfig,
+  paymobIntegrationIds,
+} from './standalone-credit-billing.config';
 
 const enabledTest = {
   STANDALONE_CREDIT_BILLING_ENABLED: 'true',
@@ -8,8 +11,8 @@ const enabledTest = {
   PAYMOB_SECRET_KEY: 'sk_test_synthetic-value',
   PAYMOB_PUBLIC_KEY: 'pk_test_synthetic-value',
   PAYMOB_HMAC_SECRET: 'synthetic-hmac-secret',
-  PAYMOB_CARD_INTEGRATION_ID: '900719925474099312345',
-  PAYMOB_WALLET_INTEGRATION_ID: '900719925474099312346',
+  PAYMOB_CARD_INTEGRATION_ID: '4001001',
+  PAYMOB_WALLET_INTEGRATION_ID: '4001002',
   PAYMOB_CALLBACK_URL: 'https://api.akeed.net/api/webhooks/payments/paymob',
   PAYMOB_RETURN_URL: 'https://app.akeed.net/billing/return',
   PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '3600',
@@ -68,17 +71,92 @@ describe('Standalone credit configuration', () => {
     },
   );
 
-  it.each(Object.keys(enabledTest).filter((key) => key.startsWith('PAYMOB_')))(
-    'requires %s in enabled mode',
-    (key) => {
+  it.each(
+    Object.keys(enabledTest).filter(
+      (key) =>
+        key.startsWith('PAYMOB_') && key !== 'PAYMOB_WALLET_INTEGRATION_ID',
+    ),
+  )('requires %s in enabled mode', (key) => {
+    expect(() =>
+      parseStandaloneCreditBillingConfig({
+        ...enabledTest,
+        [key]: undefined,
+      }),
+    ).toThrow(key);
+  });
+
+  it.each([undefined, '', '  '])(
+    'runs a test sandbox card-only when the wallet id is %p',
+    (wallet) => {
+      const billing = parseStandaloneCreditBillingConfig({
+        ...enabledTest,
+        PAYMOB_WALLET_INTEGRATION_ID: wallet,
+      });
+      expect(billing).toMatchObject({
+        enabled: true,
+        paymob: {
+          cardIntegrationId: enabledTest.PAYMOB_CARD_INTEGRATION_ID,
+          walletIntegrationId: null,
+        },
+      });
+      expect(billing.enabled && paymobIntegrationIds(billing.paymob)).toEqual([
+        enabledTest.PAYMOB_CARD_INTEGRATION_ID,
+      ]);
+    },
+  );
+
+  it('offers both integrations when the wallet id is configured', () => {
+    const billing = parseStandaloneCreditBillingConfig(enabledTest);
+    expect(billing.enabled && paymobIntegrationIds(billing.paymob)).toEqual([
+      enabledTest.PAYMOB_CARD_INTEGRATION_ID,
+      enabledTest.PAYMOB_WALLET_INTEGRATION_ID,
+    ]);
+  });
+
+  it('requires the wallet id in live mode', () => {
+    expect(() =>
+      parseStandaloneCreditBillingConfig({
+        ...enabledLive,
+        PAYMOB_WALLET_INTEGRATION_ID: undefined,
+      }),
+    ).toThrow('PAYMOB_WALLET_INTEGRATION_ID');
+  });
+
+  it.each(['placeholder', 'changeme', '0000', 'wallet_live_1'])(
+    'still rejects a configured test wallet id %s',
+    (wallet) => {
       expect(() =>
         parseStandaloneCreditBillingConfig({
           ...enabledTest,
-          [key]: undefined,
+          PAYMOB_WALLET_INTEGRATION_ID: wallet,
         }),
-      ).toThrow(key);
+      ).toThrow('PAYMOB_WALLET_INTEGRATION_ID');
     },
   );
+
+  it.each([
+    ['PAYMOB_CARD_INTEGRATION_ID', '900719925474099312345'],
+    ['PAYMOB_CARD_INTEGRATION_ID', '04001001'],
+    ['PAYMOB_WALLET_INTEGRATION_ID', '900719925474099312346'],
+  ])(
+    'rejects %s %s, which would change on its way to Paymob as a number',
+    (key, value) => {
+      expect(() =>
+        parseStandaloneCreditBillingConfig({ ...enabledTest, [key]: value }),
+      ).toThrow(`${key} must be a numeric id`);
+    },
+  );
+
+  it('keeps integration ids as configured strings', () => {
+    const billing = parseStandaloneCreditBillingConfig({
+      ...enabledTest,
+      PAYMOB_WALLET_INTEGRATION_ID: 'vodafone-cash',
+    });
+    expect(billing.enabled && billing.paymob).toMatchObject({
+      cardIntegrationId: '4001001',
+      walletIntegrationId: 'vodafone-cash',
+    });
+  });
 
   it.each([
     ['STANDALONE_CREDIT_PRICE_MINOR', '1.5'],

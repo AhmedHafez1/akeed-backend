@@ -9,7 +9,11 @@ import type {
   NormalizedProviderEvent,
   PurchaseStatus,
 } from '../../shared/ports/payments.port';
-import { PaymentCallbackService } from './payment-callback.service';
+import { parseStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import {
+  PaymentCallbackService,
+  paymentEventMismatch,
+} from './payment-callback.service';
 
 interface PurchaseRow {
   id: string;
@@ -29,7 +33,7 @@ interface PurchaseRow {
   providerTransactionId: string | null;
 }
 
-const config = standaloneCreditBillingConfigService({
+const environment = {
   STANDALONE_CREDIT_BILLING_ENABLED: 'true',
   PAYMOB_MODE: 'test',
   PAYMOB_BASE_URL: 'http://localhost:9000',
@@ -41,7 +45,8 @@ const config = standaloneCreditBillingConfigService({
   PAYMOB_CARD_INTEGRATION_ID: 'card1',
   PAYMOB_WALLET_INTEGRATION_ID: 'wallet1',
   PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '900',
-});
+};
+const config = standaloneCreditBillingConfigService(environment);
 
 const purchase: PurchaseRow = {
   id: 'purchase-1',
@@ -227,6 +232,22 @@ describe('PaymentCallbackService.ingest', () => {
       });
     },
   );
+
+  it('accepts only the card integration in a card-only sandbox', () => {
+    const cardOnly = parseStandaloneCreditBillingConfig({
+      ...environment,
+      PAYMOB_WALLET_INTEGRATION_ID: '',
+    });
+    const row = purchase as never;
+    expect(paymentEventMismatch(event(), row, cardOnly)).toBeNull();
+    // Checkout never offered a wallet, so a wallet callback is not ours.
+    expect(
+      paymentEventMismatch(event({ integrationId: 'wallet1' }), row, cardOnly),
+    ).toBe('integration_mismatch');
+    expect(
+      paymentEventMismatch(event({ integrationId: '' }), row, cardOnly),
+    ).toBe('integration_mismatch');
+  });
 
   it('quarantines an event naming a provider transaction the purchase is not bound to', async () => {
     const { service } = setup({ purchase: { providerTransactionId: 'txn_9' } });

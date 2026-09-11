@@ -5,7 +5,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
-import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import {
+  paymobIntegrationIds,
+  readStandaloneCreditBillingConfig,
+} from '../../shared/config/standalone-credit-billing.config';
 import type { StandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { withSerializableRetry } from '../../shared/database/serializable-retry';
 import {
@@ -64,7 +67,7 @@ export function paymentEventMismatch(
     return null;
   }
   const integrations = billing.enabled
-    ? [billing.paymob.cardIntegrationId, billing.paymob.walletIntegrationId]
+    ? paymobIntegrationIds(billing.paymob)
     : [];
   if (event.amountMinor !== purchase.totalMinor) return 'amount_mismatch';
   if (event.currency !== purchase.currency) return 'currency_mismatch';

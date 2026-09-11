@@ -20,7 +20,11 @@ interface PaymobConfiguration {
   publicKey: string;
   hmacSecret: string;
   cardIntegrationId: string;
-  walletIntegrationId: string;
+  /**
+   * Absent only in test mode: Paymob enables mobile wallets per account on
+   * request, so a sandbox can start with cards alone. Live always has both.
+   */
+  walletIntegrationId: string | null;
   callbackUrl: string;
   returnUrl: string;
   checkoutExpirationSeconds: number;
@@ -44,6 +48,21 @@ function publicHostname(hostname: string): boolean {
     !/(^|\.)example\.(com|net|org)$/.test(host) &&
     !/(^|\.)(localtest\.me|lvh\.me|nip\.io|sslip\.io)$/.test(host)
   );
+}
+
+/**
+ * The Paymob integrations this deployment offers at checkout and therefore the
+ * only ones a callback may name.
+ */
+export function paymobIntegrationIds(
+  paymob: Pick<
+    PaymobConfiguration,
+    'cardIntegrationId' | 'walletIntegrationId'
+  >,
+): string[] {
+  return paymob.walletIntegrationId === null
+    ? [paymob.cardIntegrationId]
+    : [paymob.cardIntegrationId, paymob.walletIntegrationId];
 }
 
 /**
@@ -193,16 +212,28 @@ export function parseStandaloneCreditBillingConfig(
       errors.push(`${key} conflicts with PAYMOB_MODE.`);
   }
   const cardIntegrationId = required('PAYMOB_CARD_INTEGRATION_ID');
-  const walletIntegrationId = required('PAYMOB_WALLET_INTEGRATION_ID');
+  // A sandbox may run card-only until Paymob enables wallets on the account;
+  // live billing must offer both methods.
+  const walletIntegrationId =
+    mode === 'test' && !read('PAYMOB_WALLET_INTEGRATION_ID')
+      ? null
+      : required('PAYMOB_WALLET_INTEGRATION_ID');
   for (const key of [
     'PAYMOB_CARD_INTEGRATION_ID',
-    'PAYMOB_WALLET_INTEGRATION_ID',
+    ...(walletIntegrationId === null ? [] : ['PAYMOB_WALLET_INTEGRATION_ID']),
   ]) {
-    if (
-      !/^[a-z0-9_-]+$/i.test(read(key)) ||
-      /^(?:0+|test|live)$/i.test(read(key))
-    ) {
+    const value = read(key);
+    if (!/^[a-z0-9_-]+$/i.test(value) || /^(?:0+|test|live)$/i.test(value)) {
       errors.push(`${key} must be a non-placeholder provider identifier.`);
+    } else if (
+      /^\d+$/.test(value) &&
+      (value.startsWith('0') || !Number.isSafeInteger(Number(value)))
+    ) {
+      // Checkout sends a numeric id to Paymob as a JSON number, so it must
+      // survive that conversion unchanged or the callback would name another.
+      errors.push(
+        `${key} must be a numeric id without leading zeros that fits a safe integer.`,
+      );
     }
   }
   if (cardIntegrationId === walletIntegrationId) {
