@@ -13,6 +13,25 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Drizzle reports only "Failed query: <sql>" and keeps the Postgres error in
+// `cause`. Surface its code and message so a failed boot names the real
+// problem. `detail` and `where` are left out because they can carry row values.
+function withDatabaseCause(error: unknown): unknown {
+  if (!(error instanceof Error) || typeof error.cause !== 'object') {
+    return error;
+  }
+
+  const cause = error.cause as { code?: unknown; message?: unknown } | null;
+  if (typeof cause?.message !== 'string') {
+    return error;
+  }
+
+  const code = typeof cause.code === 'string' ? `${cause.code} ` : '';
+  return new Error(`${error.message}\n  cause: ${code}${cause.message}`, {
+    cause: error,
+  });
+}
+
 export async function runMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -31,6 +50,8 @@ export async function runMigrations(): Promise<void> {
 
     await migrate(db, {
       migrationsFolder: path.resolve(process.cwd(), 'drizzle'),
+    }).catch((error: unknown) => {
+      throw withDatabaseCause(error);
     });
 
     console.log('[Migrate] All migrations applied successfully.');
