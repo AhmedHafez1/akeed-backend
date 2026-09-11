@@ -327,6 +327,7 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
   }
 
   private logFailure(action: string, reference: string, error: unknown): void {
+    const paymob = this.settings();
     this.logger.error(
       buildBackendLog(PaymobPaymentsAdapter.name, {
         action: `paymob-${action}`,
@@ -334,12 +335,80 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
         provider: PAYMOB_PROVIDER,
         reference,
         httpStatus: isAxiosError(error) ? error.response?.status : undefined,
-        // `normalizeError` reports the message and name only; a provider body
-        // can carry the client secret and never reaches the log.
+        // A 4xx is Paymob explaining a refusal (a wrong integration id, a bad
+        // field), so its messages are logged -- scrubbed and bounded, never the
+        // raw body, which can carry the client secret.
+        providerError: providerErrorSummary(error, [
+          paymob.secretKey,
+          paymob.publicKey,
+          paymob.hmacSecret,
+        ]),
+        // `normalizeError` reports the message and name only.
         ...normalizeError(error),
       }),
     );
   }
+}
+
+/** Longest provider error summary one log line carries. */
+const PROVIDER_ERROR_MAX_LENGTH = 300;
+
+/** Paymob key and client-secret shapes, e.g. `egy_sk_test_…`, `egy_csk_live_…`. */
+const PROVIDER_KEY_PATTERN =
+  /\b(?:[a-z]{2,4}_)?(?:sk|pk|csk|cs)_(?:test|live)_[\w\-.=]+/gi;
+
+/** Any long unbroken token: a legacy API key, an HMAC, a JWT. */
+const LONG_TOKEN_PATTERN = /[\w\-+/=.]{32,}/g;
+
+/** Fields whose value is data rather than an explanation. */
+const SENSITIVE_FIELD =
+  /secret|key|token|hmac|signature|password|phone|email|msisdn|card/i;
+
+const MESSAGE_FIELDS = new Set(['detail', 'message', 'error']);
+
+/**
+ * Paymob's own words for a 4xx, safe to write down.
+ *
+ * Reads only top-level string messages -- `{ detail }` or DRF-style
+ * `{ field: ['msg'] }` -- skips any field that names a credential or personal
+ * data, then scrubs configured secrets and anything shaped like a key. A 5xx or
+ * a timeout says nothing useful about the request, so it yields nothing.
+ */
+function providerErrorSummary(
+  error: unknown,
+  secrets: readonly string[],
+): string | undefined {
+  if (!isAxiosError(error)) return undefined;
+  const status = error.response?.status ?? 0;
+  if (status < 400 || status >= 500) return undefined;
+  const data: unknown = error.response?.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    return undefined;
+
+  const parts: string[] = [];
+  for (const [field, value] of Object.entries(
+    data as Record<string, unknown>,
+  )) {
+    if (SENSITIVE_FIELD.test(field)) continue;
+    const messages = (Array.isArray(value) ? value : [value]).filter(
+      (entry): entry is string =>
+        typeof entry === 'string' && entry.trim() !== '',
+    );
+    if (!messages.length) continue;
+    const message = messages.join(', ');
+    parts.push(MESSAGE_FIELDS.has(field) ? message : `${field}: ${message}`);
+  }
+  if (!parts.length) return undefined;
+
+  let summary = parts.join('; ');
+  for (const secret of secrets)
+    if (secret) summary = summary.split(secret).join('[redacted]');
+  summary = summary
+    .replace(PROVIDER_KEY_PATTERN, '[redacted]')
+    .replace(LONG_TOKEN_PATTERN, '[redacted]');
+  return summary.length > PROVIDER_ERROR_MAX_LENGTH
+    ? `${summary.slice(0, PROVIDER_ERROR_MAX_LENGTH)}…`
+    : summary;
 }
 
 function retryable(error: unknown): boolean {

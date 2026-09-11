@@ -37,10 +37,12 @@ function response<T>(data: T, status = 200): AxiosResponse<T> {
   return { data, status, statusText: 'OK', headers: {}, config: {} as never };
 }
 
-function axiosFailure(status?: number): AxiosError {
+function axiosFailure(
+  status?: number,
+  body: unknown = { detail: 'nope' },
+): AxiosError {
   const error = new AxiosError('provider failure');
-  if (status !== undefined)
-    error.response = response({ detail: 'nope' }, status) as never;
+  if (status !== undefined) error.response = response(body, status) as never;
   else error.code = 'ECONNABORTED';
   return error;
 }
@@ -188,15 +190,67 @@ describe('PaymobPaymentsAdapter.createCheckout', () => {
     await build(ok).createCheckout(checkout);
     const failing = jest.fn(() => throwError(() => axiosFailure(500)));
     await build(failing).createCheckout(checkout);
+    // A refusal body is logged in summary, so it must not smuggle anything out.
+    const refusing = jest.fn(() =>
+      throwError(() =>
+        axiosFailure(400, {
+          detail: `Bad key ${SECRET_KEY}, ${PUBLIC_KEY} or ${HMAC_SECRET}`,
+          client_secret: CLIENT_SECRET,
+          amount: [`echo egy_csk_test_0123456789abcdef and ${CLIENT_SECRET}`],
+        }),
+      ),
+    );
+    await build(refusing).createCheckout(checkout);
 
     const text = JSON.stringify(logged);
     for (const secret of [
       SECRET_KEY,
+      PUBLIC_KEY,
       HMAC_SECRET,
       CLIENT_SECRET,
+      'egy_csk_test_0123456789abcdef',
       'unifiedcheckout',
     ])
       expect(text).not.toContain(secret);
+    jest.restoreAllMocks();
+  });
+
+  it.each([
+    [404, { detail: 'Not found.' }, 'Not found.'],
+    [
+      400,
+      { payment_methods: ['Integration 1234567 not found'] },
+      'payment_methods: Integration 1234567 not found',
+    ],
+  ])(
+    "logs Paymob's explanation of an HTTP %d",
+    async (status, body, expected) => {
+      const logged: string[] = [];
+      jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation((message) => logged.push(String(message)));
+      const post = jest.fn(() => throwError(() => axiosFailure(status, body)));
+      await expect(build(post).createCheckout(checkout)).resolves.toMatchObject(
+        { outcome: 'rejected', code: 'provider_rejected' },
+      );
+      expect(JSON.parse(logged[0])).toMatchObject({
+        httpStatus: status,
+        providerError: expected,
+      });
+      jest.restoreAllMocks();
+    },
+  );
+
+  it('logs no provider body for a server error', async () => {
+    const logged: string[] = [];
+    jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((message) => logged.push(String(message)));
+    const post = jest.fn(() =>
+      throwError(() => axiosFailure(502, { detail: 'upstream down' })),
+    );
+    await build(post).createCheckout(checkout);
+    expect(JSON.parse(logged[0])).not.toHaveProperty('providerError');
     jest.restoreAllMocks();
   });
 });
