@@ -33,7 +33,11 @@ function withDatabaseCause(error: unknown): unknown {
 }
 
 export async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
+  // The advisory lock below is session-scoped, so it needs a session-mode
+  // (5432) or direct connection. When DATABASE_URL points at the transaction
+  // pooler (6543), set MIGRATION_DATABASE_URL to the session pooler URL.
+  const databaseUrl =
+    process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is not defined in environment variables');
   }

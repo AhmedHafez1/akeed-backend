@@ -33,6 +33,22 @@ export function usesTransactionPooler(databaseUrl: string): boolean {
   }
 }
 
+const DEFAULT_POOL_MAX = 10;
+const DEFAULT_IDLE_TIMEOUT_SECONDS = 20;
+
+/**
+ * On the session pooler (5432 on *.pooler.supabase.com) every client
+ * connection holds a server slot until it closes, and the project allows only
+ * `pool_size` of them (15 on the smallest plan). postgres.js otherwise keeps
+ * idle connections open forever, so a dev restart, a test run or a second
+ * instance can take the remaining slots and every request fails with
+ * EMAXCONNSESSION. Cap the pool and release idle connections.
+ */
+export function readPoolMax(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_POOL_MAX;
+}
+
 export const drizzleProvider: Provider = {
   provide: DRIZZLE,
   inject: [ConfigService],
@@ -44,7 +60,12 @@ export const drizzleProvider: Provider = {
     }
 
     const pooled = usesTransactionPooler(databaseUrl);
-    const client = postgres(databaseUrl, { prepare: !pooled });
+    const poolMax = readPoolMax(configService.get<string>('DATABASE_POOL_MAX'));
+    const client = postgres(databaseUrl, {
+      prepare: !pooled,
+      max: poolMax,
+      idle_timeout: DEFAULT_IDLE_TIMEOUT_SECONDS,
+    });
     new Logger('DatabaseProvider').log(
       JSON.stringify({
         app: 'backend',
@@ -53,6 +74,7 @@ export const drizzleProvider: Provider = {
         outcome: 'success',
         transactionPooler: pooled,
         preparedStatements: !pooled,
+        poolMax,
       }),
     );
     const db = drizzle(client, { schema });

@@ -1,6 +1,11 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { TokenValidatorService } from './token-validator.service';
 
 const SHOPIFY_SECRET = 'shopify-test-secret';
@@ -76,7 +81,17 @@ function createService(isActive: boolean) {
     membershipsRepo as never,
   );
 
-  return { service, membershipsRepo };
+  return { service, membershipsRepo, integrationsRepo };
+}
+
+function poolExhaustedError(): DrizzleQueryError {
+  return new DrizzleQueryError(
+    'select "id" from "memberships" where "memberships"."user_id" = $1',
+    ['standalone-user-1'],
+    new Error(
+      '(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15',
+    ),
+  );
 }
 
 function mockSupabaseUser(
@@ -211,5 +226,40 @@ describe('TokenValidatorService Supabase organization state', () => {
       response: { code: 'ORGANIZATION_REQUIRED' },
     });
     expect(membershipsRepo.findByUser).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('TokenValidatorService database failures', () => {
+  it('returns 503, not 401, when the membership lookup fails', async () => {
+    const { service, membershipsRepo } = createService(true);
+    mockSupabaseUser(service);
+    membershipsRepo.findByUser.mockRejectedValue(poolExhaustedError());
+
+    await expect(
+      service.validateToken(createSupabaseToken()),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('returns 503, not 401, when the Shopify integration lookup fails', async () => {
+    const { service, integrationsRepo } = createService(true);
+    integrationsRepo.findByPlatformDomain.mockRejectedValue(
+      poolExhaustedError(),
+    );
+
+    await expect(
+      service.validateToken(createShopifyToken()),
+    ).rejects.toMatchObject({
+      response: { code: 'AUTH_DEPENDENCY_UNAVAILABLE' },
+    });
+  });
+
+  it('still returns 401 for non-database failures', async () => {
+    const { service, membershipsRepo } = createService(true);
+    mockSupabaseUser(service);
+    membershipsRepo.findByUser.mockRejectedValue(new Error('unexpected'));
+
+    await expect(
+      service.validateToken(createSupabaseToken()),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

@@ -3,11 +3,13 @@ import {
   HttpException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import {
   AuthenticatedRequestUser,
   AuthenticatedUser,
@@ -40,6 +42,28 @@ interface ShopifySessionPayload {
   iat: number; // Issued at
   jti: string; // JWT ID
   sid: string; // Session ID
+}
+
+/**
+ * A failed membership or integration lookup says nothing about the token. If it
+ * became a 401, the standalone frontend would send a signed-in user back to
+ * /login whenever the database was briefly unreachable (for example, when the
+ * pooler was out of connections). Report it as 503 so the client can retry.
+ */
+function toAuthLookupFailure(
+  error: unknown,
+  invalidTokenMessage: string,
+): HttpException {
+  if (error instanceof DrizzleQueryError) {
+    return new ServiceUnavailableException({
+      statusCode: 503,
+      error: 'Service Unavailable',
+      message: 'Authentication is temporarily unavailable',
+      code: 'AUTH_DEPENDENCY_UNAVAILABLE',
+    });
+  }
+
+  return new UnauthorizedException(invalidTokenMessage);
 }
 
 export interface AuthenticatedAdmin {
@@ -256,7 +280,7 @@ export class TokenValidatorService {
           ...normalizeError(error),
         }),
       );
-      throw new UnauthorizedException('Invalid Shopify session token');
+      throw toAuthLookupFailure(error, 'Invalid Shopify session token');
     }
   }
 
@@ -354,7 +378,7 @@ export class TokenValidatorService {
           ...normalizeError(error),
         }),
       );
-      throw new UnauthorizedException('Invalid Supabase token');
+      throw toAuthLookupFailure(error, 'Invalid Supabase token');
     }
   }
 

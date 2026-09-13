@@ -1,9 +1,9 @@
 import { PeriodicPlanAccounting } from './repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accounting';
 import { UsageAccountingRouter } from './repositories/usage-accounting.router';
-import { Module } from '@nestjs/common';
+import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { drizzleProvider } from './database.provider';
+import { DRIZZLE, drizzleProvider, type DrizzleDB } from './database.provider';
 import { CreditAccountingRepository } from './repositories/credit-accounting.repository';
 import { PaymentPurchasesRepository } from './repositories/payment-purchases.repository';
 
@@ -66,4 +66,14 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
     VerificationMessageDispatchesRepository,
   ],
 })
-export class DatabaseModule {}
+export class DatabaseModule implements OnApplicationShutdown {
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+
+  // Give pooler slots back as soon as the process stops, instead of when the
+  // server notices the dead socket.
+  async onApplicationShutdown(): Promise<void> {
+    await (this.db.$client as Partial<DrizzleDB['$client']> | undefined)?.end?.(
+      { timeout: 5 },
+    );
+  }
+}

@@ -14,6 +14,7 @@ async function bootstrap() {
   await runMigrations();
 
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  app.enableShutdownHooks();
   const adapterHost = app.get(HttpAdapterHost);
   app.useGlobalFilters(new GlobalExceptionFilter(adapterHost));
   app.useGlobalPipes(
