@@ -9,16 +9,13 @@ import {
   type CreditDenialCode,
 } from '../../shared/billing/credit-eligibility';
 
-export const CREDIT_APPROVAL_REQUIRED_CODE = 'STANDALONE_APPROVAL_REQUIRED';
-export const CREDIT_APPROVAL_REQUIRED_REASON = 'STANDALONE_APPROVAL_REQUIRED';
-
-export interface CreditApprovalSubject {
+export interface CreditEligibilitySubject {
   orgId: string;
   platformType: string;
 }
 
 @Injectable()
-export class CreditApprovalService {
+export class CreditEligibilityService {
   constructor(
     private readonly credits: CreditAccountingRepository,
     private readonly config: ConfigService,
@@ -28,23 +25,16 @@ export class CreditApprovalService {
     return readStandaloneCreditBillingConfig(this.config).enabled;
   }
 
+  /** `null` when the source is not metered by prepaid credits. */
   async readStatus(
-    subject: CreditApprovalSubject,
+    subject: CreditEligibilitySubject,
   ): Promise<CreditAccountStatus | null> {
     if (!usesPrepaidCredits(subject) || !this.isEnforced()) return null;
-    return (
-      (await this.credits.getSummary(subject.orgId))?.status ??
-      'pending_approval'
-    );
-  }
-
-  async isApproved(subject: CreditApprovalSubject): Promise<boolean> {
-    const status = await this.readStatus(subject);
-    return status === null || status === 'active';
+    return (await this.credits.getSummary(subject.orgId))?.status ?? null;
   }
 
   async resolveDenial(
-    subject: CreditApprovalSubject,
+    subject: CreditEligibilitySubject,
   ): Promise<CreditDenialCode | null> {
     if (!usesPrepaidCredits(subject) || !this.isEnforced()) return null;
     const summary = await this.credits.getSummary(subject.orgId);

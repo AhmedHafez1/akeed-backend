@@ -1064,7 +1064,6 @@ export const adminFunnelMonthly = pgTable(
 );
 
 export const creditAccountStatus = pgEnum('credit_account_status', [
-  'pending_approval',
   'active',
   'suspended',
 ]);
@@ -1101,15 +1100,9 @@ export const creditAccounts = pgTable(
   'credit_accounts',
   {
     orgId: uuid('org_id').primaryKey(),
-    status: creditAccountStatus('status').notNull().default('pending_approval'),
+    status: creditAccountStatus('status').notNull().default('active'),
     postedBalance: integer('posted_balance').notNull().default(0),
     heldCredits: integer('held_credits').notNull().default(0),
-    approvedBy: uuid('approved_by'),
-    approvedAt: timestamp('approved_at', {
-      withTimezone: true,
-      mode: 'string',
-    }),
-    approvalReason: text('approval_reason'),
     version: integer('version').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .notNull()
@@ -1126,10 +1119,6 @@ export const creditAccounts = pgTable(
     }),
     check('credit_accounts_held_credits_check', sql`held_credits >= 0`),
     check('credit_accounts_version_check', sql`version >= 0`),
-    check(
-      'credit_account_approval_check',
-      sql`((approved_by IS NULL AND approved_at IS NULL AND approval_reason IS NULL) OR (approved_by IS NOT NULL AND approved_at IS NOT NULL AND approval_reason IS NOT NULL AND length(trim(approval_reason)) > 0))`,
-    ),
     index('credit_account_status_idx').on(table.status),
     pgPolicy('credit_service_access', {
       for: 'all',

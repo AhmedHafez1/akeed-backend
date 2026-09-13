@@ -53,14 +53,11 @@ In the SQL below, `<org>` is the merchant organization id.
 
 **Done:** the request returns **401** and the backend logs `invalid_hmac`. The internet reaches Akeed, and forged callbacks are rejected.
 
-## Session 3 — One approved merchant
+## Session 3 — One new merchant
 
-1. Sign up at `http://localhost:3001` as a new Standalone merchant. The app shows "waiting for approval".
-2. Enable the staff side, then restart the backend:
-   - Give your staff Supabase user `akeed_role = admin`.
-   - Set `ADMIN_CONTROL_TOWER_ENABLED=true` and `STANDALONE_CREDIT_APPROVAL_ENABLED=true`.
-   - Locally only, set `ADMIN_REQUIRE_AAL2=false` unless your staff user has MFA.
-3. Open `/en/admin/standalone-billing`, preview, and approve the merchant with a reason.
+1. Sign up at `http://localhost:3001` as a new Standalone merchant and confirm the email address from the verification link.
+2. Sign in. Onboarding opens directly; there is no approval step.
+3. Optional staff check: give your staff Supabase user `akeed_role = admin`, set `ADMIN_CONTROL_TOWER_ENABLED=true` (locally, `ADMIN_REQUIRE_AAL2=false` unless the user has MFA), restart the backend and open `/en/admin/standalone-billing`. The merchant is listed as active.
 
 **Done:** the merchant's `/en/billing` page shows **30 credits** and one `free_grant +30`.
 

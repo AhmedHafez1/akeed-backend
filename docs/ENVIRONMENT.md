@@ -91,15 +91,16 @@ npm run db:push
     - `business`: public-facing Scale plan, `$49.99`/month, 2,500 WhatsApp confirmations/month.
   - Plans do not include usage-based Shopify billing line items. When the included limit is reached, sending stops until renewal or upgrade.
 
-## Standalone Credit Approval
+## Standalone Account Activation
 
-`STANDALONE_CREDIT_APPROVAL_ENABLED` replaces the retired `STANDALONE_PILOT_ACTIVATION_ENABLED`. It gates `POST /api/admin/standalone-billing/approvals/apply` only; staff can always list accounts and take read-only previews.
+Standalone accounts no longer wait for staff approval. `STANDALONE_CREDIT_APPROVAL_ENABLED` and the `/api/admin/standalone-billing/approvals/*` routes are retired; remove the variable from deployed environments.
 
-- Keep `STANDALONE_CREDIT_APPROVAL_ENABLED=false` during ordinary deployments and set it to `true` only for a reviewed approval batch, then return it to `false`.
-- The existing `ADMIN_CONTROL_TOWER_ENABLED` and `ADMIN_REQUIRE_AAL2` controls also apply. Enabling approval does not bypass the staff role or MFA requirements.
-- `STANDALONE_CREDIT_BILLING_ENABLED` is a separate switch. While it is `true`, Standalone provisioning stops writing the Starter/`not_required` entitlement and leaves a `pending_approval` credit account behind; approval is what grants the entitlement and the one-time `free_grant` of `STANDALONE_FREE_GRANT` credits. While it is `false`, provisioning behaves as before and the credit ledger is bookkeeping only.
-- Approval is exactly-once at the database boundary: the ledger key is `standalone-free-grant:<orgId>:v1`, and `credit_ledger_free_grant_key` allows one `free_grant` row per organization. Never delete a committed grant or reset merchant history as a rollback; disable further apply instead.
-- See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) for the pilot history this replaced, and the dated `US-04.5-02` evidence for approval preflight, reconciliation and rollback steps.
+- Email verification is the only gate. Supabase issues no session until the address is confirmed, and Standalone provisioning (`POST /api/organizations`) requires that session, so the Supabase project's **Confirm email** setting must stay on. The backend does not re-check confirmation itself.
+- Provisioning opens the credit account `active` and posts the one-time `free_grant` of `STANDALONE_FREE_GRANT` credits (default 30) in the same transaction as the organization and source, with the owner as `actor_id` and reason `signup_auto_activation`. This happens in both billing modes, so switching `STANDALONE_CREDIT_BILLING_ENABLED` on later never strands an account without credits.
+- `STANDALONE_CREDIT_BILLING_ENABLED` still decides metering. While it is `true`, provisioning writes no Starter/`not_required` entitlement and sends consume credits. While it is `false`, provisioning writes that entitlement and the credit ledger is bookkeeping only.
+- The grant is exactly-once at the database boundary: the ledger key is `standalone-free-grant:<orgId>:v1`, and `credit_ledger_free_grant_key` allows one `free_grant` row per organization. Retried or concurrent provisioning never grants twice. Never delete a committed grant or reset merchant history as a rollback.
+- Migration `0035_standalone_auto_activation.sql` activates accounts left `pending_approval`, posts their grant (reason `auto_activation_backfill`), then drops `approved_by`/`approved_at`/`approval_reason` and the `pending_approval` status. It aborts, naming the organizations, if any pending account has a native source, native billing history, or other than exactly one owner. Run the preflight in the [US-04.5-09 evidence](US-04.5-09-STANDALONE-AUTO-ACTIVATION-EVIDENCE.md) first and escalate conflicts; never edit data ad hoc to make it pass.
+- See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) and the `US-04.5-02` evidence for the pilot and approval history this replaced.
 
 ### Standalone source eligibility and support policy
 

@@ -54,7 +54,7 @@ export class CreatePurchaseDto {
 
 export interface CreditSummaryResponseDto {
   billingEnabled: boolean;
-  status: 'pending_approval' | 'active' | 'suspended' | 'not_provisioned';
+  status: 'active' | 'suspended' | 'not_provisioned';
   postedBalance: number;
   heldCredits: number;
   availableCredits: number;

@@ -17,11 +17,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { AdminAccessGuard } from './admin-access.guard';
 import type { RequestWithAdmin } from './admin.types';
-import {
-  StandaloneApprovalApplyDto,
-  StandaloneApprovalPreviewDto,
-  StandaloneBillingAccountsDto,
-} from './dto/standalone-billing.dto';
+import { StandaloneBillingAccountsDto } from './dto/standalone-billing.dto';
 import { PurchaseRefParamDto } from '../billing/dto/billing.dto';
 import {
   AdjustmentApplyDto,
@@ -274,27 +270,5 @@ export class StandaloneBillingController {
       reason: body.reason,
       requestId: readRequestId(request),
     });
-  }
-
-  @Post('approvals/preview')
-  @Header('Cache-Control', 'private, no-store')
-  preview(
-    @Req() request: RequestWithAdmin,
-    @Body() body: StandaloneApprovalPreviewDto,
-  ) {
-    return this.billing.preview(request.admin.userId, body.organizationIds);
-  }
-
-  @Post('approvals/apply')
-  @Header('Cache-Control', 'private, no-store')
-  apply(
-    @Req() request: RequestWithAdmin,
-    @Body() body: StandaloneApprovalApplyDto,
-  ) {
-    return this.billing.apply(
-      request.admin.userId,
-      body.previewId,
-      body.reason,
-    );
   }
 }

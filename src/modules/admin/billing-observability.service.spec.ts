@@ -36,7 +36,7 @@ function setup(facts: Facts = {}) {
         averagePurchaseCredits: 0,
       },
       accounts: {
-        approvedOrganizations: 0,
+        activatedOrganizations: 0,
         lowBalanceOrganizations: 0,
         zeroBalanceOrganizations: 0,
       },

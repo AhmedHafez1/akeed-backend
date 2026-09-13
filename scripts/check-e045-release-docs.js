@@ -52,10 +52,14 @@ const stories = [
     'US-04.5-08-sandbox-and-production-release-gate.md',
     'US-04.5-08-SANDBOX-AND-PRODUCTION-RELEASE-GATE-EVIDENCE.md',
   ],
+  [
+    '09',
+    'US-04.5-09-standalone-signup-auto-activation.md',
+    'US-04.5-09-STANDALONE-AUTO-ACTIVATION-EVIDENCE.md',
+  ],
 ];
 
 const requiredEnvironmentKeys = [
-  'STANDALONE_CREDIT_APPROVAL_ENABLED',
   'STANDALONE_CREDIT_BILLING_ENABLED',
   'STANDALONE_BILLING_OPERATIONS_ENABLED',
   'STANDALONE_BILLING_OPERATOR_IDS',

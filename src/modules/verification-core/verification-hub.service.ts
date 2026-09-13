@@ -7,7 +7,7 @@ import { integrations, orders } from '../../infrastructure/database/schema';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
-import { CreditApprovalService } from './credit-approval.service';
+import { CreditEligibilityService } from './credit-eligibility.service';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
@@ -59,7 +59,7 @@ export class VerificationHubService {
     private orderEligibilityService: OrderEligibilityService,
     private verificationSendService: VerificationSendService,
     private readonly billingEntitlementService: BillingEntitlementService,
-    private readonly creditApproval: CreditApprovalService,
+    private readonly creditEligibility: CreditEligibilityService,
     private readonly automationProducer: VerificationAutomationProducer,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
@@ -318,7 +318,7 @@ export class VerificationHubService {
       this.billingEntitlementService.evaluateAccess(integration, {
         id: orderData.integrationId,
         orgId: orderData.orgId,
-      }).reason ?? (await this.creditApproval.resolveDenial(integration))
+      }).reason ?? (await this.creditEligibility.resolveDenial(integration))
     );
   }
 
@@ -340,7 +340,7 @@ export class VerificationHubService {
       this.billingEntitlementService.evaluateAccess(integration, {
         id: orderData.integrationId,
         orgId: orderData.orgId,
-      }).reason ?? (await this.creditApproval.resolveDenial(integration))
+      }).reason ?? (await this.creditEligibility.resolveDenial(integration))
     );
   }
 

@@ -15,7 +15,7 @@ import {
 import { ORDER_ELIGIBILITY_STRATEGIES } from './strategies/order-eligibility.strategy';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
-import { CreditApprovalService } from './credit-approval.service';
+import { CreditEligibilityService } from './credit-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { VerificationHubService } from './verification-hub.service';
 
@@ -121,7 +121,7 @@ describe('E02 platform-neutral verification core release gate', () => {
         OrderEligibilityService,
         BillingEntitlementService,
         {
-          provide: CreditApprovalService,
+          provide: CreditEligibilityService,
           useValue: { resolveDenial: jest.fn().mockResolvedValue(null) },
         },
         { provide: OrdersRepository, useValue: ordersRepository },

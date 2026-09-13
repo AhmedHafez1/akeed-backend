@@ -22,7 +22,7 @@ import { WhatsAppWebhookService } from '../src/infrastructure/spokes/meta/whatsa
 import { TestVerificationService } from '../src/modules/verifications/test-verification.service';
 import { VerificationHubService } from '../src/modules/verification-core/verification-hub.service';
 import { OrderEligibilityService } from '../src/modules/verification-core/order-eligibility.service';
-import { CreditApprovalService } from '../src/modules/verification-core/credit-approval.service';
+import { CreditEligibilityService } from '../src/modules/verification-core/credit-eligibility.service';
 import { BillingEntitlementService } from '../src/modules/verification-core/billing-entitlement.service';
 import { VerificationSendService } from '../src/modules/verification-core/verification-send.service';
 import { PhoneService } from '../src/shared/services/phone.service';
@@ -575,16 +575,16 @@ async function createHarness(): Promise<AcceptanceHarness> {
   ]);
   // E04.5 approval is not part of the E04 acceptance contract; the harness
   // runs with credit billing disabled, which always approves.
-  const creditApproval = {
+  const creditEligibility = {
     isEnforced: () => false,
     isApproved: async () => true,
     resolveDenial: async () => null,
-  } as unknown as CreditApprovalService;
+  } as unknown as CreditEligibilityService;
   const send = new VerificationSendService(
     verificationRepo as never,
     ordersRepo as never,
     billing,
-    creditApproval,
+    creditEligibility,
     dispatchRepo as never,
     provider,
   );
@@ -600,7 +600,7 @@ async function createHarness(): Promise<AcceptanceHarness> {
     eligibility,
     send,
     billing,
-    creditApproval,
+    creditEligibility,
     automation as never,
   );
   const testVerification = new TestVerificationService(
@@ -696,7 +696,7 @@ async function createHarness(): Promise<AcceptanceHarness> {
     manualOrders as never,
     new PhoneService(),
     billing,
-    creditApproval,
+    creditEligibility,
     dispatcher as never,
     eventRepo as never,
     eligibility,

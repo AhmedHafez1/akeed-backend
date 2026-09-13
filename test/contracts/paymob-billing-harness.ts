@@ -182,7 +182,14 @@ export function paymobBillingHarness(
       tables.integrationMonthlyUsage,
       tables.adminAccessAudit,
       tables.webhookEvents,
-      ...(options.extraTables ?? []),
+      // 0035 reads ownership and billing history when it activates accounts.
+      tables.memberships,
+      tables.billingFreePlanClaims,
+      ...(options.extraTables ?? []).filter(
+        (table) =>
+          table !== tables.memberships &&
+          table !== tables.billingFreePlanClaims,
+      ),
     ])
       await scaffold(table);
     const dispatchDdl = readFileSync(
@@ -204,9 +211,10 @@ export function paymobBillingHarness(
     await migrate('0032_credit_and_payment_domain_foundation.sql');
     await migrate('0033_dispatch_accounting_mode.sql');
     await migrate('0034_billing_observability_and_settlements.sql');
+    await migrate('0035_standalone_auto_activation.sql');
   }
 
-  /** An approved Standalone merchant holding `quantity` granted credits. */
+  /** An active Standalone merchant holding `quantity` granted credits. */
   async function merchant(quantity = 30, platformType = 'standalone') {
     const orgId = randomUUID();
     await db
@@ -230,7 +238,10 @@ export function paymobBillingHarness(
       .returning();
     if (platformType === 'standalone')
       await db.transaction(async (tx) => {
-        await credits.ensurePendingAccount(tx, orgId);
+        await tx
+          .insert(tables.creditAccounts)
+          .values({ orgId })
+          .onConflictDoNothing();
         const account = await credits.lockAccount(tx, orgId);
         if (quantity > 0)
           await credits.insertLedgerEntry(tx, {

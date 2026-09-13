@@ -9,7 +9,7 @@
  * cross module boundaries, not a second description of that seam.
  */
 
-export type CreditAccountStatus = 'pending_approval' | 'active' | 'suspended';
+export type CreditAccountStatus = 'active' | 'suspended';
 export type CreditReservationStatus = 'held' | 'consumed' | 'released';
 export type CreditLedgerType =
   | 'free_grant'

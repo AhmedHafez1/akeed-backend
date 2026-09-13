@@ -1,8 +1,8 @@
 # E04.5 — Standalone Paymob Usage-Based Billing MVP
 
 - **Horizon:** NEXT — execute before E05
-- **Status:** Blocked
-- **Stories:** 8
+- **Status:** Done
+- **Stories:** 9
 - **Prerequisite epics:** [E04 — Standalone Manual Order MVP](../04-standalone-manual-order-mvp/README.md)
 - **Next epic:** [E05 — Standalone Order Ingestion API](../05-standalone-order-ingestion-api/README.md)
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -10,11 +10,11 @@
 
 ## Business objective
 
-Let approved Egyptian Standalone merchants buy non-expiring message credits through Paymob and continue verifying orders without staff-managed quota renewals, while leaving Shopify subscription plans and periods unchanged.
+Let verified Egyptian Standalone merchants buy non-expiring message credits through Paymob and continue verifying orders without staff-managed quota renewals, while leaving Shopify subscription plans and periods unchanged.
 
 ## Measurable outcome
 
-- Staff approval creates one active credit account and exactly one 30-credit launch grant per Standalone organization.
+- Verified signup creates one active credit account and exactly one 30-credit launch grant per Standalone organization.
 - Owners/admins can buy 100–5,000 credits in increments of 50 at EGP 2.00 per credit; viewers are read-only.
 - A verified successful Paymob server callback grants purchased credits exactly once.
 - Every posted balance change has an immutable ledger entry, and concurrent sends cannot overspend.
@@ -31,7 +31,7 @@ Let approved Egyptian Standalone merchants buy non-expiring message credits thro
 | Payment methods | Online cards and Vodafone Cash through the Paymob wallet integration |
 | Unit price | EGP 2.00 / 200 piastres per credit |
 | Purchase quantity | Minimum 100, maximum 5,000, step 50 |
-| Free grant | 30 credits exactly once after staff approval |
+| Free grant | 30 credits exactly once at verified signup |
 | Expiration | Free and paid credits do not expire |
 | Billing model | Prepaid, no renewal or recurring subscription |
 | Billable event | Meta accepts the message and returns a provider message ID |
@@ -84,13 +84,16 @@ Each story is an independent implementation patch/commit series. Do not mix work
 | 5 | [US-04.5-05 — Use the merchant billing experience](US-04.5-05-merchant-billing-experience.md) | P0 | Feature | [US-04.5-04](US-04.5-04-paymob-checkout-and-callbacks.md) | Done |
 | 6 | [US-04.5-06 — Operate and reconcile Standalone billing](US-04.5-06-staff-billing-operations.md) | P0 | Operations | [US-04.5-05](US-04.5-05-merchant-billing-experience.md) | Done |
 | 7 | [US-04.5-07 — Monitor billing and revenue integrity](US-04.5-07-observability-and-finance-reconciliation.md) | P1 | Operations | [US-04.5-06](US-04.5-06-staff-billing-operations.md) | Done |
-| 8 | [US-04.5-08 — Prove sandbox and controlled-production readiness](US-04.5-08-sandbox-and-production-release-gate.md) | P0 | Quality gate | [US-04.5-07](US-04.5-07-observability-and-finance-reconciliation.md) | Blocked |
+| 8 | [US-04.5-08 — Prove sandbox and controlled-production readiness](US-04.5-08-sandbox-and-production-release-gate.md) | P0 | Quality gate | [US-04.5-07](US-04.5-07-observability-and-finance-reconciliation.md) | Done |
+| 9 | [US-04.5-09 — Activate Standalone accounts at verified signup](US-04.5-09-standalone-signup-auto-activation.md) | P0 | Feature | [US-04.5-02](US-04.5-02-approval-and-one-time-grant.md) | Done |
+
+US-04.5-09 supersedes the staff approval step from US-04.5-02: accounts are activated with their launch grant at verified signup.
 
 ## Merchant and staff workflow
 
-1. Provisioning creates a pending Standalone credit account and no Standalone plan entitlement.
-2. Staff previews eligibility, enters a reason and approves the organization.
-3. One serializable transaction activates the account, posts `free_grant +30` under `standalone-free-grant:<orgId>:v1`, and records the audit event.
+1. The merchant signs up and verifies their email address.
+2. Provisioning creates the organization, the Standalone source and an active credit account with no Standalone plan entitlement.
+3. The same transaction posts `free_grant +30` under `standalone-free-grant:<orgId>:v1`, with the owner as actor.
 4. Every member can read balance, holds, debt, ledger and purchase history. Only owner/admin can start checkout; viewers see a localized read-only state.
 5. The backend validates quantity and creates a pending local purchase before calling Paymob Create Intention with trusted EGP amount and internal reference.
 6. The merchant chooses card or Vodafone Cash inside Paymob Unified Checkout. Akeed never receives or stores card/wallet credentials.

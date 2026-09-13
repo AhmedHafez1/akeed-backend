@@ -33,7 +33,6 @@ function purchase(overrides: Partial<PurchaseFact>): PurchaseFact {
 
 describe('balanceState', () => {
   it.each([
-    [{ status: 'pending_approval', postedBalance: 0, heldCredits: 0 }, 'none'],
     [{ status: 'active', postedBalance: -5, heldCredits: 0 }, 'debt'],
     [{ status: 'active', postedBalance: 3, heldCredits: 3 }, 'zero'],
     [{ status: 'active', postedBalance: 10, heldCredits: 0 }, 'low'],

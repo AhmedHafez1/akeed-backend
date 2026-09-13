@@ -30,9 +30,8 @@ $focusedUnitSuites = @(
     'src/infrastructure/database/credit-domain-contracts.spec.ts',
     'src/shared/billing/',
     'src/shared/config/standalone-credit-billing.config.spec.ts',
-    # US-04.5-02 approval and one-time grant
-    'src/modules/verification-core/credit-approval.service.spec.ts',
-    'src/modules/admin/standalone-billing.policy.spec.ts',
+    # US-04.5-09 signup auto-activation and one-time grant
+    'src/modules/verification-core/credit-eligibility.service.spec.ts',
     'src/modules/admin/standalone-billing.service.spec.ts',
     'src/infrastructure/database/repositories/standalone-organization-provisioning.repository.spec.ts',
     # US-04.5-03 provider-neutral usage accounting

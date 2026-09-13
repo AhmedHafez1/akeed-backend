@@ -27,7 +27,7 @@ import {
   collectPaymentSignals,
 } from '../../shared/commerce/payment-signals';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
-import { CreditApprovalService } from '../verification-core/credit-approval.service';
+import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import {
   DispatchOutcome,
   WebhookDispatchService,
@@ -77,7 +77,7 @@ export class OrdersService {
     private readonly manualOrders: ManualOrderIngestionRepository,
     private readonly phoneService: PhoneService,
     private readonly billingEntitlements: BillingEntitlementService,
-    private readonly creditApproval: CreditApprovalService,
+    private readonly creditEligibility: CreditEligibilityService,
     private readonly dispatcher: WebhookDispatchService,
     private readonly webhookEvents: WebhookEventsRepository,
     private readonly orderEligibility: OrderEligibilityService,
@@ -144,7 +144,7 @@ export class OrdersService {
         code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED',
       });
     }
-    await this.assertCreditApproved(source);
+    await this.assertCreditEligible(source);
     // `evaluateAccess` above is a policy check and never reads usage, so a
     // source at its included limit passed every gate and was accepted with a
     // 202 whose verification the worker then silently skipped. The merchant had
@@ -416,7 +416,7 @@ export class OrdersService {
         lifecycle,
       });
     }
-    await this.assertCreditApproved(integration);
+    await this.assertCreditEligible(integration);
     const availability = await this.billingEntitlements.hasAvailableSlot({
       id: integration.id,
       orgId: integration.orgId,
@@ -483,14 +483,14 @@ export class OrdersService {
   }
 
   /**
-   * Read-only order and verification access stays open while approval is
-   * pending; only the billable actions are refused.
+   * Read-only order and verification access stays open while credit is
+   * unavailable; only the billable actions are refused.
    */
-  private async assertCreditApproved(source: {
+  private async assertCreditEligible(source: {
     orgId: string;
     platformType: string;
   }): Promise<void> {
-    const denial = await this.creditApproval.resolveDenial(source);
+    const denial = await this.creditEligibility.resolveDenial(source);
     if (!denial) return;
     throw new ConflictException({
       statusCode: 409,

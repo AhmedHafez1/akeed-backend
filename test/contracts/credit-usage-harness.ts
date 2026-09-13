@@ -139,6 +139,9 @@ export function creditUsageHarness() {
       tables.integrationMonthlyUsage,
       tables.adminAccessAudit,
       tables.webhookEvents,
+      // 0035 reads ownership and billing history when it activates accounts.
+      tables.memberships,
+      tables.billingFreePlanClaims,
     ])
       await scaffold(table);
     const dispatchDdl = readFileSync(
@@ -157,6 +160,7 @@ export function creditUsageHarness() {
     await client.unsafe(dispatchDdl.replaceAll('"public".', `"${namespace}".`));
     await migrate('0032_credit_and_payment_domain_foundation.sql');
     await migrate('0033_dispatch_accounting_mode.sql');
+    await migrate('0035_standalone_auto_activation.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {
@@ -182,7 +186,10 @@ export function creditUsageHarness() {
       .returning();
     if (platformType === 'standalone') {
       await db.transaction(async (tx) => {
-        await credits.ensurePendingAccount(tx, orgId);
+        await tx
+          .insert(tables.creditAccounts)
+          .values({ orgId })
+          .onConflictDoNothing();
         const account = await credits.lockAccount(tx, orgId);
         await credits.insertLedgerEntry(tx, {
           orgId,

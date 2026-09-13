@@ -62,7 +62,7 @@ export type AutomationTimezone = (typeof AUTOMATION_TIMEZONES)[number];
 
 export const STANDALONE_SETUP_BLOCKED_REASONS = [
   'source_invalid',
-  'approval_required',
+  'account_suspended',
   'pilot_entitlement_missing',
   'merchant_name_missing',
   'language_invalid',
@@ -197,7 +197,7 @@ export interface OnboardingStateDto {
   standaloneSetup: {
     canComplete: boolean;
     blockedReasons: StandaloneSetupBlockedReason[];
-    approvalStatus: CreditAccountStatus | null;
+    accountStatus: CreditAccountStatus | null;
   } | null;
 }
 

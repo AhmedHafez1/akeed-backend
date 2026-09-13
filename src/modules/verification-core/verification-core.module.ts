@@ -11,7 +11,7 @@ import { VerificationHubService } from './verification-hub.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
-import { CreditApprovalService } from './credit-approval.service';
+import { CreditEligibilityService } from './credit-eligibility.service';
 import { VerificationAutomationQueueModule } from '../verification-automation/verification-automation-queue.module';
 
 function extractProviderToken(provider: Provider): InjectionToken {
@@ -40,7 +40,7 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
-        CreditApprovalService,
+        CreditEligibilityService,
         ...config.ports,
       ],
       exports: [
@@ -48,7 +48,7 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
-        CreditApprovalService,
+        CreditEligibilityService,
         ...config.ports.map(extractProviderToken),
       ],
     };

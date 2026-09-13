@@ -11,11 +11,8 @@ describe('credit eligibility', () => {
     debtCredits: 0,
     version: 1,
   };
-  it('requires an approved account and permits the last available credit', () => {
-    expect(creditDenial(undefined)).toBe('STANDALONE_APPROVAL_REQUIRED');
-    expect(creditDenial({ ...active, status: 'pending_approval' })).toBe(
-      'STANDALONE_APPROVAL_REQUIRED',
-    );
+  it('requires a provisioned account and permits the last available credit', () => {
+    expect(creditDenial(undefined)).toBe('CREDIT_ACCOUNT_NOT_PROVISIONED');
     expect(creditDenial(active)).toBeNull();
   });
   it('distinguishes suspension, debt and holds that exhaust availability', () => {

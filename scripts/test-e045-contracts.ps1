@@ -66,7 +66,7 @@ try {
     $env:E01_TEST_DATABASE_URL = "postgresql://e01_test:e01-synthetic-only@127.0.0.1:$port/akeed_e01_test"
 
     Invoke-ContractStep 'US-04.5-01 migration, RLS, immutability and concurrency' 'test:contract:credit-foundation'
-    Invoke-ContractStep 'US-04.5-02 approval and one-time grant' 'test:contract:standalone-approval'
+    Invoke-ContractStep 'US-04.5-09 signup auto-activation, backfill and one-time grant' 'test:contract:standalone-provisioning'
     Invoke-ContractStep 'US-04.5-03 usage accounting and recovery' 'test:contract:credit-usage'
     Invoke-ContractStep 'US-04.5-04 Paymob checkout, callback and inquiry' 'test:contract:paymob-checkout'
     Invoke-ContractStep 'US-04.5-06 staff operations, debt and repair' 'test:contract:billing-operations'

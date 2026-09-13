@@ -199,7 +199,7 @@ describe('BillingService.readCredits', () => {
     await expect(service.readCredits(owner)).resolves.toMatchObject({
       status: 'not_provisioned',
       canPurchase: false,
-      purchaseDenialReason: 'STANDALONE_APPROVAL_REQUIRED',
+      purchaseDenialReason: 'CREDIT_ACCOUNT_NOT_PROVISIONED',
     });
   });
 
@@ -331,24 +331,24 @@ describe('BillingService.createPurchase', () => {
     expect(payments.createCheckout).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['pending_approval', 'STANDALONE_APPROVAL_REQUIRED'],
-    ['suspended', 'CREDIT_ACCOUNT_SUSPENDED'],
-  ] as const)('denies a %s account', async (status, code) => {
-    const { service, credits } = setup();
-    credits.getSummary.mockResolvedValue({
-      orgId: 'org-1',
-      status,
-      postedBalance: 0,
-      heldCredits: 0,
-      availableCredits: 0,
-      debtCredits: 0,
-      version: 1,
-    });
-    await expect(
-      service.createPurchase(owner, 'idem-key-1', 100),
-    ).rejects.toMatchObject({ response: { code } });
-  });
+  it.each([['suspended', 'CREDIT_ACCOUNT_SUSPENDED']] as const)(
+    'denies a %s account',
+    async (status, code) => {
+      const { service, credits } = setup();
+      credits.getSummary.mockResolvedValue({
+        orgId: 'org-1',
+        status,
+        postedBalance: 0,
+        heldCredits: 0,
+        availableCredits: 0,
+        debtCredits: 0,
+        version: 1,
+      });
+      await expect(
+        service.createPurchase(owner, 'idem-key-1', 100),
+      ).rejects.toMatchObject({ response: { code } });
+    },
+  );
 
   it('refuses while credit billing is switched off', async () => {
     const { service } = setup({

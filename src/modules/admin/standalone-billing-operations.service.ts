@@ -169,7 +169,7 @@ export class StandaloneBillingOperationsService {
             ...projection(account),
             balanceState: balanceState(account, lowBalanceThreshold),
             version: account.version,
-            approvedAt: account.approvedAt,
+            activatedAt: detail.activatedAt,
             updatedAt: account.updatedAt,
           }
         : null,
@@ -314,12 +314,6 @@ export class StandaloneBillingOperationsService {
             'This preview was already applied.',
           );
         await this.assertNoContradictions(input.orgId, tx);
-        if (account.status === 'pending_approval')
-          staffBillingError(
-            ConflictException,
-            STAFF_BILLING_ERROR_CODES.accountNotApproved,
-            'Approve the organization before adjusting its credits.',
-          );
         if (
           adjustmentFingerprint(input.orgId, quantity, account) !==
           preview.fingerprint
@@ -756,8 +750,8 @@ export class StandaloneBillingOperationsService {
   }
 
   /**
-   * The account staff may change right now: it exists, it was approved, and
-   * its projection and source rows agree.
+   * The account staff may change right now: it exists and its projection and
+   * source rows agree.
    */
   private async mutableAccount(orgId: string): Promise<Account> {
     const account = await this.repository.readAccount(orgId);
@@ -766,12 +760,6 @@ export class StandaloneBillingOperationsService {
         NotFoundException,
         STAFF_BILLING_ERROR_CODES.accountNotFound,
         'Credit account not found.',
-      );
-    if (account.status === 'pending_approval')
-      staffBillingError(
-        ConflictException,
-        STAFF_BILLING_ERROR_CODES.accountNotApproved,
-        'Approve the organization before adjusting its credits.',
       );
     const block = mutationBlock(
       await this.repository.readReconciliation(orgId),

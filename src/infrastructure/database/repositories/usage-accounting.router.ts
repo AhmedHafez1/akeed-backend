@@ -77,7 +77,7 @@ export class UsageAccountingRouter {
       .select({ orgId: creditAccounts.orgId })
       .from(creditAccounts)
       .where(eq(creditAccounts.orgId, orgId));
-    if (!existing) return 'STANDALONE_APPROVAL_REQUIRED';
+    if (!existing) return 'CREDIT_ACCOUNT_NOT_PROVISIONED';
     const account = await this.prepaid.lock(tx, orgId);
     const denial = creditDenial(this.prepaid.repository.summary(account));
     if (denial) return denial;

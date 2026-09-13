@@ -20,7 +20,7 @@ export function balanceState(
   } | null,
   lowBalanceThreshold: number,
 ): BalanceState {
-  if (!account || account.status === 'pending_approval') return 'none';
+  if (!account) return 'none';
   if (account.postedBalance < 0) return 'debt';
   const available = Math.max(account.postedBalance - account.heldCredits, 0);
   if (available === 0) return 'zero';

@@ -77,9 +77,10 @@ describe('standalone provisioning entitlement grant', () => {
 });
 
 /**
- * Credit billing moves the entitlement grant from signup to staff approval.
- * Provisioning still has to leave behind the pending account that approval
- * activates, in both modes — otherwise an organization can never be approved.
+ * A verified signup opens the credit account already active, with its one-time
+ * launch grant, in both modes: the account row and the ledger entry travel in
+ * the provisioning transaction, and a retry that finds the account posts
+ * nothing.
  */
 describe('provisionStandaloneSourceForOrganization', () => {
   function integrationRow(orgId: string) {
@@ -91,12 +92,18 @@ describe('provisionStandaloneSourceForOrganization', () => {
     });
   }
 
-  async function provision(grantEntitlement: boolean) {
+  async function provision(
+    grantEntitlement: boolean,
+    { accountExists = false } = {},
+  ) {
     const statements: { query: string; params: unknown[] }[] = [];
     const execute = jest.fn((query: string, params: unknown[]) => {
       statements.push({ query, params });
       if (query.includes('from "organizations"')) {
         return Promise.resolve({ rows: [['org-1']] });
+      }
+      if (query.includes('insert into "credit_accounts"')) {
+        return Promise.resolve({ rows: accountExists ? [] : [['org-1']] });
       }
       if (query.includes('insert into "integrations"')) {
         return Promise.resolve({ rows: [integrationRow('org-1')] });
@@ -107,13 +114,13 @@ describe('provisionStandaloneSourceForOrganization', () => {
     const result = await provisionStandaloneSourceForOrganization(
       session as never,
       'org-1',
-      { grantEntitlement },
+      { grantEntitlement, actorId: 'user-1', freeGrant: 30 },
     );
     return { result, statements };
   }
 
   it.each([true, false])(
-    'seeds the pending credit account when grantEntitlement is %s',
+    'opens an active account with the launch grant when grantEntitlement is %s',
     async (grantEntitlement) => {
       const { statements } = await provision(grantEntitlement);
 
@@ -121,9 +128,35 @@ describe('provisionStandaloneSourceForOrganization', () => {
         statement.query.includes('insert into "credit_accounts"'),
       );
       expect(account?.query).toContain('on conflict do nothing');
-      expect(account?.params).toEqual(['org-1']);
+      expect(account?.params).toEqual(
+        expect.arrayContaining(['org-1', 'active', 30]),
+      );
+      const grant = statements.find((statement) =>
+        statement.query.includes('insert into "credit_ledger_entries"'),
+      );
+      expect(grant?.params).toEqual(
+        expect.arrayContaining([
+          'org-1',
+          'free_grant',
+          30,
+          'standalone-free-grant:org-1:v1',
+          'user-1',
+          'signup_auto_activation',
+          0,
+        ]),
+      );
     },
   );
+
+  it('posts no second grant when the account already exists', async () => {
+    const { statements } = await provision(false, { accountExists: true });
+
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('insert into "credit_ledger_entries"'),
+      ),
+    ).toBe(false);
+  });
 
   it('grants the Starter entitlement while credit billing is disabled', async () => {
     const { statements, result } = await provision(true);
@@ -140,7 +173,7 @@ describe('provisionStandaloneSourceForOrganization', () => {
     expect(result.sourceCreated).toBe(true);
   });
 
-  it('leaves the entitlement to staff approval while credit billing is enabled', async () => {
+  it('meters by prepaid credits instead of a plan while credit billing is enabled', async () => {
     const { statements } = await provision(false);
 
     const source = statements.find((statement) =>

@@ -19,7 +19,7 @@ import {
  * meaningful against the real schema with the real migrations applied.
  */
 const harness = billingOperationsHarness();
-const { db, credits, approvals, operations } = harness;
+const { db, credits, accounts, operations } = harness;
 
 async function staffAdjust(orgId: string, quantity: number) {
   await db.transaction((tx) =>
@@ -43,8 +43,8 @@ async function settle(reference: string) {
   );
 }
 
-async function listed(query: Parameters<typeof approvals.list>[1]) {
-  const page = await approvals.list(OPERATOR, { limit: 100, ...query });
+async function listed(query: Parameters<typeof accounts.list>[1]) {
+  const page = await accounts.list(OPERATOR, { limit: 100, ...query });
   return page.rows.map((row) => row.orgId);
 }
 
@@ -94,7 +94,7 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
         healthy.orgId,
       );
 
-      const page = await approvals.list(OPERATOR, { limit: 100 });
+      const page = await accounts.list(OPERATOR, { limit: 100 });
       expect(page.rows.find((row) => row.orgId === debt.orgId)).toMatchObject({
         billing: { debtCredits: 5, balanceState: 'debt' },
       });
@@ -383,20 +383,20 @@ describe('US-04.5-06 PostgreSQL staff billing operations', () => {
       });
     });
 
-    it('refuses an account that was never approved', async () => {
-      const merchant = await harness.merchant(0);
-      await db
-        .update(creditAccounts)
-        .set({
-          status: 'pending_approval',
-          version: sql`${creditAccounts.version} + 1`,
-        })
-        .where(eq(creditAccounts.orgId, merchant.orgId));
+    it('dates activation from the launch grant, not from a staff approval', async () => {
+      const granted = await harness.merchant(30);
+      const ungranted = await harness.merchant(0);
+
+      const detail = await operations.accountDetail(OPERATOR, granted.orgId);
+      expect(detail.account).toMatchObject({ status: 'active' });
+      expect(detail.account?.activatedAt).toEqual(expect.any(String));
+      expect(detail.account).not.toHaveProperty('approvedAt');
       await expect(
-        operations.previewAdjustment(OPERATOR, merchant.orgId, 5),
-      ).rejects.toMatchObject({
-        response: { code: 'BILLING_ACCOUNT_NOT_APPROVED' },
-      });
+        operations.accountDetail(OPERATOR, ungranted.orgId),
+      ).resolves.toMatchObject({ account: { activatedAt: null } });
+      await expect(
+        operations.previewAdjustment(OPERATOR, ungranted.orgId, 5),
+      ).resolves.toMatchObject({ orgId: ungranted.orgId });
     });
 
     it('never applies a preview for another staff member or tenant', async () => {

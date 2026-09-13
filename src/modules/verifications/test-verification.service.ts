@@ -173,17 +173,12 @@ export class TestVerificationService {
         code: 'TEST_VERIFICATION_ENTITLEMENT_REQUIRED',
       });
     }
-    if (
-      reason === 'standalone_approval_required' ||
-      isCreditDenialCode(reason)
-    ) {
+    if (isCreditDenialCode(reason)) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: 'Akeed staff have not approved this account yet.',
-        code: isCreditDenialCode(reason)
-          ? reason
-          : 'STANDALONE_APPROVAL_REQUIRED',
+        message: 'Credit is not available for this source.',
+        code: reason,
         reason,
       });
     }

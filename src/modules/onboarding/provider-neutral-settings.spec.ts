@@ -22,7 +22,7 @@ describe('manual entitlement HTTP boundary', () => {
   let activeSources: (typeof source)[];
   let user: AuthenticatedUser;
   let completionWriteCount: number;
-  let approvalStatus: 'pending_approval' | 'active' | 'suspended' | null;
+  let accountStatus: 'active' | 'suspended' | null;
   const provider = {
     getShopName: jest.fn(),
     createRecurringApplicationCharge: jest.fn(),
@@ -49,7 +49,7 @@ describe('manual entitlement HTTP boundary', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    approvalStatus = null;
+    accountStatus = null;
     source = {
       id: 'int-1',
       orgId: 'org-1',
@@ -124,7 +124,7 @@ describe('manual entitlement HTTP boundary', () => {
         usage as never,
         usageAccountingFixture({ enabled: true }),
       ),
-      { readStatus: () => Promise.resolve(approvalStatus) } as never,
+      { readStatus: () => Promise.resolve(accountStatus) } as never,
     );
     const module = await Test.createTestingModule({
       controllers: [OnboardingController, SettingsController],
@@ -300,7 +300,8 @@ describe('manual entitlement HTTP boundary', () => {
     });
   });
 
-  it('completes approved credit setup without requiring legacy plan fields', async () => {
+  it('completes an auto-activated credit setup without requiring legacy plan fields', async () => {
+    accountStatus = 'active';
     source = {
       ...source,
       onboardingStatus: 'pending',
@@ -325,12 +326,12 @@ describe('manual entitlement HTTP boundary', () => {
     expect(source.storeName).toBe('Saved before activation');
   });
 
-  it('blocks completion with STANDALONE_APPROVAL_REQUIRED while approval is pending', async () => {
-    approvalStatus = 'pending_approval';
+  it('blocks completion while the credit account is suspended', async () => {
+    accountStatus = 'suspended';
     source = {
       ...source,
       onboardingStatus: 'pending',
-      storeName: 'Waiting merchant',
+      storeName: 'Suspended merchant',
       billingPlanId: null,
       billingStatus: null,
       billingActivatedAt: null,
@@ -343,8 +344,8 @@ describe('manual entitlement HTTP boundary', () => {
       .expect(({ body }: { body: { state: OnboardingStateDto } }) => {
         expect(body.state.standaloneSetup).toMatchObject({
           canComplete: false,
-          blockedReasons: ['approval_required'],
-          approvalStatus: 'pending_approval',
+          blockedReasons: ['account_suspended'],
+          accountStatus: 'suspended',
         });
       });
     await request(app.getHttpServer())
@@ -352,8 +353,8 @@ describe('manual entitlement HTTP boundary', () => {
       .expect(409)
       .expect(({ body }) => {
         expect(body).toMatchObject({
-          code: 'STANDALONE_APPROVAL_REQUIRED',
-          approvalStatus: 'pending_approval',
+          code: 'ONBOARDING_BLOCKED',
+          blockedReasons: ['account_suspended'],
         });
       });
     expect(completionWriteCount).toBe(0);

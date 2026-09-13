@@ -22,7 +22,7 @@ import {
 import { StandaloneBillingOperatorGuard } from './standalone-billing-operator.guard';
 import { BillingObservabilityService } from './billing-observability.service';
 
-describe('Standalone billing approval staff HTTP boundary', () => {
+describe('Standalone billing staff HTTP boundary', () => {
   let app: INestApplication;
   const staffId = randomUUID();
   const otherStaffId = randomUUID();
@@ -30,8 +30,6 @@ describe('Standalone billing approval staff HTTP boundary', () => {
   const previewId = randomUUID();
   const billing = {
     list: jest.fn().mockResolvedValue({ rows: [] }),
-    preview: jest.fn().mockResolvedValue({ previewId }),
-    apply: jest.fn().mockResolvedValue({ results: [] }),
   };
   const operations = {
     accountDetail: jest.fn().mockResolvedValue({ account: null }),
@@ -112,63 +110,22 @@ describe('Standalone billing approval staff HTTP boundary', () => {
     'staff-aal1',
   ])('denies %s', async (token) => {
     await http()
-      .post('/api/admin/standalone-billing/approvals/apply')
+      .get('/api/admin/standalone-billing/accounts')
       .set('Authorization', `Bearer ${token}`)
-      .send({ previewId, reason: 'Approve' })
       .expect(403);
-    expect(billing.apply).not.toHaveBeenCalled();
+    expect(billing.list).not.toHaveBeenCalled();
   });
   it('requires authentication even for discovery', async () => {
     await http().get('/api/admin/standalone-billing/accounts').expect(401);
   });
-  it('uses the guard principal and never accepts actor, plan or billing overrides', async () => {
-    await http()
-      .post('/api/admin/standalone-billing/approvals/apply')
-      .set('Authorization', 'Bearer staff-aal2')
-      .send({
-        previewId,
-        reason: '  Approved for credit billing  ',
-        userId: randomUUID(),
-        billingPlanId: 'business',
-        organizationIds: [orgId],
-      })
-      .expect(201);
-    expect(billing.apply).toHaveBeenCalledWith(
-      staffId,
-      previewId,
-      'Approved for credit billing',
-    );
-  });
-  it.each([
-    { organizationIds: [] },
-    { organizationIds: Array.from({ length: 51 }, () => randomUUID()) },
-    { organizationIds: [orgId, orgId] },
-    { organizationIds: ['not-a-uuid'] },
-  ])('rejects invalid preview selection', async ({ organizationIds }) => {
-    await http()
-      .post('/api/admin/standalone-billing/approvals/preview')
-      .set('Authorization', 'Bearer staff-aal2')
-      .send({ organizationIds })
-      .expect(400);
-    expect(billing.preview).not.toHaveBeenCalled();
-  });
-  it('accepts an explicit selection and prevents caching', async () => {
-    const response = await http()
-      .post('/api/admin/standalone-billing/approvals/preview')
-      .set('Authorization', 'Bearer staff-aal2')
-      .send({ organizationIds: [orgId] })
-      .expect(201);
-    expect(billing.preview).toHaveBeenCalledWith(staffId, [orgId]);
-    expect(response.headers['cache-control']).toBe('private, no-store');
-  });
-  it.each(['', '   ', 'x'.repeat(501)])(
-    'requires a bounded meaningful reason',
-    async (reason) => {
+  it.each(['approvals/preview', 'approvals/apply'])(
+    'no longer serves the retired staff approval route %s',
+    async (route) => {
       await http()
-        .post('/api/admin/standalone-billing/approvals/apply')
+        .post(`/api/admin/standalone-billing/${route}`)
         .set('Authorization', 'Bearer staff-aal2')
-        .send({ previewId, reason })
-        .expect(400);
+        .send({ organizationIds: [orgId], previewId, reason: 'Approve' })
+        .expect(404);
     },
   );
   it('passes credit filters with the guard principal and rejects unknown ones', async () => {
@@ -635,8 +592,6 @@ describe('Standalone billing approval staff HTTP boundary', () => {
         'POST accounts/:orgId/adjustments/preview',
         'POST accounts/:orgId/projection-repair/apply',
         'POST accounts/:orgId/projection-repair/preview',
-        'POST approvals/apply',
-        'POST approvals/preview',
         'POST dispatches/:dispatchId/resolve',
         'POST purchases/:purchaseRef/provider-action',
         'POST purchases/:purchaseRef/reconcile',

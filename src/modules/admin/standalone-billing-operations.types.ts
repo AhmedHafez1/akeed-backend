@@ -9,7 +9,6 @@ export const STAFF_BILLING_ERROR_CODES = {
   operationsDisabled: 'STANDALONE_BILLING_OPERATIONS_DISABLED',
   operatorRequired: 'STANDALONE_BILLING_OPERATOR_REQUIRED',
   accountNotFound: 'BILLING_ACCOUNT_NOT_FOUND',
-  accountNotApproved: 'BILLING_ACCOUNT_NOT_APPROVED',
   projectionMismatch: 'CREDIT_PROJECTION_MISMATCH',
   sourceContradictory: 'CREDIT_SOURCE_CONTRADICTORY',
   previewNotFound: 'BILLING_PREVIEW_NOT_FOUND',
@@ -40,7 +39,7 @@ export interface AccountFilters {
   reconciliation?: ReconciliationFilter;
 }
 
-/** What the account list shows beside each approval row. */
+/** The billing state the account list shows beside each account row. */
 export interface AccountBillingSummary {
   debtCredits: number;
   balanceState: BalanceState;

@@ -48,10 +48,11 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   // `reopenRetryableInitialFailure` is what stops a send that *did* reach the
   // provider from being repeated.
   'provider_outcome_unknown',
-  // Staff approval is pending. The merchant cannot resolve it themselves, but
-  // it is temporary and the verification must be reopenable once it commits.
+  // Legacy: accounts used to wait for staff approval. Rows blocked that way are
+  // still persisted and must stay reopenable now that every account is active.
   'standalone_approval_required',
   'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_NOT_PROVISIONED',
   'CREDIT_ACCOUNT_SUSPENDED',
   'CREDIT_DEBT_OUTSTANDING',
   'INSUFFICIENT_CREDITS',
@@ -69,8 +70,10 @@ export const BLOCKED_EVENT_REASONS = [
   'plan_limit_reached',
   'auto_verify_disabled',
   'onboarding_incomplete',
+  // Legacy staff-approval reasons, kept so old blocked events can re-dispatch.
   'standalone_approval_required',
   'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_NOT_PROVISIONED',
   'CREDIT_ACCOUNT_SUSPENDED',
   'CREDIT_DEBT_OUTSTANDING',
   'INSUFFICIENT_CREDITS',
@@ -86,8 +89,7 @@ export const SEND_FAILURE_REASONS = [
   'billing_not_active',
   'missing_linked_integration',
   'source_identity_mismatch',
-  'standalone_approval_required',
-  'STANDALONE_APPROVAL_REQUIRED',
+  'CREDIT_ACCOUNT_NOT_PROVISIONED',
   'CREDIT_ACCOUNT_SUSPENDED',
   'CREDIT_DEBT_OUTSTANDING',
   'INSUFFICIENT_CREDITS',

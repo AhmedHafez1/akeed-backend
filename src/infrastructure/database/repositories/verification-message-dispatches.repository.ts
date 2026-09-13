@@ -844,7 +844,7 @@ export class VerificationMessageDispatchesRepository {
       .from(creditAccounts)
       .where(eq(creditAccounts.orgId, params.orgId));
     if (!account)
-      return { outcome: 'blocked', reason: 'STANDALONE_APPROVAL_REQUIRED' };
+      return { outcome: 'blocked', reason: 'CREDIT_ACCOUNT_NOT_PROVISIONED' };
     await this.accounting.prepaid.lock(tx, params.orgId);
     let [dispatch] = await tx
       .select()

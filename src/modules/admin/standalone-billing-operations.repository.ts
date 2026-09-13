@@ -118,9 +118,8 @@ export class StandaloneBillingOperationsRepository {
   }
 
   /**
-   * Stores a staff preview as an audit row, the same way approval previews
-   * are kept: the row id is the preview id, and apply can only ever read what
-   * the server itself computed.
+   * Stores a staff preview as an audit row: the row id is the preview id, and
+   * apply can only ever read what the server itself computed.
    */
   async savePreview(input: {
     userId: string;
@@ -323,20 +322,29 @@ export class StandaloneBillingOperationsRepository {
       .where(eq(organizations.id, orgId));
     const account = await this.readAccount(orgId);
     if (!organization && !account) return undefined;
-    const [reconciliation, ledger, holds, purchases, events, audit] =
-      await Promise.all([
-        // An organization provisioned before credit billing has no account, and
-        // so nothing to reconcile; its history reads come back empty.
-        account ? this.readReconciliation(orgId) : undefined,
-        this.ledger(orgId),
-        this.holds(orgId),
-        this.purchases(orgId),
-        this.events(orgId),
-        this.audit(orgId),
-      ]);
+    const [
+      reconciliation,
+      activatedAt,
+      ledger,
+      holds,
+      purchases,
+      events,
+      audit,
+    ] = await Promise.all([
+      // An organization provisioned before credit billing has no account, and
+      // so nothing to reconcile; its history reads come back empty.
+      account ? this.readReconciliation(orgId) : undefined,
+      this.activatedAt(orgId),
+      this.ledger(orgId),
+      this.holds(orgId),
+      this.purchases(orgId),
+      this.events(orgId),
+      this.audit(orgId),
+    ]);
     return {
       organization: organization ?? null,
       account: account ?? null,
+      activatedAt,
       reconciliation,
       ledger,
       holds,
@@ -344,6 +352,21 @@ export class StandaloneBillingOperationsRepository {
       events,
       audit,
     };
+  }
+
+  /** When the one-time launch grant was posted, i.e. the account went live. */
+  private async activatedAt(orgId: string): Promise<string | null> {
+    const [grant] = await this.db
+      .select({ createdAt: creditLedgerEntries.createdAt })
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.orgId, orgId),
+          eq(creditLedgerEntries.type, 'free_grant'),
+        ),
+      )
+      .limit(1);
+    return grant?.createdAt ?? null;
   }
 
   private async ledger(orgId: string) {

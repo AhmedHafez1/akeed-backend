@@ -36,16 +36,48 @@ export class CreditVersionConflictError extends Error {
   }
 }
 
+export function buildFreeGrantKey(orgId: string): string {
+  return `standalone-free-grant:${orgId}:v1`;
+}
+
+const SIGNUP_FREE_GRANT_REASON = 'signup_auto_activation';
+
+export interface ActiveCreditAccountSeed {
+  /** The merchant whose verified signup activates the account. */
+  actorId: string;
+  freeGrant: number;
+}
+
 /**
- * Seeds the pending account a Standalone organization is approved from. Exposed
- * as a free function so the provisioning transaction, which has no container to
- * inject a repository from, writes it through the same statement staff paths do.
+ * Opens a Standalone organization's credit account already active, with its
+ * one-time launch grant posted in the same statement pair. The account row and
+ * its ledger entry are only written when the row is new, so re-provisioning
+ * never grants twice; `credit_ledger_free_grant_key` backs that up.
+ *
+ * Exposed as a free function so the provisioning transaction, which has no
+ * container to inject a repository from, writes it through the same statements.
  */
-export async function ensurePendingCreditAccount(
+export async function ensureActiveCreditAccount(
   tx: CreditWriter,
   orgId: string,
+  seed: ActiveCreditAccountSeed,
 ): Promise<void> {
-  await tx.insert(creditAccounts).values({ orgId }).onConflictDoNothing();
+  const [inserted] = await tx
+    .insert(creditAccounts)
+    .values({ orgId, status: 'active', postedBalance: seed.freeGrant })
+    .onConflictDoNothing()
+    .returning({ orgId: creditAccounts.orgId });
+  if (!inserted) return;
+  await tx.insert(creditLedgerEntries).values({
+    orgId,
+    type: 'free_grant',
+    quantity: seed.freeGrant,
+    idempotencyKey: buildFreeGrantKey(orgId),
+    actorId: seed.actorId,
+    reason: SIGNUP_FREE_GRANT_REASON,
+    postedBalanceBefore: 0,
+    postedBalanceAfter: seed.freeGrant,
+  });
 }
 
 type Account = typeof creditAccounts.$inferSelect;
@@ -132,10 +164,6 @@ export class CreditAccountingRepository {
     };
   }
 
-  async ensurePendingAccount(tx: CreditWriter, orgId: string): Promise<void> {
-    await ensurePendingCreditAccount(tx, orgId);
-  }
-
   async lockAccount(tx: CreditTransaction, orgId: string): Promise<Account> {
     const [account] = await tx
       .select()
@@ -219,8 +247,8 @@ export class CreditAccountingRepository {
 
   /**
    * The account's version trigger demands exactly one increment per update, so
-   * a status or approval change has to travel with the projection it belongs
-   * to rather than following it in a second statement.
+   * a status change has to travel with the projection it belongs to rather
+   * than following it in a second statement.
    */
   async updateProjection(
     tx: CreditTransaction,
@@ -230,7 +258,6 @@ export class CreditAccountingRepository {
       postedBalance: number;
       heldCredits: number;
       status?: CreditAccountStatus;
-      approval?: { approvedBy: string; approvedAt: string; reason: string };
     },
   ): Promise<Account> {
     const [account] = await tx
@@ -239,13 +266,6 @@ export class CreditAccountingRepository {
         postedBalance: input.postedBalance,
         heldCredits: input.heldCredits,
         ...(input.status ? { status: input.status } : {}),
-        ...(input.approval
-          ? {
-              approvedBy: input.approval.approvedBy,
-              approvedAt: input.approval.approvedAt,
-              approvalReason: input.approval.reason,
-            }
-          : {}),
         version: sql`${creditAccounts.version} + 1`,
         updatedAt: new Date().toISOString(),
       })

@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
-import { CreditApprovalService } from '../verification-core/credit-approval.service';
+import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import { getBillingManagement } from '../../shared/billing/entitlement';
 import { integrations } from '../../infrastructure/database/schema';
@@ -45,7 +45,7 @@ export class OnboardingService {
     private readonly onboardingState: OnboardingStateService,
     private readonly billingService: BillingService,
     private readonly billingEntitlements: BillingEntitlementService,
-    private readonly creditApproval: CreditApprovalService,
+    private readonly creditEligibility: CreditEligibilityService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -116,16 +116,6 @@ export class OnboardingService {
     const blockedReasons = currentState.standaloneSetup?.blockedReasons ?? [
       'source_invalid',
     ];
-    if (blockedReasons.includes('approval_required')) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Akeed staff have not approved this account yet.',
-        code: 'STANDALONE_APPROVAL_REQUIRED',
-        blockedReasons,
-        approvalStatus: currentState.standaloneSetup?.approvalStatus ?? null,
-      });
-    }
     if (blockedReasons.length > 0) {
       throw new ConflictException({
         statusCode: 409,
@@ -221,9 +211,9 @@ export class OnboardingService {
     const state = this.onboardingState.toState(integration);
     const canUpdateConfiguration = this.canUpdateConfiguration(user);
     const standalone = integration.platformType === 'standalone';
-    const approvalStatus = await this.creditApproval.readStatus(integration);
+    const accountStatus = await this.creditEligibility.readStatus(integration);
     const blockedReasons = standalone
-      ? this.getStandaloneBlockedReasons(integration, approvalStatus)
+      ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
 
     return {
@@ -237,7 +227,7 @@ export class OnboardingService {
         ? {
             canComplete: blockedReasons.length === 0,
             blockedReasons,
-            approvalStatus,
+            accountStatus,
           }
         : null,
     };
@@ -245,17 +235,17 @@ export class OnboardingService {
 
   private getStandaloneBlockedReasons(
     integration: IntegrationRecord,
-    approvalStatus: CreditAccountStatus | null,
+    accountStatus: CreditAccountStatus | null,
   ): StandaloneSetupBlockedReason[] {
     const reasons: StandaloneSetupBlockedReason[] = [];
     if (integration.platformType !== 'standalone' || !integration.isActive) {
       reasons.push('source_invalid');
     }
 
-    // Under credit billing the entitlement is deliberately absent until staff
-    // approve, so reporting both reasons would just be noise.
-    if (approvalStatus !== null && approvalStatus !== 'active') {
-      reasons.push('approval_required');
+    // A suspended account cannot send regardless of entitlement, so reporting
+    // both reasons would just be noise.
+    if (accountStatus === 'suspended') {
+      reasons.push('account_suspended');
     } else if (!this.billingEntitlements.evaluateAccess(integration).allowed) {
       reasons.push('pilot_entitlement_missing');
     }

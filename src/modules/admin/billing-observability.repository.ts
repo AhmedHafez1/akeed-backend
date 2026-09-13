@@ -675,12 +675,12 @@ export class BillingObservabilityRepository {
       FROM ranked purchase
     `);
     const [accounts] = await this.db.execute<{
-      approvedOrganizations: number;
+      activatedOrganizations: number;
       lowBalanceOrganizations: number;
       zeroBalanceOrganizations: number;
     }>(sql`
       SELECT
-        count(*) FILTER (WHERE approved_at IS NOT NULL)::int AS "approvedOrganizations",
+        count(*) FILTER (WHERE status = 'active')::int AS "activatedOrganizations",
         count(*) FILTER (WHERE greatest(posted_balance - held_credits, 0) BETWEEN 1 AND ${lowBalanceThreshold})::int AS "lowBalanceOrganizations",
         count(*) FILTER (WHERE posted_balance - held_credits <= 0)::int AS "zeroBalanceOrganizations"
       FROM ${creditAccounts}
@@ -765,13 +765,13 @@ export class BillingObservabilityRepository {
         GROUP BY entry.org_id
       )
       SELECT
-        avg(extract(epoch FROM (first_consumption.consumed_at - account.approved_at)))::float8 AS "averageSeconds",
+        avg(extract(epoch FROM (first_consumption.consumed_at - grant_entry.created_at)))::float8 AS "averageSeconds",
         count(*)::int AS "sampleSize"
-      FROM ${creditAccounts} account
-      JOIN first_consumption ON first_consumption.org_id = account.org_id
-      WHERE account.approved_at IS NOT NULL
-        AND (${from}::timestamptz IS NULL OR account.approved_at >= ${from}::timestamptz)
-        AND (${to}::timestamptz IS NULL OR account.approved_at < ${to}::timestamptz)
+      FROM ${creditLedgerEntries} grant_entry
+      JOIN first_consumption ON first_consumption.org_id = grant_entry.org_id
+      WHERE grant_entry.type = 'free_grant'
+        AND (${from}::timestamptz IS NULL OR grant_entry.created_at >= ${from}::timestamptz)
+        AND (${to}::timestamptz IS NULL OR grant_entry.created_at < ${to}::timestamptz)
     `);
     return {
       purchases,

@@ -76,7 +76,7 @@ export const BILLING_ERROR_CODES = {
   sourceUnsupported: 'BILLING_SOURCE_UNSUPPORTED',
   sourceAmbiguous: 'BILLING_SOURCE_AMBIGUOUS',
   roleRequired: 'BILLING_PURCHASE_ROLE_REQUIRED',
-  approvalRequired: 'STANDALONE_APPROVAL_REQUIRED',
+  accountNotProvisioned: 'CREDIT_ACCOUNT_NOT_PROVISIONED',
   accountSuspended: 'CREDIT_ACCOUNT_SUSPENDED',
   idempotencyKeyRequired: 'BILLING_IDEMPOTENCY_KEY_REQUIRED',
   idempotencyConflict: 'BILLING_IDEMPOTENCY_CONFLICT',

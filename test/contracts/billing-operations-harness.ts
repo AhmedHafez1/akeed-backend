@@ -14,13 +14,11 @@ export const OPERATOR = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 
 /**
  * The Paymob billing harness plus everything the staff console reads and
- * drives: memberships and claims for the approval snapshot, the dispatch
- * repository for credit holds, and the admin services themselves.
+ * drives: the dispatch repository for credit holds and the admin services
+ * themselves.
  */
 export function billingOperationsHarness() {
-  const base = paymobBillingHarness({
-    extraTables: [tables.memberships, tables.billingFreePlanClaims],
-  });
+  const base = paymobBillingHarness();
   const { db, credits } = base;
   const config = standaloneCreditBillingConfigService({
     STANDALONE_CREDIT_BILLING_ENABLED: 'true',
@@ -41,10 +39,10 @@ export function billingOperationsHarness() {
     db,
     base.router,
   );
-  const approvals = new StandaloneBillingService(
-    // The approval repository is typed against the schema barrel; the
-    // tables and relations are the same.
-    new StandaloneBillingRepository(db as never, credits),
+  const accounts = new StandaloneBillingService(
+    // The account repository is typed against the schema barrel; the tables
+    // and relations are the same.
+    new StandaloneBillingRepository(db as never),
     config,
   );
   const operationsRepository = new StandaloneBillingOperationsRepository(
@@ -151,7 +149,7 @@ export function billingOperationsHarness() {
     ...base,
     config,
     dispatches,
-    approvals,
+    accounts,
     operationsRepository,
     operations,
     verificationHub,

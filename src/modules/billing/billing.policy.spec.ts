@@ -69,7 +69,7 @@ describe('purchaseDenial', () => {
     summary: { status: 'active' as const },
   };
 
-  it('allows an owner on an approved Standalone account', () => {
+  it('allows an owner on an active Standalone account', () => {
     expect(purchaseDenial(base)).toBeNull();
   });
 
@@ -83,11 +83,7 @@ describe('purchaseDenial', () => {
     [{ platformType: null }, BILLING_ERROR_CODES.sourceUnsupported],
     [{ role: 'viewer' as const }, BILLING_ERROR_CODES.roleRequired],
     [{ role: null }, BILLING_ERROR_CODES.roleRequired],
-    [{ summary: undefined }, BILLING_ERROR_CODES.approvalRequired],
-    [
-      { summary: { status: 'pending_approval' as const } },
-      BILLING_ERROR_CODES.approvalRequired,
-    ],
+    [{ summary: undefined }, BILLING_ERROR_CODES.accountNotProvisioned],
     [
       { summary: { status: 'suspended' as const } },
       BILLING_ERROR_CODES.accountSuspended,

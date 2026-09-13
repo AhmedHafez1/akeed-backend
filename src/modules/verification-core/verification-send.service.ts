@@ -13,7 +13,7 @@ import {
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
-import { CreditApprovalService } from './credit-approval.service';
+import { CreditEligibilityService } from './credit-eligibility.service';
 import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
@@ -106,7 +106,7 @@ export class VerificationSendService {
     private readonly verificationsRepo: VerificationsRepository,
     private readonly ordersRepo: OrdersRepository,
     private readonly billingEntitlementService: BillingEntitlementService,
-    private readonly creditApproval: CreditApprovalService,
+    private readonly creditEligibility: CreditEligibilityService,
     private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
   ) {}
@@ -167,19 +167,20 @@ export class VerificationSendService {
       return { context: null, reason: access.reason };
     }
 
-    const approvalDenial = await this.creditApproval.resolveDenial(integration);
-    if (approvalDenial) {
+    const creditDenial =
+      await this.creditEligibility.resolveDenial(integration);
+    if (creditDenial) {
       this.logger.warn(
         buildBackendLog('VerificationSendService', {
-          action: 'loadContext.creditApproval',
+          action: 'loadContext.creditEligibility',
           outcome: 'skipped',
           orgId: order.orgId,
           integrationId: integration.id,
           verificationId,
-          reason: approvalDenial,
+          reason: creditDenial,
         }),
       );
-      return { context: null, reason: approvalDenial };
+      return { context: null, reason: creditDenial };
     }
 
     return { context: { verification, order, integration } };

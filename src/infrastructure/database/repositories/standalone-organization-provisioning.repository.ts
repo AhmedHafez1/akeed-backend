@@ -10,7 +10,7 @@ import {
 } from '../../../shared/billing/billing-plan';
 import { readStandaloneCreditBillingConfig } from '../../../shared/config/standalone-credit-billing.config';
 import { integrations, memberships, organizations } from '../schema';
-import { ensurePendingCreditAccount } from './credit-accounting.repository';
+import { ensureActiveCreditAccount } from './credit-accounting.repository';
 
 export interface StandaloneOrganizationProvisioningResult {
   organization: typeof organizations.$inferSelect;
@@ -43,10 +43,14 @@ export type StandaloneProvisioningTransaction = Parameters<
 export interface StandaloneSourceProvisioningOptions {
   /**
    * Writes the Starter/`not_required` entitlement at provisioning time. Credit
-   * billing moves that grant to staff approval, so it is off whenever
-   * `STANDALONE_CREDIT_BILLING_ENABLED` is set.
+   * billing meters sends against the prepaid launch grant instead, so it is
+   * off whenever `STANDALONE_CREDIT_BILLING_ENABLED` is set.
    */
   grantEntitlement: boolean;
+  /** The owner whose verified signup activates the credit account. */
+  actorId: string;
+  /** Launch credits posted once when the credit account is opened. */
+  freeGrant: number;
 }
 
 export async function provisionStandaloneSourceForOrganization(
@@ -60,7 +64,10 @@ export async function provisionStandaloneSourceForOrganization(
     .where(eq(organizations.id, orgId))
     .for('update');
   if (!organization) throw new Error('Standalone organization was not found');
-  await ensurePendingCreditAccount(tx, orgId);
+  await ensureActiveCreditAccount(tx, orgId, {
+    actorId: options.actorId,
+    freeGrant: options.freeGrant,
+  });
   const sourceIdentity = buildStandaloneSourceIdentity(orgId);
   const now = new Date().toISOString();
   const entitlement = options.grantEntitlement
@@ -94,9 +101,8 @@ export async function provisionStandaloneSourceForOrganization(
       // them NULL gave every self-serve standalone source `includedLimit: 0`
       // and blocked its sends with `billing_not_active`.
       //
-      // Under credit billing that grant is exactly what staff approval is for,
-      // so the columns stay NULL here and the approval transaction writes them
-      // together with the launch grant.
+      // Under credit billing the prepaid launch grant replaces that plan, so
+      // the columns stay NULL there.
       ...entitlement,
     })
     .onConflictDoNothing({
@@ -225,10 +231,12 @@ export class StandaloneOrganizationProvisioningRepository {
           set: { role: 'owner' },
         });
 
+      const creditBilling = readStandaloneCreditBillingConfig(this.config);
       const { integration, sourceCreated } =
         await provisionStandaloneSourceForOrganization(tx, organization.id, {
-          grantEntitlement: !readStandaloneCreditBillingConfig(this.config)
-            .enabled,
+          grantEntitlement: !creditBilling.enabled,
+          actorId: userId,
+          freeGrant: creditBilling.freeGrant,
         });
 
       return {

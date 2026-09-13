@@ -71,7 +71,7 @@ export type PurchaseDenialCode =
   | typeof BILLING_ERROR_CODES.disabled
   | typeof BILLING_ERROR_CODES.sourceUnsupported
   | typeof BILLING_ERROR_CODES.roleRequired
-  | typeof BILLING_ERROR_CODES.approvalRequired
+  | typeof BILLING_ERROR_CODES.accountNotProvisioned
   | typeof BILLING_ERROR_CODES.accountSuspended;
 
 /**
@@ -92,8 +92,7 @@ export function purchaseDenial(input: {
     return BILLING_ERROR_CODES.sourceUnsupported;
   if (!input.role || !canWriteOrganization(input.role))
     return BILLING_ERROR_CODES.roleRequired;
-  if (!input.summary || input.summary.status === 'pending_approval')
-    return BILLING_ERROR_CODES.approvalRequired;
+  if (!input.summary) return BILLING_ERROR_CODES.accountNotProvisioned;
   if (input.summary.status === 'suspended')
     return BILLING_ERROR_CODES.accountSuspended;
   return null;

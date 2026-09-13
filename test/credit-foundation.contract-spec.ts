@@ -866,31 +866,67 @@ describe('US-04.5-01 disposable PostgreSQL foundation', () => {
       ).rejects.toThrow();
     }));
 
-  it('matches Drizzle columns, unique constraints, checks, and foreign keys to the migration', async () => {
-    for (const table of [
-      schema.creditAccounts,
-      schema.creditReservations,
-      schema.creditLedgerEntries,
-      schema.paymentPurchases,
-      schema.paymentProviderEvents,
-    ]) {
-      const configuration = getTableConfig(table);
-      const columns =
-        await client`SELECT column_name FROM information_schema.columns WHERE table_schema = ${namespace} AND table_name = ${configuration.name}`;
-      expect(
-        columns.map((column) => String(column.column_name)).sort(),
-      ).toEqual(configuration.columns.map((column) => column.name).sort());
-      const constraints =
-        await client`SELECT conname FROM pg_constraint WHERE conrelid = ${`${namespace}.${configuration.name}`}::regclass`;
-      const names = constraints.map((constraint) => String(constraint.conname));
-      for (const constraint of configuration.uniqueConstraints)
-        expect(names).toContain(constraint.name);
-      for (const constraint of configuration.checks)
-        expect(names).toContain(constraint.name);
-      for (const constraint of configuration.foreignKeys)
-        expect(names).toContain(constraint.getName());
-    }
-  });
+  it('matches Drizzle columns, unique constraints, checks, and foreign keys to the migrations', async () =>
+    isolated(async (tx) => {
+      // 0035 removes the approval shape 0032 created. It reads ownership and
+      // billing history, which this suite otherwise has no use for.
+      await tx.execute(
+        sql.raw(`
+          CREATE TABLE memberships (org_id uuid NOT NULL, user_id uuid NOT NULL, role text DEFAULT 'owner');
+          CREATE TABLE billing_free_plan_claims (org_id uuid NOT NULL, platform_type text NOT NULL);
+        `),
+      );
+      await tx.execute(
+        sql`INSERT INTO memberships (org_id, user_id) VALUES (${orgId}, ${randomUUID()}), (${otherOrgId}, ${randomUUID()})`,
+      );
+      for (const statement of readFileSync(
+        resolve(__dirname, '../drizzle/0035_standalone_auto_activation.sql'),
+        'utf8',
+      )
+        .replaceAll('"public"', `"${namespace}"`)
+        .split('--> statement-breakpoint')
+        .map((part) => part.trim())
+        .filter(Boolean))
+        await tx.execute(sql.raw(statement));
+
+      for (const table of [
+        schema.creditAccounts,
+        schema.creditReservations,
+        schema.creditLedgerEntries,
+        schema.paymentPurchases,
+        schema.paymentProviderEvents,
+      ]) {
+        const configuration = getTableConfig(table);
+        const columns = await tx.execute(
+          sql`SELECT column_name FROM information_schema.columns WHERE table_schema = ${namespace} AND table_name = ${configuration.name}`,
+        );
+        expect(
+          columns.map((column) => String(column.column_name)).sort(),
+        ).toEqual(configuration.columns.map((column) => column.name).sort());
+        const constraints = await tx.execute(
+          sql`SELECT conname FROM pg_constraint WHERE conrelid = ${`${namespace}.${configuration.name}`}::regclass`,
+        );
+        const names = constraints.map((constraint) =>
+          String(constraint.conname),
+        );
+        for (const constraint of configuration.uniqueConstraints)
+          expect(names).toContain(constraint.name);
+        for (const constraint of configuration.checks)
+          expect(names).toContain(constraint.name);
+        for (const constraint of configuration.foreignKeys)
+          expect(names).toContain(constraint.getName());
+      }
+      const [range] = await tx.execute(
+        sql.raw(
+          `SELECT enum_range(NULL::"${namespace}".credit_account_status)::text AS range`,
+        ),
+      );
+      expect(range).toEqual({ range: '{active,suspended}' });
+      expect(schema.creditAccountStatus.enumValues).toEqual([
+        'active',
+        'suspended',
+      ]);
+    }));
 
   it('keeps every safe financial read scoped to the authenticated organization', async () =>
     isolated(async (tx) => {
@@ -1008,9 +1044,10 @@ describe('US-04.5-01 disposable PostgreSQL foundation', () => {
   it('serializes concurrent account postings and rejects competing stale versions', async () => {
     const concurrentOrg = randomUUID();
     await client`INSERT INTO organizations VALUES (${concurrentOrg})`;
-    await db.transaction((tx) =>
-      credit.ensurePendingAccount(tx, concurrentOrg),
-    );
+    await db
+      .insert(schema.creditAccounts)
+      .values({ orgId: concurrentOrg })
+      .onConflictDoNothing();
     await Promise.all(
       Array.from({ length: 8 }, (_, index) =>
         db.transaction(async (tx) => {
