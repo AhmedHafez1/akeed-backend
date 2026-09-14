@@ -11,7 +11,9 @@ import { TokenValidatorService } from './token-validator.service';
 const SHOPIFY_SECRET = 'shopify-test-secret';
 const SHOPIFY_API_KEY = 'shopify-test-key';
 
-function createShopifyToken(): string {
+function createShopifyToken(
+  claims: { nbf?: number; exp?: number } = {},
+): string {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString(
     'base64url',
@@ -22,8 +24,8 @@ function createShopifyToken(): string {
       dest: 'https://test.myshopify.com',
       aud: SHOPIFY_API_KEY,
       sub: 'merchant-1',
-      exp: now + 300,
-      nbf: now - 10,
+      exp: claims.exp ?? now + 300,
+      nbf: claims.nbf ?? now - 10,
       iat: now - 10,
       jti: 'jwt-1',
       sid: 'session-1',
@@ -134,6 +136,42 @@ describe('TokenValidatorService Shopify installation state', () => {
       source: 'shopify',
       shop: 'test.myshopify.com',
     });
+  });
+});
+
+describe('TokenValidatorService Shopify token clock skew', () => {
+  const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+  it('accepts a token whose nbf is slightly ahead of the server clock', async () => {
+    const { service } = createService(true);
+
+    await expect(
+      service.validateToken(createShopifyToken({ nbf: nowSeconds() + 2 })),
+    ).resolves.toMatchObject({ source: 'shopify' });
+  });
+
+  it('rejects a token whose nbf is far in the future', async () => {
+    const { service } = createService(true);
+
+    await expect(
+      service.validateToken(createShopifyToken({ nbf: nowSeconds() + 60 })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts a token that expired within the tolerance', async () => {
+    const { service } = createService(true);
+
+    await expect(
+      service.validateToken(createShopifyToken({ exp: nowSeconds() - 2 })),
+    ).resolves.toMatchObject({ source: 'shopify' });
+  });
+
+  it('rejects a token that expired beyond the tolerance', async () => {
+    const { service } = createService(true);
+
+    await expect(
+      service.validateToken(createShopifyToken({ exp: nowSeconds() - 60 })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
 

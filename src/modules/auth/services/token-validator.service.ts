@@ -45,6 +45,13 @@ interface ShopifySessionPayload {
 }
 
 /**
+ * Shopify stamps `nbf`/`exp` with its own clock, which is routinely a second or
+ * two ahead of ours. Without leeway every freshly minted token is rejected.
+ * Matches the tolerance used by @shopify/shopify-api.
+ */
+const SHOPIFY_JWT_CLOCK_TOLERANCE_SECONDS = 10;
+
+/**
  * A failed membership or integration lookup says nothing about the token. If it
  * became a 401, the standalone frontend would send a signed-in user back to
  * /login whenever the database was briefly unreachable (for example, when the
@@ -436,7 +443,7 @@ export class TokenValidatorService {
 
     // Verify expiration
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp < now) {
+    if (payload.exp + SHOPIFY_JWT_CLOCK_TOLERANCE_SECONDS < now) {
       this.logger.error(
         buildBackendLog(TokenValidatorService.name, {
           action: 'token-verify-shopify-jwt-claims',
@@ -444,13 +451,14 @@ export class TokenValidatorService {
           reason: 'token_expired',
           exp: payload.exp,
           now,
+          clockToleranceSeconds: SHOPIFY_JWT_CLOCK_TOLERANCE_SECONDS,
         }),
       );
       throw new Error('JWT expired');
     }
 
     // Verify not before
-    if (payload.nbf > now) {
+    if (payload.nbf - SHOPIFY_JWT_CLOCK_TOLERANCE_SECONDS > now) {
       this.logger.error(
         buildBackendLog(TokenValidatorService.name, {
           action: 'token-verify-shopify-jwt-claims',
@@ -458,6 +466,7 @@ export class TokenValidatorService {
           reason: 'token_not_yet_valid',
           nbf: payload.nbf,
           now,
+          clockToleranceSeconds: SHOPIFY_JWT_CLOCK_TOLERANCE_SECONDS,
         }),
       );
       throw new Error('JWT not yet valid');
