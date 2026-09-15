@@ -239,6 +239,14 @@ export class WhatsAppWebhookService {
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
 
+      const failureInfo =
+        typedStatus === 'failed' && statusObj.errors?.[0]
+          ? {
+              code: statusObj.errors[0].code,
+              title: statusObj.errors[0].title,
+            }
+          : undefined;
+
       const dispatch =
         await this.messageDispatches.findByProviderMessageId(wamid);
       let creditProjection: Awaited<
@@ -254,6 +262,7 @@ export class WhatsAppWebhookService {
           dispatch.id,
           typedStatus as 'delivered' | 'read' | 'failed',
           occurredAt,
+          ...(failureInfo ? ([failureInfo] as const) : []),
         );
       }
       // A follow-up receipt is evidence like any other: if the reminder was
@@ -270,11 +279,13 @@ export class WhatsAppWebhookService {
               typedStatus,
               undefined,
               statusObj.timestamp,
+              ...(failureInfo ? ([undefined, failureInfo] as const) : []),
             )
           : await this.verificationsRepo.updateStatusByWamid(
               wamid,
               typedStatus,
               statusObj.timestamp,
+              ...(failureInfo ? ([failureInfo] as const) : []),
             ));
 
       if (rows.length > 0) {
@@ -285,6 +296,12 @@ export class WhatsAppWebhookService {
             wamid,
             status: typedStatus,
             ...(dispatch ? { messageKind: dispatch.kind } : {}),
+            ...(failureInfo
+              ? {
+                  providerErrorCode: failureInfo.code ?? 'unknown',
+                  providerErrorTitle: failureInfo.title ?? 'unknown',
+                }
+              : {}),
           }),
         );
         if (

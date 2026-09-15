@@ -295,11 +295,17 @@ export class VerificationsRepository {
     waMessageId?: string,
     eventTimestamp?: string,
     extraUpdates?: Record<string, unknown>,
+    failureInfo?: { code?: number | string; title?: string },
   ) {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
 
-    const setPayload = this.buildLifecyclePayload(status, eventTs, now);
+    const setPayload = this.buildLifecyclePayload(
+      status,
+      eventTs,
+      now,
+      failureInfo,
+    );
     if (waMessageId !== undefined) {
       setPayload.waMessageId = waMessageId;
     }
@@ -336,11 +342,17 @@ export class VerificationsRepository {
     wamid: string,
     status: VerificationStatus,
     eventTimestamp?: string,
+    failureInfo?: { code?: number | string; title?: string },
   ) {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
 
-    const setPayload = this.buildLifecyclePayload(status, eventTs, now);
+    const setPayload = this.buildLifecyclePayload(
+      status,
+      eventTs,
+      now,
+      failureInfo,
+    );
 
     return await this.db
       .update(verifications)
@@ -518,6 +530,7 @@ export class VerificationsRepository {
     status: VerificationStatus,
     eventTs: string,
     now: string,
+    failureInfo?: { code?: number | string; title?: string },
   ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       status: status as typeof verifications.$inferSelect.status,
@@ -554,6 +567,25 @@ export class VerificationsRepository {
       case 'no_reply':
         payload.noReplyAt = eventTs;
         break;
+
+      case 'failed': {
+        // Mirrors the reason the prepaid-credit projection already writes
+        // (verification-message-dispatches.repository.ts) so both accounting
+        // modes land on the same, already-retryable taxonomy entry instead of
+        // leaving `metadata.reason` NULL for WhatsApp-reported delivery
+        // failures. The provider's own code/title ride along for triage.
+        const metadataPatch: Record<string, unknown> = {
+          reason: 'provider_delivery_failed',
+        };
+        if (failureInfo?.code !== undefined) {
+          metadataPatch.providerErrorCode = failureInfo.code;
+        }
+        if (failureInfo?.title) {
+          metadataPatch.providerErrorTitle = failureInfo.title;
+        }
+        payload.metadata = sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(metadataPatch)}::jsonb`;
+        break;
+      }
 
       default:
         break;

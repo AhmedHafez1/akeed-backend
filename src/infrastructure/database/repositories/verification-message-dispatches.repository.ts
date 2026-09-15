@@ -614,6 +614,7 @@ export class VerificationMessageDispatchesRepository {
     dispatchId: string,
     status: 'delivered' | 'read' | 'failed',
     occurredAt: string,
+    failureInfo?: { code?: number | string; title?: string },
   ): Promise<
     { verificationRows: (typeof verifications.$inferSelect)[] } | undefined
   > {
@@ -694,7 +695,17 @@ export class VerificationMessageDispatchesRepository {
                   : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
             ...(status === 'failed'
               ? {
-                  metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || '{"reason":"provider_delivery_failed"}'::jsonb`,
+                  metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+                    {
+                      reason: 'provider_delivery_failed',
+                      ...(failureInfo?.code !== undefined
+                        ? { providerErrorCode: failureInfo.code }
+                        : {}),
+                      ...(failureInfo?.title
+                        ? { providerErrorTitle: failureInfo.title }
+                        : {}),
+                    },
+                  )}::jsonb`,
                 }
               : status === 'read'
                 ? {

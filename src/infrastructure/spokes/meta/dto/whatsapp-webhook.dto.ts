@@ -72,6 +72,17 @@ export class WhatsAppMessageDto {
   text?: WhatsAppTextDto;
 }
 
+export class WhatsAppStatusErrorDto {
+  /** Numeric in Meta's payload; left untyped here so validation never rejects
+   * an otherwise-valid status webhook over this field's shape. */
+  @IsOptional()
+  code?: number | string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+}
+
 export class WhatsAppStatusDto {
   @IsOptional()
   @IsString()
@@ -84,6 +95,13 @@ export class WhatsAppStatusDto {
   @IsOptional()
   @IsString()
   timestamp?: string;
+
+  /** Present when `status` is `failed`; explains why delivery did not happen. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WhatsAppStatusErrorDto)
+  errors?: WhatsAppStatusErrorDto[];
 }
 
 export class WhatsAppChangeValueDto {
