@@ -44,7 +44,9 @@ export class AdminFunnelService {
 
   async getFunnel(query: AdminFunnelQueryDto) {
     const now = new Date();
-    const allRows = await this.repository.findStores();
+    const allRows = await this.repository.findStores({
+      platforms: ['shopify'],
+    });
     const rows = allRows.filter((row) => this.matches(row, query));
     const installedCount = rows.length;
     const stages = STAGES.map((definition, index) => {

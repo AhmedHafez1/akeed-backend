@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AdminHealthStatus } from './admin.types';
+import type { BalanceState } from './standalone-billing-operations.types';
 
 export interface AdminHealthFacts {
   onboardingStatus: string;
@@ -16,6 +17,7 @@ export interface AdminHealthFacts {
   autoEnabled: boolean;
   billingStatus: string | null;
   lastActivityAt: string | null;
+  creditBalanceState?: BalanceState | null;
 }
 
 @Injectable()
@@ -29,6 +31,7 @@ export class AdminHealthRuleService {
     status: AdminHealthStatus;
     top_signal: string | null;
     signal_count: number;
+    signals: string[];
   } {
     const attention: string[] = [];
     const critical: string[] = [];
@@ -105,6 +108,15 @@ export class AdminHealthRuleService {
       critical.push('subscription_blocked');
     }
 
+    if (
+      facts.creditBalanceState === 'zero' ||
+      facts.creditBalanceState === 'debt'
+    ) {
+      critical.push('credits_exhausted');
+    } else if (facts.creditBalanceState === 'low') {
+      attention.push('credits_low');
+    }
+
     if (facts.firstResolvedAt && facts.lastActivityAt) {
       const idleHours = this.ageHours(facts.lastActivityAt, now);
       if (
@@ -128,6 +140,7 @@ export class AdminHealthRuleService {
             : 'healthy',
       top_signal: signals[0] ?? null,
       signal_count: signals.length,
+      signals,
     };
   }
 

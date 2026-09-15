@@ -1,4 +1,6 @@
 import {
+  IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -7,7 +9,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 const PLANS = ['starter', 'basic', 'pro', 'business'] as const;
 const LIFECYCLES = [
@@ -19,6 +21,25 @@ const LIFECYCLES = [
 ] as const;
 const HEALTH = ['healthy', 'attention_required', 'critical'] as const;
 const ONBOARDING = ['pending', 'completed'] as const;
+export const PLATFORMS = [
+  'shopify',
+  'salla',
+  'zid',
+  'woocommerce',
+  'standalone',
+  'easyorders',
+] as const;
+export const VERIFICATION_STATUSES = [
+  'pending',
+  'sent',
+  'delivered',
+  'read',
+  'confirmed',
+  'canceled',
+  'expired',
+  'failed',
+  'no_reply',
+] as const;
 const SORTS = [
   'installed_at',
   'store_name',
@@ -36,6 +57,10 @@ export class AdminStoresQueryDto {
   @IsOptional()
   @IsIn(PLANS)
   plan?: (typeof PLANS)[number];
+
+  @IsOptional()
+  @IsIn(PLATFORMS)
+  platform?: (typeof PLATFORMS)[number];
 
   @IsOptional()
   @IsIn(LIFECYCLES)
@@ -76,6 +101,39 @@ export class AdminStoresQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   direction?: 'asc' | 'desc';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
+export class AdminStoreVerificationsQueryDto {
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value
+          .split(',')
+          .map((status) => status.trim().toLowerCase())
+          .filter(Boolean)
+      : value,
+  )
+  @IsArray()
+  @IsIn(VERIFICATION_STATUSES, { each: true })
+  status?: (typeof VERIFICATION_STATUSES)[number][];
+
+  @IsOptional()
+  @Transform(
+    ({ value }: { value: unknown }) => value === true || value === 'true',
+  )
+  @IsBoolean()
+  include_test?: boolean;
 
   @IsOptional()
   @Type(() => Number)

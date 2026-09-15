@@ -33,6 +33,14 @@ function row(overrides: Partial<AdminStoreQueryRow> = {}): AdminStoreQueryRow {
     failed_24h: 0,
     total_24h: 1,
     failed_webhooks_1h: 0,
+    platform_type: 'shopify',
+    org_id: 'org-1',
+    has_lifecycle: true,
+    derived_first_eligible_order_at: null,
+    derived_first_resolved_at: null,
+    credit_account_status: null,
+    credit_posted_balance: null,
+    credit_held_credits: null,
     ...overrides,
   };
 }
@@ -61,6 +69,9 @@ describe('AdminFunnelService', () => {
 
     const result = await service.getFunnel({ country: 'EG' });
 
+    expect(repository.findStores).toHaveBeenCalledWith({
+      platforms: ['shopify'],
+    });
     expect(result.cohort.installed_count).toBe(2);
     expect(result.stages[1]).toMatchObject({
       stage: 'onboarding_completed',

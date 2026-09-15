@@ -29,7 +29,27 @@ describe('AdminHealthRuleService', () => {
       status: 'healthy',
       top_signal: null,
       signal_count: 0,
+      signals: [],
     });
+  });
+
+  it('flags exhausted and low prepaid credit balances', () => {
+    expect(
+      service.evaluate({ ...baseFacts, creditBalanceState: 'debt' }, now),
+    ).toMatchObject({ status: 'critical', top_signal: 'credits_exhausted' });
+    expect(
+      service.evaluate({ ...baseFacts, creditBalanceState: 'zero' }, now)
+        .status,
+    ).toBe('critical');
+    expect(
+      service.evaluate({ ...baseFacts, creditBalanceState: 'low' }, now),
+    ).toMatchObject({
+      status: 'attention_required',
+      signals: ['credits_low'],
+    });
+    expect(
+      service.evaluate({ ...baseFacts, creditBalanceState: 'ok' }, now).status,
+    ).toBe('healthy');
   });
 
   it('resolves any critical signal to critical', () => {

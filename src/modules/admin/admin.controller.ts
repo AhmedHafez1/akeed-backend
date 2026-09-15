@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -16,6 +17,7 @@ import { AdminStoresService } from './admin-stores.service';
 import type { RequestWithAdmin } from './admin.types';
 import {
   AdminFunnelQueryDto,
+  AdminStoreVerificationsQueryDto,
   AdminStoresQueryDto,
 } from './dto/admin-query.dto';
 import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
@@ -46,6 +48,21 @@ export class AdminController {
   @Header('Cache-Control', 'private, no-store')
   getStores(@Query() query: AdminStoresQueryDto) {
     return this.storesService.getStores(query);
+  }
+
+  @Get('stores/:integrationId')
+  @Header('Cache-Control', 'private, no-store')
+  getStore(@Param('integrationId', new ParseUUIDPipe()) integrationId: string) {
+    return this.storesService.getStore(integrationId);
+  }
+
+  @Get('stores/:integrationId/verifications')
+  @Header('Cache-Control', 'private, no-store')
+  getStoreVerifications(
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+    @Query() query: AdminStoreVerificationsQueryDto,
+  ) {
+    return this.storesService.getStoreVerifications(integrationId, query);
   }
 
   @Get('funnel')
