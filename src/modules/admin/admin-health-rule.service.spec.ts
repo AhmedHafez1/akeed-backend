@@ -1,71 +1,112 @@
-import type { ConfigService } from '@nestjs/config';
-import { AdminHealthRuleService } from './admin-health-rule.service';
+import { ConfigService } from '@nestjs/config';
+import { sql } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import {
+  AdminHealthRuleService,
+  type AdminHealthColumns,
+} from './admin-health-rule.service';
 
-const baseFacts = {
-  onboardingStatus: 'completed',
-  installedAt: '2026-08-01T00:00:00Z',
-  onboardingCompletedAt: '2026-08-01T01:00:00Z',
-  firstEligibleOrderAt: '2026-08-01T02:00:00Z',
-  firstResolvedAt: '2026-08-01T03:00:00Z',
-  uninstalledAt: null,
-  usagePercent: 20,
-  failed24h: 0,
-  total24h: 10,
-  failedWebhooks1h: 0,
-  autoEnabled: true,
-  billingStatus: 'active',
-  lastActivityAt: '2026-08-25T00:00:00Z',
+const columns: AdminHealthColumns = {
+  onboardingStatus: sql`onboarding_status`,
+  installedAt: sql`installed_at`,
+  onboardingCompletedAt: sql`onboarding_completed_at`,
+  firstEligibleOrderAt: sql`first_eligible_order_at`,
+  firstResolvedAt: sql`first_resolved_at`,
+  uninstalledAt: sql`uninstalled_at`,
+  usagePercent: sql`usage_percent`,
+  failed24h: sql`failed_24h`,
+  total24h: sql`total_24h`,
+  failedWebhooks1h: sql`failed_webhooks_1h`,
+  autoEnabled: sql`auto_confirmation_enabled`,
+  billingStatus: sql`subscription_status`,
+  lastActivityAt: sql`last_activity_at`,
+  creditBalanceState: sql`credit_balance_state`,
 };
 
-describe('AdminHealthRuleService', () => {
-  const config = { get: jest.fn().mockReturnValue(undefined) };
-  const service = new AdminHealthRuleService(
-    config as unknown as ConfigService,
+function render(env: Record<string, string> = {}) {
+  const service = new AdminHealthRuleService(new ConfigService(env));
+  const { critical, attention } = service.signalsSql(columns);
+  const dialect = new PgDialect();
+  return {
+    critical: dialect.sqlToQuery(critical),
+    attention: dialect.sqlToQuery(attention),
+  };
+}
+
+function signalOrder(params: unknown[]) {
+  const known = new Set([
+    'store_uninstalled',
+    'onboarding_incomplete',
+    'no_eligible_order',
+    'usage_critical',
+    'usage_attention',
+    'failed_verification_rate',
+    'webhook_failures',
+    'auto_confirmation_disabled',
+    'subscription_blocked',
+    'credits_exhausted',
+    'credits_low',
+    'no_recent_activity',
+  ]);
+  return params.filter(
+    (param): param is string => typeof param === 'string' && known.has(param),
   );
-  const now = new Date('2026-08-26T00:00:00Z');
+}
 
-  it('returns healthy when no signal crosses a threshold', () => {
-    expect(service.evaluate(baseFacts, now)).toEqual({
-      status: 'healthy',
-      top_signal: null,
-      signal_count: 0,
-      signals: [],
+describe('AdminHealthRuleService', () => {
+  it('lists critical and attention signals in rule order', () => {
+    const { critical, attention } = render();
+
+    expect(signalOrder(critical.params)).toEqual([
+      'onboarding_incomplete',
+      'no_eligible_order',
+      'usage_critical',
+      'failed_verification_rate',
+      'webhook_failures',
+      'subscription_blocked',
+      'credits_exhausted',
+      'no_recent_activity',
+    ]);
+    expect(signalOrder(attention.params)).toEqual([
+      'store_uninstalled',
+      'onboarding_incomplete',
+      'no_eligible_order',
+      'usage_attention',
+      'failed_verification_rate',
+      'webhook_failures',
+      'auto_confirmation_disabled',
+      'credits_low',
+      'no_recent_activity',
+    ]);
+  });
+
+  it('uses default thresholds when config is absent', () => {
+    const { critical, attention } = render();
+
+    expect(critical.params).toEqual(
+      expect.arrayContaining([72, 336, 95, 20, 40, 3]),
+    );
+    expect(attention.params).toEqual(
+      expect.arrayContaining([24, 168, 80, 10, 20, 1]),
+    );
+  });
+
+  it('binds configured thresholds as parameters, never as SQL text', () => {
+    const { critical } = render({
+      ADMIN_HEALTH_USAGE_CRITICAL: '90',
+      ADMIN_HEALTH_ONBOARDING_CRITICAL_HOURS: 'not-a-number',
     });
+
+    expect(critical.params).toContain(90);
+    expect(critical.params).not.toContain(95);
+    expect(critical.params).toContain(72);
+    expect(critical.sql).not.toContain('90');
   });
 
-  it('flags exhausted and low prepaid credit balances', () => {
-    expect(
-      service.evaluate({ ...baseFacts, creditBalanceState: 'debt' }, now),
-    ).toMatchObject({ status: 'critical', top_signal: 'credits_exhausted' });
-    expect(
-      service.evaluate({ ...baseFacts, creditBalanceState: 'zero' }, now)
-        .status,
-    ).toBe('critical');
-    expect(
-      service.evaluate({ ...baseFacts, creditBalanceState: 'low' }, now),
-    ).toMatchObject({
-      status: 'attention_required',
-      signals: ['credits_low'],
-    });
-    expect(
-      service.evaluate({ ...baseFacts, creditBalanceState: 'ok' }, now).status,
-    ).toBe('healthy');
-  });
+  it('keeps attention signals exclusive of their critical level', () => {
+    const { attention } = render();
 
-  it('resolves any critical signal to critical', () => {
-    expect(
-      service.evaluate({ ...baseFacts, usagePercent: 96 }, now),
-    ).toMatchObject({ status: 'critical', top_signal: 'usage_critical' });
-  });
-
-  it('honors failed-verification minimum sample sizes', () => {
-    expect(
-      service.evaluate({ ...baseFacts, failed24h: 9, total24h: 19 }, now)
-        .status,
-    ).toBe('attention_required');
-    expect(
-      service.evaluate({ ...baseFacts, failed24h: 9, total24h: 20 }, now)
-        .status,
-    ).toBe('critical');
+    expect(attention.sql).toContain('AND NOT (');
+    expect(attention.sql).toMatch(/^array_remove\(ARRAY\[/);
   });
 });

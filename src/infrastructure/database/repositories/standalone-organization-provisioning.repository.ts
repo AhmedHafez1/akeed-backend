@@ -92,7 +92,8 @@ export async function provisionStandaloneSourceForOrganization(
       accessToken: null,
       webhookSecret: null,
       isActive: true,
-      isAutoVerifyEnabled: false,
+      isAutoVerifyEnabled: true,
+      followUpEnabled: false,
       assumeCodWhenPaymentMissing: false,
       onboardingStatus: 'pending',
       // Standalone tenants have no external billing to settle, but

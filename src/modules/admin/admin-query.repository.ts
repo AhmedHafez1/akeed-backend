@@ -3,6 +3,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
+import type { AdminHealthColumns } from './admin-health-rule.service';
 
 export interface AdminStoreQueryRow {
   [key: string]: unknown;
@@ -46,7 +47,25 @@ export interface AdminStoreQueryRow {
   credit_held_credits: number | string | null;
 }
 
-export interface AdminStoreDetailQueryRow extends AdminStoreQueryRow {
+export interface AdminStoreViewRow extends AdminStoreQueryRow {
+  is_credit: boolean;
+  usage_limit_effective: number | string;
+  usage_percent: number | string;
+  credit_available: number | string;
+  credit_debt: number | string;
+  credit_balance_state: 'ok' | 'low' | 'zero' | 'debt' | null;
+  first_eligible_order_at_effective: string | null;
+  first_resolved_at_effective: string | null;
+  first_eligible_estimated: boolean;
+  first_resolved_estimated: boolean;
+  data_quality_estimated: boolean;
+  lifecycle_status: string;
+  critical_signals: string[];
+  attention_signals: string[];
+  health_status: string;
+}
+
+export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
   owner_email: string | null;
   default_language: string;
   follow_up_enabled: boolean;
@@ -105,6 +124,91 @@ export interface AdminStoreVerificationsFilter {
   limit: number;
 }
 
+/**
+ * Business inputs the derived store columns need. They come from config and
+ * plan definitions, so the service supplies them.
+ */
+export interface AdminStoreDerivation {
+  lowBalanceThreshold: number;
+  planLimits: Record<string, number>;
+  healthSignals: (columns: AdminHealthColumns) => {
+    critical: SQL;
+    attention: SQL;
+  };
+}
+
+export type AdminStoreSortKey =
+  | 'installed_at'
+  | 'store_name'
+  | 'last_activity'
+  | 'usage_percent'
+  | 'activation_date'
+  | 'health';
+
+export interface AdminStoreListFilter {
+  search?: string;
+  platform?: string;
+  plan?: string;
+  lifecycleStatus?: string;
+  onboardingStatus?: string;
+  healthStatus?: string;
+  country?: string;
+  installedFrom?: string;
+  installedTo?: string;
+  lastActivityFrom?: string;
+  lastActivityTo?: string;
+}
+
+export interface AdminStoreListPage {
+  sort: AdminStoreSortKey;
+  direction: 'asc' | 'desc';
+  limit: number;
+  cursor?: { value: string; id: string };
+}
+
+export interface AdminStoreSummaryRow {
+  currently_installed: number;
+  onboarding: number;
+  activated: number;
+  inactive: number;
+  uninstalled: number;
+  healthy: number;
+  attention_required: number;
+  critical: number;
+}
+
+export type AdminStorePageRow = AdminStoreViewRow & { sort_value: string };
+
+const SORT_EXPRESSIONS: Record<
+  AdminStoreSortKey,
+  { expression: SQL; cast: (value: string) => SQL }
+> = {
+  installed_at: {
+    expression: sql`COALESCE(installed_at, '-infinity'::timestamptz)`,
+    cast: (value) => sql`${value}::timestamptz`,
+  },
+  store_name: {
+    expression: sql`(lower(COALESCE(store_name, organization_name)) COLLATE "C")`,
+    cast: (value) => sql`(${value}::text COLLATE "C")`,
+  },
+  last_activity: {
+    expression: sql`COALESCE(last_activity_at, '-infinity'::timestamptz)`,
+    cast: (value) => sql`${value}::timestamptz`,
+  },
+  usage_percent: {
+    expression: sql`usage_percent`,
+    cast: (value) => sql`${value}::int`,
+  },
+  activation_date: {
+    expression: sql`COALESCE(first_resolved_at_effective, '-infinity'::timestamptz)`,
+    cast: (value) => sql`${value}::timestamptz`,
+  },
+  health: {
+    expression: sql`(CASE health_status WHEN 'critical' THEN 2 WHEN 'attention_required' THEN 1 ELSE 0 END)`,
+    cast: (value) => sql`${value}::int`,
+  },
+};
+
 @Injectable()
 export class AdminQueryRepository {
   constructor(
@@ -129,11 +233,83 @@ export class AdminQueryRepository {
     return Array.from(result);
   }
 
+  /**
+   * One page of the store list, filtered, sorted and keyset-paginated in SQL,
+   * plus the summary counts over every row matching the filters.
+   */
+  async findStorePage(
+    filter: AdminStoreListFilter,
+    page: AdminStoreListPage,
+    derivation: AdminStoreDerivation,
+  ): Promise<{ summary: AdminStoreSummaryRow; rows: AdminStorePageRow[] }> {
+    const sort = SORT_EXPRESSIONS[page.sort];
+    const direction = page.direction === 'asc' ? sql`ASC` : sql`DESC`;
+    const comparator = page.direction === 'asc' ? sql`>` : sql`<`;
+    const cursor = page.cursor
+      ? sql`WHERE (${sort.expression}, integration_id) ${comparator} (${sort.cast(page.cursor.value)}, ${page.cursor.id}::uuid)`
+      : sql``;
+
+    const result = await this.db.execute<
+      AdminStoreSummaryRow & Partial<AdminStorePageRow>
+    >(sql`
+      WITH ${this.storePipeline(sql``, sql``, derivation)},
+      filtered AS (
+        SELECT * FROM stores WHERE ${this.listConditions(filter)}
+      ),
+      summary AS (
+        SELECT
+          COUNT(*) FILTER (WHERE lifecycle_status <> 'uninstalled')::int AS currently_installed,
+          COUNT(*) FILTER (WHERE lifecycle_status = 'onboarding')::int AS onboarding,
+          COUNT(*) FILTER (WHERE lifecycle_status = 'active')::int AS activated,
+          COUNT(*) FILTER (WHERE lifecycle_status = 'inactive')::int AS inactive,
+          COUNT(*) FILTER (WHERE lifecycle_status = 'uninstalled')::int AS uninstalled,
+          COUNT(*) FILTER (WHERE health_status = 'healthy')::int AS healthy,
+          COUNT(*) FILTER (WHERE health_status = 'attention_required')::int AS attention_required,
+          COUNT(*) FILTER (WHERE health_status = 'critical')::int AS critical
+        FROM filtered
+      ),
+      page AS (
+        SELECT
+          filtered.*,
+          ${sort.expression} AS sort_key,
+          (${sort.expression})::text AS sort_value
+        FROM filtered
+        ${cursor}
+        ORDER BY ${sort.expression} ${direction}, integration_id ${direction}
+        LIMIT ${page.limit}
+      )
+      SELECT summary.*, page.*
+      FROM summary
+      LEFT JOIN page ON true
+      ORDER BY page.sort_key ${direction}, page.integration_id ${direction}
+    `);
+
+    const resultRows = Array.from(result);
+    const first = resultRows[0];
+    const summary: AdminStoreSummaryRow = {
+      currently_installed: Number(first?.currently_installed ?? 0),
+      onboarding: Number(first?.onboarding ?? 0),
+      activated: Number(first?.activated ?? 0),
+      inactive: Number(first?.inactive ?? 0),
+      uninstalled: Number(first?.uninstalled ?? 0),
+      healthy: Number(first?.healthy ?? 0),
+      attention_required: Number(first?.attention_required ?? 0),
+      critical: Number(first?.critical ?? 0),
+    };
+    const rows = resultRows.filter(
+      (row): row is AdminStoreSummaryRow & AdminStorePageRow =>
+        Boolean(row.integration_id),
+    );
+
+    return { summary, rows };
+  }
+
   async findStoreById(
     integrationId: string,
+    derivation: AdminStoreDerivation,
   ): Promise<AdminStoreDetailQueryRow | null> {
-    const result = await this.db.execute<AdminStoreDetailQueryRow>(
-      this.storeQuery(
+    const result = await this.db.execute<AdminStoreDetailQueryRow>(sql`
+      WITH ${this.storePipeline(
         sql`,
         (
           SELECT owner_user.email
@@ -156,8 +332,10 @@ export class AdminQueryRepository {
         i.billing_activated_at,
         i.created_at`,
         sql`WHERE i.id = ${integrationId}`,
-      ),
-    );
+        derivation,
+      )}
+      SELECT * FROM stores
+    `);
 
     return Array.from(result)[0] ?? null;
   }
@@ -241,6 +419,146 @@ export class AdminQueryRepository {
       rows: Array.from(rows),
       totalCount: Number(Array.from(counts)[0]?.total ?? 0),
     };
+  }
+
+  private listConditions(filter: AdminStoreListFilter): SQL {
+    const conditions: SQL[] = [sql`true`];
+    const search = filter.search?.trim().toLocaleLowerCase();
+    if (search) {
+      const pattern = `%${search.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+      conditions.push(sql`(
+        lower(COALESCE(store_name, organization_name)) LIKE ${pattern} ESCAPE '\\'
+        OR lower(CASE WHEN platform_type = 'standalone' THEN NULL ELSE shop_domain END) LIKE ${pattern} ESCAPE '\\'
+        OR lower(organization_name) LIKE ${pattern} ESCAPE '\\'
+      )`);
+    }
+    if (filter.platform)
+      conditions.push(sql`platform_type = ${filter.platform}`);
+    if (filter.plan) conditions.push(sql`plan = ${filter.plan}`);
+    if (filter.lifecycleStatus)
+      conditions.push(sql`lifecycle_status = ${filter.lifecycleStatus}`);
+    if (filter.onboardingStatus)
+      conditions.push(sql`onboarding_status = ${filter.onboardingStatus}`);
+    if (filter.healthStatus)
+      conditions.push(sql`health_status = ${filter.healthStatus}`);
+    if (filter.country)
+      conditions.push(
+        sql`upper(COALESCE(country_code, '')) = ${filter.country.toUpperCase()}`,
+      );
+    if (filter.installedFrom)
+      conditions.push(
+        sql`installed_at >= ${filter.installedFrom}::timestamptz`,
+      );
+    if (filter.installedTo)
+      conditions.push(sql`installed_at <= ${filter.installedTo}::timestamptz`);
+    if (filter.lastActivityFrom || filter.lastActivityTo)
+      conditions.push(sql`last_activity_at IS NOT NULL`);
+    if (filter.lastActivityFrom)
+      conditions.push(
+        sql`last_activity_at >= ${filter.lastActivityFrom}::timestamptz`,
+      );
+    if (filter.lastActivityTo)
+      conditions.push(
+        sql`last_activity_at <= ${filter.lastActivityTo}::timestamptz`,
+      );
+    return sql.join(conditions, sql` AND `);
+  }
+
+  /**
+   * CTEs ending in `stores`: the raw store row, then usage, credit and
+   * milestone fallbacks, then lifecycle and health. List and detail share it,
+   * so a store reads the same on both pages.
+   */
+  private storePipeline(
+    extraColumns: SQL,
+    where: SQL,
+    derivation: AdminStoreDerivation,
+  ): SQL {
+    const planLimit = sql`(CASE plan ${sql.join(
+      Object.entries(derivation.planLimits).map(
+        ([plan, limit]) => sql`WHEN ${plan} THEN ${limit}::int`,
+      ),
+      sql` `,
+    )} ELSE 0 END)`;
+    const available = sql`GREATEST(COALESCE(credit_posted_balance, 0) - COALESCE(credit_held_credits, 0), 0)`;
+    const signals = derivation.healthSignals({
+      onboardingStatus: sql`onboarding_status`,
+      installedAt: sql`installed_at`,
+      onboardingCompletedAt: sql`onboarding_completed_at`,
+      firstEligibleOrderAt: sql`first_eligible_order_at_effective`,
+      firstResolvedAt: sql`first_resolved_at_effective`,
+      uninstalledAt: sql`uninstalled_at`,
+      usagePercent: sql`(CASE WHEN is_credit THEN 0 ELSE usage_percent END)`,
+      failed24h: sql`failed_24h`,
+      total24h: sql`total_24h`,
+      failedWebhooks1h: sql`failed_webhooks_1h`,
+      autoEnabled: sql`auto_confirmation_enabled`,
+      billingStatus: sql`(CASE WHEN is_credit THEN NULL ELSE subscription_status END)`,
+      lastActivityAt: sql`last_activity_at`,
+      creditBalanceState: sql`credit_balance_state`,
+    });
+
+    return sql`
+      raw_stores AS (${this.storeQuery(extraColumns, where)}),
+      fallback_stores AS (
+        SELECT
+          raw_stores.*,
+          (platform_type = 'standalone' AND credit_account_status IS NOT NULL) AS is_credit,
+          COALESCE(NULLIF(usage_limit, 0), ${planLimit}) AS usage_limit_effective,
+          (NOT has_lifecycle AND platform_type <> 'shopify'
+            AND first_eligible_order_at IS NULL
+            AND derived_first_eligible_order_at IS NOT NULL) AS first_eligible_estimated,
+          (NOT has_lifecycle AND platform_type <> 'shopify'
+            AND first_resolved_at IS NULL
+            AND derived_first_resolved_at IS NOT NULL) AS first_resolved_estimated
+        FROM raw_stores
+      ),
+      measured_stores AS (
+        SELECT
+          fallback_stores.*,
+          (CASE WHEN first_eligible_estimated THEN derived_first_eligible_order_at ELSE first_eligible_order_at END) AS first_eligible_order_at_effective,
+          (CASE WHEN first_resolved_estimated THEN derived_first_resolved_at ELSE first_resolved_at END) AS first_resolved_at_effective,
+          (CASE WHEN usage_limit_effective > 0
+            THEN ROUND(usage_used::numeric * 100 / usage_limit_effective)::int
+            ELSE 0 END) AS usage_percent,
+          ${available} AS credit_available,
+          (CASE WHEN COALESCE(credit_posted_balance, 0) < 0 THEN -credit_posted_balance ELSE 0 END) AS credit_debt,
+          (CASE
+            WHEN NOT is_credit THEN NULL
+            WHEN COALESCE(credit_posted_balance, 0) < 0 THEN 'debt'
+            WHEN ${available} = 0 THEN 'zero'
+            WHEN ${available} <= ${derivation.lowBalanceThreshold}::int THEN 'low'
+            ELSE 'ok' END) AS credit_balance_state
+        FROM fallback_stores
+      ),
+      signaled_stores AS (
+        SELECT
+          measured_stores.*,
+          (CASE
+            WHEN uninstalled_at IS NOT NULL THEN 'uninstalled'
+            WHEN NOT is_active THEN 'inactive'
+            WHEN onboarding_status <> 'completed' THEN 'onboarding'
+            WHEN first_resolved_at_effective IS NOT NULL THEN 'active'
+            ELSE 'installed' END) AS lifecycle_status,
+          (first_eligible_estimated OR first_resolved_estimated OR EXISTS (
+            SELECT 1
+            FROM jsonb_each_text(COALESCE(provenance, '{}'::jsonb)) provenance_entry
+            WHERE provenance_entry.value LIKE 'estimated%'
+          )) AS data_quality_estimated,
+          ${signals.critical} AS critical_signals,
+          ${signals.attention} AS attention_signals
+        FROM measured_stores
+      ),
+      stores AS (
+        SELECT
+          signaled_stores.*,
+          (CASE
+            WHEN cardinality(critical_signals) > 0 THEN 'critical'
+            WHEN cardinality(attention_signals) > 0 THEN 'attention_required'
+            ELSE 'healthy' END) AS health_status
+        FROM signaled_stores
+      )
+    `;
   }
 
   private storeQuery(extraColumns: SQL, where: SQL): SQL {

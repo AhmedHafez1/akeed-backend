@@ -288,7 +288,8 @@ describe('standalone source provisioning PostgreSQL contract', () => {
       accessToken: null,
       webhookSecret: null,
       isActive: true,
-      isAutoVerifyEnabled: false,
+      isAutoVerifyEnabled: true,
+      followUpEnabled: false,
       assumeCodWhenPaymentMissing: false,
       onboardingStatus: 'pending',
     });

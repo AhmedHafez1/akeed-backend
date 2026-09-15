@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   parseStandaloneCreditBillingConfig,
@@ -6,18 +6,22 @@ import {
 } from '../../shared/config/standalone-credit-billing.config';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import type {
+  AdminStoreDerivation,
   AdminStoreDetailQueryRow,
-  AdminStoreQueryRow,
+  AdminStorePageRow,
+  AdminStoreSummaryRow,
 } from './admin-query.repository';
 import { AdminStoresService } from './admin-stores.service';
 
-const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+const recent = '2026-09-14T10:00:00.000000+00';
+const SHOPIFY_ID = '00000000-0000-4000-8000-000000000001';
+const STANDALONE_ID = '00000000-0000-4000-8000-000000000002';
 
 function shopifyRow(
-  overrides: Partial<AdminStoreQueryRow> = {},
-): AdminStoreQueryRow {
+  overrides: Partial<AdminStorePageRow> = {},
+): AdminStorePageRow {
   return {
-    integration_id: '00000000-0000-4000-8000-000000000001',
+    integration_id: SHOPIFY_ID,
     org_id: 'org-shopify',
     platform_type: 'shopify',
     organization_name: 'Shopify Org',
@@ -55,41 +59,62 @@ function shopifyRow(
     credit_account_status: null,
     credit_posted_balance: null,
     credit_held_credits: null,
+    is_credit: false,
+    usage_limit_effective: 100,
+    usage_percent: 30,
+    credit_available: 0,
+    credit_debt: 0,
+    credit_balance_state: null,
+    first_eligible_order_at_effective: recent,
+    first_resolved_at_effective: recent,
+    first_eligible_estimated: false,
+    first_resolved_estimated: false,
+    data_quality_estimated: false,
+    lifecycle_status: 'active',
+    critical_signals: [],
+    attention_signals: [],
+    health_status: 'healthy',
+    sort_value: recent,
     ...overrides,
   };
 }
 
 function standaloneRow(
-  overrides: Partial<AdminStoreQueryRow> = {},
-): AdminStoreQueryRow {
+  overrides: Partial<AdminStorePageRow> = {},
+): AdminStorePageRow {
   return shopifyRow({
-    integration_id: '00000000-0000-4000-8000-000000000002',
+    integration_id: STANDALONE_ID,
     org_id: 'org-standalone',
     platform_type: 'standalone',
     organization_name: 'Standalone Org',
-    store_name: 'Standalone Store',
+    store_name: null,
     shop_domain: 'standalone:org-standalone',
     plan: null,
     subscription_status: null,
     usage_used: 0,
     usage_limit: 0,
+    usage_limit_effective: 0,
+    usage_percent: 0,
     has_lifecycle: false,
-    onboarding_completed_at: null,
-    first_eligible_order_at: null,
     first_resolved_at: null,
     credit_account_status: 'active',
     credit_posted_balance: 500,
     credit_held_credits: 20,
+    is_credit: true,
+    credit_available: 480,
+    credit_balance_state: 'ok',
+    first_resolved_estimated: true,
+    data_quality_estimated: true,
     ...overrides,
   });
 }
 
-function detailRow(row: AdminStoreQueryRow): AdminStoreDetailQueryRow {
+function detailRow(row: AdminStorePageRow): AdminStoreDetailQueryRow {
   return {
     ...row,
     owner_email: 'owner@example.com',
     default_language: 'auto',
-    follow_up_enabled: true,
+    follow_up_enabled: false,
     follow_up_delay_minutes: 120,
     escalation_enabled: true,
     quiet_hours_enabled: false,
@@ -103,6 +128,17 @@ function detailRow(row: AdminStoreQueryRow): AdminStoreDetailQueryRow {
   };
 }
 
+const summary: AdminStoreSummaryRow = {
+  currently_installed: 2,
+  onboarding: 0,
+  activated: 2,
+  inactive: 0,
+  uninstalled: 0,
+  healthy: 1,
+  attention_required: 0,
+  critical: 1,
+};
+
 function createService(repository: Record<string, jest.Mock>) {
   const config = new ConfigService({
     [STANDALONE_CREDIT_BILLING_CONFIG]: parseStandaloneCreditBillingConfig({}),
@@ -115,79 +151,153 @@ function createService(repository: Record<string, jest.Mock>) {
 }
 
 describe('AdminStoresService', () => {
-  it('lists stores from every platform with platform-aware billing', async () => {
+  it('maps SQL rows to platform-aware store views', async () => {
     const service = createService({
-      findStores: jest.fn().mockResolvedValue([shopifyRow(), standaloneRow()]),
+      findStorePage: jest.fn().mockResolvedValue({
+        summary,
+        rows: [shopifyRow(), standaloneRow()],
+      }),
     });
 
     const result = await service.getStores({});
-    const shopify = result.data.find((store) => store.platform === 'shopify');
-    const standalone = result.data.find(
-      (store) => store.platform === 'standalone',
-    );
+    const [shopify, standalone] = result.data;
 
-    expect(result.data).toHaveLength(2);
-    expect(shopify?.billing).toMatchObject({
+    expect(result.summary).toEqual(summary);
+    expect(shopify.billing).toEqual({
       model: 'plan',
       plan: 'basic',
-      usage: { used: 30, limit: 100, percent: 30 },
+      subscription_status: 'active',
+      usage: { used: 30, limit: 100, remaining: 70, percent: 30 },
     });
-    expect(shopify?.shop_domain).toBe('example.myshopify.com');
-    expect(standalone?.billing).toEqual({
-      model: 'credits',
-      account_status: 'active',
-      available: 480,
-      held: 20,
-      debt: 0,
-      balance_state: 'ok',
+    expect(shopify.shop_domain).toBe('example.myshopify.com');
+    expect(standalone).toMatchObject({
+      platform: 'standalone',
+      store_name: 'Standalone Org',
+      shop_domain: null,
+      source_identity: 'standalone:org-standalone',
+      activated_at: recent,
+      data_quality: ['estimated_historical_data'],
+      billing: {
+        model: 'credits',
+        account_status: 'active',
+        available: 480,
+        held: 20,
+        debt: 0,
+        balance_state: 'ok',
+      },
     });
-    expect(standalone?.shop_domain).toBeNull();
-    expect(standalone?.source_identity).toBe('standalone:org-standalone');
   });
 
-  it('filters by platform', async () => {
+  it('reports critical signals ahead of attention signals', async () => {
     const service = createService({
-      findStores: jest.fn().mockResolvedValue([shopifyRow(), standaloneRow()]),
-    });
-
-    const result = await service.getStores({ platform: 'standalone' });
-
-    expect(result.data.map((store) => store.platform)).toEqual(['standalone']);
-  });
-
-  it('derives standalone lifecycle from verifications and flags it as estimated', async () => {
-    const service = createService({
-      findStores: jest.fn().mockResolvedValue([standaloneRow()]),
+      findStorePage: jest.fn().mockResolvedValue({
+        summary,
+        rows: [
+          standaloneRow({
+            health_status: 'critical',
+            critical_signals: ['credits_exhausted'],
+            attention_signals: ['auto_confirmation_disabled'],
+          }),
+        ],
+      }),
     });
 
     const [store] = (await service.getStores({})).data;
 
-    expect(store.lifecycle_status).toBe('active');
-    expect(store.activated_at).toBe(recent);
-    expect(store.data_quality).toEqual(['estimated_historical_data']);
+    expect(store.health).toEqual({
+      status: 'critical',
+      top_signal: 'credits_exhausted',
+      signal_count: 2,
+      signals: ['credits_exhausted', 'auto_confirmation_disabled'],
+    });
   });
 
-  it('raises credit health signals instead of subscription rules', async () => {
-    const service = createService({
-      findStores: jest.fn().mockResolvedValue([
-        standaloneRow({
-          credit_posted_balance: -5,
-          credit_held_credits: 0,
-          subscription_status: 'frozen',
-        }),
-      ]),
+  it('passes filters, inclusive date ranges and a lookahead limit to SQL', async () => {
+    const findStorePage = jest.fn().mockResolvedValue({ summary, rows: [] });
+    const service = createService({ findStorePage });
+
+    await service.getStores({
+      search: 'shop',
+      platform: 'standalone',
+      health_status: 'critical',
+      installed_from: '2026-09-01',
+      installed_to: '2026-09-10',
+      sort: 'health',
+      direction: 'asc',
+      limit: 10,
     });
 
-    const [store] = (await service.getStores({})).data;
-
-    expect(store.billing).toMatchObject({
-      model: 'credits',
-      debt: 5,
-      balance_state: 'debt',
+    const [filter, page, derivation] = findStorePage.mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+      AdminStoreDerivation,
+    ];
+    expect(filter).toMatchObject({
+      search: 'shop',
+      platform: 'standalone',
+      healthStatus: 'critical',
+      installedFrom: '2026-09-01T00:00:00.000Z',
+      installedTo: '2026-09-10T23:59:59.999Z',
     });
-    expect(store.health.status).toBe('critical');
-    expect(store.health.signals).toContain('credits_exhausted');
-    expect(store.health.signals).not.toContain('subscription_blocked');
+    expect(page).toEqual({
+      sort: 'health',
+      direction: 'asc',
+      limit: 11,
+      cursor: undefined,
+    });
+    expect(derivation.lowBalanceThreshold).toBe(10);
+    expect(Object.keys(derivation.planLimits)).toEqual([
+      'starter',
+      'basic',
+      'pro',
+      'business',
+    ]);
+  });
+
+  it('emits a keyset cursor that round-trips for the same sort', async () => {
+    const findStorePage = jest.fn().mockResolvedValue({
+      summary,
+      rows: [
+        shopifyRow({ sort_value: 'shopify store' }),
+        standaloneRow({ sort_value: 'standalone org' }),
+      ],
+    });
+    const service = createService({ findStorePage });
+
+    const first = await service.getStores({ sort: 'store_name', limit: 1 });
+
+    expect(first.data).toHaveLength(1);
+    expect(first.next_cursor).not.toBeNull();
+
+    await service.getStores({
+      sort: 'store_name',
+      limit: 1,
+      cursor: first.next_cursor!,
+    });
+    const [, secondPage] = findStorePage.mock.calls[1] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(secondPage).toMatchObject({
+      cursor: { value: 'shopify store', id: SHOPIFY_ID },
+    });
+  });
+
+  it('rejects cursors from another sort or malformed cursors', async () => {
+    const findStorePage = jest.fn().mockResolvedValue({
+      summary,
+      rows: [shopifyRow(), standaloneRow()],
+    });
+    const service = createService({ findStorePage });
+    const { next_cursor } = await service.getStores({ limit: 1 });
+
+    await expect(
+      service.getStores({ cursor: next_cursor!, sort: 'health' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.getStores({ cursor: 'not-a-cursor' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(findStorePage).toHaveBeenCalledTimes(1);
   });
 
   it('returns store details with verification totals and milestones', async () => {
@@ -200,11 +310,10 @@ describe('AdminStoresService', () => {
       ]),
     });
 
-    const { store } = await service.getStore(
-      '00000000-0000-4000-8000-000000000002',
-    );
+    const { store } = await service.getStore(STANDALONE_ID);
 
     expect(store.owner_email).toBe('owner@example.com');
+    expect(store.settings.follow_up_enabled).toBe(false);
     expect(store.verification_totals).toMatchObject({
       total: 5,
       test: 2,

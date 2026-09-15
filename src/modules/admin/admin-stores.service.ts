@@ -15,19 +15,25 @@ import { resolveIncludedVerificationsLimit } from '../onboarding/onboarding.serv
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import {
   AdminQueryRepository,
+  type AdminStoreDerivation,
   type AdminStoreDetailQueryRow,
   type AdminStoreQueryRow,
+  type AdminStoreSortKey,
   type AdminStoreVerificationRow,
+  type AdminStoreViewRow,
 } from './admin-query.repository';
 import type {
   AdminStoreVerificationsQueryDto,
   AdminStoresQueryDto,
 } from './dto/admin-query.dto';
 import type { AdminHealthStatus, AdminLifecycleStatus } from './admin.types';
-import { balanceState } from './standalone-billing-operations.policy';
 import type { BalanceState } from './standalone-billing-operations.types';
 
-type PlanId = 'starter' | 'basic' | 'pro' | 'business';
+const PLAN_IDS = ['starter', 'basic', 'pro', 'business'] as const;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type PlanId = (typeof PLAN_IDS)[number];
 
 interface AdminUsage {
   used: number;
@@ -152,35 +158,51 @@ export class AdminStoresService {
   ) {}
 
   async getStores(query: AdminStoresQueryDto) {
-    const rows = await this.repository.findStores();
-    const lowBalanceThreshold = this.lowBalanceThreshold();
-    const filtered = rows
-      .map((row) => ({ row, store: this.toView(row, lowBalanceThreshold) }))
-      .filter(({ row, store }) => this.matches(store, row, query))
-      .map(({ store }) => store);
-    const sorted = this.sort(filtered, query);
-    const offset = this.cursorOffset(sorted, query.cursor);
+    const sort = query.sort ?? 'installed_at';
+    const direction = query.direction ?? 'desc';
     const limit = query.limit ?? 50;
-    const data = sorted.slice(offset, offset + limit);
-    const hasMore = offset + limit < sorted.length;
+    const { summary, rows } = await this.repository.findStorePage(
+      {
+        search: query.search,
+        platform: query.platform,
+        plan: query.plan,
+        lifecycleStatus: query.lifecycle_status,
+        onboardingStatus: query.onboarding_status,
+        healthStatus: query.health_status,
+        country: query.country,
+        installedFrom: this.rangeStart(query.installed_from),
+        installedTo: this.rangeEnd(query.installed_to),
+        lastActivityFrom: this.rangeStart(query.last_activity_from),
+        lastActivityTo: this.rangeEnd(query.last_activity_to),
+      },
+      {
+        sort,
+        direction,
+        limit: limit + 1,
+        cursor: this.decodeStoreCursor(query.cursor, sort, direction),
+      },
+      this.derivation(),
+    );
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
 
     return {
-      summary: this.summary(filtered),
-      data,
-      next_cursor: hasMore
-        ? Buffer.from(
-            JSON.stringify({ id: data.at(-1)?.integration_id }),
-          ).toString('base64url')
-        : null,
+      summary,
+      data: page.map((row) => this.toView(row)),
+      next_cursor:
+        hasMore && last
+          ? Buffer.from(
+              JSON.stringify({
+                sort,
+                direction,
+                value: last.sort_value,
+                id: last.integration_id,
+              }),
+            ).toString('base64url')
+          : null,
       evaluated_at: new Date().toISOString(),
     };
-  }
-
-  async getAllViews(): Promise<AdminStoreView[]> {
-    const lowBalanceThreshold = this.lowBalanceThreshold();
-    return (await this.repository.findStores()).map((row) =>
-      this.toView(row, lowBalanceThreshold),
-    );
   }
 
   async getStore(integrationId: string) {
@@ -225,7 +247,10 @@ export class AdminStoresService {
   private async requireStore(
     integrationId: string,
   ): Promise<AdminStoreDetailQueryRow> {
-    const row = await this.repository.findStoreById(integrationId);
+    const row = await this.repository.findStoreById(
+      integrationId,
+      this.derivation(),
+    );
     if (!row) throw new NotFoundException('Store not found.');
     return row;
   }
@@ -236,7 +261,7 @@ export class AdminStoresService {
       ReturnType<AdminQueryRepository['findStoreVerificationTotals']>
     >,
   ): AdminStoreDetailView {
-    const view = this.toView(row, this.lowBalanceThreshold());
+    const view = this.toView(row);
     const byStatus: Record<string, number> = {};
     let total = 0;
     let test = 0;
@@ -249,7 +274,6 @@ export class AdminStoresService {
       total += count;
       byStatus[entry.status] = (byStatus[entry.status] ?? 0) + count;
     }
-    const milestones = this.resolvedMilestones(row);
 
     return {
       ...view,
@@ -284,9 +308,9 @@ export class AdminStoresService {
         this.milestone(row, 'test_delivered', row.test_delivered_at),
         {
           key: 'eligible_real_cod_detected',
-          at: milestones.firstEligibleOrderAt,
+          at: row.first_eligible_order_at_effective,
           estimated:
-            milestones.eligibleEstimated ||
+            row.first_eligible_estimated ||
             this.isEstimated(row, 'eligible_real_cod_detected'),
         },
         this.milestone(
@@ -301,9 +325,9 @@ export class AdminStoresService {
         ),
         {
           key: 'first_real_cod_resolved',
-          at: milestones.firstResolvedAt,
+          at: row.first_resolved_at_effective,
           estimated:
-            milestones.resolvedEstimated ||
+            row.first_resolved_estimated ||
             this.isEstimated(row, 'first_real_cod_resolved'),
         },
         this.milestone(
@@ -367,110 +391,79 @@ export class AdminStoresService {
     };
   }
 
-  private lowBalanceThreshold(): number {
-    return readStandaloneCreditBillingConfig(this.config).lowBalanceThreshold;
-  }
-
-  private resolvedMilestones(row: AdminStoreQueryRow) {
-    const derive = !row.has_lifecycle && row.platform_type !== 'shopify';
-    const eligibleEstimated =
-      derive &&
-      !row.first_eligible_order_at &&
-      Boolean(row.derived_first_eligible_order_at);
-    const resolvedEstimated =
-      derive &&
-      !row.first_resolved_at &&
-      Boolean(row.derived_first_resolved_at);
+  private derivation(): AdminStoreDerivation {
     return {
-      firstEligibleOrderAt: eligibleEstimated
-        ? row.derived_first_eligible_order_at
-        : row.first_eligible_order_at,
-      firstResolvedAt: resolvedEstimated
-        ? row.derived_first_resolved_at
-        : row.first_resolved_at,
-      eligibleEstimated,
-      resolvedEstimated,
+      lowBalanceThreshold: readStandaloneCreditBillingConfig(this.config)
+        .lowBalanceThreshold,
+      planLimits: Object.fromEntries(
+        PLAN_IDS.map((plan) => [plan, resolveIncludedVerificationsLimit(plan)]),
+      ),
+      healthSignals: (columns) => this.healthRules.signalsSql(columns),
     };
   }
 
-  private billing(
-    row: AdminStoreQueryRow,
-    plan: PlanId | null,
-    usage: AdminUsage,
-    lowBalanceThreshold: number,
-  ): AdminStoreBilling {
-    if (row.platform_type === 'standalone' && row.credit_account_status) {
-      const postedBalance = Number(row.credit_posted_balance ?? 0);
-      const heldCredits = Number(row.credit_held_credits ?? 0);
-      return {
-        model: 'credits',
-        account_status: row.credit_account_status,
-        available: Math.max(postedBalance - heldCredits, 0),
-        held: heldCredits,
-        debt: postedBalance < 0 ? -postedBalance : 0,
-        balance_state: balanceState(
-          {
-            status: row.credit_account_status,
-            postedBalance,
-            heldCredits,
-          },
-          lowBalanceThreshold,
-        ),
-      };
+  private rangeStart(value?: string): string | undefined {
+    return value ? new Date(value).toISOString() : undefined;
+  }
+
+  private rangeEnd(value?: string): string | undefined {
+    if (!value) return undefined;
+    const endOfDay = /^\d{4}-\d{2}-\d{2}$/.test(value) ? 86_399_999 : 0;
+    return new Date(new Date(value).getTime() + endOfDay).toISOString();
+  }
+
+  private decodeStoreCursor(
+    cursor: string | undefined,
+    sort: AdminStoreSortKey,
+    direction: 'asc' | 'desc',
+  ): { value: string; id: string } | undefined {
+    if (!cursor) return undefined;
+    try {
+      const parsed = JSON.parse(
+        Buffer.from(cursor, 'base64url').toString(),
+      ) as Record<string, unknown>;
+      if (
+        parsed.sort !== sort ||
+        parsed.direction !== direction ||
+        typeof parsed.value !== 'string' ||
+        typeof parsed.id !== 'string' ||
+        !UUID_PATTERN.test(parsed.id)
+      ) {
+        throw new Error('Cursor does not match this query');
+      }
+      return { value: parsed.value, id: parsed.id };
+    } catch {
+      throw new BadRequestException('Invalid pagination cursor');
     }
-    return {
-      model: 'plan',
-      plan,
-      subscription_status: row.subscription_status,
-      usage,
-    };
   }
 
-  private toView(
-    row: AdminStoreQueryRow,
-    lowBalanceThreshold: number,
-  ): AdminStoreView {
+  private toView(row: AdminStoreViewRow): AdminStoreView {
     const plan = row.plan as PlanId | null;
     const used = Number(row.usage_used ?? 0);
-    const explicitLimit = Number(row.usage_limit ?? 0);
-    const limit =
-      explicitLimit || (plan ? resolveIncludedVerificationsLimit(plan) : 0);
-    const percent = limit > 0 ? Math.round((used / limit) * 100) : 0;
+    const limit = Number(row.usage_limit_effective ?? 0);
     const usage = {
       used,
       limit,
       remaining: Math.max(limit - used, 0),
-      percent,
+      percent: Number(row.usage_percent ?? 0),
     };
-    const billing = this.billing(row, plan, usage, lowBalanceThreshold);
-    const credits = billing.model === 'credits';
-    const milestones = this.resolvedMilestones(row);
-    const lifecycle = this.lifecycle(row, milestones.firstResolvedAt);
-    const health = this.healthRules.evaluate({
-      onboardingStatus: row.onboarding_status,
-      installedAt: row.installed_at,
-      onboardingCompletedAt: row.onboarding_completed_at,
-      firstEligibleOrderAt: milestones.firstEligibleOrderAt,
-      firstResolvedAt: milestones.firstResolvedAt,
-      uninstalledAt: row.uninstalled_at,
-      usagePercent: credits ? 0 : percent,
-      failed24h: Number(row.failed_24h ?? 0),
-      total24h: Number(row.total_24h ?? 0),
-      failedWebhooks1h: Number(row.failed_webhooks_1h ?? 0),
-      autoEnabled: row.auto_confirmation_enabled,
-      billingStatus: credits ? null : row.subscription_status,
-      lastActivityAt: row.last_activity_at,
-      creditBalanceState: credits ? billing.balance_state : null,
-    });
-    const provenance = row.provenance ?? {};
-    const dataQuality =
-      Object.values(provenance).some((value) =>
-        String(value).startsWith('estimated'),
-      ) ||
-      milestones.eligibleEstimated ||
-      milestones.resolvedEstimated
-        ? ['estimated_historical_data']
-        : [];
+    const billing: AdminStoreBilling =
+      row.is_credit && row.credit_account_status && row.credit_balance_state
+        ? {
+            model: 'credits',
+            account_status: row.credit_account_status,
+            available: Number(row.credit_available ?? 0),
+            held: Number(row.credit_held_credits ?? 0),
+            debt: Number(row.credit_debt ?? 0),
+            balance_state: row.credit_balance_state,
+          }
+        : {
+            model: 'plan',
+            plan,
+            subscription_status: row.subscription_status,
+            usage,
+          };
+    const signals = [...row.critical_signals, ...row.attention_signals];
 
     return {
       integration_id: row.integration_id,
@@ -483,7 +476,7 @@ export class AdminStoresService {
       country_code: row.country_code,
       timezone: row.timezone,
       installed_at: row.installed_at,
-      lifecycle_status: lifecycle,
+      lifecycle_status: row.lifecycle_status as AdminLifecycleStatus,
       onboarding_status: row.onboarding_status,
       plan,
       subscription_status: row.subscription_status,
@@ -495,156 +488,18 @@ export class AdminStoresService {
         : row.test_requested_at
           ? 'requested'
           : 'not_requested',
-      first_eligible_real_order_at: milestones.firstEligibleOrderAt,
-      activated_at: milestones.firstResolvedAt,
+      first_eligible_real_order_at: row.first_eligible_order_at_effective,
+      activated_at: row.first_resolved_at_effective,
       last_activity_at: row.last_activity_at,
-      health,
-      data_quality: dataQuality,
-    };
-  }
-
-  private lifecycle(
-    row: AdminStoreQueryRow,
-    firstResolvedAt: string | null,
-  ): AdminLifecycleStatus {
-    if (row.uninstalled_at) return 'uninstalled';
-    if (!row.is_active) return 'inactive';
-    if (row.onboarding_status !== 'completed') return 'onboarding';
-    if (firstResolvedAt) return 'active';
-    return 'installed';
-  }
-
-  private matches(
-    store: AdminStoreView,
-    raw: AdminStoreQueryRow,
-    query: AdminStoresQueryDto,
-  ): boolean {
-    const search = query.search?.trim().toLocaleLowerCase();
-    if (
-      search &&
-      ![store.store_name, store.shop_domain, raw.organization_name]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => value.toLocaleLowerCase().includes(search))
-    ) {
-      return false;
-    }
-    if (query.platform && store.platform !== query.platform) return false;
-    if (query.plan && store.plan !== query.plan) return false;
-    if (
-      query.lifecycle_status &&
-      store.lifecycle_status !== query.lifecycle_status
-    )
-      return false;
-    if (
-      query.onboarding_status &&
-      store.onboarding_status !== query.onboarding_status
-    )
-      return false;
-    if (query.health_status && store.health.status !== query.health_status)
-      return false;
-    if (
-      query.country &&
-      (store.country_code ?? '').toUpperCase() !== query.country.toUpperCase()
-    )
-      return false;
-    if (
-      !this.inRange(
-        store.installed_at,
-        query.installed_from,
-        query.installed_to,
-      )
-    )
-      return false;
-    if (
-      (query.last_activity_from || query.last_activity_to) &&
-      (!store.last_activity_at ||
-        !this.inRange(
-          store.last_activity_at,
-          query.last_activity_from,
-          query.last_activity_to,
-        ))
-    )
-      return false;
-    return true;
-  }
-
-  private inRange(value: string, from?: string, to?: string): boolean {
-    const timestamp = new Date(value).getTime();
-    const toTimestamp = to
-      ? new Date(to).getTime() +
-        (/^\d{4}-\d{2}-\d{2}$/.test(to) ? 86_399_999 : 0)
-      : null;
-    return (
-      (!from || timestamp >= new Date(from).getTime()) &&
-      (toTimestamp === null || timestamp <= toTimestamp)
-    );
-  }
-
-  private sort(stores: AdminStoreView[], query: AdminStoresQueryDto) {
-    const key = query.sort ?? 'installed_at';
-    const direction = query.direction ?? 'desc';
-    const severity = { healthy: 0, attention_required: 1, critical: 2 };
-    const value = (store: AdminStoreView): string | number => {
-      switch (key) {
-        case 'store_name':
-          return store.store_name.toLocaleLowerCase();
-        case 'last_activity':
-          return store.last_activity_at ?? '';
-        case 'usage_percent':
-          return store.usage.percent;
-        case 'activation_date':
-          return store.activated_at ?? '';
-        case 'health':
-          return severity[store.health.status];
-        default:
-          return store.installed_at;
-      }
-    };
-    return [...stores].sort((left, right) => {
-      const leftValue = value(left);
-      const rightValue = value(right);
-      const compared =
-        leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0;
-      const stable =
-        compared || left.integration_id.localeCompare(right.integration_id);
-      return direction === 'asc' ? stable : -stable;
-    });
-  }
-
-  private cursorOffset(stores: AdminStoreView[], cursor?: string): number {
-    if (!cursor) return 0;
-    try {
-      const parsed = JSON.parse(
-        Buffer.from(cursor, 'base64url').toString(),
-      ) as {
-        id?: string;
-      };
-      const index = stores.findIndex(
-        (store) => store.integration_id === parsed.id,
-      );
-      if (index < 0) throw new Error('Missing cursor row');
-      return index + 1;
-    } catch {
-      throw new BadRequestException('Invalid pagination cursor');
-    }
-  }
-
-  private summary(stores: AdminStoreView[]) {
-    const count = (predicate: (store: AdminStoreView) => boolean) =>
-      stores.filter(predicate).length;
-    return {
-      currently_installed: count(
-        (store) => store.lifecycle_status !== 'uninstalled',
-      ),
-      onboarding: count((store) => store.lifecycle_status === 'onboarding'),
-      activated: count((store) => store.lifecycle_status === 'active'),
-      inactive: count((store) => store.lifecycle_status === 'inactive'),
-      uninstalled: count((store) => store.lifecycle_status === 'uninstalled'),
-      healthy: count((store) => store.health.status === 'healthy'),
-      attention_required: count(
-        (store) => store.health.status === 'attention_required',
-      ),
-      critical: count((store) => store.health.status === 'critical'),
+      health: {
+        status: row.health_status as AdminHealthStatus,
+        top_signal: signals[0] ?? null,
+        signal_count: signals.length,
+        signals,
+      },
+      data_quality: row.data_quality_estimated
+        ? ['estimated_historical_data']
+        : [],
     };
   }
 }
