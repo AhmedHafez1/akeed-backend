@@ -62,6 +62,15 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
 ];
 
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
+
+/**
+ * Rows a listing request answers with when the client does not say.
+ *
+ * Sized for a table that pages with Load-more rather than page numbers: a
+ * screenful, not a scrollful. Every row carries its joined order, so this
+ * default is what most requests actually cost.
+ */
+const DEFAULT_VERIFICATIONS_PAGE_SIZE = 20;
 const DEFAULT_REPORTING_TIMEZONE = 'UTC';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
@@ -102,7 +111,7 @@ export class VerificationsService {
   ): Promise<PaginatedResponse<VerificationListItemDto>> {
     const statuses = this.parseStatuses(query.status);
     const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
-    const limit = query.limit ?? 50;
+    const limit = query.limit ?? DEFAULT_VERIFICATIONS_PAGE_SIZE;
     const cursor = decodeCursor(query.cursor);
 
     // The reporting timezone has to be known before the date range can be

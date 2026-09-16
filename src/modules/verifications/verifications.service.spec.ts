@@ -826,3 +826,79 @@ describe('Dashboard cancellation capabilities', () => {
     },
   );
 });
+
+describe('Listing fetch size', () => {
+  function buildService(repo: { findByOrg: jest.Mock; countByOrg: jest.Mock }) {
+    return new VerificationsService(
+      repo as never,
+      {
+        readEntitlement: jest.fn().mockResolvedValue({
+          consumedCount: 0,
+          includedLimit: 30,
+          periodEnd: null,
+        }),
+      } as never,
+      {
+        findByOrg: jest.fn().mockResolvedValue([
+          {
+            id: 'int-1',
+            orgId: 'org-1',
+            isActive: true,
+            platformType: 'shopify',
+          },
+        ]),
+      } as never,
+      {} as never,
+      new CommerceOutcomeRegistryService({} as never, [
+        new ShopifyOutcomeAdapter({} as never),
+      ]),
+    );
+  }
+
+  // The client sends its own page size; this is what a caller that does not
+  // gets. It is deliberately a screenful, because the table pages with
+  // Load-more and every row drags its joined order along with it.
+  it('reads 20 rows when the caller asks for no limit', async () => {
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(0),
+    };
+
+    await buildService(repo).listByOrg('org-1', {});
+
+    expect(repo.findByOrg).toHaveBeenCalledWith(
+      'org-1',
+      undefined,
+      expect.anything(),
+      expect.objectContaining({ limit: 21 }),
+    );
+  });
+
+  // The extra row is never returned: it exists only so the response can say
+  // whether another page follows without a second round trip.
+  it('over-fetches one row past an explicit limit and withholds it', async () => {
+    const rows = Array.from({ length: 21 }, (_, index) => ({
+      id: `ver-${index}`,
+      status: 'confirmed',
+      orderId: `order-${index}`,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      order: { orgId: 'org-1', integrationId: 'int-1' },
+    }));
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue(rows),
+      countByOrg: jest.fn().mockResolvedValue(40),
+    };
+
+    const result = await buildService(repo).listByOrg('org-1', { limit: 20 });
+
+    expect(repo.findByOrg).toHaveBeenCalledWith(
+      'org-1',
+      undefined,
+      expect.anything(),
+      expect.objectContaining({ limit: 21 }),
+    );
+    expect(result.data).toHaveLength(20);
+    expect(result.next_cursor).not.toBeNull();
+    expect(result.total_count).toBe(40);
+  });
+});

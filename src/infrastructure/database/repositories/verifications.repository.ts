@@ -262,7 +262,14 @@ export class VerificationsRepository {
     return row?.value ?? 0;
   }
 
-  /** Org + date-range + status filter shared by the list and count queries. */
+  /**
+   * Org + date-range + status filter shared by the list and count queries.
+   *
+   * A future free-text search predicate belongs here rather than in
+   * `findByOrg`: both the row query and `countByOrg` read this list, so a
+   * filter added here keeps `total_count` describing the same set as the rows
+   * it is reported alongside.
+   */
   private buildOrgListConditions(
     orgId: string,
     statuses?: VerificationStatus[],
