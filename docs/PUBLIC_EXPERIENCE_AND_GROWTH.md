@@ -331,12 +331,10 @@ Located at `public/messages/{locale}.json`.
 | `header`          | Navigation links, CTAs.              |
 | `hero`            | Hero section copy.                   |
 | `demo`            | Live demo chat interface.            |
-| `problems`        | Problem statement cards.             |
 | `how_it_works`    | Process steps.                       |
 | `solution`        | Benefits/solutions section.          |
 | `pricing`         | Pricing tiers, feature labels.       |
 | `faq`             | FAQ questions and answers.           |
-| `roi_calculator`  | ROI calculator labels.               |
 | `whatsapp_button` | WhatsApp CTA button copy.            |
 | `mobile_cta`      | Mobile sticky CTA.                   |
 | `post_faq_cta`    | Post-FAQ call-to-action.             |
