@@ -17,7 +17,6 @@ const now = new Date('2026-05-15T00:00:00Z');
 
 describe('provider-neutral entitlement policy', () => {
   it.each([
-    ['starter', 30],
     ['basic', 300],
     ['pro', 1000],
     ['business', 2500],
@@ -36,6 +35,58 @@ describe('provider-neutral entitlement policy', () => {
       periodEnd: '2026-05-31',
     });
   });
+
+  it.each(['basic', 'pro', 'business'])(
+    'rolls the paid %s quota into a new 30-day period',
+    (billingPlanId) => {
+      expect(
+        resolveEntitlement(
+          { ...source, billingPlanId },
+          source,
+          new Date('2026-06-05T00:00:00Z'),
+        ),
+      ).toMatchObject({ periodStart: '2026-05-31', periodEnd: '2026-06-30' });
+    },
+  );
+
+  it.each([
+    '2026-05-01T00:00:00Z',
+    '2026-06-01T00:00:00Z',
+    '2026-07-05T00:00:00Z',
+    '2027-06-05T00:00:00Z',
+  ])(
+    'keeps the starter allowance one-time instead of renewing it (at %s)',
+    (at) => {
+      expect(resolveEntitlement(source, source, new Date(at))).toMatchObject({
+        allowed: true,
+        planId: 'starter',
+        includedLimit: 30,
+        periodStart: '2026-05-01',
+        periodEnd: null,
+      });
+    },
+  );
+
+  it.each(['shopify', 'standalone'])(
+    'gives a %s starter source without an activation date a fixed one-time period',
+    (platformType) => {
+      for (const at of ['2026-05-15T00:00:00Z', '2026-09-18T00:00:00Z']) {
+        expect(
+          resolveEntitlement(
+            {
+              ...source,
+              platformType,
+              billingStatus: 'active',
+              billingPlanId: platformType === 'shopify' ? null : 'starter',
+              billingActivatedAt: null,
+            },
+            source,
+            new Date(at),
+          ),
+        ).toMatchObject({ periodStart: '2000-01-01', periodEnd: null });
+      }
+    },
+  );
 
   it.each([
     { billingStatus: null },

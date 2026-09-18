@@ -63,6 +63,17 @@ export const DEFAULT_BILLING_PLAN_ID: BillingPlanId = 'starter';
 export const STANDALONE_BILLING_STATUS = 'not_required';
 export const STANDALONE_DEFAULT_PLAN_ID: BillingPlanId = 'starter';
 
+/**
+ * Plans whose included verifications are a one-time allowance rather than a
+ * 30-day rolling quota. Their usage lives in a single period that never rolls
+ * over, so consuming the allowance is permanent until the store upgrades.
+ */
+export const ONE_TIME_BILLING_PLAN_IDS: readonly BillingPlanId[] = ['starter'];
+
+export function isOneTimeBillingPlan(planId: BillingPlanId | null): boolean {
+  return planId !== null && ONE_TIME_BILLING_PLAN_IDS.includes(planId);
+}
+
 export function isBillingPlanId(value: string): value is BillingPlanId {
   return BILLING_PLAN_IDS.includes(value as BillingPlanId);
 }

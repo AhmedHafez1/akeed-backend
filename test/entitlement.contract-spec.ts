@@ -149,6 +149,32 @@ describe('provider-neutral entitlement PostgreSQL contract', () => {
     });
   });
 
+  it('does not renew a used-up starter allowance after 30 days', async () => {
+    await client`UPDATE ${client(namespace)}.integrations SET billing_activated_at = now() - interval '40 days' WHERE id = ${identity.id}`;
+    await client`INSERT INTO ${client(namespace)}.integration_monthly_usage (org_id, integration_id, period_start, included_limit, consumed_count) VALUES (${identity.orgId}, ${identity.id}, (now() - interval '40 days')::date, 30, 30)`;
+
+    expect(await service.reserveVerificationSlot(identity)).toMatchObject({
+      allowed: false,
+      reason: 'plan_limit_reached',
+      consumedCount: 30,
+      periodEnd: null,
+    });
+    const rows =
+      await client`SELECT consumed_count, blocked_count FROM ${client(namespace)}.integration_monthly_usage`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ consumed_count: 30, blocked_count: 1 });
+  });
+
+  it('still opens a fresh period for a paid plan after 30 days', async () => {
+    await client`UPDATE ${client(namespace)}.integrations SET billing_plan_id = 'basic', billing_activated_at = now() - interval '40 days' WHERE id = ${identity.id}`;
+    await client`INSERT INTO ${client(namespace)}.integration_monthly_usage (org_id, integration_id, period_start, included_limit, consumed_count) VALUES (${identity.orgId}, ${identity.id}, (now() - interval '40 days')::date, 300, 300)`;
+
+    expect(await service.reserveVerificationSlot(identity)).toMatchObject({
+      allowed: true,
+      consumedCount: 1,
+    });
+  });
+
   it('keeps periods and integrations separate and releases the original period', async () => {
     const first = await service.reserveVerificationSlot(identity);
     const otherId = randomUUID();

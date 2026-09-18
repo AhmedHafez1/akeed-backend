@@ -2,10 +2,15 @@ import type { CreditDenialCode } from './credit-eligibility';
 import {
   DEFAULT_BILLING_PLAN_ID,
   isBillingPlanId,
+  isOneTimeBillingPlan,
   resolveIncludedVerificationsLimit,
   type BillingPlanId,
 } from './billing-plan';
-import { getBillingPeriodStart, getBillingPeriodEnd } from './billing-period';
+import {
+  getBillingPeriodStart,
+  getBillingPeriodEnd,
+  getOneTimePeriodStart,
+} from './billing-period';
 import { isBillingStatusActive } from '../utils/billing.util';
 
 export interface EntitlementIdentity {
@@ -48,7 +53,8 @@ export interface EntitlementSnapshot {
   planId: BillingPlanId | null;
   includedLimit: number;
   periodStart: string;
-  periodEnd: string;
+  /** `null` for a one-time plan: its allowance never resets. */
+  periodEnd: string | null;
 }
 
 export interface EntitlementAvailability {
@@ -74,7 +80,10 @@ export function resolveEntitlement(
   const planId =
     validPlan ??
     (source?.platformType === 'shopify' ? DEFAULT_BILLING_PLAN_ID : null);
-  const periodStart = getBillingPeriodStart(source?.billingActivatedAt, now);
+  const oneTime = isOneTimeBillingPlan(planId);
+  const periodStart = oneTime
+    ? getOneTimePeriodStart(source?.billingActivatedAt)
+    : getBillingPeriodStart(source?.billingActivatedAt, now);
   let reason: EntitlementDenialReason | null = null;
   if (!source) reason = 'missing_linked_integration';
   else if (source.id !== identity.id || source.orgId !== identity.orgId)
@@ -98,6 +107,6 @@ export function resolveEntitlement(
     planId,
     includedLimit: planId ? resolveIncludedVerificationsLimit(planId) : 0,
     periodStart,
-    periodEnd: getBillingPeriodEnd(periodStart),
+    periodEnd: oneTime ? null : getBillingPeriodEnd(periodStart),
   };
 }
