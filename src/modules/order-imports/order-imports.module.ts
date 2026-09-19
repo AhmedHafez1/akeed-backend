@@ -13,9 +13,11 @@ import { AuthModule } from '../auth/auth.module';
 import { OrderIngestionModule } from '../order-ingestion/order-ingestion.module';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportsController } from './order-imports.controller';
 import { OrderImportsService } from './order-imports.service';
 import { ImportFileParser } from './parsers/import-file-parser';
+import { RowValidationService } from './validation/row-validation.service';
 
 /**
  * No `dest` or `storage`: multer keeps the upload in memory, so it never
@@ -52,6 +54,8 @@ export function orderImportMulterOptions(
   controllers: [OrderImportsController],
   providers: [
     OrderImportsService,
+    OrderImportMappingService,
+    RowValidationService,
     ImportFileParser,
     OrderImportAccessGuard,
     OrderImportUploadThrottleGuard,

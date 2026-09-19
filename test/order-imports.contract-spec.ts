@@ -83,6 +83,9 @@ function batch(
     sheetName: 'Orders',
     headers: ['order_id', 'الاسم'],
     expiresAt: new Date(NOW.getTime() + 24 * HOUR),
+    mapping: null,
+    options: null,
+    mappingProfileId: null,
     ...overrides,
   };
 }
@@ -431,6 +434,126 @@ describe('order imports PostgreSQL contract', () => {
         INSERT INTO order_import_rows (batch_id, org_id, row_number, raw)
         VALUES (${draft.batchId}, ${otherOrg.orgId}, 99, '{}'::jsonb)`,
     ).rejects.toThrow(/order_import_rows_batch_id_fkey/);
+  });
+
+  it('stores the suggested mapping on the draft at upload', async () => {
+    const source = await createSource();
+    const mapping = { dictionaryVersion: 1, confirmed: false, columns: {} };
+    const draft = await repository.createDraftWithRows(
+      batch(source, { mapping, options: { country: 'EG' } }),
+      rows(1),
+      options,
+    );
+    await expect(
+      repository.findBatchForMapping(source.orgId, draft.batchId),
+    ).resolves.toMatchObject({ status: 'draft', mapping });
+    const otherOrg = await createSource();
+    await expect(
+      repository.findBatchForMapping(otherOrg.orgId, draft.batchId),
+    ).resolves.toBeNull();
+  });
+
+  it('counts the values of one column, org-scoped, treating a missing cell as blank', async () => {
+    const source = await createSource();
+    const draft = await repository.createDraftWithRows(
+      batch(source, { headers: ['payment'] }),
+      [
+        { rowNumber: 2, raw: { payment: 'COD' }, issues: [] },
+        { rowNumber: 3, raw: { payment: 'COD' }, issues: [] },
+        { rowNumber: 4, raw: { payment: 'Paid' }, issues: [] },
+        { rowNumber: 5, raw: {}, issues: [] },
+      ],
+      options,
+    );
+    const counts = await repository.columnValueCounts(
+      source.orgId,
+      draft.batchId,
+      'payment',
+    );
+    expect(counts.sort((a, b) => a.value.localeCompare(b.value))).toEqual([
+      { value: '', count: 1 },
+      { value: 'COD', count: 2 },
+      { value: 'Paid', count: 1 },
+    ]);
+    const otherOrg = await createSource();
+    await expect(
+      repository.columnValueCounts(otherOrg.orgId, draft.batchId, 'payment'),
+    ).resolves.toEqual([]);
+  });
+
+  it('saves a mapping once per header signature and only on a live draft', async () => {
+    const source = await createSource();
+    const userId = randomUUID();
+    const first = await repository.createDraftWithRows(
+      batch(source),
+      rows(1),
+      options,
+    );
+    const second = await repository.createDraftWithRows(
+      batch(source),
+      rows(1),
+      options,
+    );
+    const save = (batchId: string, country: string, orgId = source.orgId) =>
+      repository.saveMapping({
+        orgId,
+        batchId,
+        userId,
+        headerSignature: 'b'.repeat(64),
+        mapping: { confirmed: true, columns: { phone: 'order_id' } },
+        options: { country },
+        profile: {
+          mapping: { columns: { phone: 'order_id' } },
+          options: { country },
+        },
+        now: NOW,
+      });
+
+    const saved = await save(first.batchId, 'EG');
+    expect(saved.outcome).toBe('saved');
+    // Same body again: same profile, same state.
+    await expect(save(first.batchId, 'EG')).resolves.toEqual(saved);
+    // Another batch with the same headers updates the one profile.
+    await expect(save(second.batchId, 'SA')).resolves.toEqual(saved);
+    const profiles = await client<{ count: number; options: unknown }[]>`
+      SELECT count(*) OVER ()::int AS count, options FROM order_import_mapping_profiles
+      WHERE org_id = ${source.orgId}`;
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].options).toEqual({ country: 'SA' });
+    await expect(
+      repository.findMappingProfile(source.orgId, 'b'.repeat(64)),
+    ).resolves.toMatchObject({
+      id: (saved as { mappingProfileId: string }).mappingProfileId,
+    });
+    const [stored] = await client<
+      { mapping_profile_id: string; options: unknown }[]
+    >`
+      SELECT mapping_profile_id, options FROM order_import_batches WHERE id = ${first.batchId}`;
+    expect(stored).toEqual({
+      mapping_profile_id: (saved as { mappingProfileId: string })
+        .mappingProfileId,
+      options: { country: 'EG' },
+    });
+
+    // Another organization, a non-draft and an expired draft write nothing.
+    const otherOrg = await createSource();
+    await expect(save(first.batchId, 'AE', otherOrg.orgId)).resolves.toEqual({
+      outcome: 'not_draft',
+    });
+    await client`UPDATE order_import_batches SET status = 'committing' WHERE id = ${first.batchId}`;
+    await expect(save(first.batchId, 'AE')).resolves.toEqual({
+      outcome: 'not_draft',
+    });
+    await client`UPDATE order_import_batches SET expires_at = ${new Date(NOW.getTime() - HOUR).toISOString()} WHERE id = ${second.batchId}`;
+    await expect(save(second.batchId, 'AE')).resolves.toEqual({
+      outcome: 'not_draft',
+    });
+    const [after] = await client<{ options: unknown }[]>`
+      SELECT options FROM order_import_mapping_profiles WHERE org_id = ${source.orgId}`;
+    expect(after.options).toEqual({ country: 'SA' });
+    await expect(
+      repository.findMappingProfile(otherOrg.orgId, 'b'.repeat(64)),
+    ).resolves.toBeNull();
   });
 
   it('limits a signed-in member to their own organization through RLS', async () => {

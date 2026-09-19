@@ -1,4 +1,5 @@
 import {
+  ValidationPipe,
   type CanActivate,
   type ExecutionContext,
   type INestApplication,
@@ -23,10 +24,12 @@ import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-r
 import { MulterModule } from '@nestjs/platform-express';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportsController } from './order-imports.controller';
 import { orderImportMulterOptions } from './order-imports.module';
 import { OrderImportsService } from './order-imports.service';
 import { ImportFileParser } from './parsers/import-file-parser';
+import { RowValidationService } from './validation/row-validation.service';
 
 const FIVE_MB = 5 * 1024 * 1024;
 
@@ -54,6 +57,11 @@ describe('order-import routes over HTTP', () => {
     listOpenDrafts: jest.fn(),
     createDraftWithRows: jest.fn(),
     discardDraft: jest.fn(),
+    findMappingProfile: jest.fn(),
+    findBatchForMapping: jest.fn(),
+    columnValueCounts: jest.fn(),
+    saveMapping: jest.fn(),
+    readCounts: jest.fn(),
   };
 
   const fakeAuth: CanActivate = {
@@ -77,6 +85,8 @@ describe('order-import routes over HTTP', () => {
       controllers: [OrderImportsController],
       providers: [
         OrderImportsService,
+        OrderImportMappingService,
+        RowValidationService,
         ImportFileParser,
         OrderImportAccessGuard,
         OrderImportUploadThrottleGuard,
@@ -101,6 +111,14 @@ describe('order-import routes over HTTP', () => {
       .useValue(fakeAuth)
       .compile();
     app = moduleRef.createNestApplication();
+    // The app-wide pipe from main.ts, so route pipes are tested behind it.
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: false,
+      }),
+    );
     await app.init();
   });
 
@@ -123,6 +141,7 @@ describe('order-import routes over HTTP', () => {
     };
     integrations.findActiveByOrg.mockResolvedValue([standalone]);
     repository.listOpenDrafts.mockResolvedValue([]);
+    repository.findMappingProfile.mockResolvedValue(null);
     repository.createDraftWithRows.mockResolvedValue({
       batchId: '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40',
       shortCode: 'ABC123',
@@ -348,6 +367,153 @@ describe('order-import routes over HTTP', () => {
       );
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'IMPORT_DISABLED' });
+    });
+  });
+
+  it('answers the upload with the detected mapping', async () => {
+    const response = await upload(
+      Buffer.from('Order #,Customer Name,Mobile,Total\r\n#1,أحمد,010,50\r\n'),
+    );
+    expect(response.status).toBe(201);
+    const body = response.body as {
+      suggestions: { fields: { field: string; columns: string[] }[] };
+    };
+    expect(
+      Object.fromEntries(
+        body.suggestions.fields.map((field) => [field.field, field.columns]),
+      ),
+    ).toMatchObject({
+      orderReference: ['Order #'],
+      customerName: ['Customer Name'],
+      phone: ['Mobile'],
+      amount: ['Total'],
+    });
+  });
+
+  describe('PUT /api/order-imports/:id/mapping', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const body = {
+      mapping: { phone: 'phone', customerName: ['name'], amount: 'total' },
+      options: { country: 'eg', defaultCurrency: 'egp', dateFormat: 'auto' },
+    };
+    const put = (payload: unknown = body) =>
+      request(server())
+        .put(`/api/order-imports/${batchId}/mapping`)
+        .send(payload as object);
+
+    beforeEach(() => {
+      repository.findBatchForMapping.mockResolvedValue({
+        status: 'draft',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        headers: ['phone', 'name', 'total'],
+        mapping: null,
+      });
+      repository.saveMapping.mockResolvedValue({
+        outcome: 'saved',
+        mappingProfileId: 'profile-1',
+      });
+      repository.readCounts.mockResolvedValue({});
+    });
+
+    it('saves the mapping for an owner and answers 200', async () => {
+      const response = await put();
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        batchId,
+        status: 'draft',
+        mapping: { phone: 'phone', customerName: ['name'], amount: 'total' },
+        options: { country: 'EG', defaultCurrency: 'EGP', dateFormat: 'auto' },
+        mappingProfileId: 'profile-1',
+      });
+      expect(repository.findBatchForMapping).toHaveBeenCalledWith(
+        'org-1',
+        batchId,
+      );
+    });
+
+    it('refuses a viewer before reading the batch', async () => {
+      currentUser = { ...currentUser, role: 'viewer' };
+      const response = await put();
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ code: 'IMPORT_ROLE_REQUIRED' });
+      expect(repository.findBatchForMapping).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for another organization's batch", async () => {
+      repository.findBatchForMapping.mockResolvedValue(null);
+      const response = await put();
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_NOT_FOUND' });
+      expect(repository.saveMapping).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'an unsupported currency',
+        { ...body, options: { ...body.options, defaultCurrency: 'XYZ' } },
+        'options.defaultCurrency',
+      ],
+      ['an unknown property', { ...body, extra: true }, 'extra'],
+      [
+        'a bad date format',
+        { ...body, options: { ...body.options, dateFormat: 'DD/MM' } },
+        'options.dateFormat',
+      ],
+      [
+        'three name columns',
+        {
+          ...body,
+          mapping: { ...body.mapping, customerName: ['a', 'b', 'c'] },
+        },
+        'mapping.customerName',
+      ],
+      [
+        'a payment choice that is neither cod nor not_cod',
+        {
+          ...body,
+          options: { ...body.options, paymentValueMap: { cod: 'maybe' } },
+        },
+        'options.paymentValueMap',
+      ],
+      ['a missing options object', { mapping: body.mapping }, 'options'],
+    ])(
+      'answers IMPORT_VALIDATION_FAILED for %s',
+      async (_label, payload, field) => {
+        const response = await put(payload);
+        expect(response.status).toBe(400);
+        expect(response.body).toMatchObject({
+          code: 'IMPORT_VALIDATION_FAILED',
+        });
+        expect(
+          (response.body as { fieldErrors: Record<string, string> })
+            .fieldErrors,
+        ).toHaveProperty([field]);
+        expect(repository.findBatchForMapping).not.toHaveBeenCalled();
+      },
+    );
+
+    it('answers IMPORT_MAPPING_INCOMPLETE with 422 for a missing required field', async () => {
+      const response = await put({
+        ...body,
+        mapping: { ...body.mapping, amount: null },
+      });
+      expect(response.status).toBe(422);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_MAPPING_INCOMPLETE',
+        fieldErrors: { amount: expect.any(String) as string },
+      });
+    });
+
+    it('answers IMPORT_BATCH_EXPIRED with 410 for an expired draft', async () => {
+      repository.findBatchForMapping.mockResolvedValue({
+        status: 'draft',
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        headers: ['phone', 'name', 'total'],
+        mapping: null,
+      });
+      const response = await put();
+      expect(response.status).toBe(410);
+      expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_EXPIRED' });
     });
   });
 });

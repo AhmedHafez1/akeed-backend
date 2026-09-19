@@ -26,6 +26,7 @@ import {
   buildOrderImportTemplate,
   type OrderImportTemplateFile,
 } from './order-import-template';
+import { OrderImportMappingService } from './order-import-mapping.service';
 import { orderImportError } from './order-imports.errors';
 import { sanitizeImportFileName } from './parsers/file-name';
 import type { ParsedImportFile } from './parsers/grid.types';
@@ -64,6 +65,7 @@ export class OrderImportsService {
     private readonly repository: OrderImportsRepository,
     private readonly parser: ImportFileParser,
     private readonly config: ConfigService,
+    private readonly mapping: OrderImportMappingService,
   ) {}
 
   /**
@@ -98,6 +100,12 @@ export class OrderImportsService {
       issues: row.issues,
     }));
     const fileName = sanitizeImportFileName(file.originalname);
+    const suggestion = await this.mapping.suggest(
+      user.orgId,
+      source,
+      headers,
+      rows,
+    );
 
     let created: CreatedDraft;
     try {
@@ -115,6 +123,9 @@ export class OrderImportsService {
           sheetName: parsed.sheetName,
           headers,
           expiresAt: new Date(now.getTime() + DRAFT_LIFETIME_MS),
+          mapping: suggestion.mapping,
+          options: suggestion.options,
+          mappingProfileId: suggestion.mappingProfileId,
         },
         importRows,
         {
@@ -168,6 +179,7 @@ export class OrderImportsService {
       headers,
       rowCount: rows.length,
       sampleRows: importRows.slice(0, SAMPLE_ROW_COUNT),
+      ...suggestion.response,
       ...(created.duplicateFileOf
         ? { duplicateFileOf: created.duplicateFileOf }
         : {}),

@@ -1,4 +1,5 @@
 import type { RowIssue } from '../parsers/grid.types';
+import type { OrderImportMappingSuggestionDto } from './order-import-mapping.dto';
 
 export interface OrderImportSampleRowDto {
   rowNumber: number;
@@ -12,8 +13,11 @@ export interface OrderImportDuplicateFileDto {
   status: string;
 }
 
-/** `POST /api/order-imports` (US-04.6-02 AC8). */
-export interface OrderImportUploadResponseDto {
+/**
+ * `POST /api/order-imports` (US-04.6-02 AC8), with the detected mapping,
+ * options, payment values and date-format check (US-04.6-03).
+ */
+export interface OrderImportUploadResponseDto extends OrderImportMappingSuggestionDto {
   batchId: string;
   status: 'draft';
   fileName: string;

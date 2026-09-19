@@ -14,14 +14,13 @@ import { integrations } from '../../infrastructure/database/schema';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import {
   ONBOARDING_LANGUAGES,
-  ONBOARDING_SHIPPING_CURRENCIES,
   ONBOARDING_STATUSES,
   AUTOMATION_TIMEZONES,
   type AutomationTimezone,
-  type OnboardingShippingCurrency,
   type OnboardingStateDto,
   type UpdateOnboardingSettingsDto,
 } from './dto/onboarding.dto';
+import { resolveShippingCurrency } from './shipping-currency';
 import {
   STORE_PLATFORM_PORT,
   type StorePlatformPort,
@@ -40,7 +39,6 @@ import {
 } from '../../shared/commerce/current-integration-resolver';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
-const DEFAULT_SHIPPING_CURRENCY: OnboardingShippingCurrency = 'USD';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_FOLLOW_UP_ENABLED = true;
 const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
@@ -316,7 +314,7 @@ export class OnboardingStateService {
       isAutoVerifyEnabled: integration.isAutoVerifyEnabled ?? true,
       assumeCodWhenPaymentMissing:
         integration.assumeCodWhenPaymentMissing ?? false,
-      shippingCurrency: this.resolveShippingCurrency(integration),
+      shippingCurrency: resolveShippingCurrency(integration.shippingCurrency),
       avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
@@ -353,25 +351,6 @@ export class OnboardingStateService {
       undefined,
       { onboarding_completed: 'captured_exact' },
     );
-  }
-
-  private resolveShippingCurrency(
-    integration: IntegrationRecord,
-  ): OnboardingShippingCurrency {
-    const currency = integration.shippingCurrency?.trim().toUpperCase();
-    if (!currency) {
-      return DEFAULT_SHIPPING_CURRENCY;
-    }
-
-    if (
-      ONBOARDING_SHIPPING_CURRENCIES.includes(
-        currency as OnboardingShippingCurrency,
-      )
-    ) {
-      return currency as OnboardingShippingCurrency;
-    }
-
-    return DEFAULT_SHIPPING_CURRENCY;
   }
 
   private resolveAverageShippingCost(integration: IntegrationRecord): number {

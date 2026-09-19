@@ -3,7 +3,11 @@ import { and, desc, eq, gt, gte, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
-import { orderImportBatches, orderImportRows } from '../schema';
+import {
+  orderImportBatches,
+  orderImportMappingProfiles,
+  orderImportRows,
+} from '../schema';
 
 type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -39,6 +43,10 @@ export interface NewDraftBatch {
   sheetName: string | null;
   headers: string[];
   expiresAt: Date;
+  /** The suggested (unconfirmed) mapping and options, and the profile used. */
+  mapping: unknown;
+  options: unknown;
+  mappingProfileId: string | null;
 }
 
 export interface NewImportRow {
@@ -67,6 +75,39 @@ export class OrderImportShortCodeError extends Error {
     this.name = OrderImportShortCodeError.name;
   }
 }
+
+export interface MappingProfileRecord {
+  id: string;
+  mapping: unknown;
+  options: unknown;
+}
+
+export interface BatchForMapping {
+  status: string;
+  expiresAt: string;
+  headers: unknown;
+  mapping: unknown;
+}
+
+export interface ColumnValueCount {
+  value: string;
+  count: number;
+}
+
+export interface SaveMappingInput {
+  orgId: string;
+  batchId: string;
+  userId: string;
+  headerSignature: string;
+  mapping: unknown;
+  options: unknown;
+  profile: { mapping: unknown; options: unknown };
+  now: Date;
+}
+
+export type SaveMappingResult =
+  | { outcome: 'saved'; mappingProfileId: string }
+  | { outcome: 'not_draft' };
 
 export type DiscardDraftResult =
   | { outcome: 'discarded' }
@@ -186,6 +227,9 @@ export class OrderImportsRepository {
             delimiter: batch.delimiter,
             sheetName: batch.sheetName,
             headers: batch.headers,
+            mapping: batch.mapping,
+            options: batch.options,
+            mappingProfileId: batch.mappingProfileId,
             rowCount: rows.length,
             expiresAt: batch.expiresAt.toISOString(),
             shortCode: options.generateShortCode(),
@@ -258,5 +302,162 @@ export class OrderImportsRepository {
         ? { outcome: 'state_conflict', status: existing.status }
         : { outcome: 'not_found' };
     });
+  }
+
+  /** The organization's remembered mapping for a header set (US-04.6-03). */
+  async findMappingProfile(
+    orgId: string,
+    headerSignature: string,
+  ): Promise<MappingProfileRecord | null> {
+    const [row] = await this.db
+      .select({
+        id: orderImportMappingProfiles.id,
+        mapping: orderImportMappingProfiles.mapping,
+        options: orderImportMappingProfiles.options,
+      })
+      .from(orderImportMappingProfiles)
+      .where(
+        and(
+          eq(orderImportMappingProfiles.orgId, orgId),
+          eq(orderImportMappingProfiles.headerSignature, headerSignature),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Another organization's batch reads as not found. */
+  async findBatchForMapping(
+    orgId: string,
+    batchId: string,
+  ): Promise<BatchForMapping | null> {
+    const [row] = await this.db
+      .select({
+        status: orderImportBatches.status,
+        expiresAt: orderImportBatches.expiresAt,
+        headers: orderImportBatches.headers,
+        mapping: orderImportBatches.mapping,
+      })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * The distinct values of one column across the batch's rows, with counts.
+   * A missing cell counts as blank. The column name is a bound parameter.
+   */
+  async columnValueCounts(
+    orgId: string,
+    batchId: string,
+    column: string,
+  ): Promise<ColumnValueCount[]> {
+    const value = sql<string>`coalesce(${orderImportRows.raw} ->> ${column}::text, '')`;
+    return (
+      this.db
+        .select({ value, count: sql<number>`count(*)::int` })
+        .from(orderImportRows)
+        .where(
+          and(
+            eq(orderImportRows.batchId, batchId),
+            eq(orderImportRows.orgId, orgId),
+          ),
+        )
+        // By position: the select's column name is its own bound parameter, so
+        // repeating the expression would not be recognized as the same one.
+        .groupBy(sql`1`)
+    );
+  }
+
+  /**
+   * Stores a confirmed mapping on a live draft and remembers it for the header
+   * set, in one transaction (AC7, AC8).
+   *
+   * The batch update is conditional on `draft` and unexpired, so it cannot
+   * overwrite a batch a concurrent commit or expiry just moved on; when it
+   * matches nothing, nothing is written. The profile is one row per
+   * organization and header signature, replaced on every save, so saving the
+   * same body twice leaves the same state.
+   */
+  async saveMapping(input: SaveMappingInput): Promise<SaveMappingResult> {
+    const now = input.now.toISOString();
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(orderImportBatches)
+        .set({
+          mapping: input.mapping,
+          options: input.options,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(orderImportBatches.id, input.batchId),
+            eq(orderImportBatches.orgId, input.orgId),
+            eq(orderImportBatches.status, 'draft'),
+            gt(orderImportBatches.expiresAt, now),
+          ),
+        )
+        .returning({ id: orderImportBatches.id });
+      if (!updated) return { outcome: 'not_draft' };
+
+      const [profile] = await tx
+        .insert(orderImportMappingProfiles)
+        .values({
+          orgId: input.orgId,
+          headerSignature: input.headerSignature,
+          mapping: input.profile.mapping,
+          options: input.profile.options,
+          updatedBy: input.userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            orderImportMappingProfiles.orgId,
+            orderImportMappingProfiles.headerSignature,
+          ],
+          set: {
+            mapping: input.profile.mapping,
+            options: input.profile.options,
+            updatedBy: input.userId,
+            updatedAt: now,
+          },
+        })
+        .returning({ id: orderImportMappingProfiles.id });
+
+      await tx
+        .update(orderImportBatches)
+        .set({ mappingProfileId: profile.id })
+        .where(
+          and(
+            eq(orderImportBatches.id, input.batchId),
+            eq(orderImportBatches.orgId, input.orgId),
+          ),
+        );
+      return { outcome: 'saved', mappingProfileId: profile.id };
+    });
+  }
+
+  /** The batch counts as row validation last left them. */
+  async readCounts(
+    orgId: string,
+    batchId: string,
+  ): Promise<Record<string, number>> {
+    const [row] = await this.db
+      .select({ counts: orderImportBatches.counts })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return (row?.counts as Record<string, number> | undefined) ?? {};
   }
 }

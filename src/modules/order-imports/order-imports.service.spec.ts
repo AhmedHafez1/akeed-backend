@@ -5,7 +5,9 @@ import {
   parseBulkImportConfig,
 } from '../../shared/config/bulk-import.config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportsService } from './order-imports.service';
+import { RowValidationService } from './validation/row-validation.service';
 import { ImportFileError } from './parsers/import-file.error';
 import { parseImportFile } from './parsers/parse-import-file';
 
@@ -61,6 +63,7 @@ describe('OrderImportsService', () => {
     listOpenDrafts: jest.fn(),
     createDraftWithRows: jest.fn(),
     discardDraft: jest.fn(),
+    findMappingProfile: jest.fn(),
   };
   // The in-process parser: the worker wrapper has its own spec.
   const parser = {
@@ -73,10 +76,15 @@ describe('OrderImportsService', () => {
     repository as never,
     parser as never,
     config as never,
+    new OrderImportMappingService(
+      repository as never,
+      new RowValidationService(),
+    ),
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    repository.findMappingProfile.mockResolvedValue(null);
     repository.listOpenDrafts.mockResolvedValue([]);
     repository.createDraftWithRows.mockResolvedValue({
       batchId: 'batch-1',
@@ -110,7 +118,7 @@ describe('OrderImportsService', () => {
         file(csv, '../C:\\x\\orders.csv'),
       );
 
-      expect(response).toEqual({
+      expect(response).toMatchObject({
         batchId: 'batch-1',
         status: 'draft',
         fileName: 'orders.csv',
@@ -130,7 +138,33 @@ describe('OrderImportsService', () => {
           },
           issues: [],
         })),
+        // US-04.6-03: detected mapping and the store's default options.
+        mappingDictionaryVersion: 1,
+        mappingProfileApplied: false,
+        options: {
+          country: 'EG',
+          defaultCurrency: 'USD',
+          dateFormat: 'auto',
+          paymentValueMap: {},
+        },
+        paymentValues: null,
+        dateFormat: null,
       });
+      expect(response).not.toHaveProperty('duplicateFileOf');
+      expect(
+        Object.fromEntries(
+          response.suggestions.fields.map((field) => [
+            field.field,
+            field.columns,
+          ]),
+        ),
+      ).toMatchObject({
+        phone: ['phone'],
+        customerName: ['name'],
+        orderReference: ['order_id'],
+        amount: [],
+      });
+      expect(response.suggestions.unmappedColumns).toEqual([]);
       const [batch, rows, options] = repository.createDraftWithRows.mock
         .calls[0] as [
         Record<string, unknown>,
@@ -147,6 +181,14 @@ describe('OrderImportsService', () => {
         delimiter: ',',
         headers: ['order_id', 'name', 'phone'],
         fileSize: Buffer.byteLength(csv),
+        mapping: {
+          dictionaryVersion: 1,
+          confirmed: false,
+          columns: { phone: 'phone', customerName: ['name'], amount: null },
+          sources: { phone: 'auto', amount: 'none' },
+        },
+        options: { country: 'EG', defaultCurrency: 'USD' },
+        mappingProfileId: null,
       });
       expect(batch.fileSha256).toMatch(/^[0-9a-f]{64}$/);
       expect((batch.expiresAt as Date).getTime() - Date.now()).toBeGreaterThan(

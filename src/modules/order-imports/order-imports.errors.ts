@@ -20,6 +20,8 @@ const STATUS: Record<OrderImportErrorCode, HttpStatus> = {
   IMPORT_RATE_LIMITED: HttpStatus.TOO_MANY_REQUESTS,
   IMPORT_BATCH_NOT_FOUND: HttpStatus.NOT_FOUND,
   IMPORT_BATCH_STATE_CONFLICT: HttpStatus.CONFLICT,
+  IMPORT_BATCH_EXPIRED: HttpStatus.GONE,
+  IMPORT_MAPPING_INCOMPLETE: HttpStatus.UNPROCESSABLE_ENTITY,
   IMPORT_VALIDATION_FAILED: HttpStatus.BAD_REQUEST,
 };
 
@@ -32,6 +34,8 @@ export type OrderImportErrorCode =
   | 'IMPORT_RATE_LIMITED'
   | 'IMPORT_BATCH_NOT_FOUND'
   | 'IMPORT_BATCH_STATE_CONFLICT'
+  | 'IMPORT_BATCH_EXPIRED'
+  | 'IMPORT_MAPPING_INCOMPLETE'
   | 'IMPORT_VALIDATION_FAILED';
 
 /** Merchant-facing English copy; the frontend translates by `code`. */
@@ -53,6 +57,9 @@ export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
   IMPORT_RATE_LIMITED: 'Too many uploads. Wait a minute and try again.',
   IMPORT_BATCH_NOT_FOUND: 'Import not found.',
   IMPORT_BATCH_STATE_CONFLICT: 'This import can no longer be changed.',
+  IMPORT_BATCH_EXPIRED:
+    'This import expired after 24 hours. Upload the file again.',
+  IMPORT_MAPPING_INCOMPLETE: 'Finish matching the columns before continuing.',
   IMPORT_VALIDATION_FAILED: 'The request is not valid.',
 };
 
