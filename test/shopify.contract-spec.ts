@@ -80,6 +80,15 @@ describe('Shopify isolated PostgreSQL contract', () => {
     await client.unsafe(
       `ALTER TABLE "${namespace}"."webhook_events" ADD COLUMN "order_id" uuid`,
     );
+    // The repository also selects the source-neutral hold columns (US-04.6-01).
+    // Shopify events never hold, so every row here reads 'none'.
+    const holdMigration = readFileSync(
+      resolve(__dirname, '../drizzle/0036_webhook_event_hold.sql'),
+      'utf8',
+    );
+    for (const statement of holdMigration.split('--> statement-breakpoint')) {
+      if (statement.trim()) await client.unsafe(statement);
+    }
   });
 
   afterAll(async () => {

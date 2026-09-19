@@ -8,34 +8,22 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
-import {
-  ManualOrderAcceptanceStateError,
-  ManualOrderIngestionRepository,
-  ManualOrderPayloadConflictError,
-} from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { PhoneService } from '../../shared/services/phone.service';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import {
-  appendPaymentSignal,
   classifyCodStatus,
   collectPaymentSignals,
 } from '../../shared/commerce/payment-signals';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
-import {
-  DispatchOutcome,
-  WebhookDispatchService,
-} from '../webhook-queue/webhook-dispatch.service';
-import {
-  buildBackendLog,
-  normalizeError,
-} from '../../shared/logging/backend-log.util';
+import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
+import { ManualOrderChannelAdapter } from './manual-order.channel-adapter';
 import type {
   CreateManualOrderDto,
   CreateManualOrderResponseDto,
@@ -73,8 +61,7 @@ export class OrdersService {
   constructor(
     private readonly ordersRepo: OrdersRepository,
     private readonly integrationsRepo: IntegrationsRepository,
-    private readonly verificationsRepo: VerificationsRepository,
-    private readonly manualOrders: ManualOrderIngestionRepository,
+    private readonly ingestion: StandaloneOrderIngestionService,
     private readonly phoneService: PhoneService,
     private readonly billingEntitlements: BillingEntitlementService,
     private readonly creditEligibility: CreditEligibilityService,
@@ -176,167 +163,25 @@ export class OrdersService {
       });
     }
 
-    const totalPrice = Number(payload.totalPrice).toFixed(2);
-    const paymentSignals: string[] = [];
-    appendPaymentSignal(paymentSignals, payload.paymentMethod);
-    const canonicalOrder = {
-      externalOrderId: this.manualExternalOrderId(idempotencyKey),
-      orderNumber: payload.orderNumber,
-      customerPhone,
-      customerName: payload.customerName,
-      totalPrice,
-      currency: payload.currency,
-      paymentMethod: payload.paymentMethod,
-      paymentSignals,
-      codStatus: classifyCodStatus(paymentSignals),
-    } as const;
-    const submissionFingerprint = createHash('sha256')
-      .update(JSON.stringify(canonicalOrder))
-      .digest('hex');
-    const rawPayload = {
-      ingestionType: 'manual',
-      schemaVersion: 1,
-      submissionFingerprint,
-      order: canonicalOrder,
-    };
-
-    let acceptance: Awaited<
-      ReturnType<ManualOrderIngestionRepository['accept']>
-    >;
-    try {
-      acceptance = await this.manualOrders.accept({
-        event: {
+    const accepted = await this.ingestion
+      .acceptOne(
+        { orgId: user.orgId, source },
+        ManualOrderChannelAdapter.toCanonicalOrderInput(payload, {
           idempotencyKey,
-          storeDomain: source.platformStoreUrl,
-          orgId: user.orgId,
-          integrationId: source.id,
-          rawPayload,
-          submissionFingerprint,
-        },
-        order: {
-          orgId: user.orgId,
-          integrationId: source.id,
-          externalOrderId: canonicalOrder.externalOrderId,
-          orderNumber: payload.orderNumber,
           customerPhone,
-          customerName: payload.customerName,
-          totalPrice,
-          currency: payload.currency,
-          paymentMethod: payload.paymentMethod,
-          rawPayload,
-          isTest: false,
-        },
-      });
-    } catch (error) {
-      if (error instanceof ManualOrderPayloadConflictError) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          message:
-            'Idempotency-Key was already used with different order data.',
-          code: 'MANUAL_ORDER_IDEMPOTENCY_CONFLICT',
-        });
-      }
-      this.logger.error(
-        buildBackendLog(OrdersService.name, {
-          action: 'manual-order-accept',
-          outcome: 'failure',
-          orgId: user.orgId,
-          integrationId: source.id,
-          reason:
-            error instanceof ManualOrderAcceptanceStateError
-              ? 'acceptance_state_invalid'
-              : 'database_failure',
-          ...normalizeError(error),
         }),
+        { channel: 'manual', idempotencyKey },
+      )
+      .catch((error: unknown) =>
+        ManualOrderChannelAdapter.rethrowAsHttp(error),
       );
-      throw new ServiceUnavailableException({
-        statusCode: 503,
-        error: 'Service Unavailable',
-        message: 'The order could not be durably accepted. Retry safely.',
-        code: 'MANUAL_ORDER_ACCEPTANCE_FAILED',
-      });
-    }
-
-    // `dispatchById` reports 'not_claimed' and 'failed' by returning them, not
-    // by throwing. Discarding the return value meant an order whose job never
-    // reached the queue still answered 202 "accepted" and logged success, which
-    // is why these failures were invisible from both the UI and the logs.
-    let outcome: DispatchOutcome;
-    try {
-      outcome = await this.dispatcher.dispatchById(acceptance.eventId);
-    } catch (error) {
-      this.logger.error(
-        buildBackendLog(OrdersService.name, {
-          action: 'manual-order-dispatch',
-          outcome: 'failure',
-          orgId: user.orgId,
-          integrationId: source.id,
-          orderId: acceptance.order.id,
-          webhookEventId: acceptance.eventId,
-          ...normalizeError(error),
-        }),
-      );
-      outcome = 'failed';
-    }
-    if (outcome !== 'dispatched') {
-      this.logger.error(
-        buildBackendLog(OrdersService.name, {
-          action: 'manual-order-dispatch',
-          outcome: 'failure',
-          reason: outcome,
-          orgId: user.orgId,
-          integrationId: source.id,
-          orderId: acceptance.order.id,
-          webhookEventId: acceptance.eventId,
-        }),
-      );
-      // The order and its event are committed, so retrying with the same
-      // Idempotency-Key takes the duplicate branch of `accept()` and
-      // re-dispatches that same event. The retry cannot create a second order.
-      throw new ServiceUnavailableException({
-        statusCode: 503,
-        error: 'Service Unavailable',
-        message:
-          'The order was saved but its verification could not be queued. Retry safely.',
-        code: 'MANUAL_ORDER_DISPATCH_FAILED',
-      });
-    }
-
-    let verificationId: string | undefined;
-    try {
-      verificationId = (
-        await this.verificationsRepo.findByOrderId(acceptance.order.id)
-      )?.id;
-    } catch (error) {
-      this.logger.warn(
-        buildBackendLog(OrdersService.name, {
-          action: 'manual-order-verification-read',
-          outcome: 'failure',
-          orgId: user.orgId,
-          integrationId: source.id,
-          orderId: acceptance.order.id,
-          ...normalizeError(error),
-        }),
-      );
-    }
-
-    this.logger.log(
-      buildBackendLog(OrdersService.name, {
-        action: 'manual-order-accept',
-        outcome: 'success',
-        orgId: user.orgId,
-        integrationId: source.id,
-        orderId: acceptance.order.id,
-        webhookEventId: acceptance.eventId,
-        duplicate: acceptance.duplicate,
-      }),
-    );
     return {
-      orderId: acceptance.order.id,
-      ...(verificationId ? { verificationId } : {}),
+      orderId: accepted.orderId,
+      ...(accepted.verificationId
+        ? { verificationId: accepted.verificationId }
+        : {}),
       status: 'accepted',
-      duplicate: acceptance.duplicate,
+      duplicate: accepted.duplicate,
     };
   }
 
@@ -544,10 +389,6 @@ export class OrdersService {
         fieldErrors: { customerPhone: error.message },
       });
     }
-  }
-
-  private manualExternalOrderId(idempotencyKey: string): string {
-    return `manual-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 40)}`;
   }
 
   private retryReadinessReason(

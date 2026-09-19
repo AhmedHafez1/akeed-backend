@@ -75,13 +75,16 @@ export interface VerificationListItemDto {
  * safe.
  *
  * Not a merchant-facing vocabulary: the dashboard renders only the nine values
- * the `verification_status` enum can hold. The five extra members here
+ * the `verification_status` enum can hold. The extra members here
  * (`accepted`, `processing`, `ineligible`, `blocked`, `review_required`)
  * describe an order that has not reached a verification yet, or one whose
  * dispatch outcome is unresolved — distinctions retry safety needs and the UI
- * does not.
+ * does not. `awaiting_start` (held, nothing will be sent until released) and
+ * `not_started` (withdrawn before release) are never retryable.
  */
 export const RETRY_GUARD_STATUSES = [
+  'awaiting_start',
+  'not_started',
   'accepted',
   'processing',
   'ineligible',

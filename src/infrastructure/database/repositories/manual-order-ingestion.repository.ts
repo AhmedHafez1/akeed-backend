@@ -27,6 +27,11 @@ export interface ManualOrderAcceptanceInput {
     integrationId: string;
     rawPayload: Record<string, unknown>;
     submissionFingerprint: string;
+    /**
+     * Persist the event held: not dispatchable until `releaseHeld`. Omitted,
+     * the event is dispatchable immediately, exactly as before holds existed.
+     */
+    hold?: { groupId: string };
   };
   order: typeof orders.$inferInsert;
 }
@@ -95,9 +100,16 @@ export class ManualOrderIngestionRepository {
           orgId: input.event.orgId,
           integrationId: input.event.integrationId,
           rawPayload: input.event.rawPayload,
-          dispatchRequired: true,
-          nextDispatchAt: sql`NOW()`,
           status: 'pending',
+          ...(input.event.hold
+            ? {
+                dispatchRequired: false,
+                nextDispatchAt: null,
+                holdState: 'held',
+                holdGroupId: input.event.hold.groupId,
+                heldAt: sql`NOW()`,
+              }
+            : { dispatchRequired: true, nextDispatchAt: sql`NOW()` }),
         })
         .onConflictDoNothing({
           target: [

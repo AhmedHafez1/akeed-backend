@@ -1,0 +1,186 @@
+[
+  {
+    "name": "cod-decimal",
+    "idempotencyKey": "golden-key-0001",
+    "customerPhone": "+201001234567",
+    "dto": {
+      "customerPhone": "01001234567",
+      "customerName": "Customer One",
+      "orderNumber": "ORD-1",
+      "totalPrice": "125.5",
+      "currency": "EGP",
+      "paymentMethod": "cash_on_delivery"
+    },
+    "expected": {
+      "rawPayloadJson": "{\"ingestionType\":\"manual\",\"schemaVersion\":1,\"submissionFingerprint\":\"35be556bd4e234ab9c4f3a2d44cc0180936253be0b39a73d45890b68d8d5839e\",\"order\":{\"externalOrderId\":\"manual-225d61818928270d2113c286a31e8e16c3b59676\",\"orderNumber\":\"ORD-1\",\"customerPhone\":\"+201001234567\",\"customerName\":\"Customer One\",\"totalPrice\":\"125.50\",\"currency\":\"EGP\",\"paymentMethod\":\"cash_on_delivery\",\"paymentSignals\":[\"cash on delivery\"],\"codStatus\":\"cod\"}}",
+      "submissionFingerprint": "35be556bd4e234ab9c4f3a2d44cc0180936253be0b39a73d45890b68d8d5839e",
+      "externalOrderId": "manual-225d61818928270d2113c286a31e8e16c3b59676",
+      "order": {
+        "orgId": "org-1",
+        "integrationId": "int-1",
+        "externalOrderId": "manual-225d61818928270d2113c286a31e8e16c3b59676",
+        "orderNumber": "ORD-1",
+        "customerPhone": "+201001234567",
+        "customerName": "Customer One",
+        "totalPrice": "125.50",
+        "currency": "EGP",
+        "paymentMethod": "cash_on_delivery",
+        "rawPayload": {
+          "ingestionType": "manual",
+          "schemaVersion": 1,
+          "submissionFingerprint": "35be556bd4e234ab9c4f3a2d44cc0180936253be0b39a73d45890b68d8d5839e",
+          "order": {
+            "externalOrderId": "manual-225d61818928270d2113c286a31e8e16c3b59676",
+            "orderNumber": "ORD-1",
+            "customerPhone": "+201001234567",
+            "customerName": "Customer One",
+            "totalPrice": "125.50",
+            "currency": "EGP",
+            "paymentMethod": "cash_on_delivery",
+            "paymentSignals": ["cash on delivery"],
+            "codStatus": "cod"
+          }
+        },
+        "isTest": false
+      }
+    }
+  },
+  {
+    "name": "integer-price",
+    "idempotencyKey": "golden-key-0002",
+    "customerPhone": "+966501234567",
+    "dto": {
+      "customerPhone": "0501234567",
+      "customerName": "Buyer",
+      "orderNumber": "#1001",
+      "totalPrice": "10",
+      "currency": "SAR",
+      "paymentMethod": "cash_on_delivery"
+    },
+    "expected": {
+      "rawPayloadJson": "{\"ingestionType\":\"manual\",\"schemaVersion\":1,\"submissionFingerprint\":\"11d00d7841b331555efd10c9c936f7aaa5fcc7daabc78e491718c336f80c59f8\",\"order\":{\"externalOrderId\":\"manual-5ced05a0372fbcb3407949bde66640b1c66071dc\",\"orderNumber\":\"#1001\",\"customerPhone\":\"+966501234567\",\"customerName\":\"Buyer\",\"totalPrice\":\"10.00\",\"currency\":\"SAR\",\"paymentMethod\":\"cash_on_delivery\",\"paymentSignals\":[\"cash on delivery\"],\"codStatus\":\"cod\"}}",
+      "submissionFingerprint": "11d00d7841b331555efd10c9c936f7aaa5fcc7daabc78e491718c336f80c59f8",
+      "externalOrderId": "manual-5ced05a0372fbcb3407949bde66640b1c66071dc",
+      "order": {
+        "orgId": "org-1",
+        "integrationId": "int-1",
+        "externalOrderId": "manual-5ced05a0372fbcb3407949bde66640b1c66071dc",
+        "orderNumber": "#1001",
+        "customerPhone": "+966501234567",
+        "customerName": "Buyer",
+        "totalPrice": "10.00",
+        "currency": "SAR",
+        "paymentMethod": "cash_on_delivery",
+        "rawPayload": {
+          "ingestionType": "manual",
+          "schemaVersion": 1,
+          "submissionFingerprint": "11d00d7841b331555efd10c9c936f7aaa5fcc7daabc78e491718c336f80c59f8",
+          "order": {
+            "externalOrderId": "manual-5ced05a0372fbcb3407949bde66640b1c66071dc",
+            "orderNumber": "#1001",
+            "customerPhone": "+966501234567",
+            "customerName": "Buyer",
+            "totalPrice": "10.00",
+            "currency": "SAR",
+            "paymentMethod": "cash_on_delivery",
+            "paymentSignals": ["cash on delivery"],
+            "codStatus": "cod"
+          }
+        },
+        "isTest": false
+      }
+    }
+  },
+  {
+    "name": "arabic-cod-unicode-name",
+    "idempotencyKey": "golden:key.0003_x",
+    "customerPhone": "+201112223334",
+    "dto": {
+      "customerPhone": "+201112223334",
+      "customerName": "أحمد \"المصري\"  علي",
+      "orderNumber": "طلب-٣",
+      "totalPrice": "99.99",
+      "currency": "EGP",
+      "paymentMethod": "الدفع عند الاستلام"
+    },
+    "expected": {
+      "rawPayloadJson": "{\"ingestionType\":\"manual\",\"schemaVersion\":1,\"submissionFingerprint\":\"ea106a6eab0fa2dfa30bd949e431fd93aded7adb4261323ed3c29f1554d4af81\",\"order\":{\"externalOrderId\":\"manual-07def2cb0cd5b36f4093fd31938c4cd403c6a0ae\",\"orderNumber\":\"طلب-٣\",\"customerPhone\":\"+201112223334\",\"customerName\":\"أحمد \\\"المصري\\\"  علي\",\"totalPrice\":\"99.99\",\"currency\":\"EGP\",\"paymentMethod\":\"الدفع عند الاستلام\",\"paymentSignals\":[\"الدفع عند الاستلام\"],\"codStatus\":\"cod\"}}",
+      "submissionFingerprint": "ea106a6eab0fa2dfa30bd949e431fd93aded7adb4261323ed3c29f1554d4af81",
+      "externalOrderId": "manual-07def2cb0cd5b36f4093fd31938c4cd403c6a0ae",
+      "order": {
+        "orgId": "org-1",
+        "integrationId": "int-1",
+        "externalOrderId": "manual-07def2cb0cd5b36f4093fd31938c4cd403c6a0ae",
+        "orderNumber": "طلب-٣",
+        "customerPhone": "+201112223334",
+        "customerName": "أحمد \"المصري\"  علي",
+        "totalPrice": "99.99",
+        "currency": "EGP",
+        "paymentMethod": "الدفع عند الاستلام",
+        "rawPayload": {
+          "ingestionType": "manual",
+          "schemaVersion": 1,
+          "submissionFingerprint": "ea106a6eab0fa2dfa30bd949e431fd93aded7adb4261323ed3c29f1554d4af81",
+          "order": {
+            "externalOrderId": "manual-07def2cb0cd5b36f4093fd31938c4cd403c6a0ae",
+            "orderNumber": "طلب-٣",
+            "customerPhone": "+201112223334",
+            "customerName": "أحمد \"المصري\"  علي",
+            "totalPrice": "99.99",
+            "currency": "EGP",
+            "paymentMethod": "الدفع عند الاستلام",
+            "paymentSignals": ["الدفع عند الاستلام"],
+            "codStatus": "cod"
+          }
+        },
+        "isTest": false
+      }
+    }
+  },
+  {
+    "name": "non-cod",
+    "idempotencyKey": "golden-key-0004",
+    "customerPhone": "+971501234567",
+    "dto": {
+      "customerPhone": "0501234567",
+      "customerName": "Zoë",
+      "orderNumber": "A-9",
+      "totalPrice": "0.5",
+      "currency": "AED",
+      "paymentMethod": "credit card"
+    },
+    "expected": {
+      "rawPayloadJson": "{\"ingestionType\":\"manual\",\"schemaVersion\":1,\"submissionFingerprint\":\"adca2d33829bf2d29e66ffd3f3c01e42b648d9667797573bcf6a5baed662d8a7\",\"order\":{\"externalOrderId\":\"manual-bde121e00826a4c1829cd826e5af0f4bc29b2807\",\"orderNumber\":\"A-9\",\"customerPhone\":\"+971501234567\",\"customerName\":\"Zoë\",\"totalPrice\":\"0.50\",\"currency\":\"AED\",\"paymentMethod\":\"credit card\",\"paymentSignals\":[\"credit card\"],\"codStatus\":\"non_cod\"}}",
+      "submissionFingerprint": "adca2d33829bf2d29e66ffd3f3c01e42b648d9667797573bcf6a5baed662d8a7",
+      "externalOrderId": "manual-bde121e00826a4c1829cd826e5af0f4bc29b2807",
+      "order": {
+        "orgId": "org-1",
+        "integrationId": "int-1",
+        "externalOrderId": "manual-bde121e00826a4c1829cd826e5af0f4bc29b2807",
+        "orderNumber": "A-9",
+        "customerPhone": "+971501234567",
+        "customerName": "Zoë",
+        "totalPrice": "0.50",
+        "currency": "AED",
+        "paymentMethod": "credit card",
+        "rawPayload": {
+          "ingestionType": "manual",
+          "schemaVersion": 1,
+          "submissionFingerprint": "adca2d33829bf2d29e66ffd3f3c01e42b648d9667797573bcf6a5baed662d8a7",
+          "order": {
+            "externalOrderId": "manual-bde121e00826a4c1829cd826e5af0f4bc29b2807",
+            "orderNumber": "A-9",
+            "customerPhone": "+971501234567",
+            "customerName": "Zoë",
+            "totalPrice": "0.50",
+            "currency": "AED",
+            "paymentMethod": "credit card",
+            "paymentSignals": ["credit card"],
+            "codStatus": "non_cod"
+          }
+        },
+        "isTest": false
+      }
+    }
+  }
+]

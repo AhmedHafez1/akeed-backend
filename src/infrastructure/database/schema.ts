@@ -838,6 +838,19 @@ export const webhookEvents = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
+    // Source-neutral hold (US-04.6-01). A held event is invisible to dispatch
+    // and reconciliation until released; `hold_group_id` is the import batch.
+    holdState: text('hold_state').default('none').notNull(),
+    holdGroupId: uuid('hold_group_id'),
+    heldAt: timestamp('held_at', { withTimezone: true, mode: 'string' }),
+    releasedAt: timestamp('released_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    withdrawnAt: timestamp('withdrawn_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
   },
   (table) => [
     index('idx_webhook_events_platform_idempotency').using(
@@ -889,6 +902,21 @@ export const webhookEvents = pgTable(
     check(
       'webhook_events_source_identity_pair_check',
       sql`(${table.orgId} IS NULL) = (${table.integrationId} IS NULL)`,
+    ),
+    index('idx_webhook_events_hold_group')
+      .using(
+        'btree',
+        table.holdGroupId.asc().nullsLast().op('uuid_ops'),
+        table.holdState.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`${table.holdGroupId} IS NOT NULL`),
+    check(
+      'webhook_events_hold_state_check',
+      sql`${table.holdState} IN ('none', 'held', 'released', 'withdrawn')`,
+    ),
+    check(
+      'webhook_events_held_not_dispatchable_check',
+      sql`${table.holdState} <> 'held' OR ${table.dispatchRequired} = false`,
     ),
     pgPolicy('Service role manages webhook events', {
       as: 'permissive',

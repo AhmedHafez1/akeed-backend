@@ -5,6 +5,7 @@ import {
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import { OrdersService } from './orders.service';
+import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 
 describe('OrdersService manual creation', () => {
   const source = {
@@ -102,8 +103,11 @@ describe('OrdersService manual creation', () => {
     service = new OrdersService(
       {} as never,
       integrations as never,
-      verifications as never,
-      manualOrders as never,
+      new StandaloneOrderIngestionService(
+        manualOrders as never,
+        dispatcher as never,
+        verifications as never,
+      ),
       phone as never,
       entitlements as never,
       creditEligibility as never,
@@ -550,7 +554,6 @@ describe('OrdersService manual verification lifecycle', () => {
       integrations as never,
       {} as never,
       {} as never,
-      {} as never,
       billing as never,
       { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
       dispatcher as never,
@@ -677,6 +680,34 @@ describe('OrdersService manual verification lifecycle', () => {
       response: { code: 'MANUAL_ORDER_RETRY_NOT_ALLOWED' },
     });
   });
+
+  it.each([
+    ['awaiting_start', null],
+    ['not_started', 'import_not_started'],
+  ])(
+    'refuses retry for a %s order without touching the event',
+    async (status, reason) => {
+      const { service, orders, events, dispatcher } = setup();
+      orders.findDashboardOrderById.mockResolvedValue({
+        ...(await orders.findDashboardOrderById('order-1', 'org-1')),
+        verificationId: null,
+        retryGuardStatus: status,
+        retryGuardReason: reason,
+        retryGuardRetryable: false,
+      });
+
+      await expect(
+        service.retryOrderVerification(user, 'order-1'),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'MANUAL_ORDER_RETRY_NOT_ALLOWED',
+          lifecycle: { status, reason, retryable: false },
+        },
+      });
+      expect(events.resetForRedispatch).not.toHaveBeenCalled();
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+    },
+  );
 
   it('enforces role and organization isolation', async () => {
     const { service, orders } = setup();

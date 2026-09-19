@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '../src/infrastructure/database';
@@ -9,6 +11,7 @@ import {
   type ManualOrderAcceptanceInput,
 } from '../src/infrastructure/database/repositories/manual-order-ingestion.repository';
 import { OrdersRepository } from '../src/infrastructure/database/repositories/orders.repository';
+import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
 
 function isolatedDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -43,6 +46,7 @@ const client = postgres(isolatedDatabaseUrl(), {
 const database = drizzle(client, { schema });
 const repository = new ManualOrderIngestionRepository(database);
 const dashboardRepository = new OrdersRepository(database);
+const eventsRepository = new WebhookEventsRepository(database);
 let created = false;
 
 function acceptanceInput(
@@ -233,6 +237,14 @@ describe('manual order ingestion PostgreSQL contract', () => {
         FOREIGN KEY (integration_id, org_id) REFERENCES integrations(id, org_id)
       );
     `);
+    // Layer the real hold migration on the hand-written base so this suite
+    // exercises the shipped columns and constraints, not a copy of them.
+    for (const statement of readFileSync(
+      resolve(__dirname, '../drizzle/0036_webhook_event_hold.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (statement.trim()) await client.unsafe(statement);
+    }
   });
 
   afterAll(async () => {
@@ -531,5 +543,336 @@ describe('manual order ingestion PostgreSQL contract', () => {
         sourceB.orgId,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  describe('webhook event hold (US-04.6-01)', () => {
+    const maxAttempts = 8;
+    const farFuture = '2999-01-01T00:00:00.000Z';
+
+    async function acceptHeld(
+      source: { orgId: string; integrationId: string },
+      key: string,
+      groupId: string,
+    ) {
+      const input = acceptanceInput(source.orgId, source.integrationId, key);
+      return repository.accept({
+        ...input,
+        event: { ...input.event, hold: { groupId } },
+      });
+    }
+
+    async function eventRow(id: string) {
+      const [row] = await client<
+        {
+          hold_state: string;
+          hold_group_id: string | null;
+          status: string;
+          dispatch_required: boolean;
+          next_dispatch_at: string | null;
+          held_at: string | null;
+          released_at: string | null;
+          withdrawn_at: string | null;
+          last_error: string | null;
+        }[]
+      >`
+        SELECT hold_state, hold_group_id, status, dispatch_required,
+               next_dispatch_at, held_at, released_at, withdrawn_at, last_error
+        FROM webhook_events WHERE id = ${id}
+      `;
+      return row;
+    }
+
+    async function recoverableIds(): Promise<Set<string>> {
+      const rows = await eventsRepository.findRecoverable(
+        1000,
+        new Date().toISOString(),
+        maxAttempts,
+      );
+      return new Set(rows.map(({ id }) => id));
+    }
+
+    it('persists a held event that is not dispatchable', async () => {
+      const source = await createSource();
+      const groupId = randomUUID();
+      const accepted = await acceptHeld(source, 'hold-persist', groupId);
+
+      expect(await eventRow(accepted.eventId)).toMatchObject({
+        hold_state: 'held',
+        hold_group_id: groupId,
+        status: 'pending',
+        dispatch_required: false,
+        next_dispatch_at: null,
+        held_at: expect.any(String) as unknown,
+        released_at: null,
+        withdrawn_at: null,
+      });
+      // Replaying the same held submission is a duplicate, not a second order.
+      await expect(
+        acceptHeld(source, 'hold-persist', groupId),
+      ).resolves.toMatchObject({ eventId: accepted.eventId, duplicate: true });
+    });
+
+    it('defaults every other event to none and keeps it dispatchable', async () => {
+      const source = await createSource();
+      const accepted = await repository.accept(
+        acceptanceInput(source.orgId, source.integrationId, 'hold-none'),
+      );
+
+      expect(await eventRow(accepted.eventId)).toMatchObject({
+        hold_state: 'none',
+        dispatch_required: true,
+      });
+      expect(await recoverableIds()).toContain(accepted.eventId);
+    });
+
+    it('refuses to store a held event marked dispatchable', async () => {
+      const source = await createSource();
+      const accepted = await acceptHeld(source, 'hold-check', randomUUID());
+
+      await expect(
+        client`UPDATE webhook_events SET dispatch_required = true WHERE id = ${accepted.eventId}`,
+      ).rejects.toMatchObject({
+        constraint_name: 'webhook_events_held_not_dispatchable_check',
+      });
+      await expect(
+        client`UPDATE webhook_events SET hold_state = 'paused' WHERE id = ${accepted.eventId}`,
+      ).rejects.toMatchObject({
+        constraint_name: 'webhook_events_hold_state_check',
+      });
+    });
+
+    it('never offers held or withdrawn events to dispatch, recovery or retry', async () => {
+      const source = await createSource();
+      const held = await acceptHeld(source, 'hold-excluded', randomUUID());
+      const withdrawn = await acceptHeld(
+        source,
+        'withdrawn-excluded',
+        randomUUID(),
+      );
+      await eventsRepository.withdrawHeld(source.orgId, {
+        eventIds: [withdrawn.eventId],
+      });
+      // The mistake the predicate must survive: a withdrawn row forced back
+      // into a dispatchable shape.
+      await client`
+        UPDATE webhook_events
+        SET status = 'pending', dispatch_required = true, next_dispatch_at = NOW() - interval '1 minute'
+        WHERE id = ${withdrawn.eventId}
+      `;
+
+      const recoverable = await recoverableIds();
+      expect(recoverable).not.toContain(held.eventId);
+      expect(recoverable).not.toContain(withdrawn.eventId);
+      for (const eventId of [held.eventId, withdrawn.eventId]) {
+        await expect(
+          eventsRepository.claimForDispatch(
+            eventId,
+            farFuture,
+            new Date().toISOString(),
+            maxAttempts,
+          ),
+        ).resolves.toBeNull();
+      }
+
+      const orphans = await eventsRepository.findOrdersMissingVerification(
+        1000,
+        farFuture,
+      );
+      expect(orphans.map(({ eventId }) => eventId)).not.toContain(held.eventId);
+
+      await client`UPDATE webhook_events SET status = 'skipped' WHERE id = ${withdrawn.eventId}`;
+      await expect(
+        eventsRepository.resetForRedispatch({
+          id: withdrawn.eventId,
+          orderId: withdrawn.order.id,
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('still re-drives ordinary events through the orphan sweep and retry reset', async () => {
+      const source = await createSource();
+      const accepted = await repository.accept(
+        acceptanceInput(source.orgId, source.integrationId, 'hold-control'),
+      );
+      const orphans = await eventsRepository.findOrdersMissingVerification(
+        1000,
+        farFuture,
+      );
+      expect(orphans.map(({ eventId }) => eventId)).toContain(accepted.eventId);
+
+      await client`UPDATE webhook_events SET status = 'skipped' WHERE id = ${accepted.eventId}`;
+      await expect(
+        eventsRepository.resetForRedispatch({
+          id: accepted.eventId,
+          orderId: accepted.order.id,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('releases held events once, only for their own organization', async () => {
+      const source = await createSource();
+      const other = await createSource();
+      const groupId = randomUUID();
+      const first = await acceptHeld(source, 'release-1', groupId);
+      const second = await acceptHeld(source, 'release-2', groupId);
+      const dispatchAt = new Date(Date.now() - 1000).toISOString();
+
+      await expect(
+        eventsRepository.releaseHeld(other.orgId, [first.eventId], dispatchAt),
+      ).resolves.toEqual([]);
+      await expect(
+        eventsRepository.releaseHeld(source.orgId, [first.eventId], dispatchAt),
+      ).resolves.toEqual([first.eventId]);
+      await expect(
+        eventsRepository.releaseHeld(
+          source.orgId,
+          [first.eventId, second.eventId],
+          dispatchAt,
+        ),
+      ).resolves.toEqual([second.eventId]);
+      await expect(
+        eventsRepository.releaseHeld(
+          source.orgId,
+          [first.eventId, second.eventId],
+          dispatchAt,
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        eventsRepository.releaseHeld(source.orgId, [], dispatchAt),
+      ).resolves.toEqual([]);
+
+      const released = await eventRow(first.eventId);
+      expect(released).toMatchObject({
+        hold_state: 'released',
+        dispatch_required: true,
+        released_at: expect.any(String) as unknown,
+        withdrawn_at: null,
+      });
+      expect(new Date(released.next_dispatch_at!).toISOString()).toBe(
+        dispatchAt,
+      );
+      expect(await recoverableIds()).toContain(first.eventId);
+    });
+
+    it('withdraws only held events, by group or by id, and finally', async () => {
+      const source = await createSource();
+      const groupId = randomUUID();
+      const otherGroup = randomUUID();
+      const released = await acceptHeld(source, 'withdraw-released', groupId);
+      const heldA = await acceptHeld(source, 'withdraw-a', groupId);
+      const heldB = await acceptHeld(source, 'withdraw-b', groupId);
+      const elsewhere = await acceptHeld(source, 'withdraw-other', otherGroup);
+      await eventsRepository.releaseHeld(
+        source.orgId,
+        [released.eventId],
+        new Date().toISOString(),
+      );
+
+      const withdrawn = await eventsRepository.withdrawHeld(source.orgId, {
+        groupId,
+      });
+      expect(withdrawn.sort()).toEqual([heldA.eventId, heldB.eventId].sort());
+      expect(await eventRow(heldA.eventId)).toMatchObject({
+        hold_state: 'withdrawn',
+        status: 'skipped',
+        last_error: 'import_not_started',
+        dispatch_required: false,
+        withdrawn_at: expect.any(String) as unknown,
+      });
+      // Withdraw after release is a no-op; the released order carries on.
+      expect(await eventRow(released.eventId)).toMatchObject({
+        hold_state: 'released',
+        dispatch_required: true,
+      });
+      expect(await eventRow(elsewhere.eventId)).toMatchObject({
+        hold_state: 'held',
+      });
+      // Release after withdraw is a no-op too.
+      await expect(
+        eventsRepository.releaseHeld(
+          source.orgId,
+          [heldA.eventId],
+          new Date().toISOString(),
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        eventsRepository.withdrawHeld(source.orgId, {
+          eventIds: [elsewhere.eventId],
+        }),
+      ).resolves.toEqual([elsewhere.eventId]);
+    });
+
+    it('lets exactly one of a concurrent release and withdraw win', async () => {
+      const source = await createSource();
+      const groupId = randomUUID();
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const held = await acceptHeld(source, `race-${attempt}`, groupId);
+        const [released, withdrawn] = await Promise.all([
+          eventsRepository.releaseHeld(
+            source.orgId,
+            [held.eventId],
+            new Date().toISOString(),
+          ),
+          eventsRepository.withdrawHeld(source.orgId, {
+            eventIds: [held.eventId],
+          }),
+        ]);
+
+        expect(released.length + withdrawn.length).toBe(1);
+        const row = await eventRow(held.eventId);
+        expect(row.hold_state).toBe(
+          released.length === 1 ? 'released' : 'withdrawn',
+        );
+        expect(row.released_at === null).toBe(released.length === 0);
+        expect(row.withdrawn_at === null).toBe(withdrawn.length === 0);
+      }
+    });
+
+    it('projects every hold state onto the lifecycle', async () => {
+      const source = await createSource();
+      const groupId = randomUUID();
+      const none = await repository.accept(
+        acceptanceInput(source.orgId, source.integrationId, 'project-none'),
+      );
+      const held = await acceptHeld(source, 'project-held', groupId);
+      const released = await acceptHeld(source, 'project-released', groupId);
+      const releasedProcessing = await acceptHeld(
+        source,
+        'project-released-processing',
+        groupId,
+      );
+      const withdrawn = await acceptHeld(source, 'project-withdrawn', groupId);
+      await eventsRepository.releaseHeld(
+        source.orgId,
+        [released.eventId, releasedProcessing.eventId],
+        new Date().toISOString(),
+      );
+      await client`UPDATE webhook_events SET status = 'processing' WHERE id = ${releasedProcessing.eventId}`;
+      await eventsRepository.withdrawHeld(source.orgId, {
+        eventIds: [withdrawn.eventId],
+      });
+
+      const expectations: Array<
+        [{ order: { id: string } }, string, string | null]
+      > = [
+        [none, 'accepted', null],
+        [held, 'awaiting_start', null],
+        [released, 'accepted', null],
+        [releasedProcessing, 'processing', null],
+        [withdrawn, 'not_started', 'import_not_started'],
+      ];
+      for (const [accepted, status, reason] of expectations) {
+        await expect(
+          dashboardRepository.findDashboardOrderById(
+            accepted.order.id,
+            source.orgId,
+          ),
+        ).resolves.toMatchObject({
+          retryGuardStatus: status,
+          retryGuardReason: reason,
+          retryGuardRetryable: false,
+        });
+      }
+    });
   });
 });

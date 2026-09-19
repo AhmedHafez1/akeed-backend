@@ -49,6 +49,11 @@ const retryGuardStatus = sql<string>`CASE
       THEN 'blocked'
     ELSE COALESCE(${verifications.status}::text, 'pending')
   END
+  -- A held event is a pending row that must not read as 'accepted': nothing is
+  -- about to be sent until the merchant starts it. 'released' falls through to
+  -- the ordinary lifecycle below.
+  WHEN ${webhookEvents.holdState} = 'held' THEN 'awaiting_start'
+  WHEN ${webhookEvents.holdState} = 'withdrawn' THEN 'not_started'
   WHEN ${webhookEvents.id} IS NULL OR ${webhookEvents.status} = 'pending'
     THEN 'accepted'
   WHEN ${webhookEvents.status} = 'processing' THEN 'processing'
@@ -73,6 +78,7 @@ const retryGuardReason = sql<string | null>`CASE
       THEN NULL
     ELSE ${verificationReason}
   END
+  WHEN ${webhookEvents.holdState} = 'held' THEN NULL
   ELSE ${webhookEvents.lastError}
 END`;
 
@@ -84,6 +90,7 @@ const retryGuardRetryable = sql<boolean>`CASE
       retryableVerificationReasons.map((reason) => sql`${reason}`),
       sql`, `,
     )})
+  WHEN ${webhookEvents.holdState} IN ('held', 'withdrawn') THEN false
   WHEN ${webhookEvents.id} IS NULL OR ${webhookEvents.status} IN ('pending', 'processing')
     THEN false
   WHEN ${webhookEvents.lastError} IN (${sql.join(
@@ -192,7 +199,8 @@ export class OrdersRepository {
    * Load a single order together with the state the retry endpoint guards on.
    *
    * These states (`accepted`, `processing`, `review_required`, `blocked`,
-   * `ineligible`) are deliberately *not* part of the merchant-facing status
+   * `ineligible`, and the hold states `awaiting_start` / `not_started`) are
+   * deliberately *not* part of the merchant-facing status
    * vocabulary — the dashboard speaks only the nine values the
    * `verification_status` enum can hold. They exist here because retry safety
    * needs finer distinctions than the UI does: an order whose dispatch outcome

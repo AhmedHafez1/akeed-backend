@@ -1,9 +1,30 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { sql, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { orders, verifications, webhookEvents } from '../schema';
+
+export const WEBHOOK_EVENT_HOLD_STATES = [
+  'none',
+  'held',
+  'released',
+  'withdrawn',
+] as const;
+
+export type WebhookEventHoldState = (typeof WEBHOOK_EVENT_HOLD_STATES)[number];
+
+/**
+ * Hold states an event may be dispatched, recovered or re-driven in. `held`
+ * waits for an explicit release; `withdrawn` is final and never sends.
+ */
+export const DISPATCHABLE_HOLD_STATES = [
+  'none',
+  'released',
+] as const satisfies readonly WebhookEventHoldState[];
+
+/** `last_error` recorded on an event withdrawn before it was ever released. */
+export const WITHDRAWN_EVENT_REASON = 'import_not_started';
 
 interface WebhookEventInsert {
   platform: string;
@@ -41,6 +62,11 @@ export interface WebhookEvent {
   receivedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  holdState: string;
+  holdGroupId: string | null;
+  heldAt: string | null;
+  releasedAt: string | null;
+  withdrawnAt: string | null;
 }
 
 @Injectable()
@@ -106,12 +132,17 @@ export class WebhookEventsRepository {
    * the two ever disagree the reconciler reports candidates it cannot claim, or
    * worse, stops reporting events that are genuinely stuck -- so they share one
    * fragment rather than two copies that have to be kept in step by hand.
+   *
+   * The hold condition is part of the definition, not a filter each caller
+   * remembers: a held or withdrawn event is never claimable, even if
+   * `dispatch_required` is set on it by mistake.
    */
   private recoverablePredicate(
     staleBefore: string,
     maxDispatchAttempts: number,
   ) {
     return sql`${webhookEvents.dispatchRequired} = true
+      AND ${this.dispatchableHold()}
       AND ${webhookEvents.dispatchAttempts} < ${maxDispatchAttempts}
       AND (
         (${webhookEvents.status} = 'pending'
@@ -153,6 +184,10 @@ export class WebhookEventsRepository {
    * `completed`, `skipped` and `failed` are excluded deliberately: a skip is a
    * decision (plan limit reached, source inactive, identity mismatch), not a
    * fault, and re-driving those would loop forever.
+   *
+   * Held events are excluded for the same reason: waiting for the merchant is
+   * not being stuck. An import holds thousands of verification-less orders,
+   * which would otherwise fill every sweep oldest-first and hide real orphans.
    */
   async findOrdersMissingVerification(
     limit: number,
@@ -169,6 +204,7 @@ export class WebhookEventsRepository {
       .where(
         sql`${verifications.id} IS NULL
           AND ${webhookEvents.status} NOT IN ('completed', 'skipped', 'failed')
+          AND ${this.dispatchableHold()}
           AND ${orders.createdAt} <= ${olderThan}`,
       )
       .orderBy(orders.createdAt)
@@ -384,10 +420,84 @@ export class WebhookEventsRepository {
       .where(
         sql`${webhookEvents.id} = ${params.id}
           AND ${webhookEvents.orderId} = ${params.orderId}
-          AND ${webhookEvents.status} IN ('completed', 'failed', 'skipped')`,
+          AND ${webhookEvents.status} IN ('completed', 'failed', 'skipped')
+          AND ${this.dispatchableHold()}`,
       )
       .returning({ id: webhookEvents.id });
     return rows.length === 1;
+  }
+
+  /**
+   * Release held events for dispatch at `dispatchAt`.
+   *
+   * One conditional statement: the `hold_state = 'held'` guard makes a release
+   * at-most-once per event, so a repeat call, or one racing `withdrawHeld`,
+   * changes nothing and reports nothing. Only the ids actually released are
+   * returned; callers dispatch exactly those.
+   */
+  async releaseHeld(
+    orgId: string,
+    eventIds: string[],
+    dispatchAt: string,
+  ): Promise<string[]> {
+    if (eventIds.length === 0) return [];
+    const rows = await this.db
+      .update(webhookEvents)
+      .set({
+        holdState: 'released',
+        dispatchRequired: true,
+        nextDispatchAt: dispatchAt,
+        releasedAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        and(
+          eq(webhookEvents.orgId, orgId),
+          inArray(webhookEvents.id, eventIds),
+          eq(webhookEvents.holdState, 'held'),
+        ),
+      )
+      .returning({ id: webhookEvents.id });
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Withdraw events that were never released. Final: a withdrawn event is
+   * `skipped`, excluded from every dispatch path and cannot be released.
+   * Already released events are untouched and continue their lifecycle.
+   */
+  async withdrawHeld(
+    orgId: string,
+    target: { groupId: string } | { eventIds: string[] },
+  ): Promise<string[]> {
+    if ('eventIds' in target && target.eventIds.length === 0) return [];
+    const rows = await this.db
+      .update(webhookEvents)
+      .set({
+        holdState: 'withdrawn',
+        status: 'skipped',
+        lastError: WITHDRAWN_EVENT_REASON,
+        withdrawnAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        and(
+          eq(webhookEvents.orgId, orgId),
+          'groupId' in target
+            ? eq(webhookEvents.holdGroupId, target.groupId)
+            : inArray(webhookEvents.id, target.eventIds),
+          eq(webhookEvents.holdState, 'held'),
+        ),
+      )
+      .returning({ id: webhookEvents.id });
+    return rows.map((row) => row.id);
+  }
+
+  private dispatchableHold() {
+    return sql`${webhookEvents.holdState} IN (${sql.join(
+      DISPATCHABLE_HOLD_STATES.map((state) => sql`${state}`),
+      sql`, `,
+    )})`;
   }
 
   async findById(id: string): Promise<WebhookEvent | undefined> {

@@ -140,7 +140,7 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [US-04.6-01 — Add a source-neutral order hold and release primitive](US-04.6-01-source-neutral-order-hold-and-release.md) | P0 | Technical enabler | [US-04-03](../04-standalone-manual-order-mvp/US-04-03-manual-order-verification-lifecycle.md) | Backlog |
+| 1 | [US-04.6-01 — Add a source-neutral order hold and release primitive](US-04.6-01-source-neutral-order-hold-and-release.md) | P0 | Technical enabler | [US-04-03](../04-standalone-manual-order-mvp/US-04-03-manual-order-verification-lifecycle.md) | Implemented locally — 2026-09-19 |
 | 2 | [US-04.6-02 — Accept import files securely and persist parsed rows](US-04.6-02-import-batch-model-and-secure-file-intake.md) | P0 | Feature | [US-04.6-01](US-04.6-01-source-neutral-order-hold-and-release.md) | Backlog |
 | 3 | [US-04.6-03 — Detect, map and remember columns](US-04.6-03-column-detection-mapping-and-saved-profiles.md) | P0 | Feature | [US-04.6-02](US-04.6-02-import-batch-model-and-secure-file-intake.md) | Backlog |
 | 4 | [US-04.6-04 — Normalize, validate and deduplicate every row](US-04.6-04-row-normalization-validation-and-dedupe.md) | P0 | Feature | [US-04.6-03](US-04.6-03-column-detection-mapping-and-saved-profiles.md) | Backlog |

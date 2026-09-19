@@ -4,6 +4,11 @@ import {
   classifyCodStatus,
   collectPaymentSignals,
 } from '../../../shared/commerce/payment-signals';
+import {
+  CANONICAL_ORDER_REQUIRED_FIELDS,
+  isStandaloneIngestionChannel,
+  STANDALONE_ENVELOPE_SCHEMA_VERSION,
+} from '../../../shared/commerce/standalone-order-envelope';
 import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
 import type { NormalizedOrder } from '../../../shared/interfaces/order.interface';
 import type { WebhookOrderNormalizer } from '../interfaces/webhook-normalizer.interface';
@@ -23,9 +28,11 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
     integrationId: string,
     orgId: string,
   ): NormalizedOrder | null {
+    // Any Standalone channel is accepted; the channel is audit metadata and
+    // nothing below this check may depend on it.
     if (
-      rawPayload.ingestionType !== 'manual' ||
-      rawPayload.schemaVersion !== 1 ||
+      !isStandaloneIngestionChannel(rawPayload.ingestionType) ||
+      rawPayload.schemaVersion !== STANDALONE_ENVELOPE_SCHEMA_VERSION ||
       typeof rawPayload.submissionFingerprint !== 'string' ||
       rawPayload.submissionFingerprint.trim() === '' ||
       !isRecord(rawPayload.order)
@@ -36,18 +43,11 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
     // `orderNumber` and `customerName` moved up from the optional block. They
     // are what the customer's message is built from, so an envelope missing
     // either one has nothing worth sending and must not reach the send path.
-    const requiredStrings = [
-      order.externalOrderId,
-      order.orderNumber,
-      order.customerName,
-      order.customerPhone,
-      order.totalPrice,
-      order.currency,
-    ];
     if (
-      requiredStrings.some(
-        (value) => typeof value !== 'string' || value.trim() === '',
-      )
+      CANONICAL_ORDER_REQUIRED_FIELDS.some((field) => {
+        const value = order[field];
+        return typeof value !== 'string' || value.trim() === '';
+      })
     ) {
       return this.reject(orgId, integrationId, 'missing_required_field');
     }
