@@ -24,7 +24,11 @@ import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-r
 import { MulterModule } from '@nestjs/platform-express';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { PhoneService } from '../../shared/services/phone.service';
+import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
+import { StandaloneOrderEligibilityStrategy } from '../../infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { OrderImportMappingService } from './order-import-mapping.service';
+import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
 import { orderImportMulterOptions } from './order-imports.module';
 import { OrderImportsService } from './order-imports.service';
@@ -50,6 +54,8 @@ describe('order-import routes over HTTP', () => {
     orgId: 'org-1',
     platformType: 'standalone',
     onboardingStatus: 'completed',
+    timezone: 'Africa/Cairo',
+    assumeCodWhenPaymentMissing: false,
   };
   const integrations = { findActiveByOrg: jest.fn() };
   const resolver = new StandaloneSourceResolver(integrations as never);
@@ -62,6 +68,15 @@ describe('order-import routes over HTTP', () => {
     columnValueCounts: jest.fn(),
     saveMapping: jest.fn(),
     readCounts: jest.fn(),
+    findBatchForValidation: jest.fn(),
+    listRowsForValidation: jest.fn(),
+    writeValidation: jest.fn(),
+    findOrdersByExternalIds: jest.fn(),
+    findRecentOrdersByPhones: jest.fn(),
+    findRecentOrdersByOrderNumbers: jest.fn(),
+    pageRows: jest.fn(),
+    findRow: jest.fn(),
+    setIncludeOverride: jest.fn(),
   };
 
   const fakeAuth: CanActivate = {
@@ -86,7 +101,15 @@ describe('order-import routes over HTTP', () => {
       providers: [
         OrderImportsService,
         OrderImportMappingService,
+        OrderImportRowsService,
         RowValidationService,
+        PhoneService,
+        {
+          provide: OrderEligibilityService,
+          useValue: new OrderEligibilityService([
+            new StandaloneOrderEligibilityStrategy(),
+          ]),
+        },
         ImportFileParser,
         OrderImportAccessGuard,
         OrderImportUploadThrottleGuard,
@@ -413,6 +436,77 @@ describe('order-import routes over HTTP', () => {
         mappingProfileId: 'profile-1',
       });
       repository.readCounts.mockResolvedValue({});
+      repository.findBatchForValidation.mockResolvedValue({
+        status: 'draft',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        integrationId: 'int-1',
+        mapping: {
+          confirmed: true,
+          columns: {
+            phone: 'phone',
+            customerName: ['name'],
+            amount: 'total',
+            orderReference: null,
+            currency: null,
+            paymentMethod: null,
+            orderDate: null,
+            city: null,
+            address: null,
+            notes: null,
+          },
+        },
+        options: {
+          country: 'EG',
+          defaultCurrency: 'EGP',
+          dateFormat: 'auto',
+          paymentValueMap: {},
+        },
+      });
+      repository.listRowsForValidation.mockResolvedValue([
+        {
+          rowNumber: 2,
+          raw: { phone: '1012345678', name: 'Ahmed', total: '750' },
+          issues: [],
+          includeOverride: false,
+        },
+      ]);
+      repository.findOrdersByExternalIds.mockResolvedValue([]);
+      repository.findRecentOrdersByPhones.mockResolvedValue([]);
+      repository.findRecentOrdersByOrderNumbers.mockResolvedValue([]);
+      repository.writeValidation.mockResolvedValue('saved');
+    });
+
+    it('validates the rows after saving, with the session source', async () => {
+      const response = await put();
+      expect(response.status).toBe(200);
+      expect(repository.findBatchForValidation).toHaveBeenCalledWith(
+        'org-1',
+        batchId,
+      );
+      expect(repository.writeValidation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: 'org-1',
+          batchId,
+          validationVersion: 1,
+          rows: [
+            expect.objectContaining({
+              rowNumber: 2,
+              normalized: expect.objectContaining({
+                customerPhone: '+201012345678',
+                totalPrice: '750.00',
+                currency: 'EGP',
+              }) as unknown,
+              outcome: 'excluded',
+              issues: [
+                {
+                  code: 'PAYMENT_UNKNOWN_EXCLUDED',
+                  field: 'paymentMethod',
+                },
+              ],
+            }),
+          ],
+        }),
+      );
     });
 
     it('saves the mapping for an owner and answers 200', async () => {
@@ -515,5 +609,183 @@ describe('order-import routes over HTTP', () => {
       expect(response.status).toBe(410);
       expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_EXPIRED' });
     });
+  });
+
+  describe('rows', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const draft = {
+      status: 'draft',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      headers: ['phone', 'name'],
+      mapping: {
+        columns: {
+          phone: 'phone',
+          customerName: ['name'],
+          amount: null,
+          orderReference: null,
+          currency: null,
+          paymentMethod: null,
+          orderDate: null,
+          city: null,
+          address: null,
+          notes: null,
+        },
+      },
+    };
+    const stored = (rowNumber: number) => ({
+      rowNumber,
+      raw: { phone: '010', name: 'Ahmed', ignored: 'x' },
+      normalized: { paymentMethod: '' },
+      outcome: 'excluded',
+      issues: [{ code: 'POSSIBLE_DUPLICATE', params: { orderNumber: '#1' } }],
+      includeOverride: false,
+      collapsedInto: null,
+    });
+
+    beforeEach(() => {
+      repository.findBatchForMapping.mockResolvedValue(draft);
+    });
+
+    it('pages rows in row order with the mapped raw cells', async () => {
+      repository.pageRows.mockResolvedValue([stored(2), stored(3), stored(4)]);
+      const response = await request(server()).get(
+        `/api/order-imports/${batchId}/rows?outcome=excluded&limit=2`,
+      );
+      expect(response.status).toBe(200);
+      const body = response.body as {
+        rows: { rowNumber: number; raw: unknown }[];
+        nextCursor: string;
+      };
+      expect(body.rows.map((row) => row.rowNumber)).toEqual([2, 3]);
+      expect(body.rows[0].raw).toEqual({ phone: '010', customerName: 'Ahmed' });
+      expect(repository.pageRows).toHaveBeenCalledWith({
+        orgId: 'org-1',
+        batchId,
+        outcome: 'excluded',
+        afterRowNumber: 0,
+        limit: 3,
+      });
+
+      await request(server()).get(
+        `/api/order-imports/${batchId}/rows?cursor=${body.nextCursor}`,
+      );
+      expect(repository.pageRows).toHaveBeenLastCalledWith(
+        expect.objectContaining({ afterRowNumber: 3, limit: 51 }),
+      );
+    });
+
+    it('lets a viewer read rows', async () => {
+      currentUser = { ...currentUser, role: 'viewer' };
+      repository.pageRows.mockResolvedValue([]);
+      const response = await request(server()).get(
+        `/api/order-imports/${batchId}/rows`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ rows: [], nextCursor: null });
+    });
+
+    it.each([
+      ['limit=101', 'limit'],
+      ['limit=0', 'limit'],
+      ['outcome=pending', 'outcome'],
+      ['cursor=!!', 'cursor'],
+    ])('answers IMPORT_VALIDATION_FAILED for %s', async (query, field) => {
+      const response = await request(server()).get(
+        `/api/order-imports/${batchId}/rows?${query}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_VALIDATION_FAILED',
+        fieldErrors: { [field]: expect.any(String) as unknown },
+      });
+    });
+
+    it("answers 404 for another organization's batch", async () => {
+      repository.findBatchForMapping.mockResolvedValue(null);
+      const response = await request(server()).get(
+        `/api/order-imports/${batchId}/rows`,
+      );
+      expect(response.status).toBe(404);
+      expect(repository.pageRows).not.toHaveBeenCalled();
+    });
+
+    const patch = (payload: unknown = { include: true }, rowNumber = '2') =>
+      request(server())
+        .patch(`/api/order-imports/${batchId}/rows/${rowNumber}`)
+        .send(payload as object);
+
+    it('includes a possible duplicate and answers the row and counts', async () => {
+      repository.setIncludeOverride.mockImplementation(
+        (input: { decide: (row: unknown) => string | null }) =>
+          Promise.resolve({
+            outcome: input.decide(stored(2)) === 'ready' ? 'saved' : 'x',
+          }),
+      );
+      repository.findRow.mockResolvedValue({
+        ...stored(2),
+        outcome: 'ready',
+        includeOverride: true,
+      });
+      repository.readCounts.mockResolvedValue({ ready: 1 });
+      const response = await patch();
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        row: { rowNumber: 2, outcome: 'ready', includeOverride: true },
+        counts: { ready: 1 },
+      });
+    });
+
+    it('refuses to include any other row with IMPORT_BATCH_STATE_CONFLICT', async () => {
+      repository.setIncludeOverride.mockImplementation(
+        (input: { decide: (row: unknown) => string | null }) =>
+          Promise.resolve({
+            outcome:
+              input.decide({
+                ...stored(2),
+                issues: [{ code: 'ORDER_TOO_OLD' }],
+              }) === null
+                ? 'not_includable'
+                : 'saved',
+          }),
+      );
+      const response = await patch();
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_BATCH_STATE_CONFLICT',
+      });
+    });
+
+    it('refuses a viewer', async () => {
+      currentUser = { ...currentUser, role: 'viewer' };
+      const response = await patch();
+      expect(response.status).toBe(403);
+      expect(repository.setIncludeOverride).not.toHaveBeenCalled();
+    });
+
+    it('refuses a committed batch', async () => {
+      repository.findBatchForMapping.mockResolvedValue({
+        ...draft,
+        status: 'committing',
+      });
+      const response = await patch();
+      expect(response.status).toBe(409);
+      expect(repository.setIncludeOverride).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ include: 'yes' }, '2', 'include'],
+      [{}, '2', 'include'],
+      [{ include: true }, 'two', 'rowNumber'],
+    ])(
+      'answers IMPORT_VALIDATION_FAILED for %j on row %s',
+      async (payload, row, field) => {
+        const response = await patch(payload, row);
+        expect(response.status).toBe(400);
+        expect(response.body).toMatchObject({
+          code: 'IMPORT_VALIDATION_FAILED',
+          fieldErrors: { [field]: expect.any(String) as unknown },
+        });
+      },
+    );
   });
 });

@@ -9,11 +9,13 @@ import {
   readBulkImportConfig,
   type BulkImportConfig,
 } from '../../shared/config/bulk-import.config';
+import { PhoneService } from '../../shared/services/phone.service';
 import { AuthModule } from '../auth/auth.module';
 import { OrderIngestionModule } from '../order-ingestion/order-ingestion.module';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
 import { OrderImportMappingService } from './order-import-mapping.service';
+import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
 import { OrderImportsService } from './order-imports.service';
 import { ImportFileParser } from './parsers/import-file-parser';
@@ -55,7 +57,9 @@ export function orderImportMulterOptions(
   providers: [
     OrderImportsService,
     OrderImportMappingService,
+    OrderImportRowsService,
     RowValidationService,
+    PhoneService,
     ImportFileParser,
     OrderImportAccessGuard,
     OrderImportUploadThrottleGuard,

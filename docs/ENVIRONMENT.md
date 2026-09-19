@@ -208,6 +208,7 @@ Roll out read-only first (switch off), name operators only after a recovery dril
 | `BULK_IMPORT_MAX_FILE_BYTES` | Upload size, 1024–5242880 (default 5 MB). Enforced while the body streams in: `413 IMPORT_FILE_TOO_LARGE`. |
 | `BULK_IMPORT_MAX_UNCOMPRESSED_BYTES` | Total inflated size of an XLSX package, 1–50 MB (default 50 MB). Counted while inflating, so a zip bomb is stopped early: `422 IMPORT_FILE_UNREADABLE`. |
 | `BULK_IMPORT_PARSE_TIMEOUT_MS` | Budget for reading one file, 1000–20000 (default 20000). Exceeding it answers `422 IMPORT_FILE_UNREADABLE`. |
+| `BULK_IMPORT_MAX_ORDER_AGE_DAYS` | Oldest order date an import confirms, in days before today in the store timezone, 1–90 (default 7). Older rows are `excluded` with `ORDER_TOO_OLD`. Pilot default; revisit against pilot data. |
 
 ## WhatsApp (Meta) Configuration
 

@@ -12,7 +12,21 @@ import {
   type NewDraftBatch,
   type NewImportRow,
 } from '../src/infrastructure/database/repositories/order-imports.repository';
+import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
+import {
+  BULK_IMPORT_CONFIG,
+  parseBulkImportConfig,
+} from '../src/shared/config/bulk-import.config';
+import { PhoneService } from '../src/shared/services/phone.service';
 import { generateShortCode } from '../src/modules/order-imports/short-code';
+import { dateInTimezone } from '../src/modules/order-imports/validation/date';
+import {
+  isIncludable,
+  outcomeOf,
+  type RowIssue,
+} from '../src/modules/order-imports/validation/issue-codes';
+import { RowValidationService } from '../src/modules/order-imports/validation/row-validation.service';
+import { OrderEligibilityService } from '../src/modules/verification-core/order-eligibility.service';
 
 function isolatedDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -132,15 +146,32 @@ describe('order imports PostgreSQL contract', () => {
         UNIQUE (platform_type, platform_store_url),
         UNIQUE (id, org_id)
       );
+      -- The orders columns the L1/L3 lookups read, with the real unique key.
+      CREATE TABLE orders (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        integration_id uuid NOT NULL,
+        external_order_id text NOT NULL,
+        order_number text,
+        customer_phone text NOT NULL,
+        total_price numeric(12, 2),
+        created_at timestamptz DEFAULT now(),
+        CONSTRAINT unique_external_order_per_integration UNIQUE (integration_id, external_order_id)
+      );
     `);
     // Layer the real migration on the hand-written base, twice, to prove it is
     // re-runnable and ships exactly the constraints the repository relies on.
     for (let pass = 0; pass < 2; pass++) {
-      for (const statement of readFileSync(
-        resolve(__dirname, '../drizzle/0037_order_import_batches.sql'),
-        'utf8',
-      ).split('--> statement-breakpoint')) {
-        if (statement.trim()) await client.unsafe(statement);
+      for (const migration of [
+        '0037_order_import_batches.sql',
+        '0038_order_import_validation_version.sql',
+      ]) {
+        for (const statement of readFileSync(
+          resolve(__dirname, '../drizzle', migration),
+          'utf8',
+        ).split('--> statement-breakpoint')) {
+          if (statement.trim()) await client.unsafe(statement);
+        }
       }
     }
     await client.unsafe(`
@@ -583,5 +614,345 @@ describe('order imports PostgreSQL contract', () => {
         AND tablename IN ('order_import_batches', 'order_import_rows', 'order_import_mapping_profiles')
         AND qual = '(org_id = get_user_org_id())'`;
     expect(policies.count).toBe(3);
+  });
+
+  describe('row validation (US-04.6-04)', () => {
+    const DAY = 24 * HOUR;
+    const cairo = 'Africa/Cairo';
+    const columns = {
+      phone: 'phone',
+      customerName: ['name'],
+      amount: 'total',
+      orderReference: 'ref',
+      currency: null,
+      paymentMethod: 'payment',
+      orderDate: 'date',
+      city: null,
+      address: null,
+      notes: null,
+    };
+    const validator = new RowValidationService(
+      repository,
+      new PhoneService(),
+      new OrderEligibilityService([new StandaloneOrderEligibilityStrategy()]),
+      {
+        get: (key: string) =>
+          key === BULK_IMPORT_CONFIG ? parseBulkImportConfig({}) : undefined,
+      } as never,
+    );
+
+    async function seedOrder(
+      source: { orgId: string; integrationId: string },
+      order: {
+        externalOrderId: string;
+        orderNumber?: string;
+        phone: string;
+        total: string;
+        ageDays: number;
+      },
+    ): Promise<string> {
+      const [row] = await client<{ id: string }[]>`
+        INSERT INTO orders (org_id, integration_id, external_order_id, order_number, customer_phone, total_price, created_at)
+        VALUES (${source.orgId}, ${source.integrationId}, ${order.externalOrderId}, ${order.orderNumber ?? null},
+                ${order.phone}, ${order.total}, now() - make_interval(secs => ${order.ageDays * 86_400}))
+        RETURNING id`;
+      return row.id;
+    }
+
+    async function draftWithRows(
+      source: { orgId: string; integrationId: string },
+      cells: Record<string, string>[],
+    ): Promise<string> {
+      const draft = await repository.createDraftWithRows(
+        batch(source, {
+          headers: ['phone', 'name', 'total', 'ref', 'payment', 'date'],
+        }),
+        cells.map((raw, index) => ({ rowNumber: index + 2, raw, issues: [] })),
+        options,
+      );
+      await client`
+        UPDATE order_import_batches
+        SET mapping = ${JSON.stringify({ confirmed: true, columns })}::jsonb,
+            options = ${JSON.stringify({ country: 'EG', defaultCurrency: 'EGP', dateFormat: 'auto', paymentValueMap: {} })}::jsonb
+        WHERE id = ${draft.batchId}`;
+      return draft.batchId;
+    }
+
+    const standaloneSource = (source: {
+      orgId: string;
+      integrationId: string;
+    }) =>
+      ({
+        id: source.integrationId,
+        orgId: source.orgId,
+        platformType: 'standalone',
+        timezone: cairo,
+        assumeCodWhenPaymentMissing: false,
+      }) as never;
+
+    async function storedRows(batchId: string) {
+      return client<
+        {
+          row_number: number;
+          outcome: string | null;
+          issues: { code: string; params?: Record<string, unknown> }[];
+          include_override: boolean;
+          dedupe_key: string | null;
+          collapsed_into: number | null;
+        }[]
+      >`
+        SELECT row_number, outcome, issues, include_override, dedupe_key, collapsed_into
+        FROM order_import_rows WHERE batch_id = ${batchId} ORDER BY row_number`;
+    }
+
+    const today = () => dateInTimezone(new Date(), cairo);
+    const daysAgo = (days: number) =>
+      dateInTimezone(new Date(Date.now() - days * DAY), cairo);
+    const cod = (cells: Record<string, string>) => ({
+      name: 'Ahmed',
+      payment: 'COD',
+      date: today(),
+      ...cells,
+    });
+
+    it('applies L1 and L3 against the source orders and summarizes from rows', async () => {
+      const source = await createSource();
+      const other = await createSource();
+      const importedId = await seedOrder(source, {
+        externalOrderId: 'ref:1001',
+        orderNumber: '#1001',
+        phone: '+201099999999',
+        total: '1.00',
+        ageDays: 40,
+      });
+      await seedOrder(source, {
+        externalOrderId: 'manual-a',
+        orderNumber: 'M-1',
+        phone: '+201112345678',
+        total: '300.00',
+        ageDays: 3,
+      });
+      await seedOrder(source, {
+        externalOrderId: 'manual-b',
+        orderNumber: 'M-2',
+        phone: '+201212345678',
+        total: '400.00',
+        ageDays: 8, // Outside the 7-day phone window.
+      });
+      await seedOrder(source, {
+        externalOrderId: 'manual-c',
+        orderNumber: 'ORD-77',
+        phone: '+201099999998',
+        total: '1.00',
+        ageDays: 20,
+      });
+      await seedOrder(source, {
+        externalOrderId: 'manual-d',
+        orderNumber: 'ORD-88',
+        phone: '+201099999997',
+        total: '1.00',
+        ageDays: 31, // Outside the 30-day order-number window.
+      });
+      // Another organization's orders never match.
+      await seedOrder(other, {
+        externalOrderId: 'ref:1002',
+        orderNumber: '#1002',
+        phone: '+201112345678',
+        total: '300.00',
+        ageDays: 1,
+      });
+
+      const batchId = await draftWithRows(source, [
+        cod({ phone: '01000000001', total: '10', ref: '#1001' }),
+        cod({ phone: '01112345678', total: '300', ref: '', date: daysAgo(1) }),
+        cod({ phone: '01212345678', total: '400', ref: '', date: daysAgo(2) }),
+        cod({ phone: '01000000002', total: '10', ref: 'ord-77' }),
+        cod({ phone: '01000000003', total: '10', ref: 'ORD-88' }),
+        cod({ phone: '01000000004', total: '10', ref: '#1002' }),
+        cod({ phone: '0223456789', total: '10', ref: '#9' }),
+      ]);
+      await validator.validateBatch(
+        { orgId: source.orgId, source: standaloneSource(source) },
+        batchId,
+      );
+
+      const stored = await storedRows(batchId);
+      expect(stored.map((row) => [row.row_number, row.outcome])).toEqual([
+        [2, 'duplicate'],
+        [3, 'excluded'],
+        [4, 'ready'],
+        [5, 'excluded'],
+        [6, 'ready'],
+        [7, 'ready'],
+        [8, 'invalid'],
+      ]);
+      expect(stored[0].issues).toEqual([
+        {
+          code: 'ALREADY_IMPORTED',
+          field: 'orderReference',
+          params: { orderId: importedId },
+        },
+      ]);
+      expect(stored[1].issues).toEqual([
+        {
+          code: 'POSSIBLE_DUPLICATE',
+          params: {
+            orderNumber: 'M-1',
+            date: daysAgo(3),
+            match: 'phone_amount',
+          },
+        },
+      ]);
+      expect(stored[3].issues[0]).toMatchObject({
+        code: 'POSSIBLE_DUPLICATE',
+        params: { orderNumber: 'ORD-77', match: 'order_number' },
+      });
+      expect(stored[0].dedupe_key).toBe('ref:1001');
+
+      const [summary] = await client<
+        {
+          counts: Record<string, number>;
+          order_date_min: string;
+          order_date_max: string;
+          validation_version: number;
+        }[]
+      >`
+        SELECT counts, order_date_min::text, order_date_max::text, validation_version
+        FROM order_import_batches WHERE id = ${batchId}`;
+      expect(summary).toEqual({
+        counts: { total: 7, ready: 3, invalid: 1, duplicate: 1, excluded: 2 },
+        order_date_min: daysAgo(2),
+        order_date_max: today(),
+        validation_version: 1,
+      });
+    });
+
+    it('collapses line items and flags conflicting references across chunks', async () => {
+      const source = await createSource();
+      const cells = Array.from({ length: ORDER_IMPORT_ROW_CHUNK + 5 }, (_, i) =>
+        cod({ phone: '01012345678', total: `${i + 1}`, ref: `#${i}` }),
+      );
+      // Row 507 repeats row 2's order; row 508 reuses row 3's reference.
+      cells.push(cod({ phone: '01012345678', total: '1', ref: '#0' }));
+      cells.push(cod({ phone: '01112345678', total: '2', ref: '#1' }));
+      const batchId = await draftWithRows(source, cells);
+      await validator.validateBatch(
+        { orgId: source.orgId, source: standaloneSource(source) },
+        batchId,
+      );
+      const byRow = new Map(
+        (await storedRows(batchId)).map((row) => [row.row_number, row]),
+      );
+      expect(byRow.get(ORDER_IMPORT_ROW_CHUNK + 7)).toMatchObject({
+        outcome: 'duplicate',
+        collapsed_into: 2,
+      });
+      expect(byRow.get(3)?.outcome).toBe('invalid');
+      expect(byRow.get(ORDER_IMPORT_ROW_CHUNK + 8)?.issues).toContainEqual({
+        code: 'ORDER_REF_CONFLICT_IN_FILE',
+        field: 'orderReference',
+      });
+    });
+
+    it('keeps an include override through re-validation and refuses other rows', async () => {
+      const source = await createSource();
+      await seedOrder(source, {
+        externalOrderId: 'manual-a',
+        orderNumber: 'M-1',
+        phone: '+201112345678',
+        total: '300.00',
+        ageDays: 1,
+      });
+      const batchId = await draftWithRows(source, [
+        cod({ phone: '01112345678', total: '300', ref: '' }),
+        cod({ phone: '01000000001', total: '10', ref: '', payment: 'Paid' }),
+      ]);
+      const scope = { orgId: source.orgId, source: standaloneSource(source) };
+      await validator.validateBatch(scope, batchId);
+
+      const include = (rowNumber: number) =>
+        repository.setIncludeOverride({
+          orgId: source.orgId,
+          batchId,
+          rowNumber,
+          include: true,
+          now: new Date(),
+          decide: (row) => {
+            const issues = row.issues as RowIssue[];
+            return isIncludable(issues) ? outcomeOf(issues, true) : null;
+          },
+        });
+      await expect(include(2)).resolves.toEqual({ outcome: 'saved' });
+      await expect(include(3)).resolves.toEqual({ outcome: 'not_includable' });
+      await expect(include(99)).resolves.toEqual({ outcome: 'row_not_found' });
+      await expect(
+        repository.readCounts(source.orgId, batchId),
+      ).resolves.toMatchObject({ ready: 1, excluded: 1 });
+
+      await validator.validateBatch(scope, batchId);
+      const [included] = await storedRows(batchId);
+      expect(included).toMatchObject({
+        outcome: 'ready',
+        include_override: true,
+        issues: [{ code: 'POSSIBLE_DUPLICATE' }],
+      });
+      await expect(
+        repository.readCounts(source.orgId, batchId),
+      ).resolves.toMatchObject({ ready: 1, excluded: 1 });
+    });
+
+    it('pages rows in row order, filtered and org-scoped', async () => {
+      const source = await createSource();
+      const other = await createSource();
+      const batchId = await draftWithRows(source, [
+        cod({ phone: '01000000001', total: '10', ref: '#1' }),
+        cod({ phone: 'x', total: '10', ref: '#2' }),
+        cod({ phone: '01000000003', total: '10', ref: '#3' }),
+      ]);
+      await validator.validateBatch(
+        { orgId: source.orgId, source: standaloneSource(source) },
+        batchId,
+      );
+      const page = (
+        outcome: string | null,
+        afterRowNumber: number,
+        orgId = source.orgId,
+      ) =>
+        repository.pageRows({
+          orgId,
+          batchId,
+          outcome,
+          afterRowNumber,
+          limit: 10,
+        });
+      const numbers = async (rows: Promise<{ rowNumber: number }[]>) =>
+        (await rows).map((row) => row.rowNumber);
+
+      await expect(numbers(page(null, 0))).resolves.toEqual([2, 3, 4]);
+      await expect(numbers(page(null, 2))).resolves.toEqual([3, 4]);
+      await expect(numbers(page('ready', 0))).resolves.toEqual([2, 4]);
+      await expect(page(null, 0, other.orgId)).resolves.toEqual([]);
+      await expect(
+        repository.findRow(other.orgId, batchId, 2),
+      ).resolves.toBeNull();
+    });
+
+    it('writes nothing once the batch has left draft', async () => {
+      const source = await createSource();
+      const batchId = await draftWithRows(source, [
+        cod({ phone: '01000000001', total: '10', ref: '#1' }),
+      ]);
+      await client`UPDATE order_import_batches SET status = 'committing' WHERE id = ${batchId}`;
+      await expect(
+        validator.validateBatch(
+          { orgId: source.orgId, source: standaloneSource(source) },
+          batchId,
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'IMPORT_BATCH_STATE_CONFLICT' },
+      });
+      const [row] = await storedRows(batchId);
+      expect(row.outcome).toBeNull();
+    });
   });
 });

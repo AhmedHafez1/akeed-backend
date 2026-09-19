@@ -63,6 +63,24 @@ export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
   IMPORT_VALIDATION_FAILED: 'The request is not valid.',
 };
 
+/**
+ * A draft can still be changed: `expired` (or past its expiry) answers
+ * EXPIRED, any other non-draft status a state conflict.
+ */
+export function assertEditableDraft(
+  status: string,
+  expiresAt: string,
+  now: Date,
+): void {
+  if (
+    status === 'expired' ||
+    (status === 'draft' && Date.parse(expiresAt) <= now.getTime())
+  )
+    throw orderImportError('IMPORT_BATCH_EXPIRED');
+  if (status !== 'draft')
+    throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', { status });
+}
+
 export function orderImportError(
   code: OrderImportErrorCode,
   extra: Record<string, unknown> = {},

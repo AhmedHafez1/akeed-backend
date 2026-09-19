@@ -1,5 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, gte, ne, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  ne,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
@@ -7,6 +18,7 @@ import {
   orderImportBatches,
   orderImportMappingProfiles,
   orderImportRows,
+  orders,
 } from '../schema';
 
 type Database = PostgresJsDatabase<typeof schema>;
@@ -108,6 +120,72 @@ export interface SaveMappingInput {
 export type SaveMappingResult =
   | { outcome: 'saved'; mappingProfileId: string }
   | { outcome: 'not_draft' };
+
+export interface BatchForValidation {
+  status: string;
+  expiresAt: string;
+  integrationId: string;
+  mapping: unknown;
+  options: unknown;
+}
+
+export interface StoredImportRow {
+  rowNumber: number;
+  raw: Record<string, string>;
+  issues: unknown;
+  includeOverride: boolean;
+}
+
+export interface ValidatedRowWrite {
+  rowNumber: number;
+  normalized: unknown;
+  /** The outcome without the merchant's include override. */
+  outcome: string;
+  issues: unknown;
+  dedupeKey: string | null;
+  collapsedInto: number | null;
+  /** A stored include override turns this row ready. */
+  includable: boolean;
+}
+
+export interface ValidationWrite {
+  orgId: string;
+  batchId: string;
+  rows: readonly ValidatedRowWrite[];
+  validationVersion: number;
+  now: Date;
+}
+
+export type WriteValidationResult = 'saved' | 'not_draft';
+
+export type SetIncludeOverrideResult = {
+  outcome: 'saved' | 'not_draft' | 'row_not_found' | 'not_includable';
+};
+
+export interface ImportRowPageEntry {
+  rowNumber: number;
+  raw: unknown;
+  normalized: unknown;
+  outcome: string | null;
+  issues: unknown;
+  includeOverride: boolean;
+  collapsedInto: number | null;
+}
+
+/** The organization and source whose orders an import is checked against. */
+export interface OrderSourceScope {
+  orgId: string;
+  integrationId: string;
+}
+
+export interface ExistingOrderRecord {
+  id: string;
+  externalOrderId: string;
+  orderNumber: string | null;
+  customerPhone: string;
+  totalPrice: string | null;
+  createdAt: string | null;
+}
 
 export type DiscardDraftResult =
   | { outcome: 'discarded' }
@@ -441,6 +519,340 @@ export class OrderImportsRepository {
         );
       return { outcome: 'saved', mappingProfileId: profile.id };
     });
+  }
+
+  /** What row validation needs of a batch; another organization's is null. */
+  async findBatchForValidation(
+    orgId: string,
+    batchId: string,
+  ): Promise<BatchForValidation | null> {
+    const [row] = await this.db
+      .select({
+        status: orderImportBatches.status,
+        expiresAt: orderImportBatches.expiresAt,
+        integrationId: orderImportBatches.integrationId,
+        mapping: orderImportBatches.mapping,
+        options: orderImportBatches.options,
+      })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Every row of a batch in row order; bounded by the upload row cap. */
+  async listRowsForValidation(
+    orgId: string,
+    batchId: string,
+  ): Promise<StoredImportRow[]> {
+    const rows = await this.db
+      .select({
+        rowNumber: orderImportRows.rowNumber,
+        raw: orderImportRows.raw,
+        issues: orderImportRows.issues,
+        includeOverride: orderImportRows.includeOverride,
+      })
+      .from(orderImportRows)
+      .where(
+        and(
+          eq(orderImportRows.batchId, batchId),
+          eq(orderImportRows.orgId, orgId),
+        ),
+      )
+      .orderBy(asc(orderImportRows.rowNumber));
+    return rows.map((row) => ({
+      ...row,
+      raw: (row.raw ?? {}) as Record<string, string>,
+    }));
+  }
+
+  /**
+   * Stores one validation run and the batch summary derived from it (AC13),
+   * in one transaction on a batch that is still a live draft.
+   *
+   * The batch row is locked first, so a concurrent include toggle waits. The
+   * stored `include_override` is applied here, in SQL, rather than from what
+   * validation read, so a toggle made while rows were being validated is not
+   * lost.
+   */
+  async writeValidation(
+    input: ValidationWrite,
+  ): Promise<WriteValidationResult> {
+    const now = input.now.toISOString();
+    return this.db.transaction(async (tx) => {
+      if (!(await this.lockLiveDraft(tx, input.orgId, input.batchId, now)))
+        return 'not_draft';
+      for (
+        let start = 0;
+        start < input.rows.length;
+        start += ORDER_IMPORT_ROW_CHUNK
+      ) {
+        const values = sql.join(
+          input.rows
+            .slice(start, start + ORDER_IMPORT_ROW_CHUNK)
+            .map(
+              (row) =>
+                sql`(${row.rowNumber}::int, ${JSON.stringify(row.normalized)}::jsonb, ${row.outcome}::text, ${JSON.stringify(row.issues)}::jsonb, ${row.dedupeKey}::text, ${row.collapsedInto}::int, ${row.includable}::boolean)`,
+            ),
+          sql`, `,
+        );
+        await tx.execute(sql`
+          UPDATE ${orderImportRows} AS r
+          SET normalized = v.normalized,
+              outcome = CASE WHEN v.includable AND r.include_override
+                THEN 'ready' ELSE v.outcome END,
+              issues = v.issues,
+              dedupe_key = v.dedupe_key,
+              collapsed_into = v.collapsed_into
+          FROM (VALUES ${values}) AS v(row_number, normalized, outcome, issues, dedupe_key, collapsed_into, includable)
+          WHERE r.batch_id = ${input.batchId}
+            AND r.org_id = ${input.orgId}
+            AND r.row_number = v.row_number`);
+      }
+      await this.refreshSummary(tx, input.orgId, input.batchId, now, {
+        validationVersion: input.validationVersion,
+      });
+      return 'saved';
+    });
+  }
+
+  /**
+   * Sets the merchant's include choice on one row of a live draft and
+   * recomputes the batch summary (AC11). `decide` sees the row as stored,
+   * under the batch lock, and returns the outcome to store or null to refuse.
+   */
+  async setIncludeOverride(input: {
+    orgId: string;
+    batchId: string;
+    rowNumber: number;
+    include: boolean;
+    now: Date;
+    decide: (
+      row: StoredImportRow & { outcome: string | null },
+    ) => string | null;
+  }): Promise<SetIncludeOverrideResult> {
+    const now = input.now.toISOString();
+    return this.db.transaction(async (tx) => {
+      if (!(await this.lockLiveDraft(tx, input.orgId, input.batchId, now)))
+        return { outcome: 'not_draft' };
+      const [row] = await tx
+        .select({
+          rowNumber: orderImportRows.rowNumber,
+          raw: orderImportRows.raw,
+          issues: orderImportRows.issues,
+          includeOverride: orderImportRows.includeOverride,
+          outcome: orderImportRows.outcome,
+        })
+        .from(orderImportRows)
+        .where(this.rowWhere(input.orgId, input.batchId, input.rowNumber));
+      if (!row) return { outcome: 'row_not_found' };
+      const outcome = input.decide({
+        ...row,
+        raw: (row.raw ?? {}) as Record<string, string>,
+      });
+      if (outcome === null) return { outcome: 'not_includable' };
+      await tx
+        .update(orderImportRows)
+        .set({ includeOverride: input.include, outcome })
+        .where(this.rowWhere(input.orgId, input.batchId, input.rowNumber));
+      await this.refreshSummary(tx, input.orgId, input.batchId, now);
+      return { outcome: 'saved' };
+    });
+  }
+
+  /** One page of rows in row order after `afterRowNumber` (AC14). */
+  async pageRows(input: {
+    orgId: string;
+    batchId: string;
+    outcome: string | null;
+    afterRowNumber: number;
+    limit: number;
+  }): Promise<ImportRowPageEntry[]> {
+    return this.db
+      .select({
+        rowNumber: orderImportRows.rowNumber,
+        raw: orderImportRows.raw,
+        normalized: orderImportRows.normalized,
+        outcome: orderImportRows.outcome,
+        issues: orderImportRows.issues,
+        includeOverride: orderImportRows.includeOverride,
+        collapsedInto: orderImportRows.collapsedInto,
+      })
+      .from(orderImportRows)
+      .where(
+        and(
+          eq(orderImportRows.batchId, input.batchId),
+          eq(orderImportRows.orgId, input.orgId),
+          gt(orderImportRows.rowNumber, input.afterRowNumber),
+          input.outcome === null
+            ? undefined
+            : eq(orderImportRows.outcome, input.outcome),
+        ),
+      )
+      .orderBy(asc(orderImportRows.rowNumber))
+      .limit(input.limit);
+  }
+
+  /** One row as the rows endpoint shows it. */
+  async findRow(
+    orgId: string,
+    batchId: string,
+    rowNumber: number,
+  ): Promise<ImportRowPageEntry | null> {
+    const [row] = await this.db
+      .select({
+        rowNumber: orderImportRows.rowNumber,
+        raw: orderImportRows.raw,
+        normalized: orderImportRows.normalized,
+        outcome: orderImportRows.outcome,
+        issues: orderImportRows.issues,
+        includeOverride: orderImportRows.includeOverride,
+        collapsedInto: orderImportRows.collapsedInto,
+      })
+      .from(orderImportRows)
+      .where(this.rowWhere(orgId, batchId, rowNumber))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** L1: orders of the source already holding these external ids. */
+  async findOrdersByExternalIds(
+    source: OrderSourceScope,
+    externalOrderIds: readonly string[],
+  ): Promise<ExistingOrderRecord[]> {
+    if (externalOrderIds.length === 0) return [];
+    return this.selectSourceOrders(
+      source,
+      inArray(orders.externalOrderId, [...externalOrderIds]),
+    );
+  }
+
+  /** L3: recent orders of the source to any of these phones. */
+  async findRecentOrdersByPhones(
+    source: OrderSourceScope,
+    phones: readonly string[],
+    since: Date,
+  ): Promise<ExistingOrderRecord[]> {
+    if (phones.length === 0) return [];
+    return this.selectSourceOrders(
+      source,
+      and(
+        inArray(orders.customerPhone, [...phones]),
+        gte(orders.createdAt, since.toISOString()),
+      ),
+    );
+  }
+
+  /** L3: recent orders of the source with these order numbers, any case. */
+  async findRecentOrdersByOrderNumbers(
+    source: OrderSourceScope,
+    lowerCaseOrderNumbers: readonly string[],
+    since: Date,
+  ): Promise<ExistingOrderRecord[]> {
+    if (lowerCaseOrderNumbers.length === 0) return [];
+    return this.selectSourceOrders(
+      source,
+      and(
+        inArray(sql`lower(${orders.orderNumber})`, [...lowerCaseOrderNumbers]),
+        gte(orders.createdAt, since.toISOString()),
+      ),
+    );
+  }
+
+  private selectSourceOrders(
+    source: OrderSourceScope,
+    condition: SQL | undefined,
+  ): Promise<ExistingOrderRecord[]> {
+    return this.db
+      .select({
+        id: orders.id,
+        externalOrderId: orders.externalOrderId,
+        orderNumber: orders.orderNumber,
+        customerPhone: orders.customerPhone,
+        totalPrice: orders.totalPrice,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.orgId, source.orgId),
+          eq(orders.integrationId, source.integrationId),
+          condition,
+        ),
+      );
+  }
+
+  private rowWhere(orgId: string, batchId: string, rowNumber: number) {
+    return and(
+      eq(orderImportRows.batchId, batchId),
+      eq(orderImportRows.orgId, orgId),
+      eq(orderImportRows.rowNumber, rowNumber),
+    );
+  }
+
+  /** Locks the batch when it is an unexpired draft; false otherwise. */
+  private async lockLiveDraft(
+    tx: Transaction,
+    orgId: string,
+    batchId: string,
+    now: string,
+  ): Promise<boolean> {
+    const [batch] = await tx
+      .select({ id: orderImportBatches.id })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+          eq(orderImportBatches.status, 'draft'),
+          gt(orderImportBatches.expiresAt, now),
+        ),
+      )
+      .for('update');
+    return Boolean(batch);
+  }
+
+  /**
+   * Counts and the ready-order date range, always derived from the rows so a
+   * rerun can never double-count (epic invariant 5).
+   */
+  private async refreshSummary(
+    tx: Transaction,
+    orgId: string,
+    batchId: string,
+    now: string,
+    extra: { validationVersion?: number } = {},
+  ): Promise<void> {
+    const rows = sql`FROM ${orderImportRows} WHERE ${orderImportRows.batchId} = ${batchId} AND ${orderImportRows.orgId} = ${orgId}`;
+    const count = (outcome: string) =>
+      sql`count(*) FILTER (WHERE ${orderImportRows.outcome} = ${outcome})::int`;
+    const readyDate = sql`(${orderImportRows.normalized} ->> 'orderDate')::date`;
+    await tx
+      .update(orderImportBatches)
+      .set({
+        counts: sql`(SELECT jsonb_build_object(
+          'total', count(*)::int,
+          'ready', ${count('ready')},
+          'invalid', ${count('invalid')},
+          'duplicate', ${count('duplicate')},
+          'excluded', ${count('excluded')}
+        ) ${rows})`,
+        orderDateMin: sql`(SELECT min(${readyDate}) ${rows} AND ${orderImportRows.outcome} = 'ready')`,
+        orderDateMax: sql`(SELECT max(${readyDate}) ${rows} AND ${orderImportRows.outcome} = 'ready')`,
+        ...extra,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      );
   }
 
   /** The batch counts as row validation last left them. */

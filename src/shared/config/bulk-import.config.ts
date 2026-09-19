@@ -21,6 +21,8 @@ export interface BulkImportConfig {
   maxUncompressedBytes: number;
   /** Wall-clock budget for sniffing, decoding and parsing one file. */
   parseTimeoutMs: number;
+  /** Rows whose order date is older than this are excluded, not confirmed. */
+  maxOrderAgeDays: number;
 }
 
 interface IntegerSetting {
@@ -74,6 +76,13 @@ const INTEGER_SETTINGS: readonly IntegerSetting[] = [
     min: 1_000,
     max: 20_000,
   },
+  {
+    key: 'BULK_IMPORT_MAX_ORDER_AGE_DAYS',
+    field: 'maxOrderAgeDays',
+    fallback: 7,
+    min: 1,
+    max: 90,
+  },
 ];
 
 export function parseBulkImportConfig(
@@ -94,6 +103,7 @@ export function parseBulkImportConfig(
     maxFileBytes: 0,
     maxUncompressedBytes: 0,
     parseTimeoutMs: 0,
+    maxOrderAgeDays: 0,
   };
   for (const setting of INTEGER_SETTINGS) {
     const raw = read(setting.key);

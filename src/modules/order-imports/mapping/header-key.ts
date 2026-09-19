@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { toAsciiDigit } from '../validation/text';
 
 /*
  * Arabic characters are written as code points on purpose: escapes typed into
@@ -26,9 +27,6 @@ const FOLDED: ReadonlyMap<number, string> = new Map([
   [0x0649, YEH],
 ]);
 
-/** Arabic-Indic and Extended Arabic-Indic (Persian) digit blocks. */
-const DIGIT_BLOCKS = [0x0660, 0x06f0];
-
 const PUNCTUATION_AND_SPACE = /[\p{P}\p{S}\p{Z}\p{Cf}\s]+/gu;
 
 function isIgnored(code: number): boolean {
@@ -40,10 +38,7 @@ function foldCharacter(char: string): string {
   if (isIgnored(code)) return '';
   const folded = FOLDED.get(code);
   if (folded) return folded;
-  for (const block of DIGIT_BLOCKS) {
-    if (code >= block && code <= block + 9) return String(code - block);
-  }
-  return char;
+  return toAsciiDigit(code) ?? char;
 }
 
 /**

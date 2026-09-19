@@ -43,7 +43,7 @@ import {
   type PaymentValueCount,
 } from './mapping/payment-value-classifier';
 import { applySavedProfile, type SavedColumns } from './mapping/saved-profile';
-import { orderImportError } from './order-imports.errors';
+import { assertEditableDraft, orderImportError } from './order-imports.errors';
 import { RowValidationService } from './validation/row-validation.service';
 
 /** Rows the name rule looks at to tell `#1001` references from names (AC3). */
@@ -232,6 +232,7 @@ export class OrderImportMappingService {
    */
   async save(
     user: AuthenticatedUser,
+    source: StandaloneSource,
     batchId: string,
     body: SaveOrderImportMappingDto,
   ): Promise<OrderImportMappingResponseDto> {
@@ -242,7 +243,7 @@ export class OrderImportMappingService {
       batchId,
     );
     if (!batch) throw orderImportError('IMPORT_BATCH_NOT_FOUND');
-    this.assertEditable(batch.status, batch.expiresAt, now);
+    assertEditableDraft(batch.status, batch.expiresAt, now);
     const headers = isStringArray(batch.headers) ? batch.headers : [];
 
     const columns = this.toColumnMapping(body);
@@ -332,13 +333,16 @@ export class OrderImportMappingService {
         batchId,
       );
       if (!current) throw orderImportError('IMPORT_BATCH_NOT_FOUND');
-      this.assertEditable(current.status, current.expiresAt, new Date());
+      assertEditableDraft(current.status, current.expiresAt, new Date());
       throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
         status: current.status,
       });
     }
 
-    await this.rowValidation.validateBatch(batchId);
+    await this.rowValidation.validateBatch(
+      { orgId: user.orgId, source },
+      batchId,
+    );
     const counts = await this.repository.readCounts(user.orgId, batchId);
 
     // Field names only, to tune the dictionary; never headers or values.
@@ -375,17 +379,6 @@ export class OrderImportMappingService {
       dateFormat,
       counts,
     };
-  }
-
-  /** `expired` (or past its expiry) → EXPIRED; any other non-draft → conflict. */
-  private assertEditable(status: string, expiresAt: string, now: Date): void {
-    if (
-      status === 'expired' ||
-      (status === 'draft' && Date.parse(expiresAt) <= now.getTime())
-    )
-      throw orderImportError('IMPORT_BATCH_EXPIRED');
-    if (status !== 'draft')
-      throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', { status });
   }
 
   private toColumnMapping(

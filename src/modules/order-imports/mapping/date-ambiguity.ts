@@ -1,7 +1,8 @@
 import { foldArabicText } from './header-key';
 
 /** `05/06/2026`, `5-6-26`, `05.06.2026 14:30`: day and month in either order. */
-const DAY_MONTH_YEAR = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})(?:[ T].*)?$/;
+export const DAY_MONTH_YEAR =
+  /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})(?:[ T].*)?$/;
 
 export interface DateAmbiguity {
   /** Every day-month date reads as both DMY and MDY, and none settles it. */

@@ -1866,6 +1866,8 @@ export const orderImportBatches = pgTable(
     counts: jsonb().notNull().default({}),
     orderDateMin: date('order_date_min'),
     orderDateMax: date('order_date_max'),
+    /** The row-rule version that last validated the batch (US-04.6-04). */
+    validationVersion: integer('validation_version'),
     commitIdempotencyKey: text('commit_idempotency_key'),
     startIdempotencyKey: text('start_idempotency_key'),
     committedAt: timestamp('committed_at', {

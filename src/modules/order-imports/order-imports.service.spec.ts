@@ -78,7 +78,8 @@ describe('OrderImportsService', () => {
     config as never,
     new OrderImportMappingService(
       repository as never,
-      new RowValidationService(),
+      // Upload only suggests a mapping; it never validates rows.
+      { validateBatch: jest.fn() } as unknown as RowValidationService,
     ),
   );
 

@@ -6,7 +6,9 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -24,6 +26,12 @@ import { CurrentUser } from '../auth/guards/current-user.decorator';
 import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
 import type { OrderImportUploadResponseDto } from './dto/order-import.dto';
 import {
+  ListOrderImportRowsQueryDto,
+  UpdateOrderImportRowDto,
+  type OrderImportRowsPageDto,
+  type OrderImportRowUpdateResponseDto,
+} from './dto/order-import-rows.dto';
+import {
   SaveOrderImportMappingDto,
   type OrderImportMappingResponseDto,
 } from './dto/order-import-mapping.dto';
@@ -33,6 +41,7 @@ import {
 } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
 import { OrderImportMappingService } from './order-import-mapping.service';
+import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportUploadInterceptor } from './order-import-upload.interceptor';
 import { orderImportError } from './order-imports.errors';
 import {
@@ -64,14 +73,27 @@ function flattenValidationErrors(
   );
 }
 
-const mappingValidationPipe = new ValidationPipe({
-  expectedType: SaveOrderImportMappingDto,
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  exceptionFactory: (errors: ValidationError[]) =>
+/** A route pipe answering IMPORT_VALIDATION_FAILED with per-field errors. */
+function importValidationPipe(expectedType: new () => object): ValidationPipe {
+  return new ValidationPipe({
+    expectedType,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    exceptionFactory: (errors: ValidationError[]) =>
+      orderImportError('IMPORT_VALIDATION_FAILED', {
+        fieldErrors: flattenValidationErrors(errors),
+      }),
+  });
+}
+
+const mappingValidationPipe = importValidationPipe(SaveOrderImportMappingDto);
+const rowsQueryPipe = importValidationPipe(ListOrderImportRowsQueryDto);
+const rowUpdatePipe = importValidationPipe(UpdateOrderImportRowDto);
+const rowNumberPipe = new ParseIntPipe({
+  exceptionFactory: () =>
     orderImportError('IMPORT_VALIDATION_FAILED', {
-      fieldErrors: flattenValidationErrors(errors),
+      fieldErrors: { rowNumber: 'rowNumber must be an integer.' },
     }),
 });
 
@@ -80,6 +102,7 @@ export class OrderImportsController {
   constructor(
     private readonly orderImports: OrderImportsService,
     private readonly mapping: OrderImportMappingService,
+    private readonly rows: OrderImportRowsService,
   ) {}
 
   @Post()
@@ -115,12 +138,45 @@ export class OrderImportsController {
   @OrderImportAccess('write')
   saveMapping(
     @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
     @Param('id', batchIdPipe) batchId: string,
     // Declared as a plain object so the app-wide ValidationPipe skips it and
     // this route's pipe (expectedType) answers with IMPORT_VALIDATION_FAILED.
     @Body(mappingValidationPipe) body: object,
   ): Promise<OrderImportMappingResponseDto> {
-    return this.mapping.save(user, batchId, body as SaveOrderImportMappingDto);
+    return this.mapping.save(
+      user,
+      source,
+      batchId,
+      body as SaveOrderImportMappingDto,
+    );
+  }
+
+  @Get(':id/rows')
+  @OrderImportAccess('read')
+  listRows(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', batchIdPipe) batchId: string,
+    // Plain object for the same reason as the mapping body.
+    @Query(rowsQueryPipe) query: object,
+  ): Promise<OrderImportRowsPageDto> {
+    return this.rows.list(user, batchId, query as ListOrderImportRowsQueryDto);
+  }
+
+  @Patch(':id/rows/:rowNumber')
+  @OrderImportAccess('write')
+  updateRow(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', batchIdPipe) batchId: string,
+    @Param('rowNumber', rowNumberPipe) rowNumber: number,
+    @Body(rowUpdatePipe) body: object,
+  ): Promise<OrderImportRowUpdateResponseDto> {
+    return this.rows.setInclude(
+      user,
+      batchId,
+      rowNumber,
+      (body as UpdateOrderImportRowDto).include,
+    );
   }
 
   @Delete(':id')

@@ -21,22 +21,12 @@ import {
   type CodTemplateDefinition,
   type EnglishCodTemplateVariantId,
 } from '../../../shared/messaging/cod-template-catalog';
+import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 
 export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
-export const ONBOARDING_SHIPPING_CURRENCIES = [
-  'USD',
-  'EUR',
-  'EGP',
-  'SAR',
-  'AED',
-  'QAR',
-  'KWD',
-  'BHD',
-  'OMR',
-  'JOD',
-  'MAD',
-] as const;
+/** The canonical order currency list; defined once in the shared rules. */
+export const ONBOARDING_SHIPPING_CURRENCIES = CANONICAL_ORDER_CURRENCIES;
 export type OnboardingShippingCurrency =
   (typeof ONBOARDING_SHIPPING_CURRENCIES)[number];
 

@@ -106,7 +106,7 @@ describe('OrderImportMappingService', () => {
       ['customerName', { customerName: [] }],
     ])('requires %s', async (field, mapping) => {
       const refusal = await failure(
-        service.save(owner, 'batch-1', body({ mapping })),
+        service.save(owner, source, 'batch-1', body({ mapping })),
       );
       expect(refusal.status).toBe(422);
       expect(refusal.body).toMatchObject({
@@ -119,7 +119,12 @@ describe('OrderImportMappingService', () => {
 
     it('refuses one column for two fields', async () => {
       const refusal = await failure(
-        service.save(owner, 'batch-1', body({ mapping: { notes: 'Phone' } })),
+        service.save(
+          owner,
+          source,
+          'batch-1',
+          body({ mapping: { notes: 'Phone' } }),
+        ),
       );
       expect(refusal.body).toMatchObject({
         code: 'IMPORT_MAPPING_INCOMPLETE',
@@ -131,6 +136,7 @@ describe('OrderImportMappingService', () => {
       const refusal = await failure(
         service.save(
           owner,
+          source,
           'batch-1',
           body({ mapping: { customerName: ['Name', 'Name'] } }),
         ),
@@ -142,7 +148,12 @@ describe('OrderImportMappingService', () => {
 
     it('refuses a column that is not in the file', async () => {
       const refusal = await failure(
-        service.save(owner, 'batch-1', body({ mapping: { city: 'City' } })),
+        service.save(
+          owner,
+          source,
+          'batch-1',
+          body({ mapping: { city: 'City' } }),
+        ),
       );
       expect(refusal.body).toMatchObject({
         code: 'IMPORT_MAPPING_INCOMPLETE',
@@ -158,6 +169,7 @@ describe('OrderImportMappingService', () => {
       const refusal = await failure(
         service.save(
           owner,
+          source,
           'batch-1',
           body({ mapping: { orderDate: 'Date' } }),
         ),
@@ -172,6 +184,7 @@ describe('OrderImportMappingService', () => {
       await expect(
         service.save(
           owner,
+          source,
           'batch-1',
           body({
             mapping: { orderDate: 'Date' },
@@ -189,6 +202,7 @@ describe('OrderImportMappingService', () => {
       await expect(
         service.save(
           owner,
+          source,
           'batch-1',
           body({ mapping: { orderDate: 'Date' } }),
         ),
@@ -206,6 +220,7 @@ describe('OrderImportMappingService', () => {
       const refusal = await failure(
         service.save(
           owner,
+          source,
           'batch-1',
           body({ mapping: { paymentMethod: 'Payment' } }),
         ),
@@ -227,6 +242,7 @@ describe('OrderImportMappingService', () => {
 
       const saved = await service.save(
         owner,
+        source,
         'batch-1',
         body({
           mapping: { paymentMethod: 'Payment' },
@@ -256,6 +272,7 @@ describe('OrderImportMappingService', () => {
       ].map((value) => ({ value, count: 1 }));
       const saved = await service.save(
         owner,
+        source,
         'batch-1',
         body({ mapping: { paymentMethod: 'Payment' } }),
       );
@@ -279,7 +296,9 @@ describe('OrderImportMappingService', () => {
   describe('save: batch state', () => {
     it('answers 404 for a batch of another organization', async () => {
       repository.findBatchForMapping.mockResolvedValue(null);
-      const refusal = await failure(service.save(owner, 'batch-1', body()));
+      const refusal = await failure(
+        service.save(owner, source, 'batch-1', body()),
+      );
       expect(refusal.status).toBe(404);
       expect(refusal.body).toMatchObject({ code: 'IMPORT_BATCH_NOT_FOUND' });
       expect(repository.findBatchForMapping).toHaveBeenCalledWith(
@@ -292,7 +311,9 @@ describe('OrderImportMappingService', () => {
       'refuses a %s batch with IMPORT_BATCH_STATE_CONFLICT',
       async (status) => {
         repository.findBatchForMapping.mockResolvedValue(draft({ status }));
-        const refusal = await failure(service.save(owner, 'batch-1', body()));
+        const refusal = await failure(
+          service.save(owner, source, 'batch-1', body()),
+        );
         expect(refusal.status).toBe(409);
         expect(refusal.body).toMatchObject({
           code: 'IMPORT_BATCH_STATE_CONFLICT',
@@ -310,7 +331,9 @@ describe('OrderImportMappingService', () => {
       ['an expired batch', draft({ status: 'expired' })],
     ])('refuses %s with IMPORT_BATCH_EXPIRED', async (_label, batch) => {
       repository.findBatchForMapping.mockResolvedValue(batch);
-      const refusal = await failure(service.save(owner, 'batch-1', body()));
+      const refusal = await failure(
+        service.save(owner, source, 'batch-1', body()),
+      );
       expect(refusal.status).toBe(410);
       expect(refusal.body).toMatchObject({ code: 'IMPORT_BATCH_EXPIRED' });
     });
@@ -320,7 +343,9 @@ describe('OrderImportMappingService', () => {
       repository.findBatchForMapping
         .mockResolvedValueOnce(draft())
         .mockResolvedValueOnce(draft({ status: 'committing' }));
-      const refusal = await failure(service.save(owner, 'batch-1', body()));
+      const refusal = await failure(
+        service.save(owner, source, 'batch-1', body()),
+      );
       expect(refusal.body).toMatchObject({
         code: 'IMPORT_BATCH_STATE_CONFLICT',
         status: 'committing',
@@ -333,6 +358,7 @@ describe('OrderImportMappingService', () => {
     it('stores the mapping, remembers the profile, then re-validates', async () => {
       const response = await service.save(
         owner,
+        source,
         'batch-1',
         body({ mapping: { notes: 'Notes' } }),
       );
@@ -371,7 +397,10 @@ describe('OrderImportMappingService', () => {
         },
         now: expect.any(Date) as Date,
       });
-      expect(rowValidation.validateBatch).toHaveBeenCalledWith('batch-1');
+      expect(rowValidation.validateBatch).toHaveBeenCalledWith(
+        { orgId: 'org-1', source },
+        'batch-1',
+      );
       expect(repository.saveMapping.mock.invocationCallOrder[0]).toBeLessThan(
         rowValidation.validateBatch.mock.invocationCallOrder[0],
       );
@@ -407,6 +436,7 @@ describe('OrderImportMappingService', () => {
       );
       const first = await service.save(
         owner,
+        source,
         'batch-1',
         body({ mapping: { amount: 'Notes' } }),
       );
@@ -425,6 +455,7 @@ describe('OrderImportMappingService', () => {
       );
       const second = await service.save(
         owner,
+        source,
         'batch-1',
         body({ mapping: { amount: 'Notes' } }),
       );
