@@ -58,12 +58,16 @@
     "bullmq": "^5.70.4",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "csv-parse": "^7.0.2",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
+    "fflate": "^0.8.3",
     "google-libphonenumber": "^3.2.42",
+    "iconv-lite": "^0.7.3",
     "postgres": "^3.4.8",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -73,6 +77,7 @@
     "@types/express": "^5.0.6",
     "@types/google-libphonenumber": "^7.4.30",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.19.5",
     "@types/supertest": "^6.0.2",
     "drizzle-kit": "^0.31.8",
@@ -106,5 +111,10 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "overrides": {
+    "@nestjs/platform-express": {
+      "multer": "2.4.0"
+    }
   }
 }
