@@ -1,0 +1,21 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "name"
+  ],
+  "rowCount": 1,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "A-1",
+        "Ali"
+      ]
+    }
+  ]
+}

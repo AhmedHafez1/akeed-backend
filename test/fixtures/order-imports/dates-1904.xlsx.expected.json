@@ -1,0 +1,28 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Dates",
+  "ignoredSheets": [],
+  "headers": [
+    "label",
+    "value"
+  ],
+  "rowCount": 2,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "serial 0",
+        "1904-01-01"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "serial 1",
+        "1904-01-02"
+      ]
+    }
+  ]
+}

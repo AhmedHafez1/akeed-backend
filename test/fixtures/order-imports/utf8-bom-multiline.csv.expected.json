@@ -1,0 +1,37 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "customer_name",
+    "phone",
+    "amount",
+    "notes"
+  ],
+  "rowCount": 2,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "1001",
+        "أحمد علي",
+        "01001234567",
+        "250.00",
+        "سطر أول\r\nسطر ثاني"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "1002",
+        "Sara, Ltd",
+        "+201112223334",
+        "99.5",
+        "She said \"ok\""
+      ]
+    }
+  ]
+}

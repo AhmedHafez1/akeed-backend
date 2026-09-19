@@ -1,0 +1,35 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "customer_name",
+    "phone",
+    "amount"
+  ],
+  "rowCount": 40,
+  "rowsAreSample": true,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "ORD-1",
+        "Customer 1",
+        "01010000000",
+        "100.50"
+      ]
+    },
+    {
+      "rowNumber": 41,
+      "cells": [
+        "ORD-40",
+        "Customer 40",
+        "01010000039",
+        "139.50"
+      ]
+    }
+  ]
+}

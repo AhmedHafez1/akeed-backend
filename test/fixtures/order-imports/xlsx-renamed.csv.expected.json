@@ -1,0 +1,25 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "customer_name",
+    "phone",
+    "amount"
+  ],
+  "rowCount": 1,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "A-1",
+        "Ali",
+        "01001234567",
+        "250"
+      ]
+    }
+  ]
+}

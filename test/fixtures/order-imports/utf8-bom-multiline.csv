@@ -1,0 +1,4 @@
+﻿order_id,customer_name,phone,amount,notes
+1001,أحمد علي,01001234567,250.00,"سطر أول
+سطر ثاني"
+1002,"Sara, Ltd",+201112223334,99.5,"She said ""ok"""

@@ -1,0 +1,25 @@
+{
+  "format": "csv",
+  "encoding": "windows-1256",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "الاسم",
+    "الهاتف",
+    "المبلغ",
+    "المدينة"
+  ],
+  "rowCount": 1,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "خالد",
+        "01001234567",
+        "300",
+        "القاهرة"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Dates",
+  "ignoredSheets": [],
+  "headers": [
+    "label",
+    "value"
+  ],
+  "rowCount": 6,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "serial 59",
+        "1900-02-28"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "serial 60",
+        "1900-02-29"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "serial 61",
+        "1900-03-01"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "day first",
+        "2023-03-15"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "cells": [
+        "with time",
+        "2023-03-15T12:00:00"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "cells": [
+        "time only",
+        "06:00:00"
+      ]
+    }
+  ]
+}

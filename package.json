@@ -31,6 +31,7 @@
     "test:contract:platform-boundary-migration": "jest --config ./test/jest-platform-boundary-migration-contract.json --runInBand",
     "test:contract:standalone-provisioning": "jest --config ./test/jest-standalone-provisioning-contract.json --runInBand",
     "test:contract:manual-orders": "jest --config ./test/jest-manual-order-ingestion-contract.json --runInBand",
+    "test:contract:order-imports": "jest --config ./test/jest-order-imports-contract.json --runInBand",
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
     "test:contract:billing-operations": "jest --config ./test/jest-standalone-billing-operations-contract.json --runInBand",
@@ -43,7 +44,8 @@
     "test:gate:e045": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e045-release-gate.ps1",
     "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts",
     "test:contract:credit-foundation": "jest --config ./test/jest-credit-foundation-contract.json --runInBand",
-    "test:contract:e045": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e045-contracts.ps1"
+    "test:contract:e045": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e045-contracts.ps1",
+    "fixtures:order-imports": "tsx scripts/generate-order-import-fixtures.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
@@ -58,7 +60,6 @@
     "bullmq": "^5.70.4",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
-    "csv-parse": "^7.0.2",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
     "fflate": "^0.8.3",

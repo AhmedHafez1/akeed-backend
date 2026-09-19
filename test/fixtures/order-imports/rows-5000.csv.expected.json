@@ -1,0 +1,35 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "customer_name",
+    "phone",
+    "amount"
+  ],
+  "rowCount": 5000,
+  "rowsAreSample": true,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "ORD-1",
+        "Customer 1",
+        "01010000000",
+        "100.50"
+      ]
+    },
+    {
+      "rowNumber": 5001,
+      "cells": [
+        "ORD-5000",
+        "Customer 5000",
+        "01010004999",
+        "149.50"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+[
+  {
+    "file": "utf8-bom-multiline.csv",
+    "description": "UTF-8 with BOM and CRLF; quoted cells with a line break, a comma and doubled quotes.",
+    "bytes": 175
+  },
+  {
+    "file": "utf16le-tab.csv",
+    "description": "Arabic Excel \"Unicode text\": UTF-16 LE with BOM, tab-separated.",
+    "bytes": 172
+  },
+  {
+    "file": "windows-1256.csv",
+    "description": "Arabic CSV saved by older Excel in the Windows-1256 code page.",
+    "bytes": 59
+  },
+  {
+    "file": "semicolon.csv",
+    "description": "Semicolon-separated with decimal-comma amounts.",
+    "bytes": 50
+  },
+  {
+    "file": "malformed-quote.csv",
+    "description": "A closing quote followed by stray text, and a quote never closed; only those rows are flagged.",
+    "bytes": 71
+  },
+  {
+    "file": "mixed-shape.csv",
+    "description": "Mixed CRLF/LF/CR, trailing delimiter, blank line, blank and duplicate headers, extra and missing cells, a 1,001-character cell and no final newline.",
+    "bytes": 2074
+  },
+  {
+    "file": "header-only.csv",
+    "description": "A header and no data rows.",
+    "bytes": 21
+  },
+  {
+    "file": "blank-only.csv",
+    "description": "Only blank and whitespace rows.",
+    "bytes": 13
+  },
+  {
+    "file": "zero-bytes.csv",
+    "description": "An empty upload.",
+    "bytes": 0
+  },
+  {
+    "file": "rows-5000.csv",
+    "description": "Exactly the row limit.",
+    "bytes": 212823
+  },
+  {
+    "file": "rows-5001.csv",
+    "description": "One row over the limit.",
+    "bytes": 212866
+  },
+  {
+    "file": "cols-100.csv",
+    "description": "Exactly the column limit.",
+    "bytes": 786
+  },
+  {
+    "file": "cols-101.csv",
+    "description": "One column over the limit.",
+    "bytes": 796
+  },
+  {
+    "file": "pdf-renamed.csv",
+    "description": "A PDF saved with a .csv extension.",
+    "bytes": 90
+  },
+  {
+    "file": "xlsx-renamed.csv",
+    "description": "A workbook saved with a .csv extension is read as XLSX.",
+    "bytes": 8747
+  },
+  {
+    "file": "csv-renamed.xlsx",
+    "description": "CSV text saved with a .xlsx extension is read as CSV.",
+    "bytes": 24
+  },
+  {
+    "file": "arabic-excel.xlsx",
+    "description": "A typical Arabic merchant workbook.",
+    "bytes": 9053
+  },
+  {
+    "file": "hidden-first-sheet.xlsx",
+    "description": "Hidden and very hidden sheets come first; the first visible sheet is read and the rest are listed.",
+    "bytes": 10500
+  },
+  {
+    "file": "merged-cells.xlsx",
+    "description": "A merged range keeps only its top-left value.",
+    "bytes": 8809
+  },
+  {
+    "file": "formulas.xlsx",
+    "description": "Formulas are read from their cached values and never evaluated (a stale cache stays stale).",
+    "bytes": 8864
+  },
+  {
+    "file": "serial-dates.xlsx",
+    "description": "Excel serial dates, including the 1900 leap-year bug's phantom 29 February, times and a time-only cell.",
+    "bytes": 9033
+  },
+  {
+    "file": "dates-1904.xlsx",
+    "description": "A workbook using the 1904 date system (older Mac Excel).",
+    "bytes": 8842
+  },
+  {
+    "file": "number-phones.xlsx",
+    "description": "Phones and amounts stored as numbers under General, text, custom and thousands formats.",
+    "bytes": 9107
+  },
+  {
+    "file": "formatted-empty-rows.xlsx",
+    "description": "Formatting applied down to row 1,048,576 with data in 40 rows counts 40 rows.",
+    "bytes": 21470
+  },
+  {
+    "file": "protected.xlsx",
+    "description": "A password-protected workbook: an OLE2 container with EncryptionInfo and EncryptedPackage.",
+    "bytes": 6656
+  },
+  {
+    "file": "macro.xlsm",
+    "description": "A macro-enabled workbook carrying xl/vbaProject.bin.",
+    "bytes": 5964
+  },
+  {
+    "file": "legacy.xls",
+    "description": "A legacy Excel 97-2003 (BIFF8) workbook.",
+    "bytes": 3584
+  },
+  {
+    "file": "zip-bomb.xlsx",
+    "description": "A valid workbook whose shared-strings part inflates past the 50 MB cap.",
+    "bytes": 67364
+  },
+  {
+    "file": "truncated.xlsx",
+    "description": "A workbook cut off mid-download.",
+    "bytes": 1024
+  }
+]

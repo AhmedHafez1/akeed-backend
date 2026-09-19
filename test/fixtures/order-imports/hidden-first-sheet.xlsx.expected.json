@@ -1,0 +1,25 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [
+    "Secret",
+    "VeryHidden",
+    "Notes"
+  ],
+  "headers": [
+    "order_id",
+    "name"
+  ],
+  "rowCount": 1,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "A-1",
+        "Ali"
+      ]
+    }
+  ]
+}

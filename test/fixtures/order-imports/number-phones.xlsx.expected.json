@@ -1,0 +1,56 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Phones",
+  "ignoredSheets": [],
+  "headers": [
+    "case",
+    "value"
+  ],
+  "rowCount": 6,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "general number",
+        "1001234567"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "text format",
+        "1001234567"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "custom zero-padded",
+        "01001234567"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "typed as text",
+        "01001234567"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "cells": [
+        "long general number",
+        "201001234567"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "cells": [
+        "thousands amount",
+        "1,250.50"
+      ]
+    }
+  ]
+}

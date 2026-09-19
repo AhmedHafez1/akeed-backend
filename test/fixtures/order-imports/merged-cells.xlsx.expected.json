@@ -1,0 +1,31 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "name",
+    "city"
+  ],
+  "rowCount": 2,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "1",
+        "Ali",
+        "Cairo"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "2",
+        "",
+        "Giza"
+      ]
+    }
+  ]
+}
