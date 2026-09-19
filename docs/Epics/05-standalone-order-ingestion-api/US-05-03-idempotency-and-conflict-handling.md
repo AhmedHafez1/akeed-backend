@@ -27,10 +27,15 @@ Mandatory Idempotency-Key, stable acceptance replay, payload conflicts and concu
 3. The same key with changed business content returns 409 conflict with no additional order/verification/reservation.
 4. Concurrent equal requests resolve to one durable acceptance; database success followed by lost response remains recoverable.
 5. A new idempotency key for an existing externalOrderId cannot duplicate or silently overwrite it; identical create is replayed, conflicting create is rejected.
+6. All of the above is implemented **inside `StandaloneOrderIngestionService`**, not in the API layer, so manual, file import and API share one set of idempotency semantics:
+   - key namespacing per channel (`api:<key>`);
+   - fingerprinting via `fingerprintCanonicalOrder` over canonical business fields only, never the channel;
+   - existing-external-ID replay or conflict with no new event on replay.
+7. **Cross-channel identity:** an API create whose `ref:<normalized externalOrderId>` matches an order previously imported by file (or created by API) replays with `duplicate=true` when the canonical fingerprint matches and returns 409 `API_ORDER_EXTERNAL_ID_CONFLICT` otherwise. Either way it creates no second event, verification, message or credit hold.
 
 ## Implementation notes
 
-- **Backend:** Canonicalize validated business fields before fingerprinting; use transactional uniqueness and the common recoverable-dispatch path.
+- **Backend:** Reuse `fingerprintCanonicalOrder` and the shared idempotency-key validator (E04.6). Add the existing-external-ID replay and conflict branch to `acceptWithinTransaction` once, so all channels inherit it. Use transactional uniqueness and the common recoverable-dispatch path.
 - **Frontend:** Display actionable duplicate/conflict explanations in API guidance; no special dashboard deduplication layer.
 - **Data:** Retain idempotency identity while its accepted order is retained; privacy redaction must handle associated payloads consistently.
 - **Operations:** Document stable retry behavior and no-edit semantics; do not expire deduplication silently while an order can still be replayed.
@@ -39,6 +44,7 @@ Mandatory Idempotency-Key, stable acceptance replay, payload conflicts and concu
 
 - Concurrent identical/conflicting requests; reordered JSON keys; credential rotation; timeout after persistence.
 - Same key/external ID in two integrations, and a new key targeting an existing order.
+- The same order created by file import and then by API (identical and conflicting), and an API key string equal to a manual key string (no collision).
 - Satisfy the applicable [shared Definition of Done](../README.md); record test results during implementation, not when this backlog is authored.
 
 ## Migration and rollout
@@ -49,10 +55,10 @@ Backfill no speculative client keys; release API only after concurrency and cras
 
 **VERIFIED FROM CODE:** Existing webhook events and orders already have uniqueness foundations, but API-specific request identity/replay records do not exist.
 
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

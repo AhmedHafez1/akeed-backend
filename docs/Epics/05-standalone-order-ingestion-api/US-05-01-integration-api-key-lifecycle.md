@@ -6,7 +6,7 @@
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-04.5-08](../04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md)
+- **Dependencies:** [US-04.5-08](../04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md), [US-04.6-10](../04.6-standalone-bulk-order-import/US-04.6-10-bulk-import-release-gate.md)
 
 ## User story and value
 
@@ -27,10 +27,11 @@ API-key creation, one-time display, listing metadata and immediate revocation fo
 3. List/read APIs never return the secret or hash; logs, URLs and analytics do not contain the full key.
 4. Revoked keys fail subsequent authentication; rotating a key does not reset source usage or idempotency history.
 5. The localized key-management UI explains server-only use, one-time copying and revocation consequences in Arabic/English and RTL.
+6. The key guard resolves an ingestion context `{orgId, integrationId, actor: {type: 'api_key', keyId, prefix}}` of the same shape the session path passes to `StandaloneOrderIngestionService`. The command never needs to know which authentication produced it.
 
 ## Implementation notes
 
-- **Backend:** Add an integration-key repository and dedicated authentication guard; do not treat public API keys as Supabase/Shopify user sessions.
+- **Backend:** Add an integration-key repository and dedicated authentication guard; do not treat public API keys as Supabase/Shopify user sessions. Key management calls `StandaloneSourceResolver` (from E04.6) to find the ready Standalone source instead of re-querying integrations.
 - **Frontend:** Use existing authenticated helpers for management and clear the one-time secret on navigation; avoid persistent browser storage.
 - **Data:** Persist orgId/integrationId, hash, prefix, created/last-used/revoked metadata; enforce source ownership.
 - **Operations:** Audit actor/action/key prefix, never secret; already accepted orders survive key revocation unless the source itself is disabled.
@@ -49,12 +50,12 @@ Enable key issuance only after the ingestion endpoint and controls are ready for
 
 **VERIFIED FROM CODE:** Dual auth and memberships exist, but the reviewed source has no integration API-key ingestion surface.
 
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/organizations/organizations.controller.ts](../../akeed-backend/src/modules/organizations/organizations.controller.ts)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
-- [akeed-frontend/src/shared/lib/auth.ts](../../akeed-frontend/src/shared/lib/auth.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts](../../../src/infrastructure/database/repositories/memberships.repository.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/organizations/organizations.controller.ts](../../../src/modules/organizations/organizations.controller.ts)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
+- [akeed-frontend/src/shared/lib/auth.ts](../../../../akeed-frontend/src/shared/lib/auth.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

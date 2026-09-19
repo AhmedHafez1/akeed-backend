@@ -1,8 +1,8 @@
 # Akeed Expansion — Epics and Prioritized User Stories
 
 **Authored:** 2026-08-31  
-**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 and E05–E09 remain backlog
-**Inventory:** 10 epics, 61 user stories (56 P0 / 5 P1), 11 README files
+**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 and E05–E09 remain backlog
+**Inventory:** 11 epics, 72 user stories (67 P0 / 5 P1), 12 README files
 **Location:** `akeed-backend/docs/Epics`
 
 ## Purpose
@@ -19,14 +19,15 @@ Creating this backlog did not implement code, run migrations, activate connectio
 | 2     | [E02 — Platform Boundaries and Reliability](02-platform-boundaries-and-reliability/README.md)   | NOW     | 7       | [E01](01-shopify-baseline-stabilization/README.md)                                                                                                                    | [US-02-07](02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md)               |
 | 3     | [E03 — Standalone Foundation and Onboarding](03-standalone-foundation-and-onboarding/README.md) | NOW     | 5       | [E02](02-platform-boundaries-and-reliability/README.md)                                                                                                               | [US-03-05](03-standalone-foundation-and-onboarding/US-03-05-standalone-tenant-and-primary-source-guards.md) |
 | 4     | [E04 — Standalone Manual Order MVP](04-standalone-manual-order-mvp/README.md)                   | NEXT    | 5       | [E03](03-standalone-foundation-and-onboarding/README.md)                                                                                                              | [US-04-05](04-standalone-manual-order-mvp/US-04-05-manual-mvp-merchant-acceptance.md)                       |
-| 4.5   | [E04.5 — Standalone Paymob Usage-Based Billing MVP](04.5-standalone-paymob-usage-billing/README.md) | NEXT | 8 | [E04](04-standalone-manual-order-mvp/README.md) | [US-04.5-08](04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md) |
-| 5     | [E05 — Standalone Order Ingestion API](05-standalone-order-ingestion-api/README.md)             | NEXT    | 6       | [E04.5](04.5-standalone-paymob-usage-billing/README.md)                                                                                                              | [US-05-06](05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md)            |
+| 4.5   | [E04.5 — Standalone Paymob Usage-Based Billing MVP](04.5-standalone-paymob-usage-billing/README.md) | NEXT | 9 | [E04](04-standalone-manual-order-mvp/README.md) | [US-04.5-08](04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md) |
+| 4.6   | [E04.6 — Standalone Bulk Order Import (CSV / XLSX)](04.6-standalone-bulk-order-import/README.md) | NEXT | 10 | [E04](04-standalone-manual-order-mvp/README.md), [E04.5](04.5-standalone-paymob-usage-billing/README.md) | [US-04.6-10](04.6-standalone-bulk-order-import/US-04.6-10-bulk-import-release-gate.md) |
+| 5     | [E05 — Standalone Order Ingestion API](05-standalone-order-ingestion-api/README.md)             | NEXT    | 6       | [E04.5](04.5-standalone-paymob-usage-billing/README.md), [E04.6](04.6-standalone-bulk-order-import/README.md)                                                     | [US-05-06](05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md)            |
 | 6     | [E06 — Tenant-Aware WhatsApp Foundation](06-tenant-aware-whatsapp-foundation/README.md)         | NEXT    | 7       | [E02](02-platform-boundaries-and-reliability/README.md)                                                                                                               | [US-06-07](06-tenant-aware-whatsapp-foundation/US-06-07-messaging-isolation-and-fallback-release-gate.md)   |
 | 7     | [E07 — Assisted Merchant-Owned WhatsApp Pilot](07-assisted-merchant-whatsapp-pilot/README.md)   | NEXT    | 5       | [E06](06-tenant-aware-whatsapp-foundation/README.md)                                                                                                                  | [US-07-05](07-assisted-merchant-whatsapp-pilot/US-07-05-pilot-go-no-go-decision.md)                         |
 | 8     | [E08 — EasyOrders Integration](08-easyorders-integration/README.md)                             | NEXT    | 6       | [E02](02-platform-boundaries-and-reliability/README.md), [E03](03-standalone-foundation-and-onboarding/README.md), [E05](05-standalone-order-ingestion-api/README.md) | [US-08-06](08-easyorders-integration/US-08-06-easyorders-contract-and-pilot-release-gate.md)                |
 | 9     | [E09 — WooCommerce Integration](09-woocommerce-integration/README.md)                           | LATER   | 6       | [E08](08-easyorders-integration/README.md)                                                                                                                            | [US-09-06](09-woocommerce-integration/US-09-06-woocommerce-compatibility-and-pilot-release-gate.md)         |
 
-E01 → E02 → E03 → E04 → E04.5 → E05 → E08 → E09 is the commerce delivery sequence. E06 branches from E02 and may proceed alongside E03–E05; E07 follows E06. E08 does not depend on E06/E07 because EasyOrders can use the Akeed sender. E09 is deliberately later than E08. E04.5 is a decimal insertion; existing epic and story IDs are not renumbered.
+E01 → E02 → E03 → E04 → E04.5 → E04.6 → E05 → E08 → E09 is the commerce delivery sequence. E06 branches from E02 and may proceed alongside E03–E05; E07 follows E06. E08 does not depend on E06/E07 because EasyOrders can use the Akeed sender. E09 is deliberately later than E08. E04.5 and E04.6 are decimal insertions; existing epic and story IDs are not renumbered.
 
 Every epic has a prioritized story table. Each story's direct dependency links form the minimum execution chain; dependencies are transitive. The last story in each epic is its release/acceptance gate. A gate cannot be marked complete while an acceptance criterion or a required predecessor remains unresolved.
 
@@ -37,7 +38,7 @@ Every epic has a prioritized story table. Each story's direct dependency links f
 - **Horizon is separate from priority:** a P0 WooCommerce story remains LATER, not a reason to displace Shopify stabilization.
 - **Delivery rank** is the story order inside its epic. Dependencies override priority labels and prevent release gates from jumping ahead of supporting work.
 - IDs such as `US-05-03` are stable. Reprioritize the index/rank deliberately rather than renaming IDs or silently changing dependencies.
-- Record implementation and release status separately with evidence. E01 is complete for its recorded working trees; E02 and E03 are implemented locally but release blocked; E04 has all five stories implemented locally but remains release blocked; E04.5 and E05–E09 remain **Backlog**. A validation spike can be Done with a no-go finding while its dependent feature remains Blocked.
+- Record implementation and release status separately with evidence. E01 is complete for its recorded working trees; E02 and E03 are implemented locally but release blocked; E04 has all five stories implemented locally but remains release blocked; E04.5 is Done per its epic evidence; E04.6 and E05–E09 remain **Backlog**. A validation spike can be Done with a no-go finding while its dependent feature remains Blocked.
 - No story points, calendar promises or staffing assignments are fabricated. Those require delivery-team estimation.
 
 ## Story format
@@ -63,7 +64,7 @@ For any implemented story:
 9. Required source/contract documentation is updated and linked. A discrepancy between older prose and actual code is explicitly reconciled, not ignored.
 10. External validation produces dated provider/merchant evidence. Unknown eligibility/authentication/status effects block live use; they are not accepted by assumption.
 
-Use the [backend working guide](../akeed-backend/AGENTS.md) and [frontend working guide](../akeed-frontend/AGENTS.md) for existing commands/conventions. Backend `npm run lint` fixes files by default: use a non-fixing lint invocation when merely validating. The current Shopify adapter is GraphQL; preserve its characterized behavior rather than converting it because older prose mentions REST.
+Use the [backend working guide](../../AGENTS.md) and [frontend working guide](../../../akeed-frontend/AGENTS.md) for existing commands/conventions. Backend `npm run lint` fixes files by default: use a non-fixing lint invocation when merely validating. The current Shopify adapter is GraphQL; preserve its characterized behavior rather than converting it because older prose mentions REST.
 
 ## Approved product defaults
 
@@ -98,12 +99,12 @@ The current repository inspection confirms reusable normalized orders, verificat
 
 Reference entry points:
 
-- [Global provider bindings](../akeed-backend/src/app.module.ts)
-- [Canonical order interface](../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [Database schema](../akeed-backend/src/infrastructure/database/schema.ts)
-- [Standalone provisioning](../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [Global WhatsApp sender](../akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts)
-- [Dashboard feature](../akeed-frontend/src/features/dashboard)
+- [Global provider bindings](../../src/app.module.ts)
+- [Canonical order interface](../../src/shared/interfaces/order.interface.ts)
+- [Database schema](../../src/infrastructure/database/schema.ts)
+- [Standalone provisioning](../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [Global WhatsApp sender](../../src/infrastructure/spokes/meta/whatsapp.service.ts)
+- [Dashboard feature](../../../akeed-frontend/src/features/dashboard)
 
 ### Historical test evidence — 2026-08-30
 
@@ -147,7 +148,7 @@ Meta, Paymob, EasyOrders and WooCommerce validation stories explicitly record su
 - Payment providers other than the approved Paymob E04.5 adapter.
 - Full self-service Meta Embedded Signup/Tech Provider rollout.
 - Multiple active commerce sources or general source switching.
-- Broad CSV automation, hosted checkout/order forms and browser-side JavaScript SDKs.
+- Broad CSV automation (scheduled, FTP, email or URL-pull imports), hosted checkout/order forms and browser-side JavaScript SDKs. Merchant-initiated CSV/XLSX file import is approved as [E04.6](04.6-standalone-bulk-order-import/README.md).
 - A WooCommerce/WordPress plugin.
 - Bespoke delivery-company adapters.
 - Generic outbound merchant callbacks until a paid requirement is approved.
@@ -155,7 +156,7 @@ Meta, Paymob, EasyOrders and WooCommerce validation stories explicitly record su
 
 ## Backlog integrity checks
 
-The authored package must contain exactly ten epic directories, 61 uniquely identified story files and eleven README files. All priorities/types/statuses must be valid, each story must be indexed once, local links must resolve, and dependencies must be acyclic. Application source must remain unchanged by backlog creation.
+The authored package must contain exactly eleven epic directories, 72 uniquely identified story files and twelve README files. All priorities/types/statuses must be valid, each story must be indexed once, local links must resolve, and dependencies must be acyclic. Application source must remain unchanged by backlog creation.
 
 The following are separate checks: documentation integrity now; software tests and live platform validation during implementation of the stories.
 
@@ -166,3 +167,8 @@ The following are separate checks: documentation integrity now; software tests a
 - Local-link, story-index and dependency checks are rerun whenever this index changes; provider behavior still requires the specified story-level validation.
 - Reopened the official Paymob Create Intention, callback, HMAC and inquiry references on 2026-09-09.
 - Application source remained unchanged. No application test, migration, Paymob call, account activation or merchant operation was executed while adding E04.5.
+
+### Authoring validation — 2026-09-19
+
+- Added E04.6 (10 stories, all P0) between E04.5 and E05 and corrected the E04.5 roadmap row to its nine indexed stories. Confirmed 11 epic folders, 72 story files and 12 README files.
+- E04.6 local links, story index, ranks and dependency chain were checked after authoring. Application source remained unchanged; no application test, migration, upload or WhatsApp send was executed.

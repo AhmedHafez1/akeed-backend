@@ -27,6 +27,7 @@ E05 security, concurrency, documentation and production-like failure acceptance.
 3. Concurrent duplicates, conflicting payloads, database/Redis outage and lost responses recover without duplicate business effects.
 4. All documented examples pass; the end-to-end API order reaches dashboard and a valid customer outcome.
 5. Existing manual/Shopify workflows and both-mode frontend checks remain green.
+6. The architecture and equivalence checks pass. The same canonical order via manual, file import and API yields identical verification, dispatch ledger, credit, follow-up and dashboard results. The API module reaches persistence and dispatch only through `StandaloneOrderIngestionService`. Nothing downstream reads `ingestionType`. The E04.6 reuse-map duplication check still passes with the API code included.
 
 ## Implementation notes
 
@@ -49,13 +50,13 @@ E08 may reuse the common ingestion boundary only after this gate is complete.
 
 **VERIFIED FROM CODE:** Existing tests cover pieces of queues, auth and verification; the cross-boundary API acceptance suite is new work.
 
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/orders.repository.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-frontend/src/features/dashboard](../../akeed-frontend/src/features/dashboard)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-frontend/src/features/dashboard](../../../../akeed-frontend/src/features/dashboard)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

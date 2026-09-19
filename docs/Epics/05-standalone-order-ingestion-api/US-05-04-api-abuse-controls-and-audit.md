@@ -30,7 +30,7 @@ Rate/payload limits, structured errors, request auditing and secret/PII minimiza
 
 ## Implementation notes
 
-- **Backend:** Apply controls before expensive normalization/queue work and distinguish API request limits from verification plan usage.
+- **Backend:** Apply controls in the guard/interceptor layer before the channel adapter, so a throttled or oversized request never reaches `StandaloneOrderIngestionService`. Keep API request limits separate from verification usage, which stays owned by the command's readiness gates.
 - **Frontend:** Render key last-used/revoked metadata and readable errors in localized management/support surfaces.
 - **Data:** Store only minimum audit metadata with a configurable retention policy; do not duplicate raw customer payload in logs.
 - **Operations:** Monitor rejection rate, queue age and acceptance failures; publish configuration and a client-support triage procedure.
@@ -49,11 +49,11 @@ Start with documented pilot limits and adjust configuration based on observed tr
 
 **VERIFIED FROM CODE:** Existing queue/repository infrastructure supports asynchronous work and structured logs; the proposed API needs its own controls.
 
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

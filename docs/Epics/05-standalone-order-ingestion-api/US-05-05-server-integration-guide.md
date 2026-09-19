@@ -49,10 +49,10 @@ Publish with the API pilot, and version breaking contract changes rather than si
 
 **VERIFIED FROM CODE:** Standalone API capability is proposed; existing authenticated frontend helpers and backend order model define reusable terms.
 
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/orders/orders.controller.ts](../../akeed-backend/src/modules/orders/orders.controller.ts)
-- [akeed-frontend/src/shared/lib/auth.ts](../../akeed-frontend/src/shared/lib/auth.ts)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/modules/orders/orders.controller.ts](../../../src/modules/orders/orders.controller.ts)
+- [akeed-frontend/src/shared/lib/auth.ts](../../../../akeed-frontend/src/shared/lib/auth.ts)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 
