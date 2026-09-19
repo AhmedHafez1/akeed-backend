@@ -194,6 +194,27 @@ export interface OrderImportMappingSuggestionDto {
   dateFormat: OrderImportDateFormatDto | null;
 }
 
+/** A field as the batch page shows it: its origin may be the merchant's. */
+export interface OrderImportFieldStateDto extends Omit<
+  OrderImportFieldSuggestionDto,
+  'source'
+> {
+  source: MappingSource;
+}
+
+/** The mapping part of `GET /api/order-imports/:id` (US-04.6-05). */
+export interface OrderImportMappingStateDto {
+  /** False while the mapping is only the upload's suggestion. */
+  mappingConfirmed: boolean;
+  suggestions: {
+    fields: OrderImportFieldStateDto[];
+    unmappedColumns: string[];
+  };
+  options: ImportOptions;
+  paymentValues: OrderImportPaymentValuesDto | null;
+  dateFormat: OrderImportDateFormatDto | null;
+}
+
 export interface OrderImportMappingResponseDto {
   batchId: string;
   status: 'draft';

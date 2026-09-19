@@ -54,6 +54,8 @@ export class CreatePurchaseDto {
 
 export interface CreditSummaryResponseDto {
   billingEnabled: boolean;
+  /** Standalone bulk order import is switched on (E04.6); the UI hides it otherwise. */
+  bulkImportEnabled: boolean;
   status: 'active' | 'suspended' | 'not_provisioned';
   postedBalance: number;
   heldCredits: number;

@@ -14,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
 import { OrderIngestionModule } from '../order-ingestion/order-ingestion.module';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
@@ -57,6 +58,7 @@ export function orderImportMulterOptions(
   providers: [
     OrderImportsService,
     OrderImportMappingService,
+    OrderImportDetailService,
     OrderImportRowsService,
     RowValidationService,
     PhoneService,

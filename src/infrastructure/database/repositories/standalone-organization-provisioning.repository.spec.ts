@@ -57,10 +57,29 @@ describe('standalone provisioning entitlement grant', () => {
       const entitlement = resolveEntitlement(
         { ...provisionedSource, [column]: null },
         identity,
+        undefined,
+        'prepaid_credit',
       );
 
       expect(entitlement.reason).toBeNull();
       expect(entitlement.allowed).toBe(true);
+    },
+  );
+
+  it.each(['billingStatus', 'billingPlanId', 'billingActivatedAt'] as const)(
+    'blocks periodic-plan sends while credit billing is off when provisioning omits %s',
+    (column) => {
+      const entitlement = resolveEntitlement(
+        { ...provisionedSource, [column]: null },
+        identity,
+        undefined,
+        'periodic_plan',
+      );
+
+      expect(entitlement).toMatchObject({
+        allowed: false,
+        reason: 'billing_not_active',
+      });
     },
   );
 

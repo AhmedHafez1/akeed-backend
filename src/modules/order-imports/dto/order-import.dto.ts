@@ -1,5 +1,8 @@
 import type { RowIssue } from '../parsers/grid.types';
-import type { OrderImportMappingSuggestionDto } from './order-import-mapping.dto';
+import type {
+  OrderImportMappingStateDto,
+  OrderImportMappingSuggestionDto,
+} from './order-import-mapping.dto';
 
 export interface OrderImportSampleRowDto {
   rowNumber: number;
@@ -39,6 +42,42 @@ export interface OrderImportOpenDraftDto {
   rowCount: number;
   createdAt: string;
   expiresAt: string;
+}
+
+/** What the caller may do; viewers see the batch read-only. */
+export interface OrderImportPermissionsDto {
+  canEdit: boolean;
+}
+
+/** `GET /api/order-imports?status=draft`: the open drafts to resume. */
+export interface OrderImportDraftListDto {
+  drafts: OrderImportOpenDraftDto[];
+  permissions: OrderImportPermissionsDto;
+}
+
+/**
+ * `GET /api/order-imports/:id` (US-04.6-05): enough to render the wizard step
+ * the batch is in after a refresh. A draft past its expiry reads as
+ * `expired`. US-04.6-06..08 extend it with commit and lifecycle progress.
+ */
+export interface OrderImportBatchDetailDto extends OrderImportMappingStateDto {
+  batchId: string;
+  shortCode: string;
+  status: string;
+  fileName: string;
+  format: string;
+  rowCount: number;
+  createdAt: string;
+  expiresAt: string;
+  headers: string[];
+  sampleRows: OrderImportSampleRowDto[];
+  counts: Record<string, number>;
+  orderDateMin: string | null;
+  orderDateMax: string | null;
+  /** Rows older than the age window; they are not imported. */
+  oldOrderCount: number;
+  duplicateFileOf?: OrderImportDuplicateFileDto;
+  permissions: OrderImportPermissionsDto;
 }
 
 export const ORDER_IMPORT_TEMPLATE_FORMATS = ['csv', 'xlsx'] as const;

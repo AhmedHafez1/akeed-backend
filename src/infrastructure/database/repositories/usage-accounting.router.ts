@@ -13,6 +13,7 @@ import {
   creditDenial,
   type CreditDenialCode,
 } from '../../../shared/billing/credit-eligibility';
+import type { UsageAccountingMode } from '../../../shared/billing/entitlement';
 import { PrepaidCreditAccounting } from './prepaid-credit-accounting';
 
 @Injectable()
@@ -39,7 +40,7 @@ export class UsageAccountingRouter {
    * persisted on the dispatch, so holds taken before a rollback still consume,
    * release and reverse through credits.
    */
-  mode(platformType: string): 'prepaid_credit' | 'periodic_plan' {
+  mode(platformType: string): UsageAccountingMode {
     return platformType === 'standalone' && this.isEnabled()
       ? 'prepaid_credit'
       : 'periodic_plan';

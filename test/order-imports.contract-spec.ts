@@ -512,6 +512,103 @@ describe('order imports PostgreSQL contract', () => {
     ).resolves.toEqual([]);
   });
 
+  it('reads a batch detail, its first rows and an issue count, org-scoped (US-04.6-05)', async () => {
+    const source = await createSource();
+    const draft = await repository.createDraftWithRows(
+      batch(source, { headers: ['payment'] }),
+      [
+        {
+          rowNumber: 3,
+          raw: { payment: 'Paid' },
+          issues: [{ code: 'ORDER_TOO_OLD', field: 'orderDate' }],
+        },
+        { rowNumber: 2, raw: { payment: 'COD' }, issues: [] },
+        {
+          rowNumber: 4,
+          raw: { payment: 'COD' },
+          issues: [
+            { code: 'PHONE_MISSING', field: 'phone' },
+            { code: 'ORDER_TOO_OLD', field: 'orderDate' },
+          ],
+        },
+      ],
+      options,
+    );
+
+    await expect(
+      repository.findBatchDetail(source.orgId, draft.batchId),
+    ).resolves.toMatchObject({
+      batchId: draft.batchId,
+      shortCode: draft.shortCode,
+      status: 'draft',
+      fileSha256: 'a'.repeat(64),
+      headers: ['payment'],
+      orderDateMin: null,
+    });
+    const sample = await repository.readSampleRows(
+      source.orgId,
+      draft.batchId,
+      2,
+    );
+    expect(sample.map((row) => row.rowNumber)).toEqual([2, 3]);
+    await expect(
+      repository.countRowsWithIssue(
+        source.orgId,
+        draft.batchId,
+        'ORDER_TOO_OLD',
+      ),
+    ).resolves.toBe(2);
+
+    const otherOrg = await createSource();
+    await expect(
+      repository.findBatchDetail(otherOrg.orgId, draft.batchId),
+    ).resolves.toBeNull();
+    await expect(
+      repository.readSampleRows(otherOrg.orgId, draft.batchId, 5),
+    ).resolves.toEqual([]);
+    await expect(
+      repository.countRowsWithIssue(
+        otherOrg.orgId,
+        draft.batchId,
+        'ORDER_TOO_OLD',
+      ),
+    ).resolves.toBe(0);
+  });
+
+  it('finds the upload a batch duplicates, looking back from that batch only', async () => {
+    const source = await createSource();
+    const sha = 'd'.repeat(64);
+    const first = await repository.createDraftWithRows(
+      batch(source, { fileSha256: sha }),
+      rows(1),
+      options,
+    );
+    await client`
+      UPDATE order_import_batches SET created_at = now() - interval '10 minutes'
+      WHERE id = ${first.batchId}`;
+    const second = await repository.createDraftWithRows(
+      batch(source, { fileSha256: sha }),
+      rows(1),
+      options,
+    );
+    const since = new Date(Date.now() - 24 * HOUR);
+
+    await expect(
+      repository.findRecentDuplicate(source.orgId, sha, since, undefined, {
+        batchId: second.batchId,
+        createdAt: second.createdAt,
+      }),
+    ).resolves.toMatchObject({ batchId: first.batchId });
+    const [firstRow] = await client<{ created_at: string }[]>`
+      SELECT created_at::text FROM order_import_batches WHERE id = ${first.batchId}`;
+    await expect(
+      repository.findRecentDuplicate(source.orgId, sha, since, undefined, {
+        batchId: first.batchId,
+        createdAt: new Date(firstRow.created_at).toISOString(),
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('saves a mapping once per header signature and only on a live draft', async () => {
     const source = await createSource();
     const userId = randomUUID();

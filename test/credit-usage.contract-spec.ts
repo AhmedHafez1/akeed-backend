@@ -312,11 +312,12 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
     await harness.disabled.resolveNotAccepted(second.id, undefined, true);
     await balance(source.orgId, -2, 0);
     // Rolling the feature back returns a Standalone source to the periodic plan
-    // it shipped with rather than blocking it behind a reconciliation code, so
-    // a fresh send is refused by that plan's own limit and takes no hold.
+    // rules it shipped with rather than blocking it behind a reconciliation
+    // code. This source was provisioned for credits and holds no plan, so the
+    // periodic rule refuses a fresh send as unbilled and takes no hold.
     expect(await harness.disabled.claim(input)).toMatchObject({
       outcome: 'blocked',
-      reason: 'plan_limit_reached',
+      reason: 'billing_not_active',
     });
     // A dispatch already bound to credits is never re-billed on the monthly
     // plan; it stays parked for reconciliation instead.

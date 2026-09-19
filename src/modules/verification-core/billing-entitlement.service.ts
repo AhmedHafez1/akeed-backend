@@ -6,6 +6,7 @@ import {
   type EntitlementIdentity,
   type EntitlementSource,
   type EntitlementAvailability,
+  type UsageAccountingMode,
 } from '../../shared/billing/entitlement';
 import { getBillingPeriodStart } from '../../shared/billing/billing-period';
 
@@ -20,19 +21,21 @@ export class BillingEntitlementService {
     source: EntitlementSource,
     identity: EntitlementIdentity = source,
   ) {
-    return resolveEntitlement(source, identity);
+    return resolveEntitlement(
+      source,
+      identity,
+      undefined,
+      this.accountingMode(source),
+    );
   }
 
   async readEntitlement(identity: EntitlementIdentity) {
     const source =
       await this.monthlyUsageRepository.getEntitlementSource(identity);
-    const entitlement = resolveEntitlement(source, identity);
+    const mode = this.accountingMode(source);
+    const entitlement = resolveEntitlement(source, identity, undefined, mode);
     const accounting = this.accounting;
-    if (
-      source &&
-      accounting &&
-      accounting.mode(source.platformType) === 'prepaid_credit'
-    ) {
+    if (source && accounting && mode === 'prepaid_credit') {
       const availability = await accounting.readAvailability(source.orgId);
       return {
         ...entitlement,
@@ -57,13 +60,10 @@ export class BillingEntitlementService {
   ): Promise<EntitlementAvailability> {
     const source =
       await this.monthlyUsageRepository.getEntitlementSource(identity);
-    const access = resolveEntitlement(source, identity);
+    const mode = this.accountingMode(source);
+    const access = resolveEntitlement(source, identity, undefined, mode);
     const accounting = this.accounting;
-    if (
-      source &&
-      accounting &&
-      accounting.mode(source.platformType) === 'prepaid_credit'
-    ) {
+    if (source && accounting && mode === 'prepaid_credit') {
       if (!access.allowed)
         return {
           available: false,
@@ -85,6 +85,12 @@ export class BillingEntitlementService {
     };
   }
 
+  /**
+   * Reserves monthly plan usage. This is the periodic-plan path, so the
+   * repository re-reads the locked source and applies the periodic rule inside
+   * its transaction; a caller's earlier `evaluateAccess` result is never
+   * trusted for the reservation.
+   */
   reserveVerificationSlot(identity: EntitlementIdentity) {
     return this.monthlyUsageRepository.reserveMonthlyVerificationSlot({
       id: identity.id,
@@ -100,4 +106,12 @@ export class BillingEntitlementService {
   }
 
   getBillingPeriodStart = getBillingPeriodStart;
+
+  private accountingMode(
+    source: Pick<EntitlementSource, 'platformType'> | undefined,
+  ): UsageAccountingMode {
+    return source && this.accounting
+      ? this.accounting.mode(source.platformType)
+      : 'periodic_plan';
+  }
 }

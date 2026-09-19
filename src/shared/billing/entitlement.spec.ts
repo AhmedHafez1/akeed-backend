@@ -88,7 +88,7 @@ describe('provider-neutral entitlement policy', () => {
     },
   );
 
-  it.each([
+  const legacyPlanFieldGaps = [
     { billingStatus: null },
     { billingStatus: 'active' },
     { billingStatus: 'pending' },
@@ -99,12 +99,30 @@ describe('provider-neutral entitlement policy', () => {
     { billingPlanId: 'unknown' },
     { billingActivatedAt: null },
     { billingActivatedAt: 'invalid' },
-  ])(
+  ];
+
+  it.each(legacyPlanFieldGaps)(
     'leaves prepaid credit eligibility independent of legacy plan fields %j',
     (overrides) => {
       expect(
-        resolveEntitlement({ ...source, ...overrides }, source, now),
+        resolveEntitlement(
+          { ...source, ...overrides },
+          source,
+          now,
+          'prepaid_credit',
+        ),
       ).toMatchObject({ allowed: true, reason: null });
+    },
+  );
+
+  // With credit billing off a Standalone source is billed on the periodic plan
+  // it shipped with, so the plan columns gate it exactly as they did in E04.
+  it.each(legacyPlanFieldGaps)(
+    'does not infer periodic Standalone provisioning from %j',
+    (overrides) => {
+      expect(
+        resolveEntitlement({ ...source, ...overrides }, source, now),
+      ).toMatchObject({ allowed: false, reason: 'billing_not_active' });
     },
   );
 

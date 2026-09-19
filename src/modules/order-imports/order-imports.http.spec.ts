@@ -27,6 +27,7 @@ import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-thr
 import { PhoneService } from '../../shared/services/phone.service';
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { StandaloneOrderEligibilityStrategy } from '../../infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
+import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
@@ -77,6 +78,10 @@ describe('order-import routes over HTTP', () => {
     pageRows: jest.fn(),
     findRow: jest.fn(),
     setIncludeOverride: jest.fn(),
+    findBatchDetail: jest.fn(),
+    readSampleRows: jest.fn(),
+    countRowsWithIssue: jest.fn(),
+    findRecentDuplicate: jest.fn(),
   };
 
   const fakeAuth: CanActivate = {
@@ -101,6 +106,7 @@ describe('order-import routes over HTTP', () => {
       providers: [
         OrderImportsService,
         OrderImportMappingService,
+        OrderImportDetailService,
         OrderImportRowsService,
         RowValidationService,
         PhoneService,
@@ -787,5 +793,240 @@ describe('order-import routes over HTTP', () => {
         });
       },
     );
+  });
+  describe('GET /api/order-imports and /:id (US-04.6-05)', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const columns = {
+      phone: 'Mobile',
+      customerName: ['Customer Name'],
+      amount: 'Total',
+      orderReference: null,
+      currency: null,
+      paymentMethod: 'Payment',
+      orderDate: 'Date',
+      city: null,
+      address: null,
+      notes: null,
+    };
+    const batch = (overrides: Record<string, unknown> = {}) => ({
+      batchId,
+      shortCode: 'ABC123',
+      status: 'draft',
+      fileName: 'orders.csv',
+      fileFormat: 'csv',
+      fileSha256: 'a'.repeat(64),
+      rowCount: 2,
+      headers: ['Mobile', 'Customer Name', 'Total', 'Payment', 'Date', 'Note'],
+      mapping: {
+        dictionaryVersion: 1,
+        confirmed: true,
+        columns,
+        sources: {
+          phone: 'auto',
+          customerName: 'auto',
+          amount: 'merchant',
+          orderReference: 'none',
+          currency: 'none',
+          paymentMethod: 'saved',
+          orderDate: 'auto',
+          city: 'none',
+          address: 'none',
+          notes: 'none',
+        },
+      },
+      options: {
+        country: 'EG',
+        defaultCurrency: 'EGP',
+        dateFormat: 'DMY',
+        paymentValueMap: { cash: 'cod' },
+      },
+      counts: { total: 2, ready: 1, invalid: 0, duplicate: 0, excluded: 1 },
+      orderDateMin: '2026-09-12',
+      orderDateMax: '2026-09-18',
+      createdAt: '2026-09-19T09:00:00.000Z',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      repository.findBatchDetail.mockResolvedValue(batch());
+      repository.readSampleRows.mockResolvedValue([
+        {
+          rowNumber: 2,
+          raw: {
+            Mobile: '01012345678',
+            'Customer Name': 'Ahmed Ali',
+            Total: '750',
+            Payment: 'Cash',
+            Date: '05/06/2026',
+            Note: '',
+          },
+          issues: [],
+        },
+      ]);
+      repository.countRowsWithIssue.mockResolvedValue(3);
+      repository.findRecentDuplicate.mockResolvedValue(null);
+      repository.columnValueCounts.mockImplementation(
+        (_org: string, _batch: string, column: string) =>
+          Promise.resolve(
+            column === 'Payment'
+              ? [{ value: 'Cash', count: 2 }]
+              : [{ value: '05/06/2026', count: 2 }],
+          ),
+      );
+    });
+
+    const get = (id = batchId) =>
+      request(server()).get(`/api/order-imports/${id}`);
+
+    it('answers the stored mapping, counts and banners for an owner', async () => {
+      const response = await get();
+      expect(response.status).toBe(200);
+      const body = response.body as {
+        suggestions: {
+          fields: { field: string; columns: string[]; source: string }[];
+          unmappedColumns: string[];
+        };
+      };
+      expect(response.body).toMatchObject({
+        batchId,
+        status: 'draft',
+        mappingConfirmed: true,
+        rowCount: 2,
+        headers: batch().headers,
+        counts: { ready: 1, excluded: 1 },
+        orderDateMin: '2026-09-12',
+        orderDateMax: '2026-09-18',
+        oldOrderCount: 3,
+        options: { dateFormat: 'DMY' },
+        paymentValues: {
+          column: 'Payment',
+          values: [
+            expect.objectContaining({
+              normalizedValue: 'cash',
+              classification: 'cod',
+              count: 2,
+            }) as unknown,
+          ],
+        },
+        dateFormat: { column: 'Date', ambiguous: true },
+        sampleRows: [expect.objectContaining({ rowNumber: 2 }) as unknown],
+        permissions: { canEdit: true },
+      });
+      expect(response.body).not.toHaveProperty('duplicateFileOf');
+      const fields = Object.fromEntries(
+        body.suggestions.fields.map((field) => [field.field, field]),
+      );
+      expect(fields.amount).toMatchObject({
+        columns: ['Total'],
+        source: 'merchant',
+      });
+      expect(fields.paymentMethod).toMatchObject({ source: 'saved' });
+      expect(fields.city).toMatchObject({ columns: [], source: 'none' });
+      expect(body.suggestions.unmappedColumns).toEqual(['Note']);
+      expect(repository.findBatchDetail).toHaveBeenCalledWith('org-1', batchId);
+      expect(repository.countRowsWithIssue).toHaveBeenCalledWith(
+        'org-1',
+        batchId,
+        'ORDER_TOO_OLD',
+      );
+    });
+
+    it('lets a viewer read the batch without edit permission', async () => {
+      currentUser = { ...currentUser, role: 'viewer' };
+      const response = await get();
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ permissions: { canEdit: false } });
+    });
+
+    it('reports an earlier upload of the same file', async () => {
+      repository.findRecentDuplicate.mockResolvedValue({
+        batchId: '6f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f41',
+        createdAt: '2026-09-19T08:50:00.000Z',
+        status: 'draft',
+      });
+      const response = await get();
+      expect(response.body).toMatchObject({
+        duplicateFileOf: { batchId: '6f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f41' },
+      });
+      expect(repository.findRecentDuplicate).toHaveBeenCalledWith(
+        'org-1',
+        'a'.repeat(64),
+        new Date('2026-09-18T09:00:00.000Z'),
+        undefined,
+        { batchId, createdAt: '2026-09-19T09:00:00.000Z' },
+      );
+    });
+
+    it('reads a draft past its expiry as expired', async () => {
+      repository.findBatchDetail.mockResolvedValue(
+        batch({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+      );
+      const response = await get();
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ status: 'expired' });
+    });
+
+    it('describes an unconfirmed suggestion as not yet confirmed', async () => {
+      repository.findBatchDetail.mockResolvedValue(
+        batch({ mapping: { ...batch().mapping, confirmed: false } }),
+      );
+      const response = await get();
+      expect(response.body).toMatchObject({ mappingConfirmed: false });
+    });
+
+    it('answers 404 for a batch of another organization or a malformed id', async () => {
+      repository.findBatchDetail.mockResolvedValue(null);
+      const missing = await get();
+      expect(missing.status).toBe(404);
+      expect(missing.body).toMatchObject({ code: 'IMPORT_BATCH_NOT_FOUND' });
+      const malformed = await get('not-a-uuid');
+      expect(malformed.status).toBe(404);
+      expect(repository.findBatchDetail).toHaveBeenCalledTimes(1);
+    });
+
+    it('is hidden while the flag is off', async () => {
+      bulkImport = { ...bulkImport, enabled: false };
+      const detail = await get();
+      const list = await request(server()).get(
+        '/api/order-imports?status=draft',
+      );
+      expect(detail.status).toBe(403);
+      expect(list.status).toBe(403);
+      expect(list.body).toMatchObject({ code: 'IMPORT_DISABLED' });
+    });
+
+    it('lists the open drafts with the caller permission', async () => {
+      const draft = {
+        batchId,
+        fileName: 'orders.csv',
+        rowCount: 2,
+        createdAt: '2026-09-19T09:00:00.000Z',
+        expiresAt: '2026-09-20T09:00:00.000Z',
+      };
+      repository.listOpenDrafts.mockResolvedValue([draft]);
+      currentUser = { ...currentUser, role: 'viewer' };
+      const response = await request(server()).get(
+        '/api/order-imports?status=draft',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        drafts: [draft],
+        permissions: { canEdit: false },
+      });
+      expect(repository.listOpenDrafts).toHaveBeenCalledWith(
+        'org-1',
+        expect.any(Date),
+      );
+    });
+
+    it('refuses any list but open drafts until the history exists', async () => {
+      const response = await request(server()).get('/api/order-imports');
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_VALIDATION_FAILED',
+        fieldErrors: { status: expect.any(String) as unknown },
+      });
+    });
   });
 });

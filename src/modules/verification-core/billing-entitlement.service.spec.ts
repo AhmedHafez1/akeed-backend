@@ -79,4 +79,38 @@ describe('BillingEntitlementService', () => {
       expect(result).toBe('2026-01-01');
     });
   });
+
+  describe('evaluateAccess', () => {
+    const frozen = {
+      id: 'integration-1',
+      orgId: 'org-1',
+      platformType: 'standalone',
+      isActive: true,
+      billingStatus: 'frozen',
+      billingPlanId: 'starter',
+      billingActivatedAt: '2026-09-01T00:00:00Z',
+    };
+
+    it('applies the periodic plan rule to Standalone while credit billing is off', () => {
+      const service = new BillingEntitlementService(
+        null as never,
+        usageAccountingFixture(),
+      );
+      expect(service.evaluateAccess(frozen)).toMatchObject({
+        allowed: false,
+        reason: 'billing_not_active',
+      });
+    });
+
+    it('leaves Standalone eligibility to credits once credit billing is on', () => {
+      const service = new BillingEntitlementService(
+        null as never,
+        usageAccountingFixture({ enabled: true }),
+      );
+      expect(service.evaluateAccess(frozen)).toMatchObject({
+        allowed: true,
+        reason: null,
+      });
+    });
+  });
 });

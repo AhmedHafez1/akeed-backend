@@ -68,10 +68,23 @@ export interface EntitlementAvailability {
     | null;
 }
 
+/** Which accounting system bills a source's new sends. */
+export type UsageAccountingMode = 'prepaid_credit' | 'periodic_plan';
+
+/**
+ * `accountingMode` decides whether the legacy plan columns govern access. A
+ * prepaid-credit source is gated by its credit balance, so the plan columns
+ * are ignored there. A periodic-plan source is gated by them, and that
+ * includes a Standalone source while credit billing is switched off: skipping
+ * the check by platform let a frozen or unprovisioned Standalone source
+ * reserve monthly usage. The default is the strict periodic rule, so a caller
+ * that does not know the mode fails closed.
+ */
 export function resolveEntitlement(
   source: EntitlementSource | undefined,
   identity: EntitlementIdentity,
   now = new Date(),
+  accountingMode: UsageAccountingMode = 'periodic_plan',
 ): EntitlementSnapshot {
   const validPlan =
     source?.billingPlanId && isBillingPlanId(source.billingPlanId)
@@ -93,7 +106,7 @@ export function resolveEntitlement(
     if (!isBillingStatusActive(source.billingStatus))
       reason = 'billing_not_active';
   } else if (
-    source.platformType !== 'standalone' &&
+    accountingMode === 'periodic_plan' &&
     (source.billingStatus?.trim().toLowerCase() !== 'not_required' ||
       !validPlan ||
       !source.billingActivatedAt ||

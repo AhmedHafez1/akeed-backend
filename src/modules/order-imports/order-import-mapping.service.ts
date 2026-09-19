@@ -10,7 +10,9 @@ import { resolveShippingCurrency } from '../onboarding/shipping-currency';
 import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
 import type {
   OrderImportDateFormatDto,
+  OrderImportFieldStateDto,
   OrderImportMappingResponseDto,
+  OrderImportMappingStateDto,
   OrderImportMappingSuggestionDto,
   OrderImportPaymentValuesDto,
   SaveOrderImportMappingDto,
@@ -112,6 +114,40 @@ function readProfile(mapping: unknown, options: unknown): ProfileContent {
   return { columns, options: saved };
 }
 
+/** A batch's stored mapping, or null when it is missing or malformed. */
+function readStoredMapping(
+  value: unknown,
+): Pick<StoredImportMapping, 'confirmed' | 'columns' | 'sources'> | null {
+  if (!isRecord(value) || !isRecord(value.columns) || !isRecord(value.sources))
+    return null;
+  const stored = value.columns;
+  const columns = Object.fromEntries(
+    IMPORT_FIELDS.map((field) => {
+      const column = stored[field];
+      if (field === 'customerName')
+        return [field, isStringArray(column) ? column : []];
+      return [field, typeof column === 'string' ? column : null];
+    }),
+  ) as ImportColumnMapping;
+  return {
+    confirmed: value.confirmed === true,
+    columns,
+    sources: value.sources as Record<ImportField, MappingSource>,
+  };
+}
+
+/** A batch's stored options; upload always writes all of them. */
+function readStoredOptions(value: unknown): ImportOptions {
+  const { options } = readProfile(null, value);
+  return {
+    country: options.country ?? DEFAULT_COUNTRY,
+    defaultCurrency:
+      options.defaultCurrency ?? resolveShippingCurrency(undefined),
+    dateFormat: options.dateFormat ?? 'auto',
+    paymentValueMap: options.paymentValueMap ?? {},
+  };
+}
+
 /** The store's defaults (AC5): its country, else Egypt; its shipping currency. */
 export function defaultImportOptions(source: StandaloneSource): ImportOptions {
   const country = source.countryCode?.trim().toUpperCase() ?? '';
@@ -173,24 +209,18 @@ export class OrderImportMappingService {
       ? applySavedProfile(detected, headers, saved.columns)
       : detected;
     const columns = mappingFromSuggestions(suggestions.fields);
-    const valuesOf = (column: string) => {
+    const countsOf = (column: string) => {
       const index = headers.indexOf(column);
-      return rows.map((row) => row.cells[index] ?? '');
+      return countValues(rows.map((row) => row.cells[index] ?? ''));
     };
 
     const savedChoices = saved?.options.paymentValueMap ?? {};
-    const paymentValues = this.paymentValues(
-      columns.paymentMethod,
-      (column) => countValues(valuesOf(column)),
+    const { paymentValues, dateFormat } = this.columnChecks(
+      columns,
+      countsOf,
       savedChoices,
       'saved',
     );
-    const dateFormat = columns.orderDate
-      ? {
-          column: columns.orderDate,
-          ...detectDateAmbiguity(valuesOf(columns.orderDate)),
-        }
-      : null;
     const options: ImportOptions = {
       ...defaultImportOptions(source),
       ...saved?.options,
@@ -272,18 +302,13 @@ export class OrderImportMappingService {
           )
         : Promise.resolve([]),
     ]);
-    const paymentValues = this.paymentValues(
-      columns.paymentMethod,
-      () => paymentCounts,
+    const { paymentValues, dateFormat } = this.columnChecks(
+      columns,
+      (column) =>
+        column === columns.paymentMethod ? paymentCounts : dateCounts,
       choices,
       'merchant',
     );
-    const dateFormat: OrderImportDateFormatDto | null = columns.orderDate
-      ? {
-          column: columns.orderDate,
-          ...detectDateAmbiguity(dateCounts.map(({ value }) => value)),
-        }
-      : null;
 
     if (dateFormat?.ambiguous && body.options.dateFormat === 'auto')
       fieldErrors['options.dateFormat'] =
@@ -435,16 +460,118 @@ export class OrderImportMappingService {
     ) as Record<ImportField, MappingSource>;
   }
 
-  private paymentValues(
-    column: string | null,
+  /**
+   * The mapping as the batch page shows it after a refresh or resume: the
+   * stored columns and their origin, the matcher's confidence and
+   * alternatives for the file, and the payment values and date check for the
+   * mapped columns, computed the same way as at upload and save.
+   */
+  async describe(
+    orgId: string,
+    batch: {
+      batchId: string;
+      headers: readonly string[];
+      mapping: unknown;
+      options: unknown;
+    },
+    sampleRows: readonly { cells: readonly string[] }[],
+  ): Promise<OrderImportMappingStateDto> {
+    const detected = matchColumns(
+      batch.headers,
+      sampleRows.slice(0, MATCHER_SAMPLE_ROWS).map((row) => row.cells),
+    );
+    const stored = readStoredMapping(batch.mapping);
+    const columns = stored?.columns ?? mappingFromSuggestions(detected.fields);
+    const options = readStoredOptions(batch.options);
+
+    const fields = detected.fields.map(
+      (suggestion): OrderImportFieldStateDto => {
+        const chosen = columnsOf(columns, suggestion.field);
+        const source: MappingSource =
+          stored?.sources[suggestion.field] ?? suggestion.source;
+        const confidence =
+          chosen.length === 0
+            ? 'none'
+            : source === 'auto'
+              ? sameColumns(suggestion.columns, chosen)
+                ? suggestion.confidence
+                : 'partial'
+              : 'exact';
+        return {
+          field: suggestion.field,
+          required: suggestion.required,
+          columns: chosen,
+          confidence,
+          source: chosen.length === 0 && source !== 'saved' ? 'none' : source,
+          alternatives: [...suggestion.columns, ...suggestion.alternatives]
+            .filter((column) => !chosen.includes(column))
+            .filter((column, index, all) => all.indexOf(column) === index),
+        };
+      },
+    );
+
+    const counts = new Map<string, PaymentValueCount[]>();
+    await Promise.all(
+      [columns.paymentMethod, columns.orderDate]
+        .filter((column): column is string => column !== null)
+        .map(async (column) =>
+          counts.set(
+            column,
+            await this.repository.columnValueCounts(
+              orgId,
+              batch.batchId,
+              column,
+            ),
+          ),
+        ),
+    );
+    const { paymentValues, dateFormat } = this.columnChecks(
+      columns,
+      (column) => counts.get(column) ?? [],
+      options.paymentValueMap,
+      stored?.confirmed ? 'merchant' : 'saved',
+    );
+
+    return {
+      mappingConfirmed: stored?.confirmed ?? false,
+      suggestions: {
+        fields,
+        unmappedColumns: unmappedColumns(batch.headers, columns),
+      },
+      options,
+      paymentValues,
+      dateFormat,
+    };
+  }
+
+  /** Payment values and the date-format check for the mapped columns. */
+  private columnChecks(
+    columns: ImportColumnMapping,
     counts: (column: string) => PaymentValueCount[],
     choices: Readonly<Record<string, PaymentClassification>>,
     source: 'saved' | 'merchant',
-  ): OrderImportPaymentValuesDto | null {
-    if (!column) return null;
+  ): {
+    paymentValues: OrderImportPaymentValuesDto | null;
+    dateFormat: OrderImportDateFormatDto | null;
+  } {
+    const payment = columns.paymentMethod;
+    const date = columns.orderDate;
     return {
-      column,
-      ...summarizePaymentValues(counts(column), { map: choices, source }),
+      paymentValues: payment
+        ? {
+            column: payment,
+            ...summarizePaymentValues(counts(payment), {
+              map: choices,
+              source,
+            }),
+          }
+        : null,
+      dateFormat: date
+        ? {
+            column: date,
+            ...detectDateAmbiguity(counts(date).map(({ value }) => value)),
+          }
+        : null,
     };
   }
 }

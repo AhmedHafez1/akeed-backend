@@ -11,6 +11,10 @@ import {
   parseStandaloneBillingObservabilityConfig,
   STANDALONE_BILLING_OBSERVABILITY_CONFIG,
 } from '../../src/shared/config/standalone-billing-observability.config';
+import {
+  BULK_IMPORT_CONFIG,
+  parseBulkImportConfig,
+} from '../../src/shared/config/bulk-import.config';
 
 /**
  * Builds the same validated billing object `validateEnv` puts on the
@@ -28,6 +32,7 @@ export function standaloneCreditBillingConfigService(
       parseStandaloneBillingOperationsConfig(environment),
     [STANDALONE_BILLING_OBSERVABILITY_CONFIG]:
       parseStandaloneBillingObservabilityConfig(environment),
+    [BULK_IMPORT_CONFIG]: parseBulkImportConfig(environment),
   };
   return {
     get: (key: string) => values[key],

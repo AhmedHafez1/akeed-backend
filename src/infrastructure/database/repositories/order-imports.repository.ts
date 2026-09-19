@@ -7,6 +7,7 @@ import {
   gt,
   gte,
   inArray,
+  lt,
   ne,
   sql,
   type SQL,
@@ -99,6 +100,30 @@ export interface BatchForMapping {
   expiresAt: string;
   headers: unknown;
   mapping: unknown;
+}
+
+export interface BatchDetailRecord {
+  batchId: string;
+  shortCode: string;
+  status: string;
+  fileName: string;
+  fileFormat: string;
+  fileSha256: string;
+  rowCount: number;
+  headers: unknown;
+  mapping: unknown;
+  options: unknown;
+  counts: unknown;
+  orderDateMin: string | null;
+  orderDateMax: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface StoredSampleRow {
+  rowNumber: number;
+  raw: unknown;
+  issues: unknown;
 }
 
 export interface ColumnValueCount {
@@ -222,12 +247,17 @@ export class OrderImportsRepository {
     return rows;
   }
 
-  /** The newest batch of the same file in the window, whatever its status but expired. */
+  /**
+   * The newest batch of the same file in the window, whatever its status but
+   * expired. `before` looks back from an existing batch: another batch
+   * created earlier than it.
+   */
   async findRecentDuplicate(
     orgId: string,
     fileSha256: string,
     since: Date,
     executor: Database | Transaction = this.db,
+    before?: { batchId: string; createdAt: string },
   ): Promise<DuplicateFileSummary | null> {
     const [row] = await executor
       .select({
@@ -242,6 +272,10 @@ export class OrderImportsRepository {
           eq(orderImportBatches.fileSha256, fileSha256),
           gte(orderImportBatches.createdAt, since.toISOString()),
           ne(orderImportBatches.status, 'expired'),
+          before ? ne(orderImportBatches.id, before.batchId) : undefined,
+          before
+            ? lt(orderImportBatches.createdAt, before.createdAt)
+            : undefined,
         ),
       )
       .orderBy(desc(orderImportBatches.createdAt))
@@ -402,6 +436,82 @@ export class OrderImportsRepository {
       )
       .limit(1);
     return row ?? null;
+  }
+
+  /** Everything the batch page shows; another organization's batch is null. */
+  async findBatchDetail(
+    orgId: string,
+    batchId: string,
+  ): Promise<BatchDetailRecord | null> {
+    const [row] = await this.db
+      .select({
+        batchId: orderImportBatches.id,
+        shortCode: orderImportBatches.shortCode,
+        status: orderImportBatches.status,
+        fileName: orderImportBatches.fileName,
+        fileFormat: orderImportBatches.fileFormat,
+        fileSha256: orderImportBatches.fileSha256,
+        rowCount: orderImportBatches.rowCount,
+        headers: orderImportBatches.headers,
+        mapping: orderImportBatches.mapping,
+        options: orderImportBatches.options,
+        counts: orderImportBatches.counts,
+        orderDateMin: orderImportBatches.orderDateMin,
+        orderDateMax: orderImportBatches.orderDateMax,
+        createdAt: orderImportBatches.createdAt,
+        expiresAt: orderImportBatches.expiresAt,
+      })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** The first rows of a batch in row order, as stored at upload. */
+  async readSampleRows(
+    orgId: string,
+    batchId: string,
+    limit: number,
+  ): Promise<StoredSampleRow[]> {
+    return this.db
+      .select({
+        rowNumber: orderImportRows.rowNumber,
+        raw: orderImportRows.raw,
+        issues: orderImportRows.issues,
+      })
+      .from(orderImportRows)
+      .where(
+        and(
+          eq(orderImportRows.batchId, batchId),
+          eq(orderImportRows.orgId, orgId),
+        ),
+      )
+      .orderBy(asc(orderImportRows.rowNumber))
+      .limit(limit);
+  }
+
+  /** How many rows of the batch carry an issue code, whatever their outcome. */
+  async countRowsWithIssue(
+    orgId: string,
+    batchId: string,
+    code: string,
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(orderImportRows)
+      .where(
+        and(
+          eq(orderImportRows.batchId, batchId),
+          eq(orderImportRows.orgId, orgId),
+          sql`${orderImportRows.issues} @> ${JSON.stringify([{ code }])}::jsonb`,
+        ),
+      );
+    return row?.count ?? 0;
   }
 
   /** Another organization's batch reads as not found. */

@@ -24,7 +24,11 @@ import type { Response } from 'express';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { CurrentUser } from '../auth/guards/current-user.decorator';
 import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
-import type { OrderImportUploadResponseDto } from './dto/order-import.dto';
+import type {
+  OrderImportBatchDetailDto,
+  OrderImportDraftListDto,
+  OrderImportUploadResponseDto,
+} from './dto/order-import.dto';
 import {
   ListOrderImportRowsQueryDto,
   UpdateOrderImportRowDto,
@@ -40,6 +44,7 @@ import {
   OrderImportAccess,
 } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportUploadInterceptor } from './order-import-upload.interceptor';
@@ -103,6 +108,7 @@ export class OrderImportsController {
     private readonly orderImports: OrderImportsService,
     private readonly mapping: OrderImportMappingService,
     private readonly rows: OrderImportRowsService,
+    private readonly detail: OrderImportDetailService,
   ) {}
 
   @Post()
@@ -132,6 +138,25 @@ export class OrderImportsController {
       disposition: `attachment; filename="${file.fileName}"`,
       length: file.body.length,
     });
+  }
+
+  @Get()
+  @OrderImportAccess('read')
+  listDrafts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status: string | undefined,
+  ): Promise<OrderImportDraftListDto> {
+    return this.detail.listDrafts(user, status);
+  }
+
+  // Declared after `template` so that literal path is not read as an id.
+  @Get(':id')
+  @OrderImportAccess('read')
+  getBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', batchIdPipe) batchId: string,
+  ): Promise<OrderImportBatchDetailDto> {
+    return this.detail.detail(user, batchId);
   }
 
   @Put(':id/mapping')
