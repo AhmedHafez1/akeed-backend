@@ -63,6 +63,13 @@ const REDACTED_KEYS = new Set([
   'wallet_token',
   'wallettoken',
   'msisdn',
+  // A merchant's upload name often carries a customer or store name, and a
+  // file's cells are customer data (E04.6 bulk import).
+  'filename',
+  'file_name',
+  'originalname',
+  'cells',
+  'raw',
   // Paymob credentials by the names its configuration uses.
   'secret_key',
   'secretkey',

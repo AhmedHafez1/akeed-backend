@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { OrderImportsModule } from './modules/order-imports/order-imports.module';
 import { VerificationsModule } from './modules/verifications/verifications.module';
 import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module';
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
@@ -89,6 +90,7 @@ const billingModule = BillingModule.register({
     OnboardingModule,
     OrganizationsModule,
     OrdersModule,
+    OrderImportsModule,
     VerificationsModule,
     WebhookQueueModule,
     VerificationAutomationModule,

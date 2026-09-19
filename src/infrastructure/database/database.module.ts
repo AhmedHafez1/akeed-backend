@@ -20,6 +20,7 @@ import { AdminAccessAuditRepository } from './repositories/admin-access-audit.re
 import { StandaloneOrganizationProvisioningRepository } from './repositories/standalone-organization-provisioning.repository';
 import { ManualOrderIngestionRepository } from './repositories/manual-order-ingestion.repository';
 import { VerificationMessageDispatchesRepository } from './repositories/verification-message-dispatches.repository';
+import { OrderImportsRepository } from './repositories/order-imports.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -43,6 +44,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,
     VerificationMessageDispatchesRepository,
+    OrderImportsRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -64,6 +66,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,
     VerificationMessageDispatchesRepository,
+    OrderImportsRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {
