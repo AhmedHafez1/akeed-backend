@@ -6,6 +6,7 @@ import {
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import { OrdersService } from './orders.service';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
+import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-resolver';
 
 describe('OrdersService manual creation', () => {
   const source = {
@@ -102,11 +103,11 @@ describe('OrdersService manual creation', () => {
     verifications.findByOrderId.mockResolvedValue(undefined);
     service = new OrdersService(
       {} as never,
-      integrations as never,
       new StandaloneOrderIngestionService(
         manualOrders as never,
         dispatcher as never,
         verifications as never,
+        new StandaloneSourceResolver(integrations as never),
       ),
       phone as never,
       entitlements as never,
@@ -551,7 +552,6 @@ describe('OrdersService manual verification lifecycle', () => {
     };
     const service = new OrdersService(
       orders as never,
-      integrations as never,
       {} as never,
       {} as never,
       billing as never,

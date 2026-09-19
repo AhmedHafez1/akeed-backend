@@ -25,6 +25,12 @@ import {
   StandaloneIngestionConflictError,
   StandaloneIngestionDispatchError,
 } from './standalone-order-ingestion.errors';
+import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import {
+  StandaloneSourceResolver,
+  type StandaloneSource,
+  type StandaloneSourceCodeMap,
+} from './standalone-source-resolver';
 import type {
   AcceptOneOptions,
   AcceptOneResult,
@@ -57,7 +63,27 @@ export class StandaloneOrderIngestionService {
     private readonly acceptance: ManualOrderIngestionRepository,
     private readonly dispatcher: WebhookDispatchService,
     private readonly verificationsRepo: VerificationsRepository,
+    private readonly sourceResolver: StandaloneSourceResolver,
   ) {}
+
+  /**
+   * Refuses viewers. Exposed on its own so a channel can keep its request
+   * validation between the role check and the source lookup.
+   */
+  assertWritableRole(
+    user: AuthenticatedUser,
+    codes: StandaloneSourceCodeMap,
+  ): void {
+    this.sourceResolver.assertWritableRole(user, codes);
+  }
+
+  /** The single Standalone source the caller may write orders into. */
+  resolveWritableSource(
+    user: AuthenticatedUser,
+    codes: StandaloneSourceCodeMap,
+  ): Promise<StandaloneSource> {
+    return this.sourceResolver.resolveWritable(user, codes);
+  }
 
   async acceptOne(
     ctx: StandaloneIngestionContext,

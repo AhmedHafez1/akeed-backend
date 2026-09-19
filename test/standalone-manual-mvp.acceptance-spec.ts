@@ -14,6 +14,7 @@ import { CommerceOutcomeRegistryService } from '../src/modules/commerce-outcomes
 import { OrdersController } from '../src/modules/orders/orders.controller';
 import { OrdersService } from '../src/modules/orders/orders.service';
 import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
+import { StandaloneSourceResolver } from '../src/modules/order-ingestion/standalone-source-resolver';
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { StandaloneManualOrderNormalizer } from '../src/modules/webhook-queue/normalizers/standalone-manual-order.normalizer';
 import { WebhookQueueProcessor } from '../src/modules/webhook-queue/webhook-queue.processor';
@@ -692,11 +693,11 @@ async function createHarness(): Promise<AcceptanceHarness> {
   };
   const ordersService = new OrdersService(
     ordersRepo as never,
-    integrationsRepo as never,
     new StandaloneOrderIngestionService(
       manualOrders as never,
       dispatcher as never,
       verificationRepo as never,
+      new StandaloneSourceResolver(integrationsRepo as never),
     ),
     new PhoneService(),
     billing,

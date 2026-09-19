@@ -2,14 +2,12 @@ import { isCreditDenialCode } from '../../shared/billing/credit-eligibility';
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
-import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { PhoneService } from '../../shared/services/phone.service';
@@ -23,6 +21,7 @@ import { CreditEligibilityService } from '../verification-core/credit-eligibilit
 import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
+import { MANUAL_ORDER_SOURCE_CODES } from '../order-ingestion/standalone-source-resolver';
 import { ManualOrderChannelAdapter } from './manual-order.channel-adapter';
 import type {
   CreateManualOrderDto,
@@ -60,7 +59,6 @@ export class OrdersService {
 
   constructor(
     private readonly ordersRepo: OrdersRepository,
-    private readonly integrationsRepo: IntegrationsRepository,
     private readonly ingestion: StandaloneOrderIngestionService,
     private readonly phoneService: PhoneService,
     private readonly billingEntitlements: BillingEntitlementService,
@@ -75,41 +73,13 @@ export class OrdersService {
     idempotencyHeader: string | undefined,
     payload: CreateManualOrderDto,
   ): Promise<CreateManualOrderResponseDto> {
-    assertOrganizationWriteAllowed(user.role, {
-      code: 'MANUAL_ORDER_ROLE_REQUIRED',
-      message: 'Owner or admin role is required to create an order.',
-    });
+    this.ingestion.assertWritableRole(user, MANUAL_ORDER_SOURCE_CODES);
     const idempotencyKey = this.normalizeIdempotencyKey(idempotencyHeader);
     const customerPhone = this.normalizePhone(payload.customerPhone);
-    const sources = await this.integrationsRepo.findActiveByOrg(user.orgId);
-    if (sources.length !== 1 || sources[0].orgId !== user.orgId) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Exactly one active commerce source is required.',
-        code:
-          sources.length > 1
-            ? 'MANUAL_ORDER_SOURCE_AMBIGUOUS'
-            : 'MANUAL_ORDER_SOURCE_UNAVAILABLE',
-      });
-    }
-    const source = sources[0];
-    if (source.platformType !== 'standalone') {
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: 'Forbidden',
-        message: 'Manual order creation is available only for Standalone.',
-        code: 'MANUAL_ORDER_SOURCE_UNSUPPORTED',
-      });
-    }
-    if (source.onboardingStatus !== 'completed') {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Complete Standalone setup before creating an order.',
-        code: 'MANUAL_ORDER_SETUP_INCOMPLETE',
-      });
-    }
+    const source = await this.ingestion.resolveWritableSource(
+      user,
+      MANUAL_ORDER_SOURCE_CODES,
+    );
     const entitlement = this.billingEntitlements.evaluateAccess(source, {
       id: source.id,
       orgId: user.orgId,

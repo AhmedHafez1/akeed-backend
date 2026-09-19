@@ -41,6 +41,21 @@ describe('Standalone ingestion boundary', () => {
     ]);
   });
 
+  it('resolves the writable Standalone source in one place', () => {
+    const deciders = files
+      .filter(({ source }) =>
+        /platformType\s*!==\s*'standalone'|\.findActiveByOrg\(/.test(source),
+      )
+      .map(({ path }) => path)
+      .filter((path) =>
+        /^modules\/(orders|order-imports|order-ingestion)\//.test(path),
+      );
+
+    expect(deciders).toEqual([
+      'modules/order-ingestion/standalone-source-resolver.ts',
+    ]);
+  });
+
   it('dispatches only from the dispatch paths that already existed', () => {
     const callers = Object.fromEntries(
       files

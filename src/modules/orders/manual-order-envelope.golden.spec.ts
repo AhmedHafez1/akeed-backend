@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { ManualOrderAcceptanceInput } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import { OrdersService } from './orders.service';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
+import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-resolver';
 
 interface GoldenCase {
   name: string;
@@ -90,11 +91,13 @@ function buildService(accept: jest.Mock, customerPhone: string): OrdersService {
   };
   return new OrdersService(
     {} as never,
-    { findActiveByOrg: jest.fn().mockResolvedValue([source]) } as never,
     new StandaloneOrderIngestionService(
       { accept } as never,
       dispatcher as never,
       { findByOrderId: jest.fn().mockResolvedValue(undefined) } as never,
+      new StandaloneSourceResolver({
+        findActiveByOrg: jest.fn().mockResolvedValue([source]),
+      } as never),
     ),
     { standardize: () => customerPhone } as never,
     {

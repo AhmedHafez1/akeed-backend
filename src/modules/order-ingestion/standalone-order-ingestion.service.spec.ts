@@ -55,6 +55,7 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
       acceptance as never,
       dispatcher as never,
       verifications as never,
+      {} as never,
     );
   });
 
