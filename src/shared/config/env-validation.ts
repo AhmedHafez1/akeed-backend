@@ -10,6 +10,10 @@ import {
   parseStandaloneBillingObservabilityConfig,
   STANDALONE_BILLING_OBSERVABILITY_CONFIG,
 } from './standalone-billing-observability.config';
+import {
+  BULK_IMPORT_CONFIG,
+  parseBulkImportConfig,
+} from './bulk-import.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -102,5 +106,6 @@ export function validateEnv(
       parseStandaloneBillingOperationsConfig(config),
     [STANDALONE_BILLING_OBSERVABILITY_CONFIG]:
       parseStandaloneBillingObservabilityConfig(config),
+    [BULK_IMPORT_CONFIG]: parseBulkImportConfig(config),
   };
 }

@@ -195,6 +195,20 @@ Staff inspect and reconcile Standalone credit accounts under `/api/admin/standal
 
 Roll out read-only first (switch off), name operators only after a recovery drill, and roll back by turning the switch off. Nothing is deleted on rollback: ledger entries, purchases, provider events and audit rows all stay.
 
+## Standalone Bulk Order Import (E04.6)
+
+`/api/order-imports` lets a Standalone owner or admin upload a CSV or XLSX file of orders. Every route is hidden behind one switch, and the limits bound the cost of a single upload (the file is held in memory and parsed in the request). Each limit can be lowered; startup fails if one is raised past its default.
+
+| Variable | Notes |
+| --- | --- |
+| `STANDALONE_BULK_IMPORT_ENABLED` | `true` or `false` (default). While `false`, every import route answers `403 IMPORT_DISABLED`. Rollback is turning it off; the import tables stay. |
+| `BULK_IMPORT_MAX_ROWS` | Non-empty data rows per file, 1–5000 (default 5000). Above it: `422 IMPORT_ROW_LIMIT_EXCEEDED`. |
+| `BULK_IMPORT_MAX_COLUMNS` | Columns per file, 1–100 (default 100). Above it: `422 IMPORT_COLUMN_LIMIT_EXCEEDED`. |
+| `BULK_IMPORT_MAX_OPEN_DRAFTS` | Unexpired drafts per organization, 1–20 (default 3). One more: `409 IMPORT_TOO_MANY_DRAFTS`. |
+| `BULK_IMPORT_MAX_FILE_BYTES` | Upload size, 1024–5242880 (default 5 MB). Enforced while the body streams in: `413 IMPORT_FILE_TOO_LARGE`. |
+| `BULK_IMPORT_MAX_UNCOMPRESSED_BYTES` | Total inflated size of an XLSX package, 1–50 MB (default 50 MB). Counted while inflating, so a zip bomb is stopped early: `422 IMPORT_FILE_UNREADABLE`. |
+| `BULK_IMPORT_PARSE_TIMEOUT_MS` | Budget for reading one file, 1000–20000 (default 20000). Exceeding it answers `422 IMPORT_FILE_UNREADABLE`. |
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:
