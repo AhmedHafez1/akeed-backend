@@ -17,6 +17,7 @@ import {
   pgEnum,
   pgSchema,
   uniqueIndex,
+  char,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -1830,6 +1831,213 @@ export const billingReconciliationFindings = pgTable(
       to: ['service_role'],
       using: sql`true`,
       withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * E04.6: one uploaded order file and its lifecycle. A draft holds the parsed
+ * rows; commit, start and release (later stories) move it forward. The status
+ * list is the epic's canonical batch state machine.
+ */
+export const orderImportBatches = pgTable(
+  'order_import_batches',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    createdBy: uuid('created_by').notNull(),
+    status: text().notNull(),
+    fileName: text('file_name').notNull(),
+    fileSha256: char('file_sha256', { length: 64 }).notNull(),
+    fileSize: integer('file_size').notNull(),
+    fileFormat: text('file_format').notNull(),
+    encoding: text(),
+    delimiter: text(),
+    sheetName: text('sheet_name'),
+    headers: jsonb().notNull(),
+    rowCount: integer('row_count').notNull(),
+    mapping: jsonb(),
+    options: jsonb(),
+    mappingProfileId: uuid('mapping_profile_id'),
+    counts: jsonb().notNull().default({}),
+    orderDateMin: date('order_date_min'),
+    orderDateMax: date('order_date_max'),
+    commitIdempotencyKey: text('commit_idempotency_key'),
+    startIdempotencyKey: text('start_idempotency_key'),
+    committedAt: timestamp('committed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    attestedBy: uuid('attested_by'),
+    attestedAt: timestamp('attested_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    attestationVersion: text('attestation_version'),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' }),
+    pausedReason: text('paused_reason'),
+    completedAt: timestamp('completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    startDeadlineAt: timestamp('start_deadline_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    shortCode: text('short_code').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'order_import_batches_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'order_import_batches_integration_id_fkey',
+    }),
+    unique('order_import_batches_id_org_id_key').on(table.id, table.orgId),
+    unique('order_import_batches_commit_key').on(
+      table.orgId,
+      table.commitIdempotencyKey,
+    ),
+    unique('order_import_batches_short_code_key').on(
+      table.orgId,
+      table.shortCode,
+    ),
+    index('idx_order_import_batches_org_created').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+    ),
+    index('idx_order_import_batches_org_sha').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.fileSha256.asc().nullsLast().op('bpchar_ops'),
+      table.createdAt.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    check(
+      'order_import_batches_status_check',
+      sql`status = ANY (ARRAY['draft'::text, 'committing'::text, 'awaiting_start'::text, 'releasing'::text, 'paused'::text, 'completed'::text, 'stopped'::text, 'not_started'::text, 'expired'::text, 'failed'::text])`,
+    ),
+    check(
+      'order_import_batches_file_format_check',
+      sql`file_format = ANY (ARRAY['csv'::text, 'xlsx'::text])`,
+    ),
+    check(
+      'order_import_batches_short_code_check',
+      sql`short_code ~ '^[0-9A-HJKMNP-TV-Z]{6}$'::text`,
+    ),
+    pgPolicy('Multi-tenant order import batches', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+  ],
+).enableRLS();
+
+/** One spreadsheet row of a batch, as uploaded (`raw`) and later normalized. */
+export const orderImportRows = pgTable(
+  'order_import_rows',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    batchId: uuid('batch_id').notNull(),
+    orgId: uuid('org_id').notNull(),
+    rowNumber: integer('row_number').notNull(),
+    raw: jsonb().notNull(),
+    normalized: jsonb(),
+    outcome: text(),
+    issues: jsonb().notNull().default([]),
+    includeOverride: boolean('include_override').notNull().default(false),
+    dedupeKey: text('dedupe_key'),
+    collapsedInto: integer('collapsed_into'),
+    orderId: uuid('order_id'),
+    webhookEventId: uuid('webhook_event_id'),
+  },
+  (table) => [
+    // The composite key keeps a row inside its batch's organization.
+    foreignKey({
+      columns: [table.batchId, table.orgId],
+      foreignColumns: [orderImportBatches.id, orderImportBatches.orgId],
+      name: 'order_import_rows_batch_id_fkey',
+    }).onDelete('cascade'),
+    unique('order_import_rows_batch_row_key').on(
+      table.batchId,
+      table.rowNumber,
+    ),
+    index('idx_order_import_rows_batch_outcome').using(
+      'btree',
+      table.batchId.asc().nullsLast().op('uuid_ops'),
+      table.outcome.asc().nullsLast().op('text_ops'),
+      table.rowNumber.asc().nullsLast().op('int4_ops'),
+    ),
+    check(
+      'order_import_rows_outcome_check',
+      sql`outcome IS NULL OR outcome = ANY (ARRAY['ready'::text, 'invalid'::text, 'duplicate'::text, 'excluded'::text, 'imported'::text])`,
+    ),
+    pgPolicy('Multi-tenant order import rows', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+  ],
+).enableRLS();
+
+/** A column mapping remembered per organization and header set (US-04.6-03). */
+export const orderImportMappingProfiles = pgTable(
+  'order_import_mapping_profiles',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    headerSignature: char('header_signature', { length: 64 }).notNull(),
+    mapping: jsonb().notNull(),
+    options: jsonb(),
+    updatedBy: uuid('updated_by'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'order_import_mapping_profiles_org_id_fkey',
+    }).onDelete('cascade'),
+    unique('order_import_mapping_profiles_signature_key').on(
+      table.orgId,
+      table.headerSignature,
+    ),
+    pgPolicy('Multi-tenant order import mapping profiles', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
     }),
   ],
 ).enableRLS();
