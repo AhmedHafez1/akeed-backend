@@ -48,6 +48,7 @@ import {
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
+import type { HeldOrderListRow } from '../../infrastructure/database/repositories/verifications.repository';
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
   'pending',
@@ -61,7 +62,97 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
   'no_reply',
 ];
 
+/**
+ * What the list filter accepts: the nine stored statuses plus the derived
+ * hold value. 'awaiting_start' is not a `verification_status`; it describes
+ * an order that has no verification yet, so it is answered from held orders
+ * rather than from the enum.
+ */
+type ListStatusFilter = VerificationStatus | 'awaiting_start';
+
+const ALLOWED_LIST_STATUSES: ListStatusFilter[] = [
+  ...ALLOWED_STATUSES,
+  'awaiting_start',
+];
+
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
+
+/**
+ * The lifecycle value a held order reads as, and the one extra value the
+ * status filter accepts beyond the nine `verification_status` enum members.
+ */
+const HELD_STATUS = 'awaiting_start';
+
+/** Narrows a merged row to the held projection `toHeldListRow` produced. */
+function isHeldRow(row: unknown): row is { held: true } {
+  return typeof row === 'object' && row !== null && 'held' in row;
+}
+
+/** Shapes a held order like the verification rows it is listed beside. */
+function toHeldListRow(row: HeldOrderListRow) {
+  return {
+    // A held order has no verification, so the order id is the row identity.
+    // It is also what `order_id` reports, which keeps the pair unambiguous.
+    id: row.id,
+    orderId: row.orderId,
+    status: HELD_STATUS,
+    metadata: null,
+    createdAt: row.createdAt,
+    lastSentAt: null,
+    deliveredAt: null,
+    readAt: null,
+    confirmedAt: null,
+    canceledAt: null,
+    expiredAt: null,
+    noReplyAt: null,
+    followUpAttempts: 0,
+    followUpSentAt: null,
+    held: true as const,
+    order: {
+      orgId: row.orgId,
+      integrationId: row.integrationId,
+      externalOrderId: row.externalOrderId,
+      orderNumber: row.orderNumber,
+      customerName: row.customerName,
+      customerPhone: row.customerPhone,
+      totalPrice: row.totalPrice,
+      currency: row.currency,
+      isTest: row.isTest,
+    },
+  };
+}
+
+/**
+ * Merge two newest-first streams into one, keeping (created_at, id) order.
+ *
+ * Both sides are already sorted and already cursor-filtered, so taking the
+ * larger head repeatedly gives the same page a single UNION would, without
+ * touching the query the rest of E04 is built on.
+ */
+function mergeByRecency<
+  A extends { createdAt: string | null; id: string },
+  B extends { createdAt: string | null; id: string },
+>(left: A[], right: B[], limit: number): Array<A | B> {
+  const merged: Array<A | B> = [];
+  let a = 0;
+  let b = 0;
+  while (merged.length < limit && (a < left.length || b < right.length)) {
+    if (a >= left.length) merged.push(right[b++]);
+    else if (b >= right.length) merged.push(left[a++]);
+    else merged.push(isNewer(left[a], right[b]) ? left[a++] : right[b++]);
+  }
+  return merged;
+}
+
+function isNewer(
+  left: { createdAt: string | null; id: string },
+  right: { createdAt: string | null; id: string },
+): boolean {
+  const l = left.createdAt ?? '';
+  const r = right.createdAt ?? '';
+  if (l !== r) return l > r;
+  return left.id > right.id;
+}
 
 /**
  * Rows a listing request answers with when the client does not say.
@@ -126,17 +217,64 @@ export class VerificationsService {
       reportingTimezone,
     );
 
-    const [verifications, totalCount, usage] = await Promise.all([
-      this.verificationsRepo.findByOrg(orgId, statuses, filterPeriod, {
-        cursor,
-        limit: limit + 1,
-      }),
-      this.verificationsRepo.countByOrg(orgId, statuses, filterPeriod),
-      this.resolvePageUsage(activeIntegrations),
-    ]);
+    // Held orders live outside `verifications` -- an import creates none --
+    // so the page is two sorted streams merged on (created_at, id) rather
+    // than one query. Either side is skipped when the status filter excludes
+    // it, so the common case still costs exactly what it did before.
+    const verificationStatuses = statuses?.filter(
+      (status): status is VerificationStatus => status !== HELD_STATUS,
+    );
+    const wantsVerifications =
+      !verificationStatuses || verificationStatuses.length > 0;
+    const wantsHeld = !statuses || statuses.includes(HELD_STATUS);
+    const importBatchId = query.importBatchId;
 
-    const hasMore = verifications.length > limit;
-    const items = hasMore ? verifications.slice(0, limit) : verifications;
+    const [verifications, totalCount, heldRows, heldCount, usage] =
+      await Promise.all([
+        wantsVerifications
+          ? this.verificationsRepo.findByOrg(
+              orgId,
+              verificationStatuses,
+              filterPeriod,
+              {
+                cursor,
+                limit: limit + 1,
+                importBatchId,
+              },
+            )
+          : [],
+        wantsVerifications
+          ? this.verificationsRepo.countByOrg(
+              orgId,
+              verificationStatuses,
+              filterPeriod,
+              importBatchId,
+            )
+          : 0,
+        wantsHeld
+          ? this.verificationsRepo.findHeldByOrg(orgId, filterPeriod, {
+              cursor,
+              limit: limit + 1,
+              importBatchId,
+            })
+          : [],
+        wantsHeld
+          ? this.verificationsRepo.countHeldByOrg(
+              orgId,
+              filterPeriod,
+              importBatchId,
+            )
+          : 0,
+        this.resolvePageUsage(activeIntegrations),
+      ]);
+
+    const merged = mergeByRecency(
+      verifications,
+      heldRows.map(toHeldListRow),
+      limit + 1,
+    );
+    const hasMore = merged.length > limit;
+    const items = hasMore ? merged.slice(0, limit) : merged;
 
     const nextCursor =
       hasMore && items.length > 0
@@ -145,16 +283,21 @@ export class VerificationsService {
 
     return {
       data: items.map((verification) => ({
-        capabilities: this.resolveRowCapabilities(
-          verification,
-          orgId,
-          activeIntegrations,
-        ),
+        // A held order offers nothing to cancel or retry: nothing has been
+        // sent, and only POST /start may move it. The single-order read
+        // already reports it non-retryable, so the list agrees with it.
+        capabilities: isHeldRow(verification)
+          ? []
+          : this.resolveRowCapabilities(
+              verification,
+              orgId,
+              activeIntegrations,
+            ),
         cancellation_operation: this.readCancellationOperation(
           verification.metadata,
         ),
         id: verification.id,
-        status: verification.status,
+        status: verification.status as VerificationStatus,
         reason: readVerificationReason(verification.metadata),
         order_id: verification.orderId,
         order_number: verification.order?.orderNumber ?? null,
@@ -177,7 +320,7 @@ export class VerificationsService {
         follow_up_sent_at: verification.followUpSentAt ?? null,
       })),
       next_cursor: nextCursor,
-      total_count: totalCount,
+      total_count: totalCount + heldCount,
       page_context: {
         source: this.resolveDashboardSourceState(integrations),
         reporting_timezone: reportingTimezone,
@@ -562,18 +705,18 @@ export class VerificationsService {
     return undefined;
   }
 
-  private parseStatuses(input?: string): VerificationStatus[] | undefined {
+  private parseStatuses(input?: string): ListStatusFilter[] | undefined {
     if (!input) return undefined;
 
     const statuses = input
       .split(',')
       .map((value) => value.trim().toLowerCase())
-      .filter(Boolean) as VerificationStatus[];
+      .filter(Boolean) as ListStatusFilter[];
 
     if (statuses.length === 0) return undefined;
 
     const invalid = statuses.filter(
-      (status) => !ALLOWED_STATUSES.includes(status),
+      (status) => !ALLOWED_LIST_STATUSES.includes(status),
     );
 
     if (invalid.length > 0) {

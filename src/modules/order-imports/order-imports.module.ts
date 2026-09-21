@@ -14,7 +14,11 @@ import { AuthModule } from '../auth/auth.module';
 import { OrderIngestionModule } from '../order-ingestion/order-ingestion.module';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportCommitProcessor } from './order-import-commit.processor';
+import { OrderImportCommitProducer } from './order-import-commit.producer';
+import { OrderImportCommitService } from './order-import-commit.service';
 import { OrderImportDetailService } from './order-import-detail.service';
+import { OrderImportQueueModule } from './order-import-queue.module';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
@@ -47,6 +51,7 @@ export function orderImportMulterOptions(
     DatabaseModule,
     AuthModule,
     OrderIngestionModule,
+    OrderImportQueueModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -60,6 +65,9 @@ export function orderImportMulterOptions(
     OrderImportMappingService,
     OrderImportDetailService,
     OrderImportRowsService,
+    OrderImportCommitService,
+    OrderImportCommitProducer,
+    OrderImportCommitProcessor,
     RowValidationService,
     PhoneService,
     ImportFileParser,

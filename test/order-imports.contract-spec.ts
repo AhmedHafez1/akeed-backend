@@ -10,9 +10,13 @@ import {
   OrderImportShortCodeError,
   OrderImportsRepository,
   type NewDraftBatch,
+  type CommitRowLink,
   type NewImportRow,
 } from '../src/infrastructure/database/repositories/order-imports.repository';
+import { ManualOrderIngestionRepository } from '../src/infrastructure/database/repositories/manual-order-ingestion.repository';
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
+import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
+import { FileImportChannelAdapter } from '../src/modules/order-imports/file-import.channel-adapter';
 import {
   BULK_IMPORT_CONFIG,
   parseBulkImportConfig,
@@ -157,6 +161,72 @@ describe('order imports PostgreSQL contract', () => {
         total_price numeric(12, 2),
         created_at timestamptz DEFAULT now(),
         CONSTRAINT unique_external_order_per_integration UNIQUE (integration_id, external_order_id)
+      );
+      -- The rest of the columns a commit writes (US-04.6-06).
+      ALTER TABLE orders
+        ADD COLUMN customer_name text,
+        ADD COLUMN customer_email text,
+        ADD COLUMN currency text DEFAULT 'SAR',
+        ADD COLUMN payment_method text,
+        ADD COLUMN raw_payload jsonb,
+        ADD COLUMN is_test boolean NOT NULL DEFAULT false,
+        ADD COLUMN updated_at timestamptz DEFAULT now();
+      -- webhook_events with the hold columns and the two constraints the
+      -- acceptance relies on: the source idempotency key, and the guard that
+      -- a held event can never be dispatchable (US-04.6-01).
+      CREATE TYPE webhook_event_status AS ENUM
+        ('pending', 'processing', 'completed', 'failed', 'skipped');
+      CREATE TABLE webhook_events (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        platform text NOT NULL,
+        job_type text,
+        idempotency_key text NOT NULL,
+        store_domain text NOT NULL,
+        org_id uuid REFERENCES organizations(id) ON DELETE CASCADE,
+        integration_id uuid,
+        order_id uuid REFERENCES orders(id),
+        status webhook_event_status NOT NULL DEFAULT 'pending',
+        raw_payload jsonb NOT NULL,
+        dispatch_required boolean NOT NULL DEFAULT false,
+        dispatch_attempts integer NOT NULL DEFAULT 0,
+        last_dispatch_error text,
+        next_dispatch_at timestamptz,
+        dispatch_lease_until timestamptz,
+        dispatched_at timestamptz,
+        processing_lease_until timestamptz,
+        attempts integer NOT NULL DEFAULT 0,
+        last_error text,
+        processed_at timestamptz,
+        received_at timestamptz DEFAULT now(),
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now(),
+        hold_state text NOT NULL DEFAULT 'none',
+        hold_group_id uuid,
+        held_at timestamptz,
+        released_at timestamptz,
+        withdrawn_at timestamptz,
+        CONSTRAINT webhook_events_source_idempotency_key
+          UNIQUE (platform, store_domain, idempotency_key),
+        CONSTRAINT webhook_events_hold_state_check CHECK
+          (hold_state IN ('none', 'held', 'released', 'withdrawn')),
+        CONSTRAINT webhook_events_held_not_dispatchable_check CHECK
+          (hold_state <> 'held' OR dispatch_required = false)
+      );
+      CREATE UNIQUE INDEX webhook_events_order_id_key
+        ON webhook_events (order_id) WHERE order_id IS NOT NULL;
+      -- Empty throughout: the commit must not write a single row here.
+      CREATE TABLE verifications (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id uuid,
+        order_id uuid
+      );
+      CREATE TABLE verification_message_dispatches (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        verification_id uuid
+      );
+      CREATE TABLE credit_reservations (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id uuid
       );
     `);
     // Layer the real migration on the hand-written base, twice, to prove it is
@@ -917,7 +987,16 @@ describe('order imports PostgreSQL contract', () => {
         SELECT counts, order_date_min::text, order_date_max::text, validation_version
         FROM order_import_batches WHERE id = ${batchId}`;
       expect(summary).toEqual({
-        counts: { total: 7, ready: 3, invalid: 1, duplicate: 1, excluded: 2 },
+        counts: {
+          total: 7,
+          ready: 3,
+          invalid: 1,
+          duplicate: 1,
+          excluded: 2,
+          // Zero until the commit job runs; the key is always present so the
+          // progress view never has to distinguish missing from none.
+          imported: 0,
+        },
         order_date_min: daysAgo(2),
         order_date_max: today(),
         validation_version: 1,
@@ -1050,6 +1129,418 @@ describe('order imports PostgreSQL contract', () => {
       });
       const [row] = await storedRows(batchId);
       expect(row.outcome).toBeNull();
+    });
+  });
+
+  /**
+   * Commit against real Postgres, because every guarantee this story makes is
+   * a database guarantee: the two unique indexes, the savepoint rollback and
+   * the recount from rows. A fake cannot prove any of them.
+   */
+  describe('idempotent commit (US-04.6-06)', () => {
+    const acceptance = new ManualOrderIngestionRepository(database);
+    const ingestion = new StandaloneOrderIngestionService(
+      acceptance,
+      { dispatchById: jest.fn() } as never,
+      { findByOrderId: jest.fn() } as never,
+      {} as never,
+    );
+
+    async function committingBatch(
+      source: { orgId: string; integrationId: string },
+      references: Array<string | null>,
+    ): Promise<string> {
+      const draft = await repository.createDraftWithRows(
+        batch(source, { headers: ['ref', 'phone'] }),
+        references.map((_, index) => ({
+          rowNumber: index + 2,
+          raw: {},
+          issues: [],
+        })),
+        { ...options, generateShortCode: () => generateShortCode() },
+      );
+      for (const [index, reference] of references.entries()) {
+        await client`
+          UPDATE order_import_rows
+          SET outcome = 'ready',
+              dedupe_key = ${reference ? `ref:${reference}` : null},
+              normalized = ${JSON.stringify({
+                orderNumber: reference ?? undefined,
+                customerPhone: '+201012345678',
+                customerName: 'Ahmed Ali',
+                totalPrice: '750.00',
+                currency: 'EGP',
+                paymentMethod: 'cash_on_delivery',
+              })}::jsonb
+          WHERE batch_id = ${draft.batchId} AND row_number = ${index + 2}`;
+      }
+      await client`
+        UPDATE order_import_batches
+        SET status = 'committing',
+            commit_idempotency_key = ${`commit-${draft.batchId}`},
+            counts = counts || jsonb_build_object('readyAtCommit', ${references.length}::int)
+        WHERE id = ${draft.batchId}`;
+      return draft.batchId;
+    }
+
+    /** Runs the commit loop the processor runs, without BullMQ in the way. */
+    async function runCommit(
+      source: { orgId: string; integrationId: string },
+      batchId: string,
+      opts: { stopAfterChunks?: number; chunk?: number } = {},
+    ): Promise<{ imported: number; alreadyImported: number }> {
+      const record = await repository.findBatchForCommit(source.orgId, batchId);
+      if (!record) throw new Error('batch missing');
+      let imported = 0;
+      let alreadyImported = 0;
+      let after = 0;
+      let chunks = 0;
+      for (;;) {
+        const pending = await repository.listRowsForCommit({
+          orgId: source.orgId,
+          batchId,
+          afterRowNumber: after,
+          limit: opts.chunk ?? 200,
+        });
+        if (pending.length === 0) break;
+        const results = await ingestion.acceptMany(
+          {
+            orgId: source.orgId,
+            source: {
+              id: source.integrationId,
+              platformStoreUrl: record.platformStoreUrl,
+            },
+          },
+          pending.map((row) =>
+            FileImportChannelAdapter.toAcceptManyInput(
+              {
+                rowNumber: row.rowNumber,
+                normalized: { paymentMethod: '', ...row.normalized },
+                dedupeKey: row.dedupeKey,
+              },
+              { id: batchId, shortCode: record.shortCode },
+            ),
+          ),
+          { channel: 'bulk_import', hold: { groupId: batchId } },
+        );
+        const links: CommitRowLink[] = [];
+        const losers: number[] = [];
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'accepted') {
+            links.push({
+              rowNumber: pending[index].rowNumber,
+              orderId: result.orderId,
+              eventId: result.eventId,
+            });
+          } else {
+            losers.push(pending[index].rowNumber);
+          }
+        }
+        await repository.writeCommitChunk({
+          orgId: source.orgId,
+          batchId,
+          imported: links,
+          alreadyImported: losers,
+          now: new Date(),
+        });
+        imported += links.length;
+        alreadyImported += losers.length;
+        after = pending[pending.length - 1].rowNumber;
+        chunks += 1;
+        // The crash: the worker dies between chunks, having committed the
+        // chunks before it.
+        if (opts.stopAfterChunks && chunks >= opts.stopAfterChunks) {
+          return { imported, alreadyImported };
+        }
+      }
+      await repository.finishCommit({
+        orgId: source.orgId,
+        batchId,
+        now: new Date(),
+        startWindowHours: 72,
+      });
+      return { imported, alreadyImported };
+    }
+
+    async function heldEvents(batchId: string) {
+      return client<
+        { id: string; order_id: string | null; dispatch_required: boolean }[]
+      >`
+        SELECT id, order_id, dispatch_required FROM webhook_events
+        WHERE hold_group_id = ${batchId}`;
+    }
+
+    it('creates one held order and one held event per ready row', async () => {
+      const source = await createSource();
+      const batchId = await committingBatch(source, ['1001', '1002']);
+
+      const result = await runCommit(source, batchId);
+
+      expect(result).toEqual({ imported: 2, alreadyImported: 0 });
+      const events = await heldEvents(batchId);
+      expect(events).toHaveLength(2);
+      // Invariant 2: a held event is never dispatchable.
+      expect(events.every((event) => event.dispatch_required === false)).toBe(
+        true,
+      );
+      expect(events.every((event) => event.order_id !== null)).toBe(true);
+
+      const stored = await client<
+        { outcome: string; order_id: string; webhook_event_id: string }[]
+      >`
+        SELECT outcome, order_id, webhook_event_id FROM order_import_rows
+        WHERE batch_id = ${batchId} ORDER BY row_number`;
+      expect(stored.every((row) => row.outcome === 'imported')).toBe(true);
+      expect(stored.every((row) => row.order_id && row.webhook_event_id)).toBe(
+        true,
+      );
+
+      const [summary] = await client<
+        { status: string; counts: Record<string, number>; deadline: string }[]
+      >`
+        SELECT status, counts, start_deadline_at::text AS deadline
+        FROM order_import_batches WHERE id = ${batchId}`;
+      expect(summary.status).toBe('awaiting_start');
+      expect(summary.counts).toMatchObject({ imported: 2, ready: 0 });
+      expect(summary.deadline).not.toBeNull();
+    });
+
+    it('creates no dispatch, no credit reservation and no verification', async () => {
+      // Epic invariant 1 and the story's hardest promise: importing is not
+      // sending, and nothing downstream may treat it as though it were.
+      const source = await createSource();
+      const batchId = await committingBatch(source, ['2001', '2002']);
+
+      await runCommit(source, batchId);
+
+      const [counts] = await client<
+        { verifications: number; dispatches: number; reservations: number }[]
+      >`
+        SELECT
+          (SELECT count(*)::int FROM verifications WHERE org_id = ${source.orgId}) AS verifications,
+          (SELECT count(*)::int FROM verification_message_dispatches) AS dispatches,
+          (SELECT count(*)::int FROM credit_reservations) AS reservations`;
+      expect(counts).toEqual({
+        verifications: 0,
+        dispatches: 0,
+        reservations: 0,
+      });
+    });
+
+    it('gives one order per reference when two batches commit the same refs', async () => {
+      // Two merchants' tabs, or one merchant twice: the winner keeps the
+      // order and the loser's row is a duplicate with nothing left behind.
+      const source = await createSource();
+      const first = await committingBatch(source, ['3001', '3002']);
+      const second = await committingBatch(source, ['3002', '3003']);
+
+      const [a, b] = await Promise.all([
+        runCommit(source, first),
+        runCommit(source, second),
+      ]);
+
+      expect(a.imported + b.imported).toBe(3);
+      expect(a.alreadyImported + b.alreadyImported).toBe(1);
+
+      const [orders] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM orders
+        WHERE integration_id = ${source.integrationId}`;
+      expect(orders.count).toBe(3);
+
+      // AC4: the losing row's event was discarded with its order insert, so
+      // no event is left pointing at nothing.
+      const [orphans] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM webhook_events
+        WHERE hold_group_id IN (${first}, ${second}) AND order_id IS NULL`;
+      expect(orphans.count).toBe(0);
+
+      const [loser] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM order_import_rows
+        WHERE batch_id IN (${first}, ${second})
+          AND outcome = 'duplicate'
+          AND issues @> '[{"code":"ALREADY_IMPORTED"}]'::jsonb`;
+      expect(loser.count).toBe(1);
+    });
+
+    it('resumes after a crash without creating anything twice', async () => {
+      const source = await createSource();
+      const batchId = await committingBatch(source, [
+        '4001',
+        '4002',
+        '4003',
+        '4004',
+      ]);
+
+      // Dies after the first chunk of two.
+      const partial = await runCommit(source, batchId, {
+        chunk: 2,
+        stopAfterChunks: 1,
+      });
+      expect(partial.imported).toBe(2);
+
+      // The re-run only sees rows that still have no order id.
+      const resumed = await runCommit(source, batchId, { chunk: 2 });
+      expect(resumed.imported).toBe(2);
+
+      const [orders] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM orders
+        WHERE integration_id = ${source.integrationId}`;
+      expect(orders.count).toBe(4);
+      expect(await heldEvents(batchId)).toHaveLength(4);
+
+      const [summary] = await client<
+        { status: string; counts: Record<string, number> }[]
+      >`
+        SELECT status, counts FROM order_import_batches WHERE id = ${batchId}`;
+      expect(summary.status).toBe('awaiting_start');
+      expect(summary.counts).toMatchObject({ imported: 4, readyAtCommit: 4 });
+    });
+
+    it('re-links a row whose event exists but whose row was never written', async () => {
+      // The narrower crash: the acceptance committed, the row update did not.
+      const source = await createSource();
+      const batchId = await committingBatch(source, ['5001']);
+      await runCommit(source, batchId);
+      await client`
+        UPDATE order_import_rows
+        SET order_id = NULL, webhook_event_id = NULL, outcome = 'ready'
+        WHERE batch_id = ${batchId}`;
+
+      const again = await runCommit(source, batchId);
+
+      expect(again).toEqual({ imported: 1, alreadyImported: 0 });
+      const [orders] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM orders
+        WHERE integration_id = ${source.integrationId}`;
+      expect(orders.count).toBe(1);
+      expect(await heldEvents(batchId)).toHaveLength(1);
+    });
+
+    it('claims a draft for exactly one of two concurrent commits', async () => {
+      const source = await createSource();
+      const draft = await repository.createDraftWithRows(
+        batch(source),
+        rows(1),
+        options,
+      );
+      const now = new Date();
+
+      const claims = await Promise.all([
+        repository.claimForCommit({
+          orgId: source.orgId,
+          batchId: draft.batchId,
+          key: 'commit-tab-one',
+          now,
+        }),
+        repository.claimForCommit({
+          orgId: source.orgId,
+          batchId: draft.batchId,
+          key: 'commit-tab-two',
+          now,
+        }),
+      ]);
+
+      expect(claims.filter((claim) => claim === 'claimed')).toHaveLength(1);
+      expect(claims.filter((claim) => claim === 'not_draft')).toHaveLength(1);
+    });
+
+    it('refuses a commit key already spent on another batch', async () => {
+      const source = await createSource();
+      const first = await repository.createDraftWithRows(
+        batch(source),
+        rows(1),
+        options,
+      );
+      const second = await repository.createDraftWithRows(
+        batch(source),
+        rows(1),
+        options,
+      );
+      const now = new Date();
+      const key = 'commit-shared-key';
+
+      expect(
+        await repository.claimForCommit({
+          orgId: source.orgId,
+          batchId: first.batchId,
+          key,
+          now,
+        }),
+      ).toBe('claimed');
+      // The unique index is the authority, not the service's pre-check.
+      expect(
+        await repository.claimForCommit({
+          orgId: source.orgId,
+          batchId: second.batchId,
+          key,
+          now,
+        }),
+      ).toBe('key_taken');
+    });
+
+    it('leaves a failed commit with its imported rows still held', async () => {
+      const source = await createSource();
+      const batchId = await committingBatch(source, ['6001', '6002', '6003']);
+      await runCommit(source, batchId, { chunk: 1, stopAfterChunks: 1 });
+
+      await repository.failCommit({
+        orgId: source.orgId,
+        batchId,
+        now: new Date(),
+      });
+
+      const [summary] = await client<
+        { status: string; counts: Record<string, number> }[]
+      >`
+        SELECT status, counts FROM order_import_batches WHERE id = ${batchId}`;
+      expect(summary.status).toBe('failed');
+      expect(summary.counts).toMatchObject({ imported: 1, ready: 2 });
+      // The one order that made it stays held, and so stays startable.
+      const events = await heldEvents(batchId);
+      expect(events).toHaveLength(1);
+      expect(events[0].dispatch_required).toBe(false);
+    });
+
+    it('gives a reference-less row a batch-scoped identity', async () => {
+      const source = await createSource();
+      const batchId = await committingBatch(source, [null, null]);
+
+      const result = await runCommit(source, batchId);
+
+      expect(result.imported).toBe(2);
+      const created = await client<
+        { external_order_id: string; order_number: string }[]
+      >`
+        SELECT external_order_id, order_number FROM orders
+        WHERE integration_id = ${source.integrationId}
+        ORDER BY external_order_id`;
+      expect(created.map((row) => row.external_order_id)).toEqual([
+        `imp:${batchId}:2`,
+        `imp:${batchId}:3`,
+      ]);
+      expect(
+        created.every((row) =>
+          /^IMP-[0-9A-HJKMNP-TV-Z]{6}-\d+$/.test(row.order_number),
+        ),
+      ).toBe(true);
+    });
+
+    it('stores the bulk envelope with its batch and row metadata', async () => {
+      const source = await createSource();
+      const batchId = await committingBatch(source, ['7001']);
+
+      await runCommit(source, batchId);
+
+      const [order] = await client<{ raw_payload: Record<string, unknown> }[]>`
+        SELECT raw_payload FROM orders
+        WHERE integration_id = ${source.integrationId}`;
+      expect(order.raw_payload).toMatchObject({
+        ingestionType: 'bulk_import',
+        schemaVersion: 1,
+        importBatchId: batchId,
+        importRowNumber: 2,
+      });
+      expect(order.raw_payload).toHaveProperty('submissionFingerprint');
     });
   });
 });

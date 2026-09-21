@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -44,6 +45,7 @@ import {
   OrderImportAccess,
 } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
+import { OrderImportCommitService } from './order-import-commit.service';
 import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
@@ -109,6 +111,7 @@ export class OrderImportsController {
     private readonly mapping: OrderImportMappingService,
     private readonly rows: OrderImportRowsService,
     private readonly detail: OrderImportDetailService,
+    private readonly commit: OrderImportCommitService,
   ) {}
 
   @Post()
@@ -202,6 +205,23 @@ export class OrderImportsController {
       rowNumber,
       (body as UpdateOrderImportRowDto).include,
     );
+  }
+
+  /**
+   * 202: the orders are created in the background, and the merchant watches
+   * progress through `GET /:id`. Replaying the same key returns the batch as
+   * it stands rather than starting a second import.
+   */
+  @Post(':id/commit')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @OrderImportAccess('write')
+  commitBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<OrderImportBatchDetailDto> {
+    return this.commit.commit(user, source, batchId, idempotencyKey);
   }
 
   @Delete(':id')

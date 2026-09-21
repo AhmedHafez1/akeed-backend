@@ -1,4 +1,7 @@
-import type { StandaloneIngestionChannel } from '../../shared/commerce/standalone-order-envelope';
+import type {
+  CanonicalOrderInput,
+  StandaloneIngestionChannel,
+} from '../../shared/commerce/standalone-order-envelope';
 
 export type {
   CanonicalOrderExtras,
@@ -32,3 +35,31 @@ export interface AcceptOneResult {
   duplicate: boolean;
   held: boolean;
 }
+
+/** One row of a batch acceptance, already translated by a channel adapter. */
+export interface AcceptManyInput {
+  /** Channel-local key; the service namespaces it per channel. */
+  idempotencyKey: string;
+  order: CanonicalOrderInput;
+  /** Channel metadata stored beside the order in `rawPayload`. */
+  envelopeExtras?: Record<string, unknown>;
+}
+
+/**
+ * `hold` is required, not optional: a batch acceptance never dispatches, so
+ * the type makes invariant 1 (nothing is sent before `POST /start`)
+ * structural rather than a convention a future caller could forget.
+ */
+export interface AcceptManyOptions {
+  channel: StandaloneIngestionChannel;
+  hold: { groupId: string };
+}
+
+/**
+ * Per-row outcome, in input order. `already_imported` means another batch or
+ * an earlier order already owned this external identity; nothing was written
+ * for that row.
+ */
+export type AcceptManyRowResult =
+  | { status: 'accepted'; orderId: string; eventId: string; duplicate: boolean }
+  | { status: 'already_imported' };

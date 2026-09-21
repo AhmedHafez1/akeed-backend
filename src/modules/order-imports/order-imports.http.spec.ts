@@ -27,6 +27,8 @@ import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-thr
 import { PhoneService } from '../../shared/services/phone.service';
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { StandaloneOrderEligibilityStrategy } from '../../infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
+import { OrderImportCommitProducer } from './order-import-commit.producer';
+import { OrderImportCommitService } from './order-import-commit.service';
 import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
@@ -82,7 +84,12 @@ describe('order-import routes over HTTP', () => {
     readSampleRows: jest.fn(),
     countRowsWithIssue: jest.fn(),
     findRecentDuplicate: jest.fn(),
+    findBatchForCommit: jest.fn(),
+    findBatchByCommitKey: jest.fn(),
+    claimForCommit: jest.fn(),
   };
+
+  const commitProducer = { enqueue: jest.fn() };
 
   const fakeAuth: CanActivate = {
     canActivate(context: ExecutionContext) {
@@ -108,6 +115,7 @@ describe('order-import routes over HTTP', () => {
         OrderImportMappingService,
         OrderImportDetailService,
         OrderImportRowsService,
+        OrderImportCommitService,
         RowValidationService,
         PhoneService,
         {
@@ -127,6 +135,7 @@ describe('order-import routes over HTTP', () => {
           },
         },
         { provide: OrderImportsRepository, useValue: repository },
+        { provide: OrderImportCommitProducer, useValue: commitProducer },
         {
           provide: StandaloneOrderIngestionService,
           useValue: {
@@ -1027,6 +1036,218 @@ describe('order-import routes over HTTP', () => {
         code: 'IMPORT_VALIDATION_FAILED',
         fieldErrors: { status: expect.any(String) as unknown },
       });
+    });
+  });
+
+  /**
+   * Commit is the one request a merchant is most likely to send twice: a
+   * double-click, a refresh, a retry after a timeout. Every one of those must
+   * reach the same batch and the same job.
+   */
+  describe('POST /api/order-imports/:id/commit', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const key = `commit-${batchId}`;
+    const commitBatch = (overrides: Record<string, unknown> = {}) => ({
+      id: batchId,
+      status: 'draft',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      integrationId: 'int-1',
+      shortCode: 'ABC123',
+      platformStoreUrl: 'store-1.akeed.local',
+      mapping: { confirmed: true },
+      counts: { total: 2, ready: 1 },
+      commitIdempotencyKey: null,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      repository.findBatchForCommit.mockResolvedValue(commitBatch());
+      repository.findBatchByCommitKey.mockResolvedValue(null);
+      repository.claimForCommit.mockResolvedValue('claimed');
+      // `detail()` answers the 202 body from the ordinary read path.
+      repository.findBatchDetail.mockResolvedValue({
+        batchId,
+        shortCode: 'ABC123',
+        status: 'committing',
+        fileName: 'orders.csv',
+        fileFormat: 'csv',
+        fileSha256: 'a'.repeat(64),
+        rowCount: 2,
+        headers: ['Mobile'],
+        mapping: null,
+        options: null,
+        counts: { total: 2, ready: 1, readyAtCommit: 1 },
+        orderDateMin: null,
+        orderDateMax: null,
+        createdAt: '2026-09-19T09:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      });
+      repository.readSampleRows.mockResolvedValue([]);
+      repository.countRowsWithIssue.mockResolvedValue(0);
+      repository.findRecentDuplicate.mockResolvedValue(null);
+      repository.columnValueCounts.mockResolvedValue([]);
+    });
+
+    const commit = (id = batchId, header: string | null = key) => {
+      const call = request(server()).post(`/api/order-imports/${id}/commit`);
+      return header === null ? call : call.set('Idempotency-Key', header);
+    };
+
+    it('claims the draft, enqueues one job and answers 202', async () => {
+      const response = await commit();
+
+      expect(response.status).toBe(202);
+      expect(repository.claimForCommit).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: 'org-1', batchId, key }),
+      );
+      expect(commitProducer.enqueue).toHaveBeenCalledWith({
+        batchId,
+        orgId: 'org-1',
+      });
+      expect((response.body as { status: string }).status).toBe('committing');
+    });
+
+    it('replays the same key without enqueuing a second job', async () => {
+      // The double-click: the batch has already moved to `committing`, so the
+      // conditional update never fires again.
+      repository.findBatchForCommit.mockResolvedValue(
+        commitBatch({ status: 'committing', commitIdempotencyKey: key }),
+      );
+
+      const response = await commit();
+
+      expect(response.status).toBe(202);
+      expect(repository.claimForCommit).not.toHaveBeenCalled();
+      expect(commitProducer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('refuses a different key on a batch that has moved on', async () => {
+      // The second tab: it must be told to refresh, not start a rival import.
+      repository.findBatchForCommit.mockResolvedValue(
+        commitBatch({ status: 'committing', commitIdempotencyKey: key }),
+      );
+
+      const response = await commit(batchId, 'commit-from-another-tab');
+
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_BATCH_STATE_CONFLICT',
+        status: 'committing',
+      });
+      expect(commitProducer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key already used by another batch in the org', async () => {
+      repository.findBatchByCommitKey.mockResolvedValue({ id: 'other-batch' });
+
+      const response = await commit();
+
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_IDEMPOTENCY_CONFLICT',
+      });
+      expect(repository.claimForCommit).not.toHaveBeenCalled();
+    });
+
+    it('reports a unique violation the pre-check missed as the same conflict', async () => {
+      repository.claimForCommit.mockResolvedValue('key_taken');
+
+      const response = await commit();
+
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_IDEMPOTENCY_CONFLICT',
+      });
+      expect(commitProducer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('answers the winner state when a rival claimed between read and update', async () => {
+      repository.claimForCommit.mockResolvedValue('not_draft');
+      repository.findBatchForCommit
+        .mockResolvedValueOnce(commitBatch())
+        .mockResolvedValueOnce(
+          commitBatch({ status: 'committing', commitIdempotencyKey: key }),
+        );
+
+      const response = await commit();
+
+      expect(response.status).toBe(202);
+      expect(commitProducer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('refuses a batch with nothing ready', async () => {
+      repository.findBatchForCommit.mockResolvedValue(
+        commitBatch({ counts: { total: 2, ready: 0 } }),
+      );
+
+      const response = await commit();
+
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({ code: 'IMPORT_NOTHING_TO_IMPORT' });
+      expect(repository.claimForCommit).not.toHaveBeenCalled();
+    });
+
+    it('refuses an expired draft', async () => {
+      repository.findBatchForCommit.mockResolvedValue(
+        commitBatch({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+      );
+
+      const response = await commit();
+
+      expect(response.status).toBe(410);
+      expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_EXPIRED' });
+    });
+
+    it('refuses a draft whose mapping was never confirmed', async () => {
+      repository.findBatchForCommit.mockResolvedValue(
+        commitBatch({ mapping: null }),
+      );
+
+      const response = await commit();
+
+      expect(response.status).toBe(422);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_MAPPING_INCOMPLETE',
+      });
+    });
+
+    it.each([
+      ['no header', null, 'IMPORT_IDEMPOTENCY_KEY_REQUIRED'],
+      ['a short key', 'abc', 'IMPORT_VALIDATION_FAILED'],
+      ['a key with spaces', 'not a valid key', 'IMPORT_VALIDATION_FAILED'],
+    ])('refuses %s', async (_label, header, code) => {
+      const response = await commit(batchId, header);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ code });
+      expect(repository.claimForCommit).not.toHaveBeenCalled();
+    });
+
+    it('hides another org batch behind the same not-found as an unknown id', async () => {
+      repository.findBatchForCommit.mockResolvedValue(null);
+
+      const response = await commit();
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_NOT_FOUND' });
+    });
+
+    it('refuses a viewer before it reads the batch', async () => {
+      currentUser = { ...currentUser, role: 'viewer' };
+
+      const response = await commit();
+
+      expect(response.status).toBe(403);
+      expect(repository.findBatchForCommit).not.toHaveBeenCalled();
+    });
+
+    it('refuses everyone when the flag is off', async () => {
+      bulkImport = parseBulkImportConfig({});
+
+      const response = await commit();
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ code: 'IMPORT_DISABLED' });
     });
   });
 });

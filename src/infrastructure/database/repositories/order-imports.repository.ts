@@ -16,6 +16,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import {
+  integrations,
   orderImportBatches,
   orderImportMappingProfiles,
   orderImportRows,
@@ -945,13 +946,20 @@ export class OrderImportsRepository {
     await tx
       .update(orderImportBatches)
       .set({
+        // `readyAtCommit` is a snapshot the commit takes before any row
+        // leaves `ready`; it is carried across every later recount so the
+        // progress denominator stays the number the merchant was shown.
         counts: sql`(SELECT jsonb_build_object(
           'total', count(*)::int,
           'ready', ${count('ready')},
           'invalid', ${count('invalid')},
           'duplicate', ${count('duplicate')},
-          'excluded', ${count('excluded')}
-        ) ${rows})`,
+          'excluded', ${count('excluded')},
+          'imported', ${count('imported')}
+        ) ${rows}) || COALESCE(
+          jsonb_strip_nulls(jsonb_build_object('readyAtCommit', ${orderImportBatches.counts} -> 'readyAtCommit')),
+          '{}'::jsonb
+        )`,
         orderDateMin: sql`(SELECT min(${readyDate}) ${rows} AND ${orderImportRows.outcome} = 'ready')`,
         orderDateMax: sql`(SELECT max(${readyDate}) ${rows} AND ${orderImportRows.outcome} = 'ready')`,
         ...extra,
@@ -982,4 +990,275 @@ export class OrderImportsRepository {
       .limit(1);
     return (row?.counts as Record<string, number> | undefined) ?? {};
   }
+
+  /** The batch fields the commit endpoint decides on. */
+  async findBatchForCommit(
+    orgId: string,
+    batchId: string,
+  ): Promise<BatchForCommit | null> {
+    const [row] = await this.db
+      .select({
+        id: orderImportBatches.id,
+        status: orderImportBatches.status,
+        expiresAt: orderImportBatches.expiresAt,
+        integrationId: orderImportBatches.integrationId,
+        shortCode: orderImportBatches.shortCode,
+        mapping: orderImportBatches.mapping,
+        counts: orderImportBatches.counts,
+        commitIdempotencyKey: orderImportBatches.commitIdempotencyKey,
+        platformStoreUrl: integrations.platformStoreUrl,
+      })
+      .from(orderImportBatches)
+      .innerJoin(
+        integrations,
+        eq(integrations.id, orderImportBatches.integrationId),
+      )
+      .where(
+        and(
+          eq(orderImportBatches.id, batchId),
+          eq(orderImportBatches.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** The batch, if any, that already owns this commit key in the org. */
+  async findBatchByCommitKey(
+    orgId: string,
+    key: string,
+  ): Promise<{ id: string } | null> {
+    const [row] = await this.db
+      .select({ id: orderImportBatches.id })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.orgId, orgId),
+          eq(orderImportBatches.commitIdempotencyKey, key),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Move a live draft to `committing` and record the key that claimed it.
+   *
+   * One conditional UPDATE is the whole race guard: two tabs, a double-click
+   * and a retry after a timeout all reach this statement, and exactly one sees
+   * a row back. `readyAtCommit` is snapshotted here, before any row leaves
+   * `ready`, so the progress denominator cannot drift as the job runs.
+   */
+  async claimForCommit(input: {
+    orgId: string;
+    batchId: string;
+    key: string;
+    now: Date;
+  }): Promise<'claimed' | 'not_draft' | 'key_taken'> {
+    const now = input.now.toISOString();
+    try {
+      const [row] = await this.db
+        .update(orderImportBatches)
+        .set({
+          status: 'committing',
+          commitIdempotencyKey: input.key,
+          counts: sql`${orderImportBatches.counts} || jsonb_build_object('readyAtCommit', COALESCE(${orderImportBatches.counts} -> 'ready', '0'::jsonb))`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(orderImportBatches.id, input.batchId),
+            eq(orderImportBatches.orgId, input.orgId),
+            eq(orderImportBatches.status, 'draft'),
+            gt(orderImportBatches.expiresAt, now),
+          ),
+        )
+        .returning({ id: orderImportBatches.id });
+      return row ? 'claimed' : 'not_draft';
+    } catch (error) {
+      // The (org_id, commit_idempotency_key) unique index is the authority on
+      // cross-batch key reuse; the caller's pre-check only saves a round trip.
+      if (isUniqueViolation(error)) return 'key_taken';
+      throw error;
+    }
+  }
+
+  /**
+   * The next page of rows this commit still has to create.
+   *
+   * `order_id IS NULL` is what makes the job resumable: a re-run after a crash
+   * simply never sees the rows it already linked.
+   */
+  async listRowsForCommit(input: {
+    orgId: string;
+    batchId: string;
+    afterRowNumber: number;
+    limit: number;
+  }): Promise<CommitRowRecord[]> {
+    const rows = await this.db
+      .select({
+        rowNumber: orderImportRows.rowNumber,
+        normalized: orderImportRows.normalized,
+        dedupeKey: orderImportRows.dedupeKey,
+      })
+      .from(orderImportRows)
+      .where(
+        and(
+          eq(orderImportRows.batchId, input.batchId),
+          eq(orderImportRows.orgId, input.orgId),
+          eq(orderImportRows.outcome, 'ready'),
+          sql`${orderImportRows.orderId} IS NULL`,
+          gt(orderImportRows.rowNumber, input.afterRowNumber),
+        ),
+      )
+      .orderBy(asc(orderImportRows.rowNumber))
+      .limit(input.limit);
+    return rows.map((row) => ({
+      rowNumber: row.rowNumber,
+      normalized: (row.normalized ?? {}) as CommitRowRecord['normalized'],
+      dedupeKey: row.dedupeKey,
+    }));
+  }
+
+  /**
+   * Record one chunk's outcomes and recount the batch, in one transaction.
+   *
+   * Counts are rebuilt from the rows rather than incremented, so re-running a
+   * chunk after a crash cannot double-count (epic invariant 5).
+   */
+  async writeCommitChunk(input: {
+    orgId: string;
+    batchId: string;
+    imported: CommitRowLink[];
+    alreadyImported: number[];
+    now: Date;
+  }): Promise<void> {
+    const now = input.now.toISOString();
+    await this.db.transaction(async (tx) => {
+      for (const link of input.imported) {
+        await tx
+          .update(orderImportRows)
+          .set({
+            orderId: link.orderId,
+            webhookEventId: link.eventId,
+            outcome: 'imported',
+          })
+          .where(this.rowWhere(input.orgId, input.batchId, link.rowNumber));
+      }
+      if (input.alreadyImported.length > 0) {
+        await tx
+          .update(orderImportRows)
+          .set({
+            outcome: 'duplicate',
+            issues: sql`COALESCE(${orderImportRows.issues}, '[]'::jsonb) || ${JSON.stringify(
+              [{ code: 'ALREADY_IMPORTED', field: 'orderReference' }],
+            )}::jsonb`,
+          })
+          .where(
+            and(
+              eq(orderImportRows.batchId, input.batchId),
+              eq(orderImportRows.orgId, input.orgId),
+              inArray(orderImportRows.rowNumber, input.alreadyImported),
+            ),
+          );
+      }
+      await this.refreshSummary(tx, input.orgId, input.batchId, now);
+    });
+  }
+
+  /** Commit finished: the batch is now waiting for the merchant to start it. */
+  async finishCommit(input: {
+    orgId: string;
+    batchId: string;
+    now: Date;
+    startWindowHours: number;
+  }): Promise<void> {
+    const now = input.now.toISOString();
+    const deadline = new Date(
+      input.now.getTime() + input.startWindowHours * 3_600_000,
+    ).toISOString();
+    await this.db
+      .update(orderImportBatches)
+      .set({
+        status: 'awaiting_start',
+        committedAt: now,
+        startDeadlineAt: deadline,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(orderImportBatches.id, input.batchId),
+          eq(orderImportBatches.orgId, input.orgId),
+          eq(orderImportBatches.status, 'committing'),
+        ),
+      );
+  }
+
+  /**
+   * The commit exhausted its retries.
+   *
+   * Rows already linked keep `imported` and their held events, so the partial
+   * import stays startable and the merchant can re-upload the remainder.
+   */
+  async failCommit(input: {
+    orgId: string;
+    batchId: string;
+    now: Date;
+  }): Promise<void> {
+    const now = input.now.toISOString();
+    await this.db
+      .update(orderImportBatches)
+      .set({ status: 'failed', updatedAt: now })
+      .where(
+        and(
+          eq(orderImportBatches.id, input.batchId),
+          eq(orderImportBatches.orgId, input.orgId),
+          eq(orderImportBatches.status, 'committing'),
+        ),
+      );
+  }
+}
+
+export interface BatchForCommit {
+  id: string;
+  status: string;
+  expiresAt: string;
+  integrationId: string;
+  shortCode: string;
+  mapping: unknown;
+  counts: unknown;
+  commitIdempotencyKey: string | null;
+  /** The source store domain, so the commit job needs no second lookup. */
+  platformStoreUrl: string;
+}
+
+export interface CommitRowRecord {
+  rowNumber: number;
+  normalized: Record<string, string>;
+  dedupeKey: string | null;
+}
+
+export interface CommitRowLink {
+  rowNumber: number;
+  orderId: string;
+  eventId: string;
+}
+
+/**
+ * Postgres unique-violation, the only error `claimForCommit` interprets.
+ *
+ * Drizzle wraps the driver error, so the SQLSTATE is on a `cause` rather
+ * than the error it throws; walking the chain is what makes the check work
+ * against the real driver and not only against a hand-made error.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  for (
+    let current = error;
+    current;
+    current = (current as { cause?: unknown }).cause
+  ) {
+    if (typeof current !== 'object') return false;
+    if ((current as { code?: unknown }).code === '23505') return true;
+  }
+  return false;
 }

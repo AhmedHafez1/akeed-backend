@@ -1,7 +1,15 @@
 import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export const DASHBOARD_DATE_RANGE_VALUES = [
@@ -32,6 +40,16 @@ export class GetVerificationsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  /**
+   * Show only the orders one import batch created.
+   *
+   * The whitelist strips anything not declared here, so the filter has to be
+   * a field before the review link from an import can work.
+   */
+  @IsOptional()
+  @IsUUID()
+  importBatchId?: string;
 }
 
 export class GetVerificationStatsQueryDto {

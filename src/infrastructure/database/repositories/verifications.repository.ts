@@ -2,13 +2,26 @@ import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/co
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { and, eq, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import {
   verifications,
   verificationMessageDispatches,
   creditReservations,
+  orderImportRows,
+  orders,
+  webhookEvents,
 } from '../schema';
 import {
   RETRYABLE_VERIFICATION_REASONS,
@@ -182,7 +195,11 @@ export class VerificationsRepository {
     orgId: string,
     statuses?: VerificationStatus[],
     period?: { startAt: string; endAt: string },
-    opts?: { cursor?: { createdAt: string; id: string }; limit?: number },
+    opts?: {
+      cursor?: { createdAt: string; id: string };
+      limit?: number;
+      importBatchId?: string;
+    },
   ): Promise<
     Array<
       typeof verifications.$inferSelect & {
@@ -203,7 +220,12 @@ export class VerificationsRepository {
   > {
     const limit = opts?.limit ?? 50;
 
-    const conditions = this.buildOrgListConditions(orgId, statuses, period);
+    const conditions = this.buildOrgListConditions(
+      orgId,
+      statuses,
+      period,
+      opts?.importBatchId,
+    );
 
     if (opts?.cursor) {
       conditions.push(
@@ -253,11 +275,21 @@ export class VerificationsRepository {
     orgId: string,
     statuses?: VerificationStatus[],
     period?: { startAt: string; endAt: string },
+    importBatchId?: string,
   ): Promise<number> {
     const [row] = await this.db
       .select({ value: sql<number>`count(*)::int` })
       .from(verifications)
-      .where(and(...this.buildOrgListConditions(orgId, statuses, period)));
+      .where(
+        and(
+          ...this.buildOrgListConditions(
+            orgId,
+            statuses,
+            period,
+            importBatchId,
+          ),
+        ),
+      );
 
     return row?.value ?? 0;
   }
@@ -274,9 +306,13 @@ export class VerificationsRepository {
     orgId: string,
     statuses?: VerificationStatus[],
     period?: { startAt: string; endAt: string },
+    importBatchId?: string,
   ) {
     return [
       eq(verifications.orgId, orgId),
+      importBatchId
+        ? importBatchRowExists(orgId, importBatchId, verifications.orderId)
+        : undefined,
       period ? gte(verifications.createdAt, period.startAt) : undefined,
       period ? lt(verifications.createdAt, period.endAt) : undefined,
       statuses && statuses.length > 0
@@ -600,4 +636,134 @@ export class VerificationsRepository {
 
     return payload;
   }
+
+  /**
+   * Imported orders that are held, as list rows.
+   *
+   * A held order has no verification yet -- commit deliberately creates none --
+   * so it is invisible to `findByOrg`. The dashboard still has to show it,
+   * because the merchant has orders waiting on a decision only they can make.
+   * Kept as its own query rather than a UNION inside `findByOrg` so the
+   * verification list the rest of E04 is built on stays exactly as it was; the
+   * service merges the two sorted streams.
+   */
+  async findHeldByOrg(
+    orgId: string,
+    period?: { startAt: string; endAt: string },
+    opts?: {
+      cursor?: { createdAt: string; id: string };
+      limit?: number;
+      importBatchId?: string;
+    },
+  ): Promise<HeldOrderListRow[]> {
+    const conditions = this.buildHeldListConditions(
+      orgId,
+      period,
+      opts?.importBatchId,
+    );
+    if (opts?.cursor) {
+      conditions.push(
+        or(
+          lt(orders.createdAt, opts.cursor.createdAt),
+          and(
+            sql`${orders.createdAt} = ${opts.cursor.createdAt}`,
+            lt(orders.id, opts.cursor.id),
+          ),
+        ),
+      );
+    }
+    return this.db
+      .select({
+        id: orders.id,
+        orderId: orders.id,
+        createdAt: orders.createdAt,
+        orderNumber: orders.orderNumber,
+        customerName: orders.customerName,
+        customerPhone: orders.customerPhone,
+        totalPrice: orders.totalPrice,
+        currency: orders.currency,
+        isTest: orders.isTest,
+        orgId: orders.orgId,
+        integrationId: orders.integrationId,
+        externalOrderId: orders.externalOrderId,
+      })
+      .from(orders)
+      .innerJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(and(...conditions))
+      .orderBy(desc(orders.createdAt), desc(orders.id))
+      .limit(opts?.limit ?? 50);
+  }
+
+  /** The held rows a `findHeldByOrg` call would return, ignoring the cursor. */
+  async countHeldByOrg(
+    orgId: string,
+    period?: { startAt: string; endAt: string },
+    importBatchId?: string,
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({ value: sql<number>`count(*)::int` })
+      .from(orders)
+      .innerJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(
+        and(...this.buildHeldListConditions(orgId, period, importBatchId)),
+      );
+    return row?.value ?? 0;
+  }
+
+  /**
+   * Org + date-range + batch filter shared by the held list and count queries,
+   * for the same reason `buildOrgListConditions` is shared.
+   */
+  private buildHeldListConditions(
+    orgId: string,
+    period?: { startAt: string; endAt: string },
+    importBatchId?: string,
+  ) {
+    return [
+      eq(orders.orgId, orgId),
+      eq(webhookEvents.holdState, 'held'),
+      // A released order has a verification and belongs to the ordinary list;
+      // this guard also keeps a row from appearing twice during the handover.
+      sql`NOT EXISTS (SELECT 1 FROM ${verifications} v WHERE v.order_id = ${orders.id})`,
+      period ? gte(orders.createdAt, period.startAt) : undefined,
+      period ? lt(orders.createdAt, period.endAt) : undefined,
+      importBatchId ? importBatchRowExists(orgId, importBatchId) : undefined,
+    ].filter(Boolean);
+  }
+}
+
+/** A held, imported order projected as a verification-list row. */
+export interface HeldOrderListRow {
+  id: string;
+  orderId: string;
+  createdAt: string | null;
+  orderNumber: string | null;
+  customerName: string | null;
+  customerPhone: string;
+  totalPrice: string | null;
+  currency: string | null;
+  isTest: boolean;
+  orgId: string;
+  integrationId: string;
+  externalOrderId: string;
+}
+
+/**
+ * Restricts a list to the orders one import batch created.
+ *
+ * `order_import_rows` is the authoritative link (an order carries the batch id
+ * only in `raw_payload`), and it is scoped by `org_id` in its own right, so a
+ * batch id from another tenant matches nothing rather than leaking a row.
+ */
+function importBatchRowExists(
+  orgId: string,
+  batchId: string,
+  orderIdColumn: typeof orders.id | typeof verifications.orderId = orders.id,
+) {
+  return sql`EXISTS (
+    SELECT 1 FROM ${orderImportRows} r
+    WHERE r.order_id = ${orderIdColumn}
+      AND r.batch_id = ${batchId}
+      AND r.org_id = ${orgId}
+  )`;
 }

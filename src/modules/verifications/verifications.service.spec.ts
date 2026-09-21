@@ -4,6 +4,18 @@ import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { VerificationsService } from './verifications.service';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 
+/**
+ * Held orders are a second, additive stream on the listing. A fake that only
+ * knows the verification side still has to answer them, with nothing.
+ */
+function withHeldDefaults(repo: Record<string, unknown>) {
+  return {
+    findHeldByOrg: jest.fn().mockResolvedValue([]),
+    countHeldByOrg: jest.fn().mockResolvedValue(0),
+    ...repo,
+  };
+}
+
 const organizationOwner: AuthenticatedUser = {
   userId: 'owner-1',
   orgId: 'org-1',
@@ -792,7 +804,7 @@ describe('Dashboard cancellation capabilities', () => {
         new ShopifyOutcomeAdapter({} as never),
       ]);
       const service = new VerificationsService(
-        repo as never,
+        withHeldDefaults(repo) as never,
         {
           readEntitlement: jest.fn().mockResolvedValue({
             consumedCount: 0,
@@ -830,7 +842,7 @@ describe('Dashboard cancellation capabilities', () => {
 describe('Listing fetch size', () => {
   function buildService(repo: { findByOrg: jest.Mock; countByOrg: jest.Mock }) {
     return new VerificationsService(
-      repo as never,
+      withHeldDefaults(repo) as never,
       {
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 0,
@@ -900,5 +912,216 @@ describe('Listing fetch size', () => {
     expect(result.data).toHaveLength(20);
     expect(result.next_cursor).not.toBeNull();
     expect(result.total_count).toBe(40);
+  });
+});
+
+/**
+ * Imported orders are held: commit deliberately creates no verification for
+ * them, so without this second stream the merchant's own orders would be
+ * missing from the list that is supposed to show every order.
+ */
+describe('Held orders on the verifications listing', () => {
+  const heldOrder = (id: string, createdAt: string) => ({
+    id,
+    orderId: id,
+    createdAt,
+    orderNumber: `#${id}`,
+    customerName: 'Ahmed Ali',
+    customerPhone: '+201012345678',
+    totalPrice: '750.00',
+    currency: 'EGP',
+    isTest: false,
+    orgId: 'org-1',
+    integrationId: 'int-1',
+    externalOrderId: `ref:${id}`,
+  });
+
+  const verification = (id: string, createdAt: string) => ({
+    id,
+    status: 'confirmed',
+    orderId: `order-${id}`,
+    createdAt,
+    metadata: null,
+    order: { orgId: 'org-1', integrationId: 'int-1' },
+  });
+
+  function service(repo: Record<string, unknown>) {
+    return new VerificationsService(
+      withHeldDefaults(repo) as never,
+      {
+        readEntitlement: jest.fn().mockResolvedValue({
+          consumedCount: 0,
+          includedLimit: 30,
+          periodEnd: null,
+        }),
+      } as never,
+      {
+        findByOrg: jest.fn().mockResolvedValue([
+          {
+            id: 'int-1',
+            orgId: 'org-1',
+            isActive: true,
+            platformType: 'standalone',
+          },
+        ]),
+      } as never,
+      {} as never,
+      new CommerceOutcomeRegistryService({} as never, []),
+    );
+  }
+
+  it('shows a held order as awaiting_start with nothing to act on', async () => {
+    const result = await service({
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(0),
+      findHeldByOrg: jest
+        .fn()
+        .mockResolvedValue([heldOrder('order-1', '2026-09-19T10:00:00.000Z')]),
+      countHeldByOrg: jest.fn().mockResolvedValue(1),
+    }).listByOrg('org-1', {});
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'order-1',
+      order_id: 'order-1',
+      status: 'awaiting_start',
+      order_number: '#order-1',
+      customer_name: 'Ahmed Ali',
+      total_price: '750.00',
+    });
+    // Nothing has been sent, so there is nothing to cancel or retry.
+    expect(result.data[0].capabilities).toEqual([]);
+    expect(result.total_count).toBe(1);
+  });
+
+  it('interleaves held orders with verifications by recency', async () => {
+    const result = await service({
+      findByOrg: jest
+        .fn()
+        .mockResolvedValue([
+          verification('ver-1', '2026-09-19T12:00:00.000Z'),
+          verification('ver-2', '2026-09-19T08:00:00.000Z'),
+        ]),
+      countByOrg: jest.fn().mockResolvedValue(2),
+      findHeldByOrg: jest
+        .fn()
+        .mockResolvedValue([heldOrder('order-1', '2026-09-19T10:00:00.000Z')]),
+      countHeldByOrg: jest.fn().mockResolvedValue(1),
+    }).listByOrg('org-1', {});
+
+    expect(result.data.map((row) => row.id)).toEqual([
+      'ver-1',
+      'order-1',
+      'ver-2',
+    ]);
+    expect(result.total_count).toBe(3);
+  });
+
+  it('counts both streams behind one total', async () => {
+    const result = await service({
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(12),
+      findHeldByOrg: jest.fn().mockResolvedValue([]),
+      countHeldByOrg: jest.fn().mockResolvedValue(30),
+    }).listByOrg('org-1', {});
+
+    expect(result.total_count).toBe(42);
+  });
+
+  it('reads only held orders when the filter asks for awaiting_start', async () => {
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(0),
+      findHeldByOrg: jest.fn().mockResolvedValue([]),
+      countHeldByOrg: jest.fn().mockResolvedValue(0),
+    };
+
+    await service(repo).listByOrg('org-1', { status: 'awaiting_start' });
+
+    expect(repo.findByOrg).not.toHaveBeenCalled();
+    expect(repo.findHeldByOrg).toHaveBeenCalled();
+  });
+
+  it('skips the held stream when the filter names only stored statuses', async () => {
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(0),
+      findHeldByOrg: jest.fn().mockResolvedValue([]),
+      countHeldByOrg: jest.fn().mockResolvedValue(0),
+    };
+
+    await service(repo).listByOrg('org-1', { status: 'confirmed' });
+
+    expect(repo.findHeldByOrg).not.toHaveBeenCalled();
+    expect(repo.findByOrg).toHaveBeenCalledWith(
+      'org-1',
+      ['confirmed'],
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('passes the import batch filter to both streams', async () => {
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue([]),
+      countByOrg: jest.fn().mockResolvedValue(0),
+      findHeldByOrg: jest.fn().mockResolvedValue([]),
+      countHeldByOrg: jest.fn().mockResolvedValue(0),
+    };
+    const importBatchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+
+    await service(repo).listByOrg('org-1', { importBatchId });
+
+    expect(repo.findByOrg).toHaveBeenCalledWith(
+      'org-1',
+      undefined,
+      expect.anything(),
+      expect.objectContaining({ importBatchId }),
+    );
+    expect(repo.findHeldByOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.anything(),
+      expect.objectContaining({ importBatchId }),
+    );
+    // The total has to describe the same filtered set as the rows.
+    expect(repo.countByOrg).toHaveBeenCalledWith(
+      'org-1',
+      undefined,
+      expect.anything(),
+      importBatchId,
+    );
+    expect(repo.countHeldByOrg).toHaveBeenCalledWith(
+      'org-1',
+      expect.anything(),
+      importBatchId,
+    );
+  });
+
+  it('still refuses a status that is neither stored nor a hold state', async () => {
+    await expect(
+      service({
+        findByOrg: jest.fn(),
+        countByOrg: jest.fn(),
+      }).listByOrg('org-1', { status: 'not_a_status' }),
+    ).rejects.toThrow(/Invalid status filter/);
+  });
+
+  it('pages the merged stream and withholds the over-fetched row', async () => {
+    const verifications = Array.from({ length: 2 }, (_, index) =>
+      verification(`ver-${index}`, `2026-09-19T1${index}:00:00.000Z`),
+    );
+    const held = Array.from({ length: 2 }, (_, index) =>
+      heldOrder(`order-${index}`, `2026-09-19T0${index}:00:00.000Z`),
+    );
+
+    const result = await service({
+      findByOrg: jest.fn().mockResolvedValue(verifications),
+      countByOrg: jest.fn().mockResolvedValue(2),
+      findHeldByOrg: jest.fn().mockResolvedValue(held),
+      countHeldByOrg: jest.fn().mockResolvedValue(2),
+    }).listByOrg('org-1', { limit: 3 });
+
+    expect(result.data).toHaveLength(3);
+    expect(result.next_cursor).not.toBeNull();
   });
 });

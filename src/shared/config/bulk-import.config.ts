@@ -23,6 +23,8 @@ export interface BulkImportConfig {
   parseTimeoutMs: number;
   /** Rows whose order date is older than this are excluded, not confirmed. */
   maxOrderAgeDays: number;
+  /** Hours a committed batch may wait before its start deadline passes. */
+  startWindowHours: number;
 }
 
 interface IntegerSetting {
@@ -83,6 +85,13 @@ const INTEGER_SETTINGS: readonly IntegerSetting[] = [
     min: 1,
     max: 90,
   },
+  {
+    key: 'BULK_IMPORT_START_WINDOW_HOURS',
+    field: 'startWindowHours',
+    fallback: 72,
+    min: 1,
+    max: 720,
+  },
 ];
 
 export function parseBulkImportConfig(
@@ -104,6 +113,7 @@ export function parseBulkImportConfig(
     maxUncompressedBytes: 0,
     parseTimeoutMs: 0,
     maxOrderAgeDays: 0,
+    startWindowHours: 0,
   };
   for (const setting of INTEGER_SETTINGS) {
     const raw = read(setting.key);

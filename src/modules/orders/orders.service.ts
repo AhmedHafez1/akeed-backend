@@ -23,6 +23,7 @@ import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 import { MANUAL_ORDER_SOURCE_CODES } from '../order-ingestion/standalone-source-resolver';
 import { ManualOrderChannelAdapter } from './manual-order.channel-adapter';
+import { normalizeIdempotencyKey } from '../../shared/validation/idempotency-key';
 import type {
   CreateManualOrderDto,
   CreateManualOrderResponseDto,
@@ -34,6 +35,16 @@ import type {
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { integrations } from '../../infrastructure/database/schema';
+
+/**
+ * The codes the manual endpoint has always answered a bad Idempotency-Key
+ * with. The format itself is shared; only these names are per-channel, so
+ * existing clients keep switching on the same values.
+ */
+const MANUAL_ORDER_IDEMPOTENCY_CODES = {
+  required: 'MANUAL_ORDER_IDEMPOTENCY_KEY_REQUIRED',
+  invalid: 'MANUAL_ORDER_VALIDATION_FAILED',
+};
 
 /**
  * Payment signals captured when the order was ingested.
@@ -74,7 +85,10 @@ export class OrdersService {
     payload: CreateManualOrderDto,
   ): Promise<CreateManualOrderResponseDto> {
     this.ingestion.assertWritableRole(user, MANUAL_ORDER_SOURCE_CODES);
-    const idempotencyKey = this.normalizeIdempotencyKey(idempotencyHeader);
+    const idempotencyKey = normalizeIdempotencyKey(
+      idempotencyHeader,
+      MANUAL_ORDER_IDEMPOTENCY_CODES,
+    );
     const customerPhone = this.normalizePhone(payload.customerPhone);
     const source = await this.ingestion.resolveWritableSource(
       user,
@@ -314,36 +328,6 @@ export class OrdersService {
       code: denial,
       reason: denial,
     });
-  }
-
-  private normalizeIdempotencyKey(value: string | undefined): string {
-    const normalized = value?.trim();
-    if (!normalized) {
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Idempotency-Key header is required.',
-        code: 'MANUAL_ORDER_IDEMPOTENCY_KEY_REQUIRED',
-        fieldErrors: { idempotencyKey: 'Idempotency-Key header is required.' },
-      });
-    }
-    if (
-      normalized.length < 8 ||
-      normalized.length > 128 ||
-      !/^[A-Za-z0-9._:-]+$/.test(normalized)
-    ) {
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Idempotency-Key header is invalid.',
-        code: 'MANUAL_ORDER_VALIDATION_FAILED',
-        fieldErrors: {
-          idempotencyKey:
-            'Use 8-128 letters, numbers, dots, underscores, colons, or hyphens.',
-        },
-      });
-    }
-    return normalized;
   }
 
   private normalizePhone(value: string): string {

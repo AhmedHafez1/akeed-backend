@@ -3,6 +3,8 @@ import {
   ManualOrderAcceptanceStateError,
   ManualOrderIngestionRepository,
   ManualOrderPayloadConflictError,
+  type AcceptanceRowResult,
+  type ManualOrderAcceptanceInput,
   type ManualOrderAcceptanceResult,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
@@ -10,6 +12,7 @@ import {
   buildStandaloneOrderEnvelope,
   type CanonicalOrderInput,
   type StandaloneIngestionChannel,
+  type StandaloneOrderEnvelope,
 } from '../../shared/commerce/standalone-order-envelope';
 import {
   buildBackendLog,
@@ -32,6 +35,9 @@ import {
   type StandaloneSourceCodeMap,
 } from './standalone-source-resolver';
 import type {
+  AcceptManyInput,
+  AcceptManyOptions,
+  AcceptManyRowResult,
   AcceptOneOptions,
   AcceptOneResult,
   StandaloneIngestionContext,
@@ -92,42 +98,21 @@ export class StandaloneOrderIngestionService {
   ): Promise<AcceptOneResult> {
     const { channel } = options;
     const logPrefix = LOG_ACTION_PREFIX[channel];
-    const { canonicalOrder, submissionFingerprint, rawPayload } =
-      buildStandaloneOrderEnvelope({
-        ingestionType: channel,
-        order: input,
-        extras: options.envelopeExtras,
-      });
+    const envelope = buildStandaloneOrderEnvelope({
+      ingestionType: channel,
+      order: input,
+      extras: options.envelopeExtras,
+    });
 
     let acceptance: ManualOrderAcceptanceResult;
     try {
-      acceptance = await this.acceptance.accept({
-        event: {
-          idempotencyKey: namespaceIdempotencyKey(
-            channel,
-            options.idempotencyKey,
-          ),
-          storeDomain: ctx.source.platformStoreUrl,
-          orgId: ctx.orgId,
-          integrationId: ctx.source.id,
-          rawPayload,
-          submissionFingerprint,
-          ...(options.hold ? { hold: options.hold } : {}),
-        },
-        order: {
-          orgId: ctx.orgId,
-          integrationId: ctx.source.id,
-          externalOrderId: canonicalOrder.externalOrderId,
-          orderNumber: canonicalOrder.orderNumber,
-          customerPhone: canonicalOrder.customerPhone,
-          customerName: canonicalOrder.customerName,
-          totalPrice: canonicalOrder.totalPrice,
-          currency: canonicalOrder.currency,
-          paymentMethod: canonicalOrder.paymentMethod,
-          rawPayload,
-          isTest: false,
-        },
-      });
+      acceptance = await this.acceptance.accept(
+        this.toAcceptanceInput(ctx, envelope, {
+          channel,
+          idempotencyKey: options.idempotencyKey,
+          hold: options.hold,
+        }),
+      );
     } catch (error) {
       if (error instanceof ManualOrderPayloadConflictError) {
         throw new StandaloneIngestionConflictError();
@@ -249,6 +234,135 @@ export class StandaloneOrderIngestionService {
       ...(verificationId ? { verificationId } : {}),
       duplicate: acceptance.duplicate,
       held: false,
+    };
+  }
+
+  /**
+   * Accept a batch of orders, held, in one command.
+   *
+   * The batch sibling of `acceptOne`: same envelope, same fingerprint, same
+   * acceptance core, and no dispatch at all. Results come back in input order
+   * so the caller can pair them with its own rows without matching on ids.
+   */
+  async acceptMany(
+    ctx: StandaloneIngestionContext,
+    inputs: AcceptManyInput[],
+    options: AcceptManyOptions,
+  ): Promise<AcceptManyRowResult[]> {
+    const { channel, hold } = options;
+    const logPrefix = LOG_ACTION_PREFIX[channel];
+    const startedAt = Date.now();
+
+    const acceptanceInputs = inputs.map((input) =>
+      this.toAcceptanceInput(
+        ctx,
+        buildStandaloneOrderEnvelope({
+          ingestionType: channel,
+          order: input.order,
+          extras: input.envelopeExtras,
+        }),
+        { channel, idempotencyKey: input.idempotencyKey, hold },
+      ),
+    );
+
+    let accepted: AcceptanceRowResult[];
+    try {
+      accepted = await this.acceptance.acceptMany(acceptanceInputs, { hold });
+    } catch (error) {
+      if (error instanceof ManualOrderPayloadConflictError) {
+        throw new StandaloneIngestionConflictError();
+      }
+      this.logger.error(
+        buildBackendLog(StandaloneOrderIngestionService.name, {
+          action: `${logPrefix}-accept-chunk`,
+          outcome: 'failure',
+          channel,
+          orgId: ctx.orgId,
+          integrationId: ctx.source.id,
+          holdGroupId: hold.groupId,
+          rows: inputs.length,
+          reason:
+            error instanceof ManualOrderAcceptanceStateError
+              ? 'acceptance_state_invalid'
+              : 'database_failure',
+          ...normalizeError(error),
+        }),
+      );
+      throw new StandaloneIngestionAcceptanceError();
+    }
+
+    const results: AcceptManyRowResult[] = accepted.map((row) =>
+      row.status === 'accepted'
+        ? {
+            status: 'accepted' as const,
+            orderId: row.order.id,
+            eventId: row.eventId,
+            duplicate: row.duplicate,
+          }
+        : { status: 'already_imported' as const },
+    );
+
+    this.logger.log(
+      buildBackendLog(StandaloneOrderIngestionService.name, {
+        action: `${logPrefix}-accept-chunk`,
+        outcome: 'success',
+        channel,
+        orgId: ctx.orgId,
+        integrationId: ctx.source.id,
+        holdGroupId: hold.groupId,
+        rows: inputs.length,
+        accepted: results.filter((row) => row.status === 'accepted').length,
+        alreadyImported: results.filter(
+          (row) => row.status === 'already_imported',
+        ).length,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
+    return results;
+  }
+
+  /**
+   * The one place an envelope becomes rows for the acceptance repository.
+   *
+   * Shared by `acceptOne` and `acceptMany` so a single order and a batch row
+   * can never drift in what they persist -- only the `hold` differs.
+   */
+  private toAcceptanceInput(
+    ctx: StandaloneIngestionContext,
+    envelope: StandaloneOrderEnvelope,
+    options: {
+      channel: StandaloneIngestionChannel;
+      idempotencyKey: string;
+      hold?: { groupId: string };
+    },
+  ): ManualOrderAcceptanceInput {
+    const { canonicalOrder, submissionFingerprint, rawPayload } = envelope;
+    return {
+      event: {
+        idempotencyKey: namespaceIdempotencyKey(
+          options.channel,
+          options.idempotencyKey,
+        ),
+        storeDomain: ctx.source.platformStoreUrl,
+        orgId: ctx.orgId,
+        integrationId: ctx.source.id,
+        rawPayload,
+        submissionFingerprint,
+        ...(options.hold ? { hold: options.hold } : {}),
+      },
+      order: {
+        orgId: ctx.orgId,
+        integrationId: ctx.source.id,
+        externalOrderId: canonicalOrder.externalOrderId,
+        orderNumber: canonicalOrder.orderNumber,
+        customerPhone: canonicalOrder.customerPhone,
+        customerName: canonicalOrder.customerName,
+        totalPrice: canonicalOrder.totalPrice,
+        currency: canonicalOrder.currency,
+        paymentMethod: canonicalOrder.paymentMethod,
+        rawPayload,
+        isTest: false,
+      },
     };
   }
 }

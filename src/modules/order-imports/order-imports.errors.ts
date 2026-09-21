@@ -23,6 +23,9 @@ const STATUS: Record<OrderImportErrorCode, HttpStatus> = {
   IMPORT_BATCH_EXPIRED: HttpStatus.GONE,
   IMPORT_MAPPING_INCOMPLETE: HttpStatus.UNPROCESSABLE_ENTITY,
   IMPORT_VALIDATION_FAILED: HttpStatus.BAD_REQUEST,
+  IMPORT_IDEMPOTENCY_KEY_REQUIRED: HttpStatus.BAD_REQUEST,
+  IMPORT_IDEMPOTENCY_CONFLICT: HttpStatus.CONFLICT,
+  IMPORT_NOTHING_TO_IMPORT: HttpStatus.CONFLICT,
 };
 
 export type OrderImportErrorCode =
@@ -36,7 +39,10 @@ export type OrderImportErrorCode =
   | 'IMPORT_BATCH_STATE_CONFLICT'
   | 'IMPORT_BATCH_EXPIRED'
   | 'IMPORT_MAPPING_INCOMPLETE'
-  | 'IMPORT_VALIDATION_FAILED';
+  | 'IMPORT_VALIDATION_FAILED'
+  | 'IMPORT_IDEMPOTENCY_KEY_REQUIRED'
+  | 'IMPORT_IDEMPOTENCY_CONFLICT'
+  | 'IMPORT_NOTHING_TO_IMPORT';
 
 /** Merchant-facing English copy; the frontend translates by `code`. */
 export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
@@ -61,6 +67,10 @@ export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
     'This import expired after 24 hours. Upload the file again.',
   IMPORT_MAPPING_INCOMPLETE: 'Finish matching the columns before continuing.',
   IMPORT_VALIDATION_FAILED: 'The request is not valid.',
+  IMPORT_IDEMPOTENCY_KEY_REQUIRED: 'Idempotency-Key header is required.',
+  IMPORT_IDEMPOTENCY_CONFLICT:
+    'That Idempotency-Key was already used for a different import.',
+  IMPORT_NOTHING_TO_IMPORT: 'There are no ready orders to import.',
 };
 
 /**

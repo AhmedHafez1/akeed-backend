@@ -7,6 +7,7 @@ import {
   PURCHASE_CURRENCY,
   type PurchasePricing,
 } from './billing.types';
+import { IDEMPOTENCY_KEY_PATTERN } from '../../shared/validation/idempotency-key';
 
 /**
  * Pure decisions for the merchant billing API: what a purchase costs, who may
@@ -135,8 +136,6 @@ export function buildRequestHash(input: {
     )
     .digest('hex');
 }
-
-const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
 /** Mirrors the manual-order rule so merchants meet one format, not two. */
 export function normalizeIdempotencyKey(value: string | undefined): string {
