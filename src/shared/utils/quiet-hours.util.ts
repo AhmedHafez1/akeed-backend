@@ -199,6 +199,33 @@ export function adjustForQuietHours(
 }
 
 /**
+ * The next UTC instant, strictly after `from`, at which the quiet window
+ * begins. `null` when quiet hours are disabled or invalid. Used to project a
+ * sending span forward; a caller already inside the window should use
+ * `adjustForQuietHours` to find where it ends.
+ */
+export function nextQuietHoursStart(
+  from: Date,
+  config: QuietHoursConfig,
+): Date | null {
+  if (!config.enabled) return null;
+  const startMin = parseHHmm(config.start);
+  const endMin = parseHHmm(config.end);
+  if (startMin === null || endMin === null) return null;
+  if (startMin === endMin) return null;
+
+  const timezone = config.timezone?.trim() || DEFAULT_TIMEZONE;
+  try {
+    const sameDayStart = utcForLocalTimeOnSameDay(from, timezone, startMin);
+    return sameDayStart.getTime() > from.getTime()
+      ? sameDayStart
+      : new Date(sameDayStart.getTime() + 24 * 60 * MS_PER_MINUTE);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Convenience helper for callers that only need to know whether `dueAt` is
  * currently inside the quiet window.
  */
@@ -219,4 +246,19 @@ export function isInsideQuietHours(
   } catch {
     return false;
   }
+}
+
+/** The quiet-hours settings stored on a source row, as the helpers take them. */
+export function quietHoursConfigOf(source: {
+  quietHoursEnabled: boolean | null;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  timezone: string | null;
+}): QuietHoursConfig {
+  return {
+    enabled: source.quietHoursEnabled === true,
+    start: source.quietHoursStart,
+    end: source.quietHoursEnd,
+    timezone: source.timezone,
+  };
 }

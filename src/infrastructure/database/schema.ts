@@ -1882,10 +1882,18 @@ export const orderImportBatches = pgTable(
     attestationVersion: text('attestation_version'),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' }),
     pausedReason: text('paused_reason'),
+    /** While a releasing batch waits out quiet hours: when sending resumes. */
+    quietHoursUntil: timestamp('quiet_hours_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true, mode: 'string' }),
     completedAt: timestamp('completed_at', {
       withTimezone: true,
       mode: 'string',
     }),
+    /** Append-only transition log (US-04.6-07); written in the same UPDATE. */
+    events: jsonb().notNull().default([]),
     expiresAt: timestamp('expires_at', {
       withTimezone: true,
       mode: 'string',
@@ -1918,6 +1926,10 @@ export const orderImportBatches = pgTable(
       table.orgId,
       table.commitIdempotencyKey,
     ),
+    unique('order_import_batches_start_key').on(
+      table.orgId,
+      table.startIdempotencyKey,
+    ),
     unique('order_import_batches_short_code_key').on(
       table.orgId,
       table.shortCode,
@@ -1927,6 +1939,9 @@ export const orderImportBatches = pgTable(
       table.orgId.asc().nullsLast().op('uuid_ops'),
       table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
     ),
+    index('idx_order_import_batches_releasing')
+      .using('btree', table.orgId.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(status = 'releasing'::text)`),
     index('idx_order_import_batches_org_sha').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),

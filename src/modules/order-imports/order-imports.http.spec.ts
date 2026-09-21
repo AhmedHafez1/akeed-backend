@@ -33,6 +33,9 @@ import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
+import { OrderImportReleaseService } from './release/order-import-release.service';
+import { OrderImportReleaseRepository } from '../../infrastructure/database/repositories/order-import-release.repository';
+import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { orderImportMulterOptions } from './order-imports.module';
 import { OrderImportsService } from './order-imports.service';
 import { ImportFileParser } from './parsers/import-file-parser';
@@ -99,6 +102,19 @@ describe('order-import routes over HTTP', () => {
     },
   };
 
+  const releases = {
+    holdCounts: jest.fn(),
+  };
+  const ordersRepository = {
+    countLifecycleByImportBatch: jest.fn(),
+  };
+  const release = {
+    quote: jest.fn(),
+    start: jest.fn(),
+    stop: jest.fn(),
+    resume: jest.fn(),
+  };
+
   beforeAll(async () => {
     // The module's own controller, guards, parser and multer options, without
     // the database and auth modules behind them.
@@ -135,6 +151,9 @@ describe('order-import routes over HTTP', () => {
           },
         },
         { provide: OrderImportsRepository, useValue: repository },
+        { provide: OrderImportReleaseRepository, useValue: releases },
+        { provide: OrdersRepository, useValue: ordersRepository },
+        { provide: OrderImportReleaseService, useValue: release },
         { provide: OrderImportCommitProducer, useValue: commitProducer },
         {
           provide: StandaloneOrderIngestionService,
@@ -169,6 +188,7 @@ describe('order-import routes over HTTP', () => {
     jest.clearAllMocks();
     bulkImport = parseBulkImportConfig({
       STANDALONE_BULK_IMPORT_ENABLED: 'true',
+      BULK_IMPORT_QUOTE_SECRET: 'test-quote-secret-0123456789abcdef',
     });
     // A fresh user per test keeps the per-user upload throttle independent.
     currentUser = {
@@ -1248,6 +1268,107 @@ describe('order-import routes over HTTP', () => {
 
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'IMPORT_DISABLED' });
+    });
+  });
+  describe('start checkpoint routes (US-04.6-07)', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const route = (name: string) => `/api/order-imports/${batchId}/${name}`;
+
+    it('serves the quote to an owner with the session source', async () => {
+      release.quote.mockResolvedValue({ orders: 3, blockers: [] });
+
+      const response = await request(server()).get(route('start-quote'));
+
+      expect(response.status).toBe(200);
+      expect(release.quote).toHaveBeenCalledWith(
+        currentUser,
+        expect.objectContaining({ id: standalone.id }),
+        batchId,
+      );
+    });
+
+    it('passes the key and the validated body to start and answers 202', async () => {
+      release.start.mockResolvedValue({ batchId, status: 'releasing' });
+
+      const response = await request(server())
+        .post(route('start'))
+        .set('Idempotency-Key', `start-${batchId}`)
+        .send({
+          attestationVersion: 'bulk-import-consent-v1',
+          quoteToken: 'q.t',
+        });
+
+      expect(response.status).toBe(202);
+      expect(release.start).toHaveBeenCalledWith(
+        currentUser,
+        expect.objectContaining({ id: standalone.id }),
+        batchId,
+        `start-${batchId}`,
+        { attestationVersion: 'bulk-import-consent-v1', quoteToken: 'q.t' },
+      );
+    });
+
+    it('answers IMPORT_VALIDATION_FAILED for an unknown body property', async () => {
+      const response = await request(server())
+        .post(route('start'))
+        .set('Idempotency-Key', `start-${batchId}`)
+        .send({ attestationVersion: 'bulk-import-consent-v1', orders: 5 });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ code: 'IMPORT_VALIDATION_FAILED' });
+      expect(release.start).not.toHaveBeenCalled();
+    });
+
+    it('answers stop with the counts and resume with the batch', async () => {
+      release.stop.mockResolvedValue({
+        batchId,
+        status: 'stopped',
+        released: 2,
+        withdrawn: 1,
+      });
+      release.resume.mockResolvedValue({ batchId, status: 'releasing' });
+
+      const stopped = await request(server()).post(route('stop'));
+      const resumed = await request(server()).post(route('resume'));
+
+      expect(stopped.status).toBe(200);
+      expect(stopped.body).toMatchObject({ released: 2, withdrawn: 1 });
+      expect(resumed.status).toBe(200);
+    });
+
+    it.each([
+      ['get', 'start-quote'],
+      ['post', 'start'],
+      ['post', 'stop'],
+      ['post', 'resume'],
+    ] as const)('refuses a viewer on %s %s', async (method, name) => {
+      currentUser = { ...currentUser, role: 'viewer' };
+
+      const response = await request(server())[method](route(name));
+
+      expect(response.status).toBe(403);
+      expect(release.quote).not.toHaveBeenCalled();
+      expect(release.start).not.toHaveBeenCalled();
+      expect(release.stop).not.toHaveBeenCalled();
+      expect(release.resume).not.toHaveBeenCalled();
+    });
+
+    it('hides the start routes while the flag is off', async () => {
+      bulkImport = parseBulkImportConfig({});
+
+      const response = await request(server()).post(route('start'));
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ code: 'IMPORT_DISABLED' });
+    });
+
+    it('answers a malformed id with not-found', async () => {
+      const response = await request(server()).post(
+        '/api/order-imports/not-a-uuid/stop',
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ code: 'IMPORT_BATCH_NOT_FOUND' });
     });
   });
 });

@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { OrderImportsRepository } from '../../infrastructure/database/repositories/order-imports.repository';
+import { ConfigService } from '@nestjs/config';
+import { OrderImportReleaseRepository } from '../../infrastructure/database/repositories/order-import-release.repository';
+import {
+  OrderImportsRepository,
+  type BatchDetailRecord,
+} from '../../infrastructure/database/repositories/order-imports.repository';
+import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
+import { readBulkImportConfig } from '../../shared/config/bulk-import.config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { canWriteOrganization } from '../auth/organization-role';
 import type {
@@ -10,12 +17,24 @@ import type {
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { orderImportError } from './order-imports.errors';
 import type { RowIssue } from './parsers/grid.types';
+import type { OrderImportReleaseStateDto } from './dto/order-import-release.dto';
+import { lifecycleBuckets } from './release/lifecycle-buckets';
 
 /** Rows the page shows as samples, and the rows the matcher reads. */
 const SAMPLE_ROW_COUNT = 5;
 const MATCHER_ROW_COUNT = 20;
 /** The duplicate-file window, the same 24 hours as at upload. */
 const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Statuses that own held (or once-held) orders and so have release progress. */
+const COMMITTED_STATUSES = new Set([
+  'awaiting_start',
+  'releasing',
+  'paused',
+  'completed',
+  'stopped',
+  'not_started',
+  'failed',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -55,6 +74,9 @@ export class OrderImportDetailService {
   constructor(
     private readonly repository: OrderImportsRepository,
     private readonly mapping: OrderImportMappingService,
+    private readonly releases: OrderImportReleaseRepository,
+    private readonly orders: OrdersRepository,
+    private readonly config: ConfigService,
   ) {}
 
   async listDrafts(
@@ -134,7 +156,41 @@ export class OrderImportDetailService {
       oldOrderCount,
       ...mapping,
       ...(duplicateFileOf ? { duplicateFileOf } : {}),
+      ...(COMMITTED_STATUSES.has(batch.status)
+        ? await this.releaseState(user.orgId, batch)
+        : {}),
       permissions: { canEdit: canWriteOrganization(user.role) },
+    };
+  }
+
+  /**
+   * Live progress for the releasing, paused and stopped panels (AC12): hold
+   * states from the batch's events and lifecycle counts from the same
+   * projection as the verifications table, each in one grouped query.
+   */
+  private async releaseState(
+    orgId: string,
+    batch: BatchDetailRecord,
+  ): Promise<OrderImportReleaseStateDto> {
+    const [hold, lifecycle] = await Promise.all([
+      this.releases.holdCounts(orgId, batch.batchId),
+      this.orders.countLifecycleByImportBatch(orgId, batch.batchId),
+    ]);
+    return {
+      committedAt: batch.committedAt,
+      startDeadlineAt: batch.startDeadlineAt,
+      startedAt: batch.startedAt,
+      pausedReason: batch.pausedReason,
+      quietHoursUntil: batch.quietHoursUntil,
+      stoppedAt: batch.stoppedAt,
+      completedAt: batch.completedAt,
+      ratePerMinute: readBulkImportConfig(this.config).releasePerMinute,
+      storeTimezone: batch.storeTimezone,
+      release: {
+        total: hold.held + hold.released + hold.withdrawn,
+        ...hold,
+      },
+      lifecycle: lifecycleBuckets(lifecycle),
     };
   }
 }

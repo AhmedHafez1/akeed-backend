@@ -25,11 +25,22 @@ export interface BulkImportConfig {
   maxOrderAgeDays: number;
   /** Hours a committed batch may wait before its start deadline passes. */
   startWindowHours: number;
+  /**
+   * First messages released per minute per organization, across all of its
+   * releasing batches. Protects the shared sender's quality rating; 20 is an
+   * internal pilot default, not a Meta-published threshold.
+   */
+  releasePerMinute: number;
+  /** Signs start quotes so a start can prove what the merchant was shown. */
+  quoteSecret: string;
 }
+
+/** Shortest accepted quote-signing secret (256 bits of hex). */
+export const BULK_IMPORT_QUOTE_SECRET_MIN_LENGTH = 32;
 
 interface IntegerSetting {
   key: string;
-  field: Exclude<keyof BulkImportConfig, 'enabled'>;
+  field: Exclude<keyof BulkImportConfig, 'enabled' | 'quoteSecret'>;
   fallback: number;
   min: number;
   max: number;
@@ -92,6 +103,13 @@ const INTEGER_SETTINGS: readonly IntegerSetting[] = [
     min: 1,
     max: 720,
   },
+  {
+    key: 'BULK_IMPORT_RELEASE_PER_MINUTE',
+    field: 'releasePerMinute',
+    fallback: 20,
+    min: 1,
+    max: 120,
+  },
 ];
 
 export function parseBulkImportConfig(
@@ -114,7 +132,18 @@ export function parseBulkImportConfig(
     parseTimeoutMs: 0,
     maxOrderAgeDays: 0,
     startWindowHours: 0,
+    releasePerMinute: 0,
+    quoteSecret: read('BULK_IMPORT_QUOTE_SECRET'),
   };
+  // Only the start endpoint signs, but a switched-on import that cannot sign
+  // a quote would fail on the merchant's first click, so it fails at boot.
+  if (
+    (parsed.enabled || parsed.quoteSecret) &&
+    parsed.quoteSecret.length < BULK_IMPORT_QUOTE_SECRET_MIN_LENGTH
+  )
+    errors.push(
+      `BULK_IMPORT_QUOTE_SECRET must be at least ${BULK_IMPORT_QUOTE_SECRET_MIN_LENGTH} characters when bulk import is enabled.`,
+    );
   for (const setting of INTEGER_SETTINGS) {
     const raw = read(setting.key);
     const value = raw ? Number(raw) : setting.fallback;

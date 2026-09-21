@@ -209,6 +209,9 @@ Roll out read-only first (switch off), name operators only after a recovery dril
 | `BULK_IMPORT_MAX_UNCOMPRESSED_BYTES` | Total inflated size of an XLSX package, 1–50 MB (default 50 MB). Counted while inflating, so a zip bomb is stopped early: `422 IMPORT_FILE_UNREADABLE`. |
 | `BULK_IMPORT_PARSE_TIMEOUT_MS` | Budget for reading one file, 1000–20000 (default 20000). Exceeding it answers `422 IMPORT_FILE_UNREADABLE`. |
 | `BULK_IMPORT_MAX_ORDER_AGE_DAYS` | Oldest order date an import confirms, in days before today in the store timezone, 1–90 (default 7). Older rows are `excluded` with `ORDER_TOO_OLD`. Pilot default; revisit against pilot data. |
+| `BULK_IMPORT_START_WINDOW_HOURS` | Hours a committed import waits for the merchant to start it, 1–720 (default 72). After it the hourly `import.expire` job withdraws the held orders and marks the batch `not_started`. |
+| `BULK_IMPORT_RELEASE_PER_MINUTE` | First messages an organization's releasing imports send per minute, shared by all of them, 1–120 (default 20). The release job ticks every 30 s and releases `ceil(rate × 0.5)` held orders per tick. Pilot default, not a Meta threshold; revisit after the quality-rating review (US-04.6-10). Manual and Shopify orders never pass through it. |
+| `BULK_IMPORT_QUOTE_SECRET` | HMAC secret that signs the start quote (`GET /:id/start-quote`), so `POST /:id/start` can prove the count and balance the merchant saw. At least 32 characters; required while `STANDALONE_BULK_IMPORT_ENABLED=true`, otherwise startup fails. Rotating it only invalidates quotes younger than 10 minutes (`409 IMPORT_QUOTE_STALE`, the dialog re-quotes). |
 
 ## WhatsApp (Meta) Configuration
 

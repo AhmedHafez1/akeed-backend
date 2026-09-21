@@ -21,6 +21,7 @@ import { StandaloneOrganizationProvisioningRepository } from './repositories/sta
 import { ManualOrderIngestionRepository } from './repositories/manual-order-ingestion.repository';
 import { VerificationMessageDispatchesRepository } from './repositories/verification-message-dispatches.repository';
 import { OrderImportsRepository } from './repositories/order-imports.repository';
+import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -45,6 +46,7 @@ import { OrderImportsRepository } from './repositories/order-imports.repository'
     ManualOrderIngestionRepository,
     VerificationMessageDispatchesRepository,
     OrderImportsRepository,
+    OrderImportReleaseRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -67,6 +69,7 @@ import { OrderImportsRepository } from './repositories/order-imports.repository'
     ManualOrderIngestionRepository,
     VerificationMessageDispatchesRepository,
     OrderImportsRepository,
+    OrderImportReleaseRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

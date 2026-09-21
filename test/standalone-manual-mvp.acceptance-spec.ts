@@ -15,6 +15,7 @@ import { OrdersController } from '../src/modules/orders/orders.controller';
 import { OrdersService } from '../src/modules/orders/orders.service';
 import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
 import { StandaloneSourceResolver } from '../src/modules/order-ingestion/standalone-source-resolver';
+import { StandaloneSendReadinessService } from '../src/modules/order-ingestion/standalone-send-readiness.service';
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { StandaloneManualOrderNormalizer } from '../src/modules/webhook-queue/normalizers/standalone-manual-order.normalizer';
 import { WebhookQueueProcessor } from '../src/modules/webhook-queue/webhook-queue.processor';
@@ -700,11 +701,9 @@ async function createHarness(): Promise<AcceptanceHarness> {
       new StandaloneSourceResolver(integrationsRepo as never),
     ),
     new PhoneService(),
-    billing,
-    creditEligibility,
+    new StandaloneSendReadinessService(billing, creditEligibility, eligibility),
     dispatcher as never,
     eventRepo as never,
-    eligibility,
   );
   const processor = new WebhookQueueProcessor(
     [new StandaloneManualOrderNormalizer()],

@@ -41,6 +41,11 @@ import {
   type OrderImportMappingResponseDto,
 } from './dto/order-import-mapping.dto';
 import {
+  StartOrderImportDto,
+  type OrderImportStartQuoteDto,
+  type OrderImportStopResponseDto,
+} from './dto/order-import-release.dto';
+import {
   ImportSource,
   OrderImportAccess,
 } from './guards/order-import-access.guard';
@@ -51,6 +56,7 @@ import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportUploadInterceptor } from './order-import-upload.interceptor';
 import { orderImportError } from './order-imports.errors';
+import { OrderImportReleaseService } from './release/order-import-release.service';
 import {
   OrderImportsService,
   type UploadedImportFile,
@@ -97,6 +103,7 @@ function importValidationPipe(expectedType: new () => object): ValidationPipe {
 const mappingValidationPipe = importValidationPipe(SaveOrderImportMappingDto);
 const rowsQueryPipe = importValidationPipe(ListOrderImportRowsQueryDto);
 const rowUpdatePipe = importValidationPipe(UpdateOrderImportRowDto);
+const startValidationPipe = importValidationPipe(StartOrderImportDto);
 const rowNumberPipe = new ParseIntPipe({
   exceptionFactory: () =>
     orderImportError('IMPORT_VALIDATION_FAILED', {
@@ -112,6 +119,7 @@ export class OrderImportsController {
     private readonly rows: OrderImportRowsService,
     private readonly detail: OrderImportDetailService,
     private readonly commit: OrderImportCommitService,
+    private readonly release: OrderImportReleaseService,
   ) {}
 
   @Post()
@@ -222,6 +230,64 @@ export class OrderImportsController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ): Promise<OrderImportBatchDetailDto> {
     return this.commit.commit(user, source, batchId, idempotencyKey);
+  }
+
+  /** What starting would send, cost and take, plus a signed quote token. */
+  @Get(':id/start-quote')
+  @OrderImportAccess('write')
+  startQuote(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+  ): Promise<OrderImportStartQuoteDto> {
+    return this.release.quote(user, source, batchId);
+  }
+
+  /**
+   * 202: the orders are released at the organization's pace in the
+   * background; `GET /:id` shows progress. The same key replays.
+   */
+  @Post(':id/start')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @OrderImportAccess('write')
+  startBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    // A plain object so the app-wide ValidationPipe skips it and this route's
+    // pipe answers with IMPORT_VALIDATION_FAILED.
+    @Body(startValidationPipe) body: object,
+  ): Promise<OrderImportBatchDetailDto> {
+    return this.release.start(
+      user,
+      source,
+      batchId,
+      idempotencyKey,
+      body as StartOrderImportDto,
+    );
+  }
+
+  @Post(':id/stop')
+  @HttpCode(HttpStatus.OK)
+  @OrderImportAccess('write')
+  stopBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+  ): Promise<OrderImportStopResponseDto> {
+    return this.release.stop(user, source, batchId);
+  }
+
+  @Post(':id/resume')
+  @HttpCode(HttpStatus.OK)
+  @OrderImportAccess('write')
+  resumeBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+  ): Promise<OrderImportBatchDetailDto> {
+    return this.release.resume(user, source, batchId);
   }
 
   @Delete(':id')

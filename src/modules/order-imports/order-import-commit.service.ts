@@ -7,13 +7,11 @@ import type { StandaloneSource } from '../order-ingestion/standalone-source-reso
 import type { OrderImportBatchDetailDto } from './dto/order-import.dto';
 import { OrderImportDetailService } from './order-import-detail.service';
 import { OrderImportCommitProducer } from './order-import-commit.producer';
-import { assertEditableDraft, orderImportError } from './order-imports.errors';
-
-/** Import keeps its own names for the two shared Idempotency-Key rejections. */
-const IMPORT_IDEMPOTENCY_CODES = {
-  required: 'IMPORT_IDEMPOTENCY_KEY_REQUIRED',
-  invalid: 'IMPORT_VALIDATION_FAILED',
-};
+import {
+  assertEditableDraft,
+  IMPORT_IDEMPOTENCY_CODES,
+  orderImportError,
+} from './order-imports.errors';
 
 @Injectable()
 export class OrderImportCommitService {

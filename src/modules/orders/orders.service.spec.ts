@@ -7,6 +7,7 @@ import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-numbe
 import { OrdersService } from './orders.service';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-resolver';
+import { StandaloneSendReadinessService } from '../order-ingestion/standalone-send-readiness.service';
 
 describe('OrdersService manual creation', () => {
   const source = {
@@ -54,6 +55,7 @@ describe('OrdersService manual creation', () => {
   const phone = { standardize: jest.fn<string, [string]>() };
   const creditEligibility = { resolveDenial: jest.fn() };
   const entitlements = {
+    accountingModeFor: jest.fn(() => 'periodic_plan'),
     evaluateAccess: jest.fn<
       { allowed: boolean; reason: string | null },
       [unknown, unknown]
@@ -110,11 +112,13 @@ describe('OrdersService manual creation', () => {
         new StandaloneSourceResolver(integrations as never),
       ),
       phone as never,
-      entitlements as never,
-      creditEligibility as never,
+      new StandaloneSendReadinessService(
+        entitlements as never,
+        creditEligibility as never,
+        orderEligibility as never,
+      ),
       dispatcher as never,
       webhookEvents as never,
-      orderEligibility as never,
     );
   });
 
@@ -530,6 +534,8 @@ describe('OrdersService manual verification lifecycle', () => {
       findByOrg: jest.fn().mockResolvedValue([integration]),
     };
     const billing = {
+      accountingModeFor: jest.fn(() => 'periodic_plan'),
+      evaluateAccess: jest.fn(() => ({ allowed: true, reason: null })),
       hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
       readEntitlement: jest.fn().mockResolvedValue({
         consumedCount: 12,
@@ -554,11 +560,13 @@ describe('OrdersService manual verification lifecycle', () => {
       orders as never,
       {} as never,
       {} as never,
-      billing as never,
-      { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
+      new StandaloneSendReadinessService(
+        billing as never,
+        { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
+        eligibility as never,
+      ),
       dispatcher as never,
       events as never,
-      eligibility as never,
     );
     return {
       service,

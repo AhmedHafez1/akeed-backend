@@ -119,6 +119,15 @@ export interface BatchDetailRecord {
   orderDateMax: string | null;
   createdAt: string;
   expiresAt: string;
+  committedAt: string | null;
+  startDeadlineAt: string | null;
+  startedAt: string | null;
+  pausedReason: string | null;
+  quietHoursUntil: string | null;
+  stoppedAt: string | null;
+  completedAt: string | null;
+  /** The source store's timezone, for release times and quiet hours. */
+  storeTimezone: string | null;
 }
 
 export interface StoredSampleRow {
@@ -461,8 +470,23 @@ export class OrderImportsRepository {
         orderDateMax: orderImportBatches.orderDateMax,
         createdAt: orderImportBatches.createdAt,
         expiresAt: orderImportBatches.expiresAt,
+        committedAt: orderImportBatches.committedAt,
+        startDeadlineAt: orderImportBatches.startDeadlineAt,
+        startedAt: orderImportBatches.startedAt,
+        pausedReason: orderImportBatches.pausedReason,
+        quietHoursUntil: orderImportBatches.quietHoursUntil,
+        stoppedAt: orderImportBatches.stoppedAt,
+        completedAt: orderImportBatches.completedAt,
+        storeTimezone: integrations.timezone,
       })
       .from(orderImportBatches)
+      .leftJoin(
+        integrations,
+        and(
+          eq(integrations.id, orderImportBatches.integrationId),
+          eq(integrations.orgId, orderImportBatches.orgId),
+        ),
+      )
       .where(
         and(
           eq(orderImportBatches.id, batchId),
@@ -1251,7 +1275,7 @@ export interface CommitRowLink {
  * than the error it throws; walking the chain is what makes the check work
  * against the real driver and not only against a hand-made error.
  */
-function isUniqueViolation(error: unknown): boolean {
+export function isUniqueViolation(error: unknown): boolean {
   for (
     let current = error;
     current;

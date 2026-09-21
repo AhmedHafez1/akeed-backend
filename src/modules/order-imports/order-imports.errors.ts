@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import type { ImportFileErrorCode } from './parsers/import-file.error';
 
 /**
@@ -26,7 +27,28 @@ const STATUS: Record<OrderImportErrorCode, HttpStatus> = {
   IMPORT_IDEMPOTENCY_KEY_REQUIRED: HttpStatus.BAD_REQUEST,
   IMPORT_IDEMPOTENCY_CONFLICT: HttpStatus.CONFLICT,
   IMPORT_NOTHING_TO_IMPORT: HttpStatus.CONFLICT,
+  IMPORT_ATTESTATION_REQUIRED: HttpStatus.UNPROCESSABLE_ENTITY,
+  IMPORT_QUOTE_STALE: HttpStatus.CONFLICT,
+  IMPORT_START_WINDOW_EXPIRED: HttpStatus.CONFLICT,
+  IMPORT_AUTO_VERIFY_DISABLED: HttpStatus.CONFLICT,
+  IMPORT_SETUP_INCOMPLETE: HttpStatus.CONFLICT,
+  IMPORT_PLAN_LIMIT_REACHED: HttpStatus.CONFLICT,
+  // The shared credit codes, answered as-is so the frontend reuses its
+  // existing creditErrors.* copy.
+  CREDIT_ACCOUNT_NOT_PROVISIONED: HttpStatus.CONFLICT,
+  CREDIT_ACCOUNT_SUSPENDED: HttpStatus.CONFLICT,
+  CREDIT_DEBT_OUTSTANDING: HttpStatus.CONFLICT,
+  INSUFFICIENT_CREDITS: HttpStatus.CONFLICT,
+  PAYMENT_PENDING_RECONCILIATION: HttpStatus.CONFLICT,
 };
+
+/** A reason the batch cannot start or resume right now (AC2). */
+export type ImportStartBlockerCode =
+  | 'IMPORT_AUTO_VERIFY_DISABLED'
+  | 'IMPORT_SETUP_INCOMPLETE'
+  | 'IMPORT_PLAN_LIMIT_REACHED'
+  | 'IMPORT_START_WINDOW_EXPIRED'
+  | CreditDenialCode;
 
 export type OrderImportErrorCode =
   | ImportFileErrorCode
@@ -42,7 +64,10 @@ export type OrderImportErrorCode =
   | 'IMPORT_VALIDATION_FAILED'
   | 'IMPORT_IDEMPOTENCY_KEY_REQUIRED'
   | 'IMPORT_IDEMPOTENCY_CONFLICT'
-  | 'IMPORT_NOTHING_TO_IMPORT';
+  | 'IMPORT_NOTHING_TO_IMPORT'
+  | 'IMPORT_ATTESTATION_REQUIRED'
+  | 'IMPORT_QUOTE_STALE'
+  | ImportStartBlockerCode;
 
 /** Merchant-facing English copy; the frontend translates by `code`. */
 export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
@@ -71,6 +96,28 @@ export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
   IMPORT_IDEMPOTENCY_CONFLICT:
     'That Idempotency-Key was already used for a different import.',
   IMPORT_NOTHING_TO_IMPORT: 'There are no ready orders to import.',
+  IMPORT_ATTESTATION_REQUIRED:
+    'Confirm the current customer-consent statement before starting.',
+  IMPORT_QUOTE_STALE:
+    'The count or balance changed since you reviewed it. Review the new summary and start again.',
+  IMPORT_START_WINDOW_EXPIRED:
+    'The time to start this import has passed. Upload the orders again.',
+  IMPORT_AUTO_VERIFY_DISABLED:
+    'Turn on automatic confirmation in Settings before starting.',
+  IMPORT_SETUP_INCOMPLETE: 'Complete Standalone setup before importing orders.',
+  IMPORT_PLAN_LIMIT_REACHED:
+    'Your plan does not have enough confirmations left for every order.',
+  CREDIT_ACCOUNT_NOT_PROVISIONED: 'Credit is not available for this action.',
+  CREDIT_ACCOUNT_SUSPENDED: 'Credit is not available for this action.',
+  CREDIT_DEBT_OUTSTANDING: 'Credit is not available for this action.',
+  INSUFFICIENT_CREDITS: 'Credit is not available for this action.',
+  PAYMENT_PENDING_RECONCILIATION: 'Credit is not available for this action.',
+};
+
+/** Import keeps its own names for the two shared Idempotency-Key rejections. */
+export const IMPORT_IDEMPOTENCY_CODES = {
+  required: 'IMPORT_IDEMPOTENCY_KEY_REQUIRED',
+  invalid: 'IMPORT_VALIDATION_FAILED',
 };
 
 /**

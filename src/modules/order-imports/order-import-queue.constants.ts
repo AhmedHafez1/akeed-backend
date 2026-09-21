@@ -24,3 +24,23 @@ export interface OrderImportCommitJob {
 export function orderImportCommitJobId(batchId: string): string {
   return `import-commit-${batchId}`;
 }
+
+/** One paced release tick for an organization (US-04.6-07). */
+export const ORDER_IMPORT_RELEASE_JOB = 'import.release';
+
+export interface OrderImportReleaseJob {
+  orgId: string;
+}
+
+/**
+ * The organization's release scheduler id. One per org, whatever the number
+ * of releasing batches, so every batch shares one rate budget.
+ */
+export function orderImportReleaseSchedulerId(orgId: string): string {
+  return `import-release-${orgId}`;
+}
+
+/** Withdraws batches whose start window lapsed (AC9). */
+export const ORDER_IMPORT_EXPIRE_JOB = 'import.expire';
+export const ORDER_IMPORT_EXPIRE_SCHEDULER = 'import-expire';
+export const ORDER_IMPORT_EXPIRE_EVERY_MS = 60 * 60_000;

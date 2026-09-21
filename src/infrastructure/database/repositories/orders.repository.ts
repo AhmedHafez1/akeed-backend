@@ -5,6 +5,7 @@ import { eq, and, inArray, lt, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   integrations,
+  orderImportRows,
   orders,
   verificationMessageDispatches,
   verifications,
@@ -229,6 +230,39 @@ export class OrdersRepository {
       .where(and(eq(orders.id, orderId), eq(orders.orgId, orgId)))
       .limit(1);
     return row;
+  }
+
+  /**
+   * How many of an import batch's orders sit in each dashboard lifecycle
+   * status, in one grouped query over the same projection the verifications
+   * table renders, so the batch page and the table never disagree.
+   */
+  async countLifecycleByImportBatch(
+    orgId: string,
+    batchId: string,
+  ): Promise<Array<{ status: string; count: number }>> {
+    const rows = await this.db
+      .select({
+        status: retryGuardStatus,
+        count: sql<number>`count(DISTINCT ${orders.id})::int`,
+      })
+      .from(orders)
+      .innerJoin(
+        orderImportRows,
+        and(
+          eq(orderImportRows.orderId, orders.id),
+          eq(orderImportRows.batchId, batchId),
+          eq(orderImportRows.orgId, orgId),
+        ),
+      )
+      .leftJoin(verifications, eq(verifications.orderId, orders.id))
+      .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
+      .where(eq(orders.orgId, orgId))
+      .groupBy(retryGuardStatus);
+    return rows.map((row) => ({
+      status: row.status,
+      count: Number(row.count),
+    }));
   }
 
   async findByOrgAndPhone(

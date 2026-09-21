@@ -107,6 +107,13 @@ export class BillingEntitlementService {
 
   getBillingPeriodStart = getBillingPeriodStart;
 
+  /** Which accounting system bills this source's new sends. */
+  accountingModeFor(
+    source: Pick<EntitlementSource, 'platformType'>,
+  ): UsageAccountingMode {
+    return this.accountingMode(source);
+  }
+
   private accountingMode(
     source: Pick<EntitlementSource, 'platformType'> | undefined,
   ): UsageAccountingMode {

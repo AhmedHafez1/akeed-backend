@@ -55,7 +55,10 @@ describe('OrderImportsService', () => {
   const config = {
     get: jest.fn((key: string) =>
       key === BULK_IMPORT_CONFIG
-        ? parseBulkImportConfig({ STANDALONE_BULK_IMPORT_ENABLED: 'true' })
+        ? parseBulkImportConfig({
+            STANDALONE_BULK_IMPORT_ENABLED: 'true',
+            BULK_IMPORT_QUOTE_SECRET: 'test-quote-secret-0123456789abcdef',
+          })
         : undefined,
     ),
   };

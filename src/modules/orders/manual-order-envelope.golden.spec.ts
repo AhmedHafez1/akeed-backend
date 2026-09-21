@@ -4,6 +4,7 @@ import type { ManualOrderAcceptanceInput } from '../../infrastructure/database/r
 import { OrdersService } from './orders.service';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-resolver';
+import { StandaloneSendReadinessService } from '../order-ingestion/standalone-send-readiness.service';
 
 interface GoldenCase {
   name: string;
@@ -100,13 +101,16 @@ function buildService(accept: jest.Mock, customerPhone: string): OrdersService {
       } as never),
     ),
     { standardize: () => customerPhone } as never,
-    {
-      evaluateAccess: () => ({ allowed: true, reason: null }),
-      hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
-    } as never,
-    { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
+    new StandaloneSendReadinessService(
+      {
+        accountingModeFor: () => 'periodic_plan',
+        evaluateAccess: () => ({ allowed: true, reason: null }),
+        hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
+      } as never,
+      { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
+      {} as never,
+    ),
     dispatcher as never,
-    {} as never,
     {} as never,
   );
 }

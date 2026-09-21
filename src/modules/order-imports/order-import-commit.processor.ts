@@ -1,4 +1,3 @@
-import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
@@ -13,27 +12,25 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 import { FileImportChannelAdapter } from './file-import.channel-adapter';
-import {
-  ORDER_IMPORT_QUEUE,
-  type OrderImportCommitJob,
-} from './order-import-queue.constants';
+import type { OrderImportCommitJob } from './order-import-queue.constants';
 import type { NormalizedImportOrder } from './validation/row-validator';
 
 /** Rows per acceptance call; matches the repository's per-chunk transaction. */
 const COMMIT_CHUNK = 200;
 
-@Processor(ORDER_IMPORT_QUEUE, { concurrency: 2 })
+/**
+ * Runs `import.commit` jobs. `OrderImportProcessor` owns the queue worker and
+ * routes each job here by name.
+ */
 @Injectable()
-export class OrderImportCommitProcessor extends WorkerHost {
+export class OrderImportCommitProcessor {
   private readonly logger = new Logger(OrderImportCommitProcessor.name);
 
   constructor(
     private readonly repository: OrderImportsRepository,
     private readonly ingestion: StandaloneOrderIngestionService,
     private readonly config: ConfigService,
-  ) {
-    super();
-  }
+  ) {}
 
   /**
    * Create every ready row's held order, in row order, a chunk at a time.
@@ -167,7 +164,6 @@ export class OrderImportCommitProcessor extends WorkerHost {
    * single retryable database blip from ending an import the next attempt
    * would have finished. Rows already imported stay held and startable.
    */
-  @OnWorkerEvent('failed')
   async onFailed(
     job: Job<OrderImportCommitJob> | undefined,
     error: Error,

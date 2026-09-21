@@ -12,6 +12,7 @@ import {
 import { PhoneService } from '../../shared/services/phone.service';
 import { AuthModule } from '../auth/auth.module';
 import { OrderIngestionModule } from '../order-ingestion/order-ingestion.module';
+import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
 import { OrderImportCommitProcessor } from './order-import-commit.processor';
@@ -23,6 +24,11 @@ import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportRowsService } from './order-import-rows.service';
 import { OrderImportsController } from './order-imports.controller';
 import { OrderImportsService } from './order-imports.service';
+import { OrderImportProcessor } from './order-import.processor';
+import { OrderImportExpireService } from './release/order-import-expire.service';
+import { OrderImportReleaseTickService } from './release/order-import-release-tick.service';
+import { OrderImportReleaseScheduler } from './release/order-import-release.scheduler';
+import { OrderImportReleaseService } from './release/order-import-release.service';
 import { ImportFileParser } from './parsers/import-file-parser';
 import { RowValidationService } from './validation/row-validation.service';
 
@@ -52,6 +58,8 @@ export function orderImportMulterOptions(
     AuthModule,
     OrderIngestionModule,
     OrderImportQueueModule,
+    // The release tick hands released events to the shared dispatcher.
+    WebhookQueueModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -68,6 +76,11 @@ export function orderImportMulterOptions(
     OrderImportCommitService,
     OrderImportCommitProducer,
     OrderImportCommitProcessor,
+    OrderImportProcessor,
+    OrderImportReleaseService,
+    OrderImportReleaseScheduler,
+    OrderImportReleaseTickService,
+    OrderImportExpireService,
     RowValidationService,
     PhoneService,
     ImportFileParser,

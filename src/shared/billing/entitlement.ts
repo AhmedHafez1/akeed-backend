@@ -1,4 +1,5 @@
 import type { CreditDenialCode } from './credit-eligibility';
+import type { CreditSummary } from '../ports/credit-accounting.port';
 import {
   DEFAULT_BILLING_PLAN_ID,
   isBillingPlanId,
@@ -61,6 +62,8 @@ export interface EntitlementAvailability {
   available: boolean;
   consumedCount: number;
   includedLimit: number;
+  /** Prepaid-credit sources: the balance this availability was read from. */
+  credits?: CreditSummary;
   reason:
     | EntitlementDenialReason
     | CreditDenialCode

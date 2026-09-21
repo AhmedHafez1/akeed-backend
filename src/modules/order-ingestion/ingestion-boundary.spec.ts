@@ -56,6 +56,35 @@ describe('Standalone ingestion boundary', () => {
     ]);
   });
 
+  it('decides send readiness in one place', () => {
+    // Manual create, manual retry and the import quote, start, resume and
+    // release tick all ask StandaloneSendReadinessService; none of them reads
+    // the credit or usage gates on its own.
+    const readers = files
+      .filter(({ source }) =>
+        /\.(resolveDenial|hasAvailableSlot)\(/.test(source),
+      )
+      .map(({ path }) => path)
+      .filter((path) =>
+        /^modules\/(orders|order-imports|order-ingestion)\//.test(path),
+      );
+
+    expect(readers).toEqual([
+      'modules/order-ingestion/standalone-send-readiness.service.ts',
+    ]);
+  });
+
+  it('keeps manual orders out of the bulk-import release path', () => {
+    // Manual orders dispatch inline from acceptance; nothing in orders may
+    // reach the import scheduler, so an import in progress cannot delay one.
+    const couplings = files
+      .filter(({ path }) => path.startsWith('modules/orders/'))
+      .filter(({ source }) => /order-imports|order-import-release/.test(source))
+      .map(({ path }) => path);
+
+    expect(couplings).toEqual([]);
+  });
+
   it('dispatches only from the dispatch paths that already existed', () => {
     const callers = Object.fromEntries(
       files
@@ -78,6 +107,10 @@ describe('Standalone ingestion boundary', () => {
       // re-drives through `resetForRedispatch`, which refuses held and
       // withdrawn events.
       'modules/admin/message-dispatch-resolution.service.ts': 1,
+      // The bulk-import release scheduler: the only code in E04.6 allowed to
+      // turn a held order into a send (epic invariant 6), and only for events
+      // `releaseHeld` has just released.
+      'modules/order-imports/release/order-import-release-tick.service.ts': 1,
     });
   });
 });

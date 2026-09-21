@@ -12,12 +12,6 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { PhoneService } from '../../shared/services/phone.service';
 import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
-import {
-  classifyCodStatus,
-  collectPaymentSignals,
-} from '../../shared/commerce/payment-signals';
-import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
-import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
@@ -33,8 +27,8 @@ import type {
   RetryManualOrderVerificationResponseDto,
 } from './dto/dashboard.dto';
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
-import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
-import { integrations } from '../../infrastructure/database/schema';
+import { StandaloneSendReadinessService } from '../order-ingestion/standalone-send-readiness.service';
+import type { SendReadinessBlocker } from '../order-ingestion/standalone-send-readiness.types';
 
 /**
  * The codes the manual endpoint has always answered a bad Idempotency-Key
@@ -46,21 +40,14 @@ const MANUAL_ORDER_IDEMPOTENCY_CODES = {
   invalid: 'MANUAL_ORDER_VALIDATION_FAILED',
 };
 
-/**
- * Payment signals captured when the order was ingested.
- *
- * Manual ingestion stores the canonical order under `rawPayload.order`; reading
- * them back keeps a retry's eligibility decision identical to the original
- * ingestion's, instead of re-deriving it from `paymentMethod` alone.
- */
-function readStoredPaymentSignals(rawPayload: unknown): string[] {
-  if (!rawPayload || typeof rawPayload !== 'object') return [];
-  const order = (rawPayload as Record<string, unknown>).order;
-  if (!order || typeof order !== 'object') return [];
-  const signals = (order as Record<string, unknown>).paymentSignals;
-  if (!Array.isArray(signals)) return [];
-  return signals.filter(
-    (signal): signal is string => typeof signal === 'string',
+/** The first readiness blocker of `kind`, typed. */
+function blockerOf<K extends SendReadinessBlocker['kind']>(
+  blockers: SendReadinessBlocker[],
+  kind: K,
+): Extract<SendReadinessBlocker, { kind: K }> | undefined {
+  return blockers.find(
+    (blocker): blocker is Extract<SendReadinessBlocker, { kind: K }> =>
+      blocker.kind === kind,
   );
 }
 
@@ -72,11 +59,9 @@ export class OrdersService {
     private readonly ordersRepo: OrdersRepository,
     private readonly ingestion: StandaloneOrderIngestionService,
     private readonly phoneService: PhoneService,
-    private readonly billingEntitlements: BillingEntitlementService,
-    private readonly creditEligibility: CreditEligibilityService,
+    private readonly readiness: StandaloneSendReadinessService,
     private readonly dispatcher: WebhookDispatchService,
     private readonly webhookEvents: WebhookEventsRepository,
-    private readonly orderEligibility: OrderEligibilityService,
   ) {}
 
   async createManualOrder(
@@ -94,58 +79,8 @@ export class OrdersService {
       user,
       MANUAL_ORDER_SOURCE_CODES,
     );
-    const entitlement = this.billingEntitlements.evaluateAccess(source, {
-      id: source.id,
-      orgId: user.orgId,
-    });
-    if (!entitlement.allowed) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'An active Standalone entitlement is required.',
-        code: 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
-        reason: entitlement.reason,
-      });
-    }
-    if (!source.isAutoVerifyEnabled) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Enable automatic verification before creating an order.',
-        code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED',
-      });
-    }
-    await this.assertCreditEligible(source);
-    // `evaluateAccess` above is a policy check and never reads usage, so a
-    // source at its included limit passed every gate and was accepted with a
-    // 202 whose verification the worker then silently skipped. The merchant had
-    // no way to learn that from the response. The retry endpoint below already
-    // makes this check; the create endpoint has to make it too.
-    //
-    // Advisory by design: the transactional truth still lives in the dispatch
-    // claim, which is what actually reserves the slot.
-    const availability = await this.billingEntitlements.hasAvailableSlot({
-      id: source.id,
-      orgId: user.orgId,
-    });
-    if (!availability.available) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message:
-          availability.reason === 'plan_limit_reached'
-            ? 'The included verifications for this period are used up.'
-            : 'An active Standalone entitlement is required.',
-        code: isCreditDenialCode(availability.reason)
-          ? availability.reason
-          : availability.reason === 'plan_limit_reached'
-            ? 'MANUAL_ORDER_PLAN_LIMIT_REACHED'
-            : 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
-        reason: availability.reason,
-        consumedCount: availability.consumedCount,
-        includedLimit: availability.includedLimit,
-      });
-    }
+    const readiness = await this.readiness.evaluate(source, { required: 1 });
+    this.assertManualCreateReady(readiness.blockers);
 
     const accepted = await this.ingestion
       .acceptOne(
@@ -236,30 +171,11 @@ export class OrdersService {
         lifecycle,
       });
     }
-    const readinessReason = this.retryReadinessReason(order, integration);
-    if (readinessReason) {
-      throw new ConflictException({
-        code: 'MANUAL_ORDER_RETRY_BLOCKED',
-        message: 'The Standalone source is not ready for verification.',
-        reason: readinessReason,
-        lifecycle,
-      });
-    }
-    await this.assertCreditEligible(integration);
-    const availability = await this.billingEntitlements.hasAvailableSlot({
-      id: integration.id,
-      orgId: integration.orgId,
+    const readiness = await this.readiness.evaluate(integration, {
+      required: 1,
+      order,
     });
-    if (!availability.available) {
-      throw new ConflictException({
-        code: isCreditDenialCode(availability.reason)
-          ? availability.reason
-          : 'MANUAL_ORDER_RETRY_BLOCKED',
-        message: 'Verification entitlement is not currently available.',
-        reason: availability.reason,
-        lifecycle,
-      });
-    }
+    this.assertRetryReady(readiness.blockers, lifecycle);
     const event = order.webhookEvents.find(
       (candidate) => candidate.jobType === 'order.create',
     );
@@ -312,21 +228,117 @@ export class OrdersService {
   }
 
   /**
+   * The manual create endpoint's answer to each readiness blocker. The rules
+   * live in `StandaloneSendReadinessService`; this is only the vocabulary and
+   * precedence the manual form has always answered with.
+   *
    * Read-only order and verification access stays open while credit is
    * unavailable; only the billable actions are refused.
    */
-  private async assertCreditEligible(source: {
-    orgId: string;
-    platformType: string;
-  }): Promise<void> {
-    const denial = await this.creditEligibility.resolveDenial(source);
-    if (!denial) return;
+  private assertManualCreateReady(blockers: SendReadinessBlocker[]): void {
+    if (blockers.length === 0) return;
+    const entitlement = blockerOf(blockers, 'entitlement_required');
+    if (entitlement) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'An active Standalone entitlement is required.',
+        code: 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
+        reason: entitlement.reason,
+      });
+    }
+    if (blockerOf(blockers, 'auto_verify_disabled')) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Enable automatic verification before creating an order.',
+        code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED',
+      });
+    }
+    const credit = blockerOf(blockers, 'credit_denied');
+    if (credit) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Credit is not available for this action.',
+        code: credit.code,
+        reason: credit.code,
+      });
+    }
+    // The entitlement policy never reads usage, so a source at its included
+    // limit passes it; without this the create answered 202 and the worker
+    // silently skipped the verification. Advisory by design: the dispatch
+    // claim is what actually reserves the slot.
+    const slot = blockerOf(blockers, 'slot_unavailable');
+    if (slot) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message:
+          slot.reason === 'plan_limit_reached'
+            ? 'The included verifications for this period are used up.'
+            : 'An active Standalone entitlement is required.',
+        code: isCreditDenialCode(slot.reason)
+          ? slot.reason
+          : slot.reason === 'plan_limit_reached'
+            ? 'MANUAL_ORDER_PLAN_LIMIT_REACHED'
+            : 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
+        reason: slot.reason,
+        consumedCount: slot.consumedCount,
+        includedLimit: slot.includedLimit,
+      });
+    }
+    // The source resolver already refused inactive and unfinished sources;
+    // failing closed here keeps any future blocker from being accepted.
     throw new ConflictException({
       statusCode: 409,
       error: 'Conflict',
-      message: 'Credit is not available for this action.',
-      code: denial,
-      reason: denial,
+      message: MANUAL_ORDER_SOURCE_CODES.setupIncomplete.message,
+      code: MANUAL_ORDER_SOURCE_CODES.setupIncomplete.code,
+    });
+  }
+
+  /** The retry endpoint's answer to each readiness blocker. */
+  private assertRetryReady(
+    blockers: SendReadinessBlocker[],
+    lifecycle: RetryGuardStateDto,
+  ): void {
+    if (blockers.length === 0) return;
+    const notReady = blockerOf(blockers, 'source_inactive')
+      ? 'integration_inactive'
+      : blockerOf(blockers, 'setup_incomplete')
+        ? 'onboarding_incomplete'
+        : blockerOf(blockers, 'auto_verify_disabled')
+          ? 'auto_verify_disabled'
+          : blockerOf(blockers, 'order_ineligible')?.reason;
+    if (notReady) {
+      throw new ConflictException({
+        code: 'MANUAL_ORDER_RETRY_BLOCKED',
+        message: 'The Standalone source is not ready for verification.',
+        reason: notReady,
+        lifecycle,
+      });
+    }
+    const credit = blockerOf(blockers, 'credit_denied');
+    if (credit) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Credit is not available for this action.',
+        code: credit.code,
+        reason: credit.code,
+      });
+    }
+    // Retry has always learned about a denied entitlement from the usage
+    // read, so both answer with the same body.
+    const slot = blockerOf(blockers, 'slot_unavailable');
+    const reason =
+      slot?.reason ?? blockerOf(blockers, 'entitlement_required')?.reason;
+    throw new ConflictException({
+      code: isCreditDenialCode(reason) ? reason : 'MANUAL_ORDER_RETRY_BLOCKED',
+      message: 'Verification entitlement is not currently available.',
+      reason: reason ?? null,
+      lifecycle,
     });
   }
 
@@ -343,51 +355,5 @@ export class OrdersService {
         fieldErrors: { customerPhone: error.message },
       });
     }
-  }
-
-  private retryReadinessReason(
-    order: {
-      orgId: string;
-      integrationId: string;
-      externalOrderId: string;
-      orderNumber: string | null;
-      customerPhone: string;
-      customerName: string | null;
-      totalPrice: string | null;
-      currency: string | null;
-      paymentMethod: string | null;
-      rawPayload: unknown;
-    },
-    integration: typeof integrations.$inferSelect,
-  ): string | null {
-    if (!integration.isActive) return 'integration_inactive';
-    if (integration.onboardingStatus !== 'completed')
-      return 'onboarding_incomplete';
-    if (!integration.isAutoVerifyEnabled) return 'auto_verify_disabled';
-    const paymentSignals = collectPaymentSignals(
-      readStoredPaymentSignals(order.rawPayload),
-      order.paymentMethod ?? undefined,
-    );
-    const eligibility = this.orderEligibility.evaluateOrderForVerification({
-      order: {
-        orgId: order.orgId,
-        integrationId: order.integrationId,
-        externalOrderId: order.externalOrderId,
-        orderNumber: order.orderNumber ?? undefined,
-        customerPhone: order.customerPhone,
-        customerName: order.customerName ?? undefined,
-        totalPrice: order.totalPrice ?? '',
-        currency: order.currency ?? '',
-        paymentMethod: order.paymentMethod ?? '',
-        paymentSignals,
-        codStatus: classifyCodStatus(paymentSignals),
-        rawPayload:
-          order.rawPayload && typeof order.rawPayload === 'object'
-            ? (order.rawPayload as Record<string, unknown>)
-            : {},
-      },
-      integration,
-    });
-    return eligibility.eligible ? null : eligibility.reason;
   }
 }

@@ -14,6 +14,10 @@ import {
   type NewImportRow,
 } from '../src/infrastructure/database/repositories/order-imports.repository';
 import { ManualOrderIngestionRepository } from '../src/infrastructure/database/repositories/manual-order-ingestion.repository';
+import { OrderImportReleaseRepository } from '../src/infrastructure/database/repositories/order-import-release.repository';
+import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
+import { OrderImportExpireService } from '../src/modules/order-imports/release/order-import-expire.service';
+import { OrderImportReleaseTickService } from '../src/modules/order-imports/release/order-import-release-tick.service';
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
 import { FileImportChannelAdapter } from '../src/modules/order-imports/file-import.channel-adapter';
@@ -147,6 +151,7 @@ describe('order imports PostgreSQL contract', () => {
         org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
         platform_type text NOT NULL,
         platform_store_url text NOT NULL,
+        timezone text NOT NULL DEFAULT 'Asia/Riyadh',
         UNIQUE (platform_type, platform_store_url),
         UNIQUE (id, org_id)
       );
@@ -235,6 +240,7 @@ describe('order imports PostgreSQL contract', () => {
       for (const migration of [
         '0037_order_import_batches.sql',
         '0038_order_import_validation_version.sql',
+        '0039_order_import_release.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -1541,6 +1547,386 @@ describe('order imports PostgreSQL contract', () => {
         importRowNumber: 2,
       });
       expect(order.raw_payload).toHaveProperty('submissionFingerprint');
+    });
+
+    describe('start and paced release (US-04.6-07)', () => {
+      const releases = new OrderImportReleaseRepository(database);
+      const events = new WebhookEventsRepository(database);
+      const claims = new Map<string, number>();
+      /**
+       * The dispatcher without BullMQ: the real claim, so "at most once" is
+       * the database's guarantee, not the fake's. A fake messaging port; no
+       * provider is ever called.
+       */
+      const dispatcher = {
+        dispatchById: async (id: string) => {
+          const claimed = await events.claimForDispatch(
+            id,
+            new Date(Date.now() + 60_000).toISOString(),
+            new Date(Date.now() - 300_000).toISOString(),
+            5,
+          );
+          if (!claimed) return 'not_claimed';
+          claims.set(id, (claims.get(id) ?? 0) + 1);
+          await events.markDispatched(id);
+          return 'dispatched';
+        },
+      };
+      const scheduler = { ensure: jest.fn(), remove: jest.fn() };
+      const ready = {
+        evaluate: () =>
+          Promise.resolve({
+            ready: true,
+            blockers: [],
+            snapshot: {
+              accountingMode: 'prepaid_credit',
+              creditsAvailable: 10_000,
+              slotsRemaining: null,
+            },
+          }),
+      };
+      const config = {
+        get: (key: string) =>
+          key === BULK_IMPORT_CONFIG
+            ? parseBulkImportConfig({ BULK_IMPORT_RELEASE_PER_MINUTE: '20' })
+            : undefined,
+      };
+
+      function ticker(source: { orgId: string; integrationId: string }) {
+        return new OrderImportReleaseTickService(
+          releases,
+          {
+            findByOrg: () =>
+              Promise.resolve([
+                {
+                  id: source.integrationId,
+                  orgId: source.orgId,
+                  quietHoursEnabled: false,
+                  quietHoursStart: null,
+                  quietHoursEnd: null,
+                  timezone: 'Africa/Cairo',
+                },
+              ]),
+          } as never,
+          ready as never,
+          events,
+          dispatcher as never,
+          scheduler as never,
+          config as never,
+        );
+      }
+
+      async function awaitingBatch(count: number) {
+        const source = await createSource();
+        const batchId = await committingBatch(
+          source,
+          Array.from({ length: count }, (_, index) => `S${index + 1}`),
+        );
+        await runCommit(source, batchId);
+        return { source, batchId };
+      }
+
+      async function start(
+        source: { orgId: string },
+        batchId: string,
+        key = `start-${batchId}`,
+      ) {
+        return releases.claimForStart({
+          orgId: source.orgId,
+          batchId,
+          key,
+          attestedBy: randomUUID(),
+          attestationVersion: 'bulk-import-consent-v1',
+          orders: 0,
+          now: new Date(),
+        });
+      }
+
+      async function holdStates(batchId: string) {
+        return client<
+          {
+            id: string;
+            hold_state: string;
+            dispatch_required: boolean;
+            dispatched_at: Date | null;
+            status: string;
+          }[]
+        >`
+          SELECT id, hold_state, dispatch_required, dispatched_at, status
+          FROM webhook_events WHERE hold_group_id = ${batchId}`;
+      }
+
+      it('starts atomically once and keeps the attestation immutable', async () => {
+        const { source, batchId } = await awaitingBatch(3);
+
+        await expect(start(source, batchId)).resolves.toBe('claimed');
+        await expect(start(source, batchId)).resolves.toBe('not_startable');
+
+        const [stored] = await client<
+          {
+            status: string;
+            attested_by: string;
+            attestation_version: string;
+            started_at: Date;
+            start_idempotency_key: string;
+            events: Array<{ type: string; orders?: number }>;
+          }[]
+        >`
+          SELECT status, attested_by, attestation_version, started_at,
+                 start_idempotency_key, events
+          FROM order_import_batches WHERE id = ${batchId}`;
+        expect(stored).toMatchObject({
+          status: 'releasing',
+          attestation_version: 'bulk-import-consent-v1',
+          start_idempotency_key: `start-${batchId}`,
+        });
+        expect(stored.events.map((event) => event.type)).toEqual(['started']);
+
+        await expect(
+          client`UPDATE order_import_batches SET attested_by = ${randomUUID()} WHERE id = ${batchId}`,
+        ).rejects.toThrow(/order_import_attestation_immutable/);
+        await expect(
+          client`UPDATE order_import_batches SET attestation_version = 'x' WHERE id = ${batchId}`,
+        ).rejects.toThrow(/order_import_attestation_immutable/);
+        // Everything else about the batch still moves.
+        await expect(
+          releases.markStopped({
+            orgId: source.orgId,
+            batchId,
+            now: new Date(),
+          }),
+        ).resolves.toBe(true);
+      });
+
+      it('refuses a start key another batch of the org already used', async () => {
+        const first = await awaitingBatch(1);
+        const secondBatch = await committingBatch(first.source, ['K2']);
+        await runCommit(first.source, secondBatch);
+
+        await start(first.source, first.batchId, 'shared-key-0001');
+        await expect(
+          start(first.source, secondBatch, 'shared-key-0001'),
+        ).resolves.toBe('key_taken');
+      });
+
+      it('refuses a start past the start window', async () => {
+        const { source, batchId } = await awaitingBatch(1);
+        await client`
+          UPDATE order_import_batches
+          SET start_deadline_at = now() - interval '1 second'
+          WHERE id = ${batchId}`;
+
+        await expect(start(source, batchId)).resolves.toBe('not_startable');
+      });
+
+      it('releases at the pace, dispatches each event exactly once, then completes', async () => {
+        const { source, batchId } = await awaitingBatch(25);
+        await start(source, batchId);
+        const tick = ticker(source);
+
+        await tick.tick(source.orgId);
+        let states = await holdStates(batchId);
+        expect(
+          states.filter((row) => row.hold_state === 'released'),
+        ).toHaveLength(10);
+
+        // Overlapping ticks (a slow tick running into the next) cannot send
+        // an order twice.
+        await Promise.all([tick.tick(source.orgId), tick.tick(source.orgId)]);
+        await tick.tick(source.orgId);
+
+        states = await holdStates(batchId);
+        expect(states.every((row) => row.hold_state === 'released')).toBe(true);
+        expect(states.every((row) => row.dispatch_required)).toBe(true);
+        expect(states.every((row) => row.dispatched_at !== null)).toBe(true);
+        for (const row of states) expect(claims.get(row.id)).toBe(1);
+
+        const [batchRow] = await client<
+          {
+            status: string;
+            completed_at: Date | null;
+            events: Array<{ type: string }>;
+          }[]
+        >`
+          SELECT status, completed_at, events FROM order_import_batches
+          WHERE id = ${batchId}`;
+        expect(batchRow.status).toBe('completed');
+        expect(batchRow.completed_at).not.toBeNull();
+        expect(batchRow.events.map((event) => event.type)).toEqual([
+          'started',
+          'completed',
+        ]);
+        await expect(releases.listReleasing(source.orgId)).resolves.toEqual([]);
+      });
+
+      it('shares one rate budget across two batches, earliest start first', async () => {
+        const first = await awaitingBatch(8);
+        const second = await committingBatch(first.source, [
+          'T1',
+          'T2',
+          'T3',
+          'T4',
+          'T5',
+          'T6',
+          'T7',
+          'T8',
+        ]);
+        await runCommit(first.source, second);
+        await start(first.source, first.batchId);
+        await client`
+          UPDATE order_import_batches SET started_at = now() - interval '1 minute'
+          WHERE id = ${first.batchId}`;
+        await start(first.source, second);
+
+        await ticker(first.source).tick(first.source.orgId);
+
+        const releasedFirst = (await holdStates(first.batchId)).filter(
+          (row) => row.hold_state === 'released',
+        );
+        const releasedSecond = (await holdStates(second)).filter(
+          (row) => row.hold_state === 'released',
+        );
+        expect(releasedFirst).toHaveLength(8);
+        expect(releasedSecond).toHaveLength(2);
+      });
+
+      it('leaves each event released or withdrawn when stop races a tick, and bills none of the withdrawn', async () => {
+        const { source, batchId } = await awaitingBatch(25);
+        await start(source, batchId);
+
+        await Promise.all([
+          ticker(source).tick(source.orgId),
+          (async () => {
+            await releases.markStopped({
+              orgId: source.orgId,
+              batchId,
+              now: new Date(),
+            });
+            await events.withdrawHeld(source.orgId, { groupId: batchId });
+          })(),
+        ]);
+        // A second stop repairs nothing because nothing is left.
+        await expect(
+          events.withdrawHeld(source.orgId, { groupId: batchId }),
+        ).resolves.toEqual([]);
+
+        const states = await holdStates(batchId);
+        expect(states).toHaveLength(25);
+        expect(states.filter((row) => row.hold_state === 'held')).toHaveLength(
+          0,
+        );
+        const withdrawn = states.filter(
+          (row) => row.hold_state === 'withdrawn',
+        );
+        for (const row of withdrawn) {
+          expect(row.status).toBe('skipped');
+          expect(row.dispatch_required).toBe(false);
+          expect(row.dispatched_at).toBeNull();
+          expect(claims.has(row.id)).toBe(false);
+        }
+        // A withdrawn order never reaches the send path, so nothing reserved
+        // credit or created a dispatch for it.
+        const [billing] = await client<
+          { dispatches: number; reservations: number }[]
+        >`
+          SELECT (SELECT count(*)::int FROM verification_message_dispatches) AS dispatches,
+                 (SELECT count(*)::int FROM credit_reservations) AS reservations`;
+        expect(billing).toEqual({ dispatches: 0, reservations: 0 });
+        // Released events can never be withdrawn afterwards.
+        const released = states
+          .filter((row) => row.hold_state === 'released')
+          .map((row) => row.id);
+        await expect(
+          events.withdrawHeld(source.orgId, { eventIds: released }),
+        ).resolves.toEqual([]);
+      });
+
+      it('expires never-started and paused batches past their window, and only those', async () => {
+        const waiting = await awaitingBatch(3);
+        const paused = await committingBatch(waiting.source, ['P1', 'P2']);
+        await runCommit(waiting.source, paused);
+        await client`
+          UPDATE order_import_batches SET status = 'paused', paused_reason = 'INSUFFICIENT_CREDITS'
+          WHERE id = ${paused}`;
+
+        const expirer = new OrderImportExpireService(releases, events);
+        // 72 hours later, give or take a minute.
+        const before = new Date(Date.now() + 72 * HOUR - 60_000);
+        const after = new Date(Date.now() + 72 * HOUR + 60_000);
+        await expirer.run(before);
+        expect((await holdStates(waiting.batchId))[0].hold_state).toBe('held');
+
+        await expirer.run(after);
+        const statuses = await client<{ id: string; status: string }[]>`
+          SELECT id, status FROM order_import_batches
+          WHERE id IN ${client([waiting.batchId, paused])}`;
+        const byId = Object.fromEntries(
+          statuses.map((row) => [row.id, row.status]),
+        );
+        expect(byId[waiting.batchId]).toBe('not_started');
+        expect(byId[paused]).toBe('not_started');
+        for (const id of [waiting.batchId, paused])
+          expect(
+            (await holdStates(id)).every(
+              (row) => row.hold_state === 'withdrawn',
+            ),
+          ).toBe(true);
+        // A batch that was started is never touched, whatever its deadline.
+        const started = await committingBatch(waiting.source, ['X1']);
+        await runCommit(waiting.source, started);
+        await start(waiting.source, started);
+        await expirer.run(after);
+        const [startedRow] = await client<{ status: string }[]>`
+          SELECT status FROM order_import_batches WHERE id = ${started}`;
+        expect(startedRow.status).toBe('releasing');
+      });
+
+      it('finds every organization with a releasing batch for worker boot', async () => {
+        const { source, batchId } = await awaitingBatch(1);
+        await start(source, batchId);
+
+        await expect(releases.listOrgsWithReleasing()).resolves.toContain(
+          source.orgId,
+        );
+      });
+
+      it('reports hold counts and pauses every releasing batch of the org at once', async () => {
+        const { source, batchId } = await awaitingBatch(4);
+        await start(source, batchId);
+        await events.releaseHeld(
+          source.orgId,
+          (await holdStates(batchId)).slice(0, 1).map((row) => row.id),
+          new Date().toISOString(),
+        );
+
+        await expect(
+          releases.holdCounts(source.orgId, batchId),
+        ).resolves.toEqual({
+          held: 3,
+          released: 1,
+          withdrawn: 0,
+        });
+        await expect(
+          releases.pauseReleasing(
+            source.orgId,
+            'INSUFFICIENT_CREDITS',
+            new Date(),
+          ),
+        ).resolves.toEqual([batchId]);
+        await expect(
+          releases.resume({ orgId: source.orgId, batchId, now: new Date() }),
+        ).resolves.toBe(true);
+        const [row] = await client<
+          { events: Array<{ type: string; from?: string }> }[]
+        >`
+          SELECT events FROM order_import_batches WHERE id = ${batchId}`;
+        expect(row.events.map((event) => event.type)).toEqual([
+          'started',
+          'paused',
+          'resumed',
+        ]);
+        expect(row.events[2].from).toBe('INSUFFICIENT_CREDITS');
+      });
     });
   });
 });

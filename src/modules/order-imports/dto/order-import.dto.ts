@@ -1,3 +1,4 @@
+import type { OrderImportReleaseStateDto } from './order-import-release.dto';
 import type { RowIssue } from '../parsers/grid.types';
 import type {
   OrderImportMappingStateDto,
@@ -60,7 +61,8 @@ export interface OrderImportDraftListDto {
  * the batch is in after a refresh. A draft past its expiry reads as
  * `expired`. US-04.6-06..08 extend it with commit and lifecycle progress.
  */
-export interface OrderImportBatchDetailDto extends OrderImportMappingStateDto {
+export interface OrderImportBatchDetailDto
+  extends OrderImportMappingStateDto, Partial<OrderImportReleaseStateDto> {
   batchId: string;
   shortCode: string;
   status: string;
