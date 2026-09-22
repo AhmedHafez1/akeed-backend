@@ -288,6 +288,13 @@
       "when": 1789689600000,
       "tag": "0040_order_import_row_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789776000000,
+      "tag": "0041_free_plan_claims_survive_redact",
+      "breakpoints": true
     }
   ]
 }

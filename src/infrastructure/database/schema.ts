@@ -404,7 +404,9 @@ export const billingFreePlanClaims = pgTable(
       .default(sql`uuid_generate_v4()`)
       .primaryKey()
       .notNull(),
-    orgId: uuid('org_id').notNull(),
+    // Nullable so the claim outlives shop/redact: the row keeps only the store
+    // identity, which is what stops the free plan being claimed twice.
+    orgId: uuid('org_id'),
     platformType: text('platform_type').notNull(),
     shopDomain: text('shop_domain').notNull(),
     claimedAt: timestamp('claimed_at', {
@@ -433,7 +435,7 @@ export const billingFreePlanClaims = pgTable(
       columns: [table.orgId],
       foreignColumns: [organizations.id],
       name: 'billing_free_plan_claims_org_id_fkey',
-    }).onDelete('cascade'),
+    }).onDelete('set null'),
     unique('billing_free_plan_claims_platform_shop_key').on(
       table.platformType,
       table.shopDomain,

@@ -108,6 +108,30 @@ describe('BillingService', () => {
     },
   );
 
+  describe('initiateBilling — free plan claimed once per store', () => {
+    it('rejects a second starter claim with a stable code', async () => {
+      const mocks = createMocks();
+      mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+
+      await expect(
+        mocks.service.initiateBilling(
+          makeIntegration({
+            billingPlanId: 'starter',
+            billingStatus: 'cancelled',
+            onboardingStatus: 'pending',
+          }) as never,
+          'starter',
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'BILLING_FREE_PLAN_ALREADY_CLAIMED' },
+      });
+      expect(mocks.integrationsRepo.updateById).not.toHaveBeenCalled();
+      expect(
+        mocks.freePlanClaimsRepo.deleteByPlatformAndShop,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
   describe('initiateBilling — same-plan guard', () => {
     it('returns redirect without Shopify call when plan is already active', async () => {
       const { service, storePlatform } = createMocks();

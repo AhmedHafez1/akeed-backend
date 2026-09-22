@@ -90,39 +90,58 @@ export class AdminHealthRuleService {
         sql`, `,
       )}], NULL)`;
 
+    // Uninstalling cancels billing and stops all activity, so every other rule
+    // would fire as a side effect. An uninstalled store reports only that.
+    const installed = sql`${columns.uninstalledAt} IS NULL`;
+    const whileInstalled = (entries: Array<[SQL, string]>) =>
+      entries.map(([condition, signal]): [SQL, string] => [
+        sql`${installed} AND (${condition})`,
+        signal,
+      ]);
+
     return {
-      critical: signals([
-        [onboardingCritical, 'onboarding_incomplete'],
-        [noOrderCritical, 'no_eligible_order'],
-        [usageCritical, 'usage_critical'],
-        [failureCritical, 'failed_verification_rate'],
-        [webhookCritical, 'webhook_failures'],
-        [subscriptionBlocked, 'subscription_blocked'],
-        [creditsExhausted, 'credits_exhausted'],
-        [idleCritical, 'no_recent_activity'],
-      ]),
+      critical: signals(
+        whileInstalled([
+          [onboardingCritical, 'onboarding_incomplete'],
+          [noOrderCritical, 'no_eligible_order'],
+          [usageCritical, 'usage_critical'],
+          [failureCritical, 'failed_verification_rate'],
+          [webhookCritical, 'webhook_failures'],
+          [subscriptionBlocked, 'subscription_blocked'],
+          [creditsExhausted, 'credits_exhausted'],
+          [idleCritical, 'no_recent_activity'],
+        ]),
+      ),
       attention: signals([
-        [sql`${columns.uninstalledAt} IS NOT NULL`, 'store_uninstalled'],
-        [
-          sql`${onboardingAttention} AND NOT (${onboardingCritical})`,
-          'onboarding_incomplete',
-        ],
-        [
-          sql`${noOrderAttention} AND NOT (${noOrderCritical})`,
-          'no_eligible_order',
-        ],
-        [sql`${usageAttention} AND NOT (${usageCritical})`, 'usage_attention'],
-        [
-          sql`${failureAttention} AND NOT (${failureCritical})`,
-          'failed_verification_rate',
-        ],
-        [
-          sql`${webhookAttention} AND NOT (${webhookCritical})`,
-          'webhook_failures',
-        ],
-        [sql`NOT ${columns.autoEnabled}`, 'auto_confirmation_disabled'],
-        [creditsLow, 'credits_low'],
-        [sql`${idleAttention} AND NOT (${idleCritical})`, 'no_recent_activity'],
+        [sql`NOT (${installed})`, 'store_uninstalled'],
+        ...whileInstalled([
+          [
+            sql`${onboardingAttention} AND NOT (${onboardingCritical})`,
+            'onboarding_incomplete',
+          ],
+          [
+            sql`${noOrderAttention} AND NOT (${noOrderCritical})`,
+            'no_eligible_order',
+          ],
+          [
+            sql`${usageAttention} AND NOT (${usageCritical})`,
+            'usage_attention',
+          ],
+          [
+            sql`${failureAttention} AND NOT (${failureCritical})`,
+            'failed_verification_rate',
+          ],
+          [
+            sql`${webhookAttention} AND NOT (${webhookCritical})`,
+            'webhook_failures',
+          ],
+          [sql`NOT ${columns.autoEnabled}`, 'auto_confirmation_disabled'],
+          [creditsLow, 'credits_low'],
+          [
+            sql`${idleAttention} AND NOT (${idleCritical})`,
+            'no_recent_activity',
+          ],
+        ]),
       ]),
     };
   }

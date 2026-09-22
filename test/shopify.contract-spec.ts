@@ -192,6 +192,62 @@ describe('Shopify isolated PostgreSQL contract', () => {
     ]);
   });
 
+  it('keeps the free plan claim when shop/redact deletes the organization', async () => {
+    const claims = `${namespace}_claims`;
+    await client.unsafe(`CREATE SCHEMA "${claims}"`);
+    try {
+      await client.unsafe(
+        `CREATE TABLE "${claims}"."organizations" ("id" uuid PRIMARY KEY)`,
+      );
+      await client.unsafe(
+        `CREATE TABLE "${claims}"."billing_free_plan_claims" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "org_id" uuid NOT NULL, "platform_type" text NOT NULL, "shop_domain" text NOT NULL, CONSTRAINT "billing_free_plan_claims_platform_shop_key" UNIQUE("platform_type","shop_domain"))`,
+      );
+      await client.unsafe(
+        `ALTER TABLE "${claims}"."billing_free_plan_claims" ADD CONSTRAINT "billing_free_plan_claims_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "${claims}"."organizations"("id") ON DELETE cascade`,
+      );
+
+      const migration = readFileSync(
+        resolve(
+          __dirname,
+          '../drizzle/0041_free_plan_claims_survive_redact.sql',
+        ),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint')) {
+        await client.unsafe(
+          statement
+            .replaceAll('"public".', `"${claims}".`)
+            .replaceAll(
+              'TABLE "billing_free_plan_claims"',
+              `TABLE "${claims}"."billing_free_plan_claims"`,
+            ),
+        );
+      }
+
+      const orgId = randomUUID();
+      await client`INSERT INTO ${client(claims)}.organizations (id) VALUES (${orgId})`;
+      await client`INSERT INTO ${client(claims)}.billing_free_plan_claims (org_id, platform_type, shop_domain) VALUES (${orgId}, 'shopify', 'redacted.myshopify.com')`;
+      await client`DELETE FROM ${client(claims)}.organizations WHERE id = ${orgId}`;
+
+      const retained = await client<{ org_id: string | null }[]>`
+        SELECT org_id FROM ${client(claims)}.billing_free_plan_claims
+        WHERE platform_type = 'shopify' AND shop_domain = 'redacted.myshopify.com'`;
+      expect(retained).toEqual([{ org_id: null }]);
+
+      // A reinstall creates a new org; the claim still blocks a second starter.
+      const newOrgId = randomUUID();
+      await client`INSERT INTO ${client(claims)}.organizations (id) VALUES (${newOrgId})`;
+      const reclaimed = await client`
+        INSERT INTO ${client(claims)}.billing_free_plan_claims (org_id, platform_type, shop_domain)
+        VALUES (${newOrgId}, 'shopify', 'redacted.myshopify.com')
+        ON CONFLICT (platform_type, shop_domain) DO NOTHING
+        RETURNING id`;
+      expect(reclaimed).toHaveLength(0);
+    } finally {
+      await client.unsafe(`DROP SCHEMA "${claims}" CASCADE`);
+    }
+  });
+
   it('concurrent identical producer deliveries insert one row and enqueue once', async () => {
     const { producer, queue, input } = setup();
     const results = await Promise.all([

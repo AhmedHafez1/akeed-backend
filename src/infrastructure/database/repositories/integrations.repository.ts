@@ -108,6 +108,13 @@ export class IntegrationsRepository {
           accessToken: encryptedAccessToken,
           expiresAt,
           isActive: true,
+          // A reinstall (inactive -> active) must re-run plan selection: the
+          // uninstall cancelled the Shopify subscription. Also covers rows
+          // uninstalled before the uninstall webhook reset onboarding, or a
+          // missed app/uninstalled delivery.
+          ...(existing.isActive
+            ? {}
+            : { onboardingStatus: 'pending' as const }),
           updatedAt: new Date().toISOString(),
         })
         .where(eq(integrations.id, existing.id))
@@ -185,6 +192,10 @@ export class IntegrationsRepository {
           expiresAt: null,
           billingStatus: 'cancelled',
           pendingBillingPlanId: null,
+          // Shopify cancels app subscriptions on uninstall; the id is dead.
+          shopifySubscriptionId: null,
+          // Keep billingPlanId so onboarding can show the recovery banner.
+          onboardingStatus: 'pending',
           billingCanceledAt: sql`COALESCE(${integrations.billingCanceledAt}, ${occurredAt})`,
           billingStatusUpdatedAt: occurredAt,
           updatedAt: occurredAt,

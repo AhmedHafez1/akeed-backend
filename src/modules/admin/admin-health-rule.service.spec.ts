@@ -103,6 +103,23 @@ describe('AdminHealthRuleService', () => {
     expect(critical.sql).not.toContain('90');
   });
 
+  it('reports only store_uninstalled once a store is uninstalled', () => {
+    const { critical, attention } = render();
+    const count = (text: string, pattern: RegExp) =>
+      text.match(pattern)?.length ?? 0;
+    const signalCases = /::text END/g;
+    const gatedCases = /CASE WHEN uninstalled_at IS NULL AND \(/g;
+
+    expect(count(critical.sql, signalCases)).toBe(8);
+    expect(count(critical.sql, gatedCases)).toBe(8);
+
+    expect(count(attention.sql, signalCases)).toBe(9);
+    expect(count(attention.sql, gatedCases)).toBe(8);
+    expect(attention.sql).toMatch(
+      /^array_remove\(ARRAY\[CASE WHEN NOT \(uninstalled_at IS NULL\) THEN/,
+    );
+  });
+
   it('keeps attention signals exclusive of their critical level', () => {
     const { attention } = render();
 

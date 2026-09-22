@@ -48,9 +48,12 @@ describe('IntegrationsRepository installation lifecycle', () => {
         expiresAt: null,
         billingStatus: 'cancelled',
         pendingBillingPlanId: null,
+        shopifySubscriptionId: null,
+        onboardingStatus: 'pending',
         billingStatusUpdatedAt: '2026-08-27T12:00:00.000Z',
       }),
     );
+    expect(integrationSet.mock.calls[0][0]).not.toHaveProperty('billingPlanId');
     expect(lifecycleSet).toHaveBeenCalledWith(
       expect.objectContaining({
         uninstalledAt: '2026-08-27T12:00:00.000Z',
@@ -58,16 +61,8 @@ describe('IntegrationsRepository installation lifecycle', () => {
     );
   });
 
-  it('reactivates installation on reinstall without reviving billing state', async () => {
+  function setupUpsert(existing: Record<string, unknown>) {
     const set = jest.fn<void, [Record<string, unknown>]>();
-    const existing = {
-      id: 'int-1',
-      orgId: 'org-1',
-      platformType: 'shopify',
-      platformStoreUrl: 'test.myshopify.com',
-      isActive: false,
-      billingStatus: 'cancelled',
-    };
     const db = {
       query: {
         integrations: {
@@ -94,6 +89,23 @@ describe('IntegrationsRepository installation lifecycle', () => {
       db as any,
       config as unknown as ConfigService,
     );
+    return { repository, set };
+  }
+
+  const existingShop = {
+    id: 'int-1',
+    orgId: 'org-1',
+    platformType: 'shopify',
+    platformStoreUrl: 'test.myshopify.com',
+  };
+
+  it('reactivates installation on reinstall without reviving billing state', async () => {
+    const { repository, set } = setupUpsert({
+      ...existingShop,
+      isActive: false,
+      billingStatus: 'cancelled',
+      onboardingStatus: 'completed',
+    });
 
     await repository.upsertShopifyIntegration(
       'org-1',
@@ -102,6 +114,9 @@ describe('IntegrationsRepository installation lifecycle', () => {
       'fresh-offline-token',
     );
 
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ onboardingStatus: 'pending' }),
+    );
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
         isActive: true,
@@ -113,6 +128,23 @@ describe('IntegrationsRepository installation lifecycle', () => {
     expect(updates.accessToken).not.toBe('fresh-offline-token');
     expect(updates).not.toHaveProperty('billingStatus');
     expect(updates).not.toHaveProperty('billingPlanId');
+  });
+
+  it('keeps onboarding state when an active install refreshes its token', async () => {
+    const { repository, set } = setupUpsert({
+      ...existingShop,
+      isActive: true,
+      onboardingStatus: 'completed',
+    });
+
+    await repository.upsertShopifyIntegration(
+      'org-1',
+      'test.myshopify.com',
+      'shopify',
+      'fresh-offline-token',
+    );
+
+    expect(set.mock.calls[0][0]).not.toHaveProperty('onboardingStatus');
   });
 });
 

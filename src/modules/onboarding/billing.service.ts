@@ -213,9 +213,13 @@ export class BillingService {
     });
 
     if (!claimCreated) {
-      throw new BadRequestException(
-        'Starter plan can only be activated once per store. Please choose a paid plan.',
-      );
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message:
+          'Starter plan can only be activated once per store. Please choose a paid plan.',
+        code: 'BILLING_FREE_PLAN_ALREADY_CLAIMED',
+      });
     }
 
     try {
