@@ -384,74 +384,53 @@ Tests (use a fake clock and a fake messaging port, never real Meta):
 Verify in the browser: the shortfall variant, buy-credits return, start, paused banner (simulate by lowering credits), stop, with screenshots of M7 and M8 in AR and EN, light and dark.
 ```
 
-## US-04.6-08 — Import history and results export
+## US-04.6-08 — See imported orders through existing Verifications
 
 ```text
 Implement US-04.6-08 from akeed-backend/docs/Epics/04.6-standalone-bulk-order-import/US-04.6-08-import-history-and-results-export.md.
 Follow the shared rules in akeed-backend/docs/Epics/04.6-standalone-bulk-order-import/IMPLEMENTATION-PROMPTS.md. Load the frontend-dev skill before any UI work.
 
-Goal: merchants see every import and its live outcome, and can download an Excel-safe results file and a fix-and-re-upload error file. For merchants without an integration, the results file is the product.
+Goal: this is now a small MVP story. Imported orders already show up in Verifications, filtered by ?importBatchId=, with a dismissible chip and a "Review orders" link — all delivered by US-04.6-06. This story only extends that same navigation to the batch states US-04.6-07 added, and confirms nothing new needs building. Do NOT build /imports history, a batch-results page, results.csv/errors.csv, or any new table/chart — those are explicitly deferred; see the story's Deferred section.
 
 Read first:
-- The story's AC 1–8 and mockups M9 and M10.
-- src/infrastructure/database/repositories/orders.repository.ts (the retryGuardStatus expression to reuse for lifecycle counts).
-- src/modules/order-imports/csv-writer.util.ts (from US-04.6-02).
-- akeed-frontend/src/shared/layout/StandaloneSidebar.tsx, the dashboard Standalone empty state, features/orders/skins/standalone/ManualOrderTopBarAction.tsx, and features/billing/lib/csvDownload.ts.
+- The story's AC 1–6 and its Deferred / Post-MVP section (read this first — it tells you what NOT to build).
+- US-04.6-06's evidence section: the existing ?importBatchId= filter, ImportFilterChip and "Review orders" link in ImportedView.
+- US-04.6-07's releasing/paused/stopped/completed panel components (they don't yet link into Verifications).
 
 Build:
-1. GET /api/order-imports (cursor, 20 per page, newest first) and GET /:id with the full detail from AC2. Compute lifecycle counts in one grouped query using the shared projection, not per-order reads.
-2. GET /:id/results.csv and /:id/errors.csv:
-   - Streamed with keyset pagination through a Readable; constant memory.
-   - Columns and order exactly as AC3 and AC4; locale=ar|en headers and localized reasons and statuses (server-side message catalogue mirroring the frontend keys).
-   - The store timezone for timestamps; phones written as '+20… (escaped).
-   - The sanitized Content-Disposition with filename*, and Cache-Control: no-store. Any member can download.
-   - After the 90-day row purge, fall back to imported orders via raw_payload.importBatchId and say so in the detail response.
-3. The header matcher (US-04.6-03) ignores akeed_row, akeed_status and akeed_reason on re-upload.
-4. Frontend:
-   - The sidebar item "Import orders / استيراد الطلبات" (Standalone plus flag).
-   - /imports history (M9) with day grouping, status badges, progress, the actions menu and an empty state.
-   - Batch detail (M10) with the outcome cards, a token-built stacked bar, "Mapping used" and downloads via an authenticated fetch → Blob (never a token in the URL).
-   - Promote features/billing/lib/csvDownload.ts to src/shared/lib/download.ts with downloadBlob(blob, filename), keeping downloadCsv as a wrapper (update the billing import), and use it for both downloads.
-   - An "Import from file" secondary entry in the dashboard empty state and next to the manual order action.
-   - Enable the review-step "Download rows to fix". Remove the temporary link from US-04.6-05.
+1. Add a "View orders" link (same href builder and translation key as ImportedView's "Review orders") to the releasing, paused, stopped and completed batch views from US-04.6-07. That is the only new frontend code in this story.
+2. Confirm (don't rebuild) that the existing Verifications table, statuses, pagination, filters and empty/loading/error states render imported orders unchanged, and that a batch with zero currently-visible rows shows the existing Verifications empty state.
+3. Re-run US-04.6-06's ?importBatchId= regression tests; add a test that every batch state renders a working "View orders" link.
 
-Tests:
-- The formula-injection table (= + - @ tab CR, names starting with - or +, =HYPERLINK); BOM and CRLF; Arabic round-trip read back by an XLSX/CSV test reader.
-- Streaming memory stays bounded for 5,000 rows; results include every source row; errors.csv round trip (edit a fixture's errors.csv, re-upload, and only the fixed rows become ready while the others are ALREADY_IMPORTED).
-- Authorization for viewer, other org and flag off; the post-retention fallback.
+Don't touch backend order-imports endpoints; none of them change in this story. Don't add a sidebar entry or an /imports route — the "New import" header action from US-04.6-05 remains the only entry point.
 
-Verify in the browser: history, detail and both downloads opened and inspected. Screenshots of M9 and M10 in AR and EN, light and dark, at 1440 and 390.
+Verify in the browser: a releasing/paused/stopped/completed batch view, each with a working "View orders" link into the filtered Verifications page. Screenshot the M9 mockup (Verifications with the import chip) in AR and EN, light and dark.
 ```
 
-## US-04.6-09 — Security, retention and observability
+## US-04.6-09 — Basic security and operational safety
 
 ```text
 Implement US-04.6-09 from akeed-backend/docs/Epics/04.6-standalone-bulk-order-import/US-04.6-09-security-retention-and-observability.md.
 Follow the shared rules in akeed-backend/docs/Epics/04.6-standalone-bulk-order-import/IMPLEMENTATION-PROMPTS.md.
 
-Goal: bulk customer data is tenant-isolated, minimally retained, fully audited and observable, and there is a tested kill switch and runbook before any pilot.
+Goal: this is an MVP safety story, not an operations platform. Make bulk import safe to expose to real merchants: tenant isolation, upload hardening, PII-safe logging and a simple retention purge. Do NOT build a metrics dashboard, alerts, a staff pause/resume workflow, an admin audit UI or a runbook — those are explicitly deferred; see the story's Deferred section, read it first.
 
 Read first:
-- The story's AC 1–9.
-- The epic metrics section.
-- src/shared/logging/backend-log.util.ts.
-- admin_access_audit and its repository.
-- The admin store view in akeed-frontend/src/app/[locale]/admin/stores/[integrationId].
-- The existing admin guards (ADMIN_CONTROL_TOWER_ENABLED, AAL2).
-- src/shared/config env validation.
+- The story's AC 1–5 and its Deferred / Post-MVP section.
+- src/shared/logging/backend-log.util.ts and its existing REDACTED_KEYS additions from US-04.6-02.
+- The RLS pattern org_id = get_user_org_id() on orders, and StandaloneSourceResolver from US-04.6-02.
+- US-04.6-02's existing upload-hardening implementation (memory storage, macro rejection, parser timeout) and US-04.6-07's import.expire job, to see the pattern the new import.purge job should follow.
 
 Build:
-1. An authorization matrix test over every order-import endpoint × {owner, admin, viewer, other-org owner, unauthenticated, Shopify org, flag off}, with expected status and code. Fix any gap found; don't weaken the test.
-2. Hardening review of the intake: memory-only storage, buffer released, the parser timeout (20 s), XLSX external links, macros and objects ignored, request body excluded from error/log middleware. Document the review in the evidence.
-3. order_import_batches.events jsonb, append-only through a single repository method. Backfill the transitions written by US-04.6-06 and 07 to use it. Add the indexes (status, expires_at) and (committed_at).
-4. The daily import.purge job exactly as AC3 (batched 1,000, idempotent), plus mapping-profile cleanup at 365 days.
-5. The kill switch as AC7 across all endpoints and the UI. Staff pause: an admin endpoint behind the existing admin guards sets paused_reason 'staff_paused' on an org's releasing batches, audited in admin_access_audit. The merchant UI shows "Paused by Akeed support" with resume hidden.
-6. The admin read-only batch panel on the admin store page (no row data), with access audited.
-7. Metrics and alert hooks for every event in the epic metrics list, plus the four alerts in AC6. Use the existing observability conventions (see the E04.5 US-04.5-07 implementation).
-8. A PII log scan test: run upload → commit → start → release → export with a fixture of unique marker values, capture all logger output, and assert none of the marker phones, names, addresses, amounts or the file name appear.
-9. Write docs/runbooks/bulk-order-import.md covering the topics in AC9, with concrete SQL and admin steps.
+1. An authorization matrix test over every order-import endpoint × {owner, admin, viewer, other-org owner, unauthenticated, Shopify org, flag off}, with expected status and code. Fix any gap found; don't weaken the test. No new authorization framework — reuse StandaloneSourceResolver and the existing RLS pattern.
+2. Hardening review of the intake already built by US-04.6-02: memory-only storage, buffer released, the parser timeout (20 s), XLSX external links/macros/objects ignored, request body excluded from error/log middleware. Add a test for any gap found (in particular, an external-link XLSX fixture and a pathological-input timeout test if US-04.6-02 didn't already cover them). Document the review in the evidence. Don't add malware scanning, DLP or antivirus infrastructure.
+3. One new daily import.purge job: for committed batches older than 90 days, sets raw = NULL and normalized = NULL on their rows (batched 1,000, idempotent), keeping outcome, issues, order ID and row number. Add an index only if the query genuinely needs one. No mapping-profile cleanup, no retention reporting.
+4. Confirm STANDALONE_BULK_IMPORT_ENABLED=false blocks upload, mapping, commit, start and resume (IMPORT_DISABLED) on every mutation endpoint and hides every entry point, while stop and the Verifications filter keep working and releasing batches finish per US-04.6-07. Add a test per endpoint if coverage is missing.
+5. A PII log scan test: run upload → commit → start → release with a fixture of unique marker values (phones, names, addresses), capture all logger output, and assert none of the markers or the file name appear. This is the one new test this story requires beyond the matrix and hardening gaps.
 
-Tests: the matrix; purge boundaries (day 89 vs 91, draft 23 h vs 25 h); purge during an export; the parser timeout; kill-switch behavior per endpoint; staff pause beats merchant resume; the PII scan.
+Tests: the authorization matrix; the upload-hardening gap tests; purge idempotency and the 90-day boundary (day 89 vs 91); kill-switch coverage per endpoint; the PII scan.
+
+Don't build: a metrics/alerts system, a staff pause/resume workflow, an admin read-only batch panel, or docs/runbooks/bulk-order-import.md. If you find yourself building any of these, stop — they belong to a future, explicitly-scoped follow-up.
 ```
 
 ## US-04.6-10 — Bulk import release gate

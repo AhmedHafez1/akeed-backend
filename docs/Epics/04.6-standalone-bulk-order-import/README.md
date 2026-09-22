@@ -11,7 +11,7 @@
 
 ## Business objective
 
-Let a Standalone merchant who runs their COD business from a spreadsheet, marketplace export or storefront without an Akeed integration bring a batch of orders into Akeed in minutes. Akeed must confirm those orders over WhatsApp with the same lifecycle as manual orders, and give the merchant a results file they can act on. The merchant must never message customers by accident, never pay twice for the same order, and never damage the shared WhatsApp sender's quality rating with a bulk blast.
+Let a Standalone merchant who runs their COD business from a spreadsheet, marketplace export or storefront without an Akeed integration bring a batch of orders into Akeed in minutes. Akeed must confirm those orders over WhatsApp with the same lifecycle as manual orders, and let the merchant see the outcome in the same Verifications experience used for every other order. The merchant must never message customers by accident, never pay twice for the same order, and never damage the shared WhatsApp sender's quality rating with a bulk blast.
 
 CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate product. Once a row becomes an Akeed order, everything downstream (eligibility, quiet hours, follow-up, no-reply, billing, dashboard, retry) is exactly the manual-order path. `source` is data on the envelope. It is never a branch in the confirmation engine.
 
@@ -22,7 +22,7 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 - Importing sends nothing. Customers are contacted only after the merchant explicitly starts confirmation, attests consent and passes a credit check covering every initial message.
 - Released orders go out at no more than the configured per-organization rate (default 20 initial sends per minute). Nothing is released during the store's quiet hours.
 - Imported orders produce verifications, credit consumption, follow-ups and dashboard lifecycles identical to manual orders with the same data. This is asserted by an automated equivalence test.
-- The merchant can download at any time an error report they can fix and re-upload, and a results file with each order's confirmation outcome.
+- The merchant can see each imported order's confirmation outcome in the existing Verifications experience, filtered to the import batch ([US-04.6-08](US-04.6-08-import-history-and-results-export.md)). Downloadable error/results files are deferred post-MVP — see that story's Deferred section.
 - Shopify embedded merchants and the manual order path behave unchanged.
 
 ## Approved product decisions
@@ -30,7 +30,7 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 | Decision | Approved value |
 | --- | --- |
 | Audience | Standalone organizations with a completed onboarding. Hidden in Shopify embedded mode; the API returns `IMPORT_SOURCE_UNSUPPORTED`. |
-| Roles | Owner/admin: upload, map, commit, start, stop, resume, discard. Viewer: read history and download reports. |
+| Roles | Owner/admin: upload, map, commit, start, stop, resume, discard. Viewer: see imported orders through Verifications (read-only). |
 | Accepted formats | `.csv` and `.xlsx` (first **visible** worksheet; other sheets are ignored with a notice). `.xls`, `.xlsm`, `.ods`, `.numbers`, password-protected and unreadable files are rejected with guidance. |
 | Limits (env-configurable) | 5 MB file; 5,000 data rows; 100 columns; 1,000 characters per cell; 50 MB uncompressed XLSX; 3 open (uncommitted) drafts per organization; 10 uploads per user per minute. |
 | CSV dialect | UTF-8 with or without BOM, UTF-16 LE/BE with BOM, Windows-1256 fallback when bytes are not valid UTF-8. Delimiter auto-detected among `,`, `;` and tab. RFC 4180 quoting, including embedded delimiters, quotes and line breaks. |
@@ -51,13 +51,13 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 | Start window | Held orders can be started within **72 hours** of commit. After that they are withdrawn (`not_started`) at no cost. |
 | Pacing | Per-organization release rate of 20 initial sends per minute (env), shared across all releasing batches. Release pauses in store quiet hours and resumes after them. Existing `sendDelayMinutes`, quiet-hours and follow-up rules still apply downstream. |
 | Mid-release control | **Stop remaining** withdraws every unreleased order in the batch. The batch **auto-pauses** if credits, entitlement, auto-verify or onboarding stop allowing sends, and the merchant can **resume** once resolved. |
-| Error report | CSV of the original columns for every not-imported row plus `akeed_row`, `akeed_status` and `akeed_reason` (localized). Fix, then re-upload: already-imported rows are detected as duplicates. |
-| Results export | CSV per batch at any time: row, reference, name, E.164 phone, amount, currency, import outcome, reason, confirmation status, last status time, messages sent. |
+| Error report | **Deferred post-MVP.** The review step's "Download rows to fix" action exists in the UI (US-04.6-05) but stays disabled until a future, explicitly-scoped export story. MVP merchants fix rows by re-reading the on-screen reasons. |
+| Results export | **Deferred post-MVP.** MVP merchants see confirmation outcomes in the existing Verifications experience, filtered by import batch ([US-04.6-08](US-04.6-08-import-history-and-results-export.md)), not a downloadable file. |
 | Spreadsheet safety | Every generated CSV starts with a UTF-8 BOM, and any cell beginning with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'`. |
 | Saved mapping | Per organization, keyed by a header signature, and auto-applied (still reviewable) on the next upload with the same headers. |
 | Templates | Downloadable sample CSV and XLSX, bilingual headers, with two example rows. |
 | Retention | Uncommitted drafts expire after 24 h and their rows are purged. Committed batches keep row data for 90 days, then keep only counts and order links. Logs never include full phone numbers or names. |
-| Feature flag | `STANDALONE_BULK_IMPORT_ENABLED`, default off, plus the pilot allow-list `BULK_IMPORT_PILOT_ORG_IDS` until general availability. Turning the flag off blocks new uploads, commits, starts and resumes; in-flight releases finish, and stop, history and exports keep working. |
+| Feature flag | `STANDALONE_BULK_IMPORT_ENABLED`, default off, plus the pilot allow-list `BULK_IMPORT_PILOT_ORG_IDS` until general availability. Turning the flag off blocks new uploads, commits, starts and resumes; in-flight releases finish, and stop and the existing Verifications filter for already-imported orders keep working. |
 
 ## Confirmed current-state baseline
 
@@ -129,7 +129,7 @@ Bulk import must not become a second copy of the manual-order path. Every rule b
 | Order list | `GET /api/verifications` via `OrdersRepository.findByOrg` | Adds an `importBatchId` filter to the same query ([US-04.6-06](US-04.6-06-idempotent-commit-into-held-orders.md)) | Build a second order list |
 | Frontend currency list and COD constant | `manualOrderCurrencies`, `MANUAL_ORDER_PAYMENT_METHOD` in `features/orders/domain/manualOrder.model.ts` | Promoted to `src/shared/commerce/orderCommerce.ts`. The manual form re-imports it ([US-04.6-05](US-04.6-05-import-wizard-upload-mapping-review-ui.md)) | Declare a third currency list |
 | Frontend credit/billing blocker messages | `creditErrors.*` translations and the manual-order `billingLink` feedback | Reused for `INSUFFICIENT_CREDITS` and the other credit codes ([US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md)) | Add parallel credit strings |
-| Frontend file download | `features/billing/lib/csvDownload.ts#downloadCsv` | Promoted to `src/shared/lib/download.ts` with `downloadBlob(blob, filename)`; `downloadCsv` delegates to it ([US-04.6-08](US-04.6-08-import-history-and-results-export.md)) | Add another anchor/object-URL helper |
+| Frontend file download | `features/billing/lib/csvDownload.ts#downloadCsv` | **Deferred post-MVP.** Only needed once a future story adds import file exports; not built by [US-04.6-08](US-04.6-08-import-history-and-results-export.md) | Add another anchor/object-URL helper when that story exists |
 | Lifecycle badge and tones | `VerificationStatusBadge`, `lifecycleToneClasses.ts` | Extended with the two hold states ([US-04.6-01](US-04.6-01-source-neutral-order-hold-and-release.md)) | Create an import-only badge |
 
 The only genuinely new logic is file intake and parsing, header mapping, cell-level normalization (digits, amount text, dates), batch dedupe, the batch and hold state machines, paced release and CSV writing.
@@ -147,27 +147,29 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 | 5 | [US-04.6-05 — Guide the merchant through upload, mapping and review](US-04.6-05-import-wizard-upload-mapping-review-ui.md) | P0 | Feature | [US-04.6-04](US-04.6-04-row-normalization-validation-and-dedupe.md) | Implemented locally — 2026-09-19 (authenticated walkthrough pending) |
 | 6 | [US-04.6-06 — Commit ready rows idempotently into held orders](US-04.6-06-idempotent-commit-into-held-orders.md) | P0 | Feature | [US-04.6-05](US-04.6-05-import-wizard-upload-mapping-review-ui.md) | Implemented locally — 2026-09-21 (browser walkthrough pending) |
 | 7 | [US-04.6-07 — Start confirmation deliberately with paced release](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) | P0 | Feature | [US-04.6-06](US-04.6-06-idempotent-commit-into-held-orders.md) | Implemented locally — 2026-09-21 (browser walkthrough pending) |
-| 8 | [US-04.6-08 — Track imports and export confirmation results](US-04.6-08-import-history-and-results-export.md) | P0 | Feature | [US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) | Backlog |
-| 9 | [US-04.6-09 — Secure, retain and observe bulk import](US-04.6-09-security-retention-and-observability.md) | P0 | Operations | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) | Backlog |
+| 8 | [US-04.6-08 — See imported orders through existing Verifications](US-04.6-08-import-history-and-results-export.md) | P0 | Feature | [US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) | Backlog |
+| 9 | [US-04.6-09 — Basic security and operational safety](US-04.6-09-security-retention-and-observability.md) | P0 | Operations | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) | Backlog |
 | 10 | [US-04.6-10 — Release-gate bulk import with real merchant files](US-04.6-10-bulk-import-release-gate.md) | P0 | Quality gate | [US-04.6-09](US-04.6-09-security-retention-and-observability.md) | Backlog |
 
 ## Merchant workflow
 
 ```text
-Import orders (sidebar / dashboard CTA)
+Import orders ("New import" action on the Verifications page header)
   → 1. Upload  .csv / .xlsx  (template download available)
        server: size/type/encoding checks → parse once → persist rows → auto-map
   → 2. Map columns  (auto-detected ✓ / needs attention ⚠ / not provided —)
        + import country, default currency, date format (only if ambiguous),
          payment values → COD / not COD
   → 3. Review  [Ready | Invalid | Duplicate | Excluded] tabs, reasons per row,
-       include possible duplicates, date-range banner, download error report
+       include possible duplicates, date-range banner
+       (a "download rows to fix" action exists but stays disabled — deferred post-MVP)
   → Import N orders  (Idempotency-Key; background commit with progress)
   → 4. Imported: "N orders awaiting confirmation — nothing has been sent"
   → Start confirmation dialog: attestation ☐, count, duration, credit estimate,
        shortfall → Buy credits
-  → Releasing: progress, pause reason, Stop remaining
-  → Batch detail: live outcomes, download results / error report
+  → Releasing: progress, pause reason, Stop remaining, "View orders"
+  → Verifications, filtered by import batch: the merchant's confirmation results
+     (results/error downloads deferred post-MVP — see US-04.6-08)
 ```
 
 ## Canonical state machines
@@ -200,7 +202,7 @@ All endpoints are session-authenticated (Supabase JWT). The organization and sou
 | --- | --- | --- |
 | `GET /api/order-imports/template?format=csv\|xlsx&locale=ar\|en` | Sample file | any member |
 | `POST /api/order-imports` (multipart `file`) | Upload, parse and auto-map; returns the batch in `draft` | owner/admin |
-| `GET /api/order-imports` | Cursor-paged history | any member |
+| `GET /api/order-imports` | Cursor-paged history — **deferred post-MVP** (no `/imports` list page consumes it; see [US-04.6-08](US-04.6-08-import-history-and-results-export.md#deferred--post-mvp)) | any member |
 | `GET /api/order-imports/:id` | Batch detail, mapping, counts, live lifecycle counts | any member |
 | `GET /api/order-imports/:id/rows?outcome=&cursor=` | Paged rows with normalized values and issues | any member |
 | `PUT /api/order-imports/:id/mapping` | Save mapping and options, then re-validate | owner/admin |
@@ -210,7 +212,7 @@ All endpoints are session-authenticated (Supabase JWT). The organization and sou
 | `POST /api/order-imports/:id/start` (`Idempotency-Key`, `{ attestationVersion, quoteToken }`) | Begin paced release | owner/admin |
 | `POST /api/order-imports/:id/stop` / `resume` | Withdraw remaining / resume after pause | owner/admin |
 | `DELETE /api/order-imports/:id` | Discard a draft (only in `draft`) | owner/admin |
-| `GET /api/order-imports/:id/errors.csv` / `results.csv` | Streamed reports | any member |
+| `GET /api/order-imports/:id/errors.csv` / `results.csv` | **Deferred post-MVP** — not built; see [US-04.6-08](US-04.6-08-import-history-and-results-export.md#deferred--post-mvp) | any member |
 
 **Batch-level error codes:** `IMPORT_DISABLED`, `IMPORT_ROLE_REQUIRED`, `IMPORT_SOURCE_UNSUPPORTED`, `IMPORT_SETUP_INCOMPLETE`, `IMPORT_FILE_REQUIRED`, `IMPORT_FILE_TOO_LARGE`, `IMPORT_FILE_TYPE_UNSUPPORTED`, `IMPORT_FILE_PROTECTED`, `IMPORT_FILE_UNREADABLE`, `IMPORT_FILE_EMPTY`, `IMPORT_ROW_LIMIT_EXCEEDED`, `IMPORT_COLUMN_LIMIT_EXCEEDED`, `IMPORT_TOO_MANY_DRAFTS`, `IMPORT_RATE_LIMITED`, `IMPORT_BATCH_NOT_FOUND`, `IMPORT_BATCH_EXPIRED`, `IMPORT_BATCH_STATE_CONFLICT`, `IMPORT_MAPPING_INCOMPLETE`, `IMPORT_NOTHING_TO_IMPORT`, `IMPORT_IDEMPOTENCY_KEY_REQUIRED`, `IMPORT_VALIDATION_FAILED`, `IMPORT_IDEMPOTENCY_CONFLICT`, `IMPORT_ATTESTATION_REQUIRED`, `IMPORT_QUOTE_STALE`, `IMPORT_START_WINDOW_EXPIRED`, `IMPORT_AUTO_VERIFY_DISABLED`, `IMPORT_PLAN_LIMIT_REACHED`, plus the E04.5 credit denial codes (`INSUFFICIENT_CREDITS`, `CREDIT_DEBT_OUTSTANDING`, `CREDIT_ACCOUNT_SUSPENDED`, `CREDIT_ACCOUNT_NOT_PROVISIONED`).
 
@@ -291,16 +293,19 @@ Every entry is owned by the story in brackets and appears in that story's edge c
 | M6 | Committing progress and imported/awaiting start | [US-04.6-06](US-04.6-06-idempotent-commit-into-held-orders.md) |
 | M7 | Start confirmation dialog (ready and shortfall variants) | [US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) |
 | M8 | Releasing / paused / stopped batch | [US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) |
-| M9 | Import history | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) |
-| M10 | Batch results detail | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) |
+| M9 | Verifications filtered by import (chip + "View orders" links) | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) |
+
+M10 (batch results detail) is deferred along with its underlying feature — see [US-04.6-08's Deferred section](US-04.6-08-import-history-and-results-export.md#deferred--post-mvp).
 
 Rules for all mockups: never show "sent" or "delivered" wording for orders that are only imported or held; always show the "Nothing has been sent yet" reassurance until release starts; primary actions sit at the inline end of the footer (left in RTL, right in LTR).
 
 ## Metrics and release gate
 
+MVP relies on the structured operational logs already emitted per story (batch ID, format, encoding, rows, counts, duration — see US-04.6-02, 06 and 07's Implementation notes), not a named-metrics/dashboard system. A metrics/funnel dashboard and alerting are deferred post-MVP — see [US-04.6-09's Deferred section](US-04.6-09-security-retention-and-observability.md#deferred--post-mvp). If usage after MVP shows a real operational need, these become a small, targeted follow-up:
+
 - `order_import.upload` (outcome, format, encoding, rows, duration_ms), `order_import.validate` (rows by outcome and issue code), `order_import.commit` (created, duplicate_at_commit, duration_ms), `order_import.release` (released per tick, pause reason, lag between planned and actual release), `order_import.start_blocked` (reason).
 - Funnel: uploads → mapped → committed → started → completed; rows ready ÷ rows total; rows excluded by reason.
-- Quality guard: the WhatsApp block/report rate for imported orders compared with manual orders during the pilot.
+- Quality guard: the WhatsApp block/report rate for imported orders compared with manual orders during the pilot. This one stays required for the pilot regardless — see US-04.6-10 AC8.
 - The epic gate is [US-04.6-10](US-04.6-10-bulk-import-release-gate.md). It cannot close while any invariant above lacks automated evidence.
 
 ## Dependency and rollout notes
