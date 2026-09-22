@@ -1,0 +1,27 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": true,
+  "autoMapped": true,
+  "mapping": {
+    "customerName": [
+      "الاسم"
+    ],
+    "phone": "الهاتف",
+    "amount": "المبلغ",
+    "city": "المدينة"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "خالد",
+        "city": "القاهرة"
+      }
+    }
+  ]
+}

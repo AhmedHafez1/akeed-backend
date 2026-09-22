@@ -1,0 +1,86 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "Order Number",
+    "customerName": [
+      "Name"
+    ],
+    "phone": "Phone",
+    "amount": "Amount",
+    "paymentMethod": "Payment"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "paymentMethod": "cash on delivery"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "paymentMethod": "cash on delivery"
+      }
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "paymentMethod": "cash on delivery"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "paymentMethod": "cash on delivery"
+      }
+    },
+    {
+      "rowNumber": 6,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ]
+    },
+    {
+      "rowNumber": 8,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ]
+    },
+    {
+      "rowNumber": 9,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_UNKNOWN_EXCLUDED"
+      ]
+    }
+  ]
+}

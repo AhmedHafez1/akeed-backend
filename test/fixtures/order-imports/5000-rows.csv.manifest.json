@@ -1,0 +1,40 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": true,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "order_id",
+    "customerName": [
+      "customer_name"
+    ],
+    "phone": "phone",
+    "amount": "amount"
+  },
+  "rowCounts": {
+    "ready": 5000
+  },
+  "rowsAreSample": true,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderNumber": "ORD-1",
+        "customerPhone": "+201010000000"
+      }
+    },
+    {
+      "rowNumber": 5001,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderNumber": "ORD-5000",
+        "totalPrice": "149.50"
+      }
+    }
+  ]
+}

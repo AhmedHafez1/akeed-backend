@@ -1,7 +1,7 @@
 # E04.6 — Standalone Bulk Order Import (CSV / XLSX)
 
 - **Horizon:** NEXT — execute after E04.5 and before E05
-- **Status:** Backlog
+- **Status:** Implemented locally — release blocked (pilot pending)
 - **Stories:** 10
 - **Prerequisite epics:** [E04 — Standalone Manual Order MVP](../04-standalone-manual-order-mvp/README.md), [E04.5 — Standalone Paymob Usage-Based Billing MVP](../04.5-standalone-paymob-usage-billing/README.md)
 - **Next epic:** [E05 — Standalone Order Ingestion API](../05-standalone-order-ingestion-api/README.md)
@@ -149,7 +149,7 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 | 7 | [US-04.6-07 — Start confirmation deliberately with paced release](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) | P0 | Feature | [US-04.6-06](US-04.6-06-idempotent-commit-into-held-orders.md) | Implemented locally — 2026-09-21 (browser walkthrough pending) |
 | 8 | [US-04.6-08 — See imported orders through existing Verifications](US-04.6-08-import-history-and-results-export.md) | P0 | Feature | [US-04.6-07](US-04.6-07-start-confirmation-checkpoint-and-paced-release.md) | Implemented locally — 2026-09-22 (authenticated walkthrough pending) |
 | 9 | [US-04.6-09 — Basic security and operational safety](US-04.6-09-security-retention-and-observability.md) | P0 | Operations | [US-04.6-08](US-04.6-08-import-history-and-results-export.md) | Implemented locally — 2026-09-22 |
-| 10 | [US-04.6-10 — Release-gate bulk import with real merchant files](US-04.6-10-bulk-import-release-gate.md) | P0 | Quality gate | [US-04.6-09](US-04.6-09-security-retention-and-observability.md) | Backlog |
+| 10 | [US-04.6-10 — Release-gate bulk import with real merchant files](US-04.6-10-bulk-import-release-gate.md) | P0 | Quality gate | [US-04.6-09](US-04.6-09-security-retention-and-observability.md) | Implemented locally — release blocked (pilot pending) |
 
 ## Merchant workflow
 

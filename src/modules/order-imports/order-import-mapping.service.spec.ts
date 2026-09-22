@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import type { SaveOrderImportMappingDto } from './dto/order-import-mapping.dto';
+import { MAPPING_DICTIONARY_VERSION } from './mapping/alias-dictionary';
 import { headerSignature } from './mapping/header-key';
 import {
   defaultImportOptions,
@@ -369,7 +370,7 @@ describe('OrderImportMappingService', () => {
         userId: 'user-1',
         headerSignature: headerSignature(HEADERS),
         mapping: {
-          dictionaryVersion: 1,
+          dictionaryVersion: MAPPING_DICTIONARY_VERSION,
           confirmed: true,
           columns: expect.objectContaining({
             phone: 'Phone',
@@ -390,7 +391,7 @@ describe('OrderImportMappingService', () => {
         },
         profile: {
           mapping: {
-            dictionaryVersion: 1,
+            dictionaryVersion: MAPPING_DICTIONARY_VERSION,
             columns: expect.objectContaining({ phone: 'Phone' }) as object,
           },
           options: expect.objectContaining({ country: 'EG' }) as object,

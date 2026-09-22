@@ -1,0 +1,5 @@
+order_id;name;phone;amount;payment
+1;Ali;01001234567;125,50;COD
+2;Mona;01101234567;1.250,00;COD
+3;Omar;01201234567;7,5;COD
+4;Hala;01501234567;12,3456;COD

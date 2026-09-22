@@ -1,0 +1,106 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "رقم الطلب",
+    "customerName": [
+      "اسم العميل"
+    ],
+    "phone": "رقم الموبايل",
+    "amount": "المبلغ",
+    "paymentMethod": "طريقة الدفع",
+    "orderDate": "تاريخ الطلب",
+    "city": "المحافظة"
+  },
+  "dateFormat": "auto",
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderNumber": "1001",
+        "customerPhone": "+201001234567",
+        "totalPrice": "250.00",
+        "currency": "EGP",
+        "paymentMethod": "cash on delivery",
+        "orderDate": "2026-09-17",
+        "city": "القاهرة"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerPhone": "+201112223334",
+        "totalPrice": "99.50"
+      }
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "totalPrice": "1250.50",
+        "orderDate": "2026-09-16"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "invalid",
+      "issues": [
+        "PHONE_NOT_MOBILE"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "outcome": "excluded",
+      "issues": [
+        "ORDER_TOO_OLD"
+      ]
+    },
+    {
+      "rowNumber": 8,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "Sara Mostafa",
+        "totalPrice": "750.00"
+      }
+    },
+    {
+      "rowNumber": 9,
+      "outcome": "duplicate",
+      "issues": [
+        "DUPLICATE_IN_FILE"
+      ],
+      "collapsedInto": 2
+    }
+  ],
+  "results": {
+    "replies": {
+      "2": "confirm",
+      "3": "confirm",
+      "4": "cancel",
+      "8": "none"
+    },
+    "status": {
+      "2": "confirmed",
+      "3": "confirmed",
+      "4": "canceled",
+      "8": "sent"
+    }
+  }
+}

@@ -21,7 +21,7 @@ describe('parseInWorker', () => {
   it('returns the same grid as the in-process parser', async () => {
     const parsed = await parseInWorker(fixture('arabic-excel.xlsx'), LIMITS);
     expect(parsed.sheetName).toBe('الطلبات');
-    expect(parsed.grid.rows).toHaveLength(2);
+    expect(parsed.grid.rows).toHaveLength(8);
   });
 
   it('carries file refusals back with their code and reason', async () => {
@@ -40,7 +40,7 @@ describe('parseInWorker', () => {
 
   it('terminates a parse that exceeds its time budget', async () => {
     await expect(
-      parseInWorker(fixture('rows-5000.csv'), { ...LIMITS, parseTimeoutMs: 1 }),
+      parseInWorker(fixture('5000-rows.csv'), { ...LIMITS, parseTimeoutMs: 1 }),
     ).rejects.toMatchObject({
       code: 'IMPORT_FILE_UNREADABLE',
       reason: 'parse_timeout',
@@ -102,7 +102,7 @@ describe('parseInWorker', () => {
     const parser = new ImportFileParser();
     const results = await Promise.all(
       [
-        'semicolon.csv',
+        'semicolon-eu.csv',
         'formulas.xlsx',
         'windows-1256.csv',
         'merged-cells.xlsx',

@@ -1,0 +1,107 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "Order Number",
+    "Name",
+    "Phone",
+    "Amount",
+    "Payment"
+  ],
+  "rowCount": 9,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "M-1",
+        "Customer 1",
+        "01012345670",
+        "500",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "M-2",
+        "Customer 2",
+        "01012345671",
+        "500",
+        "Cash"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "M-3",
+        "Customer 3",
+        "01012345672",
+        "500",
+        "كاش"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "M-4",
+        "Customer 4",
+        "01012345673",
+        "500",
+        "عند الاستلام"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "cells": [
+        "M-5",
+        "Customer 5",
+        "01012345674",
+        "500",
+        "Paid"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "cells": [
+        "M-6",
+        "Customer 6",
+        "01012345675",
+        "500",
+        "Visa"
+      ]
+    },
+    {
+      "rowNumber": 8,
+      "cells": [
+        "M-7",
+        "Customer 7",
+        "01012345676",
+        "500",
+        "مدفوع"
+      ]
+    },
+    {
+      "rowNumber": 9,
+      "cells": [
+        "M-8",
+        "Customer 8",
+        "01012345677",
+        "500",
+        "InstaPay"
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "cells": [
+        "M-9",
+        "Customer 9",
+        "01012345678",
+        "500",
+        ""
+      ]
+    }
+  ]
+}

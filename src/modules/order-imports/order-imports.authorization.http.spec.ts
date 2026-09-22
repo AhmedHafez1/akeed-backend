@@ -77,7 +77,9 @@ type Principal =
   | 'unauthenticated'
   | 'removedMember'
   | 'shopifyOrg'
-  | 'flagOff';
+  | 'flagOff'
+  | 'pilotOrg'
+  | 'nonPilotOrg';
 
 const PRINCIPALS: Principal[] = [
   'owner',
@@ -88,6 +90,8 @@ const PRINCIPALS: Principal[] = [
   'removedMember',
   'shopifyOrg',
   'flagOff',
+  'pilotOrg',
+  'nonPilotOrg',
 ];
 
 const IDENTITIES: Record<
@@ -100,6 +104,15 @@ const IDENTITIES: Record<
   otherOrgOwner: { orgId: ORG_B, role: 'owner' },
   shopifyOrg: { orgId: ORG_SHOPIFY, role: 'owner' },
   flagOff: { orgId: ORG_A, role: 'owner' },
+  // US-04.6-10: owners of organization A with the pilot allow-list set.
+  pilotOrg: { orgId: ORG_A, role: 'owner' },
+  nonPilotOrg: { orgId: ORG_A, role: 'owner' },
+};
+
+/** The allow-list each pilot principal runs under (US-04.6-10). */
+const PILOT_LISTS: Partial<Record<Principal, string[]>> = {
+  pilotOrg: [ORG_B, ORG_A],
+  nonPilotOrg: [ORG_B],
 };
 
 const SOURCES: Record<string, Record<string, unknown>> = {
@@ -273,6 +286,7 @@ function expected(endpoint: Endpoint, principal: Principal): Expected {
     case 'removedMember':
       return { status: 403, code: 'ORGANIZATION_REQUIRED' };
     case 'flagOff':
+    case 'nonPilotOrg':
       return OPEN_WHEN_DISABLED.has(endpoint.name)
         ? { status: endpoint.ok }
         : { status: 403, code: 'IMPORT_DISABLED' };
@@ -605,11 +619,17 @@ describe('order-import authorization matrix (US-04.6-09)', () => {
     await app.close();
   });
 
-  const setFlag = (enabled: boolean) => {
+  const setFlag = (enabled: boolean, pilotOrgIds: string[] = []) => {
     bulkImport = parseBulkImportConfig({
       STANDALONE_BULK_IMPORT_ENABLED: enabled ? 'true' : 'false',
+      BULK_IMPORT_PILOT_ORG_IDS: pilotOrgIds.join(','),
       BULK_IMPORT_QUOTE_SECRET: SECRET,
     });
+  };
+  const applyFlagFor = (principal: Principal) => {
+    if (principal === 'flagOff') setFlag(false);
+    const pilot = PILOT_LISTS[principal];
+    if (pilot) setFlag(true, pilot);
   };
 
   beforeEach(() => {
@@ -644,7 +664,7 @@ describe('order-import authorization matrix (US-04.6-09)', () => {
     state.status = endpoint.batchStatus;
     if (endpoint.batchStatus === 'paused')
       state.pausedReason = 'INSUFFICIENT_CREDITS';
-    if (principal === 'flagOff') setFlag(false);
+    applyFlagFor(principal);
 
     const response = await as(principal, endpoint.call(server()));
 
@@ -739,12 +759,14 @@ describe('order-import authorization matrix (US-04.6-09)', () => {
       ['otherOrgOwner', 200],
       ['shopifyOrg', 200],
       ['flagOff', 200],
+      ['pilotOrg', 200],
+      ['nonPilotOrg', 200],
       ['unauthenticated', 401],
       ['removedMember', 403],
     ])(
       'as %s answers %i, scoped to the session organization',
       async (principal, status) => {
-        if (principal === 'flagOff') setFlag(false);
+        applyFlagFor(principal);
 
         const response = await list(principal);
 

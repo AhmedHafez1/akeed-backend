@@ -36,7 +36,7 @@ try {
 
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
-        & docker exec $containerId pg_isready -U e045_test -d akeed_e045_test *> $null
+        & docker exec $containerId pg_isready -h 127.0.0.1 -U e045_test -d akeed_e045_test *> $null
         if ($LASTEXITCODE -eq 0) {
             $ready = $true
             break

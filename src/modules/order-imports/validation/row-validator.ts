@@ -1,5 +1,5 @@
-import { buildStandaloneOrderEnvelope } from '../../../shared/commerce/standalone-order-envelope';
 import type { NormalizedOrder } from '../../../shared/interfaces/order.interface';
+import { previewCanonicalOrder } from '../../order-ingestion/standalone-order-preview';
 import type {
   IntegrationEligibilityInput,
   OrderEligibilityResult,
@@ -177,17 +177,14 @@ export function validateRow(
     normalized.paymentMethodOriginal = payment.paymentMethodOriginal;
 
   // The same eligibility decision the worker makes for this order.
-  const { canonicalOrder } = buildStandaloneOrderEnvelope({
-    ingestionType: 'bulk_import',
-    order: {
-      externalOrderId: reference.dedupeKey ?? '',
-      orderNumber: normalized.orderNumber ?? '',
-      customerPhone: normalized.customerPhone ?? '',
-      customerName: normalized.customerName ?? '',
-      totalPrice: normalized.totalPrice ?? '0',
-      currency: normalized.currency ?? '',
-      paymentMethod: normalized.paymentMethod,
-    },
+  const canonicalOrder = previewCanonicalOrder('bulk_import', {
+    externalOrderId: reference.dedupeKey ?? '',
+    orderNumber: normalized.orderNumber ?? '',
+    customerPhone: normalized.customerPhone ?? '',
+    customerName: normalized.customerName ?? '',
+    totalPrice: normalized.totalPrice ?? '0',
+    currency: normalized.currency ?? '',
+    paymentMethod: normalized.paymentMethod,
   });
   const eligibility = deps.evaluateEligibility({
     order: {

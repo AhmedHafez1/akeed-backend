@@ -1,0 +1,114 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "Order ID",
+    "customerName": [
+      "Customer Name"
+    ],
+    "phone": "Phone",
+    "amount": "Amount",
+    "paymentMethod": "Payment Method",
+    "orderDate": "Order Date"
+  },
+  "dateFormat": "auto",
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-18"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-17"
+      }
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-15"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "excluded",
+      "issues": [
+        "ORDER_TOO_OLD"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-12"
+      }
+    },
+    {
+      "rowNumber": 7,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-20"
+      }
+    },
+    {
+      "rowNumber": 8,
+      "outcome": "invalid",
+      "issues": [
+        "ORDER_DATE_FUTURE"
+      ]
+    },
+    {
+      "rowNumber": 9,
+      "outcome": "invalid",
+      "issues": [
+        "ORDER_DATE_INVALID"
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-19"
+      }
+    },
+    {
+      "rowNumber": 11,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-18"
+      }
+    },
+    {
+      "rowNumber": 12,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-18"
+      }
+    },
+    {
+      "rowNumber": 13,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderDate": "2026-09-18"
+      }
+    }
+  ]
+}

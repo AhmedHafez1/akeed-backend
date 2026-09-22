@@ -1,0 +1,57 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ";",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "name",
+    "phone",
+    "amount",
+    "payment"
+  ],
+  "rowCount": 4,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "1",
+        "Ali",
+        "01001234567",
+        "125,50",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "2",
+        "Mona",
+        "01101234567",
+        "1.250,00",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "3",
+        "Omar",
+        "01201234567",
+        "7,5",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "4",
+        "Hala",
+        "01501234567",
+        "12,3456",
+        "COD"
+      ]
+    }
+  ]
+}

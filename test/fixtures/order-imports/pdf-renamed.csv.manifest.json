@@ -1,0 +1,8 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "fileError": "IMPORT_FILE_UNREADABLE"
+}

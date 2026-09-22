@@ -1,0 +1,57 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "Order ID",
+    "Customer Name",
+    "Phone",
+    "Amount",
+    "Payment Method"
+  ],
+  "rowCount": 4,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "S-1",
+        "Adel Fouad",
+        "2.01012E+11",
+        "400",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "S-2",
+        "Dina Magdy",
+        "2.01E+11",
+        "400",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "S-3",
+        "Hany Lotfy",
+        "201012345603",
+        "400",
+        "COD"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "S-4",
+        "Rasha Aly",
+        "01012345604",
+        "400",
+        "COD"
+      ]
+    }
+  ]
+}

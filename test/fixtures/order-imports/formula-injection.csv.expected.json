@@ -1,0 +1,95 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "Order Number",
+    "Customer Name",
+    "Phone",
+    "Amount",
+    "Payment",
+    "Notes"
+  ],
+  "rowCount": 7,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "F-1",
+        "=HYPERLINK(\"http://example.test\",\"Ahmed\")",
+        "01012345601",
+        "500",
+        "COD",
+        "ok"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "F-2",
+        "Mona Ali",
+        "01012345602",
+        "500",
+        "COD",
+        "+SUM(A1:A9)"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "F-3",
+        "Omar Samy",
+        "01012345603",
+        "500",
+        "COD",
+        "-2+3"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "F-4",
+        "Hala Adel",
+        "01012345604",
+        "500",
+        "COD",
+        "@SUM(1+1)"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "cells": [
+        "F-5",
+        "Rana Said",
+        "01012345605",
+        "500",
+        "COD",
+        "cmd"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "cells": [
+        "F-6",
+        "Ziad Nabil",
+        "01012345606",
+        "500",
+        "COD",
+        "calc"
+      ]
+    },
+    {
+      "rowNumber": 8,
+      "cells": [
+        "F-7",
+        "Salma Ezz",
+        "01012345607",
+        "=500",
+        "COD",
+        ""
+      ]
+    }
+  ]
+}

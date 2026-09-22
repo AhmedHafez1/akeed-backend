@@ -1,0 +1,1204 @@
+{
+  "story": "US-04.6-10",
+  "about": "Every entry of the E04.6 edge-case catalogue and every failure-and-recovery invariant, mapped to the automated tests that prove it (file path from akeed-backend, test title substring, and optionally the table case it uses) or to a pilot checklist item. src/modules/order-ingestion/release-gate-traceability.spec.ts fails when an entry is unmapped or a cited test or case no longer exists.",
+  "catalogue": [
+    {
+      "id": "F-01",
+      "section": "File and format",
+      "entry": "Empty file and zero-byte upload",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "zero-bytes.csv"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/file-inputs.spec.ts",
+          "test": "refuses an empty upload as empty"
+        }
+      ]
+    },
+    {
+      "id": "F-02",
+      "section": "File and format",
+      "entry": "Header-only file",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "header-only.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-03",
+      "section": "File and format",
+      "entry": "File with only blank rows",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "blank-only.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-04",
+      "section": "File and format",
+      "entry": "A .csv that is really an XLSX (magic bytes win over the extension)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "xlsx-renamed.csv"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/file-inputs.spec.ts",
+          "test": "reads a ZIP with xl/workbook.xml as XLSX"
+        }
+      ]
+    },
+    {
+      "id": "F-05",
+      "section": "File and format",
+      "entry": "A .csv that is really a PDF",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "pdf-renamed.csv"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "pdf-renamed.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-06",
+      "section": "File and format",
+      "entry": "A dropped connection mid-upload",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "refuses an upload cut off mid-body without creating a batch"
+        }
+      ]
+    },
+    {
+      "id": "F-07",
+      "section": "File and format",
+      "entry": "UTF-8 BOM",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "utf8-bom-multiline-quotes.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-08",
+      "section": "File and format",
+      "entry": "UTF-16 LE with tabs (Arabic Excel \"Unicode text\")",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "unicode-text-utf16le.csv"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/file-inputs.spec.ts",
+          "test": "decodes %s"
+        }
+      ]
+    },
+    {
+      "id": "F-09",
+      "section": "File and format",
+      "entry": "Windows-1256 with Arabic text",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "windows-1256.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-10",
+      "section": "File and format",
+      "entry": "Mixed \\r\\n / \\n line ends, a trailing delimiter on every line, and a final line without a newline",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "ends records on CRLF, LF or CR, and keeps a last line without newline"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "keeps empty fields around delimiters, including a trailing one"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "mixed-shape.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-11",
+      "section": "File and format",
+      "entry": "Semicolon-delimited files (European locale Excel)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "semicolon-eu.csv"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "detects %s"
+        }
+      ]
+    },
+    {
+      "id": "F-12",
+      "section": "File and format",
+      "entry": "Rows with more or fewer cells than the header",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/header-normalizer.spec.ts",
+          "test": "keeps extra cells under Column N and fills missing cells"
+        }
+      ]
+    },
+    {
+      "id": "F-13",
+      "section": "File and format",
+      "entry": "Quoted cells containing delimiters, quotes and line breaks",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "reads RFC 4180 quoting, escaped quotes and multi-line cells"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "utf8-bom-multiline-quotes.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-14",
+      "section": "File and format",
+      "entry": "An unterminated quote produces one row issue, not a crashed parse",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "ends an unterminated quote at its line and resumes on the next line"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/csv-grid.parser.spec.ts",
+          "test": "flags a malformed quote on its own row only"
+        }
+      ]
+    },
+    {
+      "id": "F-15",
+      "section": "File and format",
+      "entry": "XLSX: a hidden first sheet and multiple sheets",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "arabic-excel.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "hidden-first-sheet.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "F-16",
+      "section": "File and format",
+      "entry": "XLSX: merged cells (value in the top-left cell only)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "merged-cells.xlsx"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "AC2 end to end: arabic-excel.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "F-17",
+      "section": "File and format",
+      "entry": "XLSX: formulas (cached values used, never evaluated)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "formulas.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "formula-injection.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-18",
+      "section": "File and format",
+      "entry": "XLSX: dates stored as serial numbers (1900 leap-year bug respected)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "serial-dates.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "old-and-future-dates.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "F-19",
+      "section": "File and format",
+      "entry": "XLSX: phone columns stored as numbers",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "number-phones.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "scientific-phones.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "F-20",
+      "section": "File and format",
+      "entry": "XLSX: password-protected",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "protected.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "refuses a protected workbook by content, whatever its name"
+        }
+      ]
+    },
+    {
+      "id": "F-21",
+      "section": "File and format",
+      "entry": "XLSX: .xlsm macros",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "macro.xlsm"
+        }
+      ]
+    },
+    {
+      "id": "F-22",
+      "section": "File and format",
+      "entry": "XLSX: an oversized shared-strings table (zip bomb)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "zip-bomb.xlsx"
+        },
+        {
+          "file": "src/modules/order-imports/parsers/file-inputs.spec.ts",
+          "test": "stops at the uncompressed cap whatever the headers claim"
+        }
+      ]
+    },
+    {
+      "id": "F-23",
+      "section": "File and format",
+      "entry": "XLSX: 1,048,576 formatted but empty rows",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/parse-import-file.fixtures.spec.ts",
+          "test": "%s — %s",
+          "case": "formatted-empty-rows.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "F-24",
+      "section": "File and format",
+      "entry": "5,000 rows accepted; 5,001 rejected before any row is persisted",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "5000-rows.csv"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "5001-rows.csv"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.service.spec.ts",
+          "test": "persists nothing for %s"
+        }
+      ]
+    },
+    {
+      "id": "F-25",
+      "section": "File and format",
+      "entry": "Cells over 1,000 characters are truncated with FIELD_TOO_LONG",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/parsers/header-normalizer.spec.ts",
+          "test": "truncates values over 1,000 characters and flags the field"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "keeps parser issues: a truncated mapped cell is invalid, an unmapped one is not"
+        }
+      ]
+    },
+    {
+      "id": "F-26",
+      "section": "File and format",
+      "entry": "101 columns rejected (limit 100)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "101-columns.csv"
+        }
+      ]
+    },
+    {
+      "id": "F-27",
+      "section": "File and format",
+      "entry": "Legacy .xls rejected with guidance",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "legacy.xls"
+        }
+      ]
+    },
+    {
+      "id": "M-01",
+      "section": "Mapping",
+      "entry": "Arabic headers with diacritics, tatweel and alef/taa-marbuta variants; English headers in any case and with punctuation",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/mapping/header-key.spec.ts",
+          "test": "headerKey (US-04.6-03 AC1)"
+        },
+        {
+          "file": "src/modules/order-imports/mapping/alias-dictionary.spec.ts",
+          "test": "matches \"%s\" exactly"
+        },
+        {
+          "file": "src/modules/order-imports/mapping/column-matcher.spec.ts",
+          "test": "matches mixed Arabic and English headers"
+        }
+      ]
+    },
+    {
+      "id": "M-02",
+      "section": "Mapping",
+      "entry": "Two columns matching the same field (the highest confidence wins, the other is flagged)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/mapping/column-matcher.spec.ts",
+          "test": "prefers an exact column over partial ones"
+        },
+        {
+          "file": "src/modules/order-imports/mapping/column-matcher.spec.ts",
+          "test": "leaves the field empty and lists every partial candidate when several match"
+        },
+        {
+          "file": "src/modules/order-imports/mapping/column-matcher.spec.ts",
+          "test": "phone priority: Shipping Phone > Phone > Billing Phone"
+        }
+      ]
+    },
+    {
+      "id": "M-03",
+      "section": "Mapping",
+      "entry": "One column mapped to two fields (rejected)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-import-mapping.service.spec.ts",
+          "test": "refuses one column for two fields"
+        },
+        {
+          "file": "src/modules/order-imports/mapping/column-matcher.spec.ts",
+          "test": "never suggests one column for two fields"
+        }
+      ]
+    },
+    {
+      "id": "M-04",
+      "section": "Mapping",
+      "entry": "Full name split across first/last columns (both map to name and are joined)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/mapping/alias-dictionary.spec.ts",
+          "test": "joins \"%s\" and \"%s\" as the customer name"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "normalizes a complete row into the bulk envelope order fields"
+        }
+      ]
+    },
+    {
+      "id": "M-05",
+      "section": "Mapping",
+      "entry": "A required field has no match",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-import-mapping.service.spec.ts",
+          "test": "requires %s"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "answers IMPORT_MAPPING_INCOMPLETE with 422 for a missing required field"
+        }
+      ]
+    },
+    {
+      "id": "M-06",
+      "section": "Mapping",
+      "entry": "The merchant changes the mapping after reviewing",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-import-mapping.service.spec.ts",
+          "test": "stores the mapping, remembers the profile, then re-validates"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validation.service.spec.ts",
+          "test": "re-normalizes from raw when the country changes"
+        }
+      ]
+    },
+    {
+      "id": "M-07",
+      "section": "Mapping",
+      "entry": "The saved profile no longer matches because a column was renamed",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/mapping/saved-profile.spec.ts",
+          "test": "falls back to detection field by field when a saved header is gone"
+        },
+        {
+          "file": "src/modules/order-imports/order-import-mapping.service.spec.ts",
+          "test": "applies a profile partially when a saved header is missing"
+        }
+      ]
+    },
+    {
+      "id": "D-01",
+      "section": "Data",
+      "entry": "Phone as +201012345678, 00201012345678, 201012345678, 01012345678, 1012345678, 010-1234-5678, 010 1234 5678 and Arabic-Indic digits",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "accepts %s",
+          "case": "00201012345678"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "accepts %s",
+          "case": "010-1234-5678"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "accepts %s",
+          "case": "010 1234 5678"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "accepts %s",
+          "case": "arabicIndic('01012345678')"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads a leading-zero-less number only as Egyptian in an Egypt import"
+        }
+      ]
+    },
+    {
+      "id": "D-02",
+      "section": "Data",
+      "entry": "Phone 2.01012E+11 (scientific notation)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "2.01012E+11"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "scientific-phones.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "D-03",
+      "section": "Data",
+      "entry": "Two numbers in one cell (010… / 011…)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "PHONE_MULTIPLE"
+        }
+      ]
+    },
+    {
+      "id": "D-04",
+      "section": "Data",
+      "entry": "A Saudi +966 number in an Egypt import (valid, keeps its own country), a landline 0223456789, and a short or long number",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "accepts %s",
+          "case": "+966501234567 (Saudi number in an Egypt import)"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "0223456789"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "'0101234567890123', 'PHONE_INVALID'"
+        }
+      ]
+    },
+    {
+      "id": "D-05",
+      "section": "Data",
+      "entry": "Name that is empty, whitespace, only digits, only emoji, or over 255 characters",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "cleanCell('   ')"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "[['12345'], 'NAME_NOT_TEXT']"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "\\u{1F600}"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "'a'.repeat(256)"
+        }
+      ]
+    },
+    {
+      "id": "D-06",
+      "section": "Data",
+      "entry": "Amount 750, 750.5, 1,250.00, 1.250,00, EGP 750, 750 ج.م and Arabic-Indic ٧٥٠٫٥٠",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "1,250.00"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "1.250,00"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "EGP 750"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "`750 ${EGP_SHORT}`"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "arabicIndic('750.50')"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "semicolon-eu.csv"
+        }
+      ],
+      "note": "The catalogue calls 1.250,00 ambiguous unless the file uses a decimal comma throughout; US-04.6-04 AC4 (the governing story) makes the last separator the decimal whenever both appear, so it reads as 1250.00. A lone comma followed by four digits is AMOUNT_AMBIGUOUS."
+    },
+    {
+      "id": "D-07",
+      "section": "Data",
+      "entry": "Amount 0, -50, 750.555 and 100000000",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "['0', 'AMOUNT_NOT_POSITIVE']"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "['-50', 'AMOUNT_NOT_POSITIVE']"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses %j with %s",
+          "case": "['750.555', 'AMOUNT_TOO_PRECISE']"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "100000000"
+        }
+      ]
+    },
+    {
+      "id": "D-08",
+      "section": "Data",
+      "entry": "Currency that is unsupported, mixed across the file (allowed per row), or lowercase",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "refuses a currency outside the canonical list"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "allows mixed currencies across rows"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "resolves %j (amount currency %j) to %s",
+          "case": "'egp'"
+        }
+      ]
+    },
+    {
+      "id": "D-09",
+      "section": "Data",
+      "entry": "Payment values COD, Cash, كاش, عند الاستلام, Paid, Visa, مدفوع, InstaPay, and blank",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "makes %j ready as %j",
+          "case": "CASH_AR"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "excludes %j as PAYMENT_NOT_COD, keeping its text",
+          "case": "'InstaPay'"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "excludes a blank payment unless the store assumes COD"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "mixed-payments.csv"
+        }
+      ]
+    },
+    {
+      "id": "D-10",
+      "section": "Data",
+      "entry": "Dates 2026-09-18, 18/09/2026, 09/18/2026, 18-9-26, an Excel serial, a timestamp with a time zone, text such as yesterday, and a date 2 days in the future",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "46283 (Excel serial)"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "reads %j as %s",
+          "case": "2026-09-18T23:30:00+03:00"
+        },
+        {
+          "file": "src/modules/order-imports/validation/row-validator.spec.ts",
+          "test": "flags %j with %s",
+          "case": "yesterday"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "old-and-future-dates.xlsx"
+        }
+      ]
+    },
+    {
+      "id": "U-01",
+      "section": "Duplicates",
+      "entry": "The same file uploaded twice (L0 warning; L1 marks every referenced row as already imported)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "the same file uploaded again after its import: L0 warns and L1 marks every referenced row as already imported"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "flags the same file uploaded again within 24 hours, never itself"
+        }
+      ]
+    },
+    {
+      "id": "U-02",
+      "section": "Duplicates",
+      "entry": "The fixed error report re-uploaded (only fixed rows import)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a corrected file uploaded after fixing the reported rows: only the fixed rows import"
+        }
+      ],
+      "note": "errors.csv itself is deferred post-MVP (US-04.6-08); the merchant fixes the rows from the on-screen reasons and re-uploads the file, which is what this test proves."
+    },
+    {
+      "id": "U-03",
+      "section": "Duplicates",
+      "entry": "A Shopify-style line-item export where one order spans 3 rows (collapsed into one order)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/batch-dedupe.spec.ts",
+          "test": "collapses a Shopify 3-line-item order into its lowest row"
+        },
+        {
+          "file": "src/modules/order-imports/fixtures-manifest.spec.ts",
+          "test": "%s",
+          "case": "shopify-orders-export.csv"
+        }
+      ]
+    },
+    {
+      "id": "U-04",
+      "section": "Duplicates",
+      "entry": "The same reference with a different phone in one file (all conflicting rows invalid)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/validation/batch-dedupe.spec.ts",
+          "test": "makes every row invalid when a reference has two phones"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "collapses line items and flags conflicting references across chunks"
+        }
+      ]
+    },
+    {
+      "id": "U-05",
+      "section": "Duplicates",
+      "entry": "A no-reference file uploaded twice on different days (L3 possible duplicate)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a reference-less file uploaded again later: L3 holds the repeats back as possible duplicates"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "applies L1 and L3 against the source orders and summarizes from rows"
+        }
+      ]
+    },
+    {
+      "id": "U-06",
+      "section": "Duplicates",
+      "entry": "The same customer genuinely ordering twice the same day (L3 possible duplicate, includable)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "the merchant can include a genuine repeat order"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "keeps an include override through re-validation and refuses other rows"
+        }
+      ]
+    },
+    {
+      "id": "U-07",
+      "section": "Duplicates",
+      "entry": "A manual order later present in the export (L3 by order number)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a manual order later present in an export: L3 matches it by order number across channels"
+        },
+        {
+          "file": "src/modules/order-imports/validation/batch-dedupe.spec.ts",
+          "test": "matches an order number case-insensitively"
+        }
+      ]
+    },
+    {
+      "id": "U-08",
+      "section": "Duplicates",
+      "entry": "Two batches committed concurrently with overlapping references (exactly one order per reference)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "two batches with overlapping references: one order per reference"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "gives one order per reference when two batches commit the same refs"
+        }
+      ]
+    },
+    {
+      "id": "O-01",
+      "section": "Operational",
+      "entry": "Double-click on Import or Start, two tabs committing the same batch, and a retry after a timeout (same key, same result; a different key on a non-draft batch gives IMPORT_BATCH_STATE_CONFLICT)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "double commit: two tabs with different keys create each order once"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "replays the same key without enqueuing a second job"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "refuses a different key on a batch that has moved on"
+        },
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "replays the same key and refuses a different one"
+        }
+      ]
+    },
+    {
+      "id": "O-02",
+      "section": "Operational",
+      "entry": "The worker crashes mid-commit or mid-release (resumes without duplicates)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a worker kill during commit: re-running the job links what exists and creates nothing twice"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a worker kill during release: the recovery sweep dispatches the released events exactly once"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "resumes after a crash without creating anything twice"
+        }
+      ]
+    },
+    {
+      "id": "O-03",
+      "section": "Operational",
+      "entry": "A browser refresh at any step (the wizard resumes from the batch URL)",
+      "coverage": [
+        {
+          "file": "../akeed-frontend/test/e2e/order-import-release-gate.spec.ts",
+          "test": "resumes each step from the batch URL after a refresh"
+        }
+      ]
+    },
+    {
+      "id": "O-04",
+      "section": "Operational",
+      "entry": "The draft expires while the merchant is reviewing (clear message, re-upload)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "answers IMPORT_BATCH_EXPIRED with 410 for an expired draft"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.http.spec.ts",
+          "test": "reads a draft past its expiry as expired"
+        }
+      ]
+    },
+    {
+      "id": "O-05",
+      "section": "Operational",
+      "entry": "Credits drop between quote and start (IMPORT_QUOTE_STALE re-quotes) or during release (auto-pause INSUFFICIENT_CREDITS); credit debt appears",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "is stale when the balance dropped below N, and fine when it only moved"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a balance drop during release: dispatch never outruns credit"
+        },
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "blocks on %s",
+          "case": "'CREDIT_DEBT_OUTSTANDING'"
+        }
+      ]
+    },
+    {
+      "id": "O-06",
+      "section": "Operational",
+      "entry": "Auto-verify is switched off, onboarding is reset, or the source is deactivated during release (auto-pause)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "pauses when auto-verify is switched off and resumes when it is back"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "auto-pauses a releasing batch when %s, and releases nothing more",
+          "case": "onboarding is reset"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "auto-pauses a releasing batch when %s, and releases nothing more",
+          "case": "the source is deactivated"
+        }
+      ]
+    },
+    {
+      "id": "O-07",
+      "section": "Operational",
+      "entry": "Quiet hours start mid-release (pause, then continue after); the store timezone changes during release (the next tick uses the new value)",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "pauses for quiet hours across midnight and resumes at the window end"
+        },
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "re-reads quiet hours every tick"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a store timezone change during release: the next tick judges quiet hours in the new zone"
+        }
+      ]
+    },
+    {
+      "id": "O-08",
+      "section": "Operational",
+      "entry": "Two batches releasing at once share one org rate; manual orders are never queued behind an import",
+      "coverage": [
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "shares one rate budget across two batches, earliest start first"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "manual orders are never queued behind an import"
+        },
+        {
+          "file": "src/modules/order-ingestion/ingestion-boundary.spec.ts",
+          "test": "keeps manual orders out of the bulk-import release path"
+        }
+      ]
+    },
+    {
+      "id": "O-09",
+      "section": "Operational",
+      "entry": "The 72-hour start window lapses",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "expires never-started and paused batches after 72 hours, and only those"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "expires never-started and paused batches past their window, and only those"
+        }
+      ]
+    },
+    {
+      "id": "O-10",
+      "section": "Operational",
+      "entry": "The feature flag is turned off mid-release",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "the feature flag turned off mid-release: the releasing batch still finishes at its pace"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.authorization.http.spec.ts",
+          "test": "keeps a releasing batch consistent while the flag flips on and off"
+        }
+      ]
+    },
+    {
+      "id": "O-11",
+      "section": "Operational",
+      "entry": "A Meta template is paused (existing failure path)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a paused Meta template: an imported order fails exactly like a manual one, and neither is billed"
+        }
+      ],
+      "pilot": "Pilot checklist §3: template status is recorded daily; a PAUSED verification template blocks general availability."
+    },
+    {
+      "id": "O-12",
+      "section": "Operational",
+      "entry": "A merchant deletes a member who started a batch (the batch continues; the audit keeps the actor ID)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a merchant removes the member who started a batch: the batch carries on and keeps the actor id"
+        }
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "id": "I-1",
+      "entry": "Parsing, mapping, validating and committing never contact a customer; only POST /start can move an event from held to released",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "AC2 end to end: arabic-excel.xlsx"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "creates no dispatch, no credit reservation and no verification"
+        },
+        {
+          "file": "src/modules/order-ingestion/release-gate-architecture.spec.ts",
+          "test": "lets bulk import touch webhook events only to release or withdraw a hold"
+        }
+      ]
+    },
+    {
+      "id": "I-2",
+      "entry": "A held event has dispatch_required = false; a release is at most once per event",
+      "coverage": [
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "releases at the pace, dispatches each event exactly once, then completes"
+        },
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "never dispatches an event twice, whatever ticks overlap"
+        }
+      ]
+    },
+    {
+      "id": "I-3",
+      "entry": "At most one order per (integration_id, external_order_id) and one event per (platform, store_domain, idempotency_key)",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "two batches with overlapping references: one order per reference"
+        },
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "double commit: two tabs with different keys create each order once"
+        }
+      ]
+    },
+    {
+      "id": "I-4",
+      "entry": "Commit is resumable: a re-run chunk only creates rows without an order_id and links existing ones",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a worker kill during commit"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "re-links a row whose event exists but whose row was never written"
+        }
+      ]
+    },
+    {
+      "id": "I-5",
+      "entry": "Each batch counter is derived from rows, so a retry cannot double-count",
+      "coverage": [
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "applies L1 and L3 against the source orders and summarizes from rows"
+        },
+        {
+          "file": "src/modules/order-imports/order-import-commit.processor.spec.ts",
+          "test": "creates nothing on a re-run once every row is linked"
+        }
+      ]
+    },
+    {
+      "id": "I-6",
+      "entry": "Withdrawn orders are never billed or dispatched; a stop racing a tick leaves each event released or withdrawn, never both",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "stop against a release tick: every event is released or withdrawn, never both"
+        },
+        {
+          "file": "test/order-imports.contract-spec.ts",
+          "test": "leaves each event released or withdrawn when stop races a tick, and bills none of the withdrawn"
+        }
+      ]
+    },
+    {
+      "id": "I-7",
+      "entry": "The start credit gate is advisory; the dispatch claim is the transactional truth, and a release without credit triggers the auto-pause",
+      "coverage": [
+        {
+          "file": "test/order-import-release-gate.contract-spec.ts",
+          "test": "a balance drop during release"
+        },
+        {
+          "file": "src/modules/order-imports/release/order-import-release.flow.spec.ts",
+          "test": "auto-pauses every releasing batch when the balance runs out, and resume continues"
+        }
+      ]
+    },
+    {
+      "id": "I-8",
+      "entry": "Merchant-facing responses carry stable codes and never SQL, stack traces or library errors",
+      "coverage": [
+        {
+          "file": "src/modules/order-imports/order-imports.service.spec.ts",
+          "test": "answers unreadable, without library detail, when the parser crashes"
+        },
+        {
+          "file": "src/modules/order-imports/order-imports.authorization.http.spec.ts",
+          "test": "%s as %s"
+        }
+      ]
+    }
+  ]
+}

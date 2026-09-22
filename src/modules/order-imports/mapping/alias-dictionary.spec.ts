@@ -97,6 +97,14 @@ const AC2_ALIASES: [ImportField, string[]][] = [
   ['notes', ['notes', 'note', 'ملاحظات']],
 ];
 
+/**
+ * Aliases added after AC2, from real files: `الهاتف` in Arabic Excel exports
+ * (US-04.6-10 gate observation G1), dictionary version 2.
+ */
+const FOLLOW_UP_ALIASES: [ImportField, string[]][] = [
+  ['phone', ['الهاتف', 'هاتف']],
+];
+
 /** The same header as a merchant might really type it. */
 const VARIANTS: [string, (alias: string) => string][] = [
   ['as written', (alias) => alias],
@@ -116,21 +124,24 @@ function suggestionFor(field: ImportField, headers: string[]) {
 
 describe('alias dictionary (US-04.6-03 AC2)', () => {
   it('is versioned', () => {
-    expect(MAPPING_DICTIONARY_VERSION).toBe(1);
+    expect(MAPPING_DICTIONARY_VERSION).toBe(2);
   });
 
-  describe.each(AC2_ALIASES)('%s', (field, aliases) => {
-    describe.each(VARIANTS)('%s', (_variant, spell) => {
-      it.each(aliases)('matches "%s" exactly', (alias) => {
-        const header = spell(alias);
-        expect(suggestionFor(field, [header])).toMatchObject({
-          columns: [header],
-          confidence: 'exact',
-          source: 'auto',
+  describe.each(AC2_ALIASES.concat(FOLLOW_UP_ALIASES))(
+    '%s',
+    (field, aliases) => {
+      describe.each(VARIANTS)('%s', (_variant, spell) => {
+        it.each(aliases)('matches "%s" exactly', (alias) => {
+          const header = spell(alias);
+          expect(suggestionFor(field, [header])).toMatchObject({
+            columns: [header],
+            confidence: 'exact',
+            source: 'auto',
+          });
         });
       });
-    });
-  });
+    },
+  );
 
   it.each([
     ['first name', 'last name'],

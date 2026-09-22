@@ -40,10 +40,10 @@ describe('order-import fixtures', () => {
   it('covers every quirk the story and the epic catalogue name', () => {
     expect(index.map(({ file }) => file).sort()).toEqual(
       expect.arrayContaining([
-        'utf16le-tab.csv',
+        'unicode-text-utf16le.csv',
         'windows-1256.csv',
-        'semicolon.csv',
-        'utf8-bom-multiline.csv',
+        'semicolon-eu.csv',
+        'utf8-bom-multiline-quotes.csv',
         'malformed-quote.csv',
         'mixed-shape.csv',
         'hidden-first-sheet.xlsx',
@@ -60,10 +60,10 @@ describe('order-import fixtures', () => {
         'xlsx-renamed.csv',
         'csv-renamed.xlsx',
         'zip-bomb.xlsx',
-        'rows-5000.csv',
-        'rows-5001.csv',
+        '5000-rows.csv',
+        '5001-rows.csv',
         'cols-100.csv',
-        'cols-101.csv',
+        '101-columns.csv',
         'header-only.csv',
         'blank-only.csv',
         'zero-bytes.csv',

@@ -1,0 +1,49 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "Order ID",
+    "customerName": [
+      "Customer Name"
+    ],
+    "phone": "Phone",
+    "amount": "Amount",
+    "paymentMethod": "Payment Method"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "invalid",
+      "issues": [
+        "PHONE_SCIENTIFIC_NOTATION"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "invalid",
+      "issues": [
+        "PHONE_SCIENTIFIC_NOTATION"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerPhone": "+201012345603"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerPhone": "+201012345604"
+      }
+    }
+  ]
+}

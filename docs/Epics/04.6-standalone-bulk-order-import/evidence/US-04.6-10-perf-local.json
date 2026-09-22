@@ -1,0 +1,56 @@
+{
+  "measuredAt": "2026-09-22T09:19:58.287Z",
+  "fixture": "5000-rows.csv",
+  "hardware": {
+    "cpu": "Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz",
+    "logicalCores": 12,
+    "memoryGiB": 16,
+    "os": "win32 10.0.26200",
+    "node": "v22.22.0",
+    "database": "postgres:17-alpine in Docker Desktop (disposable)"
+  },
+  "results": {
+    "databaseRoundTrip": {
+      "runs": 1000,
+      "p50Ms": 0.83
+    },
+    "uploadToPreview": {
+      "runs": 20,
+      "p50Ms": 3196,
+      "p95Ms": 3431,
+      "maxMs": 15446,
+      "targetMs": 10000,
+      "verdict": "TARGET VALIDATION REQUIRED"
+    },
+    "commit5000": {
+      "runs": 20,
+      "p50Ms": 70583,
+      "p95Ms": 83775,
+      "maxMs": 89290,
+      "targetMs": 60000,
+      "verdict": "TARGET VALIDATION REQUIRED"
+    },
+    "releaseLag": {
+      "eventsPerTick": 10,
+      "tickToReleased": {
+        "runs": 20,
+        "p50Ms": 142,
+        "p95Ms": 169,
+        "maxMs": 170,
+        "targetMs": 60000,
+        "verdict": "TARGET VALIDATION REQUIRED"
+      },
+      "tickToSent": {
+        "runs": 20,
+        "p50Ms": 1400,
+        "p95Ms": 1493,
+        "maxMs": 1599,
+        "targetMs": 60000,
+        "verdict": "TARGET VALIDATION REQUIRED"
+      }
+    },
+    "exports": {
+      "verdict": "N/A (deferred)"
+    }
+  }
+}

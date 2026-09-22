@@ -9,6 +9,12 @@ export const BULK_IMPORT_CONFIG = 'bulkImport';
  */
 export interface BulkImportConfig {
   enabled: boolean;
+  /**
+   * The pilot allow-list (US-04.6-10): while it has entries, only these
+   * organizations see bulk import even with the switch on. Empty means every
+   * Standalone organization, which is general availability.
+   */
+  pilotOrgIds: readonly string[];
   /** Non-empty data rows accepted from one file. */
   maxRows: number;
   /** Columns accepted from one file. */
@@ -35,12 +41,18 @@ export interface BulkImportConfig {
   quoteSecret: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** Shortest accepted quote-signing secret (256 bits of hex). */
 export const BULK_IMPORT_QUOTE_SECRET_MIN_LENGTH = 32;
 
 interface IntegerSetting {
   key: string;
-  field: Exclude<keyof BulkImportConfig, 'enabled' | 'quoteSecret'>;
+  field: Exclude<
+    keyof BulkImportConfig,
+    'enabled' | 'pilotOrgIds' | 'quoteSecret'
+  >;
   fallback: number;
   min: number;
   max: number;
@@ -122,8 +134,23 @@ export function parseBulkImportConfig(
   if (flag && flag !== 'true' && flag !== 'false')
     errors.push('STANDALONE_BULK_IMPORT_ENABLED must be true or false.');
 
+  const pilotOrgIds = [
+    ...new Set(
+      read('BULK_IMPORT_PILOT_ORG_IDS')
+        .split(',')
+        .map((id) => id.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  // A typo would silently shut a pilot merchant out, so it fails at boot.
+  if (pilotOrgIds.some((id) => !UUID_PATTERN.test(id)))
+    errors.push(
+      'BULK_IMPORT_PILOT_ORG_IDS must be a comma-separated list of organization UUIDs.',
+    );
+
   const parsed: BulkImportConfig = {
     enabled: flag === 'true',
+    pilotOrgIds,
     maxRows: 0,
     maxColumns: 0,
     maxOpenDrafts: 0,
@@ -177,4 +204,18 @@ export function readBulkImportConfig(config: {
   if (!bulkImport)
     throw new Error('Bulk import configuration was not validated');
   return bulkImport;
+}
+
+/**
+ * Whether bulk import is on for one organization: the switch, narrowed by
+ * the pilot allow-list while it has entries. Every flag check that depends on
+ * who is asking goes through this, so the pilot can't leak through one path.
+ */
+export function isBulkImportEnabledForOrg(
+  bulkImport: Pick<BulkImportConfig, 'enabled' | 'pilotOrgIds'>,
+  orgId: string | null | undefined,
+): boolean {
+  if (!bulkImport.enabled) return false;
+  if (bulkImport.pilotOrgIds.length === 0) return true;
+  return !!orgId && bulkImport.pilotOrgIds.includes(orgId.toLowerCase());
 }

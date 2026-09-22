@@ -1,0 +1,6 @@
+Name,Email,Financial Status,Currency,Subtotal,Total,Created at,Lineitem quantity,Lineitem name,Lineitem price,Shipping Name,Shipping Address1,Shipping City,Shipping Phone,Billing Name,Billing Phone,Notes,Payment Gateway
+#1001,buyer1@example.test,pending,EGP,700.00,750.00,2026-09-18 14:05:00 +0300,1,Cotton shirt - M,300.00,Nour Adel,12 Tahrir St,Cairo,+201012345678,Nour Adel,+201012345678,,Cash on Delivery (COD)
+#1001,buyer1@example.test,,,,,,2,Socks,100.00,,,,,,,,
+#1001,buyer1@example.test,,,,,,1,Cap,200.00,,,,,,,,
+#1002,buyer2@example.test,pending,EGP,420.00,450.00,2026-09-19 09:40:00 +0300,1,Scarf,420.00,Karim Samir,5 Corniche Rd,Alexandria,+201198765432,Karim Samir,,,Cash on Delivery (COD)
+#1003,buyer3@example.test,paid,EGP,980.00,"1,030.00",2026-09-19 11:15:00 +0300,1,Jacket,980.00,Laila Fathy,,Giza,+201555123456,,,,shopify_payments

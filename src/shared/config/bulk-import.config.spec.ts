@@ -1,9 +1,13 @@
-import { parseBulkImportConfig } from './bulk-import.config';
+import {
+  isBulkImportEnabledForOrg,
+  parseBulkImportConfig,
+} from './bulk-import.config';
 
 describe('parseBulkImportConfig', () => {
   it('ships disabled with the story limits', () => {
     expect(parseBulkImportConfig({})).toEqual({
       enabled: false,
+      pilotOrgIds: [],
       maxRows: 5_000,
       maxColumns: 100,
       maxOpenDrafts: 3,
@@ -34,6 +38,7 @@ describe('parseBulkImportConfig', () => {
       }),
     ).toEqual({
       enabled: true,
+      pilotOrgIds: [],
       maxRows: 100,
       maxColumns: 20,
       maxOpenDrafts: 5,
@@ -62,6 +67,8 @@ describe('parseBulkImportConfig', () => {
     ['BULK_IMPORT_RELEASE_PER_MINUTE', '0'],
     ['BULK_IMPORT_RELEASE_PER_MINUTE', '121'],
     ['BULK_IMPORT_QUOTE_SECRET', 'too-short'],
+    ['BULK_IMPORT_PILOT_ORG_IDS', 'acme-store'],
+    ['BULK_IMPORT_PILOT_ORG_IDS', '0a0a0a0a-0000-4000-8000-00000000000a,42'],
   ])('refuses to boot with %s=%s', (key, value) => {
     expect(() => parseBulkImportConfig({ [key]: value })).toThrow(key);
   });
@@ -70,5 +77,45 @@ describe('parseBulkImportConfig', () => {
     expect(() =>
       parseBulkImportConfig({ STANDALONE_BULK_IMPORT_ENABLED: 'true' }),
     ).toThrow('BULK_IMPORT_QUOTE_SECRET');
+  });
+
+  it('reads the pilot allow-list: trimmed, lowercased, de-duplicated, blanks dropped', () => {
+    expect(
+      parseBulkImportConfig({
+        BULK_IMPORT_PILOT_ORG_IDS:
+          ' 0A0A0A0A-0000-4000-8000-00000000000A , ,0b0b0b0b-0000-4000-8000-00000000000b,0a0a0a0a-0000-4000-8000-00000000000a ',
+      }).pilotOrgIds,
+    ).toEqual([
+      '0a0a0a0a-0000-4000-8000-00000000000a',
+      '0b0b0b0b-0000-4000-8000-00000000000b',
+    ]);
+    expect(
+      parseBulkImportConfig({ BULK_IMPORT_PILOT_ORG_IDS: '  ' }).pilotOrgIds,
+    ).toEqual([]);
+  });
+});
+
+describe('isBulkImportEnabledForOrg (US-04.6-10 pilot allow-list)', () => {
+  const PILOT = '0a0a0a0a-0000-4000-8000-00000000000a';
+  const OTHER = '0b0b0b0b-0000-4000-8000-00000000000b';
+
+  it.each<[string, boolean, string[], string | null, boolean]>([
+    ['off, no list', false, [], PILOT, false],
+    ['off, even for a listed org', false, [PILOT], PILOT, false],
+    ['on, no list: general availability', true, [], OTHER, true],
+    ['on, listed org', true, [PILOT], PILOT, true],
+    [
+      'on, listed org in another case',
+      true,
+      [PILOT],
+      PILOT.toUpperCase(),
+      true,
+    ],
+    ['on, unlisted org', true, [PILOT], OTHER, false],
+    ['on, list set, no organization', true, [PILOT], null, false],
+  ])('%s', (_case, enabled, pilotOrgIds, orgId, want) => {
+    expect(isBulkImportEnabledForOrg({ enabled, pilotOrgIds }, orgId)).toBe(
+      want,
+    );
   });
 });

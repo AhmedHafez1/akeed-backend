@@ -1,0 +1,10 @@
+Order Number,Name,Phone,Amount,Payment
+M-1,Customer 1,01012345670,500,COD
+M-2,Customer 2,01012345671,500,Cash
+M-3,Customer 3,01012345672,500,كاش
+M-4,Customer 4,01012345673,500,عند الاستلام
+M-5,Customer 5,01012345674,500,Paid
+M-6,Customer 6,01012345675,500,Visa
+M-7,Customer 7,01012345676,500,مدفوع
+M-8,Customer 8,01012345677,500,InstaPay
+M-9,Customer 9,01012345678,500,

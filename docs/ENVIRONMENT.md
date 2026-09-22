@@ -202,6 +202,7 @@ Roll out read-only first (switch off), name operators only after a recovery dril
 | Variable | Notes |
 | --- | --- |
 | `STANDALONE_BULK_IMPORT_ENABLED` | `true` or `false` (default). While `false`, every import route answers `403 IMPORT_DISABLED`. Rollback is turning it off; the import tables stay. |
+| `BULK_IMPORT_PILOT_ORG_IDS` | Pilot allow-list, checked together with `STANDALONE_BULK_IMPORT_ENABLED`: a comma-separated list of organization UUIDs (a malformed entry fails startup). While it has entries, every other organization is treated as if the flag were off (`403 IMPORT_DISABLED`, and no "New import" action), with stop still allowed. Empty (default) means every Standalone organization, which is general availability. Batches already releasing finish whatever the list says. Rollback for one merchant: remove its UUID. |
 | `BULK_IMPORT_MAX_ROWS` | Non-empty data rows per file, 1–5000 (default 5000). Above it: `422 IMPORT_ROW_LIMIT_EXCEEDED`. |
 | `BULK_IMPORT_MAX_COLUMNS` | Columns per file, 1–100 (default 100). Above it: `422 IMPORT_COLUMN_LIMIT_EXCEEDED`. |
 | `BULK_IMPORT_MAX_OPEN_DRAFTS` | Unexpired drafts per organization, 1–20 (default 3). One more: `409 IMPORT_TOO_MANY_DRAFTS`. |

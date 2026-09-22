@@ -5,6 +5,7 @@ import {
   parseBulkImportConfig,
 } from '../../shared/config/bulk-import.config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { MAPPING_DICTIONARY_VERSION } from './mapping/alias-dictionary';
 import { OrderImportMappingService } from './order-import-mapping.service';
 import { OrderImportsService } from './order-imports.service';
 import { RowValidationService } from './validation/row-validation.service';
@@ -143,7 +144,7 @@ describe('OrderImportsService', () => {
           issues: [],
         })),
         // US-04.6-03: detected mapping and the store's default options.
-        mappingDictionaryVersion: 1,
+        mappingDictionaryVersion: MAPPING_DICTIONARY_VERSION,
         mappingProfileApplied: false,
         options: {
           country: 'EG',
@@ -186,7 +187,7 @@ describe('OrderImportsService', () => {
         headers: ['order_id', 'name', 'phone'],
         fileSize: Buffer.byteLength(csv),
         mapping: {
-          dictionaryVersion: 1,
+          dictionaryVersion: MAPPING_DICTIONARY_VERSION,
           confirmed: false,
           columns: { phone: 'phone', customerName: ['name'], amount: null },
           sources: { phone: 'auto', amount: 'none' },

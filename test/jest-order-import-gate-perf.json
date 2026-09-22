@@ -1,0 +1,10 @@
+{
+  "rootDir": "..",
+  "testRegex": "test/order-import-gate\\.perf-spec\\.ts$",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "transform": {
+    "^.+\\.ts$": "ts-jest"
+  },
+  "testEnvironment": "node",
+  "testTimeout": 1800000
+}

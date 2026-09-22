@@ -1,0 +1,76 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "Name",
+    "customerName": [
+      "Shipping Name"
+    ],
+    "phone": "Shipping Phone",
+    "amount": "Total",
+    "currency": "Currency",
+    "paymentMethod": "Payment Gateway",
+    "orderDate": "Created at",
+    "city": "Shipping City",
+    "address": "Shipping Address1",
+    "notes": "Notes"
+  },
+  "paymentValueMap": {
+    "shopify_payments": "not_cod"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderNumber": "#1001",
+        "customerName": "Nour Adel",
+        "customerPhone": "+201012345678",
+        "totalPrice": "750.00",
+        "orderDate": "2026-09-18"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "duplicate",
+      "issues": [
+        "DUPLICATE_IN_FILE",
+        "PAYMENT_UNKNOWN_EXCLUDED"
+      ],
+      "collapsedInto": 2
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "duplicate",
+      "issues": [
+        "DUPLICATE_IN_FILE",
+        "PAYMENT_UNKNOWN_EXCLUDED"
+      ],
+      "collapsedInto": 2
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "orderNumber": "#1002",
+        "totalPrice": "450.00"
+      }
+    },
+    {
+      "rowNumber": 6,
+      "outcome": "excluded",
+      "issues": [
+        "PAYMENT_NOT_COD"
+      ],
+      "normalized": {
+        "totalPrice": "1030.00"
+      }
+    }
+  ]
+}

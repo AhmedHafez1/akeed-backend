@@ -1,0 +1,42 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "customerName": [
+      "Customer Name"
+    ],
+    "phone": "Mobile",
+    "amount": "Amount",
+    "paymentMethod": "Payment Method",
+    "orderDate": "Order Date"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": []
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "duplicate",
+      "issues": [
+        "DUPLICATE_IN_FILE"
+      ],
+      "collapsedInto": 2
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": []
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "ready",
+      "issues": []
+    }
+  ]
+}

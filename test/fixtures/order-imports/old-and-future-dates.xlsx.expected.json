@@ -1,0 +1,150 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "Order ID",
+    "Customer Name",
+    "Phone",
+    "Amount",
+    "Payment Method",
+    "Order Date"
+  ],
+  "rowCount": 12,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "D-1",
+        "Customer 1",
+        "01112345670",
+        "300",
+        "COD",
+        "2026-09-18"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "D-2",
+        "Customer 2",
+        "01112345671",
+        "300",
+        "COD",
+        "2026-09-17"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "D-3",
+        "Customer 3",
+        "01112345672",
+        "300",
+        "COD",
+        "46280"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "D-4",
+        "Customer 4",
+        "01112345673",
+        "300",
+        "COD",
+        "2026-09-11"
+      ]
+    },
+    {
+      "rowNumber": 6,
+      "cells": [
+        "D-5",
+        "Customer 5",
+        "01112345674",
+        "300",
+        "COD",
+        "2026-09-12"
+      ]
+    },
+    {
+      "rowNumber": 7,
+      "cells": [
+        "D-6",
+        "Customer 6",
+        "01112345675",
+        "300",
+        "COD",
+        "2026-09-20"
+      ]
+    },
+    {
+      "rowNumber": 8,
+      "cells": [
+        "D-7",
+        "Customer 7",
+        "01112345676",
+        "300",
+        "COD",
+        "2026-09-21"
+      ]
+    },
+    {
+      "rowNumber": 9,
+      "cells": [
+        "D-8",
+        "Customer 8",
+        "01112345677",
+        "300",
+        "COD",
+        "yesterday"
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "cells": [
+        "D-9",
+        "Customer 9",
+        "01112345678",
+        "300",
+        "COD",
+        "2026-09-18T23:30:00Z"
+      ]
+    },
+    {
+      "rowNumber": 11,
+      "cells": [
+        "D-10",
+        "Customer 10",
+        "01112345679",
+        "300",
+        "COD",
+        "18/09/2026"
+      ]
+    },
+    {
+      "rowNumber": 12,
+      "cells": [
+        "D-11",
+        "Customer 11",
+        "01112345680",
+        "300",
+        "COD",
+        "09/18/2026"
+      ]
+    },
+    {
+      "rowNumber": 13,
+      "cells": [
+        "D-12",
+        "Customer 12",
+        "01112345681",
+        "300",
+        "COD",
+        "18-9-26"
+      ]
+    }
+  ]
+}

@@ -203,6 +203,36 @@ describe('BillingService.readCredits', () => {
     });
   });
 
+  it('reports bulk import on only for pilot organizations while the allow-list is set (US-04.6-10)', async () => {
+    const pilotOrg = '0a0a0a0a-0000-4000-8000-00000000000a';
+    const pilotConfig = (list: string) =>
+      standaloneCreditBillingConfigService({
+        STANDALONE_BULK_IMPORT_ENABLED: 'true',
+        BULK_IMPORT_QUOTE_SECRET: 'q'.repeat(32),
+        BULK_IMPORT_PILOT_ORG_IDS: list,
+      });
+
+    const listed = setup({ config: pilotConfig(pilotOrg) }).service;
+    await expect(
+      listed.readCredits({ ...owner, orgId: pilotOrg }),
+    ).resolves.toMatchObject({ bulkImportEnabled: true });
+    await expect(listed.readCredits(owner)).resolves.toMatchObject({
+      bulkImportEnabled: false,
+    });
+
+    const everyone = setup({ config: pilotConfig('') }).service;
+    await expect(everyone.readCredits(owner)).resolves.toMatchObject({
+      bulkImportEnabled: true,
+    });
+
+    const off = setup({
+      config: standaloneCreditBillingConfigService(),
+    }).service;
+    await expect(
+      off.readCredits({ ...owner, orgId: pilotOrg }),
+    ).resolves.toMatchObject({ bulkImportEnabled: false });
+  });
+
   it('exposes the global billing switch without hiding read-only balances', async () => {
     const { service } = setup({
       config: standaloneCreditBillingConfigService(),

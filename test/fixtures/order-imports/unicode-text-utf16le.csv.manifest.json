@@ -1,0 +1,36 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": true,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "رقم الطلب",
+    "customerName": [
+      "اسم العميل"
+    ],
+    "phone": "الهاتف",
+    "amount": "المبلغ"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "محمد",
+        "customerPhone": "+201001234567"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "فاطمة",
+        "totalPrice": "200.00"
+      }
+    }
+  ]
+}

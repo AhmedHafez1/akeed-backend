@@ -9,7 +9,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { readBulkImportConfig } from '../../../shared/config/bulk-import.config';
+import {
+  isBulkImportEnabledForOrg,
+  readBulkImportConfig,
+} from '../../../shared/config/bulk-import.config';
 import {
   DualAuthGuard,
   type AuthenticatedUser,
@@ -36,9 +39,9 @@ export interface OrderImportAccessOptions {
 }
 
 /**
- * `write`: the flag is on and the caller is an owner or admin of an org whose
+ * `write`: the flag is on for the caller's organization and the caller is an owner or admin of an org whose
  * single active source is a Standalone store with completed onboarding.
- * `read`: the flag is on and the caller belongs to an organization.
+ * `read`: the flag is on for the caller's organization and the caller belongs to an organization.
  */
 export type OrderImportAccessMode = 'read' | 'write';
 
@@ -66,7 +69,16 @@ export class OrderImportAccessGuard implements CanActivate {
     const whenDisabled = this.reflector.getAllAndOverride<
       OrderImportAccessOptions['whenDisabled'] | undefined
     >(ORDER_IMPORT_WHEN_DISABLED, [context.getHandler(), context.getClass()]);
-    if (whenDisabled !== 'allow' && !readBulkImportConfig(this.config).enabled)
+    const request = context.switchToHttp().getRequest<OrderImportRequest>();
+    // The switch and the pilot allow-list (US-04.6-10) are one decision: an
+    // organization outside the pilot is refused exactly as if it were off.
+    if (
+      whenDisabled !== 'allow' &&
+      !isBulkImportEnabledForOrg(
+        readBulkImportConfig(this.config),
+        request.user?.orgId,
+      )
+    )
       throw orderImportError('IMPORT_DISABLED');
     const mode =
       this.reflector.getAllAndOverride<OrderImportAccessMode | undefined>(
@@ -74,7 +86,6 @@ export class OrderImportAccessGuard implements CanActivate {
         [context.getHandler(), context.getClass()],
       ) ?? 'write';
     if (mode === 'read') return true;
-    const request = context.switchToHttp().getRequest<OrderImportRequest>();
     request.orderImportSource = await this.ingestion.resolveWritableSource(
       request.user as AuthenticatedUser,
       IMPORT_SOURCE_CODES,

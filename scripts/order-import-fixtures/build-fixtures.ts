@@ -29,11 +29,82 @@ export type FixtureExpectation =
       rowsAreSample?: boolean;
     };
 
+/** One row's hand-written verdict after mapping and validation (US-04.6-10). */
+export interface ManifestRow {
+  rowNumber: number;
+  outcome: 'ready' | 'invalid' | 'duplicate' | 'excluded';
+  /** Every issue code on the row, in any order. */
+  issues: string[];
+  collapsedInto?: number;
+  /** Normalized fields worth pinning, compared as a subset. */
+  normalized?: Record<string, string>;
+}
+
+/**
+ * What a whole file must turn into for a merchant (US-04.6-10 AC1): the
+ * file-level refusal, or every row's outcome and issue codes under the given
+ * mapping, options, store settings and clock. Written by hand from the stories,
+ * never captured from the validator under test.
+ */
+export interface ImportManifest {
+  /** The validation clock and the store it runs for. */
+  now: string;
+  timezone: string;
+  country: string;
+  defaultCurrency: string;
+  assumeCodWhenPaymentMissing: boolean;
+  fileError?: string;
+  /** Field → column; fields left out are not imported. */
+  mapping?: Partial<Record<string, string | string[] | null>>;
+  /** The auto-detected mapping already equals `mapping`. */
+  autoMapped?: boolean;
+  dateFormat?: 'auto' | 'DMY' | 'MDY' | 'YMD';
+  /** Merchant corrections, by the value as written. */
+  paymentValueMap?: Record<string, 'cod' | 'not_cod'>;
+  rows?: ManifestRow[];
+  /** Totals by outcome; with `rowsAreSample`, `rows` is a subset. */
+  rowCounts?: Partial<Record<ManifestRow['outcome'], number>>;
+  rowsAreSample?: boolean;
+  /**
+   * The release-gate E2E script for this file: the reply each imported row
+   * gets, and the Verifications status it must end in.
+   */
+  results?: {
+    replies: Record<number, 'confirm' | 'cancel' | 'none'>;
+    status: Record<number, string>;
+  };
+}
+
 export interface OrderImportFixture {
   file: string;
   description: string;
   build: () => Buffer;
   expected: FixtureExpectation;
+  manifest?: ImportManifest;
+}
+
+/** The release-gate clock: 13:00 in Cairo on 19 September 2026. */
+export const MANIFEST_NOW = '2026-09-19T10:00:00.000Z';
+
+/** Defaults for an Egyptian store; each manifest overrides what it needs. */
+export function egyptStore(
+  manifest: Omit<
+    ImportManifest,
+    'now' | 'timezone' | 'country' | 'defaultCurrency'
+  >,
+): ImportManifest {
+  return {
+    now: MANIFEST_NOW,
+    timezone: 'Africa/Cairo',
+    country: 'EG',
+    defaultCurrency: 'EGP',
+    ...manifest,
+  };
+}
+
+/** Days since 1899-12-30: the serial Excel stores for a date. */
+export function excelSerial(isoDate: string): number {
+  return (Date.parse(isoDate) - Date.UTC(1899, 11, 30)) / 86_400_000;
 }
 
 const FIXED_DATE = new Date('2026-01-01T00:00:00Z');
@@ -45,21 +116,21 @@ const cfb = CFB as {
   write(container: unknown, options: { type: 'buffer' }): Buffer;
 };
 
-function text(value: string): Buffer {
+export function text(value: string): Buffer {
   return Buffer.from(value, 'utf8');
 }
 
-function withBom(value: string): Buffer {
+export function withBom(value: string): Buffer {
   return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), text(value)]);
 }
 
-type Cell = string | number | CellObject;
+export type Cell = string | number | CellObject;
 
 function sheet(rows: Cell[][]) {
   return utils.aoa_to_sheet(rows);
 }
 
-function workbook(
+export function workbook(
   sheets: { name: string; rows: Cell[][]; hidden?: 0 | 1 | 2 }[],
   configure?: (book: WorkBook) => void,
 ): Buffer {
@@ -80,7 +151,7 @@ function workbook(
 }
 
 /** Rewrites a package's parts, for quirks SheetJS cannot write directly. */
-function repackage(
+export function repackage(
   source: Buffer,
   change: (files: Record<string, Uint8Array>) => void,
 ): Buffer {
@@ -109,7 +180,7 @@ function orderRows(count: number): string[][] {
   ]);
 }
 
-function csvOf(rows: string[][]): string {
+export function csvOf(rows: string[][]): string {
   return rows.map((row) => row.join(',')).join('\r\n') + '\r\n';
 }
 
@@ -137,7 +208,7 @@ const simpleXlsxExpected: FixtureExpectation = {
 export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
   // ---------------------------------------------------------------- text
   {
-    file: 'utf8-bom-multiline.csv',
+    file: 'utf8-bom-multiline-quotes.csv',
     description:
       'UTF-8 with BOM and CRLF; quoted cells with a line break, a comma and doubled quotes.',
     build: () =>
@@ -177,11 +248,42 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         },
       ],
     },
+    manifest: egyptStore({
+      // No payment column: the store assumes COD for a missing payment.
+      assumeCodWhenPaymentMissing: true,
+      autoMapped: true,
+      mapping: {
+        orderReference: 'order_id',
+        customerName: ['customer_name'],
+        phone: 'phone',
+        amount: 'amount',
+        notes: 'notes',
+      },
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: { customerName: 'أحمد علي', totalPrice: '250.00' },
+        },
+        {
+          rowNumber: 3,
+          outcome: 'ready',
+          issues: [],
+          normalized: {
+            customerName: 'Sara, Ltd',
+            customerPhone: '+201112223334',
+            totalPrice: '99.50',
+            notes: 'She said "ok"',
+          },
+        },
+      ],
+    }),
   },
   {
-    file: 'utf16le-tab.csv',
+    file: 'unicode-text-utf16le.csv',
     description:
-      'Arabic Excel "Unicode text": UTF-16 LE with BOM, tab-separated.',
+      'Arabic Excel "Unicode text" (a .txt renamed to .csv): UTF-16 LE with BOM, tab-separated.',
     build: () =>
       Buffer.concat([
         Buffer.from([0xff, 0xfe]),
@@ -205,6 +307,30 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         { rowNumber: 3, cells: ['2', 'فاطمة', '01201234567', '200'] },
       ],
     },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: true,
+      autoMapped: true,
+      mapping: {
+        orderReference: 'رقم الطلب',
+        customerName: ['اسم العميل'],
+        phone: 'الهاتف',
+        amount: 'المبلغ',
+      },
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: { customerName: 'محمد', customerPhone: '+201001234567' },
+        },
+        {
+          rowNumber: 3,
+          outcome: 'ready',
+          issues: [],
+          normalized: { customerName: 'فاطمة', totalPrice: '200.00' },
+        },
+      ],
+    }),
   },
   {
     file: 'windows-1256.csv',
@@ -227,24 +353,92 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         { rowNumber: 2, cells: ['خالد', '01001234567', '300', 'القاهرة'] },
       ],
     },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: true,
+      autoMapped: true,
+      mapping: {
+        customerName: ['الاسم'],
+        phone: 'الهاتف',
+        amount: 'المبلغ',
+        city: 'المدينة',
+      },
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: { customerName: 'خالد', city: 'القاهرة' },
+        },
+      ],
+    }),
   },
   {
-    file: 'semicolon.csv',
-    description: 'Semicolon-separated with decimal-comma amounts.',
-    build: () => text('order_id;name;amount\n1;Ali;125,50\n2;Mona;1.250,00\n'),
+    file: 'semicolon-eu.csv',
+    description:
+      'European-locale Excel: semicolon-separated, LF line ends, decimal-comma amounts.',
+    build: () =>
+      text(
+        'order_id;name;phone;amount;payment\n' +
+          '1;Ali;01001234567;125,50;COD\n' +
+          '2;Mona;01101234567;1.250,00;COD\n' +
+          '3;Omar;01201234567;7,5;COD\n' +
+          '4;Hala;01501234567;12,3456;COD\n',
+      ),
     expected: {
       format: 'csv',
       encoding: 'utf-8',
       delimiter: ';',
       sheetName: null,
       ignoredSheets: [],
-      headers: ['order_id', 'name', 'amount'],
-      rowCount: 2,
+      headers: ['order_id', 'name', 'phone', 'amount', 'payment'],
+      rowCount: 4,
       rows: [
-        { rowNumber: 2, cells: ['1', 'Ali', '125,50'] },
-        { rowNumber: 3, cells: ['2', 'Mona', '1.250,00'] },
+        { rowNumber: 2, cells: ['1', 'Ali', '01001234567', '125,50', 'COD'] },
+        {
+          rowNumber: 3,
+          cells: ['2', 'Mona', '01101234567', '1.250,00', 'COD'],
+        },
+        { rowNumber: 4, cells: ['3', 'Omar', '01201234567', '7,5', 'COD'] },
+        {
+          rowNumber: 5,
+          cells: ['4', 'Hala', '01501234567', '12,3456', 'COD'],
+        },
       ],
     },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      autoMapped: true,
+      mapping: {
+        orderReference: 'order_id',
+        customerName: ['name'],
+        phone: 'phone',
+        amount: 'amount',
+        paymentMethod: 'payment',
+      },
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: { totalPrice: '125.50', customerPhone: '+201001234567' },
+        },
+        // Both separators: the last one is the decimal (US-04.6-04 AC4).
+        {
+          rowNumber: 3,
+          outcome: 'ready',
+          issues: [],
+          normalized: { totalPrice: '1250.00' },
+        },
+        {
+          rowNumber: 4,
+          outcome: 'ready',
+          issues: [],
+          normalized: { totalPrice: '7.50' },
+        },
+        // Four digits after a lone comma is neither a decimal nor thousands.
+        { rowNumber: 5, outcome: 'invalid', issues: ['AMOUNT_AMBIGUOUS'] },
+      ],
+    }),
   },
   {
     file: 'malformed-quote.csv',
@@ -328,7 +522,7 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
     expected: { error: 'IMPORT_FILE_EMPTY' },
   },
   {
-    file: 'rows-5000.csv',
+    file: '5000-rows.csv',
     description: 'Exactly the row limit.',
     build: () => text(csvOf([ORDER_HEADERS, ...orderRows(5_000)])),
     expected: {
@@ -351,12 +545,42 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         },
       ],
     },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: true,
+      autoMapped: true,
+      mapping: {
+        orderReference: 'order_id',
+        customerName: ['customer_name'],
+        phone: 'phone',
+        amount: 'amount',
+      },
+      rowCounts: { ready: 5_000 },
+      rowsAreSample: true,
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: { orderNumber: 'ORD-1', customerPhone: '+201010000000' },
+        },
+        {
+          rowNumber: 5_001,
+          outcome: 'ready',
+          issues: [],
+          normalized: { orderNumber: 'ORD-5000', totalPrice: '149.50' },
+        },
+      ],
+    }),
   },
   {
-    file: 'rows-5001.csv',
+    file: '5001-rows.csv',
     description: 'One row over the limit.',
     build: () => text(csvOf([ORDER_HEADERS, ...orderRows(5_001)])),
     expected: { error: 'IMPORT_ROW_LIMIT_EXCEEDED' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_ROW_LIMIT_EXCEEDED',
+    }),
   },
   {
     file: 'cols-100.csv',
@@ -385,7 +609,7 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
     },
   },
   {
-    file: 'cols-101.csv',
+    file: '101-columns.csv',
     description: 'One column over the limit.',
     build: () =>
       text(
@@ -395,6 +619,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         ]),
       ),
     expected: { error: 'IMPORT_COLUMN_LIMIT_EXCEEDED' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_COLUMN_LIMIT_EXCEEDED',
+    }),
   },
   {
     file: 'pdf-renamed.csv',
@@ -404,6 +632,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         '%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n',
       ),
     expected: { error: 'IMPORT_FILE_UNREADABLE' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_FILE_UNREADABLE',
+    }),
   },
   {
     file: 'xlsx-renamed.csv',
@@ -430,47 +662,138 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
   // ---------------------------------------------------------------- xlsx
   {
     file: 'arabic-excel.xlsx',
-    description: 'A typical Arabic merchant workbook.',
-    build: () =>
-      workbook([
-        {
-          name: 'الطلبات',
-          rows: [
-            [
-              'رقم الطلب',
-              'اسم العميل',
-              'رقم الموبايل',
-              'المبلغ',
-              'طريقة الدفع',
-              'المدينة',
+    description:
+      'A typical Arabic merchant workbook: a hidden first sheet, Arabic headers, phones stored as numbers, a formula total, dates as day-first serials, a merged city cell and a repeated line item.',
+    build: () => {
+      const day = (iso: string): CellObject => ({
+        t: 'n',
+        v: excelSerial(iso),
+        z: 'dd/mm/yyyy',
+      });
+      const zeroPadded = (phone: number): CellObject => ({
+        t: 'n',
+        v: phone,
+        z: '00000000000',
+      });
+      return workbook(
+        [
+          {
+            name: 'ملاحظات',
+            rows: [['لا تقرأ هذه الورقة'], ['تعليمات المندوب']],
+            hidden: 1,
+          },
+          {
+            name: 'الطلبات',
+            rows: [
+              [
+                'رقم الطلب',
+                'اسم العميل',
+                'رقم الموبايل',
+                'المبلغ',
+                'طريقة الدفع',
+                'تاريخ الطلب',
+                'المحافظة',
+              ],
+              [
+                '1001',
+                'أحمد علي',
+                zeroPadded(1_001_234_567),
+                { t: 'n', v: 250, f: '100*2.5' },
+                'الدفع عند الاستلام',
+                day('2026-09-17'),
+                'القاهرة',
+              ],
+              [
+                '1002',
+                'منى حسن',
+                1_112_223_334,
+                99.5,
+                'كاش',
+                day('2026-09-18'),
+                'الجيزة',
+              ],
+              [
+                '1003',
+                'سارة مصطفى',
+                '01234567890',
+                { t: 'n', v: 1_250.5, z: '#,##0.00' },
+                'عند الاستلام',
+                day('2026-09-16'),
+                'الإسكندرية',
+              ],
+              [
+                '1004',
+                'محمد حسن',
+                '0223456789',
+                400,
+                'الدفع عند الاستلام',
+                day('2026-09-17'),
+                'القاهرة',
+              ],
+              [
+                '1005',
+                'ياسمين عادل',
+                '01555123456',
+                500,
+                'مدفوع',
+                day('2026-09-18'),
+                'الجيزة',
+              ],
+              [
+                '1006',
+                'عمر خالد',
+                '01099988877',
+                300,
+                'الدفع عند الاستلام',
+                day('2026-09-01'),
+                'طنطا',
+              ],
+              [
+                '1007',
+                'Sara Mostafa',
+                '01011122233',
+                { t: 'n', v: 750, f: 'SUM(700,50)' },
+                'COD',
+                day('2026-09-19'),
+                'Cairo',
+              ],
+              [
+                '1001',
+                'أحمد علي',
+                zeroPadded(1_001_234_567),
+                250,
+                'الدفع عند الاستلام',
+                day('2026-09-17'),
+                'القاهرة',
+              ],
             ],
-            [
-              '1001',
-              'أحمد علي',
-              '01001234567',
-              250,
-              'الدفع عند الاستلام',
-              'القاهرة',
-            ],
-            ['1002', 'منى حسن', '01112223334', 99.5, 'كاش', 'الجيزة'],
-          ],
+          },
+        ],
+        (book) => {
+          // The city of rows 2-3 is one merged cell; row 3's own value is
+          // hidden under the merge and must not be read.
+          book.Sheets['الطلبات']['!merges'] = [
+            { s: { r: 1, c: 6 }, e: { r: 2, c: 6 } },
+          ];
         },
-      ]),
+      );
+    },
     expected: {
       format: 'xlsx',
       encoding: null,
       delimiter: null,
       sheetName: 'الطلبات',
-      ignoredSheets: [],
+      ignoredSheets: ['ملاحظات'],
       headers: [
         'رقم الطلب',
         'اسم العميل',
         'رقم الموبايل',
         'المبلغ',
         'طريقة الدفع',
-        'المدينة',
+        'تاريخ الطلب',
+        'المحافظة',
       ],
-      rowCount: 2,
+      rowCount: 8,
       rows: [
         {
           rowNumber: 2,
@@ -480,15 +803,158 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
             '01001234567',
             '250',
             'الدفع عند الاستلام',
+            '2026-09-17',
             'القاهرة',
           ],
         },
         {
           rowNumber: 3,
-          cells: ['1002', 'منى حسن', '01112223334', '99.5', 'كاش', 'الجيزة'],
+          cells: [
+            '1002',
+            'منى حسن',
+            '1112223334',
+            '99.5',
+            'كاش',
+            '2026-09-18',
+            '',
+          ],
+        },
+        {
+          rowNumber: 4,
+          cells: [
+            '1003',
+            'سارة مصطفى',
+            '01234567890',
+            '1,250.50',
+            'عند الاستلام',
+            '2026-09-16',
+            'الإسكندرية',
+          ],
+        },
+        {
+          rowNumber: 5,
+          cells: [
+            '1004',
+            'محمد حسن',
+            '0223456789',
+            '400',
+            'الدفع عند الاستلام',
+            '2026-09-17',
+            'القاهرة',
+          ],
+        },
+        {
+          rowNumber: 6,
+          cells: [
+            '1005',
+            'ياسمين عادل',
+            '01555123456',
+            '500',
+            'مدفوع',
+            '2026-09-18',
+            'الجيزة',
+          ],
+        },
+        {
+          rowNumber: 7,
+          cells: [
+            '1006',
+            'عمر خالد',
+            '01099988877',
+            '300',
+            'الدفع عند الاستلام',
+            '2026-09-01',
+            'طنطا',
+          ],
+        },
+        {
+          rowNumber: 8,
+          cells: [
+            '1007',
+            'Sara Mostafa',
+            '01011122233',
+            '750',
+            'COD',
+            '2026-09-19',
+            'Cairo',
+          ],
+        },
+        {
+          rowNumber: 9,
+          cells: [
+            '1001',
+            'أحمد علي',
+            '01001234567',
+            '250',
+            'الدفع عند الاستلام',
+            '2026-09-17',
+            'القاهرة',
+          ],
         },
       ],
     },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      autoMapped: true,
+      mapping: {
+        orderReference: 'رقم الطلب',
+        customerName: ['اسم العميل'],
+        phone: 'رقم الموبايل',
+        amount: 'المبلغ',
+        paymentMethod: 'طريقة الدفع',
+        orderDate: 'تاريخ الطلب',
+        city: 'المحافظة',
+      },
+      dateFormat: 'auto',
+      rows: [
+        {
+          rowNumber: 2,
+          outcome: 'ready',
+          issues: [],
+          normalized: {
+            orderNumber: '1001',
+            customerPhone: '+201001234567',
+            totalPrice: '250.00',
+            currency: 'EGP',
+            paymentMethod: 'cash on delivery',
+            orderDate: '2026-09-17',
+            city: 'القاهرة',
+          },
+        },
+        {
+          rowNumber: 3,
+          outcome: 'ready',
+          issues: [],
+          // A 10-digit Egyptian mobile stored as a number lost its 0.
+          normalized: { customerPhone: '+201112223334', totalPrice: '99.50' },
+        },
+        {
+          rowNumber: 4,
+          outcome: 'ready',
+          issues: [],
+          normalized: { totalPrice: '1250.50', orderDate: '2026-09-16' },
+        },
+        { rowNumber: 5, outcome: 'invalid', issues: ['PHONE_NOT_MOBILE'] },
+        { rowNumber: 6, outcome: 'excluded', issues: ['PAYMENT_NOT_COD'] },
+        { rowNumber: 7, outcome: 'excluded', issues: ['ORDER_TOO_OLD'] },
+        {
+          rowNumber: 8,
+          outcome: 'ready',
+          issues: [],
+          normalized: { customerName: 'Sara Mostafa', totalPrice: '750.00' },
+        },
+        {
+          rowNumber: 9,
+          outcome: 'duplicate',
+          issues: ['DUPLICATE_IN_FILE'],
+          collapsedInto: 2,
+        },
+      ],
+      results: {
+        replies: { 2: 'confirm', 3: 'confirm', 4: 'cancel', 8: 'none' },
+        status: { 2: 'confirmed', 3: 'confirmed', 4: 'canceled', 8: 'sent' },
+      },
+    }),
   },
   {
     file: 'hidden-first-sheet.xlsx',
@@ -771,6 +1237,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
       return cfb.write(container, { type: 'buffer' });
     },
     expected: { error: 'IMPORT_FILE_PROTECTED' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_FILE_PROTECTED',
+    }),
   },
   {
     file: 'macro.xlsm',
@@ -780,6 +1250,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         files['xl/vbaProject.bin'] = new Uint8Array(512).fill(0x41);
       }),
     expected: { error: 'IMPORT_FILE_TYPE_UNSUPPORTED' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_FILE_TYPE_UNSUPPORTED',
+    }),
   },
   {
     file: 'external-link.xlsx',
@@ -854,6 +1328,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
       return write(book, { type: 'buffer', bookType: 'biff8' }) as Buffer;
     },
     expected: { error: 'IMPORT_FILE_TYPE_UNSUPPORTED' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_FILE_TYPE_UNSUPPORTED',
+    }),
   },
   {
     file: 'zip-bomb.xlsx',
@@ -866,6 +1344,10 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         );
       }),
     expected: { error: 'IMPORT_FILE_UNREADABLE' },
+    manifest: egyptStore({
+      assumeCodWhenPaymentMissing: false,
+      fileError: 'IMPORT_FILE_UNREADABLE',
+    }),
   },
   {
     file: 'truncated.xlsx',

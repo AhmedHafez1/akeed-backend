@@ -1,0 +1,39 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": true,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "order_id",
+    "customerName": [
+      "customer_name"
+    ],
+    "phone": "phone",
+    "amount": "amount",
+    "notes": "notes"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "أحمد علي",
+        "totalPrice": "250.00"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "Sara, Ltd",
+        "customerPhone": "+201112223334",
+        "totalPrice": "99.50",
+        "notes": "She said \"ok\""
+      }
+    }
+  ]
+}

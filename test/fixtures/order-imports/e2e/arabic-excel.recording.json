@@ -1,0 +1,2629 @@
+{
+  "file": "arabic-excel.xlsx",
+  "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+  "steps": [
+    {
+      "step": "upload",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "status": "draft",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "encoding": null,
+        "delimiter": null,
+        "sheetName": "الطلبات",
+        "ignoredSheets": [
+          "ملاحظات"
+        ],
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "rowCount": 8,
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "رقم الموبايل": "01001234567",
+              "المبلغ": "250",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "تاريخ الطلب": "2026-09-17",
+              "المحافظة": "القاهرة"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "رقم الموبايل": "1112223334",
+              "المبلغ": "99.5",
+              "طريقة الدفع": "كاش",
+              "تاريخ الطلب": "2026-09-18",
+              "المحافظة": ""
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "رقم الموبايل": "01234567890",
+              "المبلغ": "1,250.50",
+              "طريقة الدفع": "عند الاستلام",
+              "تاريخ الطلب": "2026-09-16",
+              "المحافظة": "الإسكندرية"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "رقم الموبايل": "0223456789",
+              "المبلغ": "400",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "تاريخ الطلب": "2026-09-17",
+              "المحافظة": "القاهرة"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "رقم الموبايل": "01555123456",
+              "المبلغ": "500",
+              "طريقة الدفع": "مدفوع",
+              "تاريخ الطلب": "2026-09-18",
+              "المحافظة": "الجيزة"
+            },
+            "issues": []
+          }
+        ],
+        "mappingDictionaryVersion": 1,
+        "headerSignature": "38a7bfafee338ca7ae3eb0c7a68249f6c6d7c5c51d28cac024ac9787bc792a7e",
+        "mappingProfileApplied": false,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        }
+      }
+    },
+    {
+      "step": "detail:uploaded",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "draft",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": []
+          }
+        ],
+        "counts": {},
+        "orderDateMin": null,
+        "orderDateMax": null,
+        "oldOrderCount": 0,
+        "mappingConfirmed": false,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "mapping",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "status": "draft",
+        "mappingDictionaryVersion": 1,
+        "mapping": {
+          "phone": "رقم الموبايل",
+          "customerName": [
+            "اسم العميل"
+          ],
+          "amount": "المبلغ",
+          "orderReference": "رقم الطلب",
+          "currency": null,
+          "paymentMethod": "طريقة الدفع",
+          "orderDate": "تاريخ الطلب",
+          "city": "المحافظة",
+          "address": null,
+          "notes": null
+        },
+        "sources": {
+          "phone": "auto",
+          "customerName": "auto",
+          "amount": "auto",
+          "orderReference": "auto",
+          "currency": "none",
+          "paymentMethod": "auto",
+          "orderDate": "auto",
+          "city": "auto",
+          "address": "none",
+          "notes": "none"
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "mappingProfileId": "93d48979-9825-404d-a602-5e06f9d3db06",
+        "unmappedColumns": [],
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "counts": {
+          "ready": 4,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 0,
+          "duplicate": 1
+        }
+      }
+    },
+    {
+      "step": "detail:reviewed",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "draft",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ]
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ]
+          }
+        ],
+        "counts": {
+          "ready": 4,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 0,
+          "duplicate": 1
+        },
+        "orderDateMin": "2026-09-16",
+        "orderDateMax": "2026-09-19",
+        "oldOrderCount": 1,
+        "mappingConfirmed": true,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "rows:ready",
+      "body": {
+        "rows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "phone": "01001234567",
+              "customerName": "أحمد علي",
+              "amount": "250",
+              "orderReference": "1001",
+              "paymentMethod": "الدفع عند الاستلام",
+              "orderDate": "2026-09-17",
+              "city": "القاهرة"
+            },
+            "normalized": {
+              "city": "القاهرة",
+              "currency": "EGP",
+              "orderDate": "2026-09-17",
+              "totalPrice": "250.00",
+              "orderNumber": "1001",
+              "customerName": "أحمد علي",
+              "customerPhone": "+201001234567",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "الدفع عند الاستلام"
+            },
+            "outcome": "ready",
+            "issues": [],
+            "includeOverride": false,
+            "collapsedInto": null
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "phone": "1112223334",
+              "customerName": "منى حسن",
+              "amount": "99.5",
+              "orderReference": "1002",
+              "paymentMethod": "كاش",
+              "orderDate": "2026-09-18",
+              "city": ""
+            },
+            "normalized": {
+              "currency": "EGP",
+              "orderDate": "2026-09-18",
+              "totalPrice": "99.50",
+              "orderNumber": "1002",
+              "customerName": "منى حسن",
+              "customerPhone": "+201112223334",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "كاش"
+            },
+            "outcome": "ready",
+            "issues": [],
+            "includeOverride": false,
+            "collapsedInto": null
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "phone": "01234567890",
+              "customerName": "سارة مصطفى",
+              "amount": "1,250.50",
+              "orderReference": "1003",
+              "paymentMethod": "عند الاستلام",
+              "orderDate": "2026-09-16",
+              "city": "الإسكندرية"
+            },
+            "normalized": {
+              "city": "الإسكندرية",
+              "currency": "EGP",
+              "orderDate": "2026-09-16",
+              "totalPrice": "1250.50",
+              "orderNumber": "1003",
+              "customerName": "سارة مصطفى",
+              "customerPhone": "+201234567890",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "عند الاستلام"
+            },
+            "outcome": "ready",
+            "issues": [],
+            "includeOverride": false,
+            "collapsedInto": null
+          },
+          {
+            "rowNumber": 8,
+            "raw": {
+              "phone": "01011122233",
+              "customerName": "Sara Mostafa",
+              "amount": "750",
+              "orderReference": "1007",
+              "paymentMethod": "COD",
+              "orderDate": "2026-09-19",
+              "city": "Cairo"
+            },
+            "normalized": {
+              "city": "Cairo",
+              "currency": "EGP",
+              "orderDate": "2026-09-19",
+              "totalPrice": "750.00",
+              "orderNumber": "1007",
+              "customerName": "Sara Mostafa",
+              "customerPhone": "+201011122233",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "COD"
+            },
+            "outcome": "ready",
+            "issues": [],
+            "includeOverride": false,
+            "collapsedInto": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "step": "rows:invalid",
+      "body": {
+        "rows": [
+          {
+            "rowNumber": 5,
+            "raw": {
+              "phone": "0223456789",
+              "customerName": "محمد حسن",
+              "amount": "400",
+              "orderReference": "1004",
+              "paymentMethod": "الدفع عند الاستلام",
+              "orderDate": "2026-09-17",
+              "city": "القاهرة"
+            },
+            "normalized": {
+              "city": "القاهرة",
+              "currency": "EGP",
+              "orderDate": "2026-09-17",
+              "totalPrice": "400.00",
+              "orderNumber": "1004",
+              "customerName": "محمد حسن",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "الدفع عند الاستلام"
+            },
+            "outcome": "invalid",
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ],
+            "includeOverride": false,
+            "collapsedInto": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "step": "rows:duplicate",
+      "body": {
+        "rows": [
+          {
+            "rowNumber": 9,
+            "raw": {
+              "phone": "01001234567",
+              "customerName": "أحمد علي",
+              "amount": "250",
+              "orderReference": "1001",
+              "paymentMethod": "الدفع عند الاستلام",
+              "orderDate": "2026-09-17",
+              "city": "القاهرة"
+            },
+            "normalized": {
+              "city": "القاهرة",
+              "currency": "EGP",
+              "orderDate": "2026-09-17",
+              "totalPrice": "250.00",
+              "orderNumber": "1001",
+              "customerName": "أحمد علي",
+              "customerPhone": "+201001234567",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "الدفع عند الاستلام"
+            },
+            "outcome": "duplicate",
+            "issues": [
+              {
+                "code": "DUPLICATE_IN_FILE",
+                "params": {
+                  "rowNumber": 2
+                }
+              }
+            ],
+            "includeOverride": false,
+            "collapsedInto": 2
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "step": "rows:excluded",
+      "body": {
+        "rows": [
+          {
+            "rowNumber": 6,
+            "raw": {
+              "phone": "01555123456",
+              "customerName": "ياسمين عادل",
+              "amount": "500",
+              "orderReference": "1005",
+              "paymentMethod": "مدفوع",
+              "orderDate": "2026-09-18",
+              "city": "الجيزة"
+            },
+            "normalized": {
+              "city": "الجيزة",
+              "currency": "EGP",
+              "orderDate": "2026-09-18",
+              "totalPrice": "500.00",
+              "orderNumber": "1005",
+              "customerName": "ياسمين عادل",
+              "customerPhone": "+201555123456",
+              "paymentMethod": "مدفوع"
+            },
+            "outcome": "excluded",
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ],
+            "includeOverride": false,
+            "collapsedInto": null
+          },
+          {
+            "rowNumber": 7,
+            "raw": {
+              "phone": "01099988877",
+              "customerName": "عمر خالد",
+              "amount": "300",
+              "orderReference": "1006",
+              "paymentMethod": "الدفع عند الاستلام",
+              "orderDate": "2026-09-01",
+              "city": "طنطا"
+            },
+            "normalized": {
+              "city": "طنطا",
+              "currency": "EGP",
+              "orderDate": "2026-09-01",
+              "totalPrice": "300.00",
+              "orderNumber": "1006",
+              "customerName": "عمر خالد",
+              "customerPhone": "+201099988877",
+              "paymentMethod": "cash on delivery",
+              "paymentMethodOriginal": "الدفع عند الاستلام"
+            },
+            "outcome": "excluded",
+            "issues": [
+              {
+                "code": "ORDER_TOO_OLD",
+                "field": "orderDate",
+                "params": {
+                  "maxAgeDays": 7
+                }
+              }
+            ],
+            "includeOverride": false,
+            "collapsedInto": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "step": "commit",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "committing",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ]
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ]
+          }
+        ],
+        "counts": {
+          "ready": 4,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 0,
+          "duplicate": 1,
+          "readyAtCommit": 4
+        },
+        "orderDateMin": "2026-09-16",
+        "orderDateMax": "2026-09-19",
+        "oldOrderCount": 1,
+        "mappingConfirmed": true,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "detail:awaiting_start",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "awaiting_start",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ]
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ]
+          }
+        ],
+        "counts": {
+          "ready": 0,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 4,
+          "duplicate": 1,
+          "readyAtCommit": 4
+        },
+        "orderDateMin": null,
+        "orderDateMax": null,
+        "oldOrderCount": 1,
+        "mappingConfirmed": true,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "committedAt": "2026-09-22 06:14:27.786+00",
+        "startDeadlineAt": "2026-09-25 06:14:27.786+00",
+        "startedAt": null,
+        "pausedReason": null,
+        "quietHoursUntil": null,
+        "stoppedAt": null,
+        "completedAt": null,
+        "ratePerMinute": 20,
+        "storeTimezone": "Africa/Cairo",
+        "release": {
+          "total": 4,
+          "held": 4,
+          "released": 0,
+          "withdrawn": 0
+        },
+        "lifecycle": {
+          "queued": 4,
+          "sent": 0,
+          "confirmed": 0,
+          "canceled": 0,
+          "noReply": 0,
+          "failed": 0
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "verifications:held",
+      "body": {
+        "data": [
+          {
+            "capabilities": [],
+            "id": "f7c3aec9-7a8e-4122-8849-f29a9958c568",
+            "status": "awaiting_start",
+            "reason": null,
+            "order_id": "f7c3aec9-7a8e-4122-8849-f29a9958c568",
+            "order_number": "1007",
+            "is_test": false,
+            "customer_name": "Sara Mostafa",
+            "customer_phone": "+201011122233",
+            "total_price": "750.00",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:27.731955+00",
+            "last_sent_at": null,
+            "delivered_at": null,
+            "read_at": null,
+            "confirmed_at": null,
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [],
+            "id": "bdc5f5ca-a3ed-49c1-afd3-f989db0df6d6",
+            "status": "awaiting_start",
+            "reason": null,
+            "order_id": "bdc5f5ca-a3ed-49c1-afd3-f989db0df6d6",
+            "order_number": "1003",
+            "is_test": false,
+            "customer_name": "سارة مصطفى",
+            "customer_phone": "+201234567890",
+            "total_price": "1250.50",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:27.731955+00",
+            "last_sent_at": null,
+            "delivered_at": null,
+            "read_at": null,
+            "confirmed_at": null,
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [],
+            "id": "560e6c56-284b-4a93-9cc9-d7bdef590991",
+            "status": "awaiting_start",
+            "reason": null,
+            "order_id": "560e6c56-284b-4a93-9cc9-d7bdef590991",
+            "order_number": "1002",
+            "is_test": false,
+            "customer_name": "منى حسن",
+            "customer_phone": "+201112223334",
+            "total_price": "99.50",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:27.731955+00",
+            "last_sent_at": null,
+            "delivered_at": null,
+            "read_at": null,
+            "confirmed_at": null,
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [],
+            "id": "00673554-7d16-4c1f-b86c-807ae8f0fa54",
+            "status": "awaiting_start",
+            "reason": null,
+            "order_id": "00673554-7d16-4c1f-b86c-807ae8f0fa54",
+            "order_number": "1001",
+            "is_test": false,
+            "customer_name": "أحمد علي",
+            "customer_phone": "+201001234567",
+            "total_price": "250.00",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:27.731955+00",
+            "last_sent_at": null,
+            "delivered_at": null,
+            "read_at": null,
+            "confirmed_at": null,
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          }
+        ],
+        "next_cursor": null,
+        "total_count": 4,
+        "page_context": {
+          "source": {
+            "status": "connected",
+            "integration_id": "2d9450d7-29a8-4222-a1be-d13d73708e18",
+            "platform_type": "standalone"
+          },
+          "reporting_timezone": "Africa/Cairo",
+          "automation": {
+            "is_auto_verify_enabled": true,
+            "follow_up_enabled": true,
+            "quiet_hours_enabled": false
+          },
+          "usage": {
+            "used": 0,
+            "limit": 100,
+            "remaining": 100,
+            "period_end": null,
+            "credit_denial": null
+          }
+        }
+      }
+    },
+    {
+      "step": "start-quote",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "orders": 4,
+        "accountingMode": "prepaid_credit",
+        "creditsAvailable": 100,
+        "slotsRemaining": null,
+        "estimatedCreditsMin": 4,
+        "estimatedCreditsMax": 8,
+        "ratePerMinute": 20,
+        "estimatedDurationMinutes": 1,
+        "quietHours": {
+          "enabled": false,
+          "start": null,
+          "end": null,
+          "timezone": "Africa/Cairo"
+        },
+        "startDeadlineAt": "2026-09-25 06:14:27.786+00",
+        "blockers": [],
+        "quoteToken": "eyJiIjoiM2QxZGVjNGMtMDIwOS00YjVlLTlkMTMtZWRkZjU5N2M3MTU2IiwibiI6NCwiYmFsIjoxMDAsImV4cCI6MTc5MDA1ODI2Nzg3MX0.rKYJl3OqYvSiyopxUeuHPsqsJZez0Uw1i-Ey2HNOeCM",
+        "quoteExpiresAt": "2026-09-22T06:24:27.871Z",
+        "attestation": {
+          "version": "bulk-import-consent-v1",
+          "text": {
+            "en": "I confirm these customers placed these cash-on-delivery orders with my store recently and expect to be contacted on WhatsApp about them.",
+            "ar": "أؤكد أن هؤلاء العملاء قدّموا طلبات الدفع عند الاستلام هذه في متجري مؤخرًا ويتوقعون التواصل معهم عبر واتساب بشأنها."
+          }
+        }
+      }
+    },
+    {
+      "step": "start",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "releasing",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ]
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ]
+          }
+        ],
+        "counts": {
+          "ready": 0,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 4,
+          "duplicate": 1,
+          "readyAtCommit": 4
+        },
+        "orderDateMin": null,
+        "orderDateMax": null,
+        "oldOrderCount": 1,
+        "mappingConfirmed": true,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "committedAt": "2026-09-22 06:14:27.786+00",
+        "startDeadlineAt": "2026-09-25 06:14:27.786+00",
+        "startedAt": "2026-09-22 06:14:27.895+00",
+        "pausedReason": null,
+        "quietHoursUntil": null,
+        "stoppedAt": null,
+        "completedAt": null,
+        "ratePerMinute": 20,
+        "storeTimezone": "Africa/Cairo",
+        "release": {
+          "total": 4,
+          "held": 4,
+          "released": 0,
+          "withdrawn": 0
+        },
+        "lifecycle": {
+          "queued": 4,
+          "sent": 0,
+          "confirmed": 0,
+          "canceled": 0,
+          "noReply": 0,
+          "failed": 0
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "detail:completed",
+      "body": {
+        "batchId": "3d1dec4c-0209-4b5e-9d13-eddf597c7156",
+        "shortCode": "DNBP65",
+        "status": "completed",
+        "fileName": "arabic-excel.xlsx",
+        "format": "xlsx",
+        "rowCount": 8,
+        "createdAt": "2026-09-22 06:14:27.527211+00",
+        "expiresAt": "2026-09-23 06:14:27.216+00",
+        "headers": [
+          "رقم الطلب",
+          "اسم العميل",
+          "رقم الموبايل",
+          "المبلغ",
+          "طريقة الدفع",
+          "تاريخ الطلب",
+          "المحافظة"
+        ],
+        "sampleRows": [
+          {
+            "rowNumber": 2,
+            "raw": {
+              "المبلغ": "250",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1001",
+              "اسم العميل": "أحمد علي",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "01001234567"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 3,
+            "raw": {
+              "المبلغ": "99.5",
+              "المحافظة": "",
+              "رقم الطلب": "1002",
+              "اسم العميل": "منى حسن",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "كاش",
+              "رقم الموبايل": "1112223334"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 4,
+            "raw": {
+              "المبلغ": "1,250.50",
+              "المحافظة": "الإسكندرية",
+              "رقم الطلب": "1003",
+              "اسم العميل": "سارة مصطفى",
+              "تاريخ الطلب": "2026-09-16",
+              "طريقة الدفع": "عند الاستلام",
+              "رقم الموبايل": "01234567890"
+            },
+            "issues": []
+          },
+          {
+            "rowNumber": 5,
+            "raw": {
+              "المبلغ": "400",
+              "المحافظة": "القاهرة",
+              "رقم الطلب": "1004",
+              "اسم العميل": "محمد حسن",
+              "تاريخ الطلب": "2026-09-17",
+              "طريقة الدفع": "الدفع عند الاستلام",
+              "رقم الموبايل": "0223456789"
+            },
+            "issues": [
+              {
+                "code": "PHONE_NOT_MOBILE",
+                "field": "phone"
+              }
+            ]
+          },
+          {
+            "rowNumber": 6,
+            "raw": {
+              "المبلغ": "500",
+              "المحافظة": "الجيزة",
+              "رقم الطلب": "1005",
+              "اسم العميل": "ياسمين عادل",
+              "تاريخ الطلب": "2026-09-18",
+              "طريقة الدفع": "مدفوع",
+              "رقم الموبايل": "01555123456"
+            },
+            "issues": [
+              {
+                "code": "PAYMENT_NOT_COD",
+                "field": "paymentMethod"
+              }
+            ]
+          }
+        ],
+        "counts": {
+          "ready": 0,
+          "total": 8,
+          "invalid": 1,
+          "excluded": 2,
+          "imported": 4,
+          "duplicate": 1,
+          "readyAtCommit": 4
+        },
+        "orderDateMin": null,
+        "orderDateMax": null,
+        "oldOrderCount": 1,
+        "mappingConfirmed": true,
+        "suggestions": {
+          "fields": [
+            {
+              "field": "phone",
+              "required": true,
+              "columns": [
+                "رقم الموبايل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "customerName",
+              "required": true,
+              "columns": [
+                "اسم العميل"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "amount",
+              "required": true,
+              "columns": [
+                "المبلغ"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderReference",
+              "required": false,
+              "columns": [
+                "رقم الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "currency",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "paymentMethod",
+              "required": false,
+              "columns": [
+                "طريقة الدفع"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "orderDate",
+              "required": false,
+              "columns": [
+                "تاريخ الطلب"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "city",
+              "required": false,
+              "columns": [
+                "المحافظة"
+              ],
+              "confidence": "exact",
+              "source": "auto",
+              "alternatives": []
+            },
+            {
+              "field": "address",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            },
+            {
+              "field": "notes",
+              "required": false,
+              "columns": [],
+              "confidence": "none",
+              "source": "none",
+              "alternatives": []
+            }
+          ],
+          "unmappedColumns": []
+        },
+        "options": {
+          "country": "EG",
+          "defaultCurrency": "EGP",
+          "dateFormat": "auto",
+          "paymentValueMap": {}
+        },
+        "paymentValues": {
+          "column": "طريقة الدفع",
+          "values": [
+            {
+              "value": "الدفع عند الاستلام",
+              "normalizedValue": "الدفع عند الاستلام",
+              "count": 4,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "COD",
+              "normalizedValue": "cod",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "عند الاستلام",
+              "normalizedValue": "عند الاستلام",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "كاش",
+              "normalizedValue": "كاش",
+              "count": 1,
+              "classification": "cod",
+              "autoClassification": "cod",
+              "source": "auto"
+            },
+            {
+              "value": "مدفوع",
+              "normalizedValue": "مدفوع",
+              "count": 1,
+              "classification": "not_cod",
+              "autoClassification": "not_cod",
+              "source": "auto"
+            }
+          ],
+          "blankCount": 0,
+          "distinctCount": 5,
+          "truncated": false
+        },
+        "dateFormat": {
+          "column": "تاريخ الطلب",
+          "ambiguous": false,
+          "detectedFormat": null
+        },
+        "committedAt": "2026-09-22 06:14:27.786+00",
+        "startDeadlineAt": "2026-09-25 06:14:27.786+00",
+        "startedAt": "2026-09-22 06:14:27.895+00",
+        "pausedReason": null,
+        "quietHoursUntil": null,
+        "stoppedAt": null,
+        "completedAt": "2026-09-22 06:14:27.944+00",
+        "ratePerMinute": 20,
+        "storeTimezone": "Africa/Cairo",
+        "release": {
+          "total": 4,
+          "held": 0,
+          "released": 4,
+          "withdrawn": 0
+        },
+        "lifecycle": {
+          "queued": 0,
+          "sent": 4,
+          "confirmed": 0,
+          "canceled": 0,
+          "noReply": 0,
+          "failed": 0
+        },
+        "permissions": {
+          "canEdit": true
+        }
+      }
+    },
+    {
+      "step": "verifications:results",
+      "body": {
+        "data": [
+          {
+            "capabilities": [
+              {
+                "action": "merchant_no_reply_cancellation",
+                "supported": true
+              },
+              {
+                "action": "retry_verification",
+                "supported": false
+              }
+            ],
+            "id": "971a3d32-59b2-40fc-984c-45344d7703f4",
+            "status": "sent",
+            "reason": null,
+            "order_id": "f7c3aec9-7a8e-4122-8849-f29a9958c568",
+            "order_number": "1007",
+            "is_test": false,
+            "customer_name": "Sara Mostafa",
+            "customer_phone": "+201011122233",
+            "total_price": "750",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:28.480287+00",
+            "last_sent_at": "2026-09-22 06:14:28.532+00",
+            "delivered_at": null,
+            "read_at": null,
+            "confirmed_at": null,
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [
+              {
+                "action": "merchant_no_reply_cancellation",
+                "supported": true
+              },
+              {
+                "action": "retry_verification",
+                "supported": false
+              }
+            ],
+            "id": "3f66fa13-5984-4b7a-98ac-1bb55aa0f505",
+            "status": "canceled",
+            "reason": null,
+            "order_id": "bdc5f5ca-a3ed-49c1-afd3-f989db0df6d6",
+            "order_number": "1003",
+            "is_test": false,
+            "customer_name": "سارة مصطفى",
+            "customer_phone": "+201234567890",
+            "total_price": "1250.5",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:28.348868+00",
+            "last_sent_at": "2026-09-22 06:14:28.41+00",
+            "delivered_at": "2026-09-22 06:14:28+00",
+            "read_at": "2026-09-22 06:14:28+00",
+            "confirmed_at": null,
+            "canceled_at": "2026-09-22 06:14:28+00",
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [
+              {
+                "action": "merchant_no_reply_cancellation",
+                "supported": true
+              },
+              {
+                "action": "retry_verification",
+                "supported": false
+              }
+            ],
+            "id": "d485feb4-516e-4820-bfe5-5afa55d4d3b3",
+            "status": "confirmed",
+            "reason": null,
+            "order_id": "560e6c56-284b-4a93-9cc9-d7bdef590991",
+            "order_number": "1002",
+            "is_test": false,
+            "customer_name": "منى حسن",
+            "customer_phone": "+201112223334",
+            "total_price": "99.5",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:28.19419+00",
+            "last_sent_at": "2026-09-22 06:14:28.262+00",
+            "delivered_at": "2026-09-22 06:14:28+00",
+            "read_at": "2026-09-22 06:14:28+00",
+            "confirmed_at": "2026-09-22 06:14:28+00",
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          },
+          {
+            "capabilities": [
+              {
+                "action": "merchant_no_reply_cancellation",
+                "supported": true
+              },
+              {
+                "action": "retry_verification",
+                "supported": false
+              }
+            ],
+            "id": "909651bb-0c0b-4c26-83a1-cf510dfbbd36",
+            "status": "confirmed",
+            "reason": null,
+            "order_id": "00673554-7d16-4c1f-b86c-807ae8f0fa54",
+            "order_number": "1001",
+            "is_test": false,
+            "customer_name": "أحمد علي",
+            "customer_phone": "+201001234567",
+            "total_price": "250",
+            "currency": "EGP",
+            "created_at": "2026-09-22 06:14:28.050797+00",
+            "last_sent_at": "2026-09-22 06:14:28.111+00",
+            "delivered_at": "2026-09-22 06:14:28+00",
+            "read_at": "2026-09-22 06:14:28+00",
+            "confirmed_at": "2026-09-22 06:14:28+00",
+            "canceled_at": null,
+            "expired_at": null,
+            "no_reply_at": null,
+            "follow_up_attempts": 0,
+            "follow_up_sent_at": null
+          }
+        ],
+        "next_cursor": null,
+        "total_count": 4,
+        "page_context": {
+          "source": {
+            "status": "connected",
+            "integration_id": "2d9450d7-29a8-4222-a1be-d13d73708e18",
+            "platform_type": "standalone"
+          },
+          "reporting_timezone": "Africa/Cairo",
+          "automation": {
+            "is_auto_verify_enabled": true,
+            "follow_up_enabled": true,
+            "quiet_hours_enabled": false
+          },
+          "usage": {
+            "used": 0,
+            "limit": 96,
+            "remaining": 96,
+            "period_end": null,
+            "credit_denial": null
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "format": "csv",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "sheetName": null,
+  "ignoredSheets": [],
+  "headers": [
+    "Customer Name",
+    "Mobile",
+    "Amount",
+    "Payment Method",
+    "Order Date"
+  ],
+  "rowCount": 4,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "Ahmed Ali",
+        "01012345678",
+        "750",
+        "COD",
+        "2026-09-18"
+      ]
+    },
+    {
+      "rowNumber": 3,
+      "cells": [
+        "Ahmed Ali",
+        "01012345678",
+        "750",
+        "COD",
+        "2026-09-18"
+      ]
+    },
+    {
+      "rowNumber": 4,
+      "cells": [
+        "Ahmed Ali",
+        "01012345678",
+        "750",
+        "COD",
+        "2026-09-17"
+      ]
+    },
+    {
+      "rowNumber": 5,
+      "cells": [
+        "Mona Hassan",
+        "01198765432",
+        "300",
+        "COD",
+        "2026-09-18"
+      ]
+    }
+  ]
+}

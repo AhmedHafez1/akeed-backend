@@ -48,7 +48,10 @@ import {
   PAYMENT_PROVIDER_PAYMOB,
   type PurchasePricing,
 } from './billing.types';
-import { readBulkImportConfig } from '../../shared/config/bulk-import.config';
+import {
+  isBulkImportEnabledForOrg,
+  readBulkImportConfig,
+} from '../../shared/config/bulk-import.config';
 import { BillingRepository } from './billing.repository';
 import { PaymentReconciliationService } from './payment-reconciliation.service';
 import type {
@@ -156,7 +159,10 @@ export class BillingService {
     });
     return {
       billingEnabled: pricing.enabled,
-      bulkImportEnabled: readBulkImportConfig(this.config).enabled,
+      bulkImportEnabled: isBulkImportEnabledForOrg(
+        readBulkImportConfig(this.config),
+        user.orgId,
+      ),
       status: summary?.status ?? 'not_provisioned',
       postedBalance: summary?.postedBalance ?? 0,
       heldCredits: summary?.heldCredits ?? 0,

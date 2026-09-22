@@ -1,0 +1,69 @@
+{
+  "now": "2026-09-19T10:00:00.000Z",
+  "timezone": "Africa/Cairo",
+  "country": "EG",
+  "defaultCurrency": "EGP",
+  "assumeCodWhenPaymentMissing": false,
+  "autoMapped": true,
+  "mapping": {
+    "orderReference": "Order Number",
+    "customerName": [
+      "Customer Name"
+    ],
+    "phone": "Phone",
+    "amount": "Amount",
+    "paymentMethod": "Payment",
+    "notes": "Notes"
+  },
+  "rows": [
+    {
+      "rowNumber": 2,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "customerName": "=HYPERLINK(\"http://example.test\",\"Ahmed\")"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "notes": "+SUM(A1:A9)"
+      }
+    },
+    {
+      "rowNumber": 4,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "notes": "-2+3"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "outcome": "ready",
+      "issues": [],
+      "normalized": {
+        "notes": "@SUM(1+1)"
+      }
+    },
+    {
+      "rowNumber": 6,
+      "outcome": "ready",
+      "issues": []
+    },
+    {
+      "rowNumber": 7,
+      "outcome": "ready",
+      "issues": []
+    },
+    {
+      "rowNumber": 8,
+      "outcome": "invalid",
+      "issues": [
+        "AMOUNT_INVALID"
+      ]
+    }
+  ]
+}

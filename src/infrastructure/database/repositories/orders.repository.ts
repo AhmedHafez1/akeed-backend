@@ -258,7 +258,10 @@ export class OrdersRepository {
       .leftJoin(verifications, eq(verifications.orderId, orders.id))
       .leftJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
       .where(eq(orders.orgId, orgId))
-      .groupBy(retryGuardStatus);
+      // By position: the projection carries bound parameters, and PostgreSQL
+      // will not match a GROUP BY copy of it whose placeholders are numbered
+      // anew ("must appear in the GROUP BY clause"). Found by US-04.6-10.
+      .groupBy(sql`1`);
     return rows.map((row) => ({
       status: row.status,
       count: Number(row.count),
