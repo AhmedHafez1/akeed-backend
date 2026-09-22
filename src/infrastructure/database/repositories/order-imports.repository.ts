@@ -7,8 +7,10 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   lt,
   ne,
+  or,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -1240,6 +1242,72 @@ export class OrderImportsRepository {
           eq(orderImportBatches.status, 'committing'),
         ),
       );
+  }
+
+  /**
+   * Retention (US-04.6-09): deletes up to `limit` drafts whose 24 h window
+   * lapsed; their rows go by cascade. A system job across organizations. An
+   * expired draft can no longer be claimed for commit, so this cannot race one.
+   */
+  async deleteExpiredDrafts(now: Date, limit: number): Promise<number> {
+    const at = now.toISOString();
+    const expired = and(
+      eq(orderImportBatches.status, 'draft'),
+      lt(orderImportBatches.expiresAt, at),
+    );
+    const due = this.db
+      .select({ id: orderImportBatches.id })
+      .from(orderImportBatches)
+      .where(expired)
+      .orderBy(asc(orderImportBatches.expiresAt))
+      .limit(limit);
+    const deleted = await this.db
+      .delete(orderImportBatches)
+      .where(and(inArray(orderImportBatches.id, due), expired))
+      .returning({ id: orderImportBatches.id });
+    return deleted.length;
+  }
+
+  /**
+   * Retention (US-04.6-09): clears `raw` and `normalized` on up to `limit` rows
+   * of batches committed before `cutoff` (or that failed mid-commit before
+   * it). Outcome, issues, order link and row number stay. Rows already cleared
+   * are never selected again, so re-running is a no-op.
+   */
+  async purgeCommittedRows(cutoff: Date, limit: number): Promise<number> {
+    const before = cutoff.toISOString();
+    const due = this.db
+      .select({ id: orderImportRows.id })
+      .from(orderImportRows)
+      .innerJoin(
+        orderImportBatches,
+        and(
+          eq(orderImportBatches.id, orderImportRows.batchId),
+          eq(orderImportBatches.orgId, orderImportRows.orgId),
+        ),
+      )
+      .where(
+        and(
+          or(
+            lt(orderImportBatches.committedAt, before),
+            and(
+              eq(orderImportBatches.status, 'failed'),
+              lt(orderImportBatches.updatedAt, before),
+            ),
+          ),
+          or(
+            isNotNull(orderImportRows.raw),
+            isNotNull(orderImportRows.normalized),
+          ),
+        ),
+      )
+      .limit(limit);
+    const purged = await this.db
+      .update(orderImportRows)
+      .set({ raw: null, normalized: null })
+      .where(inArray(orderImportRows.id, due))
+      .returning({ id: orderImportRows.id });
+    return purged.length;
   }
 }
 

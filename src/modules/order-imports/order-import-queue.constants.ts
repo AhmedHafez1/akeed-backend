@@ -44,3 +44,13 @@ export function orderImportReleaseSchedulerId(orgId: string): string {
 export const ORDER_IMPORT_EXPIRE_JOB = 'import.expire';
 export const ORDER_IMPORT_EXPIRE_SCHEDULER = 'import-expire';
 export const ORDER_IMPORT_EXPIRE_EVERY_MS = 60 * 60_000;
+
+/**
+ * The daily retention job (US-04.6-09): deletes expired drafts and, 90 days
+ * after a commit, drops the rows' raw cells and normalized order while keeping
+ * outcome, issues, order link and row number.
+ */
+export const ORDER_IMPORT_PURGE_JOB = 'import.purge';
+export const ORDER_IMPORT_PURGE_SCHEDULER = 'import-purge';
+export const ORDER_IMPORT_PURGE_EVERY_MS = 24 * 60 * 60_000;
+export const ORDER_IMPORT_RETENTION_DAYS = 90;

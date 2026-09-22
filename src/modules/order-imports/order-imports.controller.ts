@@ -268,9 +268,10 @@ export class OrderImportsController {
     );
   }
 
+  /** Still answers while the flag is off: the kill switch never traps orders. */
   @Post(':id/stop')
   @HttpCode(HttpStatus.OK)
-  @OrderImportAccess('write')
+  @OrderImportAccess('write', { whenDisabled: 'allow' })
   stopBatch(
     @CurrentUser() user: AuthenticatedUser,
     @ImportSource() source: StandaloneSource,

@@ -130,6 +130,11 @@
     "bytes": 5964
   },
   {
+    "file": "external-link.xlsx",
+    "description": "A workbook linking another workbook on disk and embedding an OLE object: the link is never followed and the object never read; the formula keeps its cached value.",
+    "bytes": 7341
+  },
+  {
     "file": "legacy.xls",
     "description": "A legacy Excel 97-2003 (BIFF8) workbook.",
     "bytes": 3584

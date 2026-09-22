@@ -1,0 +1,14 @@
+-- US-04.6-09: retention of imported row data.
+--
+-- The daily import.purge job clears order_import_rows.raw and .normalized 90
+-- days after a batch was committed, keeping outcome, issues, order_id and
+-- row_number. raw was NOT NULL (0037), so it becomes nullable. Relaxing a
+-- constraint is backward compatible: every existing writer still sets it.
+--
+-- No index: the purge scans order_import_batches (a handful of rows per org
+-- per day) and reaches rows through idx_order_import_rows_batch_outcome,
+-- whose leading column is batch_id.
+--
+-- Rollback: disable the import.purge job. Restoring NOT NULL requires every
+-- purged row to be deleted or backfilled first.
+ALTER TABLE "order_import_rows" ALTER COLUMN "raw" DROP NOT NULL;

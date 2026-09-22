@@ -9,12 +9,14 @@ import { OrderImportCommitProcessor } from './order-import-commit.processor';
 import {
   ORDER_IMPORT_COMMIT_JOB,
   ORDER_IMPORT_EXPIRE_JOB,
+  ORDER_IMPORT_PURGE_JOB,
   ORDER_IMPORT_QUEUE,
   ORDER_IMPORT_RELEASE_JOB,
   type OrderImportCommitJob,
   type OrderImportReleaseJob,
 } from './order-import-queue.constants';
 import { OrderImportExpireService } from './release/order-import-expire.service';
+import { OrderImportPurgeService } from './release/order-import-purge.service';
 import { OrderImportReleaseTickService } from './release/order-import-release-tick.service';
 
 /**
@@ -31,6 +33,7 @@ export class OrderImportProcessor extends WorkerHost {
     private readonly commit: OrderImportCommitProcessor,
     private readonly release: OrderImportReleaseTickService,
     private readonly expire: OrderImportExpireService,
+    private readonly purge: OrderImportPurgeService,
   ) {
     super();
   }
@@ -42,6 +45,9 @@ export class OrderImportProcessor extends WorkerHost {
         return;
       case ORDER_IMPORT_EXPIRE_JOB:
         await this.expire.run();
+        return;
+      case ORDER_IMPORT_PURGE_JOB:
+        await this.purge.run();
         return;
       case ORDER_IMPORT_COMMIT_JOB:
       default:

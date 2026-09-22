@@ -1,0 +1,23 @@
+{
+  "format": "xlsx",
+  "encoding": null,
+  "delimiter": null,
+  "sheetName": "Orders",
+  "ignoredSheets": [],
+  "headers": [
+    "order_id",
+    "amount",
+    "linked_price"
+  ],
+  "rowCount": 1,
+  "rows": [
+    {
+      "rowNumber": 2,
+      "cells": [
+        "A-1",
+        "250",
+        "42"
+      ]
+    }
+  ]
+}

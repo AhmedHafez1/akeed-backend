@@ -8,12 +8,16 @@ function setup() {
   };
   const release = { tick: jest.fn().mockResolvedValue({ kind: 'idle' }) };
   const expire = { run: jest.fn().mockResolvedValue({ expired: 0 }) };
+  const purge = {
+    run: jest.fn().mockResolvedValue({ draftsDeleted: 0, rowsPurged: 0 }),
+  };
   const processor = new OrderImportProcessor(
     commit as never,
     release as never,
     expire as never,
+    purge as never,
   );
-  return { processor, commit, release, expire };
+  return { processor, commit, release, expire, purge };
 }
 
 const job = (name: string, data: Record<string, unknown>) =>
@@ -21,15 +25,17 @@ const job = (name: string, data: Record<string, unknown>) =>
 
 describe('OrderImportProcessor', () => {
   it('routes each job by name', async () => {
-    const { processor, commit, release, expire } = setup();
+    const { processor, commit, release, expire, purge } = setup();
 
     await processor.process(job('import.release', { orgId: 'org-1' }));
     await processor.process(job('import.expire', {}));
+    await processor.process(job('import.purge', {}));
     const commitJob = job('import.commit', { orgId: 'org-1', batchId: 'b-1' });
     await processor.process(commitJob);
 
     expect(release.tick).toHaveBeenCalledWith('org-1');
     expect(expire.run).toHaveBeenCalledTimes(1);
+    expect(purge.run).toHaveBeenCalledTimes(1);
     expect(commit.process).toHaveBeenCalledWith(commitJob);
   });
 

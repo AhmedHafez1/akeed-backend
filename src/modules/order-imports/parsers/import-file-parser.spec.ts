@@ -47,6 +47,57 @@ describe('parseInWorker', () => {
     });
   });
 
+  /**
+   * US-04.6-09: a 5 MB line with no delimiter, or one quote never closed,
+   * is the input most likely to make a parser crawl. Under the real 20 s cap
+   * it settles, as a grid or a file refusal, and never hangs; under a spent
+   * budget the worker is terminated with IMPORT_FILE_UNREADABLE.
+   */
+  describe('pathological input', () => {
+    const FIVE_MB = 5 * 1024 * 1024;
+    const inputs: [string, Buffer][] = [
+      ['one 5 MB line without a delimiter', Buffer.alloc(FIVE_MB, 0x61)],
+      [
+        'a quote opened on line one and never closed',
+        Buffer.concat([
+          Buffer.from('order_id,name\r\n"A-1,'),
+          Buffer.alloc(FIVE_MB - 20, 0x61),
+        ]),
+      ],
+    ];
+
+    it.each(inputs)(
+      'settles within the 20 s cap for %s',
+      async (_label, bytes) => {
+        const startedAt = Date.now();
+        const outcome = await parseInWorker(bytes, LIMITS).then(
+          (parsed) => ({ parsed }),
+          (error: unknown) => ({ error }),
+        );
+        expect(Date.now() - startedAt).toBeLessThan(
+          LIMITS.parseTimeoutMs + 1_000,
+        );
+        if ('error' in outcome)
+          expect(outcome.error).toBeInstanceOf(ImportFileError);
+        else expect(outcome.parsed.format).toBe('csv');
+      },
+    );
+
+    it.each(inputs)(
+      'is terminated with IMPORT_FILE_UNREADABLE once the budget is spent, for %s',
+      async (_label, bytes) => {
+        const startedAt = Date.now();
+        await expect(
+          parseInWorker(bytes, { ...LIMITS, parseTimeoutMs: 25 }),
+        ).rejects.toMatchObject({
+          code: 'IMPORT_FILE_UNREADABLE',
+          reason: 'parse_timeout',
+        });
+        expect(Date.now() - startedAt).toBeLessThan(2_000);
+      },
+    );
+  });
+
   it('queues parses beyond the concurrency cap and finishes them all', async () => {
     const parser = new ImportFileParser();
     const results = await Promise.all(

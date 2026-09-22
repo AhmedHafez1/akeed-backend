@@ -91,6 +91,13 @@ function repackage(
   return Buffer.from(zipSync(zippable, { level: 9, mtime: FIXED_DATE }));
 }
 
+/** An OLE2 compound file with one stream, like an embedded object's part. */
+function cfbWith(stream: string, content: Buffer): Buffer {
+  const container = cfb.utils.cfb_new();
+  cfb.utils.cfb_add(container, stream, content);
+  return cfb.write(container, { type: 'buffer' });
+}
+
 const ORDER_HEADERS = ['order_id', 'customer_name', 'phone', 'amount'];
 
 function orderRows(count: number): string[][] {
@@ -773,6 +780,70 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
         files['xl/vbaProject.bin'] = new Uint8Array(512).fill(0x41);
       }),
     expected: { error: 'IMPORT_FILE_TYPE_UNSUPPORTED' },
+  },
+  {
+    file: 'external-link.xlsx',
+    description:
+      'A workbook linking another workbook on disk and embedding an OLE object: the link is never followed and the object never read; the formula keeps its cached value.',
+    build: () =>
+      repackage(
+        workbook([
+          {
+            name: 'Orders',
+            rows: [
+              ['order_id', 'amount', 'linked_price'],
+              ['A-1', 250, { t: 'n', v: 42, f: '[1]Prices!A1' }],
+            ],
+          },
+        ]),
+        (files) => {
+          const edit = (name: string, change: (xml: string) => string) => {
+            files[name] = strToU8(change(Buffer.from(files[name]).toString()));
+          };
+          edit('xl/workbook.xml', (xml) =>
+            xml.replace(
+              '</sheets>',
+              '</sheets><externalReferences><externalReference r:id="rIdExt1"/></externalReferences>',
+            ),
+          );
+          edit('xl/_rels/workbook.xml.rels', (xml) =>
+            xml.replace(
+              '</Relationships>',
+              '<Relationship Id="rIdExt1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>',
+            ),
+          );
+          edit('[Content_Types].xml', (xml) =>
+            xml.replace(
+              '</Types>',
+              '<Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/></Types>',
+            ),
+          );
+          // The linked book's own cached cell says 999; only the formula's
+          // cached 42 may reach the grid.
+          files['xl/externalLinks/externalLink1.xml'] = strToU8(
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="Prices"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1"><v>999</v></cell></row></sheetData></sheetDataSet></externalBook></externalLink>',
+          );
+          files['xl/externalLinks/_rels/externalLink1.xml.rels'] = strToU8(
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="file:///C:/secret/prices.xlsx" TargetMode="External"/></Relationships>',
+          );
+          files['xl/embeddings/oleObject1.bin'] = new Uint8Array(
+            cfbWith('Ole10Native', Buffer.alloc(256, 0x4d)),
+          );
+          files['xl/worksheets/_rels/sheet1.xml.rels'] = strToU8(
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdOle1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="../embeddings/oleObject1.bin"/></Relationships>',
+          );
+        },
+      ),
+    expected: {
+      format: 'xlsx',
+      encoding: null,
+      delimiter: null,
+      sheetName: 'Orders',
+      ignoredSheets: [],
+      headers: ['order_id', 'amount', 'linked_price'],
+      rowCount: 1,
+      rows: [{ rowNumber: 2, cells: ['A-1', '250', '42'] }],
+    },
   },
   {
     file: 'legacy.xls',

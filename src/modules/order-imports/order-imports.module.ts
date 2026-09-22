@@ -26,6 +26,7 @@ import { OrderImportsController } from './order-imports.controller';
 import { OrderImportsService } from './order-imports.service';
 import { OrderImportProcessor } from './order-import.processor';
 import { OrderImportExpireService } from './release/order-import-expire.service';
+import { OrderImportPurgeService } from './release/order-import-purge.service';
 import { OrderImportReleaseTickService } from './release/order-import-release-tick.service';
 import { OrderImportReleaseScheduler } from './release/order-import-release.scheduler';
 import { OrderImportReleaseService } from './release/order-import-release.service';
@@ -81,6 +82,7 @@ export function orderImportMulterOptions(
     OrderImportReleaseScheduler,
     OrderImportReleaseTickService,
     OrderImportExpireService,
+    OrderImportPurgeService,
     RowValidationService,
     PhoneService,
     ImportFileParser,

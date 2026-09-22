@@ -1981,7 +1981,7 @@ export const orderImportRows = pgTable(
     batchId: uuid('batch_id').notNull(),
     orgId: uuid('org_id').notNull(),
     rowNumber: integer('row_number').notNull(),
-    raw: jsonb().notNull(),
+    raw: jsonb(),
     normalized: jsonb(),
     outcome: text(),
     issues: jsonb().notNull().default([]),

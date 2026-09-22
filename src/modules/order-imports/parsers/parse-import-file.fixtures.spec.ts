@@ -8,6 +8,8 @@ import { ImportFileError } from './import-file.error';
 import { parseImportFile, type ImportParseLimits } from './parse-import-file';
 
 const FIXTURES = resolve(__dirname, '../../../../test/fixtures/order-imports');
+// The module object every CommonJS caller, SheetJS included, reads through.
+const nodeFs = jest.requireActual<typeof import('node:fs')>('node:fs');
 
 const STORY_LIMITS: ImportParseLimits = {
   maxRows: 5_000,
@@ -52,6 +54,7 @@ describe('order-import fixtures', () => {
         'formatted-empty-rows.xlsx',
         'protected.xlsx',
         'macro.xlsm',
+        'external-link.xlsx',
         'legacy.xls',
         'pdf-renamed.csv',
         'xlsx-renamed.csv',
@@ -119,4 +122,29 @@ describe('order-import fixtures', () => {
       }
     },
   );
+
+  /**
+   * US-04.6-09: an external link is data about another file, never a path to
+   * open, and an embedded object is never read. Nothing touches the disk
+   * while the workbook is parsed.
+   */
+  it('never opens a file while reading a workbook with an external link and an embedded object', () => {
+    const bytes = readFileSync(join(FIXTURES, 'external-link.xlsx'));
+    const spies = (
+      [
+        'readFileSync',
+        'openSync',
+        'existsSync',
+        'statSync',
+        'createReadStream',
+      ] as const
+    ).map((name) => jest.spyOn(nodeFs, name));
+    try {
+      const parsed = parseImportFile(bytes, STORY_LIMITS);
+      expect(parsed.grid.rows[0].cells).toEqual(['A-1', '250', '42']);
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
 });

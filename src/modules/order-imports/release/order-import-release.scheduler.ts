@@ -10,6 +10,9 @@ import {
   ORDER_IMPORT_EXPIRE_EVERY_MS,
   ORDER_IMPORT_EXPIRE_JOB,
   ORDER_IMPORT_EXPIRE_SCHEDULER,
+  ORDER_IMPORT_PURGE_EVERY_MS,
+  ORDER_IMPORT_PURGE_JOB,
+  ORDER_IMPORT_PURGE_SCHEDULER,
   ORDER_IMPORT_QUEUE,
   ORDER_IMPORT_RELEASE_JOB,
   orderImportReleaseSchedulerId,
@@ -30,7 +33,7 @@ const TICK_JOB_OPTIONS: JobsOptions = {
 /**
  * Owns the BullMQ schedulers of the paced release: one repeatable
  * `import.release` job per organization with releasing batches, and the
- * hourly `import.expire` job.
+ * hourly `import.expire` and daily `import.purge` jobs.
  */
 @Injectable()
 export class OrderImportReleaseScheduler implements OnApplicationBootstrap {
@@ -80,6 +83,11 @@ export class OrderImportReleaseScheduler implements OnApplicationBootstrap {
         ORDER_IMPORT_EXPIRE_SCHEDULER,
         { every: ORDER_IMPORT_EXPIRE_EVERY_MS },
         { name: ORDER_IMPORT_EXPIRE_JOB, data: {}, opts: TICK_JOB_OPTIONS },
+      );
+      await this.queue.upsertJobScheduler(
+        ORDER_IMPORT_PURGE_SCHEDULER,
+        { every: ORDER_IMPORT_PURGE_EVERY_MS },
+        { name: ORDER_IMPORT_PURGE_JOB, data: {}, opts: TICK_JOB_OPTIONS },
       );
       const orgIds = await this.releases.listOrgsWithReleasing();
       for (const orgId of orgIds) await this.ensure(orgId);

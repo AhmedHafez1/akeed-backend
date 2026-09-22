@@ -1,3 +1,5 @@
+import { Logger, type LoggerService } from '@nestjs/common';
+import type { Job } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -17,6 +19,14 @@ import { ManualOrderIngestionRepository } from '../src/infrastructure/database/r
 import { OrderImportReleaseRepository } from '../src/infrastructure/database/repositories/order-import-release.repository';
 import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
 import { OrderImportExpireService } from '../src/modules/order-imports/release/order-import-expire.service';
+import { OrderImportPurgeService } from '../src/modules/order-imports/release/order-import-purge.service';
+import { OrderImportReleaseService } from '../src/modules/order-imports/release/order-import-release.service';
+import { OrderImportCommitProcessor } from '../src/modules/order-imports/order-import-commit.processor';
+import { OrderImportCommitService } from '../src/modules/order-imports/order-import-commit.service';
+import { OrderImportDetailService } from '../src/modules/order-imports/order-import-detail.service';
+import { OrderImportMappingService } from '../src/modules/order-imports/order-import-mapping.service';
+import { OrderImportsService } from '../src/modules/order-imports/order-imports.service';
+import { ImportFileParser } from '../src/modules/order-imports/parsers/import-file-parser';
 import { OrderImportReleaseTickService } from '../src/modules/order-imports/release/order-import-release-tick.service';
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
@@ -241,6 +251,7 @@ describe('order imports PostgreSQL contract', () => {
         '0037_order_import_batches.sql',
         '0038_order_import_validation_version.sql',
         '0039_order_import_release.sql',
+        '0040_order_import_row_retention.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -1926,6 +1937,360 @@ describe('order imports PostgreSQL contract', () => {
           'resumed',
         ]);
         expect(row.events[2].from).toBe('INSUFFICIENT_CREDITS');
+      });
+
+      /**
+       * US-04.6-09 AC3: the whole path a merchant's file takes, with the real
+       * parser worker, validation, commit job, start checkpoint and release
+       * tick over PostgreSQL, while every byte any logger writes is captured.
+       * None of the customer data in the file, nor the file's name, may be in
+       * it. Only the messaging port and the credit gate are fakes.
+       */
+      it('logs no phone, name, address or file name from upload to release', async () => {
+        const markers = {
+          phones: [
+            '01098765431',
+            '+201098765431',
+            '201098765431',
+            '1098765431',
+            '1098765432',
+          ],
+          names: ['Zubaydah', 'Quxmarker'],
+          addresses: [
+            '77 Marker Lane',
+            '78 Marker Lane',
+            'Qx9Z',
+            'Markerville',
+          ],
+          fileName: 'pii-marker-طلبات-Q7.csv',
+        };
+        const csv = [
+          'order_id,customer_name,phone,address,city,amount,payment',
+          'PII-1,Zubaydah Quxmarker,01098765431,77 Marker Lane Qx9Z,Markerville,750,cod',
+          'PII-2,Zubaydah Quxmarker Jr,+201098765432,78 Marker Lane Qx9Z,Markerville,120.50,cod',
+        ].join('\r\n');
+
+        const captured: string[] = [];
+        const keep = (...parts: unknown[]): void => {
+          captured.push(
+            parts
+              .map((part) =>
+                typeof part === 'string' ? part : JSON.stringify(part),
+              )
+              .join(' '),
+          );
+        };
+        const capture: LoggerService = {
+          log: keep,
+          error: keep,
+          warn: keep,
+          debug: keep,
+          verbose: keep,
+          fatal: keep,
+        };
+        const writeTo = (chunk: unknown): boolean => {
+          keep(String(chunk));
+          return true;
+        };
+        const spies = [
+          jest.spyOn(process.stdout, 'write').mockImplementation(writeTo),
+          jest.spyOn(process.stderr, 'write').mockImplementation(writeTo),
+          ...(['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+            jest.spyOn(console, level).mockImplementation(keep),
+          ),
+        ];
+        Logger.overrideLogger(capture);
+
+        try {
+          const org = await createSource();
+          const source = {
+            id: org.integrationId,
+            orgId: org.orgId,
+            platformType: 'standalone',
+            platformStoreUrl: `standalone:${org.orgId}`,
+            isActive: true,
+            onboardingStatus: 'completed',
+            isAutoVerifyEnabled: true,
+            followUpEnabled: false,
+            quietHoursEnabled: false,
+            quietHoursStart: null,
+            quietHoursEnd: null,
+            timezone: 'Africa/Cairo',
+            countryCode: 'EG',
+            shippingCurrency: 'EGP',
+            assumeCodWhenPaymentMissing: false,
+          } as never;
+          const user = {
+            userId: randomUUID(),
+            orgId: org.orgId,
+            role: 'owner',
+            source: 'supabase',
+          } as never;
+          const importConfig = {
+            get: (key: string) =>
+              key === BULK_IMPORT_CONFIG
+                ? parseBulkImportConfig({
+                    STANDALONE_BULK_IMPORT_ENABLED: 'true',
+                    BULK_IMPORT_QUOTE_SECRET:
+                      'test-quote-secret-0123456789abcdef',
+                    BULK_IMPORT_RELEASE_PER_MINUTE: '20',
+                  })
+                : undefined,
+          } as never;
+          const validation = new RowValidationService(
+            repository,
+            new PhoneService(),
+            new OrderEligibilityService([
+              new StandaloneOrderEligibilityStrategy(),
+            ]),
+            importConfig,
+          );
+          const mapping = new OrderImportMappingService(repository, validation);
+          const uploads = new OrderImportsService(
+            repository,
+            new ImportFileParser(),
+            importConfig,
+            mapping,
+          );
+          const detail = new OrderImportDetailService(
+            repository,
+            mapping,
+            releases,
+            { countLifecycleByImportBatch: () => Promise.resolve([]) } as never,
+            importConfig,
+          );
+          const jobs: Array<{ batchId: string; orgId: string }> = [];
+          const commits = new OrderImportCommitService(repository, detail, {
+            enqueue: (job: { batchId: string; orgId: string }) => {
+              jobs.push(job);
+              return Promise.resolve();
+            },
+          } as never);
+          const commitJob = new OrderImportCommitProcessor(
+            repository,
+            ingestion,
+            importConfig,
+          );
+          const starts = new OrderImportReleaseService(
+            releases,
+            events,
+            ready as never,
+            scheduler as never,
+            detail,
+            importConfig,
+          );
+
+          const uploaded = await uploads.upload(user, source, {
+            buffer: Buffer.from(csv, 'utf8'),
+            size: Buffer.byteLength(csv),
+            originalname: markers.fileName,
+          });
+          const batchId = uploaded.batchId;
+          await mapping.save(user, source, batchId, {
+            mapping: {
+              orderReference: 'order_id',
+              customerName: ['customer_name'],
+              phone: 'phone',
+              address: 'address',
+              city: 'city',
+              amount: 'amount',
+              paymentMethod: 'payment',
+            },
+            options: {
+              country: 'EG',
+              defaultCurrency: 'EGP',
+              dateFormat: 'auto',
+              paymentValueMap: { cod: 'cod' },
+            },
+          } as never);
+          await commits.commit(user, source, batchId, `commit-${batchId}`);
+          expect(jobs).toEqual([{ batchId, orgId: org.orgId }]);
+          await commitJob.process({ data: jobs[0] } as Job<{
+            batchId: string;
+            orgId: string;
+          }>);
+          const quote = await starts.quote(user, source, batchId);
+          expect(quote.orders).toBe(2);
+          await starts.start(user, source, batchId, `start-${batchId}`, {
+            attestationVersion: 'bulk-import-consent-v1',
+            quoteToken: quote.quoteToken,
+          });
+          const tick = ticker(org);
+          for (let attempt = 0; attempt < 5; attempt++)
+            await tick.tick(org.orgId);
+
+          const [finished] = await client<{ status: string }[]>`
+            SELECT status FROM order_import_batches WHERE id = ${batchId}`;
+          expect(finished.status).toBe('completed');
+          const released = await holdStates(batchId);
+          expect(released.map((event) => event.hold_state)).toEqual([
+            'released',
+            'released',
+          ]);
+        } finally {
+          for (const spy of spies) spy.mockRestore();
+          Logger.overrideLogger(new Logger());
+        }
+
+        const output = captured.join('\n');
+        // The flow did log: actions, ids and counts reached the capture.
+        expect(output).toContain('order-import-upload');
+        expect(output).toContain('order-import-start');
+        const leaked = [
+          ...markers.phones,
+          ...markers.names,
+          ...markers.addresses,
+          markers.fileName,
+          'pii-marker',
+        ].filter((marker) => output.includes(marker));
+        expect(leaked).toEqual([]);
+      });
+    });
+
+    describe('retention purge (US-04.6-09)', () => {
+      const purge = new OrderImportPurgeService(repository);
+      const DAY = 24 * HOUR;
+
+      /** A committed batch whose commit is `days` old, rows still holding data. */
+      async function committedDaysAgo(days: number, rowCount = 3) {
+        const source = await createSource();
+        const batchId = await committingBatch(
+          source,
+          Array.from({ length: rowCount }, (_, index) => `R${days}-${index}`),
+        );
+        await runCommit(source, batchId);
+        await client`
+          UPDATE order_import_rows
+          SET raw = jsonb_build_object('phone', '01098765431', 'name', 'Zubaydah')
+          WHERE batch_id = ${batchId}`;
+        await client`
+          UPDATE order_import_batches
+          SET status = 'completed',
+              committed_at = ${new Date(NOW.getTime() - days * DAY).toISOString()}
+          WHERE id = ${batchId}`;
+        return batchId;
+      }
+
+      async function rowsOf(batchId: string) {
+        return client<
+          {
+            row_number: number;
+            raw: unknown;
+            normalized: unknown;
+            outcome: string;
+            issues: unknown;
+            order_id: string | null;
+          }[]
+        >`
+          SELECT row_number, raw, normalized, outcome, issues, order_id
+          FROM order_import_rows WHERE batch_id = ${batchId}
+          ORDER BY row_number`;
+      }
+
+      it('clears raw and normalized on day 91 but not on day 89, keeping outcome, issues, order and row number', async () => {
+        const recent = await committedDaysAgo(89);
+        const old = await committedDaysAgo(91);
+        const before = await rowsOf(old);
+
+        await purge.run(NOW);
+
+        const kept = await rowsOf(recent);
+        expect(kept.every((row) => row.raw !== null)).toBe(true);
+        expect(kept.every((row) => row.normalized !== null)).toBe(true);
+        const purged = await rowsOf(old);
+        expect(purged).toEqual(
+          before.map((row) => ({ ...row, raw: null, normalized: null })),
+        );
+        expect(purged.every((row) => row.outcome === 'imported')).toBe(true);
+        expect(purged.every((row) => row.order_id !== null)).toBe(true);
+        // The orders themselves are untouched: retention is the import copy.
+        const [orders] = await client<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM orders
+          WHERE id IN (SELECT order_id FROM order_import_rows WHERE batch_id = ${old})`;
+        expect(orders.count).toBe(3);
+      });
+
+      it('is idempotent: a second run the same day purges nothing and does not fail', async () => {
+        const old = await committedDaysAgo(120);
+
+        const first = await purge.run(NOW);
+        expect(first.rowsPurged).toBeGreaterThanOrEqual(3);
+        const snapshot = await rowsOf(old);
+        await expect(purge.run(NOW)).resolves.toEqual({
+          draftsDeleted: 0,
+          rowsPurged: 0,
+        });
+        expect(await rowsOf(old)).toEqual(snapshot);
+      });
+
+      it('works through more than one 1,000-row statement', async () => {
+        const source = await createSource();
+        const draft = await repository.createDraftWithRows(
+          batch(source),
+          rows(2_345),
+          options,
+        );
+        await client`
+          UPDATE order_import_batches
+          SET status = 'completed', committed_at = ${new Date(NOW.getTime() - 100 * DAY).toISOString()}
+          WHERE id = ${draft.batchId}`;
+
+        const result = await purge.run(NOW);
+
+        expect(result.rowsPurged).toBeGreaterThanOrEqual(2_345);
+        const [left] = await client<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM order_import_rows
+          WHERE batch_id = ${draft.batchId} AND (raw IS NOT NULL OR normalized IS NOT NULL)`;
+        expect(left.count).toBe(0);
+      });
+
+      it('purges a batch that failed mid-commit once its last update is 90 days old', async () => {
+        const source = await createSource();
+        const draft = await repository.createDraftWithRows(
+          batch(source),
+          rows(2),
+          options,
+        );
+        await client`
+          UPDATE order_import_batches
+          SET status = 'failed', updated_at = ${new Date(NOW.getTime() - 91 * DAY).toISOString()}
+          WHERE id = ${draft.batchId}`;
+
+        await purge.run(NOW);
+
+        expect(
+          (await rowsOf(draft.batchId)).every((row) => row.raw === null),
+        ).toBe(true);
+      });
+
+      it('deletes expired drafts with their rows, and nothing else', async () => {
+        const source = await createSource();
+        const expired = await repository.createDraftWithRows(
+          batch(source, { expiresAt: new Date(NOW.getTime() - HOUR) }),
+          rows(2),
+          options,
+        );
+        const live = await repository.createDraftWithRows(
+          batch(source, { fileSha256: 'b'.repeat(64) }),
+          rows(2),
+          options,
+        );
+        const committed = await committedDaysAgo(1);
+
+        const result = await purge.run(NOW);
+
+        expect(result.draftsDeleted).toBeGreaterThanOrEqual(1);
+        const remaining = await client<{ id: string }[]>`
+          SELECT id FROM order_import_batches
+          WHERE id IN (${expired.batchId}, ${live.batchId}, ${committed})`;
+        expect(remaining.map((row) => row.id).sort()).toEqual(
+          [live.batchId, committed].sort(),
+        );
+        const [orphans] = await client<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM order_import_rows
+          WHERE batch_id = ${expired.batchId}`;
+        expect(orphans.count).toBe(0);
+        expect(await rowsOf(live.batchId)).toHaveLength(2);
       });
     });
   });

@@ -23,6 +23,17 @@ import {
 import { orderImportError } from '../order-imports.errors';
 
 const ORDER_IMPORT_ACCESS = 'orderImportAccess';
+const ORDER_IMPORT_WHEN_DISABLED = 'orderImportWhenDisabled';
+
+/**
+ * `allow`: the route keeps working while `STANDALONE_BULK_IMPORT_ENABLED` is
+ * off. Only stop uses it, so the kill switch can halt new work without
+ * trapping a merchant's orders that are already releasing (AC5, US-04.6-09).
+ * Role, source and organization checks still apply.
+ */
+export interface OrderImportAccessOptions {
+  whenDisabled: 'refuse' | 'allow';
+}
 
 /**
  * `write`: the flag is on and the caller is an owner or admin of an org whose
@@ -52,7 +63,10 @@ export class OrderImportAccessGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (!readBulkImportConfig(this.config).enabled)
+    const whenDisabled = this.reflector.getAllAndOverride<
+      OrderImportAccessOptions['whenDisabled'] | undefined
+    >(ORDER_IMPORT_WHEN_DISABLED, [context.getHandler(), context.getClass()]);
+    if (whenDisabled !== 'allow' && !readBulkImportConfig(this.config).enabled)
       throw orderImportError('IMPORT_DISABLED');
     const mode =
       this.reflector.getAllAndOverride<OrderImportAccessMode | undefined>(
@@ -75,10 +89,21 @@ export class OrderImportAccessGuard implements CanActivate {
  */
 export function OrderImportAccess(
   mode: OrderImportAccessMode,
-  ...extraGuards: (new (...args: never[]) => CanActivate)[]
+  ...extras: (
+    | (new (...args: never[]) => CanActivate)
+    | OrderImportAccessOptions
+  )[]
 ) {
+  const extraGuards = extras.filter(
+    (extra): extra is new (...args: never[]) => CanActivate =>
+      typeof extra === 'function',
+  );
+  const options = extras.find(
+    (extra): extra is OrderImportAccessOptions => typeof extra !== 'function',
+  );
   return applyDecorators(
     SetMetadata(ORDER_IMPORT_ACCESS, mode),
+    SetMetadata(ORDER_IMPORT_WHEN_DISABLED, options?.whenDisabled ?? 'refuse'),
     UseGuards(DualAuthGuard, ...extraGuards, OrderImportAccessGuard),
   );
 }
