@@ -58,6 +58,7 @@ export class ProductEventsRepository {
   async findLatest(params: {
     integrationId: string;
     names: readonly ProductEventName[];
+    since?: string;
   }): Promise<ProductEventRecord | undefined> {
     const [row] = await this.db
       .select()
@@ -66,6 +67,7 @@ export class ProductEventsRepository {
         and(
           eq(productEvents.integrationId, params.integrationId),
           inArray(productEvents.name, [...params.names]),
+          params.since ? gte(productEvents.createdAt, params.since) : undefined,
         ),
       )
       .orderBy(desc(productEvents.createdAt))

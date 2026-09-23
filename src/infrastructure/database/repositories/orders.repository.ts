@@ -310,6 +310,59 @@ export class OrdersRepository {
     return results.length;
   }
 
+  /**
+   * Removes one store's orders and everything hanging off them, leaving the
+   * org and integration rows (and their lifecycle history) for audit. Order-
+   * linked webhook events go first because their FK to orders has no action;
+   * message dispatches follow their verifications by cascade.
+   */
+  async purgeByIntegration(
+    orgId: string,
+    integrationId: string,
+  ): Promise<{ orders: number; verifications: number; webhookEvents: number }> {
+    return this.db.transaction(async (tx) => {
+      const integrationOrderIds = tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(eq(orders.orgId, orgId), eq(orders.integrationId, integrationId)),
+        );
+
+      const deletedWebhookEvents = await tx
+        .delete(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.orgId, orgId),
+            inArray(webhookEvents.orderId, integrationOrderIds),
+          ),
+        )
+        .returning({ id: webhookEvents.id });
+
+      const deletedVerifications = await tx
+        .delete(verifications)
+        .where(
+          and(
+            eq(verifications.orgId, orgId),
+            inArray(verifications.orderId, integrationOrderIds),
+          ),
+        )
+        .returning({ id: verifications.id });
+
+      const deletedOrders = await tx
+        .delete(orders)
+        .where(
+          and(eq(orders.orgId, orgId), eq(orders.integrationId, integrationId)),
+        )
+        .returning({ id: orders.id });
+
+      return {
+        orders: deletedOrders.length,
+        verifications: deletedVerifications.length,
+        webhookEvents: deletedWebhookEvents.length,
+      };
+    });
+  }
+
   async deleteByOrgId(orgId: string): Promise<number> {
     const results = await this.db
       .delete(orders)

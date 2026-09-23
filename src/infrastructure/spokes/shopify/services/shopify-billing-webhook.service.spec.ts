@@ -28,12 +28,18 @@ function createMocks() {
   const webhookEventsRepo = {
     insertIfNew: jest.fn().mockResolvedValue({ id: 'wh-1' }),
   };
+  const ordersRepo = {
+    purgeByIntegration: jest
+      .fn()
+      .mockResolvedValue({ orders: 2, verifications: 2, webhookEvents: 1 }),
+  };
   const service = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     webhookEventsRepo as any,
+    ordersRepo as any,
   );
 
-  return { service, integrationsRepo, webhookEventsRepo };
+  return { service, integrationsRepo, webhookEventsRepo, ordersRepo };
 }
 
 describe('ShopifyBillingWebhookService', () => {
@@ -55,6 +61,50 @@ describe('ShopifyBillingWebhookService', () => {
       );
       expect(integrationsRepo.updateById).not.toHaveBeenCalled();
       expect(integrationsRepo.deleteById).not.toHaveBeenCalled();
+    });
+
+    it('purges the store orders and verifications after marking it uninstalled', async () => {
+      const { service, integrationsRepo, ordersRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
+      );
+
+      await service.handleAppUninstalled(
+        { id: 123 } as any,
+        'test.myshopify.com',
+      );
+
+      expect(ordersRepo.purgeByIntegration).toHaveBeenCalledWith(
+        'org-1',
+        'int-1',
+      );
+      expect(
+        integrationsRepo.markShopifyUninstalled.mock.invocationCallOrder[0],
+      ).toBeLessThan(ordersRepo.purgeByIntegration.mock.invocationCallOrder[0]);
+    });
+
+    it('purges nothing when the shop has no integration', async () => {
+      const { service, integrationsRepo, ordersRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(undefined);
+
+      await service.handleAppUninstalled(
+        { id: 123 } as any,
+        'unknown.myshopify.com',
+      );
+
+      expect(ordersRepo.purgeByIntegration).not.toHaveBeenCalled();
+    });
+
+    it('propagates a purge failure so Shopify retries the webhook', async () => {
+      const { service, integrationsRepo, ordersRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
+      );
+      ordersRepo.purgeByIntegration.mockRejectedValue(new Error('fk'));
+
+      await expect(
+        service.handleAppUninstalled({ id: 123 } as any, 'test.myshopify.com'),
+      ).rejects.toThrow('fk');
     });
   });
 

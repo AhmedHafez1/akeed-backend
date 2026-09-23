@@ -34,6 +34,7 @@ function setup(
     source?: Record<string, unknown>;
     latestSentAt?: string;
     sentToday?: number;
+    installedAt?: string;
   } = {},
 ) {
   const integrations = {
@@ -58,14 +59,16 @@ function setup(
     }),
   };
   const productEvents = {
-    findLatest: jest.fn().mockResolvedValue(
-      options.latestSentAt
-        ? {
-            name: 'test_sent',
-            createdAt: options.latestSentAt,
-            props: { verificationId: 'verification-1' },
-          }
-        : undefined,
+    findLatest: jest.fn(({ since }: { since?: string }) =>
+      Promise.resolve(
+        options.latestSentAt && (!since || since <= options.latestSentAt)
+          ? {
+              name: 'test_sent',
+              createdAt: options.latestSentAt,
+              props: { verificationId: 'verification-1' },
+            }
+          : undefined,
+      ),
     ),
     countSince: jest.fn().mockResolvedValue(options.sentToday ?? 0),
   };
@@ -74,6 +77,7 @@ function setup(
     recordEvent: jest.fn(),
     reachMilestone: jest.fn().mockResolvedValue(true),
     findCurrent: jest.fn().mockResolvedValue({
+      installedAt: options.installedAt ?? '2020-01-01T00:00:00.000Z',
       testConfirmedAt: null,
       testSkippedAt: null,
     }),
@@ -215,6 +219,25 @@ describe('OnboardingTestService', () => {
       new Date(new Date(sentAt).getTime() + 30_000).toISOString(),
     );
     expect(status.sendsRemainingToday).toBe(5);
+  });
+
+  it('ignores a test sent by a previous install of the same store', async () => {
+    const sentAt = new Date(Date.now() - 60_000).toISOString();
+    const { service, productEvents, verifications } = setup({
+      latestSentAt: sentAt,
+      installedAt: new Date(Date.now() - 5_000).toISOString(),
+    });
+
+    const status = await service.getStatus(owner);
+
+    expect(productEvents.findLatest).toHaveBeenCalledWith(
+      expect.objectContaining({ since: expect.any(String) }),
+    );
+    expect(verifications.findByIdForOrg).not.toHaveBeenCalled();
+    expect(status.test).toBeNull();
+    expect(status.resendAvailableAt).toBe(
+      new Date(new Date(sentAt).getTime() + 30_000).toISOString(),
+    );
   });
 
   it('records a skip as a first-hit milestone', async () => {

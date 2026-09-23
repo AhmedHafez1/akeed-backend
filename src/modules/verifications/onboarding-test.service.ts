@@ -235,25 +235,34 @@ export class OnboardingTestService {
       integration.defaultLanguage,
       phone ?? '',
     );
-    const [latest, sentToday, lifecycle] = await Promise.all([
+    const lifecycle = await this.adminLifecycles.findCurrent(integration.id);
+    // Rate limits span reinstalls; the displayed test does not, or a previous
+    // install's confirmed test would read as this install's confirmation.
+    const [latest, latestThisInstall, sentToday] = await Promise.all([
       this.productEvents.findLatest({
         integrationId: integration.id,
         names: ONBOARDING_TEST_SEND_EVENTS,
       }),
+      lifecycle
+        ? this.productEvents.findLatest({
+            integrationId: integration.id,
+            names: ONBOARDING_TEST_SEND_EVENTS,
+            since: lifecycle.installedAt,
+          })
+        : undefined,
       this.productEvents.countSince({
         integrationId: integration.id,
         names: ONBOARDING_TEST_SEND_EVENTS,
         since: new Date(Date.now() - DAY_MS).toISOString(),
       }),
-      this.adminLifecycles.findCurrent(integration.id),
     ]);
 
     const verificationId =
-      typeof latest?.props === 'object' &&
-      latest.props !== null &&
-      'verificationId' in latest.props &&
-      typeof latest.props.verificationId === 'string'
-        ? latest.props.verificationId
+      typeof latestThisInstall?.props === 'object' &&
+      latestThisInstall.props !== null &&
+      'verificationId' in latestThisInstall.props &&
+      typeof latestThisInstall.props.verificationId === 'string'
+        ? latestThisInstall.props.verificationId
         : null;
     const verification = verificationId
       ? await this.verificationsRepo.findByIdForOrg(verificationId, orgId)

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
+import { OrdersRepository } from '../../../database/repositories/orders.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
@@ -19,6 +20,7 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
+    private readonly ordersRepo: OrdersRepository,
   ) {}
 
   async handleAppUninstalled(
@@ -54,6 +56,23 @@ export class ShopifyBillingWebhookService {
     await this.integrationsRepo.markShopifyUninstalled(
       integration.id,
       uninstalledAt,
+    );
+
+    const purged = await this.ordersRepo.purgeByIntegration(
+      integration.orgId,
+      integration.id,
+    );
+    this.logger.log(
+      buildBackendLog('ShopifyBillingWebhookService', {
+        action: 'handleAppUninstalled.purged',
+        outcome: 'success',
+        shopDomain,
+        orgId: integration.orgId,
+        integrationId: integration.id,
+        purgedOrders: purged.orders,
+        purgedVerifications: purged.verifications,
+        purgedWebhookEvents: purged.webhookEvents,
+      }),
     );
     return { received: true };
   }
