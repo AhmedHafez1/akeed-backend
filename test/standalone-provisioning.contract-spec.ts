@@ -226,6 +226,8 @@ describe('standalone source provisioning PostgreSQL contract', () => {
         send_delay_minutes integer DEFAULT 0 NOT NULL,
         country_code varchar(2),
         shop_timezone text,
+        merchant_whatsapp_phone text,
+        shop_phone text,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE (platform_type, platform_store_url),

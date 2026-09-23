@@ -90,6 +90,7 @@ export class VerificationsRepository {
           eq(verifications.orgId, orgId),
           gte(verifications.createdAt, startAt),
           lt(verifications.createdAt, endAt),
+          this.excludesTestOrders(),
         ),
       );
 
@@ -108,6 +109,36 @@ export class VerificationsRepository {
       customerCanceled: row?.customerCanceled ?? 0,
       followUpsSent: row?.followUpsSent ?? 0,
     };
+  }
+
+  /**
+   * Real confirmations since a point in time, for the business-outcome upgrade
+   * prompt ("Akeed confirmed 19 orders worth X"). Test orders never count.
+   */
+  async getConfirmedTotalsByOrgSince(
+    orgId: string,
+    startAt: string,
+  ): Promise<{ count: number; value: string }> {
+    const [row] = await this.db
+      .select({
+        count: sql<number>`count(*)::int`,
+        value: sql<string>`COALESCE(sum(${orders.totalPrice}), 0)::text`,
+      })
+      .from(verifications)
+      .innerJoin(orders, eq(verifications.orderId, orders.id))
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          eq(orders.isTest, false),
+          gte(verifications.confirmedAt, startAt),
+        ),
+      );
+    return { count: row?.count ?? 0, value: row?.value ?? '0' };
+  }
+
+  /** Dashboard metrics describe real orders; test sends are not business. */
+  private excludesTestOrders() {
+    return sql`NOT EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${verifications.orderId} AND ${orders.isTest} = true)`;
   }
 
   async create(data: typeof verifications.$inferInsert) {

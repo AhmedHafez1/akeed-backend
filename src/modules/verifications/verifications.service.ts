@@ -318,6 +318,7 @@ export class VerificationsService {
         no_reply_at: verification.noReplyAt ?? null,
         follow_up_attempts: verification.followUpAttempts ?? 0,
         follow_up_sent_at: verification.followUpSentAt ?? null,
+        scheduled_for: resolveScheduledFor(verification),
       })),
       next_cursor: nextCursor,
       total_count: totalCount + heldCount,
@@ -466,6 +467,12 @@ export class VerificationsService {
           periodStart: null,
           periodEnd: null,
         };
+    const confirmedInPeriod = usage.periodStart
+      ? await this.verificationsRepo.getConfirmedTotalsByOrgSince(
+          orgId,
+          usage.periodStart,
+        )
+      : { count: 0, value: '0' };
     const replyRate = this.calculateReplyRate(filteredCounts);
     const confirmationRate = this.calculateConfirmationRate(filteredCounts);
     const usageLimit = usage.includedLimit;
@@ -504,6 +511,8 @@ export class VerificationsService {
         limit: usageLimit,
         period_start: usage.periodStart ?? null,
         period_end: usage.periodEnd ?? null,
+        confirmed_in_period: confirmedInPeriod.count,
+        confirmed_value_in_period: confirmedInPeriod.value,
       },
       savings: {
         avg_shipping_cost: shippingSettings.avgShippingCost,
@@ -836,4 +845,16 @@ export class VerificationsService {
       platform_type: source?.platformType ?? null,
     };
   }
+}
+
+function resolveScheduledFor(verification: {
+  status: string;
+  lastSentAt?: string | null;
+  nextRetryAt?: string | null;
+}): string | null {
+  if (verification.status !== 'pending' || verification.lastSentAt) return null;
+  if (!verification.nextRetryAt) return null;
+  return new Date(verification.nextRetryAt).getTime() > Date.now()
+    ? verification.nextRetryAt
+    : null;
 }

@@ -1,8 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
+  Optional,
 } from '@nestjs/common';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
@@ -10,6 +14,10 @@ import { getBillingManagement } from '../../shared/billing/entitlement';
 import { integrations } from '../../infrastructure/database/schema';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import type {
+  CompleteOnboardingSetupDto,
+  OnboardingClientEventDto,
+  OnboardingActivationDto,
+  OnboardingUsageDto,
   OnboardingBillingPlanId,
   OnboardingBillingResponseDto,
   OnboardingBillingPlansResponseDto,
@@ -46,6 +54,8 @@ export class OnboardingService {
     private readonly billingService: BillingService,
     private readonly billingEntitlements: BillingEntitlementService,
     private readonly creditEligibility: CreditEligibilityService,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -63,6 +73,62 @@ export class OnboardingService {
     this.assertCanUpdateConfiguration(user);
     await this.onboardingState.updateSettings(user, payload);
     return this.getState(user);
+  }
+
+  /**
+   * Quick setup is the whole of onboarding v2: saving it activates Starter
+   * without a plan picker and takes the store live, so the first real COD
+   * order is confirmed even if the merchant never finishes the test step.
+   */
+  async completeSetup(
+    user: AuthenticatedUser,
+    payload: CompleteOnboardingSetupDto,
+  ): Promise<OnboardingStateDto> {
+    this.assertCanUpdateConfiguration(user);
+    await this.onboardingState.updateSettings(user, {
+      storeName: payload.storeName,
+      defaultLanguage: payload.defaultLanguage,
+      isAutoVerifyEnabled: payload.isAutoVerifyEnabled,
+      merchantWhatsappPhone: payload.merchantWhatsappPhone,
+    });
+    const integration =
+      await this.onboardingState.resolveCurrentIntegration(user);
+    if (!integration.merchantWhatsappPhone) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'A WhatsApp number is required to receive the test message.',
+        code: 'ONBOARDING_INVALID_PHONE',
+      });
+    }
+
+    const starter =
+      await this.billingService.activateStarterSilently(integration);
+    await this.onboardingState.markOnboardingCompleted(integration.id);
+    await this.adminLifecycles?.reachMilestone(
+      integration.id,
+      'setupCompletedAt',
+      'setup_completed',
+      {
+        provenance: { setup_completed: 'captured_exact' },
+        props: { starter, autoConfirm: payload.isAutoVerifyEnabled },
+      },
+    );
+
+    return this.getState(user);
+  }
+
+  async recordClientEvent(
+    user: AuthenticatedUser,
+    payload: OnboardingClientEventDto,
+  ): Promise<void> {
+    const integration =
+      await this.onboardingState.resolveCurrentIntegration(user);
+    await this.adminLifecycles?.recordEvent(
+      integration.id,
+      payload.name,
+      payload.step ? { step: payload.step } : undefined,
+    );
   }
 
   async getSettings(user: AuthenticatedUser): Promise<SettingsResponseDto> {
@@ -216,8 +282,15 @@ export class OnboardingService {
       ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
 
+    const [activation, usage] = await Promise.all([
+      this.readActivation(integration, state.isOnboardingComplete),
+      this.readUsage(integration),
+    ]);
+
     return {
       ...state,
+      activation,
+      usage,
       permissions: {
         canUpdateConfiguration,
         canCompleteOnboarding:
@@ -230,6 +303,51 @@ export class OnboardingService {
             accountStatus,
           }
         : null,
+    };
+  }
+
+  private async readActivation(
+    integration: IntegrationRecord,
+    isOnboardingComplete: boolean,
+  ): Promise<OnboardingActivationDto> {
+    const lifecycle = await this.adminLifecycles?.findCurrent(integration.id);
+    const hasActivePlan =
+      this.billingEntitlements.evaluateAccess(integration).allowed;
+    const managesBilling = getBillingManagement(integration).canManageBilling;
+    return {
+      setupCompletedAt: lifecycle?.setupCompletedAt ?? null,
+      testSentAt: lifecycle?.testSentAt ?? null,
+      testConfirmedAt: lifecycle?.testConfirmedAt ?? null,
+      testSkippedAt: lifecycle?.testSkippedAt ?? null,
+      firstRealConfirmedAt: lifecycle?.firstRealConfirmedAt ?? null,
+      isLive:
+        isOnboardingComplete &&
+        integration.isActive === true &&
+        integration.isAutoVerifyEnabled &&
+        hasActivePlan,
+      needsPlan:
+        isOnboardingComplete &&
+        managesBilling &&
+        !(
+          integration.billingPlanId &&
+          isBillingStatusActive(integration.billingStatus)
+        ),
+    };
+  }
+
+  private async readUsage(
+    integration: IntegrationRecord,
+  ): Promise<OnboardingUsageDto | null> {
+    if (!integration.billingPlanId) return null;
+    const entitlement =
+      await this.billingEntitlements.readEntitlement(integration);
+    return {
+      used: entitlement.consumedCount,
+      limit: entitlement.includedLimit,
+      remaining: Math.max(
+        0,
+        entitlement.includedLimit - entitlement.consumedCount,
+      ),
     };
   }
 

@@ -295,6 +295,13 @@
       "when": 1789776000000,
       "tag": "0041_free_plan_claims_survive_redact",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789862400000,
+      "tag": "0042_onboarding_v2",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,14 @@ type SyntheticTestResult =
         | 'outcome_unknown';
       reason?: string;
     });
+/**
+ * `onboarding` is the free test a merchant sends to their own phone during
+ * setup. It may run before onboarding completes and without a plan, is never
+ * charged, and always sends immediately (quiet hours and send delay apply only
+ * to real orders).
+ */
+export type SyntheticTestMode = 'dashboard' | 'onboarding';
+
 type PreparedVerification = {
   order: Awaited<ReturnType<OrdersRepository['create']>>;
   verification: {
@@ -129,14 +137,19 @@ export class VerificationHubService {
   async handleSyntheticTestOrder(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
+    mode: SyntheticTestMode = 'dashboard',
   ): Promise<SyntheticTestResult> {
+    const billingExempt = mode === 'onboarding';
     const sourceReason = await this.validateSyntheticTestSource(
       orderData,
       integration,
+      billingExempt,
     );
     if (sourceReason) return { skipped: true, reason: sourceReason };
 
-    const prepared = await this.prepareVerification(orderData, integration);
+    const prepared = await this.prepareVerification(orderData, integration, {
+      skipSlotCheck: billingExempt,
+    });
     if ('skipped' in prepared) return prepared;
     const { order, verification } = prepared;
     if (prepared.existing) {
@@ -149,6 +162,7 @@ export class VerificationHubService {
     }
     const delivery = await this.verificationSendService.sendInitial(
       verification.id,
+      { billingExempt },
     );
 
     await this.applyInitialSendFailure(verification.id, order.orgId, delivery);
@@ -325,6 +339,7 @@ export class VerificationHubService {
   private async validateSyntheticTestSource(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
+    billingExempt = false,
   ): Promise<string | null> {
     if (
       orderData.orgId !== integration.orgId ||
@@ -333,6 +348,7 @@ export class VerificationHubService {
       return 'source_identity_mismatch';
     }
     if (!integration.isActive) return 'integration_inactive';
+    if (billingExempt) return null;
     if (integration.onboardingStatus !== 'completed') {
       return 'onboarding_incomplete';
     }
@@ -358,6 +374,7 @@ export class VerificationHubService {
   private async prepareVerification(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
+    options: { skipSlotCheck?: boolean } = {},
   ): Promise<SkippedResult | PreparedVerification> {
     const order = await this.findOrCreateOrder(orderData);
     const existingVerification = await this.verificationsRepo.findByOrderId(
@@ -382,8 +399,9 @@ export class VerificationHubService {
       };
     }
 
-    const slotCheck =
-      await this.billingEntitlementService.hasAvailableSlot(integration);
+    const slotCheck = options.skipSlotCheck
+      ? { available: true as const }
+      : await this.billingEntitlementService.hasAvailableSlot(integration);
     if (!slotCheck.available) {
       this.logger.warn(
         buildBackendLog(VerificationHubService.name, {
@@ -444,6 +462,13 @@ export class VerificationHubService {
         orgId: order.orgId,
         dueAt: adjustedDueAt,
       });
+      // Lets the dashboard show a night order as "scheduled for 9:00" instead
+      // of an unexplained pending row. The status itself stays `pending`.
+      await this.verificationsRepo.updateByIdForOrg(
+        verification.id,
+        order.orgId,
+        { nextRetryAt: adjustedDueAt.toISOString() },
+      );
 
       this.logger.log(
         buildBackendLog(VerificationHubService.name, {

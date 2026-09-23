@@ -16,6 +16,7 @@ import { IntegrationsRepository } from '../../../database/repositories/integrati
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
+import { PhoneService } from '../../../../shared/services/phone.service';
 import {
   buildBackendLog,
   normalizeError,
@@ -63,6 +64,8 @@ export class ShopifyAuthService {
     private readonly membershipsRepo: MembershipsRepository,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly phoneService: PhoneService = new PhoneService(),
   ) {}
 
   async isInstalled(shop: string): Promise<boolean> {
@@ -248,6 +251,7 @@ export class ShopifyAuthService {
       integrationId: integration.id,
       provenance: { installation_completed: 'captured_exact' },
     });
+    await this.adminLifecycles.recordEvent(integration.id, 'app_installed');
   }
 
   private async syncShopProfile(
@@ -261,7 +265,7 @@ export class ShopifyAuthService {
           data?: {
             shop?: {
               name?: string;
-              billingAddress?: { countryCodeV2?: string };
+              billingAddress?: { countryCodeV2?: string; phone?: string };
               ianaTimezone?: string;
             };
           };
@@ -272,7 +276,7 @@ export class ShopifyAuthService {
               shop {
                 name
                 ianaTimezone
-                billingAddress { countryCodeV2 }
+                billingAddress { countryCodeV2 phone }
               }
             }`,
           },
@@ -290,6 +294,11 @@ export class ShopifyAuthService {
         countryCode:
           profile.billingAddress?.countryCodeV2 ?? integration.countryCode,
         shopTimezone: profile.ianaTimezone ?? integration.shopTimezone,
+        shopPhone:
+          this.normalizeShopPhone(
+            profile.billingAddress?.phone,
+            profile.billingAddress?.countryCodeV2,
+          ) ?? integration.shopPhone,
       });
     } catch (error) {
       this.logger.warn(
@@ -301,6 +310,19 @@ export class ShopifyAuthService {
         }),
       );
     }
+  }
+
+  /**
+   * Only used to prefill the merchant's test-message number, so an unparseable
+   * phone is simply dropped rather than failing the install.
+   */
+  private normalizeShopPhone(
+    phone: string | undefined,
+    countryCode: string | undefined,
+  ): string | null {
+    if (!phone?.trim()) return null;
+    const parsed = this.phoneService.parse(phone, countryCode);
+    return parsed.ok ? parsed.e164 : null;
   }
 
   private verifyHmac(query: Record<string, string | undefined>): void {

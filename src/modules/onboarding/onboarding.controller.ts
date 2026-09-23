@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Patch,
   Post,
   UseGuards,
@@ -12,6 +14,8 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { CurrentUser } from '../auth/guards/current-user.decorator';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import {
+  CompleteOnboardingSetupDto,
+  OnboardingClientEventDto,
   OnboardingBillingPlansResponseDto,
   OnboardingBillingRequestDto,
   OnboardingBillingResponseDto,
@@ -37,6 +41,24 @@ export class OnboardingController {
   ): Promise<{ state: OnboardingStateDto }> {
     const state = await this.onboardingService.getState(user);
     return { state };
+  }
+
+  @Post('setup')
+  async completeSetup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() payload: CompleteOnboardingSetupDto,
+  ): Promise<{ state: OnboardingStateDto }> {
+    const state = await this.onboardingService.completeSetup(user, payload);
+    return { state };
+  }
+
+  @Post('events')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async recordClientEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() payload: OnboardingClientEventDto,
+  ): Promise<void> {
+    await this.onboardingService.recordClientEvent(user, payload);
   }
 
   @Patch('settings')

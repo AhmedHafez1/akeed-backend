@@ -86,6 +86,11 @@ export interface VerificationListItemDto {
   no_reply_at: string | null;
   follow_up_attempts: number;
   follow_up_sent_at: string | null;
+  /**
+   * When a pending row's first message is deliberately delayed (quiet hours or
+   * send delay), the time it is due to go out. Null once anything was sent.
+   */
+  scheduled_for: string | null;
 }
 
 /**
@@ -205,6 +210,9 @@ export interface VerificationStatsDto {
     limit: number;
     period_start: string | null;
     period_end: string | null;
+    /** Real orders confirmed since the usage period started. */
+    confirmed_in_period: number;
+    confirmed_value_in_period: string;
   };
   savings: {
     avg_shipping_cost: number;

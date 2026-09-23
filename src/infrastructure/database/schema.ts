@@ -257,6 +257,8 @@ export const integrations = pgTable(
     sendDelayMinutes: integer('send_delay_minutes').default(0).notNull(),
     countryCode: varchar('country_code', { length: 2 }),
     shopTimezone: text('shop_timezone'),
+    merchantWhatsappPhone: text('merchant_whatsapp_phone'),
+    shopPhone: text('shop_phone'),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -988,6 +990,30 @@ export const adminStoreLifecycles = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    setupCompletedAt: timestamp('setup_completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    testSentAt: timestamp('test_sent_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    testConfirmedAt: timestamp('test_confirmed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    testSkippedAt: timestamp('test_skipped_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstRealConfirmedAt: timestamp('first_real_confirmed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    credits80At: timestamp('credits_80_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     provenance: jsonb().default({}).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -1019,6 +1045,51 @@ export const adminStoreLifecycles = pgTable(
       name: 'admin_store_lifecycles_integration_id_fkey',
     }).onDelete('cascade'),
     pgPolicy('Service role manages admin store lifecycles', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+);
+
+export const productEvents = pgTable(
+  'product_events',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    name: text().notNull(),
+    props: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_product_events_integration_name_created').on(
+      table.integrationId,
+      table.name,
+      table.createdAt,
+    ),
+    index('idx_product_events_name_created').on(table.name, table.createdAt),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'product_events_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'product_events_integration_id_fkey',
+    }).onDelete('cascade'),
+    pgPolicy('Service role manages product events', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

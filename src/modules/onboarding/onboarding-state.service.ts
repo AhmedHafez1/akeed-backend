@@ -33,6 +33,8 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import { PhoneService } from '../../shared/services/phone.service';
+import { InvalidPhoneNumberError } from '../../shared/errors/invalid-phone-number.error';
 import {
   resolveFallbackActiveIntegration,
   resolveShopifyLinkedIntegration,
@@ -58,6 +60,8 @@ export class OnboardingStateService {
     private readonly storePlatform: StorePlatformPort,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly phoneService: PhoneService = new PhoneService(),
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -77,6 +81,12 @@ export class OnboardingStateService {
       defaultLanguage: payload.defaultLanguage,
       isAutoVerifyEnabled: payload.isAutoVerifyEnabled,
     };
+
+    if (payload.merchantWhatsappPhone !== undefined) {
+      updates.merchantWhatsappPhone = this.normalizeMerchantPhone(
+        payload.merchantWhatsappPhone,
+      );
+    }
 
     if (payload.assumeCodWhenPaymentMissing !== undefined) {
       updates.assumeCodWhenPaymentMissing = payload.assumeCodWhenPaymentMissing;
@@ -192,6 +202,30 @@ export class OnboardingStateService {
     );
 
     return this.toState(updated);
+  }
+
+  /**
+   * The merchant's own WhatsApp number receives the onboarding test. It is
+   * stored in E.164 so the send path and the resend guard compare like with
+   * like; an empty value clears it.
+   */
+  normalizeMerchantPhone(value: string): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return this.phoneService.standardize(trimmed);
+    } catch (error) {
+      if (error instanceof InvalidPhoneNumberError) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message:
+            'WhatsApp number must be a valid phone number (example: +201234567890).',
+          code: 'ONBOARDING_INVALID_PHONE',
+        });
+      }
+      throw error;
+    }
   }
 
   async resolveCurrentIntegration(
@@ -333,6 +367,18 @@ export class OnboardingStateService {
       timezone: this.resolveTimezone(integration),
       sendDelayMinutes:
         integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
+      merchantWhatsappPhone:
+        integration.merchantWhatsappPhone ?? integration.shopPhone ?? null,
+      activation: {
+        setupCompletedAt: null,
+        testSentAt: null,
+        testConfirmedAt: null,
+        testSkippedAt: null,
+        firstRealConfirmedAt: null,
+        isLive: false,
+        needsPlan: false,
+      },
+      usage: null,
       permissions: {
         canUpdateConfiguration: false,
         canCompleteOnboarding: false,

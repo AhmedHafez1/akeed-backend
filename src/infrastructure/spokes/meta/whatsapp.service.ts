@@ -14,6 +14,7 @@ import {
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
+import { resolveTemplateLanguageForPhone } from '../../../shared/messaging/template-language';
 
 type VerificationTemplateLanguage = 'ar' | 'en';
 type VerificationTemplatePreference = 'auto' | VerificationTemplateLanguage;
@@ -24,31 +25,6 @@ export class WhatsAppService {
   private readonly apiUrl: string;
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
-  private readonly arabicCountryCallingCodes = [
-    '966', // Saudi Arabia
-    '971', // UAE
-    '973', // Bahrain
-    '974', // Qatar
-    '965', // Kuwait
-    '968', // Oman
-    '20', // Egypt
-    '962', // Jordan
-    '964', // Iraq
-    '963', // Syria
-    '961', // Lebanon
-    '970', // Palestine
-    '212', // Morocco
-    '213', // Algeria
-    '216', // Tunisia
-    '218', // Libya
-    '222', // Mauritania
-    '249', // Sudan
-    '252', // Somalia
-    '253', // Djibouti
-    '269', // Comoros
-    '967', // Yemen
-  ] as const;
-
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
@@ -207,24 +183,7 @@ export class WhatsAppService {
     preferredLanguage: VerificationTemplatePreference,
     phoneNumber: string,
   ): VerificationTemplateLanguage {
-    if (preferredLanguage === 'ar' || preferredLanguage === 'en') {
-      return preferredLanguage;
-    }
-
-    return this.isArabicPhoneNumber(phoneNumber) ? 'ar' : 'en';
-  }
-
-  private isArabicPhoneNumber(phoneNumber: string): boolean {
-    const normalizedNumber = phoneNumber.replace(/[^\d+]/g, '');
-    const internationalDigits = normalizedNumber.startsWith('+')
-      ? normalizedNumber.slice(1)
-      : normalizedNumber.startsWith('00')
-        ? normalizedNumber.slice(2)
-        : normalizedNumber;
-
-    return this.arabicCountryCallingCodes.some((dialCode) =>
-      internationalDigits.startsWith(dialCode),
-    );
+    return resolveTemplateLanguageForPhone(preferredLanguage, phoneNumber);
   }
 
   private buildSafeErrorContext(

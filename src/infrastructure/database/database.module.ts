@@ -16,6 +16,7 @@ import { IntegrationMonthlyUsageRepository } from './repositories/integration-mo
 import { WebhookEventsRepository } from './repositories/webhook-events.repository';
 import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
 import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifecycles.repository';
+import { ProductEventsRepository } from './repositories/product-events.repository';
 import { AdminAccessAuditRepository } from './repositories/admin-access-audit.repository';
 import { StandaloneOrganizationProvisioningRepository } from './repositories/standalone-organization-provisioning.repository';
 import { ManualOrderIngestionRepository } from './repositories/manual-order-ingestion.repository';
@@ -41,6 +42,7 @@ import { OrderImportReleaseRepository } from './repositories/order-import-releas
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
+    ProductEventsRepository,
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,
@@ -64,6 +66,7 @@ import { OrderImportReleaseRepository } from './repositories/order-import-releas
     WebhookEventsRepository,
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
+    ProductEventsRepository,
     AdminAccessAuditRepository,
     StandaloneOrganizationProvisioningRepository,
     ManualOrderIngestionRepository,

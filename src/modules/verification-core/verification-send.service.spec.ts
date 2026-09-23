@@ -118,6 +118,73 @@ describe('VerificationSendService', () => {
     },
   );
 
+  describe('onboarding test sends', () => {
+    const planless = {
+      ...baseIntegration,
+      billingPlanId: null,
+      billingStatus: null,
+      onboardingStatus: 'pending',
+    };
+
+    it('sends a billing-exempt test without a plan and claims it exempt', async () => {
+      const { service, order, ordersRepo, messageDispatches, messagingPort } =
+        createMocks();
+      ordersRepo.findById.mockResolvedValue({
+        ...order,
+        isTest: true,
+        integration: planless,
+      });
+
+      await service.sendInitial('ver-1', { billingExempt: true });
+
+      expect(messageDispatches.claim).toHaveBeenCalledWith(
+        expect.objectContaining({ billingExempt: true }),
+      );
+      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalled();
+    });
+
+    it('ignores the exemption for a real order', async () => {
+      const { service, order, ordersRepo, messageDispatches } = createMocks();
+      ordersRepo.findById.mockResolvedValue({
+        ...order,
+        isTest: false,
+        integration: planless,
+      });
+
+      const outcome = await service.sendInitial('ver-1', {
+        billingExempt: true,
+      });
+
+      expect(outcome).toMatchObject({ status: 'skipped' });
+      expect(messageDispatches.claim).not.toHaveBeenCalled();
+    });
+  });
+
+  it('records the 80% credit milestone once a claim crosses it', async () => {
+    const { service, order, ordersRepo, messageDispatches } = createMocks();
+    const lifecycles = { markMilestone: jest.fn(), recordEvent: jest.fn() };
+    Object.assign(service, { adminLifecycles: lifecycles });
+    ordersRepo.findById.mockResolvedValue(order);
+    messageDispatches.claim.mockResolvedValue({
+      outcome: 'claimed',
+      dispatch: { id: 'dispatch-1', providerMessageId: null, acceptedAt: null },
+      usage: { consumedBefore: 23, consumedAfter: 24, includedLimit: 30 },
+    });
+
+    await service.sendInitial('ver-1');
+
+    expect(lifecycles.markMilestone).toHaveBeenCalledWith(
+      'int-1',
+      'credits80At',
+      undefined,
+      expect.anything(),
+    );
+    expect(lifecycles.recordEvent).toHaveBeenCalledWith('int-1', 'credits_80', {
+      consumed: 24,
+      limit: 30,
+    });
+  });
+
   it('reports an untracked send when nothing could record the acceptance', async () => {
     const { service, messageDispatches, verificationsRepo } = createMocks();
     messageDispatches.markAccepted.mockResolvedValue({

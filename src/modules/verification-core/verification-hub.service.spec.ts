@@ -745,6 +745,11 @@ describe('VerificationHubService', () => {
             dueAt: new Date('2026-05-01T06:00:00.000Z'),
           }),
         );
+        expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+          'ver-1',
+          'org-1',
+          { nextRetryAt: '2026-05-01T06:00:00.000Z' },
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -1074,6 +1079,54 @@ describe('VerificationHubService', () => {
       expect(
         automationProducer.enqueueNoReplyEscalation,
       ).not.toHaveBeenCalled();
+    });
+
+    it('sends the onboarding test free before setup completes and without a plan', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        verificationSendService,
+        billingEntitlementService,
+      } = createMocks();
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent',
+        sentAt: '2026-09-23T08:02:00.000Z',
+      });
+
+      await expect(
+        service.handleSyntheticTestOrder(
+          buildOrder({ externalOrderId: 'akeed-test-id' }),
+          buildIntegration({
+            onboardingStatus: 'pending',
+            billingPlanId: null,
+            billingStatus: null,
+          }),
+          'onboarding',
+        ),
+      ).resolves.toMatchObject({ deliveryStatus: 'sent' });
+
+      expect(billingEntitlementService.hasAvailableSlot).not.toHaveBeenCalled();
+      expect(verificationSendService.sendInitial).toHaveBeenCalledWith(
+        expect.any(String),
+        { billingExempt: true },
+      );
+    });
+
+    it('keeps the dashboard test gated on setup', async () => {
+      const { service, verificationSendService } = createMocks();
+
+      await expect(
+        service.handleSyntheticTestOrder(
+          buildOrder({ externalOrderId: 'akeed-test-id' }),
+          buildIntegration({ onboardingStatus: 'pending' }),
+        ),
+      ).resolves.toEqual({ skipped: true, reason: 'onboarding_incomplete' });
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
     });
 
     it('surfaces the immediate provider outcome to the caller', async () => {

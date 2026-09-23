@@ -22,6 +22,10 @@ import {
   type EnglishCodTemplateVariantId,
 } from '../../../shared/messaging/cod-template-catalog';
 import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
+import {
+  CLIENT_PRODUCT_EVENT_NAMES,
+  type ClientProductEventName,
+} from '../../../shared/analytics/product-events';
 
 export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
@@ -152,6 +156,57 @@ export class UpdateOnboardingSettingsDto {
   @IsString()
   @IsIn(ENGLISH_COD_TEMPLATE_VARIANTS)
   codTemplateEnVariant?: EnglishCodTemplateVariantId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  merchantWhatsappPhone?: string;
+}
+
+export class CompleteOnboardingSetupDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  storeName!: string;
+
+  @IsString()
+  @IsIn(ONBOARDING_LANGUAGES)
+  defaultLanguage!: OnboardingLanguage;
+
+  @IsBoolean()
+  isAutoVerifyEnabled!: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(32)
+  merchantWhatsappPhone!: string;
+}
+
+export class OnboardingClientEventDto {
+  @IsString()
+  @IsIn(CLIENT_PRODUCT_EVENT_NAMES)
+  name!: ClientProductEventName;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['setup', 'test', 'success'])
+  step?: 'setup' | 'test' | 'success';
+}
+
+export interface OnboardingActivationDto {
+  setupCompletedAt: string | null;
+  testSentAt: string | null;
+  testConfirmedAt: string | null;
+  testSkippedAt: string | null;
+  firstRealConfirmedAt: string | null;
+  isLive: boolean;
+  needsPlan: boolean;
+}
+
+export interface OnboardingUsageDto {
+  used: number;
+  limit: number;
+  remaining: number;
 }
 
 export interface OnboardingStateDto {
@@ -180,6 +235,9 @@ export interface OnboardingStateDto {
   quietHoursEnd: string | null;
   timezone: AutomationTimezone;
   sendDelayMinutes: number;
+  merchantWhatsappPhone: string | null;
+  activation: OnboardingActivationDto;
+  usage: OnboardingUsageDto | null;
   permissions: {
     canUpdateConfiguration: boolean;
     canCompleteOnboarding: boolean;

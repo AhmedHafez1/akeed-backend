@@ -108,6 +108,64 @@ describe('BillingService', () => {
     },
   );
 
+  describe('activateStarterSilently — onboarding v2', () => {
+    const starterPlan = {
+      id: 'starter',
+      name: 'Akeed Starter',
+      amount: 0,
+      currencyCode: 'USD',
+      testMode: true,
+      includedVerifications: 30,
+    };
+    const planless = {
+      billingPlanId: null,
+      billingStatus: null,
+      shopifySubscriptionId: null,
+    };
+
+    it('claims and activates Starter for a planless store', async () => {
+      const { service, freePlanClaimsRepo, integrationsRepo, billingConfig } =
+        createMocks();
+      billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+      integrationsRepo.updateById.mockResolvedValue(makeIntegration() as never);
+
+      await expect(
+        service.activateStarterSilently(makeIntegration(planless) as any),
+      ).resolves.toBe('activated');
+      expect(freePlanClaimsRepo.createIfNew).toHaveBeenCalled();
+      expect(integrationsRepo.updateById).toHaveBeenCalledWith(
+        'int-1',
+        expect.objectContaining({
+          billingPlanId: 'starter',
+          billingStatus: 'active',
+        }),
+      );
+    });
+
+    it('leaves a reinstalled store planless instead of failing setup', async () => {
+      const { service, freePlanClaimsRepo, integrationsRepo, billingConfig } =
+        createMocks();
+      billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+      freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+
+      await expect(
+        service.activateStarterSilently(makeIntegration(planless) as any),
+      ).resolves.toBe('already_claimed');
+      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('keeps an already active plan untouched', async () => {
+      const { service, freePlanClaimsRepo } = createMocks();
+
+      await expect(
+        service.activateStarterSilently(
+          makeIntegration({ billingPlanId: 'pro' }) as any,
+        ),
+      ).resolves.toBe('already_active');
+      expect(freePlanClaimsRepo.createIfNew).not.toHaveBeenCalled();
+    });
+  });
+
   describe('initiateBilling — free plan claimed once per store', () => {
     it('rejects a second starter claim with a stable code', async () => {
       const mocks = createMocks();

@@ -248,6 +248,85 @@ describe('Shopify isolated PostgreSQL contract', () => {
     }
   });
 
+  it('applies the onboarding v2 migration re-runnably with tenant-safe product events', async () => {
+    const onboarding = `${namespace}_onboarding`;
+    await client.unsafe(`CREATE SCHEMA "${onboarding}"`);
+    try {
+      await client.unsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role; END IF; END $$`,
+      );
+      const migration = readFileSync(
+        resolve(__dirname, '../drizzle/0042_onboarding_v2.sql'),
+        'utf8',
+      );
+      const apply = () =>
+        client.begin(async (tx) => {
+          await tx.unsafe(`SET LOCAL search_path TO "${onboarding}"`);
+          for (const statement of migration.split('--> statement-breakpoint')) {
+            if (statement.trim()) await tx.unsafe(statement);
+          }
+        });
+      await client.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL search_path TO "${onboarding}"`);
+        await tx.unsafe(
+          `CREATE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'`,
+        );
+        await tx.unsafe(`CREATE TABLE organizations ("id" uuid PRIMARY KEY)`);
+        await tx.unsafe(
+          `CREATE TABLE integrations ("id" uuid PRIMARY KEY, "org_id" uuid NOT NULL REFERENCES organizations("id") ON DELETE cascade, CONSTRAINT "integrations_id_org_id_key" UNIQUE ("id", "org_id"))`,
+        );
+        await tx.unsafe(
+          `CREATE TABLE admin_store_lifecycles ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "integration_id" uuid NOT NULL)`,
+        );
+      });
+
+      await apply();
+      await apply();
+
+      const orgId = randomUUID();
+      const otherOrgId = randomUUID();
+      const integrationId = randomUUID();
+      const events = `"${onboarding}".product_events`;
+      await client.unsafe(
+        `INSERT INTO "${onboarding}".organizations (id) VALUES ('${orgId}'), ('${otherOrgId}')`,
+      );
+      await client.unsafe(
+        `INSERT INTO "${onboarding}".integrations (id, org_id) VALUES ('${integrationId}', '${orgId}')`,
+      );
+      await client.unsafe(
+        `INSERT INTO ${events} (org_id, integration_id, name) VALUES ('${orgId}', '${integrationId}', 'test_sent')`,
+      );
+      await expect(
+        client.unsafe(
+          `INSERT INTO ${events} (org_id, integration_id, name) VALUES ('${otherOrgId}', '${integrationId}', 'test_sent')`,
+        ),
+      ).rejects.toMatchObject({ code: '23503' });
+
+      const columns = await client<{ column_name: string }[]>`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = ${onboarding} AND table_name = 'admin_store_lifecycles'
+        ORDER BY column_name`;
+      expect(columns.map((row) => row.column_name)).toEqual(
+        expect.arrayContaining([
+          'credits_80_at',
+          'first_real_confirmed_at',
+          'setup_completed_at',
+          'test_confirmed_at',
+          'test_sent_at',
+          'test_skipped_at',
+        ]),
+      );
+
+      await client.unsafe(
+        `DELETE FROM "${onboarding}".integrations WHERE id = '${integrationId}'`,
+      );
+      const remaining = await client.unsafe(`SELECT id FROM ${events}`);
+      expect(remaining).toHaveLength(0);
+    } finally {
+      await client.unsafe(`DROP SCHEMA "${onboarding}" CASCADE`);
+    }
+  });
+
   it('concurrent identical producer deliveries insert one row and enqueue once', async () => {
     const { producer, queue, input } = setup();
     const results = await Promise.all([

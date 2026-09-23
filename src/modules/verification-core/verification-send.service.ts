@@ -1,5 +1,7 @@
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
+import { hasCrossedCreditsWarning } from '../../shared/analytics/product-events';
 import {
   buildBackendLog,
   normalizeError,
@@ -63,7 +65,13 @@ const ACCEPTANCE_FAILURE_CODES: Record<
   unacceptable_state: 'dispatch_not_acceptable',
 };
 
+export interface InitialSendOptions {
+  /** Free onboarding test: honoured only for synthetic test orders. */
+  billingExempt?: boolean;
+}
+
 interface ResolvedContext {
+  billingExempt: boolean;
   verification: NonNullable<
     Awaited<ReturnType<VerificationsRepository['findById']>>
   >;
@@ -109,10 +117,18 @@ export class VerificationSendService {
     private readonly creditEligibility: CreditEligibilityService,
     private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
+    @Optional()
+    private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
 
-  async sendInitial(verificationId: string): Promise<SendOutcome> {
-    const result = await this.loadContext(verificationId);
+  async sendInitial(
+    verificationId: string,
+    options: InitialSendOptions = {},
+  ): Promise<SendOutcome> {
+    const result = await this.loadContext(
+      verificationId,
+      options.billingExempt === true,
+    );
     if (!result.context) {
       return { status: 'skipped', reason: result.reason };
     }
@@ -127,8 +143,40 @@ export class VerificationSendService {
     return this.sendOnce(result.context, 'follow_up');
   }
 
+  /**
+   * Funnel bookkeeping only; the message has already been claimed and must
+   * still go out if this write fails.
+   */
+  private async recordCreditsWarning(
+    integrationId: string,
+    usage: { consumedAfter: number; includedLimit: number },
+  ): Promise<void> {
+    try {
+      await this.adminLifecycles?.markMilestone(
+        integrationId,
+        'credits80At',
+        undefined,
+        { credits_80: 'captured_exact' },
+      );
+      await this.adminLifecycles?.recordEvent(integrationId, 'credits_80', {
+        consumed: usage.consumedAfter,
+        limit: usage.includedLimit,
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.creditsWarning',
+          outcome: 'failure',
+          integrationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
   private async loadContext(
     verificationId: string,
+    requestBillingExempt = false,
   ): Promise<ContextLoadResult> {
     const verification = await this.verificationsRepo.findById(verificationId);
     if (!verification) {
@@ -150,6 +198,16 @@ export class VerificationSendService {
       integration.orgId !== verification.orgId
     ) {
       return { context: null, reason: 'source_identity_mismatch' };
+    }
+
+    const billingExempt = requestBillingExempt && order.isTest === true;
+    if (billingExempt) {
+      if (!integration.isActive) {
+        return { context: null, reason: 'integration_inactive' };
+      }
+      return {
+        context: { verification, order, integration, billingExempt },
+      };
     }
 
     const access = this.billingEntitlementService.evaluateAccess(integration);
@@ -183,7 +241,9 @@ export class VerificationSendService {
       return { context: null, reason: creditDenial };
     }
 
-    return { context: { verification, order, integration } };
+    return {
+      context: { verification, order, integration, billingExempt: false },
+    };
   }
 
   private async sendOnce(
@@ -212,6 +272,7 @@ export class VerificationSendService {
       templateName,
       languageCode: integration.defaultLanguage ?? 'auto',
       leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+      billingExempt: ctx.billingExempt,
     });
     if (dispatchClaim.outcome === 'blocked') {
       if (dispatchClaim.reason !== 'plan_limit_reached') {
@@ -281,6 +342,13 @@ export class VerificationSendService {
         waMessageId: providerMessageId ?? undefined,
         sentAt: acceptedAt ?? undefined,
       };
+    }
+    if (
+      dispatchClaim.outcome === 'claimed' &&
+      dispatchClaim.usage &&
+      hasCrossedCreditsWarning(dispatchClaim.usage)
+    ) {
+      await this.recordCreditsWarning(integration.id, dispatchClaim.usage);
     }
     if (dispatchClaim.outcome === 'busy') {
       return { status: 'skipped', reason: 'dispatch_in_progress' };

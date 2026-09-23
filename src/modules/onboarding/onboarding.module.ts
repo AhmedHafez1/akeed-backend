@@ -15,6 +15,7 @@ import { ShopifyBillingCallbackValidationGuard } from '../../shared/guards/shopi
 import { STORE_PLATFORM_PORT } from '../../shared/ports/store-platform.port';
 import { ShopifyApiService } from '../../infrastructure/spokes/shopify/services/shopify-api.service';
 import { AuthModule } from '../auth/auth.module';
+import { PhoneService } from '../../shared/services/phone.service';
 
 @Module({
   imports: [DatabaseModule, AuthModule, ShopifyModule],
@@ -30,6 +31,7 @@ import { AuthModule } from '../auth/auth.module';
     BillingConfigService,
     BillingCallbackRateLimitGuard,
     ShopifyBillingCallbackValidationGuard,
+    PhoneService,
     { provide: SUBSCRIPTION_BILLING_PORT, useExisting: ShopifyBillingAdapter },
     { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
   ],

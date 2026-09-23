@@ -375,6 +375,61 @@ describe('VerificationMessageDispatchesRepository lease reclaim', () => {
   });
 });
 
+/**
+ * The onboarding test is free: it is claimed and leased like any send, but it
+ * never reserves usage, so release and restore can never move the counter.
+ */
+describe('VerificationMessageDispatchesRepository billing-exempt claims', () => {
+  const claimParams = {
+    orgId: 'org-1',
+    integrationId: 'integration-1',
+    verificationId: 'verification-1',
+    kind: 'initial' as const,
+    templateName: 'cod_verification',
+    languageCode: 'ar',
+    leaseUntil: '2999-01-01T00:00:00.000Z',
+  };
+
+  it('claims an onboarding test without reserving usage', async () => {
+    const { repository, statements } = buildClaimRepository({
+      state: 'ready',
+    });
+
+    const result = await repository.claim({
+      ...claimParams,
+      billingExempt: true,
+    });
+
+    expect(result).toMatchObject({ outcome: 'claimed' });
+    expect(result).not.toHaveProperty('usage');
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('integration_monthly_usage'),
+      ),
+    ).toBe(false);
+    const updates = dispatchUpdates(statements);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].query).toContain('"metadata"');
+    const setClause = updates[0].query.split(' where ')[0];
+    expect(setClause).not.toContain('"usage_reserved"');
+    expect(setClause).not.toContain('"usage_period_start"');
+  });
+
+  it('still reserves usage for a normal claim', async () => {
+    const { repository, statements } = buildClaimRepository({
+      state: 'ready',
+    });
+
+    await repository.claim(claimParams);
+
+    expect(
+      statements.some((statement) =>
+        statement.query.includes('integration_monthly_usage'),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe('VerificationMessageDispatchesRepository usage refunds', () => {
   const periodStart = '2026-05-01';
 

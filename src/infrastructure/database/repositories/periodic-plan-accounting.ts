@@ -60,7 +60,12 @@ export class PeriodicPlanAccounting {
         updatedAt: now,
       })
       .where(eq(integrationMonthlyUsage.id, usage.id));
-    return { allowed: true as const };
+    return {
+      allowed: true as const,
+      consumedBefore: usage.consumedCount,
+      consumedAfter: usage.consumedCount + 1,
+      includedLimit: entitlement.includedLimit,
+    };
   }
   async release(
     tx: CreditTransaction,

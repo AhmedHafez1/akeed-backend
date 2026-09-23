@@ -130,7 +130,16 @@ export type DispatchAcceptanceResult =
     };
 
 export type DispatchClaimResult =
-  | { outcome: 'claimed'; dispatch: DispatchRecord }
+  | {
+      outcome: 'claimed';
+      dispatch: DispatchRecord;
+      /** Present when this claim reserved a periodic-plan message. */
+      usage?: {
+        consumedBefore: number;
+        consumedAfter: number;
+        includedLimit: number;
+      };
+    }
   | {
       outcome: 'blocked';
       reason: string;
@@ -158,6 +167,14 @@ export class VerificationMessageDispatchesRepository {
     templateName: string;
     languageCode: string;
     leaseUntil: string;
+    /**
+     * Onboarding test sends are free: the dispatch is still claimed and leased
+     * like any other, but no usage is reserved and entitlement is not checked,
+     * so a store without a plan (reinstall) can still see the test. The row is
+     * left with `usageReserved = false` and no period, which keeps the release
+     * and restore paths from ever touching usage for it.
+     */
+    billingExempt?: boolean;
   }): Promise<DispatchClaimResult> {
     const dispatchKey = buildDispatchKey(params.verificationId, params.kind);
     const now = new Date().toISOString();
@@ -176,6 +193,7 @@ export class VerificationMessageDispatchesRepository {
 
       if (
         source &&
+        !params.billingExempt &&
         this.accounting.mode(source.platformType) === 'prepaid_credit'
       ) {
         if (!source.isActive)
@@ -264,6 +282,31 @@ export class VerificationMessageDispatchesRepository {
         reclaimedFromExpiredLease = true;
       }
 
+      if (params.billingExempt) {
+        if (!source?.isActive)
+          return {
+            outcome: 'blocked' as const,
+            reason: 'integration_inactive',
+          };
+        const [claimedExempt] = await tx
+          .update(verificationMessageDispatches)
+          .set({
+            state: 'sending',
+            templateName: params.templateName,
+            languageCode: params.languageCode,
+            attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
+            lastErrorCode: reclaimedFromExpiredLease
+              ? 'dispatch_lease_expired'
+              : null,
+            leaseUntil: params.leaseUntil,
+            metadata: sql`${verificationMessageDispatches.metadata} || '{"billingExempt":true}'::jsonb`,
+            updatedAt: now,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatch.id))
+          .returning();
+        return { outcome: 'claimed' as const, dispatch: claimedExempt };
+      }
+
       const entitlement = resolveEntitlement(source, {
         id: params.integrationId,
         orgId: params.orgId,
@@ -275,6 +318,13 @@ export class VerificationMessageDispatchesRepository {
         };
       }
 
+      let usage:
+        | {
+            consumedBefore: number;
+            consumedAfter: number;
+            includedLimit: number;
+          }
+        | undefined;
       if (!dispatch.usageReserved) {
         const reservation = await this.accounting.periodic.reserve(
           tx,
@@ -289,6 +339,11 @@ export class VerificationMessageDispatchesRepository {
             consumedCount: reservation.consumedCount,
             includedLimit: reservation.includedLimit,
           };
+        usage = {
+          consumedBefore: reservation.consumedBefore,
+          consumedAfter: reservation.consumedAfter,
+          includedLimit: reservation.includedLimit,
+        };
       }
 
       const [claimed] = await tx
@@ -311,7 +366,7 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, dispatch.id))
         .returning();
-      return { outcome: 'claimed' as const, dispatch: claimed };
+      return { outcome: 'claimed' as const, dispatch: claimed, usage };
     });
   }
 

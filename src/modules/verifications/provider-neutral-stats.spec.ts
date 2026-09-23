@@ -30,6 +30,9 @@ describe('integration-scoped dashboard entitlement usage', () => {
         read: 5,
         followUpsSent: 0,
       }),
+      getConfirmedTotalsByOrgSince: jest
+        .fn()
+        .mockResolvedValue({ count: 3, value: '750.00' }),
     };
     const repository = {
       getEntitlementSource: jest.fn().mockResolvedValue(source),
@@ -75,6 +78,8 @@ describe('integration-scoped dashboard entitlement usage', () => {
       limit: 0,
       period_start: null,
       period_end: null,
+      confirmed_in_period: 0,
+      confirmed_value_in_period: '0',
     });
     expect(result.totals).toMatchObject({ confirmed: 3, canceled: 2 });
     expect(result.source.status).toBe('not_connected');
@@ -98,6 +103,8 @@ describe('integration-scoped dashboard entitlement usage', () => {
       limit: 0,
       period_start: null,
       period_end: null,
+      confirmed_in_period: 0,
+      confirmed_value_in_period: '0',
     });
     expect(repository.getEntitlementSource).not.toHaveBeenCalled();
   });

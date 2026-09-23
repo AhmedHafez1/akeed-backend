@@ -46,6 +46,12 @@ export interface BillingCallbackParams {
   host?: string;
 }
 
+export type StarterActivationResult =
+  | 'activated'
+  | 'already_active'
+  | 'already_claimed'
+  | 'not_applicable';
+
 interface BillingChargeResolution {
   status: string;
   subscriptionId: string;
@@ -201,18 +207,47 @@ export class BillingService {
     };
   }
 
+  /**
+   * Onboarding v2 grants Starter without a plan picker. A store that already
+   * has an active plan keeps it, and a store whose one free claim is used
+   * (reinstall) is left planless instead of failing setup: it still goes live
+   * and is offered plans from the dashboard.
+   */
+  async activateStarterSilently(
+    integration: IntegrationRecord,
+  ): Promise<StarterActivationResult> {
+    if (!getBillingManagement(integration).canManageBilling) {
+      return 'not_applicable';
+    }
+    if (
+      integration.billingPlanId &&
+      isBillingStatusActive(integration.billingStatus)
+    ) {
+      return 'already_active';
+    }
+    const starterPlan = this.billingConfig
+      .resolveAllPlans()
+      .find((plan) => plan.amount === 0);
+    if (!starterPlan) return 'not_applicable';
+
+    const activated = await this.claimAndActivateFreePlan(
+      integration,
+      starterPlan,
+    );
+    return activated ? 'activated' : 'already_claimed';
+  }
+
   private async initiateFreePlan(
     integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
-    const claimCreated = await this.freePlanClaimsRepo.createIfNew({
-      orgId: integration.orgId,
-      platformType: integration.platformType,
-      shopDomain: integration.platformStoreUrl,
-    });
+    const activated = await this.claimAndActivateFreePlan(
+      integration,
+      billingPlan,
+    );
 
-    if (!claimCreated) {
+    if (!activated) {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
@@ -221,6 +256,27 @@ export class BillingService {
         code: 'BILLING_FREE_PLAN_ALREADY_CLAIMED',
       });
     }
+
+    return {
+      confirmationUrl: await this.completeOnboardingAndBuildRedirect({
+        integrationId: integration.id,
+        shop: integration.platformStoreUrl,
+        host,
+      }),
+    };
+  }
+
+  private async claimAndActivateFreePlan(
+    integration: IntegrationRecord,
+    billingPlan: BillingPlanConfig,
+  ): Promise<boolean> {
+    const claimCreated = await this.freePlanClaimsRepo.createIfNew({
+      orgId: integration.orgId,
+      platformType: integration.platformType,
+      shopDomain: integration.platformStoreUrl,
+    });
+
+    if (!claimCreated) return false;
 
     try {
       await this.cancelExistingSubscriptionIfAny(integration);
@@ -259,13 +315,7 @@ export class BillingService {
       }),
     );
 
-    return {
-      confirmationUrl: await this.completeOnboardingAndBuildRedirect({
-        integrationId: integration.id,
-        shop: integration.platformStoreUrl,
-        host,
-      }),
-    };
+    return true;
   }
 
   async handleBillingCallback(
@@ -347,6 +397,9 @@ export class BillingService {
         undefined,
         { paid_subscription_activated: 'captured_exact' },
       );
+      await this.adminLifecycles?.recordEvent(integration.id, 'plan_upgraded', {
+        planId: activatedPlan.id,
+      });
     }
 
     // Reset usage counters so the new plan starts with a clean slate.
