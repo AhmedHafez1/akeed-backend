@@ -92,9 +92,9 @@ export class WebhookEventsRepository {
         orderId: event.orderId ?? null,
         rawPayload: event.rawPayload,
         dispatchRequired: event.dispatchRequired ?? false,
-        nextDispatchAt: event.dispatchRequired
-          ? new Date().toISOString()
-          : null,
+        // Database clock: the claim compares this to NOW(), so an app clock
+        // running ahead would make the immediate dispatch miss its own row.
+        nextDispatchAt: event.dispatchRequired ? sql`NOW()` : null,
         status: 'pending',
       })
       .onConflictDoNothing({
