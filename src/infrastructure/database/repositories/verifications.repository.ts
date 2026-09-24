@@ -28,6 +28,24 @@ import {
   TERMINAL_STATUSES,
   WEBHOOK_PROTECTED_STATUSES,
 } from '../../../shared/verification/verification-lifecycle';
+import type {
+  NeedsActionReason,
+  VerificationListTab,
+} from '../../../shared/verification/verification-needs-action';
+import type { OverviewCounts } from '../../../shared/verification/verification-metrics';
+import {
+  needsActionReasonSql,
+  type NeedsActionContext,
+} from './verification-needs-action.sql';
+
+/** Statuses a merchant may confirm by hand: a message went out, no answer yet. */
+export const MANUALLY_CONFIRMABLE_STATUSES: VerificationStatus[] = [
+  'sent',
+  'delivered',
+  'read',
+  'no_reply',
+  'failed',
+];
 
 /**
  * Converts a Meta webhook Unix-epoch string (seconds) to an ISO-8601 string.
@@ -230,10 +248,11 @@ export class VerificationsRepository {
       cursor?: { createdAt: string; id: string };
       limit?: number;
       importBatchId?: string;
-    },
+    } & VerificationListRefinement,
   ): Promise<
     Array<
       typeof verifications.$inferSelect & {
+        actionReason?: NeedsActionReason | null;
         order: Pick<
           typeof schema.orders.$inferSelect,
           | 'orgId'
@@ -256,6 +275,7 @@ export class VerificationsRepository {
       statuses,
       period,
       opts?.importBatchId,
+      opts,
     );
 
     if (opts?.cursor) {
@@ -272,6 +292,15 @@ export class VerificationsRepository {
 
     return await this.db.query.verifications.findMany({
       where: and(...conditions),
+      ...(opts?.needsAction
+        ? {
+            extras: {
+              actionReason: needsActionReasonSql(opts.needsAction).as(
+                'action_reason',
+              ),
+            },
+          }
+        : {}),
       with: {
         order: {
           columns: {
@@ -307,6 +336,7 @@ export class VerificationsRepository {
     statuses?: VerificationStatus[],
     period?: { startAt: string; endAt: string },
     importBatchId?: string,
+    refinement?: VerificationListRefinement,
   ): Promise<number> {
     const [row] = await this.db
       .select({ value: sql<number>`count(*)::int` })
@@ -318,6 +348,7 @@ export class VerificationsRepository {
             statuses,
             period,
             importBatchId,
+            refinement,
           ),
         ),
       );
@@ -326,18 +357,207 @@ export class VerificationsRepository {
   }
 
   /**
+   * Row counts for every confirmations tab in one scan.
+   *
+   * Built from the same conditions as the list (search excluded), so each
+   * count is exactly the `total_count` that tab's first page would report.
+   */
+  async countByTab(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+    needsAction: NeedsActionContext,
+    importBatchId?: string,
+  ): Promise<
+    Record<Exclude<VerificationListTab, 'all'>, number> & { all: number }
+  > {
+    const reason = needsActionReasonSql(needsAction);
+    const [row] = await this.db
+      .select({
+        all: sql<number>`count(*)::int`,
+        needsAction: sql<number>`count(*) FILTER (WHERE ${reason} IS NOT NULL)::int`,
+        confirmed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'confirmed')::int`,
+        canceled: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'canceled')::int`,
+        failed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'failed')::int`,
+      })
+      .from(verifications)
+      .where(
+        and(
+          ...this.buildOrgListConditions(
+            orgId,
+            undefined,
+            period,
+            importBatchId,
+          ),
+        ),
+      );
+
+    return {
+      all: row?.all ?? 0,
+      needs_action: row?.needsAction ?? 0,
+      confirmed: row?.confirmed ?? 0,
+      canceled: row?.canceled ?? 0,
+      failed: row?.failed ?? 0,
+    };
+  }
+
+  /**
+   * Everything the embedded dashboard counts, in one aggregate over the
+   * period's real (non-test) verifications.
+   *
+   * The `*AfterSend` numerators only count rows with a recorded send, so every
+   * rate built from them is a true share of `sent`.
+   */
+  async getOverviewCounts(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+    needsAction: NeedsActionContext,
+  ): Promise<OverviewCounts & { needsAction: number }> {
+    const reason = needsActionReasonSql(needsAction);
+    const wasSent = sql`${verifications.lastSentAt} IS NOT NULL`;
+    const customerCanceled = sql`${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer')`;
+    const [row] = await this.db
+      .select({
+        sent: sql<number>`count(${verifications.lastSentAt})::int`,
+        delivered: sql<number>`count(*) FILTER (WHERE ${wasSent} AND ${verifications.deliveredAt} IS NOT NULL)::int`,
+        read: sql<number>`count(*) FILTER (WHERE ${wasSent} AND ${verifications.readAt} IS NOT NULL)::int`,
+        confirmed: sql<number>`count(${verifications.confirmedAt})::int`,
+        confirmedAfterSend: sql<number>`count(*) FILTER (WHERE ${wasSent} AND ${verifications.confirmedAt} IS NOT NULL)::int`,
+        customerConfirmedAfterSend: sql<number>`count(*) FILTER (WHERE ${wasSent} AND ${verifications.confirmedAt} IS NOT NULL AND ${verifications.confirmationSource} IS DISTINCT FROM 'merchant_manual')::int`,
+        customerCanceled: sql<number>`count(*) FILTER (WHERE ${customerCanceled})::int`,
+        customerCanceledAfterSend: sql<number>`count(*) FILTER (WHERE ${wasSent} AND ${customerCanceled})::int`,
+        needsAction: sql<number>`count(*) FILTER (WHERE ${reason} IS NOT NULL)::int`,
+      })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          gte(verifications.createdAt, period.startAt),
+          lt(verifications.createdAt, period.endAt),
+          this.excludesTestOrders(),
+        ),
+      );
+
+    return {
+      sent: row?.sent ?? 0,
+      delivered: row?.delivered ?? 0,
+      read: row?.read ?? 0,
+      confirmed: row?.confirmed ?? 0,
+      confirmedAfterSend: row?.confirmedAfterSend ?? 0,
+      customerConfirmedAfterSend: row?.customerConfirmedAfterSend ?? 0,
+      customerCanceled: row?.customerCanceled ?? 0,
+      customerCanceledAfterSend: row?.customerCanceledAfterSend ?? 0,
+      needsAction: row?.needsAction ?? 0,
+    };
+  }
+
+  /**
+   * Value of the period's confirmed real orders, one bucket per currency,
+   * largest first. Summed in SQL; amounts come back as exact decimal strings.
+   */
+  async getConfirmedValueByCurrency(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+  ): Promise<Array<{ currency: string; amount: string }>> {
+    const total = sql<string>`COALESCE(sum(${orders.totalPrice}), 0)`;
+    const rows = await this.db
+      .select({
+        currency: sql<string>`COALESCE(${orders.currency}, '')`,
+        amount: sql<string>`${total}::text`,
+      })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          gte(verifications.createdAt, period.startAt),
+          lt(verifications.createdAt, period.endAt),
+          sql`${verifications.confirmedAt} IS NOT NULL`,
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+        ),
+      )
+      .groupBy(sql`COALESCE(${orders.currency}, '')`)
+      .orderBy(desc(total));
+
+    return rows.filter((row) => row.currency !== '');
+  }
+
+  /** The period's highest-value orders that need the merchant, for the dashboard card. */
+  async findNeedsActionTop(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+    needsAction: NeedsActionContext,
+    limit: number,
+  ): Promise<NeedsActionRow[]> {
+    const reason = needsActionReasonSql(needsAction);
+    return this.db
+      .select({
+        id: verifications.id,
+        orderId: verifications.orderId,
+        status: verifications.status,
+        actionReason: reason,
+        metadata: verifications.metadata,
+        createdAt: verifications.createdAt,
+        lastSentAt: verifications.lastSentAt,
+        readAt: verifications.readAt,
+        followUpSentAt: verifications.followUpSentAt,
+        noReplyAt: verifications.noReplyAt,
+        order: {
+          orgId: orders.orgId,
+          integrationId: orders.integrationId,
+          externalOrderId: orders.externalOrderId,
+          orderNumber: orders.orderNumber,
+          customerName: orders.customerName,
+          customerPhone: orders.customerPhone,
+          totalPrice: orders.totalPrice,
+          currency: orders.currency,
+          isTest: orders.isTest,
+        },
+      })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          gte(verifications.createdAt, period.startAt),
+          lt(verifications.createdAt, period.endAt),
+          sql`${reason} IS NOT NULL`,
+        ),
+      )
+      .orderBy(
+        sql`${orders.totalPrice} DESC NULLS LAST`,
+        desc(verifications.createdAt),
+        desc(verifications.id),
+      )
+      .limit(limit);
+  }
+
+  /**
    * Org + date-range + status filter shared by the list and count queries.
    *
-   * A future free-text search predicate belongs here rather than in
-   * `findByOrg`: both the row query and `countByOrg` read this list, so a
-   * filter added here keeps `total_count` describing the same set as the rows
-   * it is reported alongside.
+   * The tab and search predicates live here too, rather than in `findByOrg`:
+   * both the row query and `countByOrg` read this list, so a filter added here
+   * keeps `total_count` describing the same set as the rows it is reported
+   * alongside.
    */
   private buildOrgListConditions(
     orgId: string,
     statuses?: VerificationStatus[],
     period?: { startAt: string; endAt: string },
     importBatchId?: string,
+    refinement?: VerificationListRefinement,
   ) {
     return [
       eq(verifications.orgId, orgId),
@@ -348,6 +568,10 @@ export class VerificationsRepository {
       period ? lt(verifications.createdAt, period.endAt) : undefined,
       statuses && statuses.length > 0
         ? inArray(verifications.status, statuses)
+        : undefined,
+      refinement?.tab ? tabCondition(refinement.tab, refinement) : undefined,
+      refinement?.searchDigits
+        ? orderSearchCondition(orgId, refinement.searchDigits)
         : undefined,
     ].filter(Boolean);
   }
@@ -545,6 +769,41 @@ export class VerificationsRepository {
           eq(verifications.id, verificationId),
           eq(verifications.orgId, orgId),
           sql`${verifications.status} = 'no_reply'`,
+        ),
+      )
+      .returning();
+    return result ?? null;
+  }
+
+  /**
+   * Atomically record a merchant's manual confirmation.
+   *
+   * Guards on `id + orgId + status` so a customer reply or a cancellation that
+   * lands first wins and this affects zero rows. Delivered/read are left as
+   * WhatsApp reported them: the merchant confirming is not a read receipt.
+   *
+   * Returns the updated row, or null if no row matched.
+   */
+  async markMerchantConfirmed(
+    verificationId: string,
+    orgId: string,
+    confirmedBy: string,
+  ) {
+    const now = new Date().toISOString();
+    const [result] = await this.db
+      .update(verifications)
+      .set({
+        status: 'confirmed',
+        confirmedAt: now,
+        confirmationSource: 'merchant_manual',
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ manualConfirmedBy: confirmedBy })}::jsonb`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+          inArray(verifications.status, MANUALLY_CONFIRMABLE_STATUSES),
         ),
       )
       .returning();
@@ -761,6 +1020,77 @@ export class VerificationsRepository {
       importBatchId ? importBatchRowExists(orgId, importBatchId) : undefined,
     ].filter(Boolean);
   }
+}
+
+/** Tab and search narrowing for the confirmations list. */
+export interface VerificationListRefinement {
+  tab?: VerificationListTab;
+  /** Digits only; matched as an order-number prefix or a phone substring. */
+  searchDigits?: string;
+  /** Required for the needs-action tab and for each row's `actionReason`. */
+  needsAction?: NeedsActionContext;
+}
+
+/** A row of the dashboard's needs-action card. */
+export interface NeedsActionRow {
+  id: string;
+  orderId: string;
+  status: VerificationStatus;
+  actionReason: NeedsActionReason | null;
+  metadata: unknown;
+  createdAt: string | null;
+  lastSentAt: string | null;
+  readAt: string | null;
+  followUpSentAt: string | null;
+  noReplyAt: string | null;
+  order: {
+    orgId: string;
+    integrationId: string;
+    externalOrderId: string;
+    orderNumber: string | null;
+    customerName: string | null;
+    customerPhone: string;
+    totalPrice: string | null;
+    currency: string | null;
+    isTest: boolean;
+  };
+}
+
+function tabCondition(
+  tab: VerificationListTab,
+  refinement: VerificationListRefinement,
+) {
+  switch (tab) {
+    case 'needs_action':
+      if (!refinement.needsAction) {
+        throw new Error('needs_action tab requires a needs-action context');
+      }
+      return sql`${needsActionReasonSql(refinement.needsAction)} IS NOT NULL`;
+    case 'confirmed':
+    case 'canceled':
+    case 'failed':
+      return eq(verifications.status, tab);
+    case 'all':
+      return undefined;
+  }
+}
+
+/**
+ * Order number (prefix) or phone (any run of digits), within one org.
+ *
+ * The digits are bound as a parameter; LIKE wildcards cannot reach the query
+ * because the caller has already reduced the input to 0-9.
+ */
+function orderSearchCondition(orgId: string, digits: string) {
+  return sql`EXISTS (
+    SELECT 1 FROM ${orders} o
+    WHERE o.id = ${verifications.orderId}
+      AND o.org_id = ${orgId}
+      AND (
+        o.order_number LIKE ${`${digits}%`}
+        OR regexp_replace(o.customer_phone, '\\D', '', 'g') LIKE ${`%${digits}%`}
+      )
+  )`;
 }
 
 /** A held, imported order projected as a verification-list row. */

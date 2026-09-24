@@ -79,3 +79,44 @@ describe('Cancellation response compatibility bridge', () => {
     expect(service.listByOrg).toHaveBeenCalledWith('org-1', {});
   });
 });
+
+describe('Dashboard overview and manual confirmation routes', () => {
+  it('scopes the overview to the authenticated org, never the query', async () => {
+    const overview = { needs_action: { count: 0, items: [] } };
+    const service = { getOverview: jest.fn().mockResolvedValue(overview) };
+    const controller = new VerificationsController(
+      service as never,
+      {} as never,
+    );
+    const query = { date_range: 'last_7_days' as const };
+
+    await expect(
+      controller.getVerificationOverview(
+        { orgId: 'org-1', role: 'viewer' } as never,
+        query,
+      ),
+    ).resolves.toEqual({
+      overview: { ...overview, permissions: { can_confirm_orders: false } },
+    });
+    expect(service.getOverview).toHaveBeenCalledWith('org-1', query);
+  });
+
+  it('hands the whole user to manual confirmation for the role check', async () => {
+    const response = {
+      success: true,
+      verificationId: 'ver-1',
+      status: 'confirmed',
+    };
+    const service = { confirmManually: jest.fn().mockResolvedValue(response) };
+    const controller = new VerificationsController(
+      service as never,
+      {} as never,
+    );
+    const user = { orgId: 'org-1', role: 'owner' } as never;
+
+    await expect(controller.confirmManually(user, 'ver-1')).resolves.toEqual(
+      response,
+    );
+    expect(service.confirmManually).toHaveBeenCalledWith(user, 'ver-1');
+  });
+});

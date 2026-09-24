@@ -302,6 +302,13 @@
       "when": 1789862400000,
       "tag": "0042_onboarding_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789948800000,
+      "tag": "0043_verification_confirmation_source",
+      "breakpoints": true
     }
   ]
 }

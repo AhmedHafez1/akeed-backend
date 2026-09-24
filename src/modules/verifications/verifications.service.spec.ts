@@ -12,6 +12,13 @@ function withHeldDefaults(repo: Record<string, unknown>) {
   return {
     findHeldByOrg: jest.fn().mockResolvedValue([]),
     countHeldByOrg: jest.fn().mockResolvedValue(0),
+    countByTab: jest.fn().mockResolvedValue({
+      all: 0,
+      needs_action: 0,
+      confirmed: 0,
+      canceled: 0,
+      failed: 0,
+    }),
     ...repo,
   };
 }
@@ -116,6 +123,7 @@ function createMocks() {
       } as never,
       [new ShopifyOutcomeAdapter({ ...orderAdmin, ...orderTagging } as never)],
     ),
+    { finalizeVerification: jest.fn() } as never,
   );
 
   return {
@@ -190,6 +198,7 @@ describe('VerificationsService', () => {
         null as any,
         null as any,
         null as any,
+        { finalizeVerification: jest.fn() } as never,
       );
     });
 
@@ -299,6 +308,7 @@ describe('VerificationsService', () => {
         null as any,
         null as any,
         null as any,
+        { finalizeVerification: jest.fn() } as never,
       );
     });
 
@@ -815,6 +825,7 @@ describe('Dashboard cancellation capabilities', () => {
         integrations as never,
         {} as never,
         registry,
+        { finalizeVerification: jest.fn() } as never,
       );
       const result = await service.listByOrg('org-1', {});
       expect(result.data[0].capabilities).toEqual([
@@ -825,6 +836,10 @@ describe('Dashboard cancellation capabilities', () => {
         // A `no_reply` verification is never retryable, whatever the source —
         // retry is reserved for resolvable send failures.
         { action: 'retry_verification', supported: false },
+        {
+          action: 'merchant_manual_confirmation',
+          supported: kind === 'shopify' || kind === 'standalone',
+        },
       ]);
       if (kind === 'standalone') {
         expect(result.page_context?.usage).toEqual({
@@ -864,6 +879,7 @@ describe('Listing fetch size', () => {
       new CommerceOutcomeRegistryService({} as never, [
         new ShopifyOutcomeAdapter({} as never),
       ]),
+      { finalizeVerification: jest.fn() } as never,
     );
   }
 
@@ -967,6 +983,7 @@ describe('Held orders on the verifications listing', () => {
       } as never,
       {} as never,
       new CommerceOutcomeRegistryService({} as never, []),
+      { finalizeVerification: jest.fn() } as never,
     );
   }
 
@@ -1089,6 +1106,7 @@ describe('Held orders on the verifications listing', () => {
       undefined,
       expect.anything(),
       importBatchId,
+      expect.anything(),
     );
     expect(repo.countHeldByOrg).toHaveBeenCalledWith(
       'org-1',

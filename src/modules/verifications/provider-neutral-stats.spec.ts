@@ -50,6 +50,7 @@ describe('integration-scoped dashboard entitlement usage', () => {
       { findByOrg: jest.fn().mockResolvedValue(sources) } as never,
       {} as never,
       {} as never,
+      { finalizeVerification: jest.fn() } as never,
     );
     return { service, repository };
   }

@@ -179,6 +179,9 @@ export class WhatsAppWebhookService {
       if (newStatus === 'canceled') {
         extraUpdates.cancellationSource = 'customer';
       }
+      if (newStatus === 'confirmed') {
+        extraUpdates.confirmationSource = 'customer';
+      }
 
       const rows = await this.verificationsRepo.updateStatus(
         verificationId,

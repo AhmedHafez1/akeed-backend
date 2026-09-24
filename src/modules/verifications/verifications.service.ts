@@ -48,7 +48,57 @@ import {
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
-import type { HeldOrderListRow } from '../../infrastructure/database/repositories/verifications.repository';
+import {
+  MANUALLY_CONFIRMABLE_STATUSES,
+  type HeldOrderListRow,
+  type NeedsActionRow,
+} from '../../infrastructure/database/repositories/verifications.repository';
+import type { NeedsActionContext } from '../../infrastructure/database/repositories/verification-needs-action.sql';
+import {
+  DEFAULT_ESCALATION_DELAY_MINUTES,
+  NEEDS_ACTION_TOP_LIMIT,
+} from '../../shared/verification/verification-needs-action';
+import {
+  buildMessageFunnel,
+  rateOfSent,
+  resolveUsage,
+} from '../../shared/verification/verification-metrics';
+import { VerificationHubService } from '../verification-core/verification-hub.service';
+import type {
+  GetVerificationOverviewQueryDto,
+  NeedsActionItemDto,
+  VerificationOverviewDto,
+} from '../orders/dto/dashboard.dto';
+
+/** What POST /api/verifications/:id/confirm answers. */
+export interface ManualConfirmationResponse {
+  success: true;
+  verificationId: string;
+  status: 'confirmed';
+  alreadyConfirmed?: boolean;
+}
+
+const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
+const MS_PER_HOUR = 3_600_000;
+
+/** Digits of a search term, or undefined when nothing searchable remains. */
+function toSearchDigits(term: string | undefined): string | undefined {
+  const digits = term?.replace(/\D/g, '') ?? '';
+  return digits.length > 0 ? digits : undefined;
+}
+
+function readProviderErrorCode(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const code = (metadata as Record<string, unknown>).providerErrorCode;
+  if (typeof code === 'number' && Number.isFinite(code)) return String(code);
+  return typeof code === 'string' && code.length > 0 ? code : null;
+}
+
+function readConfirmationSource(
+  value: string | null | undefined,
+): 'customer' | 'merchant_manual' | null {
+  return value === 'customer' || value === 'merchant_manual' ? value : null;
+}
 
 const ALLOWED_STATUSES: VerificationStatus[] = [
   'pending',
@@ -194,6 +244,7 @@ export class VerificationsService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly ordersRepo: OrdersRepository,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
+    private readonly verificationHub: VerificationHubService,
   ) {}
 
   async listByOrg(
@@ -224,12 +275,19 @@ export class VerificationsService {
     const verificationStatuses = statuses?.filter(
       (status): status is VerificationStatus => status !== HELD_STATUS,
     );
+    const tab = query.tab && query.tab !== 'all' ? query.tab : undefined;
+    const searchDigits = toSearchDigits(query.q);
     const wantsVerifications =
       !verificationStatuses || verificationStatuses.length > 0;
-    const wantsHeld = !statuses || statuses.includes(HELD_STATUS);
+    // A held order has no verification, so it belongs to no outcome tab, and
+    // it has not been messaged, so a search for "who did we message" skips it.
+    const wantsHeld =
+      (!statuses || statuses.includes(HELD_STATUS)) && !tab && !searchDigits;
     const importBatchId = query.importBatchId;
+    const needsAction = this.resolveNeedsActionContext(activeIntegrations);
+    const refinement = { tab, searchDigits, needsAction };
 
-    const [verifications, totalCount, heldRows, heldCount, usage] =
+    const [verifications, totalCount, heldRows, heldCount, usage, tabCounts] =
       await Promise.all([
         wantsVerifications
           ? this.verificationsRepo.findByOrg(
@@ -240,6 +298,7 @@ export class VerificationsService {
                 cursor,
                 limit: limit + 1,
                 importBatchId,
+                ...refinement,
               },
             )
           : [],
@@ -249,6 +308,7 @@ export class VerificationsService {
               verificationStatuses,
               filterPeriod,
               importBatchId,
+              refinement,
             )
           : 0,
         wantsHeld
@@ -258,14 +318,18 @@ export class VerificationsService {
               importBatchId,
             })
           : [],
-        wantsHeld
-          ? this.verificationsRepo.countHeldByOrg(
-              orgId,
-              filterPeriod,
-              importBatchId,
-            )
-          : 0,
+        this.verificationsRepo.countHeldByOrg(
+          orgId,
+          filterPeriod,
+          importBatchId,
+        ),
         this.resolvePageUsage(activeIntegrations),
+        this.verificationsRepo.countByTab(
+          orgId,
+          filterPeriod,
+          needsAction,
+          importBatchId,
+        ),
       ]);
 
     const merged = mergeByRecency(
@@ -318,17 +382,256 @@ export class VerificationsService {
         no_reply_at: verification.noReplyAt ?? null,
         follow_up_attempts: verification.followUpAttempts ?? 0,
         follow_up_sent_at: verification.followUpSentAt ?? null,
+        external_order_id: verification.order?.externalOrderId ?? null,
+        platform: this.resolvePlatform(
+          verification.order?.integrationId,
+          integrations,
+        ),
+        action_reason: isHeldRow(verification)
+          ? null
+          : (verification.actionReason ?? null),
+        failure_code: readProviderErrorCode(verification.metadata),
+        confirmation_source: isHeldRow(verification)
+          ? null
+          : readConfirmationSource(verification.confirmationSource),
+        cancellation_source: isHeldRow(verification)
+          ? null
+          : (verification.cancellationSource ?? null),
+        canceled_in_store:
+          verification.status === 'canceled' &&
+          this.readCancellationOperation(verification.metadata) !== undefined,
+        updated_at: isHeldRow(verification)
+          ? verification.createdAt
+          : (verification.updatedAt ?? verification.createdAt ?? null),
         scheduled_for: resolveScheduledFor(verification),
       })),
       next_cursor: nextCursor,
-      total_count: totalCount + heldCount,
+      total_count: totalCount + (wantsHeld ? heldCount : 0),
       page_context: {
         source: this.resolveDashboardSourceState(integrations),
         reporting_timezone: reportingTimezone,
         automation: this.resolveDashboardAutomationSettings(activeIntegrations),
         usage,
+        tab_counts: {
+          ...tabCounts,
+          all: tabCounts.all + heldCount,
+        },
       },
     };
+  }
+
+  /**
+   * Everything the embedded dashboard shows, in one request.
+   *
+   * Counts and sums are computed in SQL over the period's real orders; this
+   * only composes them. The needs-action rule is the same SQL expression the
+   * confirmations list filters on, so the card and the tab always agree.
+   */
+  async getOverview(
+    orgId: string,
+    query: GetVerificationOverviewQueryDto,
+  ): Promise<VerificationOverviewDto> {
+    const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const activeIntegrations = integrations.filter(
+      (integration) => integration.isActive === true,
+    );
+    if (activeIntegrations.length > 1)
+      throw new ConflictException(
+        'Multiple active commerce sources require staff review',
+      );
+    const reportingTimezone = this.resolveReportingTimezone(integrations);
+    const period = resolveDashboardDateRangeBounds(
+      dateRange,
+      reportingTimezone,
+    );
+    const needsAction = this.resolveNeedsActionContext(activeIntegrations);
+    const source = activeIntegrations[0];
+
+    const [counts, confirmedValue, topRows, entitlement] = await Promise.all([
+      this.verificationsRepo.getOverviewCounts(orgId, period, needsAction),
+      this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
+      this.verificationsRepo.findNeedsActionTop(
+        orgId,
+        period,
+        needsAction,
+        NEEDS_ACTION_TOP_LIMIT,
+      ),
+      source ? this.billingEntitlements.readEntitlement(source) : null,
+    ]);
+
+    return {
+      date_range: dateRange,
+      reporting_timezone: reportingTimezone,
+      source: this.resolveDashboardSourceState(integrations),
+      settings: {
+        auto_verify_enabled: source?.isAutoVerifyEnabled ?? false,
+        follow_up_enabled: source?.followUpEnabled ?? false,
+        follow_up_delay_minutes:
+          source?.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
+        quiet_hours_enabled:
+          source?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
+        quiet_hours_start: source?.quietHoursStart ?? null,
+        quiet_hours_end: source?.quietHoursEnd ?? null,
+      },
+      usage: entitlement
+        ? resolveUsage(entitlement.consumedCount, entitlement.includedLimit)
+        : null,
+      kpis: {
+        confirmed: { count: counts.confirmed, value: confirmedValue },
+        canceled_before_shipping: { count: counts.customerCanceled },
+        confirmation_rate: {
+          rate: rateOfSent(counts.confirmedAfterSend, counts.sent),
+          confirmed: Math.min(counts.confirmedAfterSend, counts.sent),
+          sent: counts.sent,
+        },
+      },
+      funnel: buildMessageFunnel(counts),
+      needs_action: {
+        count: counts.needsAction,
+        items: topRows.map((row) =>
+          this.toNeedsActionItem(
+            row,
+            orgId,
+            activeIntegrations,
+            integrations,
+            needsAction.now,
+          ),
+        ),
+      },
+    };
+  }
+
+  /**
+   * The merchant confirms an order by hand (they called the customer, say).
+   *
+   * Lands on exactly the path a customer's "confirm" reply takes after the
+   * status write -- `finalizeVerification` -- so the store receives the same
+   * tag. The row records that it was manual; pending follow-up and no-reply
+   * jobs see a final status and do nothing.
+   */
+  async confirmManually(
+    user: AuthenticatedUser,
+    verificationId: string,
+  ): Promise<ManualConfirmationResponse> {
+    assertOrganizationWriteAllowed(user.role, {
+      message: 'Owner or admin role is required to confirm an order.',
+      code: 'VERIFICATION_ROLE_REQUIRED',
+    });
+    const orgId = user.orgId;
+    const verification = await this.verificationsRepo.findByIdForOrg(
+      verificationId,
+      orgId,
+    );
+    if (!verification || verification.orgId !== orgId) {
+      throw new NotFoundException({
+        message: 'Verification not found',
+        code: 'VERIFICATION_NOT_FOUND',
+      });
+    }
+    if (verification.status === 'confirmed') {
+      return {
+        success: true,
+        verificationId,
+        status: 'confirmed',
+        alreadyConfirmed: true,
+      };
+    }
+    if (!MANUALLY_CONFIRMABLE_STATUSES.includes(verification.status)) {
+      throw new ConflictException({
+        message: `A verification with status '${verification.status}' cannot be confirmed manually`,
+        code: 'VERIFICATION_NOT_CONFIRMABLE',
+      });
+    }
+
+    const updated = await this.verificationsRepo.markMerchantConfirmed(
+      verificationId,
+      orgId,
+      user.userId,
+    );
+    if (!updated) {
+      throw new ConflictException({
+        message: 'The verification changed before it could be confirmed',
+        code: 'VERIFICATION_NOT_CONFIRMABLE',
+      });
+    }
+
+    this.logger.log(
+      buildBackendLog(VerificationsService.name, {
+        action: 'verification-manual-confirm',
+        outcome: 'success',
+        orgId,
+        verificationId,
+      }),
+    );
+    await this.verificationHub.finalizeVerification(
+      verificationId,
+      'confirmed',
+    );
+    return { success: true, verificationId, status: 'confirmed' };
+  }
+
+  private toNeedsActionItem(
+    row: NeedsActionRow,
+    orgId: string,
+    activeIntegrations: IntegrationRecord[],
+    integrations: IntegrationRecord[],
+    now: string,
+  ): NeedsActionItemDto {
+    const type = row.actionReason ?? 'no_reply';
+    const since =
+      type === 'read_no_reply'
+        ? row.readAt
+        : (row.lastSentAt ?? row.createdAt ?? null);
+    const hours = since
+      ? Math.max(
+          Math.floor((Date.parse(now) - Date.parse(since)) / MS_PER_HOUR),
+          0,
+        )
+      : null;
+    return {
+      verification_id: row.id,
+      order_id: row.orderId,
+      external_order_id: row.order.externalOrderId ?? null,
+      platform: this.resolvePlatform(row.order.integrationId, integrations),
+      order_number: row.order.orderNumber ?? null,
+      customer_name: row.order.customerName ?? null,
+      customer_phone: row.order.customerPhone ?? null,
+      total_price: row.order.totalPrice ?? null,
+      currency: row.order.currency ?? null,
+      reason: {
+        type,
+        since,
+        hours: Number.isFinite(hours) ? hours : null,
+        failure_code:
+          type === 'delivery_failed'
+            ? readProviderErrorCode(row.metadata)
+            : null,
+      },
+      capabilities: this.resolveRowCapabilities(row, orgId, activeIntegrations),
+    };
+  }
+
+  private resolveNeedsActionContext(
+    activeIntegrations: IntegrationRecord[],
+  ): NeedsActionContext {
+    return {
+      now: new Date().toISOString(),
+      escalationDelayMinutes:
+        activeIntegrations[0]?.escalationDelayMinutes ??
+        DEFAULT_ESCALATION_DELAY_MINUTES,
+    };
+  }
+
+  private resolvePlatform(
+    integrationId: string | null | undefined,
+    integrations: IntegrationRecord[],
+  ): string | null {
+    if (!integrationId) return null;
+    return (
+      integrations.find((integration) => integration.id === integrationId)
+        ?.platformType ?? null
+    );
   }
 
   /**
@@ -419,6 +722,14 @@ export class VerificationsService {
             verification.status,
             readVerificationReason(verification.metadata),
           ),
+      },
+      {
+        action: 'merchant_manual_confirmation',
+        supported:
+          ownedByOrg &&
+          integration !== undefined &&
+          verification.status !== null &&
+          MANUALLY_CONFIRMABLE_STATUSES.includes(verification.status),
       },
     ];
   }

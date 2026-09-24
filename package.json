@@ -33,6 +33,7 @@
     "test:contract:manual-orders": "jest --config ./test/jest-manual-order-ingestion-contract.json --runInBand",
     "test:contract:order-imports": "jest --config ./test/jest-order-imports-contract.json --runInBand",
     "test:contract:order-import-release-gate": "jest --config ./test/jest-order-import-release-gate-contract.json --runInBand",
+    "test:contract:verification-overview": "jest --config ./test/jest-verification-overview-contract.json --runInBand",
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
     "test:contract:billing-operations": "jest --config ./test/jest-standalone-billing-operations-contract.json --runInBand",

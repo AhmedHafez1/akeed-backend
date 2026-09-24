@@ -2,12 +2,24 @@ import type { CreditDenialCode } from '../../../shared/billing/credit-eligibilit
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
 import {
+  VERIFICATION_LIST_TABS,
+  type NeedsActionReason,
+  type VerificationListTab,
+} from '../../../shared/verification/verification-needs-action';
+import type {
+  MessageFunnel,
+  UsageState,
+} from '../../../shared/verification/verification-metrics';
+import { TrimOptionalString } from '../../../shared/validation/trim.transform';
+import {
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -50,6 +62,19 @@ export class GetVerificationsQueryDto {
   @IsOptional()
   @IsUUID()
   importBatchId?: string;
+
+  /** Confirmations tab, each a server-side filter. */
+  @IsOptional()
+  @IsIn(VERIFICATION_LIST_TABS)
+  tab?: VerificationListTab;
+
+  /** Order number or phone. Digits and phone punctuation only. */
+  @IsOptional()
+  @TrimOptionalString()
+  @IsString()
+  @MaxLength(32)
+  @Matches(/^[#+\d\s()-]*$/)
+  q?: string;
 }
 
 export class GetVerificationStatsQueryDto {
@@ -86,6 +111,19 @@ export interface VerificationListItemDto {
   no_reply_at: string | null;
   follow_up_attempts: number;
   follow_up_sent_at: string | null;
+  /** The order's id on its platform, for linking to it in the store admin. */
+  external_order_id: string | null;
+  platform: string | null;
+  /** Why the merchant should act on this row; null when nothing is needed. */
+  action_reason: NeedsActionReason | null;
+  /** WhatsApp's error code when delivery failed (e.g. 131026). */
+  failure_code: string | null;
+  /** `merchant_manual` when the merchant confirmed by hand. */
+  confirmation_source: 'customer' | 'merchant_manual' | null;
+  cancellation_source: string | null;
+  /** True once Akeed canceled the order in the store as well. */
+  canceled_in_store: boolean;
+  updated_at: string | null;
   /**
    * When a pending row's first message is deliberately delayed (quiet hours or
    * send delay), the time it is due to go out. Null once anything was sent.
@@ -175,6 +213,8 @@ export interface PaginatedResponse<T> {
       can_retry_verifications?: boolean;
     };
     usage?: DashboardUsageBudgetDto;
+    /** Rows per confirmations tab for the period, search ignored. */
+    tab_counts?: Record<VerificationListTab, number>;
   };
 }
 
@@ -225,4 +265,74 @@ export interface DashboardSourceState {
   status: 'connected' | 'disconnected' | 'not_connected';
   integration_id: string | null;
   platform_type: string | null;
+}
+
+export class GetVerificationOverviewQueryDto {
+  @IsOptional()
+  @IsIn(DASHBOARD_DATE_RANGE_VALUES)
+  date_range?: DashboardDateRange;
+}
+
+export interface NeedsActionItemDto {
+  verification_id: string;
+  order_id: string;
+  external_order_id: string | null;
+  platform: string | null;
+  order_number: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  total_price: string | null;
+  currency: string | null;
+  reason: {
+    type: NeedsActionReason;
+    /** First message time, or the read time for `read_no_reply`. */
+    since: string | null;
+    /** Whole hours since `since`. */
+    hours: number | null;
+    failure_code: string | null;
+  };
+  capabilities: VerificationRowCapability[];
+}
+
+/** Everything the embedded dashboard shows, from one request. */
+export interface VerificationOverviewDto {
+  date_range: DashboardDateRange;
+  reporting_timezone: string;
+  source: DashboardSourceState;
+  settings: {
+    auto_verify_enabled: boolean;
+    follow_up_enabled: boolean;
+    follow_up_delay_minutes: number;
+    quiet_hours_enabled: boolean;
+    quiet_hours_start: string | null;
+    quiet_hours_end: string | null;
+  };
+  /** Null when there is no single active source to bill. */
+  usage: {
+    used: number;
+    limit: number;
+    percent: number;
+    state: UsageState;
+  } | null;
+  kpis: {
+    confirmed: {
+      count: number;
+      /** Largest currency first; one entry per currency seen. */
+      value: Array<{ currency: string; amount: string }>;
+    };
+    canceled_before_shipping: { count: number };
+    confirmation_rate: {
+      /** Percent of sent, one decimal; null when nothing was sent. */
+      rate: number | null;
+      confirmed: number;
+      sent: number;
+    };
+  };
+  funnel: MessageFunnel;
+  needs_action: {
+    count: number;
+    items: NeedsActionItemDto[];
+  };
+  /** Added by the controller from the caller's role. */
+  permissions?: { can_confirm_orders: boolean };
 }

@@ -13,8 +13,8 @@ describe('onboarding v2 migration contract', () => {
     ),
   ) as { entries: { idx: number; tag: string }[] };
 
-  it('is registered as the next journal entry', () => {
-    expect(journal.entries.at(-1)).toMatchObject({
+  it('is registered in the journal as entry 42', () => {
+    expect(journal.entries.find((entry) => entry.idx === 42)).toMatchObject({
       idx: 42,
       tag: '0042_onboarding_v2',
     });

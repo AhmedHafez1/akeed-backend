@@ -506,6 +506,11 @@ export const orders = pgTable(
       'btree',
       table.customerPhone.asc().nullsLast().op('text_ops'),
     ),
+    index('idx_orders_org_order_number').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.orderNumber.asc().nullsLast().op('text_ops'),
+    ),
     foreignKey({
       columns: [table.integrationId, table.orgId],
       foreignColumns: [integrations.id, integrations.orgId],
@@ -590,6 +595,7 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     cancellationSource: text('cancellation_source'),
+    confirmationSource: text('confirmation_source'),
     metadata: jsonb().default({}),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -632,6 +638,10 @@ export const verifications = pgTable(
       foreignColumns: [organizations.id],
       name: 'verifications_org_id_fkey',
     }).onDelete('cascade'),
+    check(
+      'verifications_confirmation_source_check',
+      sql`confirmation_source IS NULL OR confirmation_source IN ('customer', 'merchant_manual')`,
+    ),
     unique('unique_active_verification_per_order').on(table.orderId),
     unique('verifications_id_org_id_key').on(table.id, table.orgId),
     pgPolicy('Service role updates verifications', {

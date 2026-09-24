@@ -365,6 +365,7 @@ export function releaseGateHarness(
     integrations,
     ordersRepo,
     outcomes,
+    { finalizeVerification: () => Promise.resolve() } as never,
   );
 
   async function scaffold(table: PgTable) {

@@ -3,7 +3,9 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
@@ -13,14 +15,19 @@ import {
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { CurrentUser } from '../auth/guards/current-user.decorator';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
-import { VerificationsService } from './verifications.service';
+import {
+  VerificationsService,
+  type ManualConfirmationResponse,
+} from './verifications.service';
 import { TestVerificationService } from './test-verification.service';
 import { SendTestVerificationDto } from './dto/send-test-verification.dto';
 import {
+  GetVerificationOverviewQueryDto,
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
   PaginatedResponse,
   VerificationListItemDto,
+  VerificationOverviewDto,
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
 import { canWriteOrganization } from '../auth/organization-role';
@@ -50,6 +57,23 @@ export class VerificationsController {
     );
 
     return { stats };
+  }
+
+  @Get('overview')
+  async getVerificationOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: GetVerificationOverviewQueryDto,
+  ): Promise<{ overview: VerificationOverviewDto }> {
+    const overview = await this.verificationsService.getOverview(
+      user.orgId,
+      query,
+    );
+    return {
+      overview: {
+        ...overview,
+        permissions: { can_confirm_orders: canWriteOrganization(user.role) },
+      },
+    };
   }
 
   @Get()
@@ -104,6 +128,15 @@ export class VerificationsController {
       orderId: result.orderId,
       verificationId: result.verificationId,
     };
+  }
+
+  @Post(':id/confirm')
+  @HttpCode(200)
+  async confirmManually(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) verificationId: string,
+  ): Promise<ManualConfirmationResponse> {
+    return this.verificationsService.confirmManually(user, verificationId);
   }
 
   @Post(':id/cancel')
