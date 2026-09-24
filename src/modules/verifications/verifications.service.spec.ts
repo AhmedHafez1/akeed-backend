@@ -88,6 +88,7 @@ function callConfirmationRate(
 function createMocks() {
   const verificationsRepo = {
     findByIdForOrg: jest.fn(),
+    findNeedsActionReason: jest.fn().mockResolvedValue('no_reply'),
     markMerchantNoReplyCanceled: jest.fn(),
   };
 
@@ -413,16 +414,8 @@ describe('VerificationsService', () => {
       expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
     });
 
-    it('rejects statuses other than no_reply', async () => {
-      const statuses = [
-        'pending',
-        'sent',
-        'delivered',
-        'read',
-        'confirmed',
-        'expired',
-        'failed',
-      ];
+    it('rejects statuses that are not awaiting a reply', async () => {
+      const statuses = ['pending', 'confirmed', 'expired', 'failed'];
 
       for (const status of statuses) {
         const { service, verificationsRepo } = createMocks();
@@ -435,6 +428,55 @@ describe('VerificationsService', () => {
         ).rejects.toThrow(BadRequestException);
       }
     });
+
+    it.each(['no_reply_after_follow_up', 'read_no_reply'])(
+      'cancels a read order that needs action for %s before escalation',
+      async (reason) => {
+        const { service, verificationsRepo, ordersRepo, orderAdmin } =
+          createMocks();
+        verificationsRepo.findByIdForOrg.mockResolvedValue(
+          buildVerification({ status: 'read' }),
+        );
+        verificationsRepo.findNeedsActionReason.mockResolvedValue(reason);
+        ordersRepo.findById.mockResolvedValue(buildOrder());
+        orderAdmin.cancelOrder.mockResolvedValue({ jobId: 'job-1' });
+        verificationsRepo.markMerchantNoReplyCanceled.mockResolvedValue(
+          buildVerification({
+            status: 'canceled',
+            cancellationSource: 'merchant_no_reply',
+          }),
+        );
+
+        const result = await service.cancelNoReplyOrder(
+          organizationOwner,
+          'v-1',
+        );
+
+        expect(result.status).toBe('canceled');
+        expect(orderAdmin.cancelOrder).toHaveBeenCalled();
+      },
+    );
+
+    it.each([null, 'delivery_failed'])(
+      'rejects an unanswered order that does not need action yet (%s) without touching the store',
+      async (reason) => {
+        const { service, verificationsRepo, ordersRepo, orderAdmin } =
+          createMocks();
+        verificationsRepo.findByIdForOrg.mockResolvedValue(
+          buildVerification({ status: 'read' }),
+        );
+        verificationsRepo.findNeedsActionReason.mockResolvedValue(reason);
+        ordersRepo.findById.mockResolvedValue(buildOrder());
+
+        await expect(
+          service.cancelNoReplyOrder(organizationOwner, 'v-1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+        expect(
+          verificationsRepo.markMerchantNoReplyCanceled,
+        ).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects customer-canceled verifications (not idempotent)', async () => {
       const { service, verificationsRepo } = createMocks();
@@ -553,6 +595,9 @@ describe('VerificationsService', () => {
         'v-1',
         'org-1',
         expect.any(String),
+        expect.objectContaining({
+          escalationDelayMinutes: expect.any(Number) as unknown,
+        }),
         expect.objectContaining({ status: expect.any(String) as unknown }),
       );
     });
@@ -589,6 +634,9 @@ describe('VerificationsService', () => {
         'v-1',
         'org-1',
         expect.any(String),
+        expect.objectContaining({
+          escalationDelayMinutes: expect.any(Number) as unknown,
+        }),
         expect.objectContaining({ status: expect.any(String) as unknown }),
       );
     });
@@ -776,6 +824,7 @@ describe('Merchant cancellation source and operation contract', () => {
       'v-1',
       'org-1',
       expect.any(String),
+      expect.objectContaining({ escalationDelayMinutes: expect.any(Number) }),
       {
         status: 'pending_provider_operation',
         providerOperationId: 'operation-1',

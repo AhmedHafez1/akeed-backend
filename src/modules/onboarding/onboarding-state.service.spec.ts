@@ -323,4 +323,119 @@ describe('OnboardingStateService', () => {
       expect(result.quietHoursEnd).toBe('08:00');
     });
   });
+
+  describe('settings redesign — timezone, quiet window, test language', () => {
+    const user: AuthenticatedUser = {
+      userId: 'user-1',
+      orgId: 'org-1',
+      role: 'owner',
+      source: 'shopify',
+      shop: 'test.myshopify.com',
+    };
+    const base = {
+      storeName: 'Test Store',
+      defaultLanguage: 'auto' as const,
+      isAutoVerifyEnabled: true,
+    };
+
+    beforeEach(() => {
+      mockIntegrationsRepo.findByOrgAndPlatformDomain.mockResolvedValue(
+        makeIntegration({ shopTimezone: 'Europe/Istanbul' }),
+      );
+      mockIntegrationsRepo.updateById.mockImplementation(
+        (_id: string, updates: Record<string, unknown>) =>
+          Promise.resolve(
+            makeIntegration({ shopTimezone: 'Europe/Istanbul', ...updates }),
+          ),
+      );
+    });
+
+    it('accepts the store timezone even when it is outside the curated list', async () => {
+      const result = await service.updateSettings(user, {
+        ...base,
+        timezone: 'Europe/Istanbul',
+      });
+
+      expect(result.timezone).toBe('Europe/Istanbul');
+      expect(result.shopTimezone).toBe('Europe/Istanbul');
+    });
+
+    it('rejects a timezone that is neither curated nor the store timezone', async () => {
+      await expect(
+        service.updateSettings(user, { ...base, timezone: 'America/Chicago' }),
+      ).rejects.toMatchObject({
+        response: { code: 'SETTINGS_TIMEZONE_UNSUPPORTED' },
+      });
+      expect(mockIntegrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('rejects an enabled quiet-hours window whose start equals its end', async () => {
+      await expect(
+        service.updateSettings(user, {
+          ...base,
+          quietHoursEnabled: true,
+          quietHoursStart: '21:00',
+          quietHoursEnd: '21:00',
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'SETTINGS_QUIET_HOURS_EMPTY_WINDOW' },
+      });
+    });
+
+    it('accepts a window that crosses midnight', async () => {
+      const result = await service.updateSettings(user, {
+        ...base,
+        quietHoursEnabled: true,
+        quietHoursStart: '21:00',
+        quietHoursEnd: '09:00',
+      });
+
+      expect(result.quietHoursStart).toBe('21:00');
+      expect(result.quietHoursEnd).toBe('09:00');
+    });
+
+    it('ignores equal times while quiet hours are off', async () => {
+      await expect(
+        service.updateSettings(user, {
+          ...base,
+          quietHoursEnabled: false,
+          quietHoursStart: '21:00',
+          quietHoursEnd: '21:00',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('reports a null store timezone when the platform value is invalid', () => {
+      const state = callToState(
+        service,
+        makeIntegration({ shopTimezone: 'Not/AZone' }),
+      );
+
+      expect(state.shopTimezone).toBeNull();
+    });
+
+    it('resolves the test-send language from the merchant phone', () => {
+      expect(
+        callToState(
+          service,
+          makeIntegration({ merchantWhatsappPhone: '+201001234567' }),
+        ).testSendLanguage,
+      ).toBe('ar');
+      expect(
+        callToState(
+          service,
+          makeIntegration({ merchantWhatsappPhone: '+447700900123' }),
+        ).testSendLanguage,
+      ).toBe('en');
+      expect(
+        callToState(
+          service,
+          makeIntegration({
+            defaultLanguage: 'en',
+            merchantWhatsappPhone: '+201001234567',
+          }),
+        ).testSendLanguage,
+      ).toBe('en');
+    });
+  });
 });

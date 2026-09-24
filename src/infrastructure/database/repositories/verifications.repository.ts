@@ -28,9 +28,10 @@ import {
   TERMINAL_STATUSES,
   WEBHOOK_PROTECTED_STATUSES,
 } from '../../../shared/verification/verification-lifecycle';
-import type {
-  NeedsActionReason,
-  VerificationListTab,
+import {
+  NO_REPLY_CANCELLABLE_REASONS,
+  type NeedsActionReason,
+  type VerificationListTab,
 } from '../../../shared/verification/verification-needs-action';
 import type { OverviewCounts } from '../../../shared/verification/verification-metrics';
 import {
@@ -734,12 +735,32 @@ export class VerificationsRepository {
       .returning();
   }
 
+  /** Why one verification needs the merchant right now, or null. */
+  async findNeedsActionReason(
+    verificationId: string,
+    orgId: string,
+    needsAction: NeedsActionContext,
+  ): Promise<NeedsActionReason | null> {
+    const [row] = await this.db
+      .select({ reason: needsActionReasonSql(needsAction) })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row?.reason ?? null;
+  }
+
   /**
-   * Atomically mark a no_reply verification as merchant-canceled.
+   * Atomically mark an unanswered verification as merchant-canceled.
    *
-   * The WHERE clause guards on `id + orgId + status='no_reply'` so that
-   * concurrent calls, customer replies, or status transitions that already
-   * moved the row away from no_reply will cause zero rows affected.
+   * The WHERE clause guards on `id + orgId` and on the row still needing the
+   * merchant for a no-reply reason (the same rule the dashboard shows), so
+   * concurrent calls, customer replies, or a row not yet overdue cause zero
+   * rows affected.
    *
    * Returns the updated row, or null if no row matched.
    */
@@ -747,6 +768,7 @@ export class VerificationsRepository {
     verificationId: string,
     orgId: string,
     canceledAt: string,
+    needsAction: NeedsActionContext,
     operation?: CommerceOutcomeOperationResult,
   ) {
     const now = new Date().toISOString();
@@ -768,7 +790,9 @@ export class VerificationsRepository {
         and(
           eq(verifications.id, verificationId),
           eq(verifications.orgId, orgId),
-          sql`${verifications.status} = 'no_reply'`,
+          inArray(needsActionReasonSql(needsAction), [
+            ...NO_REPLY_CANCELLABLE_REASONS,
+          ]),
         ),
       )
       .returning();

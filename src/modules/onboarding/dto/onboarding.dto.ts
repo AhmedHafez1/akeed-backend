@@ -26,6 +26,7 @@ import {
   CLIENT_PRODUCT_EVENT_NAMES,
   type ClientProductEventName,
 } from '../../../shared/analytics/product-events';
+import { TrimString } from '../../../shared/validation/trim.transform';
 
 export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
@@ -54,6 +55,12 @@ export const AUTOMATION_TIMEZONES = [
 ] as const;
 export type AutomationTimezone = (typeof AUTOMATION_TIMEZONES)[number];
 
+/**
+ * Store names fill a WhatsApp template variable on every message; 60 fits any
+ * real shop name and keeps the rendered bubble readable.
+ */
+export const STORE_NAME_MAX_LENGTH = 60;
+
 export const STANDALONE_SETUP_BLOCKED_REASONS = [
   'source_invalid',
   'account_suspended',
@@ -68,9 +75,10 @@ export type StandaloneSetupBlockedReason =
   (typeof STANDALONE_SETUP_BLOCKED_REASONS)[number];
 
 export class UpdateOnboardingSettingsDto {
+  @TrimString()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLength(STORE_NAME_MAX_LENGTH)
   storeName!: string;
 
   @IsString()
@@ -135,10 +143,11 @@ export class UpdateOnboardingSettingsDto {
   })
   quietHoursEnd?: string;
 
+  /** A curated zone or the store's own Shopify zone; checked in the service. */
   @IsOptional()
   @IsString()
-  @IsIn(AUTOMATION_TIMEZONES)
-  timezone?: AutomationTimezone;
+  @MaxLength(64)
+  timezone?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -164,9 +173,10 @@ export class UpdateOnboardingSettingsDto {
 }
 
 export class CompleteOnboardingSetupDto {
+  @TrimString()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLength(STORE_NAME_MAX_LENGTH)
   storeName!: string;
 
   @IsString()
@@ -233,9 +243,13 @@ export interface OnboardingStateDto {
   quietHoursEnabled: boolean;
   quietHoursStart: string | null;
   quietHoursEnd: string | null;
-  timezone: AutomationTimezone;
+  timezone: string;
+  /** The store's Shopify zone, offered first as "store time"; null if unknown. */
+  shopTimezone: string | null;
   sendDelayMinutes: number;
   merchantWhatsappPhone: string | null;
+  /** Template language the merchant's own test message would use. */
+  testSendLanguage: 'ar' | 'en';
   activation: OnboardingActivationDto;
   usage: OnboardingUsageDto | null;
   permissions: {
@@ -278,6 +292,8 @@ export interface SettingsResponseDto {
       periodStart: string;
       periodEnd: string | null;
     };
+    /** Accepted customer messages in the last 30 days (tests excluded). */
+    messagesSentLast30Days: number;
   };
   template: {
     languages: Array<'ar' | 'en'>;

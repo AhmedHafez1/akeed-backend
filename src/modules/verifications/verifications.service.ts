@@ -57,6 +57,8 @@ import type { NeedsActionContext } from '../../infrastructure/database/repositor
 import {
   DEFAULT_ESCALATION_DELAY_MINUTES,
   NEEDS_ACTION_TOP_LIMIT,
+  NO_REPLY_CANCELLABLE_REASONS,
+  NO_REPLY_CANCELLABLE_STATUSES,
 } from '../../shared/verification/verification-needs-action';
 import {
   buildMessageFunnel,
@@ -860,9 +862,13 @@ export class VerificationsService {
         true,
       );
     }
-    if (verification.status !== 'no_reply') {
+    if (
+      !(NO_REPLY_CANCELLABLE_STATUSES as readonly string[]).includes(
+        verification.status ?? '',
+      )
+    ) {
       throw new BadRequestException(
-        `Cannot cancel verification with status '${verification.status}'; only 'no_reply' verifications can be canceled`,
+        `Cannot cancel verification with status '${verification.status}'; only unanswered verifications can be canceled`,
       );
     }
     const order = await this.ordersRepo.findById(verification.orderId);
@@ -883,6 +889,22 @@ export class VerificationsService {
       throw new BadRequestException(
         'Cannot cancel: order has no external order ID',
       );
+    // Checked before the store is touched: the atomic write re-checks it, but
+    // by then the order would already be canceled in the store.
+    const needsAction = this.resolveNeedsActionContext([order.integration]);
+    const reason = await this.verificationsRepo.findNeedsActionReason(
+      verificationId,
+      orgId,
+      needsAction,
+    );
+    if (
+      !reason ||
+      !(NO_REPLY_CANCELLABLE_REASONS as readonly string[]).includes(reason)
+    ) {
+      throw new BadRequestException(
+        'Cannot cancel: the customer is still within the reply window',
+      );
+    }
     const command = {
       orgId,
       integrationId: order.integrationId,
@@ -925,6 +947,7 @@ export class VerificationsService {
       verificationId,
       orgId,
       new Date().toISOString(),
+      needsAction,
       operation,
     );
     if (!updated) {

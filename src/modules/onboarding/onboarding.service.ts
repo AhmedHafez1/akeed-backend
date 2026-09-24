@@ -36,16 +36,16 @@ import {
   isArabicCodTemplateVariant,
   isEnglishCodTemplateVariant,
 } from '../../shared/messaging/cod-template-catalog';
-import {
-  AUTOMATION_TIMEZONES,
-  ONBOARDING_LANGUAGES,
-} from './dto/onboarding.dto';
+import { ONBOARDING_LANGUAGES } from './dto/onboarding.dto';
+import { isAllowedAutomationTimezone } from './automation-timezone';
+import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import {
   assertOrganizationWriteAllowed,
   canWriteOrganization,
 } from '../auth/organization-role';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class OnboardingService {
@@ -56,6 +56,8 @@ export class OnboardingService {
     private readonly creditEligibility: CreditEligibilityService,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly messageDispatches?: VerificationMessageDispatchesRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -137,9 +139,10 @@ export class OnboardingService {
     const hydratedIntegration =
       await this.onboardingState.prefillStoreNameIfMissing(integration);
 
-    const [billingPlans, usage] = await Promise.all([
+    const [billingPlans, usage, messagesSentLast30Days] = await Promise.all([
       this.billingService.getBillingPlans(hydratedIntegration),
       this.getCurrentUsage(hydratedIntegration),
+      this.countMessagesSentLast30Days(hydratedIntegration),
     ]);
 
     return {
@@ -148,6 +151,7 @@ export class OnboardingService {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
         usage,
+        messagesSentLast30Days,
       },
       template: this.getTemplateSettings(hydratedIntegration),
     };
@@ -242,6 +246,18 @@ export class OnboardingService {
       periodStart: entitlement.periodStart,
       periodEnd: entitlement.periodEnd,
     };
+  }
+
+  /** Sizes the plan recommendation on the Plan tab; 0 when unavailable. */
+  private async countMessagesSentLast30Days(
+    integration: IntegrationRecord,
+  ): Promise<number> {
+    if (!this.messageDispatches) return 0;
+    return this.messageDispatches.countAcceptedSince({
+      orgId: integration.orgId,
+      integrationId: integration.id,
+      since: new Date(Date.now() - THIRTY_DAYS_MS).toISOString(),
+    });
   }
 
   private getTemplateSettings(
@@ -377,7 +393,12 @@ export class OnboardingService {
     if (typeof integration.assumeCodWhenPaymentMissing !== 'boolean') {
       reasons.push('cod_default_invalid');
     }
-    if (!AUTOMATION_TIMEZONES.includes(integration.timezone as never)) {
+    if (
+      !isAllowedAutomationTimezone(
+        integration.timezone,
+        integration.shopTimezone,
+      )
+    ) {
       reasons.push('timezone_invalid');
     }
 

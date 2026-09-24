@@ -56,6 +56,7 @@ describe('Merchant cancellation persistence', () => {
       'ver-1',
       'org-1',
       '2026-09-02T00:00:00Z',
+      { now: '2026-09-02T00:00:00Z', escalationDelayMinutes: 360 },
       {
         status: 'pending_provider_operation',
         providerOperationId: 'operation-1',
@@ -64,7 +65,14 @@ describe('Merchant cancellation persistence', () => {
     const [query, params] = execute.mock.calls[0];
     expect(query).toContain('COALESCE("verifications"."metadata",');
     expect(query).toContain('||');
-    expect(query).toContain(`"verifications"."status" = 'no_reply'`);
+    expect(query).toMatch(/CASE[^]*END in \(\$\d+, \$\d+, \$\d+\)/);
+    expect(params).toEqual(
+      expect.arrayContaining([
+        'no_reply_after_follow_up',
+        'read_no_reply',
+        'no_reply',
+      ]),
+    );
     expect(params).toContain(
       JSON.stringify({
         commerceCancellation: {

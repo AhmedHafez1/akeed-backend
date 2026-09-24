@@ -15,11 +15,15 @@ import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/re
 import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_STATUSES,
-  AUTOMATION_TIMEZONES,
   type AutomationTimezone,
   type OnboardingStateDto,
   type UpdateOnboardingSettingsDto,
 } from './dto/onboarding.dto';
+import {
+  isAllowedAutomationTimezone,
+  isValidIanaTimezone,
+} from './automation-timezone';
+import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
 import { resolveShippingCurrency } from './shipping-currency';
 import {
   STORE_PLATFORM_PORT,
@@ -123,7 +127,18 @@ export class OnboardingStateService {
       updates.quietHoursEnd = payload.quietHoursEnd;
     }
     if (payload.timezone !== undefined) {
-      updates.timezone = payload.timezone;
+      if (
+        !isAllowedAutomationTimezone(payload.timezone, integration.shopTimezone)
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message:
+            'timezone must be a supported zone or the store timezone reported by the platform',
+          code: 'SETTINGS_TIMEZONE_UNSUPPORTED',
+        });
+      }
+      updates.timezone = payload.timezone.trim();
     }
     if (payload.sendDelayMinutes !== undefined) {
       updates.sendDelayMinutes = payload.sendDelayMinutes;
@@ -184,6 +199,19 @@ export class OnboardingStateService {
       throw new BadRequestException(
         'quietHoursStart and quietHoursEnd are required when quiet hours are enabled',
       );
+    }
+
+    // An empty window would be stored as "on" but never defer anything.
+    if (
+      resolvedQuietHoursEnabled &&
+      resolvedQuietHoursStart === resolvedQuietHoursEnd
+    ) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'quietHoursStart and quietHoursEnd must be different',
+        code: 'SETTINGS_QUIET_HOURS_EMPTY_WINDOW',
+      });
     }
 
     const updated = await this.integrationsRepo.updateById(integration.id, {
@@ -365,10 +393,15 @@ export class OnboardingStateService {
       quietHoursStart: integration.quietHoursStart ?? null,
       quietHoursEnd: integration.quietHoursEnd ?? null,
       timezone: this.resolveTimezone(integration),
+      shopTimezone: this.resolveShopTimezone(integration),
       sendDelayMinutes:
         integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
       merchantWhatsappPhone:
         integration.merchantWhatsappPhone ?? integration.shopPhone ?? null,
+      testSendLanguage: resolveTemplateLanguageForPhone(
+        integration.defaultLanguage,
+        integration.merchantWhatsappPhone ?? '',
+      ),
       activation: {
         setupCompletedAt: null,
         testSentAt: null,
@@ -415,11 +448,16 @@ export class OnboardingStateService {
     return Number(parsed.toFixed(2));
   }
 
-  private resolveTimezone(integration: IntegrationRecord): AutomationTimezone {
+  private resolveTimezone(integration: IntegrationRecord): string {
     const tz = integration.timezone?.trim();
-    if (tz && AUTOMATION_TIMEZONES.includes(tz as AutomationTimezone)) {
-      return tz as AutomationTimezone;
+    if (isAllowedAutomationTimezone(tz, integration.shopTimezone)) {
+      return tz;
     }
     return DEFAULT_TIMEZONE;
+  }
+
+  private resolveShopTimezone(integration: IntegrationRecord): string | null {
+    const tz = integration.shopTimezone?.trim();
+    return tz && isValidIanaTimezone(tz) ? tz : null;
   }
 }

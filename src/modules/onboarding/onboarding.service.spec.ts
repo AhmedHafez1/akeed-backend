@@ -139,8 +139,57 @@ describe('OnboardingService', () => {
         integrationId: 'int-1',
         periodStart,
       });
+      expect(result.billing.messagesSentLast30Days).toBe(0);
     },
   );
+
+  it('counts the last 30 days of accepted messages for the current source only', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-31T00:00:00.000Z'));
+    const integration = makeIntegration({ id: 'int-7', orgId: 'org-7' });
+    const onboardingState = {
+      resolveCurrentIntegration: jest.fn().mockResolvedValue(integration),
+      prefillStoreNameIfMissing: jest.fn().mockResolvedValue(integration),
+      toState: jest.fn().mockReturnValue({ timezone: 'Asia/Riyadh' }),
+    };
+    const messageDispatches = {
+      countAcceptedSince: jest.fn().mockResolvedValue(28),
+    };
+    const service = new OnboardingService(
+      onboardingState as any,
+      {
+        getBillingPlans: jest
+          .fn()
+          .mockResolvedValue({ plans: [], isFreePlanClaimed: true }),
+      } as any,
+      {
+        readEntitlement: jest.fn().mockResolvedValue({
+          consumedCount: 27,
+          includedLimit: 30,
+          periodStart: '2026-05-01',
+          periodEnd: null,
+        }),
+        evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
+      } as any,
+      { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      undefined,
+      messageDispatches as any,
+    );
+
+    const result = await service.getSettings({
+      userId: 'user-7',
+      orgId: 'org-7',
+      role: 'viewer',
+      source: 'shopify',
+      shop: 'other.myshopify.com',
+    });
+
+    expect(result.billing.messagesSentLast30Days).toBe(28);
+    expect(messageDispatches.countAcceptedSince).toHaveBeenCalledWith({
+      orgId: 'org-7',
+      integrationId: 'int-7',
+      since: '2026-05-01T00:00:00.000Z',
+    });
+  });
 });
 
 /* eslint-enable @typescript-eslint/no-unsafe-argument */

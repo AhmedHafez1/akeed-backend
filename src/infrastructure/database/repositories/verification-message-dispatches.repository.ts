@@ -789,6 +789,30 @@ export class VerificationMessageDispatchesRepository {
     });
   }
 
+  /**
+   * Customer messages WhatsApp accepted for one source since `since`: initial
+   * sends and reminders. Billing-exempt onboarding tests are excluded because
+   * they are not order traffic; the plan recommendation sizes on this number.
+   */
+  async countAcceptedSince(params: {
+    orgId: string;
+    integrationId: string;
+    since: string;
+  }): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.orgId, params.orgId),
+          eq(verificationMessageDispatches.integrationId, params.integrationId),
+          sql`${verificationMessageDispatches.acceptedAt} >= ${params.since}`,
+          sql`coalesce((${verificationMessageDispatches.metadata} ->> 'billingExempt')::boolean, false) = false`,
+        ),
+      );
+    return row?.count ?? 0;
+  }
+
   async isLatestGeneration(id: string): Promise<boolean> {
     const dispatch = await this.findById(id);
     if (!dispatch) return false;
