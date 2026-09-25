@@ -8,7 +8,7 @@ describe('parseBulkImportConfig', () => {
     expect(parseBulkImportConfig({})).toEqual({
       enabled: false,
       pilotOrgIds: [],
-      maxRows: 5_000,
+      maxRows: 100,
       maxColumns: 100,
       maxOpenDrafts: 3,
       maxFileBytes: 5 * 1024 * 1024,
@@ -54,7 +54,7 @@ describe('parseBulkImportConfig', () => {
 
   it.each([
     ['STANDALONE_BULK_IMPORT_ENABLED', 'yes'],
-    ['BULK_IMPORT_MAX_ROWS', '5001'],
+    ['BULK_IMPORT_MAX_ROWS', '101'],
     ['BULK_IMPORT_START_WINDOW_HOURS', '0'],
     ['BULK_IMPORT_START_WINDOW_HOURS', '721'],
     ['BULK_IMPORT_MAX_ROWS', '0'],

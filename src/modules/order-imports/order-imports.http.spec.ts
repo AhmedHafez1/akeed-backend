@@ -277,18 +277,18 @@ describe('order-import routes over HTTP', () => {
   );
 
   it('accepts exactly 5 MB and refuses 5 MB + 1 byte with IMPORT_FILE_TOO_LARGE', async () => {
-    // 5,000 rows of four 255-character cells, padded to exactly 5 MB.
+    // The 100-row limit of four 255-character cells, padded to exactly 5 MB.
     const row = ['a', 'b', 'c', 'd']
       .map((letter) => letter.repeat(255))
       .join(',');
-    let text = `h1,h2,h3,h4\r\n${Array.from({ length: 5_000 }, () => row).join('\r\n')}`;
+    let text = `h1,h2,h3,h4\r\n${Array.from({ length: 100 }, () => row).join('\r\n')}`;
     text += ' '.repeat(FIVE_MB - Buffer.byteLength(text));
     const exact = Buffer.from(text, 'utf8');
     expect(exact.length).toBe(FIVE_MB);
 
     const accepted = await upload(exact, 'exact.csv');
     expect(accepted.status).toBe(201);
-    expect(accepted.body).toMatchObject({ rowCount: 5_000 });
+    expect(accepted.body).toMatchObject({ rowCount: 100 });
 
     const tooLarge = await upload(
       Buffer.concat([exact, Buffer.from(' ')]),

@@ -62,9 +62,11 @@ const INTEGER_SETTINGS: readonly IntegerSetting[] = [
   {
     key: 'BULK_IMPORT_MAX_ROWS',
     field: 'maxRows',
-    fallback: 5_000,
+    // A file is a day's orders, checked and sent from one modal (product
+    // decision, 2026-09): larger batches belong to the order API.
+    fallback: 100,
     min: 1,
-    max: 5_000,
+    max: 100,
   },
   {
     key: 'BULK_IMPORT_MAX_COLUMNS',
