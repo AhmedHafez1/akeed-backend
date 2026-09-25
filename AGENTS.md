@@ -39,6 +39,12 @@ npm run db:studio       # Open Drizzle Studio
 
 Drizzle config: `drizzle.config.ts` (uses `DATABASE_URL` from `.env` or `.env.{NODE_ENV}`).
 
+Do not use `db:generate` or `db:push`: the `drizzle/meta` snapshots stop at
+migration 0015, so generate diffs against a stale baseline, and push must never
+target a shared database. Write migrations by hand as the next numbered
+`drizzle/NNNN_name.sql` plus a `drizzle/meta/_journal.json` entry; they run at
+boot via `runMigrations()` in `main.ts`.
+
 ## Architecture Conventions
 
 - Use async/await
@@ -94,9 +100,11 @@ Drizzle config: `drizzle.config.ts` (uses `DATABASE_URL` from `.env` or `.env.{N
 
 ## Documentation Pointers
 
-- README: `README.md`
-- Environment guide: `docs/ENVIRONMENT.md`
-- Database guide: `docs/DATABASE.md`
+- Environment guide (every env var): `docs/ENVIRONMENT.md`
+- Domain guides: `docs/ORDER_CONFIRMATION_WORKFLOW.md`, `docs/ONBOARDING_AND_BILLING.md`, `docs/INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md`, `docs/IDENTITY_ACCESS_AND_ORGANIZATION.md`, and the other `docs/*.md` files
+- Billing runbooks: `docs/STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`, `docs/STANDALONE_BILLING_SANDBOX_PLAYBOOK.md`
+- Epics and user stories: `docs/Epics/` (completed stories have `docs/US-*-EVIDENCE.md`)
+- Database: schema in `src/infrastructure/database/schema.ts`; hand-written migrations in `drizzle/`
 
 ## Response & Formatting Guidance for Agents
 
