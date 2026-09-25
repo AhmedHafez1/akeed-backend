@@ -17,6 +17,10 @@ export interface BatchForRelease {
   startDeadlineAt: string | null;
   startIdempotencyKey: string | null;
   pausedReason: string | null;
+  /** A draft whose mapping the merchant saved: its rows are validated. */
+  mappingConfirmed: boolean;
+  /** Rows that will be imported, as the last validation counted them. */
+  readyCount: number;
 }
 
 export interface ReleasingBatch {
@@ -80,6 +84,8 @@ export class OrderImportReleaseRepository {
         startDeadlineAt: orderImportBatches.startDeadlineAt,
         startIdempotencyKey: orderImportBatches.startIdempotencyKey,
         pausedReason: orderImportBatches.pausedReason,
+        mappingConfirmed: sql<boolean>`coalesce((${orderImportBatches.mapping} ->> 'confirmed')::boolean, false)`,
+        readyCount: sql<number>`coalesce((${orderImportBatches.counts} ->> 'ready')::int, 0)`,
       })
       .from(orderImportBatches)
       .where(

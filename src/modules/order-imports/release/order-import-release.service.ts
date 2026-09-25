@@ -69,11 +69,21 @@ export class OrderImportReleaseService {
     batchId: string,
   ): Promise<OrderImportStartQuoteDto> {
     const batch = await this.loadBatch(user, source, batchId);
-    if (!QUOTABLE_STATUSES.has(batch.status))
+    // A validated draft is priced before it is imported, on its ready rows,
+    // so the send step can show the cost first. Its token carries over to the
+    // start after the commit: `start` re-checks N against the held orders
+    // and answers IMPORT_QUOTE_STALE if the import brought in a different N.
+    const preview = batch.status === 'draft' && batch.mappingConfirmed;
+    if (!preview && !QUOTABLE_STATUSES.has(batch.status))
       throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
         status: batch.status,
       });
-    return this.buildQuote(source, batch, new Date());
+    return this.buildQuote(
+      source,
+      batch,
+      new Date(),
+      preview ? batch.readyCount : undefined,
+    );
   }
 
   /**
@@ -258,8 +268,11 @@ export class OrderImportReleaseService {
     source: StandaloneSource,
     batch: BatchForRelease,
     now: Date,
+    /** A draft's ready rows; otherwise the batch's held orders are priced. */
+    orders?: number,
   ): Promise<OrderImportStartQuoteDto> {
-    const { held } = await this.releases.holdCounts(batch.orgId, batch.id);
+    const held =
+      orders ?? (await this.releases.holdCounts(batch.orgId, batch.id)).held;
     const readiness = await this.readiness.evaluate(source, {
       required: held,
       mode: 'all',

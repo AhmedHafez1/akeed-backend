@@ -983,7 +983,8 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
 
     it('a worker kill during commit: re-running the job links what exists and creates nothing twice', async () => {
       const merchant = await gate.merchant();
-      const references = Array.from({ length: 250 }, (_, i) => `CK-${i + 1}`);
+      // A file's row limit (100) fits one acceptance chunk.
+      const references = Array.from({ length: 100 }, (_, i) => `CK-${i + 1}`);
       const session = await draft(merchant, references);
       await gate.services.commits.commit(
         merchant.user,
@@ -992,7 +993,7 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
         `commit-${session.batchId}`,
       );
       const [job] = gate.commitJobs.splice(0);
-      // The first chunk of 200 lands; the process dies before the rest.
+      // The chunk lands; the process dies before the rows are marked imported.
       const ingestion = gate.services.ingestion;
       const acceptMany = (
         ...args: Parameters<typeof ingestion.acceptMany>
@@ -1001,13 +1002,11 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
           ingestion,
           args,
         ) as ReturnType<typeof ingestion.acceptMany>;
-      let calls = 0;
       const spy = jest
         .spyOn(gate.services.ingestion, 'acceptMany')
-        .mockImplementation((...args) => {
-          calls += 1;
-          if (calls === 2) return Promise.reject(new Error('worker killed'));
-          return acceptMany(...args);
+        .mockImplementationOnce(async (...args) => {
+          await acceptMany(...args);
+          throw new Error('worker killed');
         });
       await expect(
         gate.services.commitProcessor.process({ data: job } as Job<{
@@ -1025,8 +1024,8 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
         .select({ id: orders.id })
         .from(orders)
         .where(eq(orders.orgId, merchant.orgId));
-      expect(created).toHaveLength(250);
-      expect(await eventsOf(session.batchId)).toHaveLength(250);
+      expect(created).toHaveLength(100);
+      expect(await eventsOf(session.batchId)).toHaveLength(100);
       const rows = await gate.db
         .select()
         .from(orderImportRows)
@@ -1036,7 +1035,7 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
             eq(orderImportRows.outcome, 'imported'),
           ),
         );
-      expect(rows).toHaveLength(250);
+      expect(rows).toHaveLength(100);
       expect(await orgCounts(merchant.orgId)).toMatchObject({
         dispatches: 0,
         reservations: 0,
@@ -1179,6 +1178,13 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
         merchant.source,
         again.batchId,
         mappingBody(manifest),
+      );
+      // Judged on the manifest's clock, like the first upload: row 4's date
+      // must not age past the order window on the day the suite runs.
+      await gate.services.validation.validateBatch(
+        { orgId: merchant.orgId, source: merchant.source },
+        again.batchId,
+        new Date(manifest.now),
       );
       const rows = await rowsOf(again.batchId);
       const held = rows.filter((row) => row.outcome === 'ready');

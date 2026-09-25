@@ -38,6 +38,8 @@ interface Batch {
   attestedBy: string | null;
   attestationVersion: string | null;
   quietHoursUntil: string | null;
+  mappingConfirmed: boolean;
+  readyCount: number;
   events: Array<{ type: string }>;
 }
 
@@ -373,6 +375,8 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
       attestedBy: null,
       attestationVersion: null,
       quietHoursUntil: null,
+      mappingConfirmed: true,
+      readyCount: held,
       events: [],
       ...overrides,
     });
@@ -575,9 +579,42 @@ describe('start quote (AC1, AC2)', () => {
     });
   });
 
-  it('answers a draft with a state conflict and another source with 404', async () => {
+  it('prices a validated draft on its ready rows, before the import', async () => {
     const w = world();
-    const draft = w.addBatch(0, { status: 'draft' });
+    w.state.credits = 457;
+    const draft = w.addBatch(0, { status: 'draft', readyCount: 5 });
+    await expect(w.quote(draft)).resolves.toMatchObject({
+      orders: 5,
+      creditsAvailable: 457,
+      estimatedCreditsMin: 5,
+      blockers: [],
+    });
+    expect(w.releases.holdCounts).not.toHaveBeenCalled();
+  });
+
+  it('carries a draft quote over to the start once the import is in', async () => {
+    const w = world();
+    const batchId = w.addBatch(0, { status: 'draft', readyCount: 5 });
+    const seen = await w.quote(batchId);
+    // The commit: the five rows are now held orders awaiting the start.
+    const imported = w.addBatch(5);
+    w.state.batches.set(batchId, {
+      ...w.state.batches.get(imported)!,
+      id: batchId,
+    });
+    for (const event of w.state.events)
+      if (event.groupId === imported) event.groupId = batchId;
+    await expect(
+      w.service.start(USER, w.state.source, batchId, 'key-0000001', {
+        attestationVersion: 'bulk-import-consent-v1',
+        quoteToken: seen.quoteToken,
+      }),
+    ).resolves.toMatchObject({ status: 'releasing' });
+  });
+
+  it('answers an unsaved draft with a state conflict and another source with 404', async () => {
+    const w = world();
+    const draft = w.addBatch(0, { status: 'draft', mappingConfirmed: false });
     await expect(errorOf(w.quote(draft))).resolves.toMatchObject({
       code: 'IMPORT_BATCH_STATE_CONFLICT',
     });
