@@ -148,7 +148,8 @@ describe('OrderImportsService', () => {
         mappingProfileApplied: false,
         options: {
           country: 'EG',
-          defaultCurrency: 'USD',
+          // The store never chose a currency: Egypt's own is the default.
+          defaultCurrency: 'EGP',
           dateFormat: 'auto',
           paymentValueMap: {},
         },
@@ -192,7 +193,7 @@ describe('OrderImportsService', () => {
           columns: { phone: 'phone', customerName: ['name'], amount: null },
           sources: { phone: 'auto', amount: 'none' },
         },
-        options: { country: 'EG', defaultCurrency: 'USD' },
+        options: { country: 'EG', defaultCurrency: 'EGP' },
         mappingProfileId: null,
       });
       expect(batch.fileSha256).toMatch(/^[0-9a-f]{64}$/);

@@ -35,6 +35,21 @@ export const CANONICAL_ORDER_CURRENCIES = [
 export type CanonicalOrderCurrency =
   (typeof CANONICAL_ORDER_CURRENCIES)[number];
 
+/** The local currency of each market Akeed serves, by ISO country code. */
+export const COUNTRY_CURRENCIES: Readonly<
+  Record<string, CanonicalOrderCurrency>
+> = {
+  EG: 'EGP',
+  SA: 'SAR',
+  AE: 'AED',
+  QA: 'QAR',
+  KW: 'KWD',
+  BH: 'BHD',
+  OM: 'OMR',
+  JO: 'JOD',
+  MA: 'MAD',
+};
+
 /** The payment method the manual form submits for cash on delivery. */
 export const CANONICAL_COD_PAYMENT_METHOD = 'cash_on_delivery';
 

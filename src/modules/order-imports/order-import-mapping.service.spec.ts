@@ -502,9 +502,13 @@ describe('OrderImportMappingService', () => {
     });
 
     it.each([
-      [{ countryCode: null, shippingCurrency: 'USD' }, 'EG', 'USD'],
-      [{ countryCode: 'Egypt', shippingCurrency: 'XYZ' }, 'EG', 'USD'],
+      // The USD column default is not a choice: the country's currency wins.
+      [{ countryCode: null, shippingCurrency: 'USD' }, 'EG', 'EGP'],
+      [{ countryCode: 'Egypt', shippingCurrency: 'XYZ' }, 'EG', 'EGP'],
+      [{ countryCode: 'sa', shippingCurrency: 'USD' }, 'SA', 'SAR'],
+      [{ countryCode: 'US', shippingCurrency: 'USD' }, 'US', 'USD'],
       [{ countryCode: 'ae', shippingCurrency: ' aed ' }, 'AE', 'AED'],
+      [{ countryCode: 'eg', shippingCurrency: 'SAR' }, 'EG', 'SAR'],
     ])('falls back per option: %j', (store, country, currency) => {
       expect(defaultImportOptions(store as never)).toMatchObject({
         country,

@@ -6,7 +6,11 @@ import {
   ONBOARDING_SHIPPING_CURRENCIES,
   type OnboardingShippingCurrency,
 } from '../onboarding/dto/onboarding.dto';
-import { resolveShippingCurrency } from '../onboarding/shipping-currency';
+import {
+  DEFAULT_SHIPPING_CURRENCY,
+  resolveShippingCurrency,
+} from '../onboarding/shipping-currency';
+import { COUNTRY_CURRENCIES } from '../../shared/commerce/canonical-order.rules';
 import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
 import type {
   OrderImportDateFormatDto,
@@ -148,12 +152,21 @@ function readStoredOptions(value: unknown): ImportOptions {
   };
 }
 
-/** The store's defaults (AC5): its country, else Egypt; its shipping currency. */
+/**
+ * The store's defaults (AC5): its country, else Egypt; its shipping currency,
+ * unless that is still the column default (USD), which standalone stores never
+ * chose -- then the country's own currency, so an Egyptian store gets EGP.
+ */
 export function defaultImportOptions(source: StandaloneSource): ImportOptions {
-  const country = source.countryCode?.trim().toUpperCase() ?? '';
+  const stored = source.countryCode?.trim().toUpperCase() ?? '';
+  const country = COUNTRY_CODE.test(stored) ? stored : DEFAULT_COUNTRY;
+  const currency = resolveShippingCurrency(source.shippingCurrency);
   return {
-    country: COUNTRY_CODE.test(country) ? country : DEFAULT_COUNTRY,
-    defaultCurrency: resolveShippingCurrency(source.shippingCurrency),
+    country,
+    defaultCurrency:
+      currency === DEFAULT_SHIPPING_CURRENCY
+        ? (COUNTRY_CURRENCIES[country] ?? currency)
+        : currency,
     dateFormat: 'auto',
     paymentValueMap: {},
   };
