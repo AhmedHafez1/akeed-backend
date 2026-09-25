@@ -999,6 +999,7 @@ describe('Held orders on the verifications listing', () => {
     orgId: 'org-1',
     integrationId: 'int-1',
     externalOrderId: `ref:${id}`,
+    stage: 'awaiting_start',
   });
 
   const verification = (id: string, createdAt: string) => ({
@@ -1059,6 +1060,26 @@ describe('Held orders on the verifications listing', () => {
     expect(result.data[0].capabilities).toEqual([]);
     expect(result.total_count).toBe(1);
   });
+
+  it.each(['queued', 'sending'])(
+    'shows an order without a verification at its %s stage',
+    async (stage) => {
+      const result = await service({
+        findByOrg: jest.fn().mockResolvedValue([]),
+        countByOrg: jest.fn().mockResolvedValue(0),
+        findHeldByOrg: jest.fn().mockResolvedValue([
+          {
+            ...heldOrder('order-1', '2026-09-19T10:00:00.000Z'),
+            stage,
+          },
+        ]),
+        countHeldByOrg: jest.fn().mockResolvedValue(1),
+      }).listByOrg('org-1', {});
+
+      expect(result.data[0]).toMatchObject({ id: 'order-1', status: stage });
+      expect(result.data[0].capabilities).toEqual([]);
+    },
+  );
 
   it('interleaves held orders with verifications by recency', async () => {
     const result = await service({

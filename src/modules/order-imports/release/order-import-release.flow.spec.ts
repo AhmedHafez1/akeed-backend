@@ -36,7 +36,6 @@ interface Batch {
   pausedReason: string | null;
   startedAt: string | null;
   attestedBy: string | null;
-  attestationVersion: string | null;
   quietHoursUntil: string | null;
   mappingConfirmed: boolean;
   readyCount: number;
@@ -104,8 +103,7 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
         orgId: string;
         batchId: string;
         key: string;
-        attestedBy: string;
-        attestationVersion: string;
+        startedBy: string;
         now: Date;
       }) => {
         for (const other of state.batches.values())
@@ -124,8 +122,7 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
         Object.assign(batch, {
           status: 'releasing',
           startIdempotencyKey: input.key,
-          attestedBy: input.attestedBy,
-          attestationVersion: input.attestationVersion,
+          attestedBy: input.startedBy,
           startedAt: input.now.toISOString(),
           pausedReason: null,
         });
@@ -373,7 +370,6 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
       pausedReason: null,
       startedAt: null,
       attestedBy: null,
-      attestationVersion: null,
       quietHoursUntil: null,
       mappingConfirmed: true,
       readyCount: held,
@@ -398,7 +394,6 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
   async function start(batchId: string, key = `start-${batchId}`) {
     const fresh = await quote(batchId);
     return service.start(USER, state.source, batchId, key, {
-      attestationVersion: 'bulk-import-consent-v1',
       quoteToken: fresh.quoteToken,
     });
   }
@@ -462,7 +457,6 @@ describe('start quote (AC1, AC2)', () => {
       estimatedDurationMinutes: 49,
       blockers: [],
       quoteExpiresAt: '2026-09-21T10:10:00.000Z',
-      attestation: { version: 'bulk-import-consent-v1' },
     });
   });
 
@@ -606,7 +600,6 @@ describe('start quote (AC1, AC2)', () => {
       if (event.groupId === imported) event.groupId = batchId;
     await expect(
       w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-        attestationVersion: 'bulk-import-consent-v1',
         quoteToken: seen.quoteToken,
       }),
     ).resolves.toMatchObject({ status: 'releasing' });
@@ -626,7 +619,7 @@ describe('start quote (AC1, AC2)', () => {
 });
 
 describe('start (AC3, AC4)', () => {
-  it('starts once, records the attestation and ensures the scheduler', async () => {
+  it('starts once, records who started it and ensures the scheduler', async () => {
     const w = world();
     const batchId = w.addBatch(30);
     await expect(w.start(batchId)).resolves.toEqual({
@@ -637,7 +630,6 @@ describe('start (AC3, AC4)', () => {
     expect(batch).toMatchObject({
       status: 'releasing',
       attestedBy: USER.userId,
-      attestationVersion: 'bulk-import-consent-v1',
       startIdempotencyKey: `start-${batchId}`,
       startedAt: '2026-09-21T10:00:00.000Z',
     });
@@ -655,16 +647,13 @@ describe('start (AC3, AC4)', () => {
     const fresh = await w.quote(w.addBatch(1));
     await expect(
       w.service.start(USER, w.state.source, batchId, 'key-one-0001', {
-        attestationVersion: 'bulk-import-consent-v1',
         quoteToken: fresh.quoteToken,
       }),
     ).resolves.toMatchObject({ status: 'releasing' });
     expect(w.releases.claimForStart).toHaveBeenCalledTimes(1);
     await expect(
       errorOf(
-        w.service.start(USER, w.state.source, batchId, 'key-two-0002', {
-          attestationVersion: 'bulk-import-consent-v1',
-        }),
+        w.service.start(USER, w.state.source, batchId, 'key-two-0002', {}),
       ),
     ).resolves.toMatchObject({
       code: 'IMPORT_BATCH_STATE_CONFLICT',
@@ -681,23 +670,18 @@ describe('start (AC3, AC4)', () => {
   });
 
   it.each([undefined, 'bulk-import-consent-v0'])(
-    'requires the current attestation (got %p)',
+    'starts without a consent statement and ignores an old one (got %p)',
     async (attestationVersion) => {
       const w = world();
       const batchId = w.addBatch(5);
       const fresh = await w.quote(batchId);
+      expect(fresh).not.toHaveProperty('attestation');
       await expect(
-        errorOf(
-          w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-            attestationVersion,
-            quoteToken: fresh.quoteToken,
-          }),
-        ),
-      ).resolves.toMatchObject({
-        code: 'IMPORT_ATTESTATION_REQUIRED',
-        attestationVersion: 'bulk-import-consent-v1',
-      });
-      expect(w.state.batches.get(batchId)!.status).toBe('awaiting_start');
+        w.service.start(USER, w.state.source, batchId, 'key-0000001', {
+          attestationVersion,
+          quoteToken: fresh.quoteToken,
+        }),
+      ).resolves.toMatchObject({ status: 'releasing' });
     },
   );
 
@@ -707,7 +691,6 @@ describe('start (AC3, AC4)', () => {
     const attempt = (quoteToken?: string) =>
       errorOf(
         w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-          attestationVersion: 'bulk-import-consent-v1',
           quoteToken,
         }),
       );
@@ -734,7 +717,6 @@ describe('start (AC3, AC4)', () => {
     await expect(
       errorOf(
         w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-          attestationVersion: 'bulk-import-consent-v1',
           quoteToken: seen.quoteToken,
         }),
       ),
@@ -753,7 +735,6 @@ describe('start (AC3, AC4)', () => {
     await expect(
       errorOf(
         w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-          attestationVersion: 'bulk-import-consent-v1',
           quoteToken: seen.quoteToken,
         }),
       ),
@@ -767,7 +748,6 @@ describe('start (AC3, AC4)', () => {
     w.state.credits = 60;
     await expect(
       w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-        attestationVersion: 'bulk-import-consent-v1',
         quoteToken: seen.quoteToken,
       }),
     ).resolves.toMatchObject({ status: 'releasing' });
@@ -781,7 +761,6 @@ describe('start (AC3, AC4)', () => {
     await expect(
       errorOf(
         w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-          attestationVersion: 'bulk-import-consent-v1',
           quoteToken: seen.quoteToken,
         }),
       ),
@@ -799,7 +778,6 @@ describe('start (AC3, AC4)', () => {
     await expect(
       errorOf(
         w.service.start(USER, w.state.source, batchId, 'key-0000001', {
-          attestationVersion: 'bulk-import-consent-v1',
           quoteToken: seen.quoteToken,
         }),
       ),
@@ -1093,9 +1071,7 @@ describe('stop, resume and expiry (AC7, AC8, AC9)', () => {
     expect(seen).toBeNull();
     await expect(
       errorOf(
-        w.service.start(USER, w.state.source, waiting, 'key-0000009', {
-          attestationVersion: 'bulk-import-consent-v1',
-        }),
+        w.service.start(USER, w.state.source, waiting, 'key-0000009', {}),
       ),
     ).resolves.toMatchObject({ code: 'IMPORT_START_WINDOW_EXPIRED' });
   });

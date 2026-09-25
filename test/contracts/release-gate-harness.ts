@@ -355,7 +355,7 @@ export function releaseGateHarness(
     scheduler as never,
     config,
   );
-  const rows = new OrderImportRowsService(imports);
+  const rows = new OrderImportRowsService(imports, validation);
   const reconciler = new WebhookDispatchReconciler(events, dispatcher, {
     get: () => undefined,
   } as never);

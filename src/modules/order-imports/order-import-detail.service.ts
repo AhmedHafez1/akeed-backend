@@ -10,6 +10,7 @@ import { readBulkImportConfig } from '../../shared/config/bulk-import.config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { canWriteOrganization } from '../auth/organization-role';
 import type {
+  OrderImportActiveListDto,
   OrderImportBatchDetailDto,
   OrderImportDraftListDto,
   OrderImportSampleRowDto,
@@ -25,6 +26,9 @@ const SAMPLE_ROW_COUNT = 5;
 const MATCHER_ROW_COUNT = 20;
 /** The duplicate-file window, the same 24 hours as at upload. */
 const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** How far back a finished import may still be settling its last sends. */
+const ACTIVE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const MAX_ACTIVE_BATCHES = 10;
 /** Statuses that own held (or once-held) orders and so have release progress. */
 const COMMITTED_STATUSES = new Set([
   'awaiting_start',
@@ -79,14 +83,25 @@ export class OrderImportDetailService {
     private readonly config: ConfigService,
   ) {}
 
+  /** Started imports for the top bar's progress (`?status=active`). */
+  async listActive(user: AuthenticatedUser): Promise<OrderImportActiveListDto> {
+    const batches = await this.repository.listStartedBatches(
+      user.orgId,
+      new Date(Date.now() - ACTIVE_LOOKBACK_MS),
+      MAX_ACTIVE_BATCHES,
+    );
+    return { batches: batches.map((batch) => ({ ...batch })) };
+  }
+
   async listDrafts(
     user: AuthenticatedUser,
     status: string | undefined,
   ): Promise<OrderImportDraftListDto> {
-    // Only open drafts until the history list (US-04.6-08) extends this route.
+    // Open drafts, or (listActive) started imports, until the history list
+    // (US-04.6-08) extends this route.
     if (status !== 'draft')
       throw orderImportError('IMPORT_VALIDATION_FAILED', {
-        fieldErrors: { status: 'status must be draft.' },
+        fieldErrors: { status: 'status must be draft or active.' },
       });
     const drafts = await this.repository.listOpenDrafts(user.orgId, new Date());
     return {

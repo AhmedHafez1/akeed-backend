@@ -201,6 +201,8 @@ export class OrderImportMappingService {
    * Detects the mapping of a freshly parsed file (AC1–AC3, AC5, AC6), with
    * the organization's saved profile for the same header set laid over it
    * (AC8). Payment values and date ambiguity look at every row, not samples.
+   * A payment value's choice comes from that profile first, then from what
+   * the store chose for it in any earlier file, then from the automatic guess.
    */
   async suggest(
     orgId: string,
@@ -227,7 +229,18 @@ export class OrderImportMappingService {
       return countValues(rows.map((row) => row.cells[index] ?? ''));
     };
 
-    const savedChoices = saved?.options.paymentValueMap ?? {};
+    const storeChoices = columns.paymentMethod
+      ? await this.repository.findPaymentClassifications(
+          orgId,
+          countsOf(columns.paymentMethod).map(({ value }) =>
+            normalizePaymentValue(value),
+          ),
+        )
+      : {};
+    const savedChoices = {
+      ...storeChoices,
+      ...saved?.options.paymentValueMap,
+    };
     const { paymentValues, dateFormat } = this.columnChecks(
       columns,
       countsOf,
@@ -362,6 +375,7 @@ export class OrderImportMappingService {
         mapping: { dictionaryVersion: MAPPING_DICTIONARY_VERSION, columns },
         options,
       },
+      paymentClassifications: options.paymentValueMap,
       now,
     });
     if (result.outcome === 'not_draft') {

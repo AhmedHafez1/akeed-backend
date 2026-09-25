@@ -83,6 +83,8 @@ describe('order-import routes over HTTP', () => {
     pageRows: jest.fn(),
     findRow: jest.fn(),
     setIncludeOverride: jest.fn(),
+    setRowCell: jest.fn(),
+    listStartedBatches: jest.fn(),
     findBatchDetail: jest.fn(),
     readSampleRows: jest.fn(),
     countRowsWithIssue: jest.fn(),
@@ -823,6 +825,166 @@ describe('order-import routes over HTTP', () => {
       },
     );
   });
+  describe('PATCH /api/order-imports/:id/rows/:rowNumber/phone', () => {
+    const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
+    const columns = {
+      phone: 'phone',
+      customerName: ['name'],
+      amount: 'total',
+      orderReference: null,
+      currency: null,
+      paymentMethod: null,
+      orderDate: null,
+      city: null,
+      address: null,
+      notes: null,
+    };
+    const batch = (overrides: Record<string, unknown> = {}) => ({
+      status: 'draft',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      integrationId: 'int-1',
+      mapping: { confirmed: true, columns },
+      options: {
+        country: 'EG',
+        defaultCurrency: 'EGP',
+        dateFormat: 'auto',
+        paymentValueMap: {},
+      },
+      ...overrides,
+    });
+    const phoneIssueRow = {
+      raw: { phone: '12', name: 'Ahmed', total: '750' },
+      issues: [{ code: 'PHONE_INVALID', field: 'phone' }],
+    };
+    const patchPhone = (payload: unknown = { phone: '01012345678' }) =>
+      request(server())
+        .patch(`/api/order-imports/${batchId}/rows/2/phone`)
+        .send(payload as object);
+
+    beforeEach(() => {
+      repository.findBatchForValidation.mockResolvedValue(batch());
+      repository.setRowCell.mockImplementation(
+        (input: { editable: (row: unknown) => boolean }) =>
+          Promise.resolve({
+            outcome: input.editable(phoneIssueRow) ? 'saved' : 'not_editable',
+          }),
+      );
+      repository.listRowsForValidation.mockResolvedValue([
+        {
+          rowNumber: 2,
+          raw: { phone: '+201012345678', name: 'Ahmed', total: '750' },
+          issues: [],
+          includeOverride: false,
+        },
+      ]);
+      repository.findOrdersByExternalIds.mockResolvedValue([]);
+      repository.findRecentOrdersByPhones.mockResolvedValue([]);
+      repository.findRecentOrdersByOrderNumbers.mockResolvedValue([]);
+      repository.writeValidation.mockResolvedValue('saved');
+      repository.findRow.mockResolvedValue({
+        rowNumber: 2,
+        raw: { phone: '+201012345678', name: 'Ahmed', total: '750' },
+        normalized: { customerPhone: '+201012345678', paymentMethod: '' },
+        outcome: 'ready',
+        issues: [],
+        includeOverride: false,
+        collapsedInto: null,
+      });
+      repository.readCounts.mockResolvedValue({ ready: 1, invalid: 0 });
+    });
+
+    it('stores the number as the mapped cell, validates again and answers the row', async () => {
+      const response = await patchPhone();
+      expect(response.status).toBe(200);
+      expect(repository.setRowCell).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: 'org-1',
+          batchId,
+          rowNumber: 2,
+          column: 'phone',
+          value: '+201012345678',
+        }),
+      );
+      expect(repository.writeValidation).toHaveBeenCalled();
+      expect(response.body).toMatchObject({
+        row: { rowNumber: 2, outcome: 'ready' },
+        counts: { ready: 1, invalid: 0 },
+      });
+    });
+
+    it.each(['12', '0101234567/01098765432', '   '])(
+      'refuses %p with IMPORT_ROW_PHONE_INVALID and writes nothing',
+      async (phone) => {
+        const response = await patchPhone({ phone });
+        expect(response.status).toBe(422);
+        expect(response.body).toMatchObject({
+          code: 'IMPORT_ROW_PHONE_INVALID',
+          issue: expect.stringMatching(/^PHONE_/) as unknown,
+        });
+        expect(repository.setRowCell).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses a row without a phone issue with IMPORT_ROW_NOT_EDITABLE', async () => {
+      repository.setRowCell.mockImplementation(
+        (input: { editable: (row: unknown) => boolean }) =>
+          Promise.resolve({
+            outcome: input.editable({
+              issues: [{ code: 'POSSIBLE_DUPLICATE' }],
+            })
+              ? 'saved'
+              : 'not_editable',
+          }),
+      );
+      const response = await patchPhone();
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_ROW_NOT_EDITABLE',
+        reason: 'no_phone_issue',
+      });
+      expect(repository.writeValidation).not.toHaveBeenCalled();
+    });
+
+    it('refuses before the mapping is saved with IMPORT_ROW_NOT_EDITABLE', async () => {
+      repository.findBatchForValidation.mockResolvedValue(
+        batch({ mapping: { confirmed: false, columns } }),
+      );
+      const response = await patchPhone();
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_ROW_NOT_EDITABLE',
+        reason: 'mapping_not_confirmed',
+      });
+      expect(repository.setRowCell).not.toHaveBeenCalled();
+    });
+
+    it('refuses a committed batch and a viewer', async () => {
+      repository.findBatchForValidation.mockResolvedValue(
+        batch({ status: 'committing' }),
+      );
+      expect((await patchPhone()).status).toBe(409);
+      currentUser = { ...currentUser, role: 'viewer' };
+      expect((await patchPhone()).status).toBe(403);
+      expect(repository.setRowCell).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for another organization's batch", async () => {
+      repository.findBatchForValidation.mockResolvedValue(null);
+      expect((await patchPhone()).status).toBe(404);
+    });
+
+    it.each([[{}], [{ phone: 5 }], [{ phone: '010', include: true }]])(
+      'answers IMPORT_VALIDATION_FAILED for %j',
+      async (payload) => {
+        const response = await patchPhone(payload);
+        expect(response.status).toBe(400);
+        expect(response.body).toMatchObject({
+          code: 'IMPORT_VALIDATION_FAILED',
+        });
+      },
+    );
+  });
+
   describe('GET /api/order-imports and /:id (US-04.6-05)', () => {
     const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
     const columns = {
@@ -1047,6 +1209,30 @@ describe('order-import routes over HTTP', () => {
         'org-1',
         expect.any(Date),
       );
+    });
+
+    it('lists the started imports for any member', async () => {
+      const started = {
+        batchId,
+        fileName: 'orders.csv',
+        status: 'releasing',
+        startedAt: '2026-09-19T09:00:00.000Z',
+      };
+      repository.listStartedBatches.mockResolvedValue([started]);
+      currentUser = { ...currentUser, role: 'viewer' };
+      const response = await request(server()).get(
+        '/api/order-imports?status=active',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ batches: [started] });
+      const [orgId, since, limit] = repository.listStartedBatches.mock
+        .calls[0] as [string, Date, number];
+      expect(orgId).toBe('org-1');
+      // Finished imports from the last day may still be settling.
+      expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(
+        24 * 3_600_000 - 1_000,
+      );
+      expect(limit).toBe(10);
     });
 
     it('refuses any list but open drafts until the history exists', async () => {

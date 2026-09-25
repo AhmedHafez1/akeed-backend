@@ -27,6 +27,9 @@ const STATUS: Record<OrderImportErrorCode, HttpStatus> = {
   IMPORT_IDEMPOTENCY_KEY_REQUIRED: HttpStatus.BAD_REQUEST,
   IMPORT_IDEMPOTENCY_CONFLICT: HttpStatus.CONFLICT,
   IMPORT_NOTHING_TO_IMPORT: HttpStatus.CONFLICT,
+  IMPORT_ROW_NOT_EDITABLE: HttpStatus.CONFLICT,
+  IMPORT_ROW_PHONE_INVALID: HttpStatus.UNPROCESSABLE_ENTITY,
+  /** No longer thrown: a start asks for no consent statement. Kept, never reused. */
   IMPORT_ATTESTATION_REQUIRED: HttpStatus.UNPROCESSABLE_ENTITY,
   IMPORT_QUOTE_STALE: HttpStatus.CONFLICT,
   IMPORT_START_WINDOW_EXPIRED: HttpStatus.CONFLICT,
@@ -65,6 +68,8 @@ export type OrderImportErrorCode =
   | 'IMPORT_IDEMPOTENCY_KEY_REQUIRED'
   | 'IMPORT_IDEMPOTENCY_CONFLICT'
   | 'IMPORT_NOTHING_TO_IMPORT'
+  | 'IMPORT_ROW_NOT_EDITABLE'
+  | 'IMPORT_ROW_PHONE_INVALID'
   | 'IMPORT_ATTESTATION_REQUIRED'
   | 'IMPORT_QUOTE_STALE'
   | ImportStartBlockerCode;
@@ -96,6 +101,8 @@ export const ORDER_IMPORT_MESSAGES: Record<OrderImportErrorCode, string> = {
   IMPORT_IDEMPOTENCY_CONFLICT:
     'That Idempotency-Key was already used for a different import.',
   IMPORT_NOTHING_TO_IMPORT: 'There are no ready orders to import.',
+  IMPORT_ROW_NOT_EDITABLE: "This row's phone number cannot be changed.",
+  IMPORT_ROW_PHONE_INVALID: 'Enter a valid mobile number for this customer.',
   IMPORT_ATTESTATION_REQUIRED:
     'Confirm the current customer-consent statement before starting.',
   IMPORT_QUOTE_STALE:

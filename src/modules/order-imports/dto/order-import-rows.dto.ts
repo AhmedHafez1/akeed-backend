@@ -54,6 +54,14 @@ export class UpdateOrderImportRowDto {
   include!: boolean;
 }
 
+/** `PATCH /api/order-imports/:id/rows/:rowNumber/phone` body. */
+export class UpdateOrderImportRowPhoneDto {
+  @IsDefined({ message: 'phone is required.' })
+  @IsString({ message: 'phone must be a string.' })
+  @MaxLength(64, { message: 'phone is too long.' })
+  phone!: string;
+}
+
 export interface OrderImportRowDto {
   rowNumber: number;
   /** The file's cells for each mapped field, as uploaded. */

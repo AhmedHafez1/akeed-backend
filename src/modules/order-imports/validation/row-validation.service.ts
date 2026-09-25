@@ -25,6 +25,7 @@ import {
   type ExistingOrders,
 } from './batch-dedupe';
 import { dateInTimezone } from './date';
+import { validatePhone, type FieldResult } from './phone';
 import { isIncludable, outcomeOf, VALIDATION_VERSION } from './issue-codes';
 import {
   validateRow,
@@ -151,6 +152,13 @@ export class RowValidationService {
         issueCounts,
         durationMs: Date.now() - startedAt,
       }),
+    );
+  }
+
+  /** One phone as a row would read it, for a merchant's fix (e164 when ok). */
+  checkPhone(phone: string, country: string): FieldResult<string> {
+    return validatePhone(cleanCell(phone), country, (value, code) =>
+      this.phone.standardizeMobile(value, code),
     );
   }
 

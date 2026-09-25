@@ -252,6 +252,7 @@ describe('order imports PostgreSQL contract', () => {
         '0038_order_import_validation_version.sql',
         '0039_order_import_release.sql',
         '0040_order_import_row_retention.sql',
+        '0044_order_import_payment_classifications.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -263,7 +264,7 @@ describe('order imports PostgreSQL contract', () => {
     }
     await client.unsafe(`
       GRANT USAGE ON SCHEMA ${namespace} TO authenticated;
-      GRANT SELECT ON order_import_batches, order_import_rows, order_import_mapping_profiles TO authenticated;
+      GRANT SELECT ON order_import_batches, order_import_rows, order_import_mapping_profiles, order_import_payment_classifications TO authenticated;
     `);
   });
 
@@ -721,6 +722,7 @@ describe('order imports PostgreSQL contract', () => {
           mapping: { columns: { phone: 'order_id' } },
           options: { country },
         },
+        paymentClassifications: {},
         now: NOW,
       });
 
@@ -771,6 +773,97 @@ describe('order imports PostgreSQL contract', () => {
     ).resolves.toBeNull();
   });
 
+  it('remembers payment choices per organization across header sets', async () => {
+    const source = await createSource();
+    const otherOrg = await createSource();
+    const userId = randomUUID();
+    const save = async (
+      orgId: string,
+      signature: string,
+      paymentClassifications: Record<string, 'cod' | 'not_cod'>,
+    ) => {
+      const draft = await repository.createDraftWithRows(
+        batch(orgId === source.orgId ? source : otherOrg),
+        rows(1),
+        options,
+      );
+      return repository.saveMapping({
+        orgId,
+        batchId: draft.batchId,
+        userId,
+        headerSignature: signature,
+        mapping: { confirmed: true, columns: { phone: 'order_id' } },
+        options: { country: 'EG' },
+        profile: { mapping: {}, options: {} },
+        paymentClassifications,
+        now: NOW,
+      });
+    };
+
+    await save(source.orgId, 'c'.repeat(64), { cash: 'cod', visa: 'not_cod' });
+    // A file with other headers changes one choice and adds another.
+    await save(source.orgId, 'd'.repeat(64), {
+      visa: 'cod',
+      wallet: 'not_cod',
+      ['x'.repeat(256)]: 'cod',
+    });
+    await save(otherOrg.orgId, 'c'.repeat(64), { cash: 'not_cod' });
+
+    await expect(
+      repository.findPaymentClassifications(source.orgId, [
+        'cash',
+        'visa',
+        'wallet',
+        'unseen',
+        'x'.repeat(256),
+      ]),
+    ).resolves.toEqual({ cash: 'cod', visa: 'cod', wallet: 'not_cod' });
+    await expect(
+      repository.findPaymentClassifications(otherOrg.orgId, ['cash', 'visa']),
+    ).resolves.toEqual({ cash: 'not_cod' });
+    await expect(
+      repository.findPaymentClassifications(source.orgId, []),
+    ).resolves.toEqual({});
+    await expect(
+      client`INSERT INTO order_import_payment_classifications (org_id, normalized_value, classification) VALUES (${source.orgId}, 'bank', 'maybe')`,
+    ).rejects.toThrow(/classification_check/);
+  });
+
+  it('lists started imports: sending, paused, or finished since the cutoff', async () => {
+    const source = await createSource();
+    const other = await createSource();
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++)
+      ids.push(
+        (await repository.createDraftWithRows(batch(source), rows(1), options))
+          .batchId,
+      );
+    const foreign = (
+      await repository.createDraftWithRows(batch(other), rows(1), options)
+    ).batchId;
+    const at = (hoursAgo: number) =>
+      new Date(NOW.getTime() - hoursAgo * HOUR).toISOString();
+    const set = (id: string, status: string, startedAt: string | null) =>
+      client`UPDATE order_import_batches SET status = ${status}, started_at = ${startedAt} WHERE id = ${id}`;
+    await set(ids[0], 'releasing', at(1));
+    await set(ids[1], 'paused', at(30));
+    await set(ids[2], 'completed', at(2));
+    await set(ids[3], 'completed', at(30));
+    await set(ids[4], 'awaiting_start', null);
+    await set(foreign, 'releasing', at(1));
+
+    const started = await repository.listStartedBatches(
+      source.orgId,
+      new Date(NOW.getTime() - 24 * HOUR),
+      10,
+    );
+    expect(started.map((entry) => [entry.batchId, entry.status])).toEqual([
+      [ids[0], 'releasing'],
+      [ids[2], 'completed'],
+      [ids[1], 'paused'],
+    ]);
+  });
+
   it('limits a signed-in member to their own organization through RLS', async () => {
     const mine = await createSource();
     const theirs = await createSource();
@@ -795,9 +888,9 @@ describe('order imports PostgreSQL contract', () => {
     const [policies] = await client<{ count: number }[]>`
       SELECT count(*)::int AS count FROM pg_policies
       WHERE schemaname = ${namespace}
-        AND tablename IN ('order_import_batches', 'order_import_rows', 'order_import_mapping_profiles')
+        AND tablename IN ('order_import_batches', 'order_import_rows', 'order_import_mapping_profiles', 'order_import_payment_classifications')
         AND qual = '(org_id = get_user_org_id())'`;
-    expect(policies.count).toBe(3);
+    expect(policies.count).toBe(4);
   });
 
   describe('row validation (US-04.6-04)', () => {
@@ -883,9 +976,10 @@ describe('order imports PostgreSQL contract', () => {
           include_override: boolean;
           dedupe_key: string | null;
           collapsed_into: number | null;
+          raw: Record<string, string>;
         }[]
       >`
-        SELECT row_number, outcome, issues, include_override, dedupe_key, collapsed_into
+        SELECT row_number, outcome, issues, include_override, dedupe_key, collapsed_into, raw
         FROM order_import_rows WHERE batch_id = ${batchId} ORDER BY row_number`;
     }
 
@@ -1092,6 +1186,49 @@ describe('order imports PostgreSQL contract', () => {
       await expect(
         repository.readCounts(source.orgId, batchId),
       ).resolves.toMatchObject({ ready: 1, excluded: 1 });
+    });
+
+    it('replaces a phone cell on a live draft and re-validation readies the row', async () => {
+      const source = await createSource();
+      const other = await createSource();
+      const batchId = await draftWithRows(source, [
+        cod({ phone: 'x', total: '10', ref: '#1' }),
+        cod({ phone: '01000000002', total: '10', ref: '#2' }),
+      ]);
+      const scope = { orgId: source.orgId, source: standaloneSource(source) };
+      await validator.validateBatch(scope, batchId);
+      const setPhone = (orgId: string, rowNumber: number) =>
+        repository.setRowCell({
+          orgId,
+          batchId,
+          rowNumber,
+          column: 'phone',
+          value: '+201000000001',
+          now: new Date(),
+          editable: (row) =>
+            (row.issues as RowIssue[]).some((issue) => issue.field === 'phone'),
+        });
+
+      await expect(setPhone(other.orgId, 2)).resolves.toEqual({
+        outcome: 'not_draft',
+      });
+      await expect(setPhone(source.orgId, 3)).resolves.toEqual({
+        outcome: 'not_editable',
+      });
+      await expect(setPhone(source.orgId, 99)).resolves.toEqual({
+        outcome: 'row_not_found',
+      });
+      await expect(setPhone(source.orgId, 2)).resolves.toEqual({
+        outcome: 'saved',
+      });
+
+      await validator.validateBatch(scope, batchId);
+      const [fixed] = await storedRows(batchId);
+      expect(fixed).toMatchObject({ outcome: 'ready', issues: [] });
+      expect(fixed.raw).toMatchObject({ phone: '+201000000001', ref: '#1' });
+      await expect(
+        repository.readCounts(source.orgId, batchId),
+      ).resolves.toMatchObject({ ready: 2 });
     });
 
     it('pages rows in row order, filtered and org-scoped', async () => {
@@ -1646,8 +1783,7 @@ describe('order imports PostgreSQL contract', () => {
           orgId: source.orgId,
           batchId,
           key,
-          attestedBy: randomUUID(),
-          attestationVersion: 'bulk-import-consent-v1',
+          startedBy: randomUUID(),
           orders: 0,
           now: new Date(),
         });
@@ -1667,7 +1803,7 @@ describe('order imports PostgreSQL contract', () => {
           FROM webhook_events WHERE hold_group_id = ${batchId}`;
       }
 
-      it('starts atomically once and keeps the attestation immutable', async () => {
+      it('starts atomically once and keeps who started it immutable', async () => {
         const { source, batchId } = await awaitingBatch(3);
 
         await expect(start(source, batchId)).resolves.toBe('claimed');
@@ -1677,7 +1813,7 @@ describe('order imports PostgreSQL contract', () => {
           {
             status: string;
             attested_by: string;
-            attestation_version: string;
+            attestation_version: string | null;
             started_at: Date;
             start_idempotency_key: string;
             events: Array<{ type: string; orders?: number }>;
@@ -1688,7 +1824,7 @@ describe('order imports PostgreSQL contract', () => {
           FROM order_import_batches WHERE id = ${batchId}`;
         expect(stored).toMatchObject({
           status: 'releasing',
-          attestation_version: 'bulk-import-consent-v1',
+          attestation_version: null,
           start_idempotency_key: `start-${batchId}`,
         });
         expect(stored.events.map((event) => event.type)).toEqual(['started']);
@@ -2112,7 +2248,6 @@ describe('order imports PostgreSQL contract', () => {
           const quote = await starts.quote(user, source, batchId);
           expect(quote.orders).toBe(2);
           await starts.start(user, source, batchId, `start-${batchId}`, {
-            attestationVersion: 'bulk-import-consent-v1',
             quoteToken: quote.quoteToken,
           });
           const tick = ticker(org);

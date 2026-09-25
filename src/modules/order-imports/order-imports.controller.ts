@@ -26,6 +26,7 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { CurrentUser } from '../auth/guards/current-user.decorator';
 import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
 import type {
+  OrderImportActiveListDto,
   OrderImportBatchDetailDto,
   OrderImportDraftListDto,
   OrderImportUploadResponseDto,
@@ -33,6 +34,7 @@ import type {
 import {
   ListOrderImportRowsQueryDto,
   UpdateOrderImportRowDto,
+  UpdateOrderImportRowPhoneDto,
   type OrderImportRowsPageDto,
   type OrderImportRowUpdateResponseDto,
 } from './dto/order-import-rows.dto';
@@ -103,6 +105,7 @@ function importValidationPipe(expectedType: new () => object): ValidationPipe {
 const mappingValidationPipe = importValidationPipe(SaveOrderImportMappingDto);
 const rowsQueryPipe = importValidationPipe(ListOrderImportRowsQueryDto);
 const rowUpdatePipe = importValidationPipe(UpdateOrderImportRowDto);
+const rowPhonePipe = importValidationPipe(UpdateOrderImportRowPhoneDto);
 const startValidationPipe = importValidationPipe(StartOrderImportDto);
 const rowNumberPipe = new ParseIntPipe({
   exceptionFactory: () =>
@@ -156,7 +159,8 @@ export class OrderImportsController {
   listDrafts(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status: string | undefined,
-  ): Promise<OrderImportDraftListDto> {
+  ): Promise<OrderImportDraftListDto | OrderImportActiveListDto> {
+    if (status === 'active') return this.detail.listActive(user);
     return this.detail.listDrafts(user, status);
   }
 
@@ -212,6 +216,24 @@ export class OrderImportsController {
       batchId,
       rowNumber,
       (body as UpdateOrderImportRowDto).include,
+    );
+  }
+
+  @Patch(':id/rows/:rowNumber/phone')
+  @OrderImportAccess('write')
+  fixRowPhone(
+    @CurrentUser() user: AuthenticatedUser,
+    @ImportSource() source: StandaloneSource,
+    @Param('id', batchIdPipe) batchId: string,
+    @Param('rowNumber', rowNumberPipe) rowNumber: number,
+    @Body(rowPhonePipe) body: object,
+  ): Promise<OrderImportRowUpdateResponseDto> {
+    return this.rows.fixPhone(
+      user,
+      source,
+      batchId,
+      rowNumber,
+      (body as UpdateOrderImportRowPhoneDto).phone,
     );
   }
 

@@ -23,10 +23,6 @@ import {
   IMPORT_IDEMPOTENCY_CODES,
   orderImportError,
 } from '../order-imports.errors';
-import {
-  BULK_IMPORT_ATTESTATIONS,
-  CURRENT_ATTESTATION_VERSION,
-} from './attestation';
 import { toImportBlockers } from './import-blockers';
 import { OrderImportReleaseScheduler } from './order-import-release.scheduler';
 import {
@@ -47,7 +43,7 @@ const QUOTABLE_STATUSES = new Set(['awaiting_start', 'paused']);
 
 /**
  * The start checkpoint (US-04.6-07 AC1–AC4, AC7, AC8): the quote, the
- * attested start, stop and resume. Nothing here sends; a start only makes the
+ * start, stop and resume. Nothing here sends; a start only makes the
  * batch `releasing` and ensures the organization's release ticks run.
  */
 @Injectable()
@@ -115,10 +111,6 @@ export class OrderImportReleaseService {
       throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
         status: batch.status,
       });
-    if (body.attestationVersion !== CURRENT_ATTESTATION_VERSION)
-      throw orderImportError('IMPORT_ATTESTATION_REQUIRED', {
-        attestationVersion: CURRENT_ATTESTATION_VERSION,
-      });
     if (this.deadlinePassed(batch, now))
       throw orderImportError('IMPORT_START_WINDOW_EXPIRED');
 
@@ -131,8 +123,7 @@ export class OrderImportReleaseService {
       orgId: user.orgId,
       batchId,
       key,
-      attestedBy: user.userId,
-      attestationVersion: CURRENT_ATTESTATION_VERSION,
+      startedBy: user.userId,
       orders: quote.orders,
       now,
     });
@@ -210,8 +201,8 @@ export class OrderImportReleaseService {
   }
 
   /**
-   * Continue a paused batch (AC7). The quote gates run again; the start's
-   * attestation still covers it. A pause by Akeed staff is not the
+   * Continue a paused batch (AC7). The quote gates run again. A pause by
+   * Akeed staff is not the
    * merchant's to lift.
    */
   async resume(
@@ -317,10 +308,6 @@ export class OrderImportReleaseService {
         quoteSecret,
       ),
       quoteExpiresAt: new Date(expiresAt).toISOString(),
-      attestation: {
-        version: CURRENT_ATTESTATION_VERSION,
-        text: { ...BULK_IMPORT_ATTESTATIONS[CURRENT_ATTESTATION_VERSION] },
-      },
     };
   }
 

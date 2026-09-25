@@ -21,6 +21,7 @@ import {
   integrations,
   orderImportBatches,
   orderImportMappingProfiles,
+  orderImportPaymentClassifications,
   orderImportRows,
   orders,
 } from '../schema';
@@ -38,6 +39,14 @@ export interface OpenDraftSummary {
   rowCount: number;
   createdAt: string;
   expiresAt: string;
+}
+
+/** A started batch the top bar may still be reporting on. */
+export interface StartedBatchSummary {
+  batchId: string;
+  fileName: string;
+  status: string;
+  startedAt: string | null;
 }
 
 export interface DuplicateFileSummary {
@@ -143,6 +152,11 @@ export interface ColumnValueCount {
   count: number;
 }
 
+export type StoredPaymentClassification = 'cod' | 'not_cod';
+
+/** The column's CHECK: a longer key is never remembered. */
+const MAX_REMEMBERED_PAYMENT_VALUE = 255;
+
 export interface SaveMappingInput {
   orgId: string;
   batchId: string;
@@ -151,6 +165,8 @@ export interface SaveMappingInput {
   mapping: unknown;
   options: unknown;
   profile: { mapping: unknown; options: unknown };
+  /** Normalized payment value → choice, remembered for the whole store. */
+  paymentClassifications: Readonly<Record<string, StoredPaymentClassification>>;
   now: Date;
 }
 
@@ -197,6 +213,10 @@ export type WriteValidationResult = 'saved' | 'not_draft';
 
 export type SetIncludeOverrideResult = {
   outcome: 'saved' | 'not_draft' | 'row_not_found' | 'not_includable';
+};
+
+export type SetRowCellResult = {
+  outcome: 'saved' | 'not_draft' | 'row_not_found' | 'not_editable';
 };
 
 export interface ImportRowPageEntry {
@@ -257,6 +277,40 @@ export class OrderImportsRepository {
       )
       .orderBy(desc(orderImportBatches.createdAt));
     return rows;
+  }
+
+  /**
+   * Batches still sending (`releasing`, `paused`), and those that finished
+   * handing orders over since `since` -- their last sends may still be
+   * settling. Newest first; the caller reads each one's live counts.
+   */
+  async listStartedBatches(
+    orgId: string,
+    since: Date,
+    limit: number,
+  ): Promise<StartedBatchSummary[]> {
+    return this.db
+      .select({
+        batchId: orderImportBatches.id,
+        fileName: orderImportBatches.fileName,
+        status: orderImportBatches.status,
+        startedAt: orderImportBatches.startedAt,
+      })
+      .from(orderImportBatches)
+      .where(
+        and(
+          eq(orderImportBatches.orgId, orgId),
+          or(
+            inArray(orderImportBatches.status, ['releasing', 'paused']),
+            and(
+              inArray(orderImportBatches.status, ['completed', 'stopped']),
+              gte(orderImportBatches.startedAt, since.toISOString()),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(orderImportBatches.startedAt))
+      .limit(limit);
   }
 
   /**
@@ -429,6 +483,44 @@ export class OrderImportsRepository {
   }
 
   /** The organization's remembered mapping for a header set (US-04.6-03). */
+  /**
+   * The store's remembered classification for these normalized payment
+   * values, whatever file they came from. Unknown values are absent.
+   */
+  async findPaymentClassifications(
+    orgId: string,
+    normalizedValues: readonly string[],
+  ): Promise<Record<string, StoredPaymentClassification>> {
+    const values = [...new Set(normalizedValues)].filter(
+      (value) =>
+        value.length > 0 && value.length <= MAX_REMEMBERED_PAYMENT_VALUE,
+    );
+    if (values.length === 0) return {};
+    const rows = await this.db
+      .select({
+        normalizedValue: orderImportPaymentClassifications.normalizedValue,
+        classification: orderImportPaymentClassifications.classification,
+      })
+      .from(orderImportPaymentClassifications)
+      .where(
+        and(
+          eq(orderImportPaymentClassifications.orgId, orgId),
+          inArray(orderImportPaymentClassifications.normalizedValue, values),
+        ),
+      );
+    return Object.fromEntries(
+      rows
+        .filter(
+          (row) =>
+            row.classification === 'cod' || row.classification === 'not_cod',
+        )
+        .map((row) => [
+          row.normalizedValue,
+          row.classification as StoredPaymentClassification,
+        ]),
+    );
+  }
+
   async findMappingProfile(
     orgId: string,
     headerSignature: string,
@@ -645,6 +737,34 @@ export class OrderImportsRepository {
         })
         .returning({ id: orderImportMappingProfiles.id });
 
+      const remembered = Object.entries(input.paymentClassifications)
+        .filter(
+          ([value]) =>
+            value.length > 0 && value.length <= MAX_REMEMBERED_PAYMENT_VALUE,
+        )
+        .map(([normalizedValue, classification]) => ({
+          orgId: input.orgId,
+          normalizedValue,
+          classification,
+          updatedBy: input.userId,
+          updatedAt: now,
+        }));
+      if (remembered.length > 0)
+        await tx
+          .insert(orderImportPaymentClassifications)
+          .values(remembered)
+          .onConflictDoUpdate({
+            target: [
+              orderImportPaymentClassifications.orgId,
+              orderImportPaymentClassifications.normalizedValue,
+            ],
+            set: {
+              classification: sql`excluded.classification`,
+              updatedBy: sql`excluded.updated_by`,
+              updatedAt: sql`excluded.updated_at`,
+            },
+          });
+
       await tx
         .update(orderImportBatches)
         .set({ mappingProfileId: profile.id })
@@ -798,6 +918,43 @@ export class OrderImportsRepository {
         .set({ includeOverride: input.include, outcome })
         .where(this.rowWhere(input.orgId, input.batchId, input.rowNumber));
       await this.refreshSummary(tx, input.orgId, input.batchId, now);
+      return { outcome: 'saved' };
+    });
+  }
+
+  /**
+   * Replaces one cell of a live draft's row, as if the file had said it.
+   * `editable` sees the row as stored, under the batch lock; the caller
+   * re-validates the batch afterwards, which recomputes outcome and counts.
+   */
+  async setRowCell(input: {
+    orgId: string;
+    batchId: string;
+    rowNumber: number;
+    column: string;
+    value: string;
+    now: Date;
+    editable: (row: { issues: unknown }) => boolean;
+  }): Promise<SetRowCellResult> {
+    const now = input.now.toISOString();
+    return this.db.transaction(async (tx) => {
+      if (!(await this.lockLiveDraft(tx, input.orgId, input.batchId, now)))
+        return { outcome: 'not_draft' };
+      const [row] = await tx
+        .select({ raw: orderImportRows.raw, issues: orderImportRows.issues })
+        .from(orderImportRows)
+        .where(this.rowWhere(input.orgId, input.batchId, input.rowNumber));
+      if (!row) return { outcome: 'row_not_found' };
+      if (!input.editable(row)) return { outcome: 'not_editable' };
+      await tx
+        .update(orderImportRows)
+        .set({
+          raw: {
+            ...((row.raw ?? {}) as Record<string, string>),
+            [input.column]: input.value,
+          },
+        })
+        .where(this.rowWhere(input.orgId, input.batchId, input.rowNumber));
       return { outcome: 'saved' };
     });
   }

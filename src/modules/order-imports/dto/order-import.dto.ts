@@ -56,6 +56,23 @@ export interface OrderImportDraftListDto {
   permissions: OrderImportPermissionsDto;
 }
 
+/** One started import on `GET /api/order-imports?status=active`. */
+export interface OrderImportStartedBatchDto {
+  batchId: string;
+  fileName: string;
+  status: string;
+  startedAt: string | null;
+}
+
+/**
+ * `GET /api/order-imports?status=active`: imports still sending, or that
+ * finished handing orders over in the last day, for the top bar's progress.
+ * Their live counts come from `GET /:id`.
+ */
+export interface OrderImportActiveListDto {
+  batches: OrderImportStartedBatchDto[];
+}
+
 /**
  * `GET /api/order-imports/:id` (US-04.6-05): enough to render the wizard step
  * the batch is in after a refresh. A draft past its expiry reads as

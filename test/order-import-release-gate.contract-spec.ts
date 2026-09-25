@@ -29,7 +29,6 @@ import {
 } from './contracts/release-gate-harness';
 
 const FIXTURES = resolve(__dirname, 'fixtures/order-imports');
-const ATTESTATION = 'bulk-import-consent-v1';
 
 const gate = releaseGateHarness();
 type Merchant = Awaited<ReturnType<ReleaseGateHarness['merchant']>>;
@@ -153,7 +152,7 @@ class MerchantSession {
       this.merchant.source,
       this.batchId,
       `start-${this.batchId}`,
-      { attestationVersion: ATTESTATION, quoteToken: quote.quoteToken },
+      { quoteToken: quote.quoteToken },
     );
     this.record('start', started);
     return quote;
@@ -300,6 +299,11 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
 
     const quote = await session.start();
     expect(quote.orders).toBe(ready.length);
+    // Started, nothing released yet: every order is in line, not waiting.
+    const queued = await session.verificationsList('verifications:queued');
+    expect(queued.data.map((row) => row.status)).toEqual(
+      ready.map(() => 'queued'),
+    );
     expect(await session.releaseAll()).toBe('completed');
     await session.detail('detail:completed');
 

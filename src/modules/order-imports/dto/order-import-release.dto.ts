@@ -3,12 +3,17 @@ import type { UsageAccountingMode } from '../../../shared/billing/entitlement';
 import type { ImportStartBlocker } from '../release/import-blockers';
 
 /**
- * `POST /api/order-imports/:id/start` body (AC3). Both fields are optional
- * here on purpose: a missing attestation answers IMPORT_ATTESTATION_REQUIRED
- * and a missing quote IMPORT_QUOTE_STALE with a fresh quote, which tell the
- * client what to do, rather than a generic validation failure.
+ * `POST /api/order-imports/:id/start` body (AC3). The quote is optional here
+ * on purpose: a missing one answers IMPORT_QUOTE_STALE with a fresh quote,
+ * which tells the client what to do, rather than a generic validation failure.
+ * No consent statement is asked for.
  */
 export class StartOrderImportDto {
+  /**
+   * Ignored. Clients sent the consent statement's version until the start
+   * stopped asking for one; still accepted so an open tab from before that
+   * change does not fail on an unknown property.
+   */
   @IsOptional()
   @IsString({ message: 'attestationVersion must be a string.' })
   @MaxLength(64, { message: 'attestationVersion is too long.' })
@@ -44,7 +49,6 @@ export interface OrderImportStartQuoteDto {
   blockers: ImportStartBlocker[];
   quoteToken: string;
   quoteExpiresAt: string;
-  attestation: { version: string; text: { en: string; ar: string } };
 }
 
 /** `POST /api/order-imports/:id/stop` (AC8). */

@@ -1,9 +1,7 @@
 /**
- * The consent statement a merchant ticks before an import may contact anyone.
- *
- * Stored by version: a batch records only `attestation_version`, so the exact
- * words it agreed to stay recoverable here. Never edit a published version;
- * add a new one and move `CURRENT_ATTESTATION_VERSION`.
+ * The consent statement merchants ticked before starting an import, until the
+ * start stopped asking for one. Kept as the record of what batches with an
+ * `attestation_version` agreed to; nothing reads it at runtime. Never edit.
  */
 export const BULK_IMPORT_ATTESTATIONS = {
   'bulk-import-consent-v1': {

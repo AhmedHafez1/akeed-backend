@@ -212,10 +212,7 @@ describe('US-04.6-10 AC6 local performance baseline (5000-rows.csv)', () => {
       merchant.source,
       batchId,
       `perf-start-${batchId}`,
-      {
-        attestationVersion: 'bulk-import-consent-v1',
-        quoteToken: quote.quoteToken,
-      },
+      { quoteToken: quote.quoteToken },
     );
 
     const budget = releaseBudgetPerTick(

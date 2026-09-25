@@ -19,6 +19,7 @@ import {
   verifications,
   verificationMessageDispatches,
   creditReservations,
+  orderImportBatches,
   orderImportRows,
   orders,
   webhookEvents,
@@ -952,11 +953,14 @@ export class VerificationsRepository {
   }
 
   /**
-   * Imported orders that are held, as list rows.
+   * Imported orders that have no verification yet, as list rows.
    *
-   * A held order has no verification yet -- commit deliberately creates none --
+   * A held order has no verification -- commit deliberately creates none --
    * so it is invisible to `findByOrg`. The dashboard still has to show it,
-   * because the merchant has orders waiting on a decision only they can make.
+   * because the merchant has orders waiting on a decision only they can make,
+   * and once the import sends, each order's place in line (`stage`):
+   * waiting for the start, queued behind the paced release, or released and
+   * on its way to the worker that creates its verification.
    * Kept as its own query rather than a UNION inside `findByOrg` so the
    * verification list the rest of E04 is built on stays exactly as it was; the
    * service merges the two sorted streams.
@@ -1000,6 +1004,7 @@ export class VerificationsRepository {
         orgId: orders.orgId,
         integrationId: orders.integrationId,
         externalOrderId: orders.externalOrderId,
+        stage: preVerificationStage(orgId),
       })
       .from(orders)
       .innerJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
@@ -1035,8 +1040,16 @@ export class VerificationsRepository {
   ) {
     return [
       eq(orders.orgId, orgId),
-      eq(webhookEvents.holdState, 'held'),
-      // A released order has a verification and belongs to the ordinary list;
+      or(
+        eq(webhookEvents.holdState, 'held'),
+        // Released and not yet processed: the worker has not created its
+        // verification. A failed event is not "on its way"; it is left out.
+        and(
+          eq(webhookEvents.holdState, 'released'),
+          inArray(webhookEvents.status, ['pending', 'processing']),
+        ),
+      ),
+      // Once the verification exists the order belongs to the ordinary list;
       // this guard also keeps a row from appearing twice during the handover.
       sql`NOT EXISTS (SELECT 1 FROM ${verifications} v WHERE v.order_id = ${orders.id})`,
       period ? gte(orders.createdAt, period.startAt) : undefined,
@@ -1117,7 +1130,27 @@ function orderSearchCondition(orgId: string, digits: string) {
   )`;
 }
 
-/** A held, imported order projected as a verification-list row. */
+/** Where an imported order without a verification stands. */
+export type PreVerificationStage = 'awaiting_start' | 'queued' | 'sending';
+
+/**
+ * `sending` once released; `queued` while held by a batch that is already
+ * releasing (or paused mid-release); otherwise waiting on the merchant's start.
+ */
+function preVerificationStage(orgId: string) {
+  return sql<PreVerificationStage>`CASE
+    WHEN ${webhookEvents.holdState} = 'released' THEN 'sending'
+    WHEN EXISTS (
+      SELECT 1 FROM ${orderImportBatches} b
+      WHERE b.id = ${webhookEvents.holdGroupId}
+        AND b.org_id = ${orgId}
+        AND b.status IN ('releasing', 'paused')
+    ) THEN 'queued'
+    ELSE 'awaiting_start'
+  END`;
+}
+
+/** An imported order without a verification, projected as a list row. */
 export interface HeldOrderListRow {
   id: string;
   orderId: string;
@@ -1131,6 +1164,7 @@ export interface HeldOrderListRow {
   orgId: string;
   integrationId: string;
   externalOrderId: string;
+  stage: PreVerificationStage;
 }
 
 /**

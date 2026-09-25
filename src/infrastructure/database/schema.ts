@@ -18,6 +18,7 @@ import {
   pgSchema,
   uniqueIndex,
   char,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -2096,6 +2097,49 @@ export const orderImportRows = pgTable(
       sql`outcome IS NULL OR outcome = ANY (ARRAY['ready'::text, 'invalid'::text, 'duplicate'::text, 'excluded'::text, 'imported'::text])`,
     ),
     pgPolicy('Multi-tenant order import rows', {
+      as: 'permissive',
+      for: 'all',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+      withCheck: sql`(org_id = get_user_org_id())`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * A payment value's COD classification remembered per organization, whatever
+ * the file's headers (0044). Keyed by `normalizePaymentValue`.
+ */
+export const orderImportPaymentClassifications = pgTable(
+  'order_import_payment_classifications',
+  {
+    orgId: uuid('org_id').notNull(),
+    normalizedValue: text('normalized_value').notNull(),
+    classification: text().notNull(),
+    updatedBy: uuid('updated_by'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.orgId, table.normalizedValue],
+      name: 'order_import_payment_classifications_pkey',
+    }),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'order_import_payment_classifications_org_id_fkey',
+    }).onDelete('cascade'),
+    check(
+      'order_import_payment_classifications_classification_check',
+      sql`${table.classification} IN ('cod', 'not_cod')`,
+    ),
+    check(
+      'order_import_payment_classifications_value_check',
+      sql`char_length(${table.normalizedValue}) BETWEEN 1 AND 255`,
+    ),
+    pgPolicy('Multi-tenant order import payment classifications', {
       as: 'permissive',
       for: 'all',
       to: ['authenticated'],

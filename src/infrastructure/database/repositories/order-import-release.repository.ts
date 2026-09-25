@@ -122,7 +122,9 @@ export class OrderImportReleaseRepository {
   }
 
   /**
-   * `awaiting_start` → `releasing`, recording the merchant's attestation.
+   * `awaiting_start` → `releasing`, recording who started it. The start is
+   * kept in `attested_by`/`attested_at` (immutable once set, 0039); no
+   * consent statement is asked for, so `attestation_version` stays null.
    *
    * The deadline is re-checked here, not only by the caller, so a start that
    * races the expiry job cannot resurrect a batch whose holds it withdrew.
@@ -131,8 +133,7 @@ export class OrderImportReleaseRepository {
     orgId: string;
     batchId: string;
     key: string;
-    attestedBy: string;
-    attestationVersion: string;
+    startedBy: string;
     orders: number;
     now: Date;
   }): Promise<ClaimForStartResult> {
@@ -142,16 +143,14 @@ export class OrderImportReleaseRepository {
         .update(orderImportBatches)
         .set({
           status: 'releasing',
-          attestedBy: input.attestedBy,
+          attestedBy: input.startedBy,
           attestedAt: now,
-          attestationVersion: input.attestationVersion,
           startedAt: now,
           startIdempotencyKey: input.key,
           pausedReason: null,
           events: appendEvent('started', now, {
-            by: input.attestedBy,
+            by: input.startedBy,
             orders: input.orders,
-            attestationVersion: input.attestationVersion,
           }),
           updatedAt: now,
         })
@@ -171,7 +170,7 @@ export class OrderImportReleaseRepository {
     }
   }
 
-  /** `paused` → `releasing`; the attestation from the start still applies. */
+  /** `paused` → `releasing`. */
   async resume(input: {
     orgId: string;
     batchId: string;

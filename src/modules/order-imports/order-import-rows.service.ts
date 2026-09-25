@@ -5,6 +5,7 @@ import {
 } from '../../infrastructure/database/repositories/order-imports.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import type { StandaloneSource } from '../order-ingestion/standalone-source-resolver';
 import {
   DEFAULT_IMPORT_ROWS_PAGE,
   type ImportRowOutcome,
@@ -21,7 +22,9 @@ import {
   outcomeOf,
   type RowIssue,
 } from './validation/issue-codes';
+import type { ImportOptions } from './mapping/mapping-rules';
 import type { NormalizedImportOrder } from './validation/row-validator';
+import { RowValidationService } from './validation/row-validation.service';
 
 /** The cursor is the last row number shown, opaque to the client. */
 function encodeCursor(rowNumber: number): string {
@@ -43,6 +46,19 @@ function issuesOf(value: unknown): RowIssue[] {
   return Array.isArray(value) ? (value as RowIssue[]) : [];
 }
 
+const hasPhoneIssue = (issues: unknown) =>
+  issuesOf(issues).some(
+    (issue) => issue.field === 'phone' && !issue.informational,
+  );
+
+function isConfirmed(mapping: unknown): boolean {
+  return (
+    typeof mapping === 'object' &&
+    mapping !== null &&
+    (mapping as { confirmed?: unknown }).confirmed === true
+  );
+}
+
 function columnMappingOf(mapping: unknown): ImportColumnMapping | null {
   if (typeof mapping !== 'object' || mapping === null) return null;
   const columns = (mapping as { columns?: unknown }).columns;
@@ -55,7 +71,10 @@ function columnMappingOf(mapping: unknown): ImportColumnMapping | null {
 export class OrderImportRowsService {
   private readonly logger = new Logger(OrderImportRowsService.name);
 
-  constructor(private readonly repository: OrderImportsRepository) {}
+  constructor(
+    private readonly repository: OrderImportsRepository,
+    private readonly rowValidation: RowValidationService,
+  ) {}
 
   /** `GET /api/order-imports/:id/rows` (AC14): any member, row order. */
   async list(
@@ -157,6 +176,97 @@ export class OrderImportRowsService {
       row: this.toDto(row, columnMappingOf(batch.mapping)),
       counts,
     };
+  }
+
+  /**
+   * `PATCH /api/order-imports/:id/rows/:rowNumber/phone`: the merchant types
+   * the number a row's phone issue asked for. The number is checked the way
+   * validation reads it and refused before anything is written; a good one
+   * replaces the mapped phone cell and the batch is validated again, so the
+   * row's outcome, in-file duplicates and the counts all follow.
+   */
+  async fixPhone(
+    user: AuthenticatedUser,
+    source: StandaloneSource,
+    batchId: string,
+    rowNumber: number,
+    phone: string,
+  ): Promise<OrderImportRowUpdateResponseDto> {
+    const now = new Date();
+    const batch = await this.repository.findBatchForValidation(
+      user.orgId,
+      batchId,
+    );
+    if (!batch) throw orderImportError('IMPORT_BATCH_NOT_FOUND');
+    assertEditableDraft(batch.status, batch.expiresAt, now);
+    const mapping = columnMappingOf(batch.mapping);
+    const options = batch.options as ImportOptions | null;
+    if (
+      batch.integrationId !== source.id ||
+      !isConfirmed(batch.mapping) ||
+      !mapping?.phone ||
+      !options
+    )
+      throw orderImportError('IMPORT_ROW_NOT_EDITABLE', {
+        reason: 'mapping_not_confirmed',
+      });
+
+    const checked = this.rowValidation.checkPhone(phone, options.country);
+    if (!checked.ok)
+      throw orderImportError('IMPORT_ROW_PHONE_INVALID', {
+        issue: checked.issue.code,
+      });
+
+    const result = await this.repository.setRowCell({
+      orgId: user.orgId,
+      batchId,
+      rowNumber,
+      column: mapping.phone,
+      value: checked.value,
+      now,
+      editable: (row) => hasPhoneIssue(row.issues),
+    });
+    if (result.outcome === 'row_not_found')
+      throw orderImportError('IMPORT_VALIDATION_FAILED', {
+        fieldErrors: { rowNumber: 'The import has no row with this number.' },
+      });
+    if (result.outcome === 'not_editable')
+      throw orderImportError('IMPORT_ROW_NOT_EDITABLE', {
+        reason: 'no_phone_issue',
+      });
+    if (result.outcome === 'not_draft') {
+      const current = await this.repository.findBatchForMapping(
+        user.orgId,
+        batchId,
+      );
+      if (!current) throw orderImportError('IMPORT_BATCH_NOT_FOUND');
+      assertEditableDraft(current.status, current.expiresAt, new Date());
+      throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
+        status: current.status,
+      });
+    }
+
+    await this.rowValidation.validateBatch(
+      { orgId: user.orgId, source },
+      batchId,
+      now,
+    );
+    const [row, counts] = await Promise.all([
+      this.repository.findRow(user.orgId, batchId, rowNumber),
+      this.repository.readCounts(user.orgId, batchId),
+    ]);
+    if (!row) throw orderImportError('IMPORT_BATCH_NOT_FOUND');
+    // Never the number itself: phones are personal data.
+    this.logger.log(
+      buildBackendLog(OrderImportRowsService.name, {
+        action: 'order-import-row-phone',
+        outcome: 'success',
+        orgId: user.orgId,
+        batchId,
+        rowNumber,
+      }),
+    );
+    return { row: this.toDto(row, mapping), counts };
   }
 
   private toDto(

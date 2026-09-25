@@ -64,6 +64,7 @@ function body(
 describe('OrderImportMappingService', () => {
   const repository = {
     findMappingProfile: jest.fn(),
+    findPaymentClassifications: jest.fn(),
     findBatchForMapping: jest.fn(),
     columnValueCounts: jest.fn(),
     saveMapping: jest.fn(),
@@ -98,6 +99,7 @@ describe('OrderImportMappingService', () => {
     repository.readCounts.mockResolvedValue({ ready: 0 });
     rowValidation.validateBatch.mockResolvedValue(undefined);
     repository.findMappingProfile.mockResolvedValue(null);
+    repository.findPaymentClassifications.mockResolvedValue({});
   });
 
   describe('save: mapping validation', () => {
@@ -256,6 +258,12 @@ describe('OrderImportMappingService', () => {
       expect(saved.options.paymentValueMap).toEqual({
         'bank transfer': 'not_cod',
       });
+      // The same listed choices are remembered for the whole store.
+      expect(repository.saveMapping).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentClassifications: { 'bank transfer': 'not_cod' },
+        }),
+      );
       expect(saved.paymentValues?.values[1]).toMatchObject({
         classification: 'not_cod',
         source: 'merchant',
@@ -396,6 +404,7 @@ describe('OrderImportMappingService', () => {
           },
           options: expect.objectContaining({ country: 'EG' }) as object,
         },
+        paymentClassifications: {},
         now: expect.any(Date) as Date,
       });
       expect(rowValidation.validateBatch).toHaveBeenCalledWith(
@@ -566,6 +575,51 @@ describe('OrderImportMappingService', () => {
       expect(suggestion.response.mappingProfileApplied).toBe(true);
       expect(suggestion.mappingProfileId).toBe('profile-9');
       expect(suggestion.mapping.sources.notes).toBe('saved');
+    });
+
+    it("recalls the store's choice for a value from any earlier file", async () => {
+      repository.findPaymentClassifications.mockResolvedValue({
+        other: 'not_cod',
+      });
+      const suggestion = await service.suggest('org-1', source, HEADERS, rows);
+      expect(repository.findPaymentClassifications).toHaveBeenCalledWith(
+        'org-1',
+        expect.arrayContaining(['cod', 'other']),
+      );
+      expect(suggestion.options.paymentValueMap).toEqual({ other: 'not_cod' });
+      expect(suggestion.response.paymentValues?.values[1]).toMatchObject({
+        normalizedValue: 'other',
+        classification: 'not_cod',
+        source: 'saved',
+      });
+      expect(suggestion.response.mappingProfileApplied).toBe(false);
+    });
+
+    it("lets the same headers' profile win over the store's memory", async () => {
+      repository.findMappingProfile.mockResolvedValue({
+        id: 'profile-9',
+        mapping: { columns: { phone: 'Phone' } },
+        options: { paymentValueMap: { other: 'cod' } },
+      });
+      repository.findPaymentClassifications.mockResolvedValue({
+        other: 'not_cod',
+        cod: 'cod',
+      });
+      const suggestion = await service.suggest('org-1', source, HEADERS, rows);
+      expect(suggestion.options.paymentValueMap).toEqual({
+        cod: 'cod',
+        other: 'cod',
+      });
+    });
+
+    it('asks nothing of the store when no payment column is mapped', async () => {
+      await service.suggest(
+        'org-1',
+        source,
+        ['Phone', 'Name', 'Total'],
+        [{ cells: ['010', 'Ahmed', '100'] }],
+      );
+      expect(repository.findPaymentClassifications).not.toHaveBeenCalled();
     });
 
     it('applies a profile partially when a saved header is missing', async () => {

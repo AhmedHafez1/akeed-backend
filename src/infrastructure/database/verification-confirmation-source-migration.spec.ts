@@ -16,8 +16,8 @@ describe('verification confirmation source migration contract', () => {
     ),
   ) as { entries: { idx: number; tag: string }[] };
 
-  it('is registered as the next journal entry', () => {
-    expect(journal.entries.at(-1)).toMatchObject({
+  it('is registered as journal entry 43', () => {
+    expect(journal.entries.find((entry) => entry.idx === 43)).toMatchObject({
       idx: 43,
       tag: '0043_verification_confirmation_source',
     });

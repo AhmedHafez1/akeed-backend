@@ -130,8 +130,10 @@ const ALLOWED_LIST_STATUSES: ListStatusFilter[] = [
 const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
 
 /**
- * The lifecycle value a held order reads as, and the one extra value the
- * status filter accepts beyond the nine `verification_status` enum members.
+ * The one extra value the status filter accepts beyond the nine
+ * `verification_status` enum members: it selects the imported orders that
+ * have no verification yet, whatever their stage (awaiting_start, queued,
+ * sending).
  */
 const HELD_STATUS = 'awaiting_start';
 
@@ -147,7 +149,8 @@ function toHeldListRow(row: HeldOrderListRow) {
     // It is also what `order_id` reports, which keeps the pair unambiguous.
     id: row.id,
     orderId: row.orderId,
-    status: HELD_STATUS,
+    // Not a verification_status: where the order stands before it has one.
+    status: row.stage,
     metadata: null,
     createdAt: row.createdAt,
     lastSentAt: null,
