@@ -171,6 +171,7 @@ export function validateRow(
   const payment = canonicalPayment(
     cell(mapping.paymentMethod),
     options.paymentValueMap,
+    options.blankPaymentClass,
   );
   normalized.paymentMethod = payment.paymentMethod;
   if (payment.paymentMethodOriginal !== undefined)

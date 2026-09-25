@@ -571,13 +571,21 @@ describe('order-import routes over HTTP', () => {
     });
 
     it('saves the mapping for an owner and answers 200', async () => {
-      const response = await put();
+      const response = await put({
+        ...body,
+        options: { ...body.options, blankPaymentClass: 'not_cod' },
+      });
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
         batchId,
         status: 'draft',
         mapping: { phone: 'phone', customerName: ['name'], amount: 'total' },
-        options: { country: 'EG', defaultCurrency: 'EGP', dateFormat: 'auto' },
+        options: {
+          country: 'EG',
+          defaultCurrency: 'EGP',
+          dateFormat: 'auto',
+          blankPaymentClass: 'not_cod',
+        },
         mappingProfileId: 'profile-1',
       });
       expect(repository.findBatchForMapping).toHaveBeenCalledWith(
@@ -613,6 +621,14 @@ describe('order-import routes over HTTP', () => {
         'a bad date format',
         { ...body, options: { ...body.options, dateFormat: 'DD/MM' } },
         'options.dateFormat',
+      ],
+      [
+        'an invalid blank payment choice',
+        {
+          ...body,
+          options: { ...body.options, blankPaymentClass: 'maybe' },
+        },
+        'options.blankPaymentClass',
       ],
       [
         'three name columns',

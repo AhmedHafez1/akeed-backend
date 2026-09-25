@@ -1,4 +1,8 @@
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import type {
+  SaveMappingInput,
+  SaveMappingResult,
+} from '../../infrastructure/database/repositories/order-imports.repository';
 import type { SaveOrderImportMappingDto } from './dto/order-import-mapping.dto';
 import { MAPPING_DICTIONARY_VERSION } from './mapping/alias-dictionary';
 import { headerSignature } from './mapping/header-key';
@@ -67,7 +71,7 @@ describe('OrderImportMappingService', () => {
     findPaymentClassifications: jest.fn(),
     findBatchForMapping: jest.fn(),
     columnValueCounts: jest.fn(),
-    saveMapping: jest.fn(),
+    saveMapping: jest.fn<Promise<SaveMappingResult>, [SaveMappingInput]>(),
     readCounts: jest.fn(),
   };
   const rowValidation = { validateBatch: jest.fn() };
@@ -251,19 +255,23 @@ describe('OrderImportMappingService', () => {
           mapping: { paymentMethod: 'Payment' },
           // Keys are normalized, and a choice for an unseen value is dropped.
           options: {
+            blankPaymentClass: 'not_cod',
             paymentValueMap: { 'Bank Transfer': 'not_cod', ghost: 'cod' },
           },
         }),
       );
+      expect(saved.options.blankPaymentClass).toBe('not_cod');
       expect(saved.options.paymentValueMap).toEqual({
         'bank transfer': 'not_cod',
       });
-      // The same listed choices are remembered for the whole store.
-      expect(repository.saveMapping).toHaveBeenCalledWith(
-        expect.objectContaining({
-          paymentClassifications: { 'bank transfer': 'not_cod' },
-        }),
-      );
+      // The same listed choices are remembered for the whole store; the blank
+      // choice stays on this batch and is not saved to the profile.
+      const input = repository.saveMapping.mock.calls.at(-1)?.[0];
+      expect(input?.options).toMatchObject({ blankPaymentClass: 'not_cod' });
+      expect(input?.paymentClassifications).toEqual({
+        'bank transfer': 'not_cod',
+      });
+      expect(input?.profile.options).not.toHaveProperty('blankPaymentClass');
       expect(saved.paymentValues?.values[1]).toMatchObject({
         classification: 'not_cod',
         source: 'merchant',

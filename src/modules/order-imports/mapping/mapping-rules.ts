@@ -27,6 +27,8 @@ export interface ImportOptions {
   country: string;
   defaultCurrency: OnboardingShippingCurrency;
   dateFormat: ImportDateFormat;
+  /** Explicit blank-payment choice for this import batch only. */
+  blankPaymentClass?: PaymentClassification;
   /** Keyed by `normalizePaymentValue`. */
   paymentValueMap: Record<string, PaymentClassification>;
 }

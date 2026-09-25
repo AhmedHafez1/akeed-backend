@@ -148,6 +148,10 @@ function readStoredOptions(value: unknown): ImportOptions {
     defaultCurrency:
       options.defaultCurrency ?? resolveShippingCurrency(undefined),
     dateFormat: options.dateFormat ?? 'auto',
+    blankPaymentClass:
+      isRecord(value) && isPaymentClassification(value.blankPaymentClass)
+        ? value.blankPaymentClass
+        : undefined,
     paymentValueMap: options.paymentValueMap ?? {},
   };
 }
@@ -351,11 +355,16 @@ export class OrderImportMappingService {
         dateFormat,
       });
 
-    const options: ImportOptions = {
+    // The blank-payment choice is for this batch only, not the saved profile.
+    const profileOptions: ImportOptions = {
       country: body.options.country,
       defaultCurrency: body.options.defaultCurrency,
       dateFormat: body.options.dateFormat,
       paymentValueMap: choicesForListedValues(choices, paymentValues),
+    };
+    const options: ImportOptions = {
+      ...profileOptions,
+      blankPaymentClass: body.options.blankPaymentClass,
     };
     const sources = this.sourcesAfterSave(batch.mapping, columns);
     const stored: StoredImportMapping = {
@@ -373,7 +382,7 @@ export class OrderImportMappingService {
       options,
       profile: {
         mapping: { dictionaryVersion: MAPPING_DICTIONARY_VERSION, columns },
-        options,
+        options: profileOptions,
       },
       paymentClassifications: options.paymentValueMap,
       now,

@@ -460,6 +460,24 @@ describe('validateRow', () => {
       expect(assumed.outcome).toBe('ready');
     });
 
+    it('applies an explicit per-import choice to blank payments', () => {
+      const cod = run(
+        { ...goodRow, payment: '' },
+        { options: { ...options, blankPaymentClass: 'cod' } },
+      );
+      expect(cod.outcome).toBe('ready');
+      expect(cod.normalized.paymentMethod).toBe('cash on delivery');
+
+      const notCod = run(
+        { ...goodRow, payment: '' },
+        { options: { ...options, blankPaymentClass: 'not_cod' } },
+      );
+      expect(notCod.outcome).toBe('excluded');
+      expect(notCod.issues).toEqual([
+        { code: 'PAYMENT_NOT_COD', field: 'paymentMethod' },
+      ]);
+    });
+
     it("follows the merchant's classification over the automatic one", () => {
       const notCod = run(
         { ...goodRow, payment: 'COD' },

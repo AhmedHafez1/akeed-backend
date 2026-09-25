@@ -143,6 +143,10 @@ export class OrderImportOptionsDto {
   dateFormat!: ImportDateFormat;
 
   @IsOptional()
+  @IsIn(PAYMENT_CLASSIFICATIONS)
+  blankPaymentClass?: PaymentClassification;
+
+  @IsOptional()
   @IsObject()
   @IsPaymentValueMap()
   paymentValueMap?: Record<string, PaymentClassification>;

@@ -22,29 +22,32 @@ export interface CanonicalPayment {
  * confirmed is decided afterwards by the shared eligibility service.
  *
  * A value the merchant classified `cod` becomes the manual form's COD method;
- * any other value keeps its text; a blank stays blank, so the store's
- * `assumeCodWhenPaymentMissing` setting applies to it unchanged. Values past
- * the listed 50 fall back to the automatic classification.
+ * any other value keeps its text. A blank cell uses this import's
+ * `blankPaymentClass` when the merchant chose one, else stays blank so the
+ * store's `assumeCodWhenPaymentMissing` setting applies. Values past the
+ * listed 50 fall back to the automatic classification.
  */
 export function canonicalPayment(
   cell: string,
   paymentValueMap: Readonly<Record<string, PaymentClassification>>,
+  blankPaymentClass?: PaymentClassification,
 ): CanonicalPayment {
   const key = normalizePaymentValue(cell);
-  if (!key) return { paymentMethod: '', merchantNotCod: false };
-  const classification = Object.hasOwn(paymentValueMap, key)
-    ? paymentValueMap[key]
-    : classifyPaymentValue(cell);
+  const classification = !key
+    ? blankPaymentClass
+    : Object.hasOwn(paymentValueMap, key)
+      ? paymentValueMap[key]
+      : classifyPaymentValue(cell);
   if (classification === 'cod')
     return {
       paymentMethod: String(
         normalizeCanonicalPaymentMethod(CANONICAL_COD_PAYMENT_METHOD),
       ),
-      paymentMethodOriginal: cell,
+      ...(key ? { paymentMethodOriginal: cell } : {}),
       merchantNotCod: false,
     };
   return {
-    paymentMethod: String(normalizeCanonicalPaymentMethod(cell)),
+    paymentMethod: key ? String(normalizeCanonicalPaymentMethod(cell)) : '',
     merchantNotCod: classification === 'not_cod',
   };
 }
