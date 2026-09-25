@@ -207,6 +207,7 @@ describe('order-import routes over HTTP', () => {
       shortCode: 'ABC123',
       createdAt: '2026-09-19T09:00:00.000Z',
       duplicateFileOf: null,
+      supersededDrafts: 0,
     });
   });
 
@@ -397,6 +398,29 @@ describe('order-import routes over HTTP', () => {
       );
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'IMPORT_ROLE_REQUIRED' });
+    });
+
+    it('answers 204 again for a draft already discarded', async () => {
+      repository.discardDraft.mockResolvedValue({ outcome: 'not_found' });
+      const response = await request(server()).delete(
+        '/api/order-imports/5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40',
+      );
+      expect(response.status).toBe(204);
+    });
+
+    it('refuses a batch past draft with 409', async () => {
+      repository.discardDraft.mockResolvedValue({
+        outcome: 'state_conflict',
+        status: 'releasing',
+      });
+      const response = await request(server()).delete(
+        '/api/order-imports/5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40',
+      );
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({
+        code: 'IMPORT_BATCH_STATE_CONFLICT',
+        status: 'releasing',
+      });
     });
   });
 

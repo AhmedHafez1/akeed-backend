@@ -147,6 +147,11 @@ interface Endpoint {
   read?: boolean;
   /** No batch id in the path: any member of any org reaches their own data. */
   orgWide?: boolean;
+  /**
+   * Idempotent: another organization's batch is a no-op that answers `ok`,
+   * the same as a batch already gone, and leaves A's batch as it is.
+   */
+  idempotent?: boolean;
   call: (server: Server) => request.Test;
 }
 
@@ -272,6 +277,7 @@ const ENDPOINTS: Endpoint[] = [
     name: 'DELETE /:id',
     batchStatus: 'draft',
     ok: 204,
+    idempotent: true,
     call: (server) => request(server).delete(route()),
   },
 ];
@@ -301,7 +307,7 @@ function expected(endpoint: Endpoint, principal: Principal): Expected {
         ? { status: endpoint.ok }
         : { status: 404, code: 'IMPORT_BATCH_NOT_FOUND' };
     case 'otherOrgOwner':
-      return endpoint.orgWide
+      return endpoint.orgWide || endpoint.idempotent
         ? { status: endpoint.ok }
         : { status: 404, code: 'IMPORT_BATCH_NOT_FOUND' };
     default:
@@ -372,12 +378,15 @@ describe('order-import authorization matrix (US-04.6-09)', () => {
       shortCode: 'NEW123',
       createdAt: new Date().toISOString(),
       duplicateFileOf: null,
+      supersededDrafts: 0,
     })),
-    discardDraft: jest.fn(async (orgId: string, batchId: string) =>
-      ownBatch(orgId, batchId) && state.status === 'draft'
-        ? { outcome: 'discarded' }
-        : { outcome: 'not_found' },
-    ),
+    discardDraft: jest.fn(async (orgId: string, batchId: string) => {
+      if (!ownBatch(orgId, batchId)) return { outcome: 'not_found' };
+      if (state.status !== 'draft')
+        return { outcome: 'state_conflict', status: state.status };
+      state.status = 'discarded';
+      return { outcome: 'discarded' };
+    }),
     findMappingProfile: jest.fn(async () => null),
     findBatchForMapping: jest.fn(async (orgId: string, batchId: string) =>
       ownBatch(orgId, batchId)
@@ -693,6 +702,18 @@ describe('order-import authorization matrix (US-04.6-09)', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it("answers another organization's discard as a no-op and leaves A's draft", async () => {
+    state.status = 'draft';
+    const response = await as(
+      'otherOrgOwner',
+      request(server()).delete(route()),
+    );
+
+    expect(response.status).toBe(204);
+    expect(imports.discardDraft).toHaveBeenCalledWith(ORG_B, BATCH);
+    expect(state.status).toBe('draft');
   });
 
   it('lists nothing of organization A to another organization', async () => {

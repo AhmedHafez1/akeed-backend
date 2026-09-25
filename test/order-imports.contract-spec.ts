@@ -527,6 +527,136 @@ describe('order imports PostgreSQL contract', () => {
     });
   });
 
+  it.each([
+    'committing',
+    'awaiting_start',
+    'releasing',
+    'paused',
+    'completed',
+    'stopped',
+    'not_started',
+    'expired',
+    'failed',
+  ])('never discards a %s batch or its rows', async (status) => {
+    const source = await createSource();
+    const created = await repository.createDraftWithRows(
+      batch(source),
+      rows(3),
+      options,
+    );
+    // Straight to the status: only the delete's own guard is under test.
+    await client`UPDATE order_import_batches SET status = ${status} WHERE id = ${created.batchId}`;
+
+    await expect(
+      repository.discardDraft(source.orgId, created.batchId),
+    ).resolves.toEqual({ outcome: 'state_conflict', status });
+    await expect(batchCount(source.orgId)).resolves.toBe(1);
+    const [remaining] = await client<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM order_import_rows WHERE batch_id = ${created.batchId}`;
+    expect(remaining.count).toBe(3);
+  });
+
+  it("keeps the organization's mapping profile when its draft is discarded", async () => {
+    const source = await createSource();
+    const draft = await repository.createDraftWithRows(
+      batch(source),
+      rows(1),
+      options,
+    );
+    await repository.saveMapping({
+      orgId: source.orgId,
+      batchId: draft.batchId,
+      userId: randomUUID(),
+      headerSignature: 'c'.repeat(64),
+      mapping: { confirmed: true, columns: { phone: 'order_id' } },
+      options: { country: 'EG' },
+      profile: {
+        mapping: { columns: { phone: 'order_id' } },
+        options: { country: 'EG' },
+      },
+      paymentClassifications: {},
+      now: NOW,
+    });
+
+    await expect(
+      repository.discardDraft(source.orgId, draft.batchId),
+    ).resolves.toEqual({ outcome: 'discarded' });
+    await expect(batchCount(source.orgId)).resolves.toBe(0);
+    const [profiles] = await client<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM order_import_mapping_profiles WHERE org_id = ${source.orgId}`;
+    expect(profiles.count).toBe(1);
+  });
+
+  it("replaces only the uploader's own drafts on a new upload", async () => {
+    const source = await createSource();
+    const otherOrg = await createSource();
+    const uploader = randomUUID();
+    // Each seeding upload runs as a stranger, then is handed to the uploader:
+    // uploading as the uploader would already replace the previous one.
+    const seed = async (
+      target: { orgId: string; integrationId: string },
+      count: number,
+      overrides: Partial<NewDraftBatch> = {},
+      status = 'draft',
+    ) => {
+      const created = await repository.createDraftWithRows(
+        batch(target, overrides),
+        rows(count),
+        { ...options, maxOpenDrafts: 10 },
+      );
+      await client`UPDATE order_import_batches SET created_by = ${uploader}, status = ${status} WHERE id = ${created.batchId}`;
+      return created;
+    };
+    const mine = await seed(source, 50);
+    const alsoMine = await seed(source, 1, { fileSha256: 'd'.repeat(64) });
+    const mineStarted = await seed(source, 1, {}, 'awaiting_start');
+    const elsewhere = await seed(otherOrg, 1);
+    const theirs = await repository.createDraftWithRows(
+      batch(source),
+      rows(1),
+      options,
+    );
+
+    // Before the delete, three drafts would fill a cap of two; after it, only
+    // the colleague's one counts, so the upload fits.
+    const replacement = await repository.createDraftWithRows(
+      batch(source, { createdBy: uploader }),
+      rows(2),
+      { ...options, maxOpenDrafts: 2 },
+    );
+
+    expect(replacement.supersededDrafts).toBe(2);
+    const survivors = await client<{ id: string; status: string }[]>`
+      SELECT id, status FROM order_import_batches WHERE org_id = ${source.orgId} ORDER BY id`;
+    expect(survivors.map((row) => row.id).sort()).toEqual(
+      [theirs.batchId, mineStarted.batchId, replacement.batchId].sort(),
+    );
+    const [orphanRows] = await client<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM order_import_rows
+      WHERE batch_id IN (${mine.batchId}, ${alsoMine.batchId})`;
+    expect(orphanRows.count).toBe(0);
+    // The same file as the replaced draft points at the started batch, which
+    // still exists, never at the draft that is gone.
+    expect([theirs.batchId, mineStarted.batchId]).toContain(
+      replacement.duplicateFileOf?.batchId,
+    );
+    await expect(batchCount(otherOrg.orgId)).resolves.toBe(1);
+    const [kept] = await client<{ status: string }[]>`
+      SELECT status FROM order_import_batches WHERE id = ${elsewhere.batchId}`;
+    expect(kept.status).toBe('draft');
+  });
+
+  it("still refuses an upload when other members' drafts fill the cap", async () => {
+    const source = await createSource();
+    for (let index = 0; index < 3; index++)
+      await repository.createDraftWithRows(batch(source), rows(1), options);
+
+    await expect(
+      repository.createDraftWithRows(batch(source), rows(1), options),
+    ).rejects.toBeInstanceOf(OrderImportDraftLimitError);
+    await expect(batchCount(source.orgId)).resolves.toBe(3);
+  });
+
   it('enforces the status, format, outcome and short-code checks', async () => {
     const source = await createSource();
     const draft = await repository.createDraftWithRows(
@@ -833,10 +963,15 @@ describe('order imports PostgreSQL contract', () => {
     const source = await createSource();
     const other = await createSource();
     const ids: string[] = [];
+    // Five drafts at once: above the default cap of three.
     for (let i = 0; i < 5; i++)
       ids.push(
-        (await repository.createDraftWithRows(batch(source), rows(1), options))
-          .batchId,
+        (
+          await repository.createDraftWithRows(batch(source), rows(1), {
+            ...options,
+            maxOpenDrafts: 10,
+          })
+        ).batchId,
       );
     const foreign = (
       await repository.createDraftWithRows(batch(other), rows(1), options)

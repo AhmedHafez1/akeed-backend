@@ -96,6 +96,7 @@ describe('OrderImportsService', () => {
       shortCode: 'ABC123',
       createdAt: '2026-09-19T09:00:00.000Z',
       duplicateFileOf: null,
+      supersededDrafts: 0,
     });
   });
 
@@ -209,6 +210,7 @@ describe('OrderImportsService', () => {
         batchId: 'batch-2',
         shortCode: 'XYZ789',
         createdAt: '2026-09-19T09:00:01.000Z',
+        supersededDrafts: 0,
         duplicateFileOf: {
           batchId: 'batch-1',
           createdAt: '2026-09-19T09:00:00.000Z',
@@ -236,6 +238,16 @@ describe('OrderImportsService', () => {
       });
       expect(parser.parse).not.toHaveBeenCalled();
       expect(repository.createDraftWithRows).not.toHaveBeenCalled();
+    });
+
+    it("leaves the uploader's own drafts out of the early cap check: this upload replaces them", async () => {
+      await service.upload(owner, source, file('a,b\n1,2'));
+      expect(repository.listOpenDrafts).toHaveBeenCalledWith(
+        'org-1',
+        expect.any(Date),
+        { excludeCreatedBy: 'user-1' },
+      );
+      expect(repository.createDraftWithRows).toHaveBeenCalled();
     });
 
     it('answers the draft cap when a concurrent upload won the last slot', async () => {
@@ -302,26 +314,34 @@ describe('OrderImportsService', () => {
       expect(repository.discardDraft).toHaveBeenCalledWith('org-1', 'batch-1');
     });
 
-    it('answers 404 for another organization or an unknown batch', async () => {
+    it("is a no-op for a draft already gone or another organization's batch", async () => {
       repository.discardDraft.mockResolvedValue({ outcome: 'not_found' });
-      await expect(
-        failure(service.discard(owner, 'batch-x')),
-      ).resolves.toMatchObject({
-        status: 404,
-        body: { code: 'IMPORT_BATCH_NOT_FOUND' },
-      });
+      await expect(service.discard(owner, 'batch-x')).resolves.toBeUndefined();
+      await expect(service.discard(owner, 'batch-x')).resolves.toBeUndefined();
+      expect(repository.discardDraft).toHaveBeenCalledTimes(2);
+      expect(repository.discardDraft).toHaveBeenCalledWith('org-1', 'batch-x');
     });
 
-    it('refuses to discard a batch that is past draft', async () => {
+    it.each([
+      'committing',
+      'awaiting_start',
+      'releasing',
+      'paused',
+      'completed',
+      'stopped',
+      'not_started',
+      'expired',
+      'failed',
+    ])('refuses to discard a %s batch', async (status) => {
       repository.discardDraft.mockResolvedValue({
         outcome: 'state_conflict',
-        status: 'awaiting_start',
+        status,
       });
       await expect(
         failure(service.discard(owner, 'batch-1')),
       ).resolves.toMatchObject({
         status: 409,
-        body: { code: 'IMPORT_BATCH_STATE_CONFLICT', status: 'awaiting_start' },
+        body: { code: 'IMPORT_BATCH_STATE_CONFLICT', status },
       });
     });
   });

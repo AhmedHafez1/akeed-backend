@@ -84,8 +84,11 @@ export class OrderImportsService {
     const now = new Date();
 
     // Cheap early refusal; the authoritative check runs again under the
-    // organization lock in the same transaction as the insert.
-    const openDrafts = await this.repository.listOpenDrafts(user.orgId, now);
+    // organization lock in the same transaction as the insert. The caller's
+    // own drafts do not count: this upload replaces them.
+    const openDrafts = await this.repository.listOpenDrafts(user.orgId, now, {
+      excludeCreatedBy: user.userId,
+    });
     if (openDrafts.length >= limits.maxOpenDrafts)
       throw this.tooManyDrafts(user.orgId, openDrafts);
 
@@ -164,6 +167,7 @@ export class OrderImportsService {
         rowCount: rows.length,
         columnCount: headers.length,
         duplicateFile: created.duplicateFileOf !== null,
+        supersededDrafts: created.supersededDrafts,
         durationMs: Date.now() - startedAt,
       }),
     );
@@ -186,11 +190,25 @@ export class OrderImportsService {
     };
   }
 
-  /** Discards a draft and its rows (AC10). Other states cannot be discarded. */
+  /**
+   * Discards a draft and its rows (AC10); the import modal calls it on close.
+   * Idempotent: a draft already gone (discarded, superseded, purged, or never
+   * this organization's) is a no-op. Other states cannot be discarded.
+   */
   async discard(user: AuthenticatedUser, batchId: string): Promise<void> {
     const result = await this.repository.discardDraft(user.orgId, batchId);
-    if (result.outcome === 'not_found')
-      throw orderImportError('IMPORT_BATCH_NOT_FOUND');
+    if (result.outcome === 'not_found') {
+      this.logger.log(
+        buildBackendLog(OrderImportsService.name, {
+          action: 'order-import-discard',
+          outcome: 'skipped',
+          orgId: user.orgId,
+          batchId,
+          reason: 'not_found',
+        }),
+      );
+      return;
+    }
     if (result.outcome === 'state_conflict')
       throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
         status: result.status,

@@ -85,6 +85,8 @@ export interface CreatedDraft {
   shortCode: string;
   createdAt: string;
   duplicateFileOf: DuplicateFileSummary | null;
+  /** The uploader's earlier drafts this upload replaced. */
+  supersededDrafts: number;
 }
 
 export class OrderImportDraftLimitError extends Error {
@@ -253,13 +255,19 @@ export type DiscardDraftResult =
 export class OrderImportsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  /** Unexpired drafts, newest first. Expired ones await the purge job. */
+  /**
+   * Unexpired drafts, newest first. Expired ones await the purge job.
+   * `excludeCreatedBy` leaves out one user's drafts: an upload replaces them.
+   */
   async listOpenDrafts(
     orgId: string,
     now: Date,
-    executor: Database | Transaction = this.db,
+    options: {
+      excludeCreatedBy?: string;
+      executor?: Database | Transaction;
+    } = {},
   ): Promise<OpenDraftSummary[]> {
-    const rows = await executor
+    const rows = await (options.executor ?? this.db)
       .select({
         batchId: orderImportBatches.id,
         fileName: orderImportBatches.fileName,
@@ -273,6 +281,9 @@ export class OrderImportsRepository {
           eq(orderImportBatches.orgId, orgId),
           eq(orderImportBatches.status, 'draft'),
           gt(orderImportBatches.expiresAt, now.toISOString()),
+          options.excludeCreatedBy
+            ? ne(orderImportBatches.createdBy, options.excludeCreatedBy)
+            : undefined,
         ),
       )
       .orderBy(desc(orderImportBatches.createdAt));
@@ -357,6 +368,12 @@ export class OrderImportsRepository {
    * open-draft cap cannot be overshot by two requests that both counted two
    * drafts. The duplicate-file lookup runs under the same lock, before the
    * insert, so a batch never reports itself as its own duplicate.
+   *
+   * The uploader's earlier drafts are deleted first (rows by cascade): there
+   * is no resume, so a draft left behind by a closed tab or a lost discard
+   * would otherwise hold a slot of the cap until it expires. Deleting them
+   * before the duplicate lookup keeps a re-upload from pointing at the very
+   * draft it replaces. Other members' drafts are theirs and still count.
    */
   async createDraftWithRows(
     batch: NewDraftBatch,
@@ -372,7 +389,19 @@ export class OrderImportsRepository {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`order-import-drafts:${batch.orgId}`}, 0))`,
       );
-      const drafts = await this.listOpenDrafts(batch.orgId, options.now, tx);
+      const superseded = await tx
+        .delete(orderImportBatches)
+        .where(
+          and(
+            eq(orderImportBatches.orgId, batch.orgId),
+            eq(orderImportBatches.createdBy, batch.createdBy),
+            eq(orderImportBatches.status, 'draft'),
+          ),
+        )
+        .returning({ id: orderImportBatches.id });
+      const drafts = await this.listOpenDrafts(batch.orgId, options.now, {
+        executor: tx,
+      });
       if (drafts.length >= options.maxOpenDrafts)
         throw new OrderImportDraftLimitError(drafts);
       const duplicateFileOf = await this.findRecentDuplicate(
@@ -443,13 +472,16 @@ export class OrderImportsRepository {
         shortCode: created.shortCode,
         createdAt: created.createdAt,
         duplicateFileOf,
+        supersededDrafts: superseded.length,
       };
     });
   }
 
   /**
-   * Deletes a draft and, by cascade, its rows. Any other status is left as it
-   * is; another organization's batch reads as not found.
+   * Deletes a draft and, by cascade, its rows, in one statement. Any other
+   * status is left as it is; another organization's batch, or one already
+   * gone, reads as not found. Organization-level memory (mapping profiles,
+   * payment classifications) is not the draft's and stays.
    */
   async discardDraft(
     orgId: string,
