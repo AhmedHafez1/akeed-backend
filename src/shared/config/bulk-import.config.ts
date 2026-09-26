@@ -29,8 +29,6 @@ export interface BulkImportConfig {
   parseTimeoutMs: number;
   /** Rows whose order date is older than this are excluded, not confirmed. */
   maxOrderAgeDays: number;
-  /** Hours a committed batch may wait before its start deadline passes. */
-  startWindowHours: number;
   /**
    * First messages released per minute per organization, across all of its
    * releasing batches. Protects the shared sender's quality rating; 20 is an
@@ -111,13 +109,6 @@ const INTEGER_SETTINGS: readonly IntegerSetting[] = [
     max: 90,
   },
   {
-    key: 'BULK_IMPORT_START_WINDOW_HOURS',
-    field: 'startWindowHours',
-    fallback: 72,
-    min: 1,
-    max: 720,
-  },
-  {
     key: 'BULK_IMPORT_RELEASE_PER_MINUTE',
     field: 'releasePerMinute',
     fallback: 20,
@@ -160,7 +151,6 @@ export function parseBulkImportConfig(
     maxUncompressedBytes: 0,
     parseTimeoutMs: 0,
     maxOrderAgeDays: 0,
-    startWindowHours: 0,
     releasePerMinute: 0,
     quoteSecret: read('BULK_IMPORT_QUOTE_SECRET'),
   };

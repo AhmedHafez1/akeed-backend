@@ -40,6 +40,14 @@ export function orderImportReleaseSchedulerId(orgId: string): string {
   return `import-release-${orgId}`;
 }
 
+/**
+ * How long a committed batch may sit held before `import.expire` withdraws it.
+ * The modal commits and starts in one action, so a batch only waits here when
+ * its start failed or was interrupted; it is a cleanup bound, not a merchant
+ * setting.
+ */
+export const ORDER_IMPORT_HELD_BATCH_TTL_HOURS = 24;
+
 /** Withdraws batches whose start window lapsed (AC9). */
 export const ORDER_IMPORT_EXPIRE_JOB = 'import.expire';
 export const ORDER_IMPORT_EXPIRE_SCHEDULER = 'import-expire';

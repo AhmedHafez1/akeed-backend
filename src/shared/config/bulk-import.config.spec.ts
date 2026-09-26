@@ -15,7 +15,6 @@ describe('parseBulkImportConfig', () => {
       maxUncompressedBytes: 50 * 1024 * 1024,
       parseTimeoutMs: 20_000,
       maxOrderAgeDays: 7,
-      startWindowHours: 72,
       releasePerMinute: 20,
       quoteSecret: '',
     });
@@ -32,7 +31,6 @@ describe('parseBulkImportConfig', () => {
         BULK_IMPORT_MAX_UNCOMPRESSED_BYTES: '2097152',
         BULK_IMPORT_PARSE_TIMEOUT_MS: '5000',
         BULK_IMPORT_MAX_ORDER_AGE_DAYS: '14',
-        BULK_IMPORT_START_WINDOW_HOURS: '24',
         BULK_IMPORT_RELEASE_PER_MINUTE: '60',
         BULK_IMPORT_QUOTE_SECRET: ' qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq ',
       }),
@@ -46,7 +44,6 @@ describe('parseBulkImportConfig', () => {
       maxUncompressedBytes: 2097152,
       parseTimeoutMs: 5000,
       maxOrderAgeDays: 14,
-      startWindowHours: 24,
       releasePerMinute: 60,
       quoteSecret: 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
     });
@@ -55,8 +52,6 @@ describe('parseBulkImportConfig', () => {
   it.each([
     ['STANDALONE_BULK_IMPORT_ENABLED', 'yes'],
     ['BULK_IMPORT_MAX_ROWS', '101'],
-    ['BULK_IMPORT_START_WINDOW_HOURS', '0'],
-    ['BULK_IMPORT_START_WINDOW_HOURS', '721'],
     ['BULK_IMPORT_MAX_ROWS', '0'],
     ['BULK_IMPORT_MAX_COLUMNS', '1.5'],
     ['BULK_IMPORT_MAX_FILE_BYTES', String(5 * 1024 * 1024 + 1)],

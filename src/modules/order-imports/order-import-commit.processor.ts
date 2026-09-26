@@ -1,18 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
 import {
   OrderImportsRepository,
   type CommitRowLink,
 } from '../../infrastructure/database/repositories/order-imports.repository';
-import { readBulkImportConfig } from '../../shared/config/bulk-import.config';
 import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-order-ingestion.service';
 import { FileImportChannelAdapter } from './file-import.channel-adapter';
-import type { OrderImportCommitJob } from './order-import-queue.constants';
+import {
+  ORDER_IMPORT_HELD_BATCH_TTL_HOURS,
+  type OrderImportCommitJob,
+} from './order-import-queue.constants';
 import type { NormalizedImportOrder } from './validation/row-validator';
 
 /** Rows per acceptance call; matches the repository's per-chunk transaction. */
@@ -29,7 +30,6 @@ export class OrderImportCommitProcessor {
   constructor(
     private readonly repository: OrderImportsRepository,
     private readonly ingestion: StandaloneOrderIngestionService,
-    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -141,7 +141,7 @@ export class OrderImportCommitProcessor {
       orgId,
       batchId,
       now: new Date(),
-      startWindowHours: readBulkImportConfig(this.config).startWindowHours,
+      startWindowHours: ORDER_IMPORT_HELD_BATCH_TTL_HOURS,
     });
 
     this.logger.log(

@@ -269,7 +269,9 @@ export class OrderImportReleaseService {
       mode: 'all',
     });
     const blockers = toImportBlockers(readiness.blockers);
-    if (this.deadlinePassed(batch, now))
+    // A draft has no start deadline until its commit finishes (`finishCommit`
+    // sets it); its own expiry is enforced by the draft purge, not here.
+    if (batch.status !== 'draft' && this.deadlinePassed(batch, now))
       blockers.push({ code: 'IMPORT_START_WINDOW_EXPIRED' });
 
     const { releasePerMinute, quoteSecret } = readBulkImportConfig(this.config);

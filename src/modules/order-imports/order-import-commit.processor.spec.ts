@@ -52,13 +52,9 @@ function setup() {
     failCommit: jest.fn().mockResolvedValue(undefined),
   };
   const ingestion = { acceptMany: jest.fn() };
-  const config = {
-    get: () => ({ enabled: true, startWindowHours: 72 }),
-  };
   const processor = new OrderImportCommitProcessor(
     repository as never,
     ingestion as never,
-    config as never,
   );
   return { processor, repository, ingestion };
 }
@@ -114,7 +110,7 @@ describe('OrderImportCommitProcessor', () => {
       }),
     );
     expect(repository.finishCommit).toHaveBeenCalledWith(
-      expect.objectContaining({ startWindowHours: 72 }),
+      expect.objectContaining({ startWindowHours: 24 }),
     );
   });
 

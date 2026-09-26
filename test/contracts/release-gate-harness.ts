@@ -329,11 +329,7 @@ export function releaseGateHarness(
       return Promise.resolve();
     },
   } as never);
-  const commitProcessor = new OrderImportCommitProcessor(
-    imports,
-    ingestion,
-    config,
-  );
+  const commitProcessor = new OrderImportCommitProcessor(imports, ingestion);
   const scheduler = {
     ensure: jest.fn(() => Promise.resolve()),
     remove: jest.fn(() => Promise.resolve()),

@@ -573,6 +573,19 @@ describe('start quote (AC1, AC2)', () => {
     });
   });
 
+  it('does not hold a draft to a start deadline it does not have yet', async () => {
+    const w = world();
+    const draft = w.addBatch(0, {
+      status: 'draft',
+      readyCount: 5,
+      startDeadlineAt: null,
+    });
+    await expect(w.quote(draft)).resolves.toMatchObject({
+      orders: 5,
+      blockers: [],
+    });
+  });
+
   it('prices a validated draft on its ready rows, before the import', async () => {
     const w = world();
     w.state.credits = 457;

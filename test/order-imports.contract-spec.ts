@@ -2340,7 +2340,6 @@ describe('order imports PostgreSQL contract', () => {
           const commitJob = new OrderImportCommitProcessor(
             repository,
             ingestion,
-            importConfig,
           );
           const starts = new OrderImportReleaseService(
             releases,
