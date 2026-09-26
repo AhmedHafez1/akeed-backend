@@ -44,10 +44,10 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 | Old orders | When an order date is mapped, rows older than **7 days** in the store timezone are excluded (`ORDER_TOO_OLD`). Dates more than 1 day in the future are invalid. With no date column, rows are allowed and the review screen states that no order date was provided. |
 | Order identity | With a reference: `externalOrderId = ref:<normalized reference>`, and `orderNumber` = the reference as written. Without a reference: `externalOrderId = imp:<batchId>:<rowNumber>`, and `orderNumber = IMP-<batch short code>-<rowNumber>`. |
 | Duplicate protection | L0 file hash (same org and bytes within 24 h: warning, continue allowed). L1 reference already imported into the source (duplicate). L2 repeated reference inside the file (identical line-item rows collapse into one order; conflicting rows are all invalid). L3 possible duplicate (same phone and amount on the source within 7 days, or the same order number within 30 days; excluded by default, includable). L4 commit `Idempotency-Key` plus the per-row event key `import:<batchId>:<rowNumber>`. |
-| Default after import | **Import only.** Orders are created in a source-neutral hold (`awaiting_start`). Nothing is sent until the merchant starts confirmation. |
+| Default send action | **Send now.** After quote review, one action commits ready orders into the source-neutral hold (`awaiting_start`) and starts release. Nothing is sent before start. |
 | Start checkpoint | Requires a consent attestation (versioned text, actor and timestamp stored), shows the order count, estimated duration and a credit estimate (N initial messages, up to 2N if follow-up is enabled). |
-| Credit gap | Start is **blocked** unless available credits ≥ N (prepaid mode) or remaining included verifications ≥ N (periodic mode). The screen shows the shortfall and a **Buy credits** action. No partial starts. |
-| Auto-verify off | Import is allowed. Start is blocked with a link to settings. |
+| Credit gap | The send action is **blocked** unless available credits ≥ N (prepaid mode) or remaining included verifications ≥ N (periodic mode). The screen shows the shortfall and a **Buy credits** action. No partial starts. |
+| Auto-verify off | The send action is blocked with a link to settings. |
 | Start window | Held orders can be started within **72 hours** of commit. After that they are withdrawn (`not_started`) at no cost. |
 | Pacing | Per-organization release rate of 20 initial sends per minute (env), shared across all releasing batches. Release pauses in store quiet hours and resumes after them. Existing `sendDelayMinutes`, quiet-hours and follow-up rules still apply downstream. |
 | Mid-release control | **Stop remaining** withdraws every unreleased order in the batch. The batch **auto-pauses** if credits, entitlement, auto-verify or onboarding stop allowing sends, and the merchant can **resume** once resolved. |
@@ -163,10 +163,8 @@ Import orders ("New import" action on the Verifications page header)
   → 3. Review  [Ready | Invalid | Duplicate | Excluded] tabs, reasons per row,
        include possible duplicates, date-range banner
        (a "download rows to fix" action exists but stays disabled — deferred post-MVP)
-  → Import N orders  (Idempotency-Key; background commit with progress)
-  → 4. Imported: "N orders awaiting confirmation — nothing has been sent"
-  → Start confirmation dialog: attestation ☐, count, duration, credit estimate,
-       shortfall → Buy credits
+  → 4. Review quote and Send N orders  (one action; commit into `awaiting_start`,
+       then start release using the reviewed quote; no messages before start)
   → Releasing: progress, pause reason, Stop remaining, "View orders"
   → Verifications, filtered by import batch: the merchant's confirmation results
      (results/error downloads deferred post-MVP — see US-04.6-08)
