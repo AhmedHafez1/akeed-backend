@@ -259,6 +259,16 @@ Two buttons are attached to every template:
 
 Delivery statuses from Meta (`delivered`, `read`, `failed`) are matched by `waMessageId` and update the verification record.
 
+`VerificationMessageDispatchesRepository.resolveOrParkReceipt` resolves each status to one of three outcomes:
+
+- **Dispatch-ledger row:** the status goes through `recordProviderStatus`.
+- **Pre-ledger verification:** the status goes through `updateStatusByWamid`.
+- **Nothing yet:** the status is parked in `provider_message_receipts`, and the log line is `outcome: retry` with `reason: awaiting_acceptance`.
+
+Meta can report delivery before the transaction that stores the wamid has committed. This is routine for prepaid sends, because their acceptance also moves credits under the org credit lock. Such a receipt used to be dropped, and because the webhook still answers 200, Meta never resent it. Now `markAccepted` applies the parked receipts in its own transaction, oldest first, using the same rules as the live path. It then sets `applied_at`.
+
+Both sides take a transaction-scoped advisory lock on the wamid, so whichever side runs second always sees the other's committed write. Receipts for wamids Akeed never sent stay parked with `applied_at IS NULL`.
+
 ## Verification Core Pipeline
 
 ### Order Eligibility

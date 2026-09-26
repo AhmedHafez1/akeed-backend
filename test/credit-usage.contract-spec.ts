@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { creditUsageHarness } from './contracts/credit-usage-harness';
+import type { PrepaidCreditAccounting } from '../src/infrastructure/database/repositories/prepaid-credit-accounting';
 import {
   creditAccounts,
   creditLedgerEntries,
@@ -8,6 +9,7 @@ import {
   verifications,
   adminAccessAudit,
   integrationMonthlyUsage,
+  providerMessageReceipts,
 } from '../src/infrastructure/database/schema';
 
 const harness = creditUsageHarness();
@@ -178,6 +180,212 @@ describe('US-04.5-03 PostgreSQL usage accounting', () => {
     // separate evidence-backed resolution instead of being guessed away.
     await acceptance(dispatch, providerMessageId);
     await balance(source.orgId, 1, 1);
+  });
+
+  describe('receipts that beat the acceptance commit', () => {
+    // Meta can report a message delivered before the transaction that stores
+    // its wamid has committed. Those receipts used to match nothing and be
+    // dropped, leaving the verification at `sent` for good.
+    function gateTransition(action: 'consume' | 'reverse') {
+      type TransitionArgs = Parameters<PrepaidCreditAccounting['transition']>;
+      const prepaid: PrepaidCreditAccounting = harness.prepaid;
+      const original = prepaid.transition.bind(prepaid) as (
+        ...args: TransitionArgs
+      ) => Promise<void>;
+      let release!: () => void;
+      let reached!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const inFlight = new Promise<void>((resolve) => (reached = resolve));
+      jest
+        .spyOn(prepaid, 'transition')
+        .mockImplementation(async (...args: TransitionArgs) => {
+          if (args[2] === action) {
+            reached();
+            await gate;
+          }
+          return original(...args);
+        });
+      return { release, inFlight };
+    }
+
+    async function receiptsFor(providerMessageId: string) {
+      return db
+        .select()
+        .from(providerMessageReceipts)
+        .where(
+          eq(providerMessageReceipts.providerMessageId, providerMessageId),
+        );
+    }
+
+    it('parks a receipt that arrives mid-acceptance and applies it on commit', async () => {
+      const source = await merchant(2);
+      const input = await verification(source);
+      const dispatch = await claim(input);
+      const providerMessageId = randomUUID();
+      const { release, inFlight } = gateTransition('consume');
+
+      const accepting = acceptance(dispatch, providerMessageId);
+      await inFlight;
+      await expect(
+        dispatches.resolveOrParkReceipt({
+          providerMessageId,
+          status: 'delivered',
+          occurredAt: new Date(Date.now() + 1000).toISOString(),
+        }),
+      ).resolves.toEqual({ outcome: 'parked' });
+      release();
+      await expect(accepting).resolves.toMatchObject({ outcome: 'accepted' });
+
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row).toMatchObject({
+        status: 'delivered',
+        waMessageId: providerMessageId,
+      });
+      expect(row.deliveredAt).not.toBeNull();
+      const [receipt] = await receiptsFor(providerMessageId);
+      expect(receipt.appliedAt).not.toBeNull();
+      await balance(source.orgId, 1, 0);
+    });
+
+    it('applies parked delivered and read receipts in order', async () => {
+      const source = await merchant(1);
+      const input = await verification(source);
+      const dispatch = await claim(input);
+      const providerMessageId = randomUUID();
+      const later = (seconds: number) =>
+        new Date(Date.now() + seconds * 1000).toISOString();
+      // Arrival order is the reverse of the order they happened in.
+      for (const [status, occurredAt] of [
+        ['read', later(2)],
+        ['delivered', later(1)],
+      ] as const)
+        expect(
+          await dispatches.resolveOrParkReceipt({
+            providerMessageId,
+            status,
+            occurredAt,
+          }),
+        ).toEqual({ outcome: 'parked' });
+
+      await acceptance(dispatch, providerMessageId);
+
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row.status).toBe('read');
+      expect(row.deliveredAt).not.toBeNull();
+      expect(row.readAt).not.toBeNull();
+      const [ledger] = await db
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, dispatch.id));
+      expect(ledger.deliveredAt).not.toBeNull();
+      expect(ledger.readAt).not.toBeNull();
+      expect(
+        (await receiptsFor(providerMessageId)).every(
+          (receipt) => receipt.appliedAt !== null,
+        ),
+      ).toBe(true);
+    });
+
+    it('holds a receipt behind an acceptance in flight, then resolves it to the dispatch', async () => {
+      const source = await merchant(2);
+      const input = await verification(source);
+      const dispatch = await claim(input);
+      const providerMessageId = randomUUID();
+      await dispatches.resolveOrParkReceipt({
+        providerMessageId,
+        status: 'failed',
+        occurredAt: new Date(Date.now() + 60000).toISOString(),
+        failureInfo: { code: 131026, title: 'Message undeliverable' },
+      });
+      // The drain reverses the credit for the parked failure while holding the
+      // wamid lock; a receipt arriving now must wait, then see the dispatch.
+      const { release, inFlight } = gateTransition('reverse');
+      const accepting = acceptance(dispatch, providerMessageId);
+      await inFlight;
+      let settled = false;
+      const waiting = dispatches
+        .resolveOrParkReceipt({
+          providerMessageId,
+          status: 'delivered',
+          occurredAt: new Date().toISOString(),
+        })
+        .finally(() => (settled = true));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(settled).toBe(false);
+      release();
+      await accepting;
+      await expect(waiting).resolves.toMatchObject({
+        outcome: 'dispatch',
+        dispatch: { id: dispatch.id, providerMessageId },
+      });
+
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row.status).toBe('failed');
+      expect(row.metadata).toMatchObject({
+        reason: 'provider_delivery_failed',
+        providerErrorCode: '131026',
+      });
+      // Consumed on acceptance, reversed once by the parked failure.
+      await balance(source.orgId, 2, 0);
+      expect(await receiptsFor(providerMessageId)).toHaveLength(1);
+    });
+
+    it('applies parked receipts to periodic-plan sends too', async () => {
+      const source = await merchant(1, 'shopify');
+      const input = await verification(source);
+      const claimed = await harness.disabled.claim(input);
+      if (claimed.outcome !== 'claimed')
+        throw new Error('Expected periodic claim');
+      const providerMessageId = randomUUID();
+      await harness.disabled.resolveOrParkReceipt({
+        providerMessageId,
+        status: 'read',
+        occurredAt: new Date(Date.now() + 1000).toISOString(),
+      });
+
+      await harness.disabled.markAccepted({
+        dispatchId: claimed.dispatch.id,
+        providerMessageId,
+        sentAt: new Date().toISOString(),
+      });
+
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row.status).toBe('read');
+      expect(row.readAt).not.toBeNull();
+      const [receipt] = await receiptsFor(providerMessageId);
+      expect(receipt.appliedAt).not.toBeNull();
+    });
+
+    it('resolves a wamid recorded only on a pre-ledger verification', async () => {
+      const source = await merchant(1);
+      const input = await verification(source);
+      const providerMessageId = randomUUID();
+      await db
+        .update(verifications)
+        .set({ waMessageId: providerMessageId, status: 'sent' })
+        .where(eq(verifications.id, input.verificationId));
+
+      await expect(
+        dispatches.resolveOrParkReceipt({
+          providerMessageId,
+          status: 'delivered',
+          occurredAt: new Date().toISOString(),
+        }),
+      ).resolves.toEqual({ outcome: 'verification' });
+      expect(await receiptsFor(providerMessageId)).toHaveLength(0);
+    });
   });
 
   it('releases confirmed rejection without posting and advances the immutable generation', async () => {

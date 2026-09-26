@@ -235,7 +235,9 @@ describe('VerificationHubService', () => {
         verificationsRepo as never,
         service,
         {
-          findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
+          resolveOrParkReceipt: jest
+            .fn()
+            .mockResolvedValue({ outcome: 'verification' }),
           recordProviderStatus: jest.fn(),
         } as never,
       );

@@ -459,11 +459,13 @@ export function releaseGateHarness(
     await migrate('0032_credit_and_payment_domain_foundation.sql');
     await migrate('0033_dispatch_accounting_mode.sql');
     await migrate('0035_standalone_auto_activation.sql');
+    await migrate('0045_provider_message_receipts.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',
       '0039_order_import_release.sql',
       '0040_order_import_row_retention.sql',
+      '0044_order_import_payment_classifications.sql',
     ])
       await migrate(name);
   }

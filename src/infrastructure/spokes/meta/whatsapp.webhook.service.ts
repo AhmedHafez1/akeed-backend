@@ -250,17 +250,37 @@ export class WhatsAppWebhookService {
             }
           : undefined;
 
+      const occurredAt = statusObj.timestamp
+        ? new Date(Number(statusObj.timestamp) * 1000).toISOString()
+        : new Date().toISOString();
+      // A receipt can beat the commit that records its wamid. It is parked
+      // rather than dropped, and the acceptance applies it when it lands.
+      const resolution = await this.messageDispatches.resolveOrParkReceipt({
+        providerMessageId: wamid,
+        status: typedStatus as 'delivered' | 'read' | 'failed',
+        occurredAt,
+        ...(failureInfo ? { failureInfo } : {}),
+      });
+      if (resolution.outcome === 'parked') {
+        this.logger.log(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-status',
+            outcome: 'retry',
+            wamid,
+            status: typedStatus,
+            reason: 'awaiting_acceptance',
+          }),
+        );
+        continue;
+      }
       const dispatch =
-        await this.messageDispatches.findByProviderMessageId(wamid);
+        resolution.outcome === 'dispatch' ? resolution.dispatch : undefined;
       let creditProjection: Awaited<
         ReturnType<
           VerificationMessageDispatchesRepository['recordProviderStatus']
         >
       >;
       if (dispatch) {
-        const occurredAt = statusObj.timestamp
-          ? new Date(Number(statusObj.timestamp) * 1000).toISOString()
-          : new Date().toISOString();
         creditProjection = await this.messageDispatches.recordProviderStatus(
           dispatch.id,
           typedStatus as 'delivered' | 'read' | 'failed',

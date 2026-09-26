@@ -543,10 +543,21 @@ async function createHarness(): Promise<AcceptanceHarness> {
       }
       return 1;
     },
-    findByProviderMessageId: async (providerMessageId: string) =>
-      [...store.dispatches.values()].find(
-        (dispatch) => dispatch.providerMessageId === providerMessageId,
-      ),
+    resolveOrParkReceipt: async ({
+      providerMessageId,
+    }: {
+      providerMessageId: string;
+    }) => {
+      const dispatch = [...store.dispatches.values()].find(
+        (candidate) => candidate.providerMessageId === providerMessageId,
+      );
+      if (dispatch) return { outcome: 'dispatch' as const, dispatch };
+      return [...store.verifications.values()].some(
+        (verification) => verification.waMessageId === providerMessageId,
+      )
+        ? { outcome: 'verification' as const }
+        : { outcome: 'parked' as const };
+    },
     recordProviderStatus: async () => undefined,
   };
 

@@ -793,6 +793,56 @@ export const verificationMessageDispatches = pgTable(
   ],
 );
 
+/**
+ * Delivery receipts that arrived before the send they describe was recorded.
+ * The acceptance transaction applies them when it stores the wamid (see
+ * `VerificationMessageDispatchesRepository.drainPendingReceipts`).
+ */
+export const providerMessageReceipts = pgTable(
+  'provider_message_receipts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    providerMessageId: text('provider_message_id').notNull(),
+    status: text('status').$type<'delivered' | 'read' | 'failed'>().notNull(),
+    occurredAt: timestamp('occurred_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    errorCode: text('error_code'),
+    errorTitle: text('error_title'),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    appliedAt: timestamp('applied_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+  },
+  (table) => [
+    check(
+      'provider_message_receipts_status_check',
+      sql`${table.status} IN ('delivered', 'read', 'failed')`,
+    ),
+    unique('provider_message_receipts_message_status_key').on(
+      table.providerMessageId,
+      table.status,
+    ),
+    index('idx_provider_message_receipts_pending')
+      .using('btree', table.providerMessageId.asc().nullsLast().op('text_ops'))
+      .where(sql`${table.appliedAt} IS NULL`),
+    pgPolicy('Service role manages provider message receipts', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
 export const webhookEventStatus = pgEnum('webhook_event_status', [
   'pending',
   'processing',

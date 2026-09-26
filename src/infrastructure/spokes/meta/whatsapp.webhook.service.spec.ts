@@ -82,7 +82,10 @@ function createMocks() {
     finalizeVerification: jest.fn().mockResolvedValue(undefined),
   };
   const messageDispatches = {
-    findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
+    // Default: a wamid recorded only on the verification (pre-ledger sends).
+    resolveOrParkReceipt: jest
+      .fn()
+      .mockResolvedValue({ outcome: 'verification' }),
     recordProviderStatus: jest.fn(),
   };
 
@@ -105,10 +108,9 @@ describe('WhatsAppWebhookService', () => {
   describe('status updates', () => {
     it('prefers the dispatch ledger for an initial message callback', async () => {
       const { service, verificationsRepo, messageDispatches } = createMocks();
-      messageDispatches.findByProviderMessageId.mockResolvedValue({
-        id: 'dispatch-1',
-        kind: 'initial',
-        verificationId: 'v1',
+      messageDispatches.resolveOrParkReceipt.mockResolvedValue({
+        outcome: 'dispatch',
+        dispatch: { id: 'dispatch-1', kind: 'initial', verificationId: 'v1' },
       });
 
       await service.processIncoming(statusPayload('wamid_ledger', 'delivered'));
@@ -133,10 +135,9 @@ describe('WhatsAppWebhookService', () => {
       // terminal guard inside `updateStatus` is what stops a late follow-up
       // receipt from disturbing a verification the customer already answered.
       const { service, verificationsRepo, messageDispatches } = createMocks();
-      messageDispatches.findByProviderMessageId.mockResolvedValue({
-        id: 'dispatch-2',
-        kind: 'follow_up',
-        verificationId: 'v1',
+      messageDispatches.resolveOrParkReceipt.mockResolvedValue({
+        outcome: 'dispatch',
+        dispatch: { id: 'dispatch-2', kind: 'follow_up', verificationId: 'v1' },
       });
 
       await service.processIncoming(statusPayload('wamid_follow_up', 'read'));
@@ -156,10 +157,9 @@ describe('WhatsAppWebhookService', () => {
       'records a Meta failure against the %s dispatch ledger entry',
       async (kind) => {
         const { service, messageDispatches } = createMocks();
-        messageDispatches.findByProviderMessageId.mockResolvedValue({
-          id: `dispatch-${kind}`,
-          kind,
-          verificationId: 'v1',
+        messageDispatches.resolveOrParkReceipt.mockResolvedValue({
+          outcome: 'dispatch',
+          dispatch: { id: `dispatch-${kind}`, kind, verificationId: 'v1' },
         });
 
         await service.processIncoming(statusPayload('wamid_failed', 'failed'));
@@ -233,6 +233,40 @@ describe('WhatsAppWebhookService', () => {
         'delivered',
         '1700000000',
       );
+    });
+
+    it('parks a receipt that arrives before its send is recorded', async () => {
+      // Meta can report delivery before the transaction that stores the wamid
+      // commits. The receipt must be kept for the acceptance to apply, never
+      // dropped or written against nothing.
+      const { service, verificationsRepo, messageDispatches } = createMocks();
+      messageDispatches.resolveOrParkReceipt.mockResolvedValue({
+        outcome: 'parked',
+      });
+
+      const result = await service.processIncoming(
+        wrap({
+          statuses: [
+            {
+              id: 'wamid_early',
+              status: 'failed',
+              timestamp: '1700000000',
+              errors: [{ code: 131026, title: 'Message undeliverable' }],
+            },
+          ],
+        }),
+      );
+
+      expect(result).toEqual({ status: 'success' });
+      expect(messageDispatches.resolveOrParkReceipt).toHaveBeenCalledWith({
+        providerMessageId: 'wamid_early',
+        status: 'failed',
+        occurredAt: '2023-11-14T22:13:20.000Z',
+        failureInfo: { code: 131026, title: 'Message undeliverable' },
+      });
+      expect(messageDispatches.recordProviderStatus).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();
     });
 
     it('should skip status objects with missing id or status', async () => {

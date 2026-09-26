@@ -2,7 +2,7 @@ import type { CreditTransaction } from '../credit-transaction';
 import { UsageAccountingRouter } from './usage-accounting.router';
 import { reconciliationRequired } from './prepaid-credit-accounting';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { TERMINAL_STATUSES } from '../../../shared/verification/verification-lifecycle';
@@ -12,9 +12,11 @@ import {
   creditAccounts,
   orders,
   integrations,
+  providerMessageReceipts,
   verificationMessageDispatches,
   verifications,
 } from '../schema';
+import { buildVerificationLifecyclePayload } from './verifications.repository';
 
 /**
  * Projects a lifecycle status onto a verification without regressing a
@@ -119,6 +121,45 @@ type DispatchWriter =
  * verification; a missing verification means the cascade took both, nothing is
  * left to write to, and the send that already reached the customer is orphaned.
  */
+/** A delivery receipt as the provider reported it. */
+export interface ProviderReceipt {
+  providerMessageId: string;
+  status: 'delivered' | 'read' | 'failed';
+  occurredAt: string;
+  failureInfo?: { code?: number | string; title?: string };
+}
+
+/**
+ * What a receipt's wamid resolved to: a ledger dispatch, a verification sent
+ * before the ledger existed, or nothing yet (the receipt is parked until the
+ * acceptance that records the wamid applies it).
+ */
+export type ReceiptResolution =
+  | { outcome: 'dispatch'; dispatch: DispatchRecord }
+  | { outcome: 'verification' }
+  | { outcome: 'parked' };
+
+/**
+ * Verification rows a prepaid receipt projected onto; `undefined` for
+ * periodic-plan dispatches, whose verification the caller projects.
+ */
+type ReceiptProjection =
+  | { verificationRows: (typeof verifications.$inferSelect)[] }
+  | undefined;
+
+/**
+ * Serializes everything that looks up or records one provider message id, so a
+ * receipt and the acceptance that stores the same wamid cannot miss each other.
+ */
+async function lockProviderMessage(
+  tx: Pick<CreditTransaction, 'execute'>,
+  providerMessageId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`wa-receipt:${providerMessageId}`}, 0))`,
+  );
+}
+
 export type DispatchAcceptanceResult =
   | { outcome: 'accepted'; dispatch: DispatchRecord }
   | { outcome: 'not_found' }
@@ -527,6 +568,8 @@ export class VerificationMessageDispatchesRepository {
             'accepted',
             params.staffAudit,
           );
+        // Receipts that beat this commit were parked; this is where they land.
+        if (updated) await this.drainPendingReceipts(tx, updated);
         return { outcome: 'accepted' as const, dispatch: updated };
       },
       params.verificationId && params.kind
@@ -670,9 +713,7 @@ export class VerificationMessageDispatchesRepository {
     status: 'delivered' | 'read' | 'failed',
     occurredAt: string,
     failureInfo?: { code?: number | string; title?: string },
-  ): Promise<
-    { verificationRows: (typeof verifications.$inferSelect)[] } | undefined
-  > {
+  ): Promise<ReceiptProjection> {
     return this.withDispatchTransaction(dispatchId, async (tx) => {
       const [dispatch] = await tx
         .select()
@@ -680,113 +721,267 @@ export class VerificationMessageDispatchesRepository {
         .where(eq(verificationMessageDispatches.id, dispatchId))
         .for('update');
       if (!dispatch) return;
-      if (dispatch.accountingMode === 'prepaid_credit') {
-        // `outcome_unknown` is reachable *with* a provider message id: a send
-        // whose acceptance could not be persisted is salvaged there by
-        // `VerificationSendService.salvageAcceptance`, keeping the credit held
-        // for staff resolution. Its receipts are real facts about a message the
-        // customer received, so they must still be recorded — refusing them
-        // threw out of the Meta status handler, which abandoned every remaining
-        // status in the batch and made Meta retry the same payload forever.
-        //
-        // No credit moves on that path: nothing was consumed, so there is
-        // nothing to reverse, and the hold stays until staff resolve it.
-        if (
-          dispatch.state !== 'accepted' &&
-          dispatch.state !== 'outcome_unknown'
+      return this.applyReceipt(tx, dispatch, status, occurredAt, failureInfo);
+    });
+  }
+
+  /**
+   * Resolves a delivery receipt to what it describes, or parks it.
+   *
+   * Meta can report a message delivered before the transaction that stores its
+   * wamid has committed -- routinely for prepaid sends, whose acceptance also
+   * moves credits under the organization's credit lock. Such a receipt used to
+   * match nothing and be dropped for good, since the webhook still answers 200.
+   * It is parked instead, and {@link drainPendingReceipts} applies it when the
+   * acceptance records the wamid.
+   *
+   * Both sides take the same per-wamid lock, and both run at READ COMMITTED, so
+   * whichever goes second sees what the first committed: the lookup here waits
+   * for an acceptance in flight and then finds its dispatch, or the drain waits
+   * for this insert and then finds the receipt. This transaction holds nothing
+   * else and commits before the caller applies the receipt under the credit
+   * lock, so the two lock orders never nest in opposite directions.
+   */
+  async resolveOrParkReceipt(
+    receipt: ProviderReceipt,
+  ): Promise<ReceiptResolution> {
+    return this.db.transaction(async (tx) => {
+      await lockProviderMessage(tx, receipt.providerMessageId);
+      const [dispatch] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(
+          eq(
+            verificationMessageDispatches.providerMessageId,
+            receipt.providerMessageId,
+          ),
         )
-          reconciliationRequired();
-        if (status === 'failed') {
-          if (dispatch.failedAt) return { verificationRows: [] };
-          if (
-            dispatch.readAt ||
-            dispatch.deliveredAt ||
-            (dispatch.acceptedAt &&
-              new Date(occurredAt) < new Date(dispatch.acceptedAt))
-          )
-            return { verificationRows: [] };
-          if (dispatch.state === 'accepted')
-            await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
-        } else if (dispatch.failedAt) {
-          return { verificationRows: [] };
-        }
-      }
-      if (status === 'failed') {
-        if (dispatch.accountingMode !== 'prepaid_credit')
-          await this.accounting.periodic.release(tx, dispatch, occurredAt);
+        .limit(1);
+      if (dispatch) return { outcome: 'dispatch' as const, dispatch };
+      // Verifications sent before the dispatch ledger existed carry the wamid
+      // only on the row itself.
+      const [verification] = await tx
+        .select({ id: verifications.id })
+        .from(verifications)
+        .where(eq(verifications.waMessageId, receipt.providerMessageId))
+        .limit(1);
+      if (verification) return { outcome: 'verification' as const };
+      await tx
+        .insert(providerMessageReceipts)
+        .values({
+          providerMessageId: receipt.providerMessageId,
+          status: receipt.status,
+          occurredAt: receipt.occurredAt,
+          errorCode:
+            receipt.failureInfo?.code !== undefined
+              ? String(receipt.failureInfo.code)
+              : null,
+          errorTitle: receipt.failureInfo?.title ?? null,
+        })
+        .onConflictDoNothing();
+      return { outcome: 'parked' as const };
+    });
+  }
+
+  /**
+   * Applies the receipts parked for a dispatch's wamid, oldest first, inside
+   * the transaction that has just recorded that wamid.
+   *
+   * Each receipt goes through {@link applyReceipt}, the same rules the webhook
+   * path uses, so credit reversal and the verification projection cannot
+   * differ with arrival order. A periodic-plan dispatch has no ledger-side
+   * projection, so its verification is updated here with the lifecycle rules
+   * `VerificationsRepository.updateStatus` applies to a live receipt.
+   */
+  private async drainPendingReceipts(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+  ): Promise<void> {
+    const providerMessageId = dispatch.providerMessageId;
+    if (!providerMessageId) return;
+    await lockProviderMessage(tx, providerMessageId);
+    const pending = await tx
+      .select()
+      .from(providerMessageReceipts)
+      .where(
+        and(
+          eq(providerMessageReceipts.providerMessageId, providerMessageId),
+          isNull(providerMessageReceipts.appliedAt),
+        ),
+      )
+      .orderBy(asc(providerMessageReceipts.occurredAt))
+      .for('update');
+    let current = dispatch;
+    for (const receipt of pending) {
+      const failureInfo =
+        receipt.status === 'failed'
+          ? {
+              ...(receipt.errorCode !== null
+                ? { code: receipt.errorCode }
+                : {}),
+              ...(receipt.errorTitle !== null
+                ? { title: receipt.errorTitle }
+                : {}),
+            }
+          : undefined;
+      const projection = await this.applyReceipt(
+        tx,
+        current,
+        receipt.status,
+        receipt.occurredAt,
+        failureInfo,
+      );
+      if (!projection) {
         await tx
-          .update(verificationMessageDispatches)
-          .set({
-            failedAt: dispatch.failedAt ?? occurredAt,
-            usageReserved: false,
-            updatedAt: occurredAt,
-          })
-          .where(eq(verificationMessageDispatches.id, dispatch.id));
-      } else {
-        await tx
-          .update(verificationMessageDispatches)
-          .set({
-            deliveredAt: dispatch.deliveredAt ?? occurredAt,
-            ...(status === 'read'
-              ? { readAt: dispatch.readAt ?? occurredAt }
-              : {}),
-            updatedAt: occurredAt,
-          })
-          .where(eq(verificationMessageDispatches.id, dispatch.id));
-      }
-      if (dispatch.accountingMode === 'prepaid_credit') {
-        // The projection resolves against the provider message id, so a dispatch
-        // parked without one has no verification row to address. The receipt is
-        // still recorded above; there is simply nothing to project it onto.
-        if (!dispatch.providerMessageId) return { verificationRows: [] };
-        const verificationRows = await tx
           .update(verifications)
-          .set({
-            status:
-              status === 'failed'
-                ? 'failed'
-                : status === 'read'
-                  ? 'read'
-                  : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
-            ...(status === 'failed'
-              ? {
-                  metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
-                    {
-                      reason: 'provider_delivery_failed',
-                      ...(failureInfo?.code !== undefined
-                        ? { providerErrorCode: failureInfo.code }
-                        : {}),
-                      ...(failureInfo?.title
-                        ? { providerErrorTitle: failureInfo.title }
-                        : {}),
-                    },
-                  )}::jsonb`,
-                }
-              : status === 'read'
-                ? {
-                    readAt: occurredAt,
-                    deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
-                  }
-                : {
-                    deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
-                  }),
-            updatedAt: occurredAt,
-          })
+          .set(
+            buildVerificationLifecyclePayload(
+              receipt.status,
+              receipt.occurredAt,
+              new Date().toISOString(),
+              failureInfo,
+            ),
+          )
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
-              eq(verifications.waMessageId, dispatch.providerMessageId),
               notInArray(verifications.status, [
-                'confirmed',
-                'canceled',
+                ...TERMINAL_STATUSES,
                 'no_reply',
               ]),
             ),
-          )
-          .returning();
-        return { verificationRows };
+          );
       }
-    });
+      await tx
+        .update(providerMessageReceipts)
+        .set({ appliedAt: new Date().toISOString() })
+        .where(eq(providerMessageReceipts.id, receipt.id));
+      // Later receipts must see what earlier ones wrote (a `failed` after a
+      // `delivered` is ignored on that basis).
+      const [reloaded] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, dispatch.id));
+      current = reloaded ?? current;
+    }
+  }
+
+  /**
+   * Records one provider receipt against a locked dispatch: its ledger
+   * timestamps, any credit reversal, and — for prepaid dispatches — the
+   * verification projection. Returns `undefined` for periodic-plan dispatches,
+   * whose verification the caller projects.
+   */
+  private async applyReceipt(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+    status: 'delivered' | 'read' | 'failed',
+    occurredAt: string,
+    failureInfo?: { code?: number | string; title?: string },
+  ): Promise<ReceiptProjection> {
+    if (dispatch.accountingMode === 'prepaid_credit') {
+      // `outcome_unknown` is reachable *with* a provider message id: a send
+      // whose acceptance could not be persisted is salvaged there by
+      // `VerificationSendService.salvageAcceptance`, keeping the credit held
+      // for staff resolution. Its receipts are real facts about a message the
+      // customer received, so they must still be recorded — refusing them
+      // threw out of the Meta status handler, which abandoned every remaining
+      // status in the batch and made Meta retry the same payload forever.
+      //
+      // No credit moves on that path: nothing was consumed, so there is
+      // nothing to reverse, and the hold stays until staff resolve it.
+      if (dispatch.state !== 'accepted' && dispatch.state !== 'outcome_unknown')
+        reconciliationRequired();
+      if (status === 'failed') {
+        if (dispatch.failedAt) return { verificationRows: [] };
+        if (
+          dispatch.readAt ||
+          dispatch.deliveredAt ||
+          (dispatch.acceptedAt &&
+            new Date(occurredAt) < new Date(dispatch.acceptedAt))
+        )
+          return { verificationRows: [] };
+        if (dispatch.state === 'accepted')
+          await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
+      } else if (dispatch.failedAt) {
+        return { verificationRows: [] };
+      }
+    }
+    if (status === 'failed') {
+      if (dispatch.accountingMode !== 'prepaid_credit')
+        await this.accounting.periodic.release(tx, dispatch, occurredAt);
+      await tx
+        .update(verificationMessageDispatches)
+        .set({
+          failedAt: dispatch.failedAt ?? occurredAt,
+          usageReserved: false,
+          updatedAt: occurredAt,
+        })
+        .where(eq(verificationMessageDispatches.id, dispatch.id));
+    } else {
+      await tx
+        .update(verificationMessageDispatches)
+        .set({
+          deliveredAt: dispatch.deliveredAt ?? occurredAt,
+          ...(status === 'read'
+            ? { readAt: dispatch.readAt ?? occurredAt }
+            : {}),
+          updatedAt: occurredAt,
+        })
+        .where(eq(verificationMessageDispatches.id, dispatch.id));
+    }
+    if (dispatch.accountingMode === 'prepaid_credit') {
+      // The projection resolves against the provider message id, so a dispatch
+      // parked without one has no verification row to address. The receipt is
+      // still recorded above; there is simply nothing to project it onto.
+      if (!dispatch.providerMessageId) return { verificationRows: [] };
+      const verificationRows = await tx
+        .update(verifications)
+        .set({
+          status:
+            status === 'failed'
+              ? 'failed'
+              : status === 'read'
+                ? 'read'
+                : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
+          ...(status === 'failed'
+            ? {
+                metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+                  {
+                    reason: 'provider_delivery_failed',
+                    ...(failureInfo?.code !== undefined
+                      ? { providerErrorCode: failureInfo.code }
+                      : {}),
+                    ...(failureInfo?.title
+                      ? { providerErrorTitle: failureInfo.title }
+                      : {}),
+                  },
+                )}::jsonb`,
+              }
+            : status === 'read'
+              ? {
+                  readAt: occurredAt,
+                  deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                }
+              : {
+                  deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                }),
+          updatedAt: occurredAt,
+        })
+        .where(
+          and(
+            eq(verifications.id, dispatch.verificationId),
+            eq(verifications.waMessageId, dispatch.providerMessageId),
+            notInArray(verifications.status, [
+              'confirmed',
+              'canceled',
+              'no_reply',
+            ]),
+          ),
+        )
+        .returning();
+      return { verificationRows };
+    }
   }
 
   /**

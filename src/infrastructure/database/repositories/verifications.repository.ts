@@ -63,6 +63,82 @@ function toIsoTimestamp(epochSeconds?: string): string {
   return new Date().toISOString();
 }
 
+/**
+ * Build the SET payload for a lifecycle-aware status update.
+ *
+ * Uses COALESCE in SQL so that earlier milestone timestamps are only
+ * written when they are still NULL, preserving the original event time.
+ * Exported so the dispatch ledger can project a receipt onto a verification
+ * inside its own transaction with exactly the same rules.
+ */
+export function buildVerificationLifecyclePayload(
+  status: VerificationStatus,
+  eventTs: string,
+  now: string,
+  failureInfo?: { code?: number | string; title?: string },
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    status: status as typeof verifications.$inferSelect.status,
+    updatedAt: now,
+  };
+
+  switch (status) {
+    case 'sent':
+      payload.lastSentAt = eventTs;
+      payload.attempts = sql`COALESCE(${verifications.attempts}, 0) + 1`;
+      break;
+
+    case 'delivered':
+      payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+      break;
+
+    case 'read':
+      payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+      payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+      break;
+
+    case 'confirmed':
+      payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+      payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+      payload.confirmedAt = eventTs;
+      break;
+
+    case 'canceled':
+      payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
+      payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
+      payload.canceledAt = eventTs;
+      break;
+
+    case 'no_reply':
+      payload.noReplyAt = eventTs;
+      break;
+
+    case 'failed': {
+      // Mirrors the reason the prepaid-credit projection already writes
+      // (verification-message-dispatches.repository.ts) so both accounting
+      // modes land on the same, already-retryable taxonomy entry instead of
+      // leaving `metadata.reason` NULL for WhatsApp-reported delivery
+      // failures. The provider's own code/title ride along for triage.
+      const metadataPatch: Record<string, unknown> = {
+        reason: 'provider_delivery_failed',
+      };
+      if (failureInfo?.code !== undefined) {
+        metadataPatch.providerErrorCode = failureInfo.code;
+      }
+      if (failureInfo?.title) {
+        metadataPatch.providerErrorTitle = failureInfo.title;
+      }
+      payload.metadata = sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(metadataPatch)}::jsonb`;
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return payload;
+}
+
 @Injectable()
 export class VerificationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
@@ -600,7 +676,7 @@ export class VerificationsRepository {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
 
-    const setPayload = this.buildLifecyclePayload(
+    const setPayload = buildVerificationLifecyclePayload(
       status,
       eventTs,
       now,
@@ -647,7 +723,7 @@ export class VerificationsRepository {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
 
-    const setPayload = this.buildLifecyclePayload(
+    const setPayload = buildVerificationLifecyclePayload(
       status,
       eventTs,
       now,
@@ -876,80 +952,6 @@ export class VerificationsRepository {
       .where(and(...conditions))
       .returning();
     return result;
-  }
-
-  /**
-   * Build the SET payload for a lifecycle-aware status update.
-   *
-   * Uses COALESCE in SQL so that earlier milestone timestamps are only
-   * written when they are still NULL, preserving the original event time.
-   */
-  private buildLifecyclePayload(
-    status: VerificationStatus,
-    eventTs: string,
-    now: string,
-    failureInfo?: { code?: number | string; title?: string },
-  ): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      status: status as typeof verifications.$inferSelect.status,
-      updatedAt: now,
-    };
-
-    switch (status) {
-      case 'sent':
-        payload.lastSentAt = eventTs;
-        payload.attempts = sql`COALESCE(${verifications.attempts}, 0) + 1`;
-        break;
-
-      case 'delivered':
-        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
-        break;
-
-      case 'read':
-        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
-        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
-        break;
-
-      case 'confirmed':
-        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
-        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
-        payload.confirmedAt = eventTs;
-        break;
-
-      case 'canceled':
-        payload.deliveredAt = sql`COALESCE(${verifications.deliveredAt}, ${eventTs})`;
-        payload.readAt = sql`COALESCE(${verifications.readAt}, ${eventTs})`;
-        payload.canceledAt = eventTs;
-        break;
-
-      case 'no_reply':
-        payload.noReplyAt = eventTs;
-        break;
-
-      case 'failed': {
-        // Mirrors the reason the prepaid-credit projection already writes
-        // (verification-message-dispatches.repository.ts) so both accounting
-        // modes land on the same, already-retryable taxonomy entry instead of
-        // leaving `metadata.reason` NULL for WhatsApp-reported delivery
-        // failures. The provider's own code/title ride along for triage.
-        const metadataPatch: Record<string, unknown> = {
-          reason: 'provider_delivery_failed',
-        };
-        if (failureInfo?.code !== undefined) {
-          metadataPatch.providerErrorCode = failureInfo.code;
-        }
-        if (failureInfo?.title) {
-          metadataPatch.providerErrorTitle = failureInfo.title;
-        }
-        payload.metadata = sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(metadataPatch)}::jsonb`;
-        break;
-      }
-
-      default:
-        break;
-    }
-
-    return payload;
   }
 
   /**

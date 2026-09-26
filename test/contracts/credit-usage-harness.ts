@@ -161,6 +161,7 @@ export function creditUsageHarness() {
     await migrate('0032_credit_and_payment_domain_foundation.sql');
     await migrate('0033_dispatch_accounting_mode.sql');
     await migrate('0035_standalone_auto_activation.sql');
+    await migrate('0045_provider_message_receipts.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {
