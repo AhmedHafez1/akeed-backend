@@ -1064,7 +1064,7 @@ export class VerificationsRepository {
 /** Tab and search narrowing for the confirmations list. */
 export interface VerificationListRefinement {
   tab?: VerificationListTab;
-  /** Digits only; matched as an order-number prefix or a phone substring. */
+  /** Digits only; matched within the order number or phone number. */
   searchDigits?: string;
   /** Required for the needs-action tab and for each row's `actionReason`. */
   needsAction?: NeedsActionContext;
@@ -1115,7 +1115,7 @@ function tabCondition(
 }
 
 /**
- * Order number (prefix) or phone (any run of digits), within one org.
+ * Order number or phone (any run of digits), within one org.
  *
  * The digits are bound as a parameter; LIKE wildcards cannot reach the query
  * because the caller has already reduced the input to 0-9.
@@ -1126,7 +1126,7 @@ function orderSearchCondition(orgId: string, digits: string) {
     WHERE o.id = ${verifications.orderId}
       AND o.org_id = ${orgId}
       AND (
-        o.order_number LIKE ${`${digits}%`}
+        regexp_replace(o.order_number, '\\D', '', 'g') LIKE ${`%${digits}%`}
         OR regexp_replace(o.customer_phone, '\\D', '', 'g') LIKE ${`%${digits}%`}
       )
   )`;

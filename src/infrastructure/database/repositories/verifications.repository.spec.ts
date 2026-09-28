@@ -43,6 +43,33 @@ describe('VerificationsRepository follow-up SQL contract', () => {
   });
 });
 
+describe('VerificationsRepository search SQL contract', () => {
+  it('matches order-number digits anywhere in both list and count queries', async () => {
+    const execute = jest.fn<
+      Promise<{ rows: unknown[][] }>,
+      [string, unknown[]]
+    >(() => Promise.resolve({ rows: [] }));
+    const repository = new VerificationsRepository(
+      drizzle(execute, { schema }) as never,
+    );
+
+    await repository.findByOrg('org-1', undefined, undefined, {
+      searchDigits: '2074',
+    });
+    await repository.countByOrg('org-1', undefined, undefined, undefined, {
+      searchDigits: '2074',
+    });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    for (const [query, params] of execute.mock.calls) {
+      expect(query).toContain("regexp_replace(o.order_number, '\\D', '', 'g')");
+      expect(query).toMatch(/regexp_replace\(o\.order_number,[^]*LIKE \$\d+/);
+      expect(params).toEqual(expect.arrayContaining(['%2074%']));
+      expect(params).toContain('org-1');
+    }
+  });
+});
+
 describe('Merchant cancellation persistence', () => {
   it('merges the provider reference atomically with the guarded local transition without replacing metadata', async () => {
     const execute = jest.fn<
