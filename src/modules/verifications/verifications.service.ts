@@ -53,9 +53,7 @@ import {
   type HeldOrderListRow,
   type NeedsActionRow,
 } from '../../infrastructure/database/repositories/verifications.repository';
-import type { NeedsActionContext } from '../../infrastructure/database/repositories/verification-needs-action.sql';
 import {
-  DEFAULT_ESCALATION_DELAY_MINUTES,
   NEEDS_ACTION_TOP_LIMIT,
   NO_REPLY_CANCELLABLE_REASONS,
   NO_REPLY_CANCELLABLE_STATUSES,
@@ -289,8 +287,7 @@ export class VerificationsService {
     const wantsHeld =
       (!statuses || statuses.includes(HELD_STATUS)) && !tab && !searchDigits;
     const importBatchId = query.importBatchId;
-    const needsAction = this.resolveNeedsActionContext(activeIntegrations);
-    const refinement = { tab, searchDigits, needsAction };
+    const refinement = { tab, searchDigits, withActionReason: true };
 
     const [verifications, totalCount, heldRows, heldCount, usage, tabCounts] =
       await Promise.all([
@@ -329,12 +326,7 @@ export class VerificationsService {
           importBatchId,
         ),
         this.resolvePageUsage(activeIntegrations),
-        this.verificationsRepo.countByTab(
-          orgId,
-          filterPeriod,
-          needsAction,
-          importBatchId,
-        ),
+        this.verificationsRepo.countByTab(orgId, filterPeriod, importBatchId),
       ]);
 
     const merged = mergeByRecency(
@@ -450,16 +442,15 @@ export class VerificationsService {
       dateRange,
       reportingTimezone,
     );
-    const needsAction = this.resolveNeedsActionContext(activeIntegrations);
+    const now = new Date().toISOString();
     const source = activeIntegrations[0];
 
     const [counts, confirmedValue, topRows, entitlement] = await Promise.all([
-      this.verificationsRepo.getOverviewCounts(orgId, period, needsAction),
+      this.verificationsRepo.getOverviewCounts(orgId, period),
       this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
       this.verificationsRepo.findNeedsActionTop(
         orgId,
         period,
-        needsAction,
         NEEDS_ACTION_TOP_LIMIT,
       ),
       source ? this.billingEntitlements.readEntitlement(source) : null,
@@ -500,7 +491,7 @@ export class VerificationsService {
             orgId,
             activeIntegrations,
             integrations,
-            needsAction.now,
+            now,
           ),
         ),
       },
@@ -614,17 +605,6 @@ export class VerificationsService {
             : null,
       },
       capabilities: this.resolveRowCapabilities(row, orgId, activeIntegrations),
-    };
-  }
-
-  private resolveNeedsActionContext(
-    activeIntegrations: IntegrationRecord[],
-  ): NeedsActionContext {
-    return {
-      now: new Date().toISOString(),
-      escalationDelayMinutes:
-        activeIntegrations[0]?.escalationDelayMinutes ??
-        DEFAULT_ESCALATION_DELAY_MINUTES,
     };
   }
 
@@ -894,18 +874,16 @@ export class VerificationsService {
       );
     // Checked before the store is touched: the atomic write re-checks it, but
     // by then the order would already be canceled in the store.
-    const needsAction = this.resolveNeedsActionContext([order.integration]);
     const reason = await this.verificationsRepo.findNeedsActionReason(
       verificationId,
       orgId,
-      needsAction,
     );
     if (
       !reason ||
       !(NO_REPLY_CANCELLABLE_REASONS as readonly string[]).includes(reason)
     ) {
       throw new BadRequestException(
-        'Cannot cancel: the customer is still within the reply window',
+        'Cannot cancel: the order has not been escalated to no reply yet',
       );
     }
     const command = {
@@ -950,7 +928,6 @@ export class VerificationsService {
       verificationId,
       orgId,
       new Date().toISOString(),
-      needsAction,
       operation,
     );
     if (!updated) {

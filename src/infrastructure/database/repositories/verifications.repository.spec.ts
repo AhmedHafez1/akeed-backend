@@ -83,7 +83,6 @@ describe('Merchant cancellation persistence', () => {
       'ver-1',
       'org-1',
       '2026-09-02T00:00:00Z',
-      { now: '2026-09-02T00:00:00Z', escalationDelayMinutes: 360 },
       {
         status: 'pending_provider_operation',
         providerOperationId: 'operation-1',

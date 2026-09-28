@@ -35,10 +35,7 @@ import {
   type VerificationListTab,
 } from '../../../shared/verification/verification-needs-action';
 import type { OverviewCounts } from '../../../shared/verification/verification-metrics';
-import {
-  needsActionReasonSql,
-  type NeedsActionContext,
-} from './verification-needs-action.sql';
+import { needsActionReasonSql } from './verification-needs-action.sql';
 
 /** Statuses a merchant may confirm by hand: a message went out, no answer yet. */
 export const MANUALLY_CONFIRMABLE_STATUSES: VerificationStatus[] = [
@@ -370,12 +367,10 @@ export class VerificationsRepository {
 
     return await this.db.query.verifications.findMany({
       where: and(...conditions),
-      ...(opts?.needsAction
+      ...(opts?.withActionReason
         ? {
             extras: {
-              actionReason: needsActionReasonSql(opts.needsAction).as(
-                'action_reason',
-              ),
+              actionReason: needsActionReasonSql().as('action_reason'),
             },
           }
         : {}),
@@ -443,12 +438,11 @@ export class VerificationsRepository {
   async countByTab(
     orgId: string,
     period: { startAt: string; endAt: string },
-    needsAction: NeedsActionContext,
     importBatchId?: string,
   ): Promise<
     Record<Exclude<VerificationListTab, 'all'>, number> & { all: number }
   > {
-    const reason = needsActionReasonSql(needsAction);
+    const reason = needsActionReasonSql();
     const [row] = await this.db
       .select({
         all: sql<number>`count(*)::int`,
@@ -488,9 +482,8 @@ export class VerificationsRepository {
   async getOverviewCounts(
     orgId: string,
     period: { startAt: string; endAt: string },
-    needsAction: NeedsActionContext,
   ): Promise<OverviewCounts & { needsAction: number }> {
-    const reason = needsActionReasonSql(needsAction);
+    const reason = needsActionReasonSql();
     const wasSent = sql`${verifications.lastSentAt} IS NOT NULL`;
     const customerCanceled = sql`${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer')`;
     const [row] = await this.db
@@ -570,10 +563,9 @@ export class VerificationsRepository {
   async findNeedsActionTop(
     orgId: string,
     period: { startAt: string; endAt: string },
-    needsAction: NeedsActionContext,
     limit: number,
   ): Promise<NeedsActionRow[]> {
-    const reason = needsActionReasonSql(needsAction);
+    const reason = needsActionReasonSql();
     return this.db
       .select({
         id: verifications.id,
@@ -647,7 +639,7 @@ export class VerificationsRepository {
       statuses && statuses.length > 0
         ? inArray(verifications.status, statuses)
         : undefined,
-      refinement?.tab ? tabCondition(refinement.tab, refinement) : undefined,
+      refinement?.tab ? tabCondition(refinement.tab) : undefined,
       refinement?.searchDigits
         ? orderSearchCondition(orgId, refinement.searchDigits)
         : undefined,
@@ -816,10 +808,9 @@ export class VerificationsRepository {
   async findNeedsActionReason(
     verificationId: string,
     orgId: string,
-    needsAction: NeedsActionContext,
   ): Promise<NeedsActionReason | null> {
     const [row] = await this.db
-      .select({ reason: needsActionReasonSql(needsAction) })
+      .select({ reason: needsActionReasonSql() })
       .from(verifications)
       .where(
         and(
@@ -845,7 +836,6 @@ export class VerificationsRepository {
     verificationId: string,
     orgId: string,
     canceledAt: string,
-    needsAction: NeedsActionContext,
     operation?: CommerceOutcomeOperationResult,
   ) {
     const now = new Date().toISOString();
@@ -867,9 +857,7 @@ export class VerificationsRepository {
         and(
           eq(verifications.id, verificationId),
           eq(verifications.orgId, orgId),
-          inArray(needsActionReasonSql(needsAction), [
-            ...NO_REPLY_CANCELLABLE_REASONS,
-          ]),
+          inArray(needsActionReasonSql(), [...NO_REPLY_CANCELLABLE_REASONS]),
         ),
       )
       .returning();
@@ -1066,8 +1054,8 @@ export interface VerificationListRefinement {
   tab?: VerificationListTab;
   /** Digits only; matched within the order number or phone number. */
   searchDigits?: string;
-  /** Required for the needs-action tab and for each row's `actionReason`. */
-  needsAction?: NeedsActionContext;
+  /** Adds each row's `actionReason`. */
+  withActionReason?: boolean;
 }
 
 /** A row of the dashboard's needs-action card. */
@@ -1095,16 +1083,10 @@ export interface NeedsActionRow {
   };
 }
 
-function tabCondition(
-  tab: VerificationListTab,
-  refinement: VerificationListRefinement,
-) {
+function tabCondition(tab: VerificationListTab) {
   switch (tab) {
     case 'needs_action':
-      if (!refinement.needsAction) {
-        throw new Error('needs_action tab requires a needs-action context');
-      }
-      return sql`${needsActionReasonSql(refinement.needsAction)} IS NOT NULL`;
+      return sql`${needsActionReasonSql()} IS NOT NULL`;
     case 'confirmed':
     case 'canceled':
     case 'failed':

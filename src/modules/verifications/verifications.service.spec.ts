@@ -414,8 +414,16 @@ describe('VerificationsService', () => {
       expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
     });
 
-    it('rejects statuses that are not awaiting a reply', async () => {
-      const statuses = ['pending', 'confirmed', 'expired', 'failed'];
+    it('rejects statuses that are not escalated to no reply', async () => {
+      const statuses = [
+        'pending',
+        'sent',
+        'delivered',
+        'read',
+        'confirmed',
+        'expired',
+        'failed',
+      ];
 
       for (const status of statuses) {
         const { service, verificationsRepo } = createMocks();
@@ -430,12 +438,12 @@ describe('VerificationsService', () => {
     });
 
     it.each(['no_reply_after_follow_up', 'read_no_reply'])(
-      'cancels a read order that needs action for %s before escalation',
+      'cancels an escalated order that needs action for %s',
       async (reason) => {
         const { service, verificationsRepo, ordersRepo, orderAdmin } =
           createMocks();
         verificationsRepo.findByIdForOrg.mockResolvedValue(
-          buildVerification({ status: 'read' }),
+          buildVerification({ status: 'no_reply' }),
         );
         verificationsRepo.findNeedsActionReason.mockResolvedValue(reason);
         ordersRepo.findById.mockResolvedValue(buildOrder());
@@ -458,12 +466,12 @@ describe('VerificationsService', () => {
     );
 
     it.each([null, 'delivery_failed'])(
-      'rejects an unanswered order that does not need action yet (%s) without touching the store',
+      'rejects an order without a no-reply reason (%s) without touching the store',
       async (reason) => {
         const { service, verificationsRepo, ordersRepo, orderAdmin } =
           createMocks();
         verificationsRepo.findByIdForOrg.mockResolvedValue(
-          buildVerification({ status: 'read' }),
+          buildVerification({ status: 'no_reply' }),
         );
         verificationsRepo.findNeedsActionReason.mockResolvedValue(reason);
         ordersRepo.findById.mockResolvedValue(buildOrder());
@@ -595,9 +603,6 @@ describe('VerificationsService', () => {
         'v-1',
         'org-1',
         expect.any(String),
-        expect.objectContaining({
-          escalationDelayMinutes: expect.any(Number) as unknown,
-        }),
         expect.objectContaining({ status: expect.any(String) as unknown }),
       );
     });
@@ -634,9 +639,6 @@ describe('VerificationsService', () => {
         'v-1',
         'org-1',
         expect.any(String),
-        expect.objectContaining({
-          escalationDelayMinutes: expect.any(Number) as unknown,
-        }),
         expect.objectContaining({ status: expect.any(String) as unknown }),
       );
     });
@@ -824,7 +826,6 @@ describe('Merchant cancellation source and operation contract', () => {
       'v-1',
       'org-1',
       expect.any(String),
-      expect.objectContaining({ escalationDelayMinutes: expect.any(Number) }),
       {
         status: 'pending_provider_operation',
         providerOperationId: 'operation-1',
