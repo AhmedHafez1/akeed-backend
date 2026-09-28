@@ -26,13 +26,8 @@ export const NO_REPLY_CANCELLABLE_REASONS = [
   'no_reply',
 ] as const satisfies readonly NeedsActionReason[];
 
-/** Every status a no-reply reason can be assigned to. */
-export const NO_REPLY_CANCELLABLE_STATUSES = [
-  'sent',
-  'delivered',
-  'read',
-  'no_reply',
-] as const;
+/** The only status a no-reply reason is assigned to: escalated to no-reply. */
+export const NO_REPLY_CANCELLABLE_STATUSES = ['no_reply'] as const;
 
 export function isNeedsActionReason(
   value: unknown,
@@ -56,6 +51,3 @@ export type VerificationListTab = (typeof VERIFICATION_LIST_TABS)[number];
 
 /** Rows the dashboard's "needs action" card shows at most. */
 export const NEEDS_ACTION_TOP_LIMIT = 5;
-
-/** Used when a source has no escalation delay of its own. */
-export const DEFAULT_ESCALATION_DELAY_MINUTES = 360;

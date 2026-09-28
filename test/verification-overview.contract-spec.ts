@@ -242,12 +242,13 @@ beforeAll(async () => {
     phone: '+201007611456',
     total: '2629.95',
     verification: {
-      status: 'read',
+      status: 'no_reply',
       lastSentAt: sentAt,
       deliveredAt: sentAt,
       readAt: ago(2 * HOUR),
       followUpSentAt: ago(3 * HOUR),
       followUpAttempts: 1,
+      noReplyAt: ago(HOUR),
     },
   });
   await seed({
@@ -257,10 +258,11 @@ beforeAll(async () => {
     phone: '+201000000004',
     total: '49.95',
     verification: {
-      status: 'read',
+      status: 'no_reply',
       lastSentAt: sentAt,
       deliveredAt: sentAt,
       readAt: ago(14 * HOUR),
+      noReplyAt: ago(HOUR),
     },
   });
   await seed({
@@ -274,6 +276,8 @@ beforeAll(async () => {
       lastSentAt: sentAt,
       deliveredAt: sentAt,
       readAt: ago(HOUR),
+      followUpSentAt: ago(2 * HOUR),
+      followUpAttempts: 1,
     },
   });
   await seed({
@@ -387,10 +391,6 @@ afterAll(async () => {
 });
 
 const period = () => ({ startAt: ago(30 * DAY), endAt: ago(-DAY) });
-const needsAction = () => ({
-  now: new Date().toISOString(),
-  escalationDelayMinutes: 360,
-});
 const owner = (orgId: string): AuthenticatedUser => ({
   userId: randomUUID(),
   orgId,
@@ -411,12 +411,7 @@ describe('0043 migration', () => {
 
 describe('needs-action rule', () => {
   it('assigns each case its reason and leaves the rest out', async () => {
-    const rows = await repository.findNeedsActionTop(
-      orgA,
-      period(),
-      needsAction(),
-      50,
-    );
+    const rows = await repository.findNeedsActionTop(orgA, period(), 50);
     expect(rows.map((row) => [row.id, row.actionReason])).toEqual([
       [ids.afterFollowUp, 'no_reply_after_follow_up'],
       [ids.deliveryFailed, 'delivery_failed'],
@@ -426,32 +421,22 @@ describe('needs-action rule', () => {
   });
 
   it('caps the dashboard card and orders it by value', async () => {
-    const rows = await repository.findNeedsActionTop(
-      orgA,
-      period(),
-      needsAction(),
-      2,
-    );
+    const rows = await repository.findNeedsActionTop(orgA, period(), 2);
     expect(rows.map((row) => row.order.totalPrice)).toEqual([
       '2629.95',
       '1025.00',
     ]);
   });
 
-  it('honors the escalation delay for read-but-unanswered', async () => {
-    const rows = await repository.findNeedsActionTop(
-      orgA,
-      period(),
-      { now: new Date().toISOString(), escalationDelayMinutes: 30 },
-      50,
-    );
-    expect(rows.map((row) => row.id)).toContain(ids.readRecently);
+  it('waits for the no-reply escalation even after the reminder went out', async () => {
+    const rows = await repository.findNeedsActionTop(orgA, period(), 50);
+    expect(rows.map((row) => row.id)).not.toContain(ids.readRecently);
   });
 });
 
 describe('tab counts and list filters', () => {
   it('counts every tab over the same rows the list shows', async () => {
-    const counts = await repository.countByTab(orgA, period(), needsAction());
+    const counts = await repository.countByTab(orgA, period());
     expect(counts).toEqual({
       all: 11,
       needs_action: 4,
@@ -473,7 +458,7 @@ describe('tab counts and list filters', () => {
         undefined,
         {
           tab,
-          needsAction: needsAction(),
+          withActionReason: true,
         },
       );
       expect(total).toBe(counts[tab]);
@@ -483,7 +468,7 @@ describe('tab counts and list filters', () => {
   it('searches by order number prefix and by phone digits, within the shop', async () => {
     const byNumber = await repository.findByOrg(orgA, undefined, period(), {
       searchDigits: '1138',
-      needsAction: needsAction(),
+      withActionReason: true,
     });
     expect(byNumber.map((row) => row.id)).toEqual([ids.afterFollowUp]);
     expect(byNumber[0].actionReason).toBe('no_reply_after_follow_up');
@@ -502,11 +487,7 @@ describe('tab counts and list filters', () => {
 
 describe('overview aggregate', () => {
   it('counts real orders in the period, with send-restricted numerators', async () => {
-    const counts = await repository.getOverviewCounts(
-      orgA,
-      period(),
-      needsAction(),
-    );
+    const counts = await repository.getOverviewCounts(orgA, period());
     expect(counts).toEqual({
       sent: 8,
       delivered: 4,
