@@ -39,6 +39,7 @@ import {
 import { ONBOARDING_LANGUAGES } from './dto/onboarding.dto';
 import { isAllowedAutomationTimezone } from './automation-timezone';
 import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import {
   assertOrganizationWriteAllowed,
   canWriteOrganization,
@@ -58,6 +59,8 @@ export class OnboardingService {
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
     private readonly messageDispatches?: VerificationMessageDispatchesRepository,
+    @Optional()
+    private readonly ordersRepo?: OrdersRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -326,7 +329,12 @@ export class OnboardingService {
     integration: IntegrationRecord,
     isOnboardingComplete: boolean,
   ): Promise<OnboardingActivationDto> {
-    const lifecycle = await this.adminLifecycles?.findCurrent(integration.id);
+    const [lifecycle, hasRealOrders] = await Promise.all([
+      this.adminLifecycles?.findCurrent(integration.id),
+      // Without the repository (unit wiring) assume orders exist, so no
+      // merchant is ever held in the first-run dashboard by mistake.
+      this.ordersRepo?.hasRealOrders(integration.orgId) ?? true,
+    ]);
     const hasActivePlan =
       this.billingEntitlements.evaluateAccess(integration).allowed;
     const managesBilling = getBillingManagement(integration).canManageBilling;
@@ -336,6 +344,7 @@ export class OnboardingService {
       testConfirmedAt: lifecycle?.testConfirmedAt ?? null,
       testSkippedAt: lifecycle?.testSkippedAt ?? null,
       firstRealConfirmedAt: lifecycle?.firstRealConfirmedAt ?? null,
+      hasRealOrders,
       isLive:
         isOnboardingComplete &&
         integration.isActive === true &&

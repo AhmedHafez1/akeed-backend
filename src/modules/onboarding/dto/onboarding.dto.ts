@@ -209,6 +209,8 @@ export interface OnboardingActivationDto {
   testConfirmedAt: string | null;
   testSkippedAt: string | null;
   firstRealConfirmedAt: string | null;
+  /** The organization has at least one real (non-test) order. */
+  hasRealOrders: boolean;
   isLive: boolean;
   needsPlan: boolean;
 }

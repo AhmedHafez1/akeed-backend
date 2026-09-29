@@ -110,6 +110,20 @@ export class OrdersRepository {
     return result;
   }
 
+  /**
+   * Whether the organization has any real (non-test) order yet. Onboarding
+   * test orders carry is_test = true and never count. Drives the standalone
+   * dashboard's first-run state; LIMIT 1 stops at the first real row.
+   */
+  async hasRealOrders(orgId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(and(eq(orders.orgId, orgId), eq(orders.isTest, false)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   async findById(orderId: string) {
     return await this.db.query.orders.findFirst({
       where: eq(orders.id, orderId),

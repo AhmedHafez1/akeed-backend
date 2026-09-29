@@ -43,6 +43,7 @@ function setup(
   options: {
     integration?: Record<string, unknown>;
     starter?: string;
+    hasRealOrders?: boolean;
   } = {},
 ) {
   const integration = makeIntegration(options.integration);
@@ -78,6 +79,9 @@ function setup(
       .fn()
       .mockResolvedValue({ consumedCount: 0, includedLimit: 30 }),
   };
+  const ordersRepo = {
+    hasRealOrders: jest.fn().mockResolvedValue(options.hasRealOrders ?? false),
+  };
   const service = new OnboardingService(
     onboardingState as never,
     billingService as never,
@@ -87,8 +91,10 @@ function setup(
     ),
     { readStatus: jest.fn().mockResolvedValue(null) } as never,
     lifecycles as never,
+    undefined,
+    ordersRepo as never,
   );
-  return { service, onboardingState, billingService, lifecycles };
+  return { service, onboardingState, billingService, lifecycles, ordersRepo };
 }
 
 describe('OnboardingService.completeSetup', () => {
@@ -178,5 +184,24 @@ describe('OnboardingService.completeSetup', () => {
       service.completeSetup({ ...owner, role: 'viewer' }, payload),
     ).rejects.toBeInstanceOf(HttpException);
     expect(onboardingState.updateSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('OnboardingService activation.hasRealOrders', () => {
+  it('reports no real orders so the standalone dashboard shows first-run', async () => {
+    const { service, ordersRepo } = setup({ hasRealOrders: false });
+
+    const state = await service.getState(owner);
+
+    expect(ordersRepo.hasRealOrders).toHaveBeenCalledWith('org-1');
+    expect(state.activation.hasRealOrders).toBe(false);
+  });
+
+  it('reports real orders once the organization has one', async () => {
+    const { service } = setup({ hasRealOrders: true });
+
+    const state = await service.getState(owner);
+
+    expect(state.activation.hasRealOrders).toBe(true);
   });
 });

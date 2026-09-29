@@ -432,6 +432,7 @@ export class OnboardingStateService {
         testConfirmedAt: null,
         testSkippedAt: null,
         firstRealConfirmedAt: null,
+        hasRealOrders: true,
         isLive: false,
         needsPlan: false,
       },
