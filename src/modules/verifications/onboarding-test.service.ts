@@ -257,12 +257,15 @@ export class OnboardingTestService {
       }),
     ]);
 
+    // Only Shopify installs open a lifecycle; a standalone source is one
+    // continuous install, so its latest send is the displayed test.
+    const displayed = lifecycle ? latestThisInstall : latest;
     const verificationId =
-      typeof latestThisInstall?.props === 'object' &&
-      latestThisInstall.props !== null &&
-      'verificationId' in latestThisInstall.props &&
-      typeof latestThisInstall.props.verificationId === 'string'
-        ? latestThisInstall.props.verificationId
+      typeof displayed?.props === 'object' &&
+      displayed.props !== null &&
+      'verificationId' in displayed.props &&
+      typeof displayed.props.verificationId === 'string'
+        ? displayed.props.verificationId
         : null;
     const verification = verificationId
       ? await this.verificationsRepo.findByIdForOrg(verificationId, orgId)

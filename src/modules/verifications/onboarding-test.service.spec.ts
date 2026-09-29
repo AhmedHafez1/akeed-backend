@@ -35,6 +35,8 @@ function setup(
     latestSentAt?: string;
     sentToday?: number;
     installedAt?: string;
+    /** Standalone sources never open an admin lifecycle. */
+    noLifecycle?: boolean;
   } = {},
 ) {
   const integrations = {
@@ -76,11 +78,15 @@ function setup(
     markMilestone: jest.fn(),
     recordEvent: jest.fn(),
     reachMilestone: jest.fn().mockResolvedValue(true),
-    findCurrent: jest.fn().mockResolvedValue({
-      installedAt: options.installedAt ?? '2020-01-01T00:00:00.000Z',
-      testConfirmedAt: null,
-      testSkippedAt: null,
-    }),
+    findCurrent: jest.fn().mockResolvedValue(
+      options.noLifecycle
+        ? undefined
+        : {
+            installedAt: options.installedAt ?? '2020-01-01T00:00:00.000Z',
+            testConfirmedAt: null,
+            testSkippedAt: null,
+          },
+    ),
   };
   const service = new OnboardingTestService(
     integrations as never,
@@ -313,6 +319,59 @@ describe('OnboardingTestService', () => {
       expectCode(error, 'ONBOARDING_TEST_PHONE_MISSING');
       expect((error as HttpException).getStatus()).toBe(400);
       expect(hub.handleSyntheticTestOrder).not.toHaveBeenCalled();
+    });
+
+    it('reports the latest attempt although no admin lifecycle exists', async () => {
+      const sentAt = new Date(Date.now() - 5_000).toISOString();
+      const { service, verifications } = setup({
+        source: standalone,
+        latestSentAt: sentAt,
+        noLifecycle: true,
+      });
+      verifications.findByIdForOrg.mockResolvedValueOnce({
+        id: 'verification-1',
+        status: 'confirmed',
+        lastSentAt: sentAt,
+        deliveredAt: sentAt,
+        readAt: sentAt,
+        confirmedAt: sentAt,
+        canceledAt: null,
+      });
+
+      const status = await service.getStatus(owner);
+
+      expect(verifications.findByIdForOrg).toHaveBeenCalledWith(
+        'verification-1',
+        'org-1',
+      );
+      expect(status.test).toMatchObject({
+        verificationId: 'verification-1',
+        status: 'confirmed',
+        sentAt,
+        confirmedAt: sentAt,
+      });
+      expect(status.testConfirmedAt).toBeNull();
+    });
+
+    it('returns the just-sent attempt from send so the screen starts polling', async () => {
+      const { service, productEvents } = setup({
+        source: standalone,
+        noLifecycle: true,
+      });
+      productEvents.findLatest.mockResolvedValue({
+        name: 'test_sent',
+        createdAt: new Date().toISOString(),
+        props: { verificationId: 'verification-1' },
+      });
+      // The cooldown check reads the latest send before any exists.
+      productEvents.findLatest.mockResolvedValueOnce(undefined);
+
+      const status = await service.send(owner);
+
+      expect(status.test).toMatchObject({
+        verificationId: 'verification-1',
+        status: 'delivered',
+      });
     });
   });
 });
