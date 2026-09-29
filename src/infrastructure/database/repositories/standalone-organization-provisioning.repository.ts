@@ -36,6 +36,24 @@ export function buildStandaloneSourceIdentity(orgId: string): string {
   return `standalone:${orgId}`;
 }
 
+/**
+ * Onboarding v2 no longer asks Standalone merchants for confirmation rules
+ * (docs/standalone-onboarding-v2.md), so a new source starts ready to send:
+ * immediate first send, one follow-up after 2 h, escalation after 6 h. They are
+ * written explicitly so a column default change cannot alter them. Only new
+ * sources get them; existing rows keep what the merchant saved.
+ */
+export const STANDALONE_SOURCE_DEFAULTS = {
+  isAutoVerifyEnabled: true,
+  sendDelayMinutes: 0,
+  followUpEnabled: true,
+  followUpDelayMinutes: 120,
+  escalationEnabled: true,
+  escalationDelayMinutes: 360,
+  quietHoursEnabled: false,
+  assumeCodWhenPaymentMissing: false,
+} as const satisfies Partial<typeof integrations.$inferInsert>;
+
 export type StandaloneProvisioningTransaction = Parameters<
   Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
 >[0];
@@ -92,9 +110,7 @@ export async function provisionStandaloneSourceForOrganization(
       accessToken: null,
       webhookSecret: null,
       isActive: true,
-      isAutoVerifyEnabled: true,
-      followUpEnabled: false,
-      assumeCodWhenPaymentMissing: false,
+      ...STANDALONE_SOURCE_DEFAULTS,
       onboardingStatus: 'pending',
       // Standalone tenants have no external billing to settle, but
       // `resolveEntitlement` still requires all three columns before it will

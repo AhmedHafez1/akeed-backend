@@ -415,6 +415,55 @@ describe('VerificationMessageDispatchesRepository billing-exempt claims', () => 
     expect(setClause).not.toContain('"usage_period_start"');
   });
 
+  it('reserves no credit for a Standalone source billed by prepaid credits', async () => {
+    const statements: { query: string; params: unknown[] }[] = [];
+    const execute = jest.fn((query: string, params: unknown[]) => {
+      statements.push({ query, params });
+      if (!query.trimStart().startsWith('select')) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (query.includes('from "integrations"')) {
+        return Promise.resolve({
+          rows: [
+            integrationRow({
+              platform_type: 'standalone',
+              onboarding_status: 'pending',
+              billing_status: null,
+              billing_plan_id: null,
+              billing_activated_at: null,
+            }),
+          ],
+        });
+      }
+      return Promise.resolve({ rows: [dispatchRow({ state: 'ready' })] });
+    });
+    const session = drizzle(execute as never, { schema });
+    const accounting = {
+      mode: jest.fn().mockReturnValue('prepaid_credit'),
+    };
+    const repository = new VerificationMessageDispatchesRepository(
+      {
+        transaction: (callback: (tx: unknown) => unknown) => callback(session),
+      } as never,
+      accounting as never,
+    );
+
+    const result = await repository.claim({
+      ...claimParams,
+      billingExempt: true,
+    });
+
+    expect(result).toMatchObject({ outcome: 'claimed' });
+    expect(result).not.toHaveProperty('usage');
+    expect(
+      statements.some(
+        ({ query }) =>
+          query.includes('credit_') ||
+          query.includes('integration_monthly_usage'),
+      ),
+    ).toBe(false);
+  });
+
   it('still reserves usage for a normal claim', async () => {
     const { repository, statements } = buildClaimRepository({
       state: 'ready',

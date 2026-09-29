@@ -192,6 +192,40 @@ describe('provisionStandaloneSourceForOrganization', () => {
     expect(result.sourceCreated).toBe(true);
   });
 
+  it('creates the source with the onboarding v2 confirmation defaults', async () => {
+    const { statements } = await provision(false);
+
+    const source = statements.find((statement) =>
+      statement.query.includes('insert into "integrations"'),
+    );
+    const [, columnList, valueList] =
+      /insert into "integrations" \(([^)]*)\) values \(([^)]*)\)/.exec(
+        source?.query ?? '',
+      ) ?? [];
+    const values = valueList.split(', ');
+    const inserted = Object.fromEntries(
+      columnList.split(', ').map((column, index) => {
+        const placeholder = /^\$(\d+)$/.exec(values[index]);
+        return [
+          column.replace(/"/g, ''),
+          placeholder ? source?.params[Number(placeholder[1]) - 1] : 'default',
+        ];
+      }),
+    );
+
+    expect(inserted).toMatchObject({
+      is_auto_verify_enabled: true,
+      send_delay_minutes: 0,
+      follow_up_enabled: true,
+      follow_up_delay_minutes: 120,
+      escalation_enabled: true,
+      escalation_delay_minutes: 360,
+      quiet_hours_enabled: false,
+      assume_cod_when_payment_missing: false,
+      onboarding_status: 'pending',
+    });
+  });
+
   it('meters by prepaid credits instead of a plan while credit billing is enabled', async () => {
     const { statements } = await provision(false);
 

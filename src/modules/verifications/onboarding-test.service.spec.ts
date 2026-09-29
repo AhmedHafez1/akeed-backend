@@ -262,4 +262,57 @@ describe('OnboardingTestService', () => {
 
     expectCode(error, 'TEST_VERIFICATION_ROLE_REQUIRED');
   });
+
+  describe('standalone source (onboarding v2)', () => {
+    const standalone = {
+      platformType: 'standalone',
+      platformStoreUrl: 'standalone:org-1',
+      onboardingStatus: 'pending',
+      billingPlanId: null,
+      billingStatus: null,
+      shippingCurrency: 'SAR',
+      storeName: 'Nile Shop',
+      merchantWhatsappPhone: '+966501234567',
+    };
+
+    it('sends the free test while onboarding is pending, priced in the shipping currency', async () => {
+      const { service, hub } = setup({ source: standalone });
+
+      const status = await service.send(owner);
+
+      // 'onboarding' mode is what makes the hub send billing-exempt: no slot
+      // check and no credit reservation (covered in verification-hub spec).
+      expect(hub.handleSyntheticTestOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: 'org-1',
+          integrationId: 'int-1',
+          currency: 'SAR',
+          customerPhone: '+966501234567',
+        }),
+        expect.objectContaining({
+          platformType: 'standalone',
+          onboardingStatus: 'pending',
+        }),
+        'onboarding',
+      );
+      expect(status.sample).toMatchObject({
+        currency: 'SAR',
+        storeName: 'Nile Shop',
+      });
+    });
+
+    it('returns 400 ONBOARDING_TEST_PHONE_MISSING when no number is saved', async () => {
+      const { service, hub } = setup({
+        source: { ...standalone, merchantWhatsappPhone: null },
+      });
+
+      const error = await service
+        .send(owner)
+        .catch((caught: unknown) => caught);
+
+      expectCode(error, 'ONBOARDING_TEST_PHONE_MISSING');
+      expect((error as HttpException).getStatus()).toBe(400);
+      expect(hub.handleSyntheticTestOrder).not.toHaveBeenCalled();
+    });
+  });
 });

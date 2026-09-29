@@ -291,7 +291,12 @@ describe('standalone source provisioning PostgreSQL contract', () => {
       webhookSecret: null,
       isActive: true,
       isAutoVerifyEnabled: true,
-      followUpEnabled: false,
+      sendDelayMinutes: 0,
+      followUpEnabled: true,
+      followUpDelayMinutes: 120,
+      escalationEnabled: true,
+      escalationDelayMinutes: 360,
+      quietHoursEnabled: false,
       assumeCodWhenPaymentMissing: false,
       onboardingStatus: 'pending',
     });

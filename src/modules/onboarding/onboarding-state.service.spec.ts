@@ -1,7 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import { OnboardingStateService } from './onboarding-state.service';
-import type { OnboardingStateDto } from './dto/onboarding.dto';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import {
+  UpdateOnboardingSettingsDto,
+  type OnboardingStateDto,
+} from './dto/onboarding.dto';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import type { integrations } from '../../infrastructure/database/schema';
+
+type IntegrationRecord = typeof integrations.$inferSelect;
 
 /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
 
@@ -436,6 +444,201 @@ describe('OnboardingStateService', () => {
           }),
         ).testSendLanguage,
       ).toBe('en');
+    });
+  });
+
+  describe('prefillStoreNameIfMissing', () => {
+    function buildService(organizationName: string | null) {
+      const storePlatform = {
+        getShopName: jest.fn().mockResolvedValue('Shop'),
+      };
+      const organizationsRepo = {
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            organizationName === null
+              ? undefined
+              : { id: 'org-1', name: organizationName },
+          ),
+      };
+      mockIntegrationsRepo.updateById.mockImplementation(
+        (_id: string, updates: Record<string, unknown>) =>
+          Promise.resolve(makeIntegration({ ...updates })),
+      );
+      const svc = new OnboardingStateService(
+        mockIntegrationsRepo as never,
+        storePlatform as never,
+        undefined,
+        undefined,
+        organizationsRepo as never,
+      );
+      return { svc, storePlatform, organizationsRepo };
+    }
+
+    const standaloneSource = (storeName: string | null) =>
+      makeIntegration({
+        platformType: 'standalone',
+        platformStoreUrl: 'standalone:org-1',
+        onboardingStatus: 'pending',
+        storeName,
+      }) as unknown as IntegrationRecord;
+
+    it('fills an empty standalone store name from the organization name', async () => {
+      const { svc, storePlatform, organizationsRepo } =
+        buildService('  Nile Shop  ');
+
+      const result = await svc.prefillStoreNameIfMissing(
+        standaloneSource(null),
+      );
+
+      expect(organizationsRepo.findById).toHaveBeenCalledWith('org-1');
+      expect(mockIntegrationsRepo.updateById).toHaveBeenCalledWith('int-1', {
+        storeName: 'Nile Shop',
+      });
+      expect(result.storeName).toBe('Nile Shop');
+      expect(storePlatform.getShopName).not.toHaveBeenCalled();
+    });
+
+    it('never overwrites an existing standalone store name', async () => {
+      const { svc, organizationsRepo } = buildService('Signup Name');
+      const source = standaloneSource('Merchant Choice');
+
+      await expect(svc.prefillStoreNameIfMissing(source)).resolves.toBe(source);
+      expect(organizationsRepo.findById).not.toHaveBeenCalled();
+      expect(mockIntegrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('leaves the store name empty when the organization has no name', async () => {
+      const { svc } = buildService('   ');
+      const source = standaloneSource(null);
+
+      await expect(svc.prefillStoreNameIfMissing(source)).resolves.toBe(source);
+      expect(mockIntegrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('caps a long organization name at the store-name limit', async () => {
+      const { svc } = buildService('x'.repeat(80));
+
+      await svc.prefillStoreNameIfMissing(standaloneSource(null));
+
+      expect(mockIntegrationsRepo.updateById).toHaveBeenCalledWith('int-1', {
+        storeName: 'x'.repeat(60),
+      });
+    });
+
+    it('keeps prefilling Shopify stores from the platform, not the organization', async () => {
+      const { svc, storePlatform, organizationsRepo } =
+        buildService('Org Name');
+
+      const result = await svc.prefillStoreNameIfMissing(
+        makeIntegration({ storeName: null }) as unknown as IntegrationRecord,
+      );
+
+      expect(storePlatform.getShopName).toHaveBeenCalledTimes(1);
+      expect(organizationsRepo.findById).not.toHaveBeenCalled();
+      expect(result.storeName).toBe('Shop');
+    });
+  });
+
+  describe('updateSettings — standalone your-store form', () => {
+    const user: AuthenticatedUser = {
+      userId: 'user-1',
+      orgId: 'org-1',
+      role: 'owner',
+      source: 'supabase',
+    };
+    const base = {
+      storeName: 'Nile Shop',
+      defaultLanguage: 'auto' as const,
+      isAutoVerifyEnabled: true,
+    };
+
+    beforeEach(() => {
+      mockIntegrationsRepo.findActiveByOrg = jest.fn().mockResolvedValue([
+        makeIntegration({
+          platformType: 'standalone',
+          platformStoreUrl: 'standalone:org-1',
+          onboardingStatus: 'pending',
+          storeName: null,
+          shopTimezone: null,
+        }),
+      ]);
+      mockIntegrationsRepo.updateById.mockImplementation(
+        (_id: string, updates: Record<string, unknown>) =>
+          Promise.resolve(
+            makeIntegration({
+              platformType: 'standalone',
+              shopTimezone: null,
+              ...updates,
+            }),
+          ),
+      );
+    });
+
+    it('persists the WhatsApp number, shipping currency and timezone', async () => {
+      const result = await service.updateSettings(user, {
+        ...base,
+        merchantWhatsappPhone: ' +20 100 123 4567 ',
+        shippingCurrency: 'EGP',
+        timezone: 'Africa/Cairo',
+      });
+
+      expect(mockIntegrationsRepo.updateById).toHaveBeenCalledWith(
+        'int-1',
+        expect.objectContaining({
+          storeName: 'Nile Shop',
+          merchantWhatsappPhone: '+201001234567',
+          shippingCurrency: 'EGP',
+          timezone: 'Africa/Cairo',
+        }),
+      );
+      expect(result).toMatchObject({
+        merchantWhatsappPhone: '+201001234567',
+        shippingCurrency: 'EGP',
+        timezone: 'Africa/Cairo',
+      });
+    });
+
+    it('rejects a timezone outside the curated list (no store zone to fall back on)', async () => {
+      await expect(
+        service.updateSettings(user, { ...base, timezone: 'Europe/London' }),
+      ).rejects.toMatchObject({
+        response: { code: 'SETTINGS_TIMEZONE_UNSUPPORTED' },
+      });
+      expect(mockIntegrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid WhatsApp number', async () => {
+      await expect(
+        service.updateSettings(user, {
+          ...base,
+          merchantWhatsappPhone: 'not-a-phone',
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'ONBOARDING_INVALID_PHONE' },
+      });
+      expect(mockIntegrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('UpdateOnboardingSettingsDto shippingCurrency', () => {
+    async function currencyErrors(shippingCurrency: string) {
+      const dto = plainToInstance(UpdateOnboardingSettingsDto, {
+        storeName: 'Nile Shop',
+        defaultLanguage: 'auto',
+        isAutoVerifyEnabled: true,
+        shippingCurrency,
+      });
+      const errors = await validate(dto);
+      return errors.filter((error) => error.property === 'shippingCurrency');
+    }
+
+    it('accepts a currency on the allowlist', async () => {
+      await expect(currencyErrors('EGP')).resolves.toHaveLength(0);
+    });
+
+    it('rejects a currency outside the allowlist', async () => {
+      await expect(currencyErrors('GBP')).resolves.toHaveLength(1);
     });
   });
 });

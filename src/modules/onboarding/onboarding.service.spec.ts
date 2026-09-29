@@ -1,5 +1,8 @@
+import { ConflictException } from '@nestjs/common';
 import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
+import { STANDALONE_SOURCE_DEFAULTS } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import { OnboardingStateService } from './onboarding-state.service';
 import { OnboardingService } from './onboarding.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -188,6 +191,113 @@ describe('OnboardingService', () => {
       orgId: 'org-7',
       integrationId: 'int-7',
       since: '2026-05-01T00:00:00.000Z',
+    });
+  });
+
+  /**
+   * Standalone onboarding v2: the "Your store" form saves settings on a source
+   * created with the provisioning defaults, then /complete runs once the test
+   * is confirmed or skipped (the frontend decides when to call it).
+   */
+  describe('completeStandaloneOnboarding (v2 flow)', () => {
+    const owner = {
+      userId: 'user-1',
+      orgId: 'org-1',
+      role: 'owner' as const,
+      source: 'supabase' as const,
+    };
+    const yourStoreForm = {
+      storeName: 'Nile Shop',
+      defaultLanguage: 'auto' as const,
+      isAutoVerifyEnabled: true,
+      merchantWhatsappPhone: '+201001234567',
+      shippingCurrency: 'EGP' as const,
+      timezone: 'Africa/Cairo',
+    };
+
+    function setup(accountStatus: 'active' | 'suspended' = 'active') {
+      let row: Record<string, unknown> = {
+        id: 'int-1',
+        orgId: 'org-1',
+        platformType: 'standalone',
+        platformStoreUrl: 'standalone:org-1',
+        isActive: true,
+        onboardingStatus: 'pending',
+        storeName: null,
+        defaultLanguage: 'auto',
+        shippingCurrency: 'USD',
+        timezone: 'Asia/Riyadh',
+        shopTimezone: null,
+        billingPlanId: null,
+        billingStatus: null,
+        ...STANDALONE_SOURCE_DEFAULTS,
+      };
+      const integrationsRepo = {
+        findActiveByOrg: jest.fn(() => Promise.resolve([row])),
+        updateById: jest.fn((_id: string, updates: Record<string, unknown>) => {
+          row = { ...row, ...updates };
+          return Promise.resolve(row);
+        }),
+      };
+      const onboardingState = new OnboardingStateService(
+        integrationsRepo as never,
+        {} as never,
+        undefined,
+        undefined,
+        {
+          findById: jest.fn().mockResolvedValue({ name: 'Nile Shop' }),
+        } as never,
+      );
+      const service = new OnboardingService(
+        onboardingState,
+        {} as never,
+        {
+          evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
+        } as never,
+        { readStatus: jest.fn().mockResolvedValue(accountStatus) } as never,
+      );
+      return { service, integrationsRepo, current: () => row };
+    }
+
+    it('completes after the your-store settings are saved', async () => {
+      const { service, current } = setup();
+
+      await service.updateSettings(owner, yourStoreForm);
+      const { state } = await service.completeStandaloneOnboarding(owner);
+
+      expect(current()).toMatchObject({
+        onboardingStatus: 'completed',
+        merchantWhatsappPhone: '+201001234567',
+        shippingCurrency: 'EGP',
+        timezone: 'Africa/Cairo',
+      });
+      expect(state).toMatchObject({
+        isOnboardingComplete: true,
+        storeName: 'Nile Shop',
+        shippingCurrency: 'EGP',
+        timezone: 'Africa/Cairo',
+        followUpEnabled: true,
+        followUpDelayMinutes: 120,
+        escalationDelayMinutes: 360,
+        sendDelayMinutes: 0,
+        standaloneSetup: { canComplete: true, blockedReasons: [] },
+      });
+    });
+
+    it('stays blocked for a suspended account', async () => {
+      const { service, current } = setup('suspended');
+
+      await service.updateSettings(owner, yourStoreForm);
+      const error = await service
+        .completeStandaloneOnboarding(owner)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({
+        code: 'ONBOARDING_BLOCKED',
+        blockedReasons: ['account_suspended'],
+      });
+      expect(current().onboardingStatus).toBe('pending');
     });
   });
 });

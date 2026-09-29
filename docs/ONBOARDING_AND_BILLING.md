@@ -86,6 +86,18 @@ When a merchant returns to the onboarding page mid-flow:
 - If billing has a non-active status (declined, frozen, expired, canceled, error), show a recovery error banner on step 2.
 - Otherwise, start at step 1.
 
+### Standalone onboarding v2
+
+Standalone (Supabase) merchants use three calls, all already shared with the embedded settings code. Design: [standalone-onboarding-v2.md](standalone-onboarding-v2.md). Evidence: [US-STANDALONE-ONBOARDING-V2-EVIDENCE.md](US-STANDALONE-ONBOARDING-V2-EVIDENCE.md).
+
+1. `PATCH /api/onboarding/settings` saves the "Your store" form: `storeName`, `merchantWhatsappPhone` (stored as E.164, `400 ONBOARDING_INVALID_PHONE`), `defaultLanguage`, `shippingCurrency` (the canonical currency list) and `timezone` (the curated `AUTOMATION_TIMEZONES` list; a standalone source has no store zone, so anything else is `400 SETTINGS_TIMEZONE_UNSUPPORTED`).
+2. `POST /api/onboarding/test` sends the free test to the merchant's own WhatsApp. It works while onboarding is `pending`, reserves no plan usage and no credit, and prices the sample in the source's `shippingCurrency`. Without a saved number it returns `400 ONBOARDING_TEST_PHONE_MISSING`. `POST /api/onboarding/test/skip` records a skip.
+3. `POST /api/onboarding/complete` marks onboarding `completed`. It is still blocked by `409 ONBOARDING_BLOCKED` for the existing reasons, including `account_suspended`. The backend does not require a confirmed or skipped test: the frontend calls it only after the test is confirmed, skipped, or Akeed's WhatsApp is unavailable.
+
+The store name is prefilled from the organization name (the signup company name) when it is empty; an existing name is never overwritten.
+
+A new standalone source is provisioned ready to send, so onboarding does not ask for confirmation rules: auto-verify on, first send immediate, one follow-up after 120 minutes, escalation after 360 minutes, quiet hours off, COD fallback off (`STANDALONE_SOURCE_DEFAULTS`). Existing sources keep their saved values; there is no migration.
+
 ## Billing Plans
 
 Plan definitions are in `akeed-backend/src/modules/onboarding/onboarding.service.helpers.ts`.

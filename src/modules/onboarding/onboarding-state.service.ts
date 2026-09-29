@@ -12,9 +12,11 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
+import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_STATUSES,
+  STORE_NAME_MAX_LENGTH,
   type AutomationTimezone,
   type OnboardingStateDto,
   type UpdateOnboardingSettingsDto,
@@ -66,6 +68,8 @@ export class OnboardingStateService {
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
     private readonly phoneService: PhoneService = new PhoneService(),
+    @Optional()
+    private readonly organizationsRepo?: OrganizationsRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -301,12 +305,20 @@ export class OnboardingStateService {
   async prefillStoreNameIfMissing(
     integration: IntegrationRecord,
   ): Promise<IntegrationRecord> {
-    if (integration.storeName || integration.platformType !== 'shopify') {
+    if (integration.storeName) return integration;
+    if (
+      integration.platformType !== 'shopify' &&
+      integration.platformType !== 'standalone'
+    ) {
       return integration;
     }
 
     try {
-      const storeName = await this.storePlatform.getShopName(integration);
+      const storeName =
+        integration.platformType === 'shopify'
+          ? await this.storePlatform.getShopName(integration)
+          : await this.readOrganizationStoreName(integration.orgId);
+      if (!storeName) return integration;
       const updated = await this.integrationsRepo.updateById(integration.id, {
         storeName,
       });
@@ -324,6 +336,18 @@ export class OnboardingStateService {
       );
       return integration;
     }
+  }
+
+  /**
+   * A Standalone store starts with the company name given at signup, which is
+   * the organization name. Trimmed to fit the WhatsApp template variable.
+   */
+  private async readOrganizationStoreName(
+    orgId: string,
+  ): Promise<string | null> {
+    const organization = await this.organizationsRepo?.findById(orgId);
+    const name = organization?.name?.trim().slice(0, STORE_NAME_MAX_LENGTH);
+    return name?.trim() || null;
   }
 
   ensureBillingPrerequisitesMet(integration: IntegrationRecord): void {
