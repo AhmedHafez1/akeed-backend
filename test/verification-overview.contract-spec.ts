@@ -413,6 +413,7 @@ describe('needs-action rule', () => {
   it('assigns each case its reason and leaves the rest out', async () => {
     const rows = await repository.findNeedsActionTop(orgA, period(), 50);
     expect(rows.map((row) => [row.id, row.actionReason])).toEqual([
+      [ids.planFailed, 'send_failed'],
       [ids.afterFollowUp, 'no_reply_after_follow_up'],
       [ids.deliveryFailed, 'delivery_failed'],
       [ids.readLongAgo, 'read_no_reply'],
@@ -423,8 +424,8 @@ describe('needs-action rule', () => {
   it('caps the dashboard card and orders it by value', async () => {
     const rows = await repository.findNeedsActionTop(orgA, period(), 2);
     expect(rows.map((row) => row.order.totalPrice)).toEqual([
+      '5000.00',
       '2629.95',
-      '1025.00',
     ]);
   });
 
@@ -439,7 +440,7 @@ describe('tab counts and list filters', () => {
     const counts = await repository.countByTab(orgA, period());
     expect(counts).toEqual({
       all: 11,
-      needs_action: 4,
+      needs_action: 5,
       confirmed: 2,
       canceled: 1,
       failed: 2,
@@ -497,7 +498,7 @@ describe('overview aggregate', () => {
       customerConfirmedAfterSend: 1,
       customerCanceled: 1,
       customerCanceledAfterSend: 1,
-      needsAction: 4,
+      needsAction: 5,
     });
   });
 
@@ -522,23 +523,24 @@ describe('overview aggregate', () => {
       percent: 90,
       state: 'warning',
     });
-    expect(overview.needs_action.count).toBe(4);
-    expect(overview.needs_action.items[0]).toMatchObject({
+    expect(overview.needs_action.count).toBe(5);
+    expect(overview.needs_action.items).toHaveLength(3);
+    expect(overview.needs_action.items[0].reason).toMatchObject({
+      type: 'send_failed',
+      failure_code: null,
+    });
+    expect(overview.needs_action.items[1]).toMatchObject({
       verification_id: ids.afterFollowUp,
       order_number: '1138',
       platform: 'shopify',
       reason: { type: 'no_reply_after_follow_up' },
     });
-    expect(Date.parse(overview.needs_action.items[0].reason.since ?? '')).toBe(
+    expect(Date.parse(overview.needs_action.items[1].reason.since ?? '')).toBe(
       Date.parse(sentAt),
     );
-    expect(overview.needs_action.items[1].reason).toMatchObject({
+    expect(overview.needs_action.items[2].reason).toMatchObject({
       type: 'delivery_failed',
       failure_code: '131026',
-    });
-    expect(overview.needs_action.items[2].reason).toMatchObject({
-      type: 'read_no_reply',
-      hours: 14,
     });
   });
 

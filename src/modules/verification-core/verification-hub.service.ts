@@ -210,6 +210,11 @@ export class VerificationHubService {
         orgId: params.orgId,
         dueAt: followUpDueAt,
       });
+      await this.recordFollowUpDueAt(
+        params.verificationId,
+        params.orgId,
+        followUpDueAt,
+      );
     }
 
     const escalationMinutes = Math.max(
@@ -232,6 +237,34 @@ export class VerificationHubService {
         orgId: params.orgId,
         dueAt: escalationDueAt,
       });
+    }
+  }
+
+  /**
+   * Keeps the reminder's due time on the row so the dashboard can say "Reminder
+   * scheduled for 9:00" -- the job itself lives only in the queue. Display
+   * only: the message and its follow-up job already exist, so a failed write
+   * is logged rather than thrown (a throw would retry work that succeeded).
+   */
+  async recordFollowUpDueAt(
+    verificationId: string,
+    orgId: string,
+    dueAt: Date,
+  ): Promise<void> {
+    try {
+      await this.verificationsRepo.mergeMetadata(verificationId, {
+        follow_up_due_at: dueAt.toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-follow-up-due-record',
+          outcome: 'failure',
+          orgId,
+          verificationId,
+          ...normalizeError(error),
+        }),
+      );
     }
   }
 

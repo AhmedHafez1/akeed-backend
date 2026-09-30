@@ -465,7 +465,7 @@ describe('VerificationsService', () => {
       },
     );
 
-    it.each([null, 'delivery_failed'])(
+    it.each([null, 'delivery_failed', 'send_failed'])(
       'rejects an order without a no-reply reason (%s) without touching the store',
       async (reason) => {
         const { service, verificationsRepo, ordersRepo, orderAdmin } =

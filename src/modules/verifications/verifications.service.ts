@@ -64,6 +64,11 @@ import {
   resolveUsage,
 } from '../../shared/verification/verification-metrics';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
+import {
+  resolveFollowUpScheduledFor,
+  resolveHeldScheduledFor,
+  resolveScheduledFor,
+} from './verification-schedule.policy';
 import type {
   GetVerificationOverviewQueryDto,
   NeedsActionItemDto,
@@ -342,6 +347,10 @@ export class VerificationsService {
         ? encodeCursor(items[items.length - 1])
         : null;
 
+    const now = new Date();
+    const sourceOf = (integrationId: string | null | undefined) =>
+      integrations.find((integration) => integration.id === integrationId);
+
     return {
       data: items.map((verification) => ({
         // A held order offers nothing to cancel or retry: nothing has been
@@ -400,7 +409,20 @@ export class VerificationsService {
         updated_at: isHeldRow(verification)
           ? verification.createdAt
           : (verification.updatedAt ?? verification.createdAt ?? null),
-        scheduled_for: resolveScheduledFor(verification),
+        scheduled_for: isHeldRow(verification)
+          ? resolveHeldScheduledFor(
+              verification.status,
+              sourceOf(verification.order?.integrationId),
+              now,
+            )
+          : resolveScheduledFor(verification, now),
+        follow_up_scheduled_for: isHeldRow(verification)
+          ? null
+          : resolveFollowUpScheduledFor(
+              verification,
+              sourceOf(verification.order?.integrationId),
+              now,
+            ),
       })),
       next_cursor: nextCursor,
       total_count: totalCount + (wantsHeld ? heldCount : 0),
@@ -1159,16 +1181,4 @@ export class VerificationsService {
       platform_type: source?.platformType ?? null,
     };
   }
-}
-
-function resolveScheduledFor(verification: {
-  status: string;
-  lastSentAt?: string | null;
-  nextRetryAt?: string | null;
-}): string | null {
-  if (verification.status !== 'pending' || verification.lastSentAt) return null;
-  if (!verification.nextRetryAt) return null;
-  return new Date(verification.nextRetryAt).getTime() > Date.now()
-    ? verification.nextRetryAt
-    : null;
 }

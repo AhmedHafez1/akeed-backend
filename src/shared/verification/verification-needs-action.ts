@@ -9,6 +9,7 @@
  */
 export const NEEDS_ACTION_REASONS = [
   'delivery_failed',
+  'send_failed',
   'no_reply_after_follow_up',
   'read_no_reply',
   'no_reply',
@@ -17,8 +18,8 @@ export const NEEDS_ACTION_REASONS = [
 export type NeedsActionReason = (typeof NEEDS_ACTION_REASONS)[number];
 
 /**
- * Reasons the merchant may cancel for: the customer never answered. A delivery
- * failure is left out because the customer never saw the question.
+ * Reasons the merchant may cancel for: the customer never answered. Delivery
+ * and send failures are left out because the customer never saw the question.
  */
 export const NO_REPLY_CANCELLABLE_REASONS = [
   'no_reply_after_follow_up',
@@ -50,4 +51,4 @@ export const VERIFICATION_LIST_TABS = [
 export type VerificationListTab = (typeof VERIFICATION_LIST_TABS)[number];
 
 /** Rows the dashboard's "needs action" card shows at most. */
-export const NEEDS_ACTION_TOP_LIMIT = 5;
+export const NEEDS_ACTION_TOP_LIMIT = 3;

@@ -126,7 +126,20 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (await this.skipUnavailableIntegration(ctx, 'initial')) return;
 
-    if (await this.delayIfQuietHours(job, ctx.integration, token)) return;
+    // The row keeps the new send time, so the dashboard still says
+    // "Scheduled" instead of dropping to "Pending" once the old time passes.
+    const delayed = await this.delayIfQuietHours(
+      job,
+      ctx.integration,
+      token,
+      (dueAt) =>
+        this.verificationsRepo.updateByIdForOrg(
+          ctx.verification.id,
+          ctx.verification.orgId,
+          { nextRetryAt: dueAt.toISOString() },
+        ),
+    );
+    if (delayed) return;
 
     const outcome = await this.verificationSendService.sendInitial(
       ctx.verification.id,
@@ -219,7 +232,18 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (await this.skipUnavailableIntegration(ctx, 'follow_up')) return;
 
-    if (await this.delayIfQuietHours(job, integration, token)) return;
+    const delayed = await this.delayIfQuietHours(
+      job,
+      integration,
+      token,
+      (dueAt) =>
+        this.verificationHub.recordFollowUpDueAt(
+          verification.id,
+          verification.orgId,
+          dueAt,
+        ),
+    );
+    if (delayed) return;
 
     const outcome = await this.verificationSendService.sendFollowUp(
       verification.id,
@@ -491,11 +515,13 @@ export class VerificationAutomationProcessor extends WorkerHost {
    * If quiet hours are currently active, move the BullMQ job to the next valid
    * timestamp and throw `DelayedError` so the worker treats the job as delayed
    * rather than completed. Returns `true` when the job was delayed.
+   * `onDelay` records the new due time on the row before the job moves.
    */
   private async delayIfQuietHours(
     job: Job<VerificationAutomationJobPayload>,
     integration: typeof integrations.$inferSelect,
     token?: string,
+    onDelay?: (dueAt: Date) => Promise<unknown>,
   ): Promise<boolean> {
     const now = new Date();
     const config = {
@@ -535,6 +561,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
       return false;
     }
 
+    await onDelay?.(nextDue);
     await job.moveToDelayed(nextDue.getTime(), token);
     throw new DelayedError();
   }

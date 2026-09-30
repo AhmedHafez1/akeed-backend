@@ -7,16 +7,18 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  *
  * Returns the reason for the first rule that matches, or NULL:
  * 1. `delivery_failed`: WhatsApp reported the message undeliverable.
- * 2. `no_reply_after_follow_up`: escalated to no-reply after the reminder went out.
- * 3. `read_no_reply`: escalated to no-reply after the customer read the message.
- * 4. `no_reply`: escalated to no-reply without a reminder or a read receipt.
+ * 2. `send_failed`: any other failure: the message never went out (no
+ *    credits, plan limit, source inactive, provider error).
+ * 3. `no_reply_after_follow_up`: escalated to no-reply after the reminder went out.
+ * 4. `read_no_reply`: escalated to no-reply after the customer read the message.
+ * 5. `no_reply`: escalated to no-reply without a reminder or a read receipt.
  *
  * A no-reply reason is only assigned once the escalation job has moved the
  * row to `no_reply`: a sent reminder or an old read receipt alone still leaves
  * the customer time to answer.
  *
- * Test sends never need action. Failures caused by the plan or billing are
- * deliberately left out: the usage bar asks for that fix, not each row.
+ * Test sends never need action. Every other failed row does, whatever the
+ * cause: the order was not confirmed and the merchant must retry or call.
  */
 export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
   // The subquery names its own alias and raw columns: inside a relational
@@ -30,6 +32,7 @@ export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
     WHEN ${verifications.status} = 'failed'
       AND ${verifications.metadata}->>'reason' = 'provider_delivery_failed'
       THEN 'delivery_failed'
+    WHEN ${verifications.status} = 'failed' THEN 'send_failed'
     WHEN ${verifications.status} = 'no_reply'
       AND ${verifications.followUpSentAt} IS NOT NULL
       THEN 'no_reply_after_follow_up'

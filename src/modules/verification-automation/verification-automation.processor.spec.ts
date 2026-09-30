@@ -30,6 +30,7 @@ function createMocks() {
   };
   const verificationHub = {
     scheduleFollowUpAndEscalation: jest.fn(),
+    recordFollowUpDueAt: jest.fn(),
   };
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
@@ -213,6 +214,43 @@ describe('VerificationAutomationProcessor', () => {
         expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
       },
     );
+
+    it('keeps the new send and reminder times on the row when quiet hours push a job back', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-05-01T03:00:00.000Z'));
+      const quiet = {
+        quietHoursEnabled: true,
+        quietHoursStart: '21:00',
+        quietHoursEnd: '09:00',
+        timezone: 'Asia/Riyadh',
+      };
+      const morning = new Date('2026-05-01T06:00:00.000Z');
+
+      const initial = setup('pending', quiet);
+      await expect(
+        initial.processor.process(
+          buildJob(VerificationAutomationJobType.INITIAL_SEND),
+          'synthetic-lock-token',
+        ),
+      ).rejects.toBeInstanceOf(DelayedError);
+      expect(initial.verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+        'ver-1',
+        'org-1',
+        { nextRetryAt: morning.toISOString() },
+      );
+
+      const followUp = setup('sent', quiet);
+      await expect(
+        followUp.processor.process(
+          buildJob(VerificationAutomationJobType.FOLLOW_UP),
+          'synthetic-lock-token',
+        ),
+      ).rejects.toBeInstanceOf(DelayedError);
+      expect(followUp.verificationHub.recordFollowUpDueAt).toHaveBeenCalledWith(
+        'ver-1',
+        'org-1',
+        morning,
+      );
+    });
 
     it.each(['send_error', 'missing_wamid'])(
       'records follow-up %s metadata without replacing the original message or status',

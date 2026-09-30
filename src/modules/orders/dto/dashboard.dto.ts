@@ -129,6 +129,11 @@ export interface VerificationListItemDto {
    * send delay), the time it is due to go out. Null once anything was sent.
    */
   scheduled_for: string | null;
+  /**
+   * When the reminder for a sent, unanswered message is due to go out. Null
+   * once it went out, was skipped or failed, or when reminders are off.
+   */
+  follow_up_scheduled_for: string | null;
 }
 
 /**

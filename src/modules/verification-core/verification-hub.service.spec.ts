@@ -103,6 +103,7 @@ function createMocks() {
     updateStatus: jest.fn(),
     findById: jest.fn(),
     updateByIdForOrg: jest.fn(),
+    mergeMetadata: jest.fn(),
   };
   verificationsRepo.createForOrderIfAbsent.mockImplementation(
     async (values: unknown) => ({
@@ -619,6 +620,13 @@ describe('VerificationHubService', () => {
       expect(automationProducer.enqueueNoReplyEscalation).toHaveBeenCalledTimes(
         1,
       );
+      // The reminder time rides on the row for the dashboard's hover hint.
+      const [{ dueAt }] = automationProducer.enqueueFollowUp.mock.calls[0] as [
+        { dueAt: Date },
+      ];
+      expect(verificationsRepo.mergeMetadata).toHaveBeenCalledWith('ver-1', {
+        follow_up_due_at: dueAt.toISOString(),
+      });
     });
 
     it('does NOT schedule follow-up/escalation when initial send fails', async () => {
@@ -898,6 +906,14 @@ describe('VerificationHubService', () => {
           orgId: 'org-1',
           dueAt: expect.any(Date) as Date,
         }),
+      );
+      // A send delay alone (no quiet hours) still reads "Scheduled".
+      const [{ dueAt }] = automationProducer.enqueueInitialSend.mock
+        .calls[0] as [{ dueAt: Date }];
+      expect(verificationsRepo.updateByIdForOrg).toHaveBeenCalledWith(
+        'ver-1',
+        'org-1',
+        { nextRetryAt: dueAt.toISOString() },
       );
     });
   });
