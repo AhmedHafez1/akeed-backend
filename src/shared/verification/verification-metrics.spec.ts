@@ -13,11 +13,21 @@ function counts(overrides: Partial<OverviewCounts> = {}): OverviewCounts {
     confirmed: 0,
     confirmedAfterSend: 0,
     customerConfirmedAfterSend: 0,
+    manualConfirmed: 0,
     customerCanceled: 0,
     customerCanceledAfterSend: 0,
     ...overrides,
   };
 }
+
+describe('buildMessageFunnel manual confirmations', () => {
+  it('passes manual confirmations through, even without a recorded send', () => {
+    const funnel = buildMessageFunnel(
+      counts({ sent: 4, confirmedAfterSend: 1, manualConfirmed: 2 }),
+    );
+    expect(funnel.manually_confirmed).toBe(2);
+  });
+});
 
 describe('rateOfSent', () => {
   it('is null when nothing was sent, so a new shop never reads 0%', () => {

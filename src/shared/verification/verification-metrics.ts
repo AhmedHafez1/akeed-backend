@@ -19,6 +19,8 @@ export interface OverviewCounts {
   confirmedAfterSend: number;
   /** Of those, the ones the customer confirmed by replying. */
   customerConfirmedAfterSend: number;
+  /** Merchant manual confirmations, with or without a recorded send (a failed send can be confirmed by hand). */
+  manualConfirmed: number;
   /** Customer cancellations in the period (merchant cancels excluded). */
   customerCanceled: number;
   /** Customer cancellations that had a recorded send. */
@@ -37,6 +39,7 @@ export interface MessageFunnel {
   read: FunnelStep;
   replied: FunnelStep;
   confirmed: number;
+  manually_confirmed: number;
   customer_canceled: number;
   no_reply_yet: number;
 }
@@ -71,6 +74,7 @@ export function buildMessageFunnel(counts: OverviewCounts): MessageFunnel {
     read: step(cap(counts.read)),
     replied: step(replied),
     confirmed,
+    manually_confirmed: Math.max(counts.manualConfirmed, 0),
     customer_canceled: Math.min(customerCanceled, replied - confirmed),
     no_reply_yet: sent - replied,
   };

@@ -496,6 +496,7 @@ describe('overview aggregate', () => {
       confirmed: 2,
       confirmedAfterSend: 2,
       customerConfirmedAfterSend: 1,
+      manualConfirmed: 1,
       customerCanceled: 1,
       customerCanceledAfterSend: 1,
       needsAction: 5,
