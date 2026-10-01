@@ -4,10 +4,11 @@ Last updated: 2026-05-28
 
 ## Purpose
 
-This document explains how Akeed integrates with external platforms (Shopify, Meta/WhatsApp), processes inbound webhooks, manages asynchronous job queues, and runs the verification automation pipeline. It covers the ingestion path from Shopify order webhook to WhatsApp send, the customer reply flow, follow-up and escalation scheduling, quiet-hours handling, billing entitlement checks, and GDPR compliance webhooks.
+This document explains how Akeed integrates with external platforms (Shopify, Meta/WhatsApp), processes inbound webhooks, manages asynchronous job queues, and runs the verification automation pipeline. It covers the ingestion path from Shopify order webhook to WhatsApp send (Standalone merchants add orders through the manual and bulk-import channels instead; see `MANUAL_ORDER_CREATION.md` and `BULK_ORDER_IMPORT.md`), the customer reply flow, follow-up and escalation scheduling, quiet-hours handling, billing entitlement checks, and GDPR compliance webhooks.
 
 For the verification lifecycle state machine and merchant controls, see `ORDER_CONFIRMATION_WORKFLOW.md`.
 For dashboard and settings screens, see `MERCHANT_OPERATIONS.md`.
+For Standalone bulk order import (held orders and paced release), see `BULK_ORDER_IMPORT.md`.
 For authentication and organization management, see `IDENTITY_ACCESS_AND_ORGANIZATION.md`.
 
 ## Scope

@@ -4,7 +4,7 @@ Last updated: 2026-05-28
 
 ## Purpose
 
-This document explains the public-facing pages, marketing site, localization system, SEO infrastructure, analytics, and growth surfaces in the Akeed frontend. It covers the marketing homepage, legal pages, pricing display, the i18n bilingual system (Arabic/English with RTL), structured data, the Shopify app listing configuration, and conversion elements.
+This document explains the public-facing pages, marketing site, localization system, SEO infrastructure, analytics, and growth surfaces in the Akeed frontend. It covers the marketing homepage, legal pages, pricing display, the i18n bilingual system (Arabic/English with RTL), structured data, the Shopify app listing configuration (for Shopify merchants), and conversion elements. The public site presents Akeed as COD confirmation infrastructure for both Shopify stores and independent stores, and merchant help articles live in `akeed-frontend/content/docs`.
 
 For merchant-facing operational screens, see `MERCHANT_OPERATIONS.md`.
 For onboarding and billing, see `ONBOARDING_AND_BILLING.md`.
@@ -15,7 +15,7 @@ For authentication and identity, see `IDENTITY_ACCESS_AND_ORGANIZATION.md`.
 In scope:
 
 - Marketing homepage structure and sections.
-- Pricing tiers and feature matrix.
+- Pricing: standalone credits and the Shopify plan pointer.
 - Legal pages (Terms of Service, Privacy Policy, Support).
 - SEO: sitemap, robots.txt, metadata, OpenGraph, JSON-LD structured data.
 - Localization: Arabic/English, RTL support, translation namespaces.
@@ -23,7 +23,7 @@ In scope:
 - Navigation: Header, Footer, mobile CTA.
 - Public assets: logos, favicons, OG images.
 - Shopify app listing and extension configuration.
-- ROI calculator and social proof.
+- Acquisition paths (Shopify vs own store) and the credit pricing section.
 - Message template preview component.
 
 Out of scope:
@@ -74,98 +74,64 @@ The root page (`/`) is mode-aware:
 
 ## Marketing Homepage
 
-The homepage is rendered by `HomePage.tsx` and composed of sequential sections.
+The homepage is rendered by `HomePage.tsx` and composed of sequential sections. It presents Akeed as COD confirmation infrastructure for two kinds of merchant: Shopify stores, and independent stores that add their own orders.
 
 ### Sections
 
-| Order | Section    | Purpose                                                    |
-| ----- | ---------- | ---------------------------------------------------------- |
-| 1     | Hero       | Main value proposition and primary CTA.                    |
-| 2     | Problem    | Four pain points COD merchants face.                       |
-| 3     | Solution   | Eight benefit cards showing how Akeed solves each problem. |
-| 4     | HowItWorks | Three-step process (connect, automate, ship).              |
-| 5     | Pricing    | Four pricing tiers with feature comparison.                |
-| 6     | FAQ        | Six common questions in accordion format.                  |
+| Order | Section    | Purpose                                                                              |
+| ----- | ---------- | ------------------------------------------------------------------------------------ |
+| 1     | Hero       | Value proposition, the "Get started free" CTA and the order-to-confirmation flow.    |
+| 2     | Trust      | Official WhatsApp, Shopify App Store listing, independent stores, Arabic first.      |
+| 3     | HowItWorks | Three steps, with a tab for **Shopify store** and one for **Own store**.             |
+| 4     | Pricing    | Pay-per-use credits for independent stores, with a pointer to Shopify plans.         |
+| 5     | WhoItsFor  | Shopify, own store or site, manual orders, and mostly-COD merchants.                 |
+| 6     | FAQ        | Common questions in accordion format.                                                |
 
-Additional elements:
-
-| Component              | Purpose                                                  |
-| ---------------------- | -------------------------------------------------------- |
-| `StickyMobileCta`      | Persistent CTA bar on mobile viewports.                  |
-| `ChatInterface`        | Live demo WhatsApp chat simulation.                      |
-| `PlatformAvailability` | Platform badges (Shopify available, others coming soon). |
-| `SocialProof`          | Social proof metrics.                                    |
-| `LogoTicker`           | Partner/brand logo carousel.                             |
+`StickyMobileCta` adds a persistent CTA bar on mobile viewports. `ChatInterface` is the live WhatsApp demo.
 
 ### Hero Section
 
-Key messaging elements:
+Copy lives in the `hero` namespace of `en.json` and `ar.json`.
 
-- **Headline:** "Stop Wasting Shipping Costs" / "أوقف خسائر الشحن"
-- **Subheadline:** "Confirm COD Orders on WhatsApp" / "أكد طلبات الدفع عند الاستلام عبر واتساب"
-- **Trust badges:** Shopify badge, official Meta APIs, no setup required.
-- **Social proof:** "Join 85+ MENA merchants on the waitlist."
-- **Urgency:** "First 20 stores get 50 confirmations FREE."
-- **Primary CTA:** "Install on Shopify" → links to Shopify App Store listing.
+- **Headline:** "Confirm COD orders before you ship." / "أكّد طلبات الدفع عند الاستلام قبل ما تشحن."
+- **Primary CTA:** "Get started free" / "ابدأ مجانًا". The secondary CTA is "See how it works".
+- **Microcopy:** "30 free messages" and "No credit card required". The 30 comes from `CREDIT_FREE_GRANT` (see Pricing) and the `hero.microcopy_credits` string is written to match it.
+- **Integrations line:** "Works with your store" with Shopify, Independent stores and "+ more integrations".
+- **Value points:** reduce returns, save on shipping costs, official WhatsApp API, built for every merchant.
 
-### Problem Section
-
-Four pain points:
-
-1. Shipping losses from unconfirmed COD orders.
-2. Time wasted on manual order confirmation.
-3. Poor customer experience with phone calls.
-4. Difficulty scaling verification manually.
-
-### Solution Section
-
-Eight benefit cards covering automation, response speed, message control, analytics, follow-up reminders, rule-based automation, quiet hours, and priority support.
+There is no waitlist counter or limited-offer banner in the current page. This document previously listed "85+ MENA merchants on the waitlist" and "first 20 stores get 50 free confirmations", but neither exists in the app or its translations, so they were removed here. Do not add claims like these without a verified source.
 
 ### How It Works
 
-Three steps:
+Two tabs, chosen by the acquisition path (`?path=`):
 
-1. **Connect** — Install the Shopify app.
-2. **Automate** — Configure verification settings.
-3. **Ship** — Ship only confirmed orders.
+1. **Shopify store:** install Akeed on Shopify, Akeed sends the confirmation automatically, ship only verified COD orders.
+2. **Own store:** create an account and verify your email (activated at once with free launch credits, no card), add your orders (create them in Akeed or import a file), then send and track replies.
 
-### ROI Calculator
+### Who It Is For
 
-Interactive calculator showing potential savings at different order volumes.
-
-Configuration (from `roi.ts`):
-
-| Monthly COD orders | Estimated cancellation rate | Shipping cost saved |
-| ------------------ | --------------------------- | ------------------- |
-| 500                | Variable                    | Calculated          |
-| 1,000              | Variable                    | Calculated          |
-| 2,000              | Variable                    | Calculated          |
+Shopify store owners (install from Shopify), owners of their own store or site, merchants who take orders manually (Instagram, WhatsApp, phone), and merchants whose volume is mostly cash on delivery. Independent stores are self-serve.
 
 ## Pricing
 
-### Tiers
+Pricing differs by mode.
 
-| Plan    | Included verifications | Price        | Key features                                            |
-| ------- | ---------------------- | ------------ | ------------------------------------------------------- |
-| Starter | 30 one-time            | Free         | Automatic COD confirmation, dashboard, Shopify updates. |
-| Basic   | 300 / month            | $9.99/month  | + Automated follow-up reminders, rule-based automation. |
-| Pro     | 1,000 / month          | $22.99/month | + Quiet hours / scheduling.                             |
-| Scale   | 2,500 / month          | $49.99/month | + Priority support, setup call.                         |
+### Independent stores: prepaid credits
 
-### Feature Matrix
+No monthly subscription. Credits are bought through Paymob. One credit is one WhatsApp message sent to a customer, a follow-up costs a second credit, and a send that WhatsApp does not accept is refunded automatically.
 
-| Feature                                   | Starter | Basic | Pro | Scale |
-| ----------------------------------------- | ------- | ----- | --- | ----- |
-| Automatic COD confirmation on WhatsApp    | ✓       | ✓     | ✓   | ✓     |
-| Automatic order status updates to Shopify | ✓       | ✓     | ✓   | ✓     |
-| Dashboard with confirmation insights      | ✓       | ✓     | ✓   | ✓     |
-| Automated follow-up reminders             |         | ✓     | ✓   | ✓     |
-| Rule-based automation                     |         | ✓     | ✓   | ✓     |
-| Quiet hours / scheduling                  |         |       | ✓   | ✓     |
-| Priority support                          |         |       |     | ✓     |
-| Setup call                                |         |       |     | ✓     |
+| Item | Value (defaults) | Source |
+| ---- | ---------------- | ------ |
+| Price per credit | EGP 2.00 (`CREDIT_UNIT_PRICE_MINOR` = 200 piastres) | `STANDALONE_CREDIT_PRICE_MINOR` |
+| Free launch credits on sign-up | 30 (one-time) | `STANDALONE_FREE_GRANT` |
+| Purchase range | 100 to 5,000 credits, in steps of 50 | `STANDALONE_PURCHASE_MIN` / `MAX` / `STEP` |
+| Quick presets | 100, 250, 500, 1,000 | `CREDIT_PRESETS` |
 
-Pricing configuration lives in `features/marketing/config/site.ts`. The same plan IDs and prices are used in the backend billing system (see `ONBOARDING_AND_BILLING.md`).
+The public page cannot call the authenticated billing API, so it mirrors these values in `shared/config/pricing.ts`, overridable through `NEXT_PUBLIC_CREDIT_UNIT_PRICE_MINOR`, `NEXT_PUBLIC_CREDIT_FREE_GRANT` and the other `NEXT_PUBLIC_CREDIT_*` variables. Whenever the backend values change, change them in both repos. The page states that the price on the billing page is the authoritative one. The pricing section is made of `CreditPriceCard`, `CreditSlider` (credits to total and order estimate) and `PricingFactsPanel`.
+
+### Shopify: monthly plans
+
+Shopify merchants subscribe to a plan billed by Shopify, and the page links to the plans instead of repeating them (a copy once drifted from the backend). The authoritative plan definitions are in `ONBOARDING_AND_BILLING.md` (Starter 30 one-time, Basic 300, Pro 1,000, Scale 2,500 per month).
 
 ## Legal Pages
 
@@ -332,12 +298,12 @@ Located at `public/messages/{locale}.json`.
 | `hero`            | Hero section copy.                   |
 | `demo`            | Live demo chat interface.            |
 | `how_it_works`    | Process steps.                       |
-| `solution`        | Benefits/solutions section.          |
-| `pricing`         | Pricing tiers, feature labels.       |
+| `trust`           | Trust section.                       |
+| `who_its_for`     | Audience cards.                      |
+| `pricing_credits` | Credit pricing section.              |
 | `faq`             | FAQ questions and answers.           |
 | `whatsapp_button` | WhatsApp CTA button copy.            |
 | `mobile_cta`      | Mobile sticky CTA.                   |
-| `post_faq_cta`    | Post-FAQ call-to-action.             |
 | `auth`            | Login, signup, password reset forms. |
 | `legal`           | Terms, privacy content.              |
 | `footer`          | Footer navigation and links.         |
@@ -517,21 +483,16 @@ Exports:
 | -------------------- | ------------------------------------------------------------- | ---------------------------------------------------- |
 | Marketing homepage   | `features/marketing/ui/HomePage.tsx`                          | Composes all homepage sections.                      |
 | Hero section         | `features/marketing/ui/sections/Hero.tsx`                     | Value proposition, badges, primary CTA.              |
-| Problem section      | `features/marketing/ui/sections/Problem.tsx`                  | Four pain point cards.                               |
-| Solution section     | `features/marketing/ui/sections/Solution.tsx`                 | Eight benefit cards.                                 |
-| How it works         | `features/marketing/ui/sections/HowItWorks.tsx`               | Three-step process.                                  |
-| Pricing section      | `features/marketing/ui/sections/Pricing.tsx`                  | Pricing tier display.                                |
+| Trust section        | `features/marketing/ui/sections/Trust.tsx`                    | Trust points.                                        |
+| How it works         | `features/marketing/ui/sections/HowItWorks.tsx`               | Three steps, Shopify and own-store tabs.             |
+| Pricing section      | `features/marketing/ui/sections/Pricing.tsx`                  | Credit price card, slider and facts panel.           |
+| Who it is for        | `features/marketing/ui/sections/WhoItsFor.tsx`                | Audience cards.                                      |
 | FAQ section          | `features/marketing/ui/sections/FAQ.tsx`                      | Accordion FAQ.                                       |
-| Post-FAQ CTA         | `features/marketing/ui/sections/PostFaqCta.tsx`               | Final call-to-action.                                |
-| ROI calculator       | `features/marketing/ui/sections/roi/`                         | Interactive savings calculator.                      |
 | Chat demo            | `features/marketing/ui/components/ChatInterface.tsx`          | Live WhatsApp chat simulation.                       |
 | Mobile CTA           | `features/marketing/ui/components/StickyMobileCta.tsx`        | Sticky CTA bar for mobile.                           |
-| Platform badges      | `features/marketing/ui/components/PlatformAvailability.tsx`   | Shopify/coming-soon badges.                          |
-| Social proof         | `features/marketing/ui/components/SocialProof.tsx`            | Merchant count metrics.                              |
-| Logo ticker          | `features/marketing/ui/components/LogoTicker.tsx`             | Brand logo carousel.                                 |
 | Landing primitives   | `features/marketing/ui/components/LandingPrimitives.tsx`      | Reusable section/card primitives.                    |
-| Site config          | `features/marketing/config/site.ts`                           | Pricing tiers, feature lists, FAQs.                  |
-| ROI config           | `features/marketing/config/roi.ts`                            | ROI calculator data.                                 |
+| Site config          | `features/marketing/config/site.ts`                           | How-it-works steps, audiences, trust points, FAQs.   |
+| Credit pricing       | `shared/config/pricing.ts`                                    | Price, free grant and purchase range for the public page. |
 | Message preview      | `features/message-preview/ui/VerificationTemplatePreview.tsx` | WhatsApp template preview component.                 |
 | Template content     | `features/message-preview/lib/templatePreviewContent.ts`      | Template strings and interpolation.                  |
 | Header               | `shared/layout/Header.tsx`                                    | Public navigation header.                            |
@@ -566,8 +527,7 @@ Exports:
 - The landing page is mode-aware: standalone visitors see the marketing homepage; embedded Shopify merchants are redirected to the dashboard.
 - Legal pages use a shared `LegalDocumentPage` component for consistent structure across Terms and Privacy.
 - The Shopify App Store listing URL is referenced from a constant (`SHOPIFY_APP_STORE_LISTING_URL`) so all CTAs point to the same destination.
-- The ROI calculator uses predefined order volume tiers (500, 1000, 2000) rather than free-form input.
-- Social proof messaging references "85+ MENA merchants" and "first 20 stores get 50 free confirmations" as growth/urgency copy.
+- The public page shows no unverified social proof or urgency claims (merchant counts, limited offers). Any such claim needs a verified source first. The only numbers it states are the credit price and the free launch credits, mirrored from the backend pricing config.
 - The message preview component is shared between the marketing site (demo) and the settings page (template configuration).
 - JSON-LD structured data is included on the homepage (Organization, SoftwareApplication, FAQPage) and support page (ContactPage, ContactPoint).
 
@@ -601,7 +561,6 @@ npm --prefix akeed-frontend run build
 | Scroll on desktop                          | Header gains blur backdrop effect.                                         |
 | Check Facebook Pixel fires (standalone)    | `PageView` event tracked.                                                  |
 | Check analytics absent (embedded)          | No Facebook Pixel or Google Analytics scripts loaded.                      |
-| Pricing section displays all 4 tiers       | Correct prices, inclusion counts, and feature lists.                       |
+| Pricing section                            | Shows the per-credit price, the free launch credits and the slider total.  |
 | FAQ accordion interaction                  | Questions expand/collapse on click.                                        |
-| ROI calculator interaction                 | Savings update based on selected order volume.                             |
 | Legal page navigation links                | "Terms" links to terms, "Privacy" links to privacy, toggle works.          |

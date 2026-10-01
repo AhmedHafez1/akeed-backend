@@ -1,12 +1,12 @@
 # Order Confirmation Workflow And Controls
 
-Last updated: 2026-05-28
+Last updated: 2026-10-01
 
 ## Purpose
 
 This document explains the Akeed cash-on-delivery order confirmation feature from a business perspective. It covers the order lifecycle, merchant controls, backend services, frontend screens, data model, API contracts, and operational behavior.
 
-The feature verifies COD Shopify orders through WhatsApp before the merchant fulfills the order. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`, tag the Shopify order, and let the merchant cancel it from the Akeed dashboard.
+The feature verifies COD orders through WhatsApp before the merchant fulfills the order. Orders enter from three channels: the Shopify `orders-create` webhook, a manual order created in the Standalone dashboard (see `MANUAL_ORDER_CREATION.md`), and a CSV/XLSX bulk import (see `BULK_ORDER_IMPORT.md`). Every channel produces the same normalized order and follows the same lifecycle below. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`. For Shopify orders it also tags the Shopify order, and the merchant can cancel the order from the Akeed dashboard.
 
 Merchants can now choose branded confirmation template variants per language (Arabic and English). The selected variants are used for both preview and actual sends.
 
@@ -15,6 +15,7 @@ Merchants can now choose branded confirmation template variants per language (Ar
 In scope:
 
 - Shopify `orders-create` webhook ingestion.
+- Standalone order ingestion: manual orders and CSV/XLSX bulk import.
 - COD eligibility filtering.
 - Auto-verification enable/disable control.
 - Initial WhatsApp verification message.
@@ -23,7 +24,7 @@ In scope:
 - Quiet-hours scheduling.
 - No-reply escalation.
 - Customer confirm/cancel replies.
-- Shopify order tagging.
+- Shopify order tagging (Shopify source only; Standalone results stay in Akeed).
 - Merchant cancellation for `no_reply` orders.
 - Dashboard KPIs, filters, actions, and settings controls.
 - Billing usage consumption for verification sends.
@@ -32,7 +33,7 @@ Out of scope:
 
 - Creating Shopify orders before checkout submission.
 - Automatically canceling Shopify orders on a customer cancel reply. The current customer cancel flow marks and tags the order, but does not call Shopify order cancellation.
-- Multi-platform order support beyond the currently implemented Shopify strategy.
+- Platforms other than Shopify and Standalone. EasyOrders and WooCommerce are roadmap items.
 
 ## Lifecycle States
 
@@ -47,6 +48,19 @@ Out of scope:
 | `no_reply`  | Customer did not respond before the escalation job fired.                          | `VerificationAutomationProcessor`                   |
 | `failed`    | Initial send failed or plan limit blocked the initial send.                        | `VerificationSendService`, `VerificationHubService` |
 | `expired`   | Reserved enum value for lifecycle compatibility.                                   | Not actively automated in this workflow             |
+
+### Held orders (bulk import)
+
+A bulk import creates its orders **held** before any verification exists. A held order has no verification row and no message, and it is invisible to dispatch and reconciliation until the merchant starts the import. The dashboard shows these pre-verification stages next to the lifecycle statuses above:
+
+| Stage | Meaning |
+| ----- | ------- |
+| `awaiting_start` | Imported and held. Nothing has been sent. |
+| `queued` | The import is releasing and this order is waiting for its turn (paced release). |
+| `sending` | The order was released and is being dispatched. |
+| `not_started` | The start window passed, or the import was stopped; the order was withdrawn without a message or charge. |
+
+Once released, an imported order is indistinguishable from any other order: the same eligibility, quiet hours, follow-up, no-reply, credit and retry rules apply. See `BULK_ORDER_IMPORT.md`.
 
 ### The `pending` invariant
 

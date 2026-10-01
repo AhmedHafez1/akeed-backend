@@ -1,7 +1,7 @@
 # E04.6 — Standalone Bulk Order Import (CSV / XLSX)
 
 - **Horizon:** NEXT — execute after E04.5 and before E05
-- **Status:** Implemented locally — release blocked (pilot pending)
+- **Status:** Implemented. The pilot is complete per the product owner (2026-10-01) and the feature is enabled for general availability by setting `STANDALONE_BULK_IMPORT_ENABLED`. The per-story evidence files predate this and still describe the pilot as pending.
 - **Stories:** 10
 - **Prerequisite epics:** [E04 — Standalone Manual Order MVP](../04-standalone-manual-order-mvp/README.md), [E04.5 — Standalone Paymob Usage-Based Billing MVP](../04.5-standalone-paymob-usage-billing/README.md)
 - **Next epic:** [E05 — Standalone Order Ingestion API](../05-standalone-order-ingestion-api/README.md)
@@ -17,9 +17,9 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 
 ## Measurable outcome
 
-- An owner/admin can upload a `.csv` or `.xlsx` file of up to 5,000 orders and reach a validated preview in under 10 seconds (p95, 5,000 rows), with every row classified as ready or as not imported with a reason.
+- An owner/admin can upload a `.csv` or `.xlsx` file of up to 100 orders and reach a validated preview in under 10 seconds (p95, at the row limit), with every row classified as ready or as not imported with a reason.
 - Uploading the same file, or a file overlapping an earlier import, cannot create a second order for any order reference already imported into the source.
-- Importing sends nothing. Customers are contacted only after the merchant explicitly starts confirmation, attests consent and passes a credit check covering every initial message.
+- Importing sends nothing. Customers are contacted only after the merchant explicitly starts confirmation and passes a credit check covering every initial message. (The consent attestation originally approved was removed from the start flow; the start no longer asks for it.)
 - Released orders go out at no more than the configured per-organization rate (default 20 initial sends per minute). Nothing is released during the store's quiet hours.
 - Imported orders produce verifications, credit consumption, follow-ups and dashboard lifecycles identical to manual orders with the same data. This is asserted by an automated equivalence test.
 - The merchant can see each imported order's confirmation outcome in the existing Verifications experience, filtered to the import batch ([US-04.6-08](US-04.6-08-import-history-and-results-export.md)). Downloadable error/results files are deferred post-MVP — see that story's Deferred section.
@@ -32,7 +32,7 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 | Audience | Standalone organizations with a completed onboarding. Hidden in Shopify embedded mode; the API returns `IMPORT_SOURCE_UNSUPPORTED`. |
 | Roles | Owner/admin: upload, map, commit, start, stop, resume, discard. Viewer: see imported orders through Verifications (read-only). |
 | Accepted formats | `.csv` and `.xlsx` (first **visible** worksheet; other sheets are ignored with a notice). `.xls`, `.xlsm`, `.ods`, `.numbers`, password-protected and unreadable files are rejected with guidance. |
-| Limits (env-configurable) | 5 MB file; 5,000 data rows; 100 columns; 1,000 characters per cell; 50 MB uncompressed XLSX; 3 open (uncommitted) drafts per organization; 10 uploads per user per minute. |
+| Limits (env-configurable) | 5 MB file; **100** data rows (originally 5,000, lowered as a product decision in 2026-09); 100 columns; 1,000 characters per cell; 50 MB uncompressed XLSX; 3 open (uncommitted) drafts per organization; 10 uploads per user per minute. |
 | CSV dialect | UTF-8 with or without BOM, UTF-16 LE/BE with BOM, Windows-1256 fallback when bytes are not valid UTF-8. Delimiter auto-detected among `,`, `;` and tab. RFC 4180 quoting, including embedded delimiters, quotes and line breaks. |
 | Header row | The first non-empty row is the header. Blank headers become `Column N`; duplicate headers get ` (2)`, ` (3)` suffixes. |
 | Parse model | Parse **once** at upload and persist every row as `order_import_rows.raw`. Mapping changes re-validate from stored rows; commit is a state promotion. The original file is never stored, only its SHA-256, name, size and format. |
@@ -45,10 +45,10 @@ CSV/XLSX import is the first **multi-order ingestion adapter**, not a separate p
 | Order identity | With a reference: `externalOrderId = ref:<normalized reference>`, and `orderNumber` = the reference as written. Without a reference: `externalOrderId = imp:<batchId>:<rowNumber>`, and `orderNumber = IMP-<batch short code>-<rowNumber>`. |
 | Duplicate protection | L0 file hash (same org and bytes within 24 h: warning, continue allowed). L1 reference already imported into the source (duplicate). L2 repeated reference inside the file (identical line-item rows collapse into one order; conflicting rows are all invalid). L3 possible duplicate (same phone and amount on the source within 7 days, or the same order number within 30 days; excluded by default, includable). L4 commit `Idempotency-Key` plus the per-row event key `import:<batchId>:<rowNumber>`. |
 | Default send action | **Send now.** After quote review, one action commits ready orders into the source-neutral hold (`awaiting_start`) and starts release. Nothing is sent before start. |
-| Start checkpoint | Requires a consent attestation (versioned text, actor and timestamp stored), shows the order count, estimated duration and a credit estimate (N initial messages, up to 2N if follow-up is enabled). |
+| Start checkpoint | Shows the order count, estimated duration and a credit estimate (N initial messages, up to 2N if follow-up is enabled). It originally required a consent attestation; the code no longer asks for one, and only records the starting user and time. |
 | Credit gap | The send action is **blocked** unless available credits ≥ N (prepaid mode) or remaining included verifications ≥ N (periodic mode). The screen shows the shortfall and a **Buy credits** action. No partial starts. |
 | Auto-verify off | The send action is blocked with a link to settings. |
-| Start window | Held orders can be started within **72 hours** of commit. After that they are withdrawn (`not_started`) at no cost. |
+| Start window | Held orders can be started within **24 hours** of commit. After that they are withdrawn (`not_started`) at no cost. |
 | Pacing | Per-organization release rate of 20 initial sends per minute (env), shared across all releasing batches. Release pauses in store quiet hours and resumes after them. Existing `sendDelayMinutes`, quiet-hours and follow-up rules still apply downstream. |
 | Mid-release control | **Stop remaining** withdraws every unreleased order in the batch. The batch **auto-pauses** if credits, entitlement, auto-verify or onboarding stop allowing sends, and the merchant can **resume** once resolved. |
 | Error report | **Deferred post-MVP.** The review step's "Download rows to fix" action exists in the UI (US-04.6-05) but stays disabled until a future, explicitly-scoped export story. MVP merchants fix rows by re-reading the on-screen reasons. |
@@ -178,7 +178,7 @@ Import orders ("New import" action on the Verifications page header)
 draft ──mapping/validate──▶ draft
 draft ──commit──▶ committing ──▶ awaiting_start ──start──▶ releasing ──▶ completed
   │                  │                 │                  │  ▲
-  │ 24 h / discard   │ worker crash:   │ 72 h             │  │ resume
+  │ 24 h / discard   │ worker crash:   │ 24 h             │  │ resume
   ▼                  │ resumable       ▼                  ▼  │
 expired              │            not_started           paused ──stop──▶ stopped
                      └─ unrecoverable ─▶ failed (rows imported so far stay held and startable)
@@ -225,7 +225,7 @@ Every entry is owned by the story in brackets and appears in that story's edge c
 - UTF-8 BOM, UTF-16 LE with tabs (Arabic Excel "Unicode text"), Windows-1256 with Arabic text, mixed `\r\n`/`\n`, a trailing delimiter on every line, and a final line without a newline.
 - Semicolon-delimited files (European locale Excel), rows with more or fewer cells than the header, and quoted cells containing delimiters, quotes and line breaks. An unterminated quote produces one row issue, not a crashed parse.
 - XLSX: a hidden first sheet, multiple sheets, merged cells (value in the top-left cell only), formulas (cached values used, never evaluated), dates stored as serial numbers (1900 leap-year bug respected), phone columns stored as numbers, password-protected, `.xlsm` macros, an oversized shared-strings table (zip bomb), and 1,048,576 formatted but empty rows.
-- 5,000 rows accepted; 5,001 rejected before any row is persisted. Cells over 1,000 characters are truncated with `FIELD_TOO_LONG`.
+- 100 rows accepted; 101 rejected before any row is persisted. Cells over 1,000 characters are truncated with `FIELD_TOO_LONG`.
 
 **Mapping** [US-04.6-03]
 - Arabic headers with diacritics, tatweel and alef/taa-marbuta variants; English headers in any case and with punctuation.
@@ -261,7 +261,7 @@ Every entry is owned by the story in brackets and appears in that story's edge c
 - Auto-verify is switched off, onboarding is reset, or the source is deactivated during release (auto-pause).
 - Quiet hours start mid-release (pause, then continue after); the store timezone changes during release (the next tick uses the new value).
 - Two batches releasing at once share one org rate; manual orders are never queued behind an import.
-- The 72-hour start window lapses; the feature flag is turned off mid-release; a Meta template is paused (existing failure path).
+- The 24-hour start window lapses; the feature flag is turned off mid-release; a Meta template is paused (existing failure path).
 - A merchant deletes a member who started a batch (the batch continues; the audit keeps the actor ID).
 
 ## Failure and recovery invariants

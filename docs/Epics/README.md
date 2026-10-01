@@ -1,7 +1,7 @@
 # Akeed Expansion — Epics and Prioritized User Stories
 
 **Authored:** 2026-08-31  
-**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 and E05–E09 remain backlog
+**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 implemented, pilot complete (product owner, 2026-10-01); E05–E09 remain backlog
 **Inventory:** 11 epics, 72 user stories (67 P0 / 5 P1), 12 README files
 **Location:** `akeed-backend/docs/Epics`
 
@@ -38,7 +38,7 @@ Every epic has a prioritized story table. Each story's direct dependency links f
 - **Horizon is separate from priority:** a P0 WooCommerce story remains LATER, not a reason to displace Shopify stabilization.
 - **Delivery rank** is the story order inside its epic. Dependencies override priority labels and prevent release gates from jumping ahead of supporting work.
 - IDs such as `US-05-03` are stable. Reprioritize the index/rank deliberately rather than renaming IDs or silently changing dependencies.
-- Record implementation and release status separately with evidence. E01 is complete for its recorded working trees; E02 and E03 are implemented locally but release blocked; E04 has all five stories implemented locally but remains release blocked; E04.5 is Done per its epic evidence; E04.6 and E05–E09 remain **Backlog**. A validation spike can be Done with a no-go finding while its dependent feature remains Blocked.
+- Record implementation and release status separately with evidence. E01 is complete for its recorded working trees; E02 and E03 are implemented locally but release blocked; E04 has all five stories implemented locally but remains release blocked; E04.5 is Done per its epic evidence; E04.6 is implemented and its pilot is reported complete (product owner, 2026-10-01; the story evidence files have not been updated to say so); E05–E09 remain **Backlog**. A validation spike can be Done with a no-go finding while its dependent feature remains Blocked.
 - No story points, calendar promises or staffing assignments are fabricated. Those require delivery-team estimation.
 
 ## Story format

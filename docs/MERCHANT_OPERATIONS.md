@@ -1,12 +1,12 @@
 # Merchant Operations: Dashboard, Verifications, And Settings
 
-Last updated: 2026-05-28
+Last updated: 2026-10-01
 
 ## Purpose
 
 This document explains the merchant-facing operational screens in Akeed: the Dashboard, the Verifications list, and the Settings page. It covers the KPIs displayed, filtering and pagination, merchant actions (test send, order cancellation), settings tabs, validation rules, and the interaction between the frontend skins and the backend APIs.
 
-The Dashboard is the merchant's primary view after onboarding. It shows verification statistics, a filterable list of verification records, and actions for test sending and no-reply order cancellation. The Settings page allows merchants to configure store details, automation behavior, message templates, and billing plans.
+The Dashboard is the merchant's primary view after onboarding. In Standalone mode it also offers **Verify order** (a single manual order, see `MANUAL_ORDER_CREATION.md`) and **Import from file** (see `BULK_ORDER_IMPORT.md`). It shows verification statistics, a filterable list of verification records, and actions for test sending and no-reply order cancellation. The Settings page allows merchants to configure store details, automation behavior, message templates, and billing plans.
 
 For COD verification lifecycle mechanics (send, follow-up, escalation, customer replies), see `ORDER_CONFIRMATION_WORKFLOW.md`.
 For onboarding flow and billing plan activation, see `ONBOARDING_AND_BILLING.md`.
@@ -161,6 +161,10 @@ Each row displays:
 - Cursor-based: the API returns `next_cursor` when more rows exist.
 - Frontend uses "Load More" button (not page numbers).
 - Loading more appends to the existing list.
+
+### Imported orders
+
+Orders from a bulk import appear in the same list. Before the first message they carry the pre-verification stages `awaiting_start` (held), `queued` and `sending`, and a withdrawn order shows `not_started`. `GET /api/verifications` accepts an `importBatchId` (UUID) filter, scoped to the caller's organization. After release, imported orders behave exactly like any other order.
 
 ### Merchant Actions
 
