@@ -103,6 +103,11 @@ describe('OrdersService manual creation', () => {
     });
     dispatcher.dispatchById.mockResolvedValue('dispatched');
     verifications.findByOrderId.mockResolvedValue(undefined);
+    const readiness = new StandaloneSendReadinessService(
+      entitlements as never,
+      creditEligibility as never,
+      orderEligibility as never,
+    );
     service = new OrdersService(
       {} as never,
       new StandaloneOrderIngestionService(
@@ -110,13 +115,10 @@ describe('OrdersService manual creation', () => {
         dispatcher as never,
         verifications as never,
         new StandaloneSourceResolver(integrations as never),
+        readiness,
       ),
       phone as never,
-      new StandaloneSendReadinessService(
-        entitlements as never,
-        creditEligibility as never,
-        orderEligibility as never,
-      ),
+      readiness,
       dispatcher as never,
       webhookEvents as never,
     );

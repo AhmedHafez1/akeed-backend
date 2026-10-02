@@ -1436,6 +1436,7 @@ describe('order imports PostgreSQL contract', () => {
       { dispatchById: jest.fn() } as never,
       { findByOrderId: jest.fn() } as never,
       {} as never,
+      {} as never,
     );
 
     async function committingBatch(

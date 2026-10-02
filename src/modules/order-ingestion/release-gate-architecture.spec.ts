@@ -103,7 +103,11 @@ describe('E04.6 release gate: adapter boundary', () => {
       'modules/billing/',
       'infrastructure/spokes/',
     )
-      .filter(({ source }) => /ingestionType|bulk_import/.test(source))
+      .filter(({ source }) =>
+        /ingestionType|bulk_import|STANDALONE_INGESTION_CHANNELS|StandaloneIngestionChannel\b/.test(
+          source,
+        ),
+      )
       .map(({ path }) => path);
 
     expect(readers).toEqual([
@@ -116,7 +120,26 @@ describe('E04.6 release gate: adapter boundary', () => {
     expect(normalizer).toContain(
       'isStandaloneIngestionChannel(rawPayload.ingestionType)',
     );
-    expect(normalizer).not.toMatch(/'manual'|'bulk_import'/);
+    expect(normalizer).not.toMatch(/'manual'|'bulk_import'|'api'/);
+  });
+
+  it('names the API channel only where a channel is declared or chosen (E05)', () => {
+    // `'api'` is audit metadata: appended to the channel list, the key
+    // namespace and the log-action map, and passed by the API controller.
+    // Nothing else may compare against it.
+    const literal =
+      /channel:\s*'api'|\bapi:\s*'|[=!]==?\s*'api'|'api'\s*[=!]==?|^\s*'api',?\s*$/m;
+    const namers = files
+      .filter(({ source }) => literal.test(source))
+      .map(({ path }) => path)
+      .sort();
+
+    expect(namers).toEqual([
+      'modules/order-api/order-api.controller.ts',
+      'modules/order-ingestion/standalone-ingestion-keys.ts',
+      'modules/order-ingestion/standalone-order-ingestion.service.ts',
+      'shared/commerce/standalone-order-envelope.ts',
+    ]);
   });
 
   it('has no import-specific branch in the hub or any send path', () => {
@@ -151,7 +174,7 @@ describe('E04.6 release gate: adapter boundary', () => {
       ...controller.matchAll(/@(Get|Post|Put|Patch|Delete)\(([^)]*)\)/g),
     ].map(([, verb, route]) => `${verb} ${route}`);
 
-    expect(routes.length).toBe(13);
+    expect(routes.length).toBe(14);
     expect(
       routes.filter((route) => /retry|cancel|orders|verif/i.test(route)),
     ).toEqual([]);

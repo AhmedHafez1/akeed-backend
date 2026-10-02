@@ -33,6 +33,15 @@ export interface StandaloneSourceCodeMap {
   setupIncomplete: DenialCopy;
 }
 
+/**
+ * The same vocabulary for a caller that has no role: an integration
+ * credential, resolved by `resolveForIntegration`.
+ */
+export type StandaloneIntegrationSourceCodeMap = Omit<
+  StandaloneSourceCodeMap,
+  'roleRequired'
+>;
+
 export const MANUAL_ORDER_SOURCE_CODES: StandaloneSourceCodeMap = {
   roleRequired: {
     code: 'MANUAL_ORDER_ROLE_REQUIRED',
@@ -113,9 +122,10 @@ export const IMPORT_SOURCE_CODES: StandaloneSourceCodeMap = {
 /**
  * Resolves the one Standalone source a caller may write orders into.
  *
- * Every Standalone channel (manual form, file import, later the API) goes
- * through this, so "who may write, into which source" is decided in one place.
- * The source always comes from the session's organization, never the request.
+ * Every Standalone channel (manual form, file import, the API) goes through
+ * this, so "who may write, into which source" is decided in one place. The
+ * source always comes from the session's organization or the credential's
+ * integration, never the request.
  */
 @Injectable()
 export class StandaloneSourceResolver {
@@ -133,8 +143,35 @@ export class StandaloneSourceResolver {
     codes: StandaloneSourceCodeMap,
   ): Promise<StandaloneSource> {
     this.assertWritableRole(user, codes);
-    const sources = await this.integrationsRepo.findActiveByOrg(user.orgId);
-    if (sources.length !== 1 || sources[0].orgId !== user.orgId) {
+    return this.resolveSingle(user.orgId, codes);
+  }
+
+  /**
+   * The source an integration credential may write into: the organization's
+   * single active Standalone source, and only if it is the integration the
+   * credential was issued for. There is no role to check; an owner or admin
+   * issued the credential. A credential of a replaced source stops resolving
+   * here without being revoked.
+   */
+  resolveForIntegration(
+    orgId: string,
+    integrationId: string,
+    codes: StandaloneIntegrationSourceCodeMap,
+  ): Promise<StandaloneSource> {
+    return this.resolveSingle(orgId, codes, integrationId);
+  }
+
+  private async resolveSingle(
+    orgId: string,
+    codes: StandaloneIntegrationSourceCodeMap,
+    integrationId?: string,
+  ): Promise<StandaloneSource> {
+    const sources = await this.integrationsRepo.findActiveByOrg(orgId);
+    if (
+      sources.length !== 1 ||
+      sources[0].orgId !== orgId ||
+      (integrationId !== undefined && sources[0].id !== integrationId)
+    ) {
       const copy =
         sources.length > 1 ? codes.sourceAmbiguous : codes.sourceUnavailable;
       throw new ConflictException({

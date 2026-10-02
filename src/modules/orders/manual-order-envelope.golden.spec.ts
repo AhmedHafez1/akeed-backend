@@ -90,6 +90,15 @@ function buildService(accept: jest.Mock, customerPhone: string): OrdersService {
   const dispatcher = {
     dispatchById: jest.fn().mockResolvedValue('dispatched'),
   };
+  const readiness = new StandaloneSendReadinessService(
+    {
+      accountingModeFor: () => 'periodic_plan',
+      evaluateAccess: () => ({ allowed: true, reason: null }),
+      hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
+    } as never,
+    { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
+    {} as never,
+  );
   return new OrdersService(
     {} as never,
     new StandaloneOrderIngestionService(
@@ -99,17 +108,10 @@ function buildService(accept: jest.Mock, customerPhone: string): OrdersService {
       new StandaloneSourceResolver({
         findActiveByOrg: jest.fn().mockResolvedValue([source]),
       } as never),
+      readiness,
     ),
     { standardize: () => customerPhone } as never,
-    new StandaloneSendReadinessService(
-      {
-        accountingModeFor: () => 'periodic_plan',
-        evaluateAccess: () => ({ allowed: true, reason: null }),
-        hasAvailableSlot: jest.fn().mockResolvedValue({ available: true }),
-      } as never,
-      { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
-      {} as never,
-    ),
+    readiness,
     dispatcher as never,
     {} as never,
   );

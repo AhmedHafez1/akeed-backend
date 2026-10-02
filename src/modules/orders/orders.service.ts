@@ -29,6 +29,10 @@ import type {
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { StandaloneSendReadinessService } from '../order-ingestion/standalone-send-readiness.service';
 import type { SendReadinessBlocker } from '../order-ingestion/standalone-send-readiness.types';
+import {
+  blockerOf,
+  MANUAL_ORDER_READINESS_CODES,
+} from '../order-ingestion/standalone-readiness-gate';
 
 /**
  * The codes the manual endpoint has always answered a bad Idempotency-Key
@@ -39,17 +43,6 @@ const MANUAL_ORDER_IDEMPOTENCY_CODES = {
   required: 'MANUAL_ORDER_IDEMPOTENCY_KEY_REQUIRED',
   invalid: 'MANUAL_ORDER_VALIDATION_FAILED',
 };
-
-/** The first readiness blocker of `kind`, typed. */
-function blockerOf<K extends SendReadinessBlocker['kind']>(
-  blockers: SendReadinessBlocker[],
-  kind: K,
-): Extract<SendReadinessBlocker, { kind: K }> | undefined {
-  return blockers.find(
-    (blocker): blocker is Extract<SendReadinessBlocker, { kind: K }> =>
-      blocker.kind === kind,
-  );
-}
 
 @Injectable()
 export class OrdersService {
@@ -75,21 +68,22 @@ export class OrdersService {
       MANUAL_ORDER_IDEMPOTENCY_CODES,
     );
     const customerPhone = this.normalizePhone(payload.customerPhone);
-    const source = await this.ingestion.resolveWritableSource(
-      user,
-      MANUAL_ORDER_SOURCE_CODES,
-    );
-    const readiness = await this.readiness.evaluate(source, { required: 1 });
-    this.assertManualCreateReady(readiness.blockers);
 
     const accepted = await this.ingestion
-      .acceptOne(
-        { orgId: user.orgId, source },
+      .submitOne(
+        user,
         ManualOrderChannelAdapter.toCanonicalOrderInput(payload, {
           idempotencyKey,
           customerPhone,
         }),
-        { channel: 'manual', idempotencyKey },
+        {
+          channel: 'manual',
+          idempotencyKey,
+          codes: {
+            source: MANUAL_ORDER_SOURCE_CODES,
+            readiness: MANUAL_ORDER_READINESS_CODES,
+          },
+        },
       )
       .catch((error: unknown) =>
         ManualOrderChannelAdapter.rethrowAsHttp(error),
@@ -225,77 +219,6 @@ export class OrdersService {
       },
       duplicate: !reset,
     };
-  }
-
-  /**
-   * The manual create endpoint's answer to each readiness blocker. The rules
-   * live in `StandaloneSendReadinessService`; this is only the vocabulary and
-   * precedence the manual form has always answered with.
-   *
-   * Read-only order and verification access stays open while credit is
-   * unavailable; only the billable actions are refused.
-   */
-  private assertManualCreateReady(blockers: SendReadinessBlocker[]): void {
-    if (blockers.length === 0) return;
-    const entitlement = blockerOf(blockers, 'entitlement_required');
-    if (entitlement) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'An active Standalone entitlement is required.',
-        code: 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
-        reason: entitlement.reason,
-      });
-    }
-    if (blockerOf(blockers, 'auto_verify_disabled')) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Enable automatic verification before creating an order.',
-        code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED',
-      });
-    }
-    const credit = blockerOf(blockers, 'credit_denied');
-    if (credit) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'Credit is not available for this action.',
-        code: credit.code,
-        reason: credit.code,
-      });
-    }
-    // The entitlement policy never reads usage, so a source at its included
-    // limit passes it; without this the create answered 202 and the worker
-    // silently skipped the verification. Advisory by design: the dispatch
-    // claim is what actually reserves the slot.
-    const slot = blockerOf(blockers, 'slot_unavailable');
-    if (slot) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message:
-          slot.reason === 'plan_limit_reached'
-            ? 'The included verifications for this period are used up.'
-            : 'An active Standalone entitlement is required.',
-        code: isCreditDenialCode(slot.reason)
-          ? slot.reason
-          : slot.reason === 'plan_limit_reached'
-            ? 'MANUAL_ORDER_PLAN_LIMIT_REACHED'
-            : 'MANUAL_ORDER_ENTITLEMENT_REQUIRED',
-        reason: slot.reason,
-        consumedCount: slot.consumedCount,
-        includedLimit: slot.includedLimit,
-      });
-    }
-    // The source resolver already refused inactive and unfinished sources;
-    // failing closed here keeps any future blocker from being accepted.
-    throw new ConflictException({
-      statusCode: 409,
-      error: 'Conflict',
-      message: MANUAL_ORDER_SOURCE_CODES.setupIncomplete.message,
-      code: MANUAL_ORDER_SOURCE_CODES.setupIncomplete.code,
-    });
   }
 
   /** The retry endpoint's answer to each readiness blocker. */

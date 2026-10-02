@@ -14,6 +14,8 @@ export const CANONICAL_PHONE_MAX_LENGTH = 20;
 export const CANONICAL_NAME_MAX_LENGTH = 255;
 export const CANONICAL_ORDER_NUMBER_MAX_LENGTH = 100;
 export const CANONICAL_PAYMENT_METHOD_MAX_LENGTH = 100;
+/** `city`, `address` and `notes`: the longest cell a file import keeps. */
+export const CANONICAL_EXTRA_TEXT_MAX_LENGTH = 1_000;
 
 /** Greater than zero, at most 10 integer digits and 2 decimals, no sign. */
 export const CANONICAL_TOTAL_PRICE_PATTERN =
@@ -77,6 +79,27 @@ export function fitsCanonicalOrderNumber(value: string): boolean {
 
 export function fitsCanonicalPaymentMethod(value: string): boolean {
   return value.length <= CANONICAL_PAYMENT_METHOD_MAX_LENGTH;
+}
+
+const CANONICAL_ORDER_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * The stored form of an order date: a real calendar day as `YYYY-MM-DD`.
+ * A file import normalizes its cells to this form, so a channel that takes
+ * the date as text must take exactly it or the same order would fingerprint
+ * differently.
+ */
+export function isCanonicalOrderDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = CANONICAL_ORDER_DATE.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [+match[1], +match[2], +match[3]];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 export type CanonicalTotalPriceFailure =

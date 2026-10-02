@@ -703,6 +703,11 @@ async function createHarness(): Promise<AcceptanceHarness> {
     },
     resetForRedispatch: async () => false,
   };
+  const sendReadiness = new StandaloneSendReadinessService(
+    billing,
+    creditEligibility,
+    eligibility,
+  );
   const ordersService = new OrdersService(
     ordersRepo as never,
     new StandaloneOrderIngestionService(
@@ -710,9 +715,10 @@ async function createHarness(): Promise<AcceptanceHarness> {
       dispatcher as never,
       verificationRepo as never,
       new StandaloneSourceResolver(integrationsRepo as never),
+      sendReadiness,
     ),
     new PhoneService(),
-    new StandaloneSendReadinessService(billing, creditEligibility, eligibility),
+    sendReadiness,
     dispatcher as never,
     eventRepo as never,
   );

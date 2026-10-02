@@ -2,6 +2,9 @@ import type {
   CanonicalOrderInput,
   StandaloneIngestionChannel,
 } from '../../shared/commerce/standalone-order-envelope';
+import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import type { StandaloneReadinessCodeMap } from './standalone-readiness-gate';
+import type { StandaloneIntegrationSourceCodeMap } from './standalone-source-resolver';
 
 export type {
   CanonicalOrderExtras,
@@ -26,6 +29,34 @@ export interface AcceptOneOptions {
   hold?: { groupId: string };
   /** Channel metadata stored beside the order in `rawPayload`. */
   envelopeExtras?: Record<string, unknown>;
+}
+
+/**
+ * A caller authenticated by an integration credential instead of a session.
+ * `keyId` and `prefix` are log metadata; only `orgId` and `integrationId`
+ * decide which source the order is accepted into.
+ */
+export interface IntegrationIngestionPrincipal {
+  orgId: string;
+  integrationId: string;
+  keyId: string;
+  prefix: string;
+}
+
+/** Who is submitting one order: a signed-in member or an integration. */
+export type StandaloneIngestionPrincipal =
+  | AuthenticatedUser
+  | IntegrationIngestionPrincipal;
+
+/**
+ * `submitOne` never holds: a held acceptance sends nothing, so it has no
+ * readiness to check and stays on `acceptOne` / `acceptMany`.
+ */
+export interface SubmitOneOptions<
+  SourceCodes extends StandaloneIntegrationSourceCodeMap,
+> extends Omit<AcceptOneOptions, 'hold'> {
+  /** The channel's vocabulary for a refused source or an unready one. */
+  codes: { source: SourceCodes; readiness: StandaloneReadinessCodeMap };
 }
 
 export interface AcceptOneResult {

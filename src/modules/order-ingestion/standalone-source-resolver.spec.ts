@@ -119,6 +119,83 @@ describe('StandaloneSourceResolver', () => {
     });
   });
 
+  // An integration API key has no session and no role: the key itself names
+  // the source, and the resolver proves that source is still the one to use.
+  describe('resolveForIntegration', () => {
+    const CODES = {
+      sourceUnavailable: { code: 'X_SOURCE_UNAVAILABLE', message: 'none' },
+      sourceAmbiguous: { code: 'X_SOURCE_AMBIGUOUS', message: 'many' },
+      sourceUnsupported: { code: 'X_SOURCE_UNSUPPORTED', message: 'other' },
+      setupIncomplete: { code: 'X_SETUP_INCOMPLETE', message: 'setup' },
+    };
+
+    async function integrationDenial(
+      integrationId = 'int-1',
+    ): Promise<{ status: number; body: unknown }> {
+      try {
+        await resolver.resolveForIntegration('org-1', integrationId, CODES);
+      } catch (error) {
+        const http = error as { getStatus(): number; getResponse(): unknown };
+        return { status: http.getStatus(), body: http.getResponse() };
+      }
+      throw new Error('expected a denial');
+    }
+
+    it('resolves the completed Standalone source the key names, without a role', async () => {
+      await expect(
+        resolver.resolveForIntegration('org-1', 'int-1', CODES),
+      ).resolves.toBe(standalone);
+      expect(integrations.findActiveByOrg).toHaveBeenCalledWith('org-1');
+    });
+
+    it('refuses a key whose integration is not the active source', async () => {
+      // The merchant replaced the source: the old integration's keys stop
+      // working with no revocation needed.
+      await expect(integrationDenial('int-old')).resolves.toEqual({
+        status: 409,
+        body: {
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'none',
+          code: 'X_SOURCE_UNAVAILABLE',
+        },
+      });
+    });
+
+    it.each([
+      ['an inactive source (none active)', [], 409, 'X_SOURCE_UNAVAILABLE'],
+      [
+        'a second active source',
+        [standalone, { ...standalone, id: 'int-2' }],
+        409,
+        'X_SOURCE_AMBIGUOUS',
+      ],
+      [
+        'a row of another organization',
+        [{ ...standalone, orgId: 'org-2' }],
+        409,
+        'X_SOURCE_UNAVAILABLE',
+      ],
+      [
+        'a non-Standalone source',
+        [{ ...standalone, platformType: 'shopify' }],
+        403,
+        'X_SOURCE_UNSUPPORTED',
+      ],
+      [
+        'pending onboarding',
+        [{ ...standalone, onboardingStatus: 'pending' }],
+        409,
+        'X_SETUP_INCOMPLETE',
+      ],
+    ])('denies %s', async (_label, sources, status, code) => {
+      integrations.findActiveByOrg.mockResolvedValue(sources);
+      const result = await integrationDenial();
+      expect(result.status).toBe(status);
+      expect(result.body).toMatchObject({ statusCode: status, code });
+    });
+  });
+
   describe('import code map', () => {
     it.each([
       [

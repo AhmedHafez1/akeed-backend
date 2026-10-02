@@ -6,9 +6,12 @@ import { appendPaymentSignal, classifyCodStatus } from './payment-signals';
  * Every channel a Standalone order can enter through. All of them share one
  * envelope, one normalizer and one eligibility strategy; `ingestionType` is
  * audit metadata only and nothing downstream of the normalizer reads it.
- * E05 appends `'api'` here.
  */
-export const STANDALONE_INGESTION_CHANNELS = ['manual', 'bulk_import'] as const;
+export const STANDALONE_INGESTION_CHANNELS = [
+  'manual',
+  'bulk_import',
+  'api',
+] as const;
 
 export type StandaloneIngestionChannel =
   (typeof STANDALONE_INGESTION_CHANNELS)[number];

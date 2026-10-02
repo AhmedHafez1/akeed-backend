@@ -40,6 +40,7 @@ function setup() {
     dispatcher as never,
     verificationsRepo as never,
     {} as never,
+    {} as never,
   );
   return { service, acceptance, dispatcher };
 }

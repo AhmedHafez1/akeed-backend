@@ -282,16 +282,17 @@ export function releaseGateHarness(
   }
 
   const resolver = new StandaloneSourceResolver(integrations);
+  const readiness = new StandaloneSendReadinessService(
+    billing,
+    creditEligibility,
+    eligibility,
+  );
   const ingestion = new StandaloneOrderIngestionService(
     new ManualOrderIngestionRepository(db),
     dispatcher,
     verificationsRepo,
     resolver,
-  );
-  const readiness = new StandaloneSendReadinessService(
-    billing,
-    creditEligibility,
-    eligibility,
+    readiness,
   );
   const orders = new OrdersService(
     ordersRepo,

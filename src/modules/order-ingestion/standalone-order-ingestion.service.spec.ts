@@ -15,6 +15,9 @@ import {
   StandaloneIngestionDispatchError,
 } from './standalone-order-ingestion.errors';
 import { StandaloneOrderIngestionService } from './standalone-order-ingestion.service';
+import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { MANUAL_ORDER_READINESS_CODES } from './standalone-readiness-gate';
+import { MANUAL_ORDER_SOURCE_CODES } from './standalone-source-resolver';
 
 describe('StandaloneOrderIngestionService.acceptOne', () => {
   const ctx = {
@@ -55,6 +58,7 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
       acceptance as never,
       dispatcher as never,
       verifications as never,
+      {} as never,
       {} as never,
     );
   });
@@ -175,12 +179,192 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
   });
 });
 
+describe('StandaloneOrderIngestionService.submitOne', () => {
+  const source = {
+    id: 'int-1',
+    orgId: 'org-1',
+    platformType: 'standalone',
+    platformStoreUrl: 'standalone:org-1',
+  };
+  const input: CanonicalOrderInput = {
+    externalOrderId: 'ref:1001',
+    orderNumber: '#1001',
+    customerPhone: '+201001234567',
+    customerName: 'Customer',
+    totalPrice: '50',
+    currency: 'EGP',
+    paymentMethod: 'cash_on_delivery',
+  };
+  const user: AuthenticatedUser = {
+    userId: 'user-1',
+    orgId: 'org-1',
+    role: 'owner',
+    source: 'supabase',
+  };
+  const apiKey = {
+    orgId: 'org-1',
+    integrationId: 'int-1',
+    keyId: 'key-1',
+    prefix: 'ak_live_ab12cd34',
+  };
+  const codes = {
+    source: MANUAL_ORDER_SOURCE_CODES,
+    readiness: MANUAL_ORDER_READINESS_CODES,
+  };
+  const acceptance = {
+    accept: jest.fn<
+      Promise<{ eventId: string; order: { id: string }; duplicate: boolean }>,
+      [ManualOrderAcceptanceInput]
+    >(),
+  };
+  const dispatcher = { dispatchById: jest.fn<Promise<string>, [string]>() };
+  const verifications = { findByOrderId: jest.fn() };
+  const resolver = {
+    resolveWritable: jest.fn(),
+    resolveForIntegration: jest.fn(),
+  };
+  const readiness = { evaluate: jest.fn() };
+  let service: StandaloneOrderIngestionService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    acceptance.accept.mockResolvedValue({
+      eventId: 'event-1',
+      order: { id: 'order-1' },
+      duplicate: false,
+    });
+    dispatcher.dispatchById.mockResolvedValue('dispatched');
+    verifications.findByOrderId.mockResolvedValue({ id: 'verification-1' });
+    resolver.resolveWritable.mockResolvedValue(source);
+    resolver.resolveForIntegration.mockResolvedValue(source);
+    readiness.evaluate.mockResolvedValue({ ready: true, blockers: [] });
+    service = new StandaloneOrderIngestionService(
+      acceptance as never,
+      dispatcher as never,
+      verifications as never,
+      resolver as never,
+      readiness as never,
+    );
+  });
+
+  it('resolves a session user by role, checks readiness for one send, then accepts', async () => {
+    await expect(
+      service.submitOne(user, input, {
+        channel: 'manual',
+        idempotencyKey: 'key-00001',
+        codes,
+      }),
+    ).resolves.toEqual({
+      orderId: 'order-1',
+      eventId: 'event-1',
+      verificationId: 'verification-1',
+      duplicate: false,
+      held: false,
+    });
+
+    expect(resolver.resolveWritable).toHaveBeenCalledWith(user, codes.source);
+    expect(resolver.resolveForIntegration).not.toHaveBeenCalled();
+    expect(readiness.evaluate).toHaveBeenCalledWith(source, { required: 1 });
+    const resolved = resolver.resolveWritable.mock.invocationCallOrder[0];
+    const evaluated = readiness.evaluate.mock.invocationCallOrder[0];
+    const accepted = acceptance.accept.mock.invocationCallOrder[0];
+    expect(resolved).toBeLessThan(evaluated);
+    expect(evaluated).toBeLessThan(accepted);
+    expect(acceptance.accept.mock.calls[0][0].event).toMatchObject({
+      orgId: 'org-1',
+      integrationId: 'int-1',
+      storeDomain: 'standalone:org-1',
+      idempotencyKey: 'key-00001',
+    });
+  });
+
+  it('resolves an integration principal by its integration, with no role', async () => {
+    await service.submitOne(apiKey, input, {
+      channel: 'api',
+      idempotencyKey: 'order-1001',
+      codes,
+    });
+
+    expect(resolver.resolveForIntegration).toHaveBeenCalledWith(
+      'org-1',
+      'int-1',
+      codes.source,
+    );
+    expect(resolver.resolveWritable).not.toHaveBeenCalled();
+    expect(readiness.evaluate).toHaveBeenCalledWith(source, { required: 1 });
+    const call = acceptance.accept.mock.calls[0][0];
+    expect(call.event).toMatchObject({
+      orgId: 'org-1',
+      integrationId: 'int-1',
+      storeDomain: 'standalone:org-1',
+      idempotencyKey: 'api:order-1001',
+    });
+    expect(call.event.rawPayload.ingestionType).toBe('api');
+    // The command never learns which credential produced the order.
+    expect(JSON.stringify(call)).not.toContain('key-1');
+    expect(JSON.stringify(call)).not.toContain('ak_live_ab12cd34');
+  });
+
+  it('accepts into the resolved source, never the one the principal names', async () => {
+    resolver.resolveForIntegration.mockResolvedValue({
+      ...source,
+      id: 'int-resolved',
+      platformStoreUrl: 'standalone:resolved',
+    });
+    await service.submitOne(apiKey, input, {
+      channel: 'api',
+      idempotencyKey: 'order-1001',
+      codes,
+    });
+    expect(acceptance.accept.mock.calls[0][0].event).toMatchObject({
+      integrationId: 'int-resolved',
+      storeDomain: 'standalone:resolved',
+    });
+  });
+
+  it('accepts nothing when the source cannot be resolved', async () => {
+    const refusal = new Error('source refused');
+    resolver.resolveWritable.mockRejectedValue(refusal);
+    await expect(
+      service.submitOne(user, input, {
+        channel: 'manual',
+        idempotencyKey: 'key-00001',
+        codes,
+      }),
+    ).rejects.toBe(refusal);
+    expect(readiness.evaluate).not.toHaveBeenCalled();
+    expect(acceptance.accept).not.toHaveBeenCalled();
+  });
+
+  it('accepts nothing while the source is not ready to send', async () => {
+    readiness.evaluate.mockResolvedValue({
+      ready: false,
+      blockers: [{ kind: 'auto_verify_disabled' }],
+    });
+    await expect(
+      service.submitOne(apiKey, input, {
+        channel: 'api',
+        idempotencyKey: 'order-1001',
+        codes,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'MANUAL_ORDER_AUTO_VERIFY_DISABLED' },
+    });
+    expect(acceptance.accept).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+  });
+});
+
 describe('Standalone ingestion keys', () => {
   it('keeps manual keys unchanged and namespaces import rows', () => {
     expect(namespaceIdempotencyKey('manual', 'abc-12345')).toBe('abc-12345');
     expect(
       namespaceIdempotencyKey('bulk_import', importRowKey('batch-1', 12)),
     ).toBe('import:batch-1:12');
+  });
+
+  it('namespaces API keys so they cannot collide with a manual key', () => {
+    expect(namespaceIdempotencyKey('api', 'abc-12345')).toBe('api:abc-12345');
   });
 
   it.each([

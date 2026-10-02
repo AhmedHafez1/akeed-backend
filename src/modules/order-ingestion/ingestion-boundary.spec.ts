@@ -15,6 +15,9 @@ function srcPath(path: string): string {
   return relative(SRC, path).replace(/\\/g, '/');
 }
 
+/** Every Standalone channel and the command they share. */
+const CHANNELS = /^modules\/(orders|order-imports|order-api|order-ingestion)\//;
+
 /**
  * `StandaloneOrderIngestionService` is the only way a Standalone order enters
  * Akeed. A channel that wrote through the repository or dispatched on its own
@@ -47,9 +50,7 @@ describe('Standalone ingestion boundary', () => {
         /platformType\s*!==\s*'standalone'|\.findActiveByOrg\(/.test(source),
       )
       .map(({ path }) => path)
-      .filter((path) =>
-        /^modules\/(orders|order-imports|order-ingestion)\//.test(path),
-      );
+      .filter((path) => CHANNELS.test(path));
 
     expect(deciders).toEqual([
       'modules/order-ingestion/standalone-source-resolver.ts',
@@ -65,13 +66,99 @@ describe('Standalone ingestion boundary', () => {
         /\.(resolveDenial|hasAvailableSlot)\(/.test(source),
       )
       .map(({ path }) => path)
-      .filter((path) =>
-        /^modules\/(orders|order-imports|order-ingestion)\//.test(path),
-      );
+      .filter((path) => CHANNELS.test(path));
 
     expect(readers).toEqual([
       'modules/order-ingestion/standalone-send-readiness.service.ts',
     ]);
+  });
+
+  it('gates a single submission in one place', () => {
+    // The manual form and the API both enter through `submitOne`; neither
+    // evaluates readiness for a new order or maps its blockers on its own.
+    const gates = files
+      .filter(({ source }) => /\bassertSendReady\(/.test(source))
+      .map(({ path }) => path)
+      .sort();
+
+    expect(gates).toEqual([
+      'modules/order-ingestion/standalone-order-ingestion.service.ts',
+      'modules/order-ingestion/standalone-readiness-gate.ts',
+    ]);
+  });
+
+  describe('the order API is a channel adapter and nothing else (E05)', () => {
+    const api = files.filter(({ path }) =>
+      path.startsWith('modules/order-api/'),
+    );
+
+    it('holds a controller, a request DTO, an adapter and its module', () => {
+      expect(api.map(({ path }) => path).sort()).toEqual([
+        'modules/order-api/api-order.channel-adapter.ts',
+        'modules/order-api/dto/create-api-order.dto.ts',
+        'modules/order-api/order-api.controller.ts',
+        'modules/order-api/order-api.module.ts',
+      ]);
+    });
+
+    it('imports nothing that persists, dispatches, bills or builds an envelope', () => {
+      const forbidden =
+        /from\s+'[^']*(manual-order-ingestion\.repository|webhook-events\.repository|webhook-dispatch\.service|credit-eligibility\.service|billing-entitlement\.service|standalone-send-readiness\.service|standalone-order-envelope|standalone-order-preview|\/verification-core\/|google-libphonenumber|\/repositories\/orders\.repository)[^']*'/g;
+      const offenders = api.flatMap(({ path, source }) =>
+        [...source.matchAll(forbidden)].map(
+          ([, target]) => `${path}: ${target}`,
+        ),
+      );
+
+      expect(offenders).toEqual([]);
+    });
+
+    it('reaches the ingestion command only through submitOne', () => {
+      const calls = api.flatMap(({ path, source }) =>
+        [
+          ...source.matchAll(
+            /\.(submitOne|acceptOne|acceptMany|dispatchById|evaluate|resolveWritable|resolveWritableSource|resolveForIntegration)\(/g,
+          ),
+        ].map(([, method]) => `${path}: ${method}`),
+      );
+
+      expect(calls).toEqual([
+        'modules/order-api/order-api.controller.ts: submitOne',
+      ]);
+      expect(
+        api.filter(({ source }) =>
+          /buildStandaloneOrderEnvelope|fingerprintCanonicalOrder|PhoneNumberUtil|classifyCodStatus|assertSendReady/.test(
+            source,
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it('declares no limit, pattern or currency list of its own', () => {
+      // Every field rule is read from canonical-order.rules.ts; the only
+      // literal the module may hold is text.
+      const declared = api.flatMap(({ path, source }) =>
+        [
+          ...source.matchAll(
+            /@(?:Min|Max)?Length\(\s*\d|@Matches\(\s*\/|@IsIn\(\s*\[|new RegExp\(|=\s*\/\S/g,
+          ),
+        ].map(([match]) => `${path}: ${match}`),
+      );
+
+      expect(declared).toEqual([]);
+    });
+
+    it('takes the tenant from the API key, never from a session or the body', () => {
+      const controller = api.find(({ path }) =>
+        path.endsWith('order-api.controller.ts'),
+      )!.source;
+
+      expect(controller).toContain('@UseGuards(IntegrationApiKeyGuard)');
+      expect(controller).not.toMatch(/DualAuthGuard|CurrentUser\b/);
+      expect(
+        api.filter(({ source }) => /\b(orgId|integrationId)\b/.test(source)),
+      ).toEqual([]);
+    });
   });
 
   it('keeps manual orders out of the bulk-import release path', () => {

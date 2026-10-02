@@ -29,8 +29,11 @@ import {
   StandaloneIngestionDispatchError,
 } from './standalone-order-ingestion.errors';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { assertSendReady } from './standalone-readiness-gate';
+import { StandaloneSendReadinessService } from './standalone-send-readiness.service';
 import {
   StandaloneSourceResolver,
+  type StandaloneIntegrationSourceCodeMap,
   type StandaloneSource,
   type StandaloneSourceCodeMap,
 } from './standalone-source-resolver';
@@ -40,7 +43,10 @@ import type {
   AcceptManyRowResult,
   AcceptOneOptions,
   AcceptOneResult,
+  IntegrationIngestionPrincipal,
   StandaloneIngestionContext,
+  StandaloneIngestionPrincipal,
+  SubmitOneOptions,
 } from './standalone-order-ingestion.types';
 
 /**
@@ -50,16 +56,18 @@ import type {
 const LOG_ACTION_PREFIX: Record<StandaloneIngestionChannel, string> = {
   manual: 'manual-order',
   bulk_import: 'bulk-import-order',
+  api: 'api-order',
 };
 
 /**
  * The one ingestion command for Standalone orders.
  *
- * Channel adapters (the manual form, file import, later the public API) only
+ * Channel adapters (the manual form, file import, the server API) only
  * translate their input into a `CanonicalOrderInput`. Everything after that --
- * the envelope and fingerprint, idempotent acceptance, the optional hold and
- * the dispatch -- happens here, so no channel can build its own payload, write
- * orders or events, or start a verification by another route.
+ * the source and readiness gates of a single submission, the envelope and
+ * fingerprint, idempotent acceptance, the optional hold and the dispatch --
+ * happens here, so no channel can build its own payload, write orders or
+ * events, or start a verification by another route.
  */
 @Injectable()
 export class StandaloneOrderIngestionService {
@@ -70,6 +78,7 @@ export class StandaloneOrderIngestionService {
     private readonly dispatcher: WebhookDispatchService,
     private readonly verificationsRepo: VerificationsRepository,
     private readonly sourceResolver: StandaloneSourceResolver,
+    private readonly readiness: StandaloneSendReadinessService,
   ) {}
 
   /**
@@ -89,6 +98,54 @@ export class StandaloneOrderIngestionService {
     codes: StandaloneSourceCodeMap,
   ): Promise<StandaloneSource> {
     return this.sourceResolver.resolveWritable(user, codes);
+  }
+
+  /**
+   * Submit one order that will be sent at once: resolve the caller's source,
+   * refuse while that source cannot send, then accept.
+   *
+   * Every single-order channel enters here, so the manual form and the API
+   * refuse the same situations in the same order and differ only in the codes
+   * they answer with. A session user is resolved by organization and role, an
+   * integration principal by the integration its credential was issued for;
+   * both end in the same `StandaloneIngestionContext`.
+   */
+  submitOne(
+    principal: AuthenticatedUser,
+    input: CanonicalOrderInput,
+    options: SubmitOneOptions<StandaloneSourceCodeMap>,
+  ): Promise<AcceptOneResult>;
+  submitOne(
+    principal: IntegrationIngestionPrincipal,
+    input: CanonicalOrderInput,
+    options: SubmitOneOptions<StandaloneIntegrationSourceCodeMap>,
+  ): Promise<AcceptOneResult>;
+  async submitOne(
+    principal: StandaloneIngestionPrincipal,
+    input: CanonicalOrderInput,
+    options:
+      | SubmitOneOptions<StandaloneSourceCodeMap>
+      | SubmitOneOptions<StandaloneIntegrationSourceCodeMap>,
+  ): Promise<AcceptOneResult> {
+    const { codes, ...acceptOptions } = options;
+    const source =
+      'integrationId' in principal
+        ? await this.sourceResolver.resolveForIntegration(
+            principal.orgId,
+            principal.integrationId,
+            codes.source,
+          )
+        : await this.sourceResolver.resolveWritable(
+            principal,
+            codes.source as StandaloneSourceCodeMap,
+          );
+    const readiness = await this.readiness.evaluate(source, { required: 1 });
+    assertSendReady(readiness.blockers, codes.readiness);
+    return this.acceptOne(
+      { orgId: principal.orgId, source },
+      input,
+      acceptOptions,
+    );
   }
 
   async acceptOne(

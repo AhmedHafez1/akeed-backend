@@ -149,9 +149,9 @@ describe('Standalone channel equivalence', () => {
     ['credit card'],
     [''],
   ])(
-    'normalizes manual and bulk envelopes to the same order (payment "%s")',
+    'normalizes manual, bulk and API envelopes to the same order (payment "%s")',
     (paymentMethod) => {
-      const [manual, bulk] = STANDALONE_INGESTION_CHANNELS.map(
+      const [manual, bulk, api] = STANDALONE_INGESTION_CHANNELS.map(
         (ingestionType) =>
           normalizer.normalizeOrder(
             buildStandaloneOrderEnvelope({
@@ -174,23 +174,27 @@ describe('Standalone channel equivalence', () => {
       expect(bulkOrder).toEqual(manualOrder);
       expect(manualPayload?.ingestionType).toBe('manual');
       expect(bulkPayload?.ingestionType).toBe('bulk_import');
+      expect(api).not.toBeNull();
+      const { rawPayload: apiPayload, ...apiOrder } = api!;
+      expect(apiOrder).toEqual(manualOrder);
+      expect(apiPayload?.ingestionType).toBe('api');
 
       for (const assumeCodWhenPaymentMissing of [false, true]) {
         const integration = {
           platformType: 'standalone',
           assumeCodWhenPaymentMissing,
         } as never;
-        expect(
-          eligibility.evaluateOrderForVerification({
-            order: bulk!,
-            integration,
-          }),
-        ).toEqual(
-          eligibility.evaluateOrderForVerification({
-            order: manual!,
-            integration,
-          }),
-        );
+        const manualDecision = eligibility.evaluateOrderForVerification({
+          order: manual!,
+          integration,
+        });
+        for (const other of [bulk!, api!])
+          expect(
+            eligibility.evaluateOrderForVerification({
+              order: other,
+              integration,
+            }),
+          ).toEqual(manualDecision);
       }
     },
   );
@@ -202,7 +206,7 @@ describe('Standalone channel equivalence', () => {
     });
     expect(
       normalizer.normalizeOrder(
-        { ...rawPayload, ingestionType: 'api' },
+        { ...rawPayload, ingestionType: 'webhook' },
         'source-1',
         'org-1',
       ),

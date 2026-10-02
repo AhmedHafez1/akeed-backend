@@ -15,6 +15,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { OrdersModule } from './modules/orders/orders.module';
 import { OrderImportsModule } from './modules/order-imports/order-imports.module';
 import { IntegrationKeysModule } from './modules/integration-keys/integration-keys.module';
+import { OrderApiModule } from './modules/order-api/order-api.module';
 import { VerificationsModule } from './modules/verifications/verifications.module';
 import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module';
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
@@ -93,6 +94,7 @@ const billingModule = BillingModule.register({
     OrdersModule,
     OrderImportsModule,
     IntegrationKeysModule,
+    OrderApiModule,
     VerificationsModule,
     WebhookQueueModule,
     VerificationAutomationModule,

@@ -6,11 +6,12 @@ import type { StandaloneIngestionChannel } from '../../shared/commerce/standalon
  * Manual keys carry no prefix: they were stored raw before channels existed,
  * and a replay must find the event it created. Every later channel is
  * namespaced so its keys cannot collide with a merchant's manual key or with
- * each other. E05 adds `api: 'api:'`.
+ * each other.
  */
 const IDEMPOTENCY_KEY_PREFIX: Record<StandaloneIngestionChannel, string> = {
   manual: '',
   bulk_import: 'import:',
+  api: 'api:',
 };
 
 export function namespaceIdempotencyKey(
