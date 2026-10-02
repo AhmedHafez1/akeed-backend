@@ -310,4 +310,15 @@ describe('RowValidationService', () => {
     expect(validated).toHaveLength(5_000);
     expect(elapsedMs).toBeLessThan(2_000);
   });
+
+  it("detects a file's country among the supported ones, else the fallback", () => {
+    const { service } = setup();
+    expect(service.detectCountry(['501039595', '966531047514'], 'EG')).toBe(
+      'SA',
+    );
+    expect(service.detectCountry(['01012345678'], 'SA')).toBe('EG');
+    expect(service.detectCountry(['n/a', ''], 'EG')).toBe('EG');
+    // A store country Akeed has no currency for is still a candidate.
+    expect(service.detectCountry(['2125550123'], 'US')).toBe('US');
+  });
 });

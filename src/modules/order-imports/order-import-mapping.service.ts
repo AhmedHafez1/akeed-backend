@@ -176,6 +176,28 @@ export function defaultImportOptions(source: StandaloneSource): ImportOptions {
   };
 }
 
+/**
+ * The defaults for a file whose phones belong to `country`. That country's
+ * currency comes along, unless the store chose a currency that is not its own
+ * country's -- the same rule the page applies when the merchant changes the
+ * country by hand.
+ */
+function optionsForCountry(
+  defaults: ImportOptions,
+  country: string,
+): ImportOptions {
+  if (country === defaults.country) return defaults;
+  const followsCountry =
+    defaults.defaultCurrency === COUNTRY_CURRENCIES[defaults.country];
+  return {
+    ...defaults,
+    country,
+    defaultCurrency: followsCountry
+      ? (COUNTRY_CURRENCIES[country] ?? defaults.defaultCurrency)
+      : defaults.defaultCurrency,
+  };
+}
+
 /** Keeps only the choices for values the merchant was actually shown. */
 function choicesForListedValues(
   map: Readonly<Record<string, PaymentClassification>>,
@@ -205,6 +227,8 @@ export class OrderImportMappingService {
    * Detects the mapping of a freshly parsed file (AC1–AC3, AC5, AC6), with
    * the organization's saved profile for the same header set laid over it
    * (AC8). Payment values and date ambiguity look at every row, not samples.
+   * The import country is the profile's, else the one the phone column points
+   * to, else the store's default.
    * A payment value's choice comes from that profile first, then from what
    * the store chose for it in any earlier file, then from the automatic guess.
    */
@@ -228,10 +252,11 @@ export class OrderImportMappingService {
       ? applySavedProfile(detected, headers, saved.columns)
       : detected;
     const columns = mappingFromSuggestions(suggestions.fields);
-    const countsOf = (column: string) => {
+    const cellsOf = (column: string) => {
       const index = headers.indexOf(column);
-      return countValues(rows.map((row) => row.cells[index] ?? ''));
+      return rows.map((row) => row.cells[index] ?? '');
     };
+    const countsOf = (column: string) => countValues(cellsOf(column));
 
     const storeChoices = columns.paymentMethod
       ? await this.repository.findPaymentClassifications(
@@ -251,8 +276,19 @@ export class OrderImportMappingService {
       savedChoices,
       'saved',
     );
+    // A country saved for these headers is the merchant's own answer; without
+    // one, the phones say more about the file than the store's default does.
+    const defaults = defaultImportOptions(source);
     const options: ImportOptions = {
-      ...defaultImportOptions(source),
+      ...(columns.phone && !saved?.options.country
+        ? optionsForCountry(
+            defaults,
+            this.rowValidation.detectCountry(
+              cellsOf(columns.phone),
+              defaults.country,
+            ),
+          )
+        : defaults),
       ...saved?.options,
       paymentValueMap: choicesForListedValues(savedChoices, paymentValues),
     };

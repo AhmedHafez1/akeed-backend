@@ -6,6 +6,7 @@ import {
   type OrderSourceScope,
   type StoredImportRow,
 } from '../../../infrastructure/database/repositories/order-imports.repository';
+import { COUNTRY_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 import { readBulkImportConfig } from '../../../shared/config/bulk-import.config';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { PhoneService } from '../../../shared/services/phone.service';
@@ -26,6 +27,7 @@ import {
 } from './batch-dedupe';
 import { dateInTimezone } from './date';
 import { validatePhone, type FieldResult } from './phone';
+import { detectPhoneCountry } from './phone-country';
 import { isIncludable, outcomeOf, VALIDATION_VERSION } from './issue-codes';
 import {
   validateRow,
@@ -159,6 +161,26 @@ export class RowValidationService {
   checkPhone(phone: string, country: string): FieldResult<string> {
     return validatePhone(cleanCell(phone), country, (value, code) =>
       this.phone.standardizeMobile(value, code),
+    );
+  }
+
+  /**
+   * The import country a file's phone column points to, among the countries
+   * Akeed has a currency for; `fallback` when the phones do not say.
+   */
+  detectCountry(phones: readonly string[], fallback: string): string {
+    const candidates = [
+      fallback,
+      ...Object.keys(COUNTRY_CURRENCIES).filter(
+        (country) => country !== fallback,
+      ),
+    ];
+    return (
+      detectPhoneCountry(phones, candidates, {
+        standardizeMobile: (phone, country) =>
+          this.phone.standardizeMobile(phone, country),
+        callingCodeOf: (country) => this.phone.callingCode(country),
+      }) ?? fallback
     );
   }
 

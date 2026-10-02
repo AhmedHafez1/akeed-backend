@@ -4,7 +4,7 @@ import { headerKey } from './header-key';
  * Bumped whenever an alias is added, removed or re-ranked, and stored on the
  * batch mapping, so a result can be traced to the dictionary that produced it.
  */
-export const MAPPING_DICTIONARY_VERSION = 3;
+export const MAPPING_DICTIONARY_VERSION = 4;
 
 /** Canonical fields in matching order; the first three are required (AC4). */
 export const IMPORT_FIELDS = [
@@ -55,6 +55,8 @@ export const FIELD_ALIASES: Readonly<Record<ImportField, FieldAlias[]>> = {
       'mobile number',
       'whatsapp',
       'tel',
+      'contact number',
+      'contact no',
       'رقم الهاتف',
       'الهاتف',
       'هاتف',
@@ -72,6 +74,7 @@ export const FIELD_ALIASES: Readonly<Record<ImportField, FieldAlias[]>> = {
       0,
       'customer',
       'customer name',
+      'client',
       'client name',
       'full name',
       'اسم العميل',
@@ -125,7 +128,7 @@ export const FIELD_ALIASES: Readonly<Record<ImportField, FieldAlias[]>> = {
     ...aliases(1, 'created at', 'created'),
   ],
   city: [
-    ...aliases(0, 'city', 'governorate', 'المدينه', 'المحافظه'),
+    ...aliases(0, 'city', 'governorate', 'emirate', 'المدينه', 'المحافظه'),
     ...aliases(1, 'shipping city'),
     ...aliases(2, 'billing city'),
   ],

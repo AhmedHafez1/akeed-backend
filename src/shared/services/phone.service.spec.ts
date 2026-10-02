@@ -27,6 +27,20 @@ describe('PhoneService', () => {
     });
   });
 
+  describe('callingCode', () => {
+    it.each([
+      ['SA', 966],
+      [' eg ', 20],
+      ['AE', 971],
+    ])('knows %j as %d', (country, code) => {
+      expect(phones.callingCode(country)).toBe(code);
+    });
+
+    it.each(['ZZ', '', 'Egypt'])('has none for %j', (country) => {
+      expect(phones.callingCode(country)).toBeNull();
+    });
+  });
+
   describe('standardizeMobile', () => {
     it.each([
       ['00201012345678', 'EG', '+201012345678'],

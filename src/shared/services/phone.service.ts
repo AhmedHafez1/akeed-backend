@@ -82,6 +82,14 @@ export class PhoneService {
     return result.e164;
   }
 
+  /** A country's calling code (`966` for `SA`), or null when it is unknown. */
+  callingCode(countryCode: string): number | null {
+    const code = this.phoneUtil.getCountryCodeForRegion(
+      countryCode.trim().toUpperCase(),
+    );
+    return code > 0 ? code : null;
+  }
+
   /**
    * A customer's WhatsApp-capable number from spreadsheet text.
    *

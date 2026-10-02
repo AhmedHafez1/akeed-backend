@@ -83,7 +83,10 @@ describe('OrderImportsService', () => {
     new OrderImportMappingService(
       repository as never,
       // Upload only suggests a mapping; it never validates rows.
-      { validateBatch: jest.fn() } as unknown as RowValidationService,
+      {
+        validateBatch: jest.fn(),
+        detectCountry: (_phones: string[], fallback: string) => fallback,
+      } as unknown as RowValidationService,
     ),
   );
 

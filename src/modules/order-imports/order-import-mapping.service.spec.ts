@@ -74,7 +74,10 @@ describe('OrderImportMappingService', () => {
     saveMapping: jest.fn<Promise<SaveMappingResult>, [SaveMappingInput]>(),
     readCounts: jest.fn(),
   };
-  const rowValidation = { validateBatch: jest.fn() };
+  const rowValidation = {
+    validateBatch: jest.fn(),
+    detectCountry: jest.fn<string, [string[], string]>(),
+  };
   const service = new OrderImportMappingService(
     repository as never,
     rowValidation as never,
@@ -102,6 +105,10 @@ describe('OrderImportMappingService', () => {
     });
     repository.readCounts.mockResolvedValue({ ready: 0 });
     rowValidation.validateBatch.mockResolvedValue(undefined);
+    // The phones say nothing, unless a test says otherwise.
+    rowValidation.detectCountry.mockImplementation(
+      (_phones, fallback) => fallback,
+    );
     repository.findMappingProfile.mockResolvedValue(null);
     repository.findPaymentClassifications.mockResolvedValue({});
   });
@@ -530,6 +537,92 @@ describe('OrderImportMappingService', () => {
       expect(defaultImportOptions(store as never)).toMatchObject({
         country,
         defaultCurrency: currency,
+      });
+    });
+
+    describe("the country the file's phones point to", () => {
+      const store = (overrides: Record<string, unknown>) =>
+        ({ id: 'int-1', orgId: 'org-1', ...overrides }) as never;
+
+      it('wins over the store default and brings its currency', async () => {
+        rowValidation.detectCountry.mockReturnValue('SA');
+        const suggestion = await service.suggest(
+          'org-1',
+          store({ countryCode: null, shippingCurrency: 'USD' }),
+          HEADERS,
+          rows,
+        );
+        expect(rowValidation.detectCountry).toHaveBeenCalledWith(
+          ['010', '011'],
+          'EG',
+        );
+        expect(suggestion.options).toMatchObject({
+          country: 'SA',
+          defaultCurrency: 'SAR',
+        });
+        expect(suggestion.response.options).toEqual(suggestion.options);
+      });
+
+      it("keeps a currency the store chose apart from its country's", async () => {
+        rowValidation.detectCountry.mockReturnValue('SA');
+        const suggestion = await service.suggest(
+          'org-1',
+          store({ countryCode: 'eg', shippingCurrency: 'AED' }),
+          HEADERS,
+          rows,
+        );
+        expect(suggestion.options).toMatchObject({
+          country: 'SA',
+          defaultCurrency: 'AED',
+        });
+      });
+
+      it('gives way to the country saved for the same headers', async () => {
+        rowValidation.detectCountry.mockReturnValue('SA');
+        repository.findMappingProfile.mockResolvedValue({
+          id: 'profile-9',
+          mapping: { columns: { phone: 'Phone' } },
+          options: { country: 'AE', defaultCurrency: 'AED' },
+        });
+        const suggestion = await service.suggest(
+          'org-1',
+          source,
+          HEADERS,
+          rows,
+        );
+        expect(rowValidation.detectCountry).not.toHaveBeenCalled();
+        expect(suggestion.options).toMatchObject({
+          country: 'AE',
+          defaultCurrency: 'AED',
+        });
+      });
+
+      it('is read from a `Contact Number` column', async () => {
+        rowValidation.detectCountry.mockReturnValue('AE');
+        const suggestion = await service.suggest(
+          'org-1',
+          store({ countryCode: null, shippingCurrency: 'USD' }),
+          ['Order No', 'Client', 'Contact Number', 'Emirate', 'Amount'],
+          [{ cells: ['ae-701', 'Ahmed Hassan', '0501055433', 'Dubai', '450'] }],
+        );
+        expect(suggestion.mapping.columns).toMatchObject({
+          phone: 'Contact Number',
+          customerName: ['Client'],
+          city: 'Emirate',
+        });
+        expect(rowValidation.detectCountry).toHaveBeenCalledWith(
+          ['0501055433'],
+          'EG',
+        );
+        expect(suggestion.options).toMatchObject({
+          country: 'AE',
+          defaultCurrency: 'AED',
+        });
+      });
+
+      it('is not looked for when no phone column is mapped', async () => {
+        await service.suggest('org-1', source, ['Name', 'Total'], []);
+        expect(rowValidation.detectCountry).not.toHaveBeenCalled();
       });
     });
 
