@@ -1,66 +1,82 @@
-# US-05-02 — Accept orders through the Standalone ingestion API
+# US-05-02 — Submit API orders to the existing ingestion command
 
 - **Epic:** [E05 — Standalone Order Ingestion API](README.md)
 - **Delivery rank:** 2 of 6
 - **Priority:** P0
 - **Horizon:** NEXT
-- **Story type:** Feature
+- **Story type:** Feature + core extraction
 - **Status:** Backlog
-- **Dependencies:** [US-05-01](../05-standalone-order-ingestion-api/US-05-01-integration-api-key-lifecycle.md)
+- **Dependencies:** [US-05-01](US-05-01-integration-api-key-lifecycle.md)
 
 ## User story and value
 
-As a custom website or delivery-system integrator, I want one authenticated order-submission endpoint, so that I can verify orders without a platform-specific adapter.
+As a custom website or delivery-system integrator, I want one authenticated order-submission endpoint, so that my orders are confirmed by Akeed exactly like orders the merchant enters or imports, without a platform-specific adapter.
 
-**Business value:** I can verify orders without a platform-specific adapter.
+**Business value:** Server integrations get the full verification pipeline with no second order-processing path to build or maintain.
 
 ## Scope
 
-POST /api/v1/orders using Authorization: Bearer <integration-key>, implemented as an `ApiOrderChannelAdapter` over the E04.6 `StandaloneOrderIngestionService.acceptOne` command.
+`POST /api/v1/orders`. The API **converts an external order into `CanonicalOrderInput` and submits it to the existing Standalone ingestion command.** Before any API code, the story moves the pre-accept steps that today live in the manual channel into the shared core, so the API and the manual form call one implementation.
 
-**Out of scope:** Browser calls with embedded secrets, order updates, a batch/bulk API endpoint (file import is E04.6) and outbound status callbacks.
+**Out of scope:** Browser calls with embedded secrets, order updates, a batch endpoint (file import is E04.6), outbound callbacks, and external-ID replay/conflict (US-05-03).
+
+## Part A — Core extraction (in `src/modules/order-ingestion/`, done first)
+
+Today `OrdersService.createManualOrder` resolves the source, evaluates readiness and maps blockers to `MANUAL_ORDER_*` codes (`assertManualCreateReady`) before calling `acceptOne`. An API copy of that would be a second implementation of the rules. Instead:
+
+1. **Resolve by integration.** Add `StandaloneSourceResolver.resolveForIntegration(orgId, integrationId, codes)`. It applies the same checks as `resolveWritable` — the org's single active source, Standalone, onboarding completed — and additionally requires that source to be the key's `integrationId`. No role check (the key was issued by an owner/admin).
+2. **Shared readiness gate.** Add a readiness code map type (vocabulary per channel, like `StandaloneSourceCodeMap`) and one shared function that turns `SendReadinessBlocker[]` into the channel's exception with today's precedence: entitlement → auto-verify → credit (E04.5 code unchanged) → slot/plan limit → fail closed with `setupIncomplete`.
+3. **One submit entry point.** Add `StandaloneOrderIngestionService.submitOne(principal, input, options)` composing resolve → `StandaloneSendReadinessService.evaluate(source, {required: 1})` → gate → `acceptOne`. The principal is either a session user (manual) or an integration principal (API); both end in the same `StandaloneIngestionContext`.
+4. **Move manual onto it.** `createManualOrder` calls `submitOne` with `MANUAL_ORDER_*` maps. Response status, body and code stay **byte-identical**; `assertManualCreateReady` is deleted, not duplicated.
+
+## Part B — The API channel (`src/modules/order-api/`)
+
+Only after Part A is green. The API module holds the controller, the request DTO and `ApiOrderChannelAdapter`; nothing else.
 
 ## Acceptance criteria
 
-1. The endpoint accepts externalOrderId, optional orderNumber/customerName, customerPhone, decimal-string totalPrice, currency and paymentMethod.
-2. Identity comes exclusively from the validated integration key; supplied orgId/integrationId/platform cannot retarget the request.
-3. Valid orders are durably accepted through `StandaloneOrderIngestionService.acceptOne(ctx, input, {channel: 'api', idempotencyKey})` and return orderId, optional verificationId, status and duplicate; acceptance is not delivery confirmation. The controller and `ApiOrderChannelAdapter` contain no persistence, envelope, fingerprint, dispatch, credit or eligibility code.
-4. Invalid fields, inactive/unready sources and authentication failure return stable safe errors with no partial business effects.
-5. Known non-COD orders follow the manual/API visibility policy and never send; eligible orders use the same entitlement and automation as manual orders.
-6. Field validation uses the shared `canonical-order.rules.ts` (E04.6 US-04.6-04) and phone parsing uses the shared `PhoneService.parse` core. Limits, patterns and the currency list are imported, never re-declared. `externalOrderId` is normalized by the shared reference normalizer to `ref:<normalized>`.
-7. `'api'` is added to the shared `STANDALONE_INGESTION_CHANNELS`. The Standalone normalizer accepts it with no other change, and no code in `verification-core`, the normalizers or the eligibility strategies reads the channel.
-8. Source and readiness failures come from `StandaloneSourceResolver` and `StandaloneSendReadinessService` through an `API_*` code map (for example `API_SOURCE_UNAVAILABLE`, `API_SETUP_INCOMPLETE`, `API_AUTO_VERIFY_DISABLED`), plus the unchanged E04.5 credit codes.
+1. **Fields.** Required: `externalOrderId`, `customerName`, `customerPhone`, `totalPrice` (decimal string), `currency`, `paymentMethod`. Optional: `orderNumber` (defaults to `externalOrderId` as the client wrote it) and the import extras `orderDate`, `city`, `address`, `notes`. Unknown fields are rejected.
+2. **Identity from the key only.** Supplied `orgId`, `integrationId` or `platform` cannot retarget the request and never reach the command.
+3. **Same command.** Valid orders go through `submitOne` → `acceptOne(ctx, input, {channel: 'api', idempotencyKey})` and return `{orderId, verificationId?, status: 'accepted', duplicate}`. Accepted is not delivered. The controller and `ApiOrderChannelAdapter` contain no persistence, envelope, fingerprint, dispatch, credit, readiness or eligibility code.
+4. **Shared rules.** DTO decorators read `canonical-order.rules.ts`; phone goes through `PhoneService.standardize` (as manual does); `Idempotency-Key` is required and validated by `normalizeIdempotencyKey`; `externalOrderId` becomes `ref:<normalized>` through `normalizeOrderReference`. No limit, regex or currency list is re-declared.
+5. **Channel is metadata.** `'api'` is appended to `STANDALONE_INGESTION_CHANNELS`, `IDEMPOTENCY_KEY_PREFIX` (`'api:'`) and the service's log-action map. The Standalone normalizer accepts it with no other change; nothing in `verification-core`, the normalizers or the eligibility strategies reads the channel.
+6. **Safe errors.** Invalid fields (`API_VALIDATION_FAILED`), unready sources (`API_SOURCE_UNAVAILABLE`, `API_SETUP_INCOMPLETE`, `API_AUTO_VERIFY_DISABLED`, `API_ENTITLEMENT_REQUIRED`, `API_PLAN_LIMIT_REACHED`), credit denials (E04.5 codes unchanged) and `StandaloneIngestion*Error`s (`API_ORDER_ACCEPTANCE_FAILED`, `API_ORDER_DISPATCH_FAILED`, `API_ORDER_IDEMPOTENCY_CONFLICT`) are mapped by the adapter, with no partial business effects.
+7. **Non-COD.** Known non-COD orders are accepted and visible but never sent, exactly as for manual orders; eligible orders use the same entitlement and automation.
+8. **Manual unchanged.** The manual contract suite and `orders.service.spec.ts` pass without edits to expected bodies or codes.
 
 ## Implementation notes
 
-- **Backend:** Use a dedicated API-key guard and thin versioned controller. The only new business-facing code is `ApiOrderChannelAdapter` (request DTO → `CanonicalOrderInput`). Everything else is the E04.6 command and its shared services.
-- **Frontend:** No order-submission UI; keep key-management/support views compatible with acceptance identifiers.
-- **Data:** Use integration-scoped external order identity and persist the acceptance/processing intent consistently.
-- **Operations:** Require HTTPS in deployment, do not accept keys in query strings, and emit a correlation ID for accepted/failed requests.
+- **Backend:** `order-api.controller.ts` (versioned, `IntegrationApiKeyGuard`), `dto/create-api-order.dto.ts`, `api-order.channel-adapter.ts` modeled on `ManualOrderChannelAdapter` (`toCanonicalOrderInput` + `rethrowAsHttp`). The body type and route pipe follow the global `ValidationPipe` rule so validation errors carry the coded body.
+- **Frontend:** No order-submission UI.
+- **Data:** No migration. Orders use the integration-scoped `(integration_id, external_order_id)` identity.
+- **Operations:** HTTPS only; no keys in query strings.
 
 ## Test requirements
 
-- Schema validation, source state, bad key, tenant spoofing and non-COD acceptance.
-- Verify equivalent manual, file-import and API payloads produce the same normalized values, fingerprints and lifecycle rules.
-- An architecture test: the `order-api` module imports only the key guard, the adapter and `StandaloneOrderIngestionService` from the ingestion side.
-- Satisfy the applicable [shared Definition of Done](../README.md); record test results during implementation, not when this backlog is authored.
+- Part A: unit tests for `resolveForIntegration` (wrong integration, inactive, non-Standalone, onboarding incomplete, second active source) and the shared gate's precedence; manual suites unchanged.
+- Part B: schema validation, bad key, tenant spoofing, unready source, non-COD accepted-but-not-sent, each `API_*` code.
+- A unit-level equivalence check: the same order through the manual, file-import and API adapters yields the same `CanonicalOrderInput` → envelope → fingerprint (the full lifecycle check is US-05-06).
+- Architecture: extend `ingestion-boundary.spec.ts` / `release-gate-architecture.spec.ts` so `modules/order-api/` imports nothing from the README's forbidden list.
+- Run the regression suites from [the prompts' shared rules](IMPLEMENTATION-PROMPTS.md#shared-rules) before and after.
 
 ## Migration and rollout
 
-Keep endpoint restricted to Standalone integrations and pilot clients; idempotency in US-05-03 is required before external release.
+Restricted to pilot integrations; US-05-03 is required before any external release.
 
 ## Evidence and references
 
-**VERIFIED FROM CODE:** NormalizedOrder and the shared verification pipeline provide the ingestion core; existing OrdersController only reads orders.
+**VERIFIED FROM CODE (2026-10-02):** `acceptOne` does not resolve sources or evaluate readiness; the manual channel does both before calling it.
 
-- [akeed-backend/src/modules/orders/orders.controller.ts](../../../src/modules/orders/orders.controller.ts)
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/modules/orders/orders.service.ts](../../../src/modules/orders/orders.service.ts) (`createManualOrder`, `assertManualCreateReady`)
+- [akeed-backend/src/modules/orders/manual-order.channel-adapter.ts](../../../src/modules/orders/manual-order.channel-adapter.ts)
+- [akeed-backend/src/modules/orders/dto/create-manual-order.dto.ts](../../../src/modules/orders/dto/create-manual-order.dto.ts)
+- [akeed-backend/src/modules/order-ingestion/standalone-order-ingestion.service.ts](../../../src/modules/order-ingestion/standalone-order-ingestion.service.ts)
+- [akeed-backend/src/modules/order-ingestion/standalone-source-resolver.ts](../../../src/modules/order-ingestion/standalone-source-resolver.ts)
+- [akeed-backend/src/modules/order-ingestion/standalone-send-readiness.types.ts](../../../src/modules/order-ingestion/standalone-send-readiness.types.ts)
+- [akeed-backend/src/shared/commerce/standalone-order-envelope.ts](../../../src/shared/commerce/standalone-order-envelope.ts)
+- [akeed-backend/src/shared/commerce/canonical-order.rules.ts](../../../src/shared/commerce/canonical-order.rules.ts)
+- [akeed-backend/src/modules/order-imports/file-import.channel-adapter.ts](../../../src/modules/order-imports/file-import.channel-adapter.ts)
 
-**ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
+**ASSUMPTION / REQUIRES VALIDATION:** The acceptance criteria describe approved proposed work, not completed functionality.
 
-**EXTERNAL PLATFORM DEPENDENCY:** No new provider capability is assumed by this story; inherited Shopify/Meta dependencies remain subject to their owning epic gates.
-
+**EXTERNAL PLATFORM DEPENDENCY:** None.
