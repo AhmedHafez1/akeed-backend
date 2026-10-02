@@ -834,7 +834,8 @@ describe('POST /api/v1/orders', () => {
     it.each([
       ['markup', '<script>alert(1)</script>'],
       ['a phone number', '+201001234567'],
-      ['a short value', 'abc'],
+      // Not hex, so the generated UUID that replaces it can never contain it.
+      ['a short value', 'xyz'],
       ['a JSON fragment', '{"orgId":"x"}'],
     ])('replaces %s instead of echoing it', async (_case, supplied) => {
       const response = await request(server())

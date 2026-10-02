@@ -51,7 +51,9 @@
     "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts",
     "test:contract:credit-foundation": "jest --config ./test/jest-credit-foundation-contract.json --runInBand",
     "test:contract:e045": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e045-contracts.ps1",
-    "fixtures:order-imports": "tsx scripts/generate-order-import-fixtures.ts"
+    "fixtures:order-imports": "tsx scripts/generate-order-import-fixtures.ts",
+    "docs:order-api-guide": "node scripts/order-api-guide.js",
+    "docs:order-api-guide:check": "node scripts/order-api-guide.js --check"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

@@ -1,6 +1,6 @@
 {
   "rootDir": "..",
-  "testRegex": "test/order-api(-idempotency)?\\.contract-spec\\.ts$",
+  "testRegex": "test/order-api(-idempotency|-guide)?\\.contract-spec\\.ts$",
   "moduleFileExtensions": ["js", "json", "ts"],
   "transform": { "^.+\\.ts$": "ts-jest" },
   "testEnvironment": "node",

@@ -1,0 +1,768 @@
+{
+  "version": "v1",
+  "path": "/api/v1/orders",
+  "limits": {
+    "perStorePerMinute": 60,
+    "maxBodyBytes": 32768,
+    "idempotencyKeyMinLength": 8,
+    "idempotencyKeyMaxLength": 128
+  },
+  "fields": [
+    {
+      "name": "externalOrderId",
+      "required": true,
+      "maxLength": 100,
+      "rule": "Your own id for the order. It is the order's identity in Akeed."
+    },
+    {
+      "name": "customerName",
+      "required": true,
+      "maxLength": 255,
+      "rule": "The customer's name as it should appear in the message."
+    },
+    {
+      "name": "customerPhone",
+      "required": true,
+      "minLength": 7,
+      "maxLength": 20,
+      "rule": "International format with `+` and the country code, for example `+201001234567`."
+    },
+    {
+      "name": "totalPrice",
+      "required": true,
+      "rule": "A decimal **string** greater than zero with at most 2 decimals, for example `\"450.00\"`. A JSON number is rejected."
+    },
+    {
+      "name": "currency",
+      "required": true,
+      "rule": "One of the supported currency codes listed below."
+    },
+    {
+      "name": "paymentMethod",
+      "required": true,
+      "maxLength": 100,
+      "rule": "How the customer pays, in your own words, for example `cod` or `Credit Card`."
+    },
+    {
+      "name": "orderNumber",
+      "required": false,
+      "maxLength": 100,
+      "rule": "The number the customer sees in the message. Defaults to `externalOrderId` as you wrote it."
+    },
+    {
+      "name": "orderDate",
+      "required": false,
+      "rule": "The day the order was placed, as `YYYY-MM-DD`. A timestamp is rejected."
+    },
+    {
+      "name": "city",
+      "required": false,
+      "maxLength": 1000,
+      "rule": "Delivery city."
+    },
+    {
+      "name": "address",
+      "required": false,
+      "maxLength": 1000,
+      "rule": "Delivery address."
+    },
+    {
+      "name": "notes",
+      "required": false,
+      "maxLength": 1000,
+      "rule": "Anything your team should see beside the order."
+    }
+  ],
+  "currencies": [
+    "USD",
+    "EUR",
+    "EGP",
+    "SAR",
+    "AED",
+    "QAR",
+    "KWD",
+    "BHD",
+    "OMR",
+    "JOD",
+    "MAD"
+  ],
+  "orders": {
+    "base": {
+      "externalOrderId": "10023",
+      "customerName": "Mona Ali",
+      "customerPhone": "+201001234567",
+      "totalPrice": "450.00",
+      "currency": "EGP",
+      "paymentMethod": "cod",
+      "city": "Cairo",
+      "address": "12 Nile St",
+      "notes": "Call before delivery"
+    }
+  },
+  "errors": [
+    {
+      "code": "API_VALIDATION_FAILED",
+      "status": 400,
+      "meaning": "A field, the `Idempotency-Key` header or the JSON itself is invalid. `fieldErrors` names each problem.",
+      "action": "Fix the request. Sending it again unchanged fails the same way.",
+      "example": "invalid-phone"
+    },
+    {
+      "code": "API_REQUEST_REJECTED",
+      "status": 400,
+      "meaning": "The request was refused for a reason that has no code of its own. The status can be any 4xx.",
+      "action": "Check the method, path and headers against this guide.",
+      "provenBy": "src/modules/order-api/edge/order-api.errors.spec.ts"
+    },
+    {
+      "code": "API_KEY_INVALID",
+      "status": 401,
+      "meaning": "The key is missing, mistyped, revoked, sent in the URL, or not sent as `Authorization: Bearer <key>`.",
+      "action": "Check the header. If the key was revoked or lost, create a new one in **Settings → API keys**.",
+      "example": "invalid-key"
+    },
+    {
+      "code": "API_ORDER_IDEMPOTENCY_CONFLICT",
+      "status": 409,
+      "meaning": "This `Idempotency-Key` was already used for different order data.",
+      "action": "Use one key per order. Do not reuse a key for another order or for a changed order.",
+      "example": "idempotency-conflict"
+    },
+    {
+      "code": "API_ORDER_EXTERNAL_ID_CONFLICT",
+      "status": 409,
+      "meaning": "Akeed already has an order with this `externalOrderId`, and its data is different.",
+      "action": "Orders cannot be changed through the API. Open the order in the dashboard, or use a new `externalOrderId` if it really is a new order.",
+      "example": "existing-order-different"
+    },
+    {
+      "code": "API_SOURCE_UNAVAILABLE",
+      "status": 409,
+      "meaning": "The store this key belongs to cannot take orders: it was deactivated or replaced. A store that is not a Standalone store answers the same code with status 403.",
+      "action": "Sign in to Akeed and check the store. Contact support if it looks active.",
+      "example": "store-unavailable"
+    },
+    {
+      "code": "API_SETUP_INCOMPLETE",
+      "status": 409,
+      "meaning": "The store has not finished setup.",
+      "action": "Finish setup in the Akeed app, then send the order again with the same key.",
+      "example": "setup-incomplete"
+    },
+    {
+      "code": "API_AUTO_VERIFY_DISABLED",
+      "status": 409,
+      "meaning": "Automatic confirmation is turned off for the store.",
+      "action": "Turn it on in **Settings**, then send the order again with the same key.",
+      "example": "store-not-ready"
+    },
+    {
+      "code": "API_ENTITLEMENT_REQUIRED",
+      "status": 409,
+      "meaning": "The store has no active plan or billing.",
+      "action": "Open **Billing & credits** in the Akeed app.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    },
+    {
+      "code": "API_PLAN_LIMIT_REACHED",
+      "status": 409,
+      "meaning": "The confirmations included for this period are used up.",
+      "action": "Open **Billing & credits** in the Akeed app.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    },
+    {
+      "code": "INSUFFICIENT_CREDITS",
+      "status": 409,
+      "meaning": "The credit balance cannot cover one more message.",
+      "action": "Buy credits, then send the order again with the same key.",
+      "example": "out-of-credits"
+    },
+    {
+      "code": "CREDIT_ACCOUNT_SUSPENDED",
+      "status": 409,
+      "meaning": "The credit account is suspended.",
+      "action": "Contact support.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    },
+    {
+      "code": "CREDIT_DEBT_OUTSTANDING",
+      "status": 409,
+      "meaning": "The credit account has a negative balance to settle first.",
+      "action": "Open **Billing & credits** and settle the balance.",
+      "provenBy": "src/modules/order-ingestion/standalone-send-readiness.service.spec.ts"
+    },
+    {
+      "code": "CREDIT_ACCOUNT_NOT_PROVISIONED",
+      "status": 409,
+      "meaning": "The store has no credit account.",
+      "action": "Contact support.",
+      "provenBy": "src/modules/order-ingestion/standalone-send-readiness.service.spec.ts"
+    },
+    {
+      "code": "API_PAYLOAD_TOO_LARGE",
+      "status": 413,
+      "meaning": "The request body is larger than the limit.",
+      "action": "Send one order per request and keep the text fields short.",
+      "example": "payload-too-large"
+    },
+    {
+      "code": "API_RATE_LIMITED",
+      "status": 429,
+      "meaning": "Too many requests in one minute.",
+      "action": "Wait the number of seconds in `Retry-After`, then send the request again with the same key.",
+      "example": "rate-limited"
+    },
+    {
+      "code": "API_INTERNAL_ERROR",
+      "status": 500,
+      "meaning": "Something failed on Akeed's side.",
+      "action": "Retry with the same key. If it keeps failing, send support the `correlationId`.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    },
+    {
+      "code": "API_ORDER_ACCEPTANCE_FAILED",
+      "status": 503,
+      "meaning": "The order could not be stored. Nothing was saved.",
+      "action": "Retry with the same key.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    },
+    {
+      "code": "API_ORDER_DISPATCH_FAILED",
+      "status": 503,
+      "meaning": "The order was stored, but its confirmation could not be queued.",
+      "action": "Retry with the same key. The retry queues the same order and never creates a second one.",
+      "provenBy": "src/modules/order-api/order-api.http.spec.ts"
+    }
+  ],
+  "examples": [
+    {
+      "id": "create-order",
+      "title": "Create an order",
+      "intro": "A cash-on-delivery order from a ready store. `202` means Akeed stored the order. The WhatsApp message is sent afterwards.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "requestForms": ["curl", "http"],
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "replay-same-key",
+      "title": "Send the same request again",
+      "intro": "The same `Idempotency-Key` with the same body returns the original order with `duplicate: true`. No second order, message or credit.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "note": "Once Akeed has started the confirmation, the answer also carries its `verificationId`.",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "verificationId": "<VERIFICATION_ID>",
+              "status": "accepted",
+              "duplicate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "lost-response-retry",
+      "title": "Retry after a lost response",
+      "intro": "Your request timed out and you do not know whether Akeed received it. Send exactly the same request again, with the same `Idempotency-Key`. If the first one arrived, you get the same order back.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "idempotency-conflict",
+      "title": "Same key, different order data",
+      "intro": "The key `order-10023` was already used for an order of 450.00. Sending it with another amount is refused, and the stored order is not changed.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "request": {
+            "idempotencyKey": "order-10023",
+            "order": "base",
+            "with": { "totalPrice": "999.00" }
+          },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_ORDER_IDEMPOTENCY_CONFLICT",
+              "message": "Idempotency-Key was already used with different order data.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "existing-order-identical",
+      "title": "New key for an order Akeed already has",
+      "intro": "Order `10023` already exists. Sending it again under a new key, with identical data, returns the existing order. Nothing new is stored or sent.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "request": { "idempotencyKey": "resync-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "verificationId": "<VERIFICATION_ID>",
+              "status": "accepted",
+              "duplicate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "existing-order-different",
+      "title": "New key, same order id, different data",
+      "intro": "Order `10023` already exists with the note \"Call before delivery\". A new key with a different note is refused: a create request never updates an order.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "request": {
+            "idempotencyKey": "resync-10023",
+            "order": "base",
+            "with": { "notes": "Leave with the doorman" }
+          },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_ORDER_EXTERNAL_ID_CONFLICT",
+              "message": "An order with this externalOrderId already exists with different order data.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "order-id-written-differently",
+      "title": "Same order id, written differently",
+      "intro": "Order `10023` already exists. `#10023` is the same order, but without an `orderNumber` the customer-facing number is taken from the id as written, so the data differs and the request is refused.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "request": {
+            "idempotencyKey": "resync-10023",
+            "order": "base",
+            "with": { "externalOrderId": "#10023" }
+          },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_ORDER_EXTERNAL_ID_CONFLICT",
+              "message": "An order with this externalOrderId already exists with different order data.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        },
+        {
+          "show": "response",
+          "note": "Sending the original number as `orderNumber` makes the data identical again:",
+          "request": {
+            "idempotencyKey": "resync-10023",
+            "order": "base",
+            "with": { "externalOrderId": "#10023", "orderNumber": "10023" }
+          },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "verificationId": "<VERIFICATION_ID>",
+              "status": "accepted",
+              "duplicate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "non-cod",
+      "title": "An order that is not cash on delivery",
+      "intro": "A prepaid order is accepted and appears in the dashboard, but Akeed never messages the customer and no credit is used. The answer has no `verificationId`.",
+      "scenario": "ready",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": {
+            "idempotencyKey": "order-10024",
+            "order": "base",
+            "with": {
+              "externalOrderId": "10024",
+              "paymentMethod": "Credit Card"
+            }
+          },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "show": "response",
+          "note": "Sending it again later gives the same order, still without a `verificationId`.",
+          "request": {
+            "idempotencyKey": "order-10024",
+            "order": "base",
+            "with": {
+              "externalOrderId": "10024",
+              "paymentMethod": "Credit Card"
+            }
+          },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "invalid-phone",
+      "title": "Invalid phone number",
+      "intro": "The phone has no `+` and country code. `fieldErrors` names the field to fix.",
+      "scenario": "ready",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": {
+            "idempotencyKey": "order-10025",
+            "order": "base",
+            "with": {
+              "externalOrderId": "10025",
+              "customerPhone": "01001234567"
+            }
+          },
+          "response": {
+            "status": 400,
+            "body": {
+              "code": "API_VALIDATION_FAILED",
+              "message": "Order validation failed.",
+              "correlationId": "<CORRELATION_ID>",
+              "fieldErrors": { "customerPhone": "Invalid phone number format." }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "missing-idempotency-key",
+      "title": "Missing Idempotency-Key",
+      "intro": "Every request needs the header.",
+      "scenario": "ready",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": { "idempotencyKey": null, "order": "base" },
+          "response": {
+            "status": 400,
+            "body": {
+              "code": "API_VALIDATION_FAILED",
+              "message": "Idempotency-Key header is required.",
+              "correlationId": "<CORRELATION_ID>",
+              "fieldErrors": {
+                "idempotencyKey": "Idempotency-Key header is required."
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "invalid-key",
+      "title": "Invalid API key",
+      "intro": "A revoked, unknown or mistyped key gets the same answer, so the response never reveals which keys exist.",
+      "scenario": "ready",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": {
+            "auth": "unknown",
+            "idempotencyKey": "order-10023",
+            "order": "base"
+          },
+          "response": {
+            "status": 401,
+            "body": {
+              "code": "API_KEY_INVALID",
+              "message": "A valid API key is required.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "payload-too-large",
+      "title": "Request body too large",
+      "intro": "A body over 32 KB is refused before anything else is checked.",
+      "scenario": "ready",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": {
+            "idempotencyKey": "order-10026",
+            "order": "base",
+            "with": { "externalOrderId": "10026" },
+            "padField": { "name": "notes", "characters": 40000 }
+          },
+          "response": {
+            "status": 413,
+            "body": {
+              "code": "API_PAYLOAD_TOO_LARGE",
+              "message": "The request body is too large.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rate-limited",
+      "title": "Too many requests",
+      "intro": "The store already sent 60 requests in the last minute. Wait the number of seconds in `Retry-After`, then send the same request again.",
+      "scenario": "ready",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "repeat": 60,
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": { "status": 202 }
+        },
+        {
+          "request": {
+            "idempotencyKey": "order-10027",
+            "order": "base",
+            "with": { "externalOrderId": "10027" }
+          },
+          "response": {
+            "status": 429,
+            "headers": { "Retry-After": "<SECONDS>" },
+            "body": {
+              "code": "API_RATE_LIMITED",
+              "message": "Too many requests. Wait for the Retry-After period, then retry with the same Idempotency-Key.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "store-not-ready",
+      "title": "Automatic confirmation is turned off",
+      "intro": "The store cannot send messages right now, so the order is refused instead of being stored and forgotten.",
+      "scenario": "auto_verify_off",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_AUTO_VERIFY_DISABLED",
+              "message": "Enable automatic verification before submitting orders.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "setup-incomplete",
+      "title": "Store setup is not finished",
+      "intro": "The store behind the key has not completed setup.",
+      "scenario": "setup_incomplete",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "show": "response",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_SETUP_INCOMPLETE",
+              "message": "Complete Standalone setup before submitting orders.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "store-unavailable",
+      "title": "Store cannot accept orders",
+      "intro": "The store behind the key was deactivated or replaced.",
+      "scenario": "store_inactive",
+      "messagesSent": 0,
+      "steps": [
+        {
+          "show": "response",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "API_SOURCE_UNAVAILABLE",
+              "message": "The store this API key belongs to cannot accept orders.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "out-of-credits",
+      "title": "Not enough credits",
+      "intro": "The balance cannot cover one more message. Nothing is stored. Buy credits, then send the order again with the same key.",
+      "scenario": "one_credit",
+      "messagesSent": 1,
+      "steps": [
+        {
+          "show": "none",
+          "request": { "idempotencyKey": "order-10023", "order": "base" },
+          "response": {
+            "status": 202,
+            "body": {
+              "orderId": "<ORDER_ID>",
+              "status": "accepted",
+              "duplicate": false
+            }
+          }
+        },
+        {
+          "workerRan": true,
+          "show": "response",
+          "request": {
+            "idempotencyKey": "order-10028",
+            "order": "base",
+            "with": { "externalOrderId": "10028" }
+          },
+          "response": {
+            "status": 409,
+            "body": {
+              "code": "INSUFFICIENT_CREDITS",
+              "message": "Credit is not available for this action.",
+              "correlationId": "<CORRELATION_ID>"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

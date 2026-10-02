@@ -44,4 +44,3 @@ No calendar estimate or staffing commitment is implied by priority.
 ## Evidence discipline
 
 The product sequence is approved; all implementation remains proposed. Story-level links distinguish code evidence from assumptions and external dependencies. Historical baseline results are dated 2026-08-30 and are not fresh test runs.
-

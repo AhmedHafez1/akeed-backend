@@ -114,7 +114,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | 2 | [US-05-02 — Submit API orders to the existing ingestion command](US-05-02-authenticated-order-ingestion-endpoint.md) | P0 | Feature + core extraction | [US-05-01](US-05-01-integration-api-key-lifecycle.md) | Implemented locally (release blocked) |
 | 3 | [US-05-03 — Extend shared idempotency to external order identity](US-05-03-idempotency-and-conflict-handling.md) | P0 | Technical enabler (core) | [US-05-02](US-05-02-authenticated-order-ingestion-endpoint.md) | Implemented locally (release blocked) |
 | 4 | [US-05-04 — Add API abuse controls and safe operational errors](US-05-04-api-abuse-controls-and-audit.md) | P0 | Technical enabler | [US-05-03](US-05-03-idempotency-and-conflict-handling.md) | Implemented locally (release blocked) |
-| 5 | [US-05-05 — Publish server-side integration guidance](US-05-05-server-integration-guide.md) | P1 | Feature | [US-05-04](US-05-04-api-abuse-controls-and-audit.md) | Backlog |
+| 5 | [US-05-05 — Publish server-side integration guidance](US-05-05-server-integration-guide.md) | P1 | Feature | [US-05-04](US-05-04-api-abuse-controls-and-audit.md) | Implemented locally (release blocked) |
 | 6 | [US-05-06 — Prove cross-channel equivalence, isolation and recovery](US-05-06-api-security-and-recovery-release-gate.md) | P0 | Quality gate | [US-05-05](US-05-05-server-integration-guide.md) | Backlog |
 
 ## Measurable exit criteria

@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-06; see [evidence](../../US-05-05-SERVER-INTEGRATION-GUIDE-EVIDENCE.md)
 - **Dependencies:** [US-05-04](US-05-04-api-abuse-controls-and-audit.md)
 
 ## User story and value

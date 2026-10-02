@@ -4,6 +4,10 @@ $originalTestUrl = $env:E01_TEST_DATABASE_URL
 $testExitCode = 1
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    # The public guide is generated from the fixture the guide suite runs
+    # (US-05-05); a guide that drifted from it fails the gate before any test.
+    & npm.cmd run docs:order-api-guide:check
+    if ($LASTEXITCODE -ne 0) { throw 'The server API guide differs from the tested examples.' }
     $containerId = (& docker run --detach --rm --label akeed.e05.order-api-contract=true --publish '127.0.0.1::5432' --env POSTGRES_USER=e01_test --env POSTGRES_PASSWORD=e01-synthetic-only --env POSTGRES_DB=akeed_e01_test 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73').Trim()
     if ($LASTEXITCODE -ne 0 -or $containerId -notmatch '^[a-f0-9]{64}$') { throw 'Could not create disposable PostgreSQL container.' }
     $ready = $false

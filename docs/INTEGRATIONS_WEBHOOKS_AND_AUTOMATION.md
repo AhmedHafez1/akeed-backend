@@ -567,6 +567,24 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 
 **Operations.** Accepted orders survive key revocation; only disabling the source stops their processing. Idempotency is scoped to the source, so rotating a key resets neither usage nor idempotency history. Contract suite: `npm run test:contract:integration-keys`, or `scripts/test-integration-api-keys-contract.ps1` for a disposable PostgreSQL.
 
+## Server API Guide (US-05-05)
+
+The integrator-facing guide for `POST /api/v1/orders` is public: `akeed-frontend/content/docs/en/server-api.md` (`/en/docs/server-api`), with a short Arabic overview at `content/docs/ar/server-api.md`. Settings → API keys links to it and shows the endpoint address.
+
+**One fixture, three readers.** `test/fixtures/order-api/guide-examples.json` holds every example, the field limits, the request limits and the error-code table.
+
+| Reader | What it does with the fixture |
+| --- | --- |
+| `test/order-api-guide.contract-spec.ts` | Runs each example over real HTTP against PostgreSQL with a key issued for the test, and asserts the status, the body key for key, the message, `Retry-After` and the number of WhatsApp messages the example leads to. It also checks the documented limits against `parseOrderApiConfig({})`, the field lengths and required fields against the real DTO, and the currency list against `CANONICAL_ORDER_CURRENCIES`. |
+| `scripts/order-api-guide.js` | Renders the guide's `Field reference`, `Limits`, `Examples` and `Error Codes` sections from the fixture. |
+| `scripts/order-api-guide.js --check` | Fails when those sections differ from the fixture, when a code block in the hand-written part is not one of the tested examples, or when the guide names an error code the fixture does not document. |
+
+An error code that a healthy instance cannot produce (`API_INTERNAL_ERROR`, the two 503 codes, the plan and entitlement codes) has no example. Its fixture entry names the suite that proves it in `provenBy`, and the contract suite checks that the file exists and contains the code.
+
+**Changing the API contract.** Change the fixture first, then run `npm run docs:order-api-guide` and the contract suite. `scripts/test-order-api-contract.ps1` runs the check before the tests, so a guide that drifted fails the gate. A change that would break an integrator needs a new API version, not an edited example.
+
+The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GUIDE_FRONTEND_ROOT`), like `scripts/check-e045-locale-parity.js`.
+
 ## API Reference
 
 ### Shopify Webhooks (Inbound)
