@@ -1,5 +1,7 @@
-import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import { Logger, ValidationPipe, type INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { ThrottlerModule } from '@nestjs/throttler';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { IntegrationApiKeysRepository } from '../../infrastructure/database/repositories/integration-api-keys.repository';
@@ -8,6 +10,10 @@ import {
   ManualOrderPayloadConflictError,
   type ManualOrderAcceptanceInput,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
+import {
+  ORDER_API_CONFIG,
+  type OrderApiConfig,
+} from '../../shared/config/order-api.config';
 import { PhoneService } from '../../shared/services/phone.service';
 import { IntegrationApiKeyGuard } from '../integration-keys/guards/integration-api-key.guard';
 import { generateIntegrationApiKey } from '../integration-keys/integration-api-key.secret';
@@ -15,6 +21,11 @@ import { StandaloneOrderIngestionService } from '../order-ingestion/standalone-o
 import { StandaloneSendReadinessService } from '../order-ingestion/standalone-send-readiness.service';
 import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-resolver';
 import { ApiOrderChannelAdapter } from './api-order.channel-adapter';
+import {
+  OrderApiIngressThrottleGuard,
+  OrderApiThrottleGuard,
+} from './edge/order-api-throttle.guard';
+import { applyOrderApiEdge } from './edge/order-api.edge';
 import { OrderApiController } from './order-api.controller';
 
 const ORG_A = '11111111-1111-4111-8111-111111111111';
@@ -23,6 +34,8 @@ const SOURCE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SOURCE_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const keyA = generateIntegrationApiKey();
+/** A second key of the same integration, as after a rotation. */
+const keyARotated = generateIntegrationApiKey();
 const keyB = generateIntegrationApiKey();
 const revokedKey = generateIntegrationApiKey();
 const unknownKey = generateIntegrationApiKey();
@@ -57,17 +70,32 @@ function errorOf(response: request.Response) {
 }
 
 const UNIFORM_401 = {
-  statusCode: 401,
-  error: 'Unauthorized',
-  message: 'A valid API key is required.',
   code: 'API_KEY_INVALID',
+  message: 'A valid API key is required.',
+  correlationId: expect.any(String) as unknown,
 };
+
+/** Limits no test of the request path can reach by accident. */
+const ROOMY_LIMITS: OrderApiConfig = {
+  perIntegrationPerMinute: 5_000,
+  globalPerMinute: 50_000,
+  preAuthPerIpPerMinute: 100_000,
+  maxBodyBytes: 32 * 1024,
+};
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** Lets the server finish writing its request log line. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 /**
  * `POST /api/v1/orders` over real HTTP: the production guard, route pipe,
  * controller, adapter, ingestion service, source resolver and readiness
  * service. Only the repositories and the billing reads behind them are faked,
  * so the test proves what a request can make the acceptance repository write.
+ * The app is mounted as main.ts mounts it: the API edge first, then the
+ * app-wide pipe.
  */
 describe('POST /api/v1/orders', () => {
   let app: INestApplication;
@@ -76,6 +104,12 @@ describe('POST /api/v1/orders', () => {
   const credentials = new Map(
     [
       { key: keyA, id: 'key-a', orgId: ORG_A, integrationId: SOURCE_A },
+      {
+        key: keyARotated,
+        id: 'key-a-rotated',
+        orgId: ORG_A,
+        integrationId: SOURCE_A,
+      },
       { key: keyB, id: 'key-b', orgId: ORG_B, integrationId: SOURCE_B },
       {
         key: revokedKey,
@@ -127,41 +161,67 @@ describe('POST /api/v1/orders', () => {
     return idempotencyKey ? call.set('Idempotency-Key', idempotencyKey) : call;
   };
 
-  beforeAll(async () => {
-    const readiness = new StandaloneSendReadinessService(
+  const ingestion = new StandaloneOrderIngestionService(
+    acceptance as never,
+    dispatcher as never,
+    verifications as never,
+    new StandaloneSourceResolver(integrations as never),
+    new StandaloneSendReadinessService(
       entitlements as never,
       creditEligibility as never,
       {} as never,
-    );
+    ),
+  );
+  const submitOne = jest.spyOn(ingestion, 'submitOne');
+
+  /** Every structured line the app logged, at any level. */
+  const logged: string[] = [];
+  const requestLines = () =>
+    logged
+      .filter((line) => line.includes('"action":"order-api-request"'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  /** The app as main.ts builds it, with its own throttler storage. */
+  async function createApp(limits: OrderApiConfig): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
+      imports: [
+        // The app-wide IP throttler's module; the route skips its guard.
+        ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 60 }] }),
+      ],
       controllers: [OrderApiController],
       providers: [
         ApiOrderChannelAdapter,
         PhoneService,
         IntegrationApiKeyGuard,
-        { provide: IntegrationApiKeysRepository, useValue: keys },
+        OrderApiIngressThrottleGuard,
+        OrderApiThrottleGuard,
         {
-          provide: StandaloneOrderIngestionService,
-          useValue: new StandaloneOrderIngestionService(
-            acceptance as never,
-            dispatcher as never,
-            verifications as never,
-            new StandaloneSourceResolver(integrations as never),
-            readiness,
-          ),
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === ORDER_API_CONFIG ? limits : undefined,
+          },
         },
+        { provide: IntegrationApiKeysRepository, useValue: keys },
+        { provide: StandaloneOrderIngestionService, useValue: ingestion },
       ],
     }).compile();
-    app = moduleRef.createNestApplication();
+    const created = moduleRef.createNestApplication();
+    applyOrderApiEdge(created);
     // The app-wide pipe from main.ts, so the route pipe is tested behind it.
-    app.useGlobalPipes(
+    created.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
         transform: true,
         forbidNonWhitelisted: false,
       }),
     );
-    await app.init();
+    await created.init();
+    return created;
+  }
+
+  beforeAll(async () => {
+    app = await createApp(ROOMY_LIMITS);
   });
 
   afterAll(async () => {
@@ -170,6 +230,13 @@ describe('POST /api/v1/orders', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    logged.length = 0;
+    for (const level of ['log', 'warn', 'error'] as const)
+      jest
+        .spyOn(Logger.prototype, level)
+        .mockImplementation((...args: unknown[]) => {
+          logged.push(String(args[0]));
+        });
     integrations.findActiveByOrg.mockImplementation((orgId: string) =>
       Promise.resolve(
         orgId === ORG_A
@@ -203,6 +270,15 @@ describe('POST /api/v1/orders', () => {
   const untouched = () => {
     expect(acceptance.accept).not.toHaveBeenCalled();
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+  };
+
+  /** No order, event, dispatch or credit check: the command was never run. */
+  const neverSubmitted = () => {
+    expect(submitOne).not.toHaveBeenCalled();
+    expect(integrations.findActiveByOrg).not.toHaveBeenCalled();
+    expect(entitlements.hasAvailableSlot).not.toHaveBeenCalled();
+    expect(creditEligibility.resolveDenial).not.toHaveBeenCalled();
+    untouched();
   };
 
   describe('accepted orders', () => {
@@ -431,8 +507,8 @@ describe('POST /api/v1/orders', () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        statusCode: 400,
         code: 'API_VALIDATION_FAILED',
+        correlationId: expect.any(String) as unknown,
       });
       expect(typeof errorOf(response).fieldErrors.idempotencyKey).toBe(
         'string',
@@ -517,11 +593,16 @@ describe('POST /api/v1/orders', () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        statusCode: 400,
-        error: 'Bad Request',
         message: 'Order validation failed.',
         code: 'API_VALIDATION_FAILED',
+        correlationId: expect.any(String) as unknown,
       });
+      expect(Object.keys(response.body as object).sort()).toEqual([
+        'code',
+        'correlationId',
+        'fieldErrors',
+        'message',
+      ]);
       expect(typeof errorOf(response).fieldErrors[field]).toBe('string');
       expect(integrations.findActiveByOrg).not.toHaveBeenCalled();
       untouched();
@@ -628,8 +709,11 @@ describe('POST /api/v1/orders', () => {
         arrange();
         const response = await post().send(order).expect(status);
 
-        expect(response.body).toMatchObject({ statusCode: status, code });
-        expect(typeof errorOf(response).message).toBe('string');
+        expect(response.body).toEqual({
+          code,
+          message: expect.any(String) as unknown,
+          correlationId: expect.any(String) as unknown,
+        });
         untouched();
       },
     );
@@ -652,9 +736,10 @@ describe('POST /api/v1/orders', () => {
         new ManualOrderIdentityConflictError(),
       );
       const response = await post().send(order).expect(409);
-      expect(response.body).toMatchObject({
-        statusCode: 409,
+      expect(response.body).toEqual({
         code: 'API_ORDER_EXTERNAL_ID_CONFLICT',
+        message: expect.any(String) as unknown,
+        correlationId: expect.any(String) as unknown,
       });
       expect(dispatcher.dispatchById).not.toHaveBeenCalled();
     });
@@ -713,5 +798,661 @@ describe('POST /api/v1/orders', () => {
         });
       },
     );
+  });
+
+  describe('correlation ID (US-05-04)', () => {
+    it('generates one for a request that brings none and returns it on success', async () => {
+      const response = await post().send(order).expect(202);
+
+      expect(response.headers['x-correlation-id']).toMatch(UUID);
+      expect(response.headers['x-request-id']).toBe(
+        response.headers['x-correlation-id'],
+      );
+    });
+
+    it('echoes a safe client value in the header, the error body and the log', async () => {
+      const response = await post()
+        .set('X-Correlation-Id', 'shop-req_2026.10.02-0001')
+        .send({ ...order, currency: 'XYZ' })
+        .expect(400);
+      await settle();
+
+      expect(response.headers['x-correlation-id']).toBe(
+        'shop-req_2026.10.02-0001',
+      );
+      expect(response.body).toMatchObject({
+        correlationId: 'shop-req_2026.10.02-0001',
+      });
+      expect(requestLines()).toEqual([
+        expect.objectContaining({
+          correlationId: 'shop-req_2026.10.02-0001',
+          requestId: 'shop-req_2026.10.02-0001',
+        }),
+      ]);
+    });
+
+    it.each([
+      ['markup', '<script>alert(1)</script>'],
+      ['a phone number', '+201001234567'],
+      ['a short value', 'abc'],
+      ['a JSON fragment', '{"orgId":"x"}'],
+    ])('replaces %s instead of echoing it', async (_case, supplied) => {
+      const response = await request(server())
+        .post('/api/v1/orders')
+        .set('X-Correlation-Id', supplied)
+        .send(order)
+        .expect(401);
+      await settle();
+
+      const correlationId = response.headers['x-correlation-id'];
+      expect(correlationId).toMatch(UUID);
+      expect(response.body).toEqual({ ...UNIFORM_401, correlationId });
+      expect(JSON.stringify(response.headers)).not.toContain(supplied);
+      expect(logged.join('\n')).not.toContain(supplied);
+    });
+
+    it('gives the key guard the same ID to log, whatever X-Request-Id the client sent', async () => {
+      const response = await request(server())
+        .post('/api/v1/orders')
+        .set('X-Request-Id', 'forged-request-id')
+        .send(order)
+        .expect(401);
+      await settle();
+
+      const correlationId = response.headers['x-correlation-id'];
+      expect(response.headers['x-request-id']).toBe(correlationId);
+      const guardLine = logged
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find(({ action }) => action === 'integration-api-key-authenticate');
+      expect(guardLine).toMatchObject({ requestId: correlationId });
+      expect(logged.join('\n')).not.toContain('forged-request-id');
+    });
+  });
+
+  describe('one error envelope (US-05-04)', () => {
+    const ENVELOPE_KEYS = ['code', 'correlationId', 'message'];
+
+    it.each<[string, () => request.Test, number, string]>([
+      [
+        'authentication',
+        () => request(server()).post('/api/v1/orders').send(order),
+        401,
+        'API_KEY_INVALID',
+      ],
+      [
+        'a conflict',
+        () => {
+          acceptance.accept.mockRejectedValue(
+            new ManualOrderPayloadConflictError(),
+          );
+          return post().send(order);
+        },
+        409,
+        'API_ORDER_IDEMPOTENCY_CONFLICT',
+      ],
+      [
+        'an unready source',
+        () => {
+          integrations.findActiveByOrg.mockResolvedValue([]);
+          return post().send(order);
+        },
+        409,
+        'API_SOURCE_UNAVAILABLE',
+      ],
+      [
+        'a failed acceptance',
+        () => {
+          acceptance.accept.mockRejectedValue(new Error('pool exhausted'));
+          return post().send(order);
+        },
+        503,
+        'API_ORDER_ACCEPTANCE_FAILED',
+      ],
+      [
+        'an unexpected server error',
+        () => {
+          integrations.findActiveByOrg.mockRejectedValue(
+            new TypeError('x is not a function'),
+          );
+          return post().send(order);
+        },
+        500,
+        'API_INTERNAL_ERROR',
+      ],
+      [
+        'an oversized body',
+        () => post().send({ ...order, notes: 'x'.repeat(40_000) }),
+        413,
+        'API_PAYLOAD_TOO_LARGE',
+      ],
+    ])(
+      'answers %s with exactly {code, message, correlationId}',
+      async (_case, send, status, code) => {
+        const response = await send().expect(status);
+
+        expect(Object.keys(response.body as object).sort()).toEqual(
+          ENVELOPE_KEYS,
+        );
+        expect(response.body).toEqual({
+          code,
+          message: expect.any(String) as unknown,
+          correlationId: response.headers['x-correlation-id'],
+        });
+      },
+    );
+
+    it('adds fieldErrors to a validation failure and nothing else', async () => {
+      const response = await post()
+        .send({ ...order, currency: 'XYZ' })
+        .expect(400);
+
+      expect(Object.keys(response.body as object).sort()).toEqual(
+        [...ENVELOPE_KEYS, 'fieldErrors'].sort(),
+      );
+      expect(errorOf(response).fieldErrors).toEqual({
+        currency: expect.any(String) as unknown,
+      });
+    });
+  });
+
+  describe('body-size limit (US-05-04)', () => {
+    const LIMIT = ROOMY_LIMITS.maxBodyBytes;
+    const TOO_LARGE = {
+      code: 'API_PAYLOAD_TOO_LARGE',
+      message: 'The request body is too large.',
+      correlationId: expect.any(String) as unknown,
+    };
+    /** A valid order padded with JSON whitespace to an exact byte size. */
+    const paddedTo = (bytes: number) => {
+      const text = JSON.stringify(order);
+      return text + ' '.repeat(bytes - Buffer.byteLength(text));
+    };
+    const json = (call: request.Test) =>
+      call.set('Content-Type', 'application/json');
+
+    it('accepts a body of exactly the limit', async () => {
+      await json(post()).send(paddedTo(LIMIT)).expect(202);
+      expect(submitOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers 413 API_PAYLOAD_TOO_LARGE one byte over the limit, before ingestion', async () => {
+      const response = await json(post())
+        .send(paddedTo(LIMIT + 1))
+        .expect(413);
+
+      expect(response.body).toEqual(TOO_LARGE);
+      neverSubmitted();
+    });
+
+    it('answers 413 for a large field before validating it', async () => {
+      const response = await post()
+        .send({ ...order, notes: 'x'.repeat(LIMIT) })
+        .expect(413);
+
+      expect(response.body).toEqual(TOO_LARGE);
+      neverSubmitted();
+    });
+
+    it('counts a chunked body that declares no length', async () => {
+      const call = json(post());
+      const chunk = ' '.repeat(8 * 1024);
+      call.write(JSON.stringify(order));
+      for (let index = 0; index < 5; index++) call.write(chunk);
+      const response = await call.expect(413);
+
+      expect(response.body).toEqual(TOO_LARGE);
+      neverSubmitted();
+    });
+
+    it('applies the limit to a body that is not declared as JSON', async () => {
+      const response = await post()
+        .set('Content-Type', 'application/x-www-form-urlencoded')
+        .send(`notes=${'x'.repeat(LIMIT)}`)
+        .expect(413);
+
+      expect(response.body).toEqual(TOO_LARGE);
+      neverSubmitted();
+    });
+
+    it('answers 413 before authenticating, so an oversized body costs no key lookup', async () => {
+      const response = await json(request(server()).post('/api/v1/orders'))
+        .send(paddedTo(LIMIT + 1))
+        .expect(413);
+
+      expect(response.body).toEqual(TOO_LARGE);
+      expect(keys.findByPrefixForAuthentication).not.toHaveBeenCalled();
+      neverSubmitted();
+    });
+
+    it.each([
+      ['malformed JSON', 'application/json', '{"externalOrderId": '],
+      ['a form-encoded body', 'application/x-www-form-urlencoded', 'a=1&b=2'],
+      ['plain text', 'text/plain', 'hello'],
+      ['a JSON value that is not an object', 'application/json', '"10023"'],
+    ])(
+      'answers 400 API_VALIDATION_FAILED for %s',
+      async (_case, type, text) => {
+        const response = await post()
+          .set('Content-Type', type)
+          .send(text)
+          .expect(400);
+
+        expect(response.body).toEqual({
+          code: 'API_VALIDATION_FAILED',
+          message: 'The request body must be valid JSON.',
+          correlationId: response.headers['x-correlation-id'],
+        });
+        expect(keys.findByPrefixForAuthentication).not.toHaveBeenCalled();
+        neverSubmitted();
+      },
+    );
+  });
+
+  describe('rate limits (US-05-04)', () => {
+    const LIMITS: OrderApiConfig = {
+      perIntegrationPerMinute: 3,
+      globalPerMinute: 5,
+      preAuthPerIpPerMinute: 20,
+      maxBodyBytes: 32 * 1024,
+    };
+    const RATE_LIMITED = {
+      code: 'API_RATE_LIMITED',
+      message: expect.any(String) as unknown,
+      correlationId: expect.any(String) as unknown,
+    };
+    let limited: INestApplication;
+
+    /** A valid, distinct order through the throttled app. */
+    const submit = (key: string, reference: number) =>
+      request(limited.getHttpServer() as Server)
+        .post('/api/v1/orders')
+        .set('Authorization', `Bearer ${key}`)
+        .set('Idempotency-Key', `api-order-${reference}`)
+        .send({ ...order, externalOrderId: String(reference) });
+
+    const submitTimes = async (key: string, count: number, from = 1) => {
+      for (let index = 0; index < count; index++)
+        await submit(key, from + index).expect(202);
+    };
+
+    // Each test gets its own app, and with it empty throttler buckets.
+    beforeEach(async () => {
+      limited = await createApp(LIMITS);
+    });
+
+    afterEach(async () => {
+      await limited.close();
+    });
+
+    it('answers 429 API_RATE_LIMITED with Retry-After after a burst, before the adapter runs', async () => {
+      await submitTimes(keyA.plaintext, LIMITS.perIntegrationPerMinute);
+      jest.clearAllMocks();
+
+      const response = await submit(keyA.plaintext, 99).expect(429);
+
+      expect(response.body).toEqual(RATE_LIMITED);
+      const retryAfter = Number(response.headers['retry-after']);
+      expect(Number.isInteger(retryAfter)).toBe(true);
+      expect(retryAfter).toBeGreaterThanOrEqual(1);
+      expect(retryAfter).toBeLessThanOrEqual(60);
+      neverSubmitted();
+    });
+
+    it('throttles before validation: a throttled request is not even read', async () => {
+      await submitTimes(keyA.plaintext, LIMITS.perIntegrationPerMinute);
+      jest.clearAllMocks();
+
+      const response = await request(limited.getHttpServer() as Server)
+        .post('/api/v1/orders')
+        .set('Authorization', `Bearer ${keyA.plaintext}`)
+        .send({ nonsense: true })
+        .expect(429);
+
+      expect(response.body).toEqual(RATE_LIMITED);
+      neverSubmitted();
+    });
+
+    it('lets exactly the limit through under concurrent load', async () => {
+      const responses = await Promise.all(
+        Array.from({ length: 10 }, (_, index) =>
+          submit(keyA.plaintext, 100 + index),
+        ),
+      );
+
+      const statuses = responses.map(({ status }) => status);
+      expect(statuses.filter((status) => status === 202)).toHaveLength(
+        LIMITS.perIntegrationPerMinute,
+      );
+      expect(statuses.filter((status) => status === 429)).toHaveLength(
+        10 - LIMITS.perIntegrationPerMinute,
+      );
+      expect(submitOne).toHaveBeenCalledTimes(LIMITS.perIntegrationPerMinute);
+      expect(acceptance.accept).toHaveBeenCalledTimes(
+        LIMITS.perIntegrationPerMinute,
+      );
+      expect(dispatcher.dispatchById).toHaveBeenCalledTimes(
+        LIMITS.perIntegrationPerMinute,
+      );
+    });
+
+    it('refuses a rotated key of a throttled integration', async () => {
+      await submitTimes(keyA.plaintext, LIMITS.perIntegrationPerMinute);
+      jest.clearAllMocks();
+
+      const response = await submit(keyARotated.plaintext, 99).expect(429);
+
+      expect(response.body).toEqual(RATE_LIMITED);
+      neverSubmitted();
+    });
+
+    it('keeps serving another integration while one is throttled', async () => {
+      await submitTimes(keyA.plaintext, LIMITS.perIntegrationPerMinute);
+      await submit(keyA.plaintext, 99).expect(429);
+
+      await submit(keyB.plaintext, 1).expect(202);
+    });
+
+    it('applies the global limit across integrations', async () => {
+      await submitTimes(keyA.plaintext, 3);
+      await submitTimes(keyB.plaintext, 2);
+      jest.clearAllMocks();
+
+      // Integration B has used 2 of its own 3; the global 5 are spent.
+      const response = await submit(keyB.plaintext, 99).expect(429);
+
+      expect(response.body).toEqual(RATE_LIMITED);
+      expect(response.headers['retry-after']).toBeDefined();
+      neverSubmitted();
+    });
+
+    it('bounds requests without a valid key before they reach the key lookup', async () => {
+      const bad = () =>
+        request(limited.getHttpServer() as Server)
+          .post('/api/v1/orders')
+          .set('Authorization', `Bearer ${unknownKey.plaintext}`)
+          .send(order);
+      for (let index = 0; index < LIMITS.preAuthPerIpPerMinute; index++)
+        await bad().expect(401);
+      expect(keys.findByPrefixForAuthentication).toHaveBeenCalledTimes(
+        LIMITS.preAuthPerIpPerMinute,
+      );
+      jest.clearAllMocks();
+
+      const response = await bad().expect(429);
+
+      expect(response.body).toEqual(RATE_LIMITED);
+      expect(response.headers['retry-after']).toBeDefined();
+      expect(keys.findByPrefixForAuthentication).not.toHaveBeenCalled();
+      neverSubmitted();
+    });
+
+    it('logs a throttled request with its integration and the outcome code', async () => {
+      await submitTimes(keyA.plaintext, LIMITS.perIntegrationPerMinute);
+      logged.length = 0;
+
+      const response = await submit(keyA.plaintext, 99).expect(429);
+      await settle();
+
+      expect(requestLines()).toEqual([
+        expect.objectContaining({
+          outcome: 'failure',
+          httpStatus: 429,
+          resultCode: 'API_RATE_LIMITED',
+          integrationId: SOURCE_A,
+          keyPrefix: keyA.prefix,
+          correlationId: response.headers['x-correlation-id'],
+        }),
+      ]);
+    });
+  });
+
+  describe('request log (US-05-04)', () => {
+    /** Things no log line or error body may ever contain. */
+    const SECRETS = [
+      keyA.plaintext,
+      keyA.plaintext.slice(keyA.prefix.length + 1),
+      keyA.keyHash,
+      unknownKey.plaintext,
+      unknownKey.plaintext.slice(unknownKey.prefix.length + 1),
+      '+201001234567',
+      '201001234567',
+      'Mona Ali',
+      '12 Nile St',
+      'Call before delivery',
+    ];
+    const pii = {
+      ...order,
+      address: '12 Nile St',
+      notes: 'Call before delivery',
+    };
+
+    const expectClean = (response: request.Response) => {
+      const lines = logged.join('\n');
+      const sent = JSON.stringify(response.body);
+      for (const secret of SECRETS) {
+        expect(lines).not.toContain(secret);
+        expect(sent).not.toContain(secret);
+      }
+    };
+
+    it('writes one line for an accepted order: integration, key prefix, correlation ID, outcome, duration and order', async () => {
+      const response = await post().send(pii).expect(202);
+      await settle();
+
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        app: 'backend',
+        module: 'OrderApi',
+        action: 'order-api-request',
+        outcome: 'success',
+        httpStatus: 202,
+        resultCode: 'accepted',
+        orgId: ORG_A,
+        integrationId: SOURCE_A,
+        keyId: 'key-a',
+        keyPrefix: keyA.prefix,
+        orderId: 'order-1',
+        correlationId: response.headers['x-correlation-id'],
+        requestId: response.headers['x-correlation-id'],
+      });
+      expect(typeof lines[0].durationMs).toBe('number');
+      expect(Object.keys(lines[0]).sort()).toEqual(
+        [
+          'action',
+          'app',
+          'correlationId',
+          'durationMs',
+          'env',
+          'httpStatus',
+          'integrationId',
+          'keyId',
+          'keyPrefix',
+          'module',
+          'orderId',
+          'orgId',
+          'outcome',
+          'requestId',
+          'resultCode',
+        ].sort(),
+      );
+      expectClean(response);
+    });
+
+    it('marks a replay as duplicate', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'event-1',
+        order: { id: 'order-1' },
+        duplicate: true,
+      });
+      await post().send(order).expect(202);
+      await settle();
+
+      expect(requestLines()).toEqual([
+        expect.objectContaining({
+          resultCode: 'duplicate',
+          orderId: 'order-1',
+        }),
+      ]);
+    });
+
+    it('redacts the authentication failure path', async () => {
+      const response = await request(server())
+        .post('/api/v1/orders')
+        .set('Authorization', `Bearer ${unknownKey.plaintext}`)
+        .set('Idempotency-Key', 'order-10023')
+        .send(pii)
+        .expect(401);
+      await settle();
+
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        outcome: 'failure',
+        httpStatus: 401,
+        resultCode: 'API_KEY_INVALID',
+        correlationId: response.headers['x-correlation-id'],
+      });
+      // Nobody authenticated, so the line names no tenant.
+      for (const field of ['orgId', 'integrationId', 'keyId', 'keyPrefix'])
+        expect(lines[0]).not.toHaveProperty(field);
+      expectClean(response);
+    });
+
+    it('redacts a key sent in the query string', async () => {
+      const response = await request(server())
+        .post(`/api/v1/orders?api_key=${keyA.plaintext}`)
+        .set('Authorization', `Bearer ${keyA.plaintext}`)
+        .send(pii)
+        .expect(401);
+      await settle();
+
+      expect(requestLines()).toHaveLength(1);
+      expectClean(response);
+    });
+
+    it('redacts the validation failure path', async () => {
+      const response = await post()
+        .send({ ...pii, currency: 'XYZ', discountCode: 'Mona Ali' })
+        .expect(400);
+      await settle();
+
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        outcome: 'failure',
+        httpStatus: 400,
+        resultCode: 'API_VALIDATION_FAILED',
+        integrationId: SOURCE_A,
+        keyPrefix: keyA.prefix,
+      });
+      expect(lines[0]).not.toHaveProperty('orderId');
+      expectClean(response);
+    });
+
+    it.each([
+      [
+        'a key replayed with different data',
+        new ManualOrderPayloadConflictError(),
+        'API_ORDER_IDEMPOTENCY_CONFLICT',
+      ],
+      [
+        'an existing order with different data',
+        new ManualOrderIdentityConflictError(),
+        'API_ORDER_EXTERNAL_ID_CONFLICT',
+      ],
+    ])('redacts the conflict path: %s', async (_case, conflict, code) => {
+      acceptance.accept.mockRejectedValue(conflict);
+      const response = await post().send(pii).expect(409);
+      await settle();
+
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        outcome: 'failure',
+        httpStatus: 409,
+        resultCode: code,
+        integrationId: SOURCE_A,
+      });
+      expectClean(response);
+    });
+
+    it('redacts the database error path and never shows another tenant', async () => {
+      const databaseError = Object.assign(
+        new Error(
+          `select "id" from "integrations" where "org_id" = '${ORG_B}' -- customer +201001234567 Mona Ali`,
+        ),
+        {
+          code: '57P01',
+          query: `select * from integrations /* ${SOURCE_B} */`,
+        },
+      );
+      integrations.findActiveByOrg.mockRejectedValue(databaseError);
+
+      const response = await post().send(pii).expect(500);
+      await settle();
+
+      expect(response.body).toEqual({
+        code: 'API_INTERNAL_ERROR',
+        message: expect.any(String) as unknown,
+        correlationId: response.headers['x-correlation-id'],
+      });
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        outcome: 'failure',
+        httpStatus: 500,
+        resultCode: 'API_INTERNAL_ERROR',
+        errorCode: '57P01',
+        orgId: ORG_A,
+        integrationId: SOURCE_A,
+      });
+      const everything = `${logged.join('\n')}\n${JSON.stringify(response.body)}`;
+      for (const leak of [ORG_B, SOURCE_B, 'select', 'integrations', 'org_id'])
+        expect(everything).not.toContain(leak);
+      expectClean(response);
+      untouched();
+    });
+
+    it('keeps the cause of a failed acceptance out of the response and the request line', async () => {
+      acceptance.accept.mockRejectedValue(
+        new Error(`insert into "orders" failed for ${ORG_B} +201001234567`),
+      );
+      const response = await post().send(pii).expect(503);
+      await settle();
+
+      expect(response.body).toEqual({
+        code: 'API_ORDER_ACCEPTANCE_FAILED',
+        message: expect.any(String) as unknown,
+        correlationId: response.headers['x-correlation-id'],
+      });
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        httpStatus: 503,
+        resultCode: 'API_ORDER_ACCEPTANCE_FAILED',
+      });
+      const line = JSON.stringify(lines[0]);
+      for (const leak of [ORG_B, 'insert into', '+201001234567'])
+        expect(line).not.toContain(leak);
+    });
+
+    it('writes one line for an oversized body, with no tenant and no content', async () => {
+      const response = await post()
+        .send({ ...pii, notes: 'Mona Ali '.repeat(8_000) })
+        .expect(413);
+      await settle();
+
+      const lines = requestLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        outcome: 'failure',
+        httpStatus: 413,
+        resultCode: 'API_PAYLOAD_TOO_LARGE',
+        correlationId: response.headers['x-correlation-id'],
+      });
+      expect(lines[0]).not.toHaveProperty('integrationId');
+      expectClean(response);
+    });
   });
 });

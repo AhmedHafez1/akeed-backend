@@ -213,6 +213,23 @@ Roll out read-only first (switch off), name operators only after a recovery dril
 | `BULK_IMPORT_RELEASE_PER_MINUTE` | First messages an organization's releasing imports send per minute, shared by all of them, 1–120 (default 20). The release job ticks every 30 s and releases `ceil(rate × 0.5)` held orders per tick. Pilot default, not a Meta threshold; revisit after the quality-rating review (US-04.6-10). Manual and Shopify orders never pass through it. |
 | `BULK_IMPORT_QUOTE_SECRET` | HMAC secret that signs the start quote (`GET /:id/start-quote`), so `POST /:id/start` can prove the count and balance the merchant saw. At least 32 characters; required while `STANDALONE_BULK_IMPORT_ENABLED=true`, otherwise startup fails. Rotating it only invalidates quotes younger than 10 minutes (`409 IMPORT_QUOTE_STALE`, the dialog re-quotes). |
 
+## Server Order API (E05)
+
+`POST /api/v1/orders` accepts orders from a merchant's own server, authenticated by an integration API key. These variables bound what the route can cost; none is required, and startup fails on a value outside its range.
+
+| Variable | Notes |
+| --- | --- |
+| `ORDER_API_RATE_LIMIT_PER_INTEGRATION` | Requests a minute for one integration, 1–6000 (default 60). Counted by integration, not by key, so rotating or adding keys does not raise it. Above it: `429 API_RATE_LIMITED` with `Retry-After` (seconds). |
+| `ORDER_API_RATE_LIMIT_GLOBAL` | Authenticated requests a minute across all integrations, 1–60000 (default 300). Counted only for requests the integration limit let through. Above it: `429 API_RATE_LIMITED`. |
+| `ORDER_API_RATE_LIMIT_PRE_AUTH_PER_IP` | Requests a minute from one client address, counted before the key is checked, 1–120000 (default 600). It bounds traffic with a bad or missing key. The app does not set `trust proxy`, so behind a proxy every client shares one address and this is a ceiling for the whole route; keep it at or above the global limit. |
+| `ORDER_API_MAX_BODY_BYTES` | Largest request body under `/api/v1`, 1024–102400 (default 32768). Checked while the body is read, before authentication, validation or ingestion: `413 API_PAYLOAD_TOO_LARGE`. |
+
+The limits must satisfy per-integration ≤ global ≤ pre-auth, otherwise startup fails. All three count requests in a 60-second window; a blocked bucket stays blocked for 60 seconds. They are separate from verification usage, which the readiness gates own. The route skips the app-wide 60-a-minute IP throttler.
+
+The counters live in memory, which is correct for one backend instance. Do not run a second API instance before moving the throttler to Redis-backed storage.
+
+Every `/api/v1/orders` error answers `{code, message, correlationId}` (validation failures add `fieldErrors`), and every response carries `X-Correlation-Id`. A client may send its own `X-Correlation-Id` (8–64 letters, digits, `.`, `_` or `-`); any other value is replaced. Support triage starts from that ID: ask the integrator for it, then filter the backend log for `"action":"order-api-request"` and the ID. The line holds the integration, the key prefix, the outcome code, the HTTP status, the duration and the order ID, and never the key, the body or customer data.
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:

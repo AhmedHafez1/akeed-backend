@@ -92,13 +92,43 @@ describe('Standalone ingestion boundary', () => {
       path.startsWith('modules/order-api/'),
     );
 
-    it('holds a controller, a request DTO, an adapter and its module', () => {
-      expect(api.map(({ path }) => path).sort()).toEqual([
+    // The channel: what turns a request into a canonical order.
+    const channel = api.filter(
+      ({ path }) => !path.startsWith('modules/order-api/edge/'),
+    );
+    // The protection around it (US-05-04): rate limits, the error envelope
+    // and the request log. It knows who is calling and nothing about orders.
+    const edge = api.filter(({ path }) =>
+      path.startsWith('modules/order-api/edge/'),
+    );
+
+    it('holds a controller, a request DTO, an adapter, its module and the edge', () => {
+      expect(channel.map(({ path }) => path).sort()).toEqual([
         'modules/order-api/api-order.channel-adapter.ts',
         'modules/order-api/dto/create-api-order.dto.ts',
         'modules/order-api/order-api.controller.ts',
         'modules/order-api/order-api.module.ts',
       ]);
+      expect(edge.map(({ path }) => path).sort()).toEqual([
+        'modules/order-api/edge/order-api-exception.filter.ts',
+        'modules/order-api/edge/order-api-outcome.interceptor.ts',
+        'modules/order-api/edge/order-api-request-state.ts',
+        'modules/order-api/edge/order-api-throttle.guard.ts',
+        'modules/order-api/edge/order-api.edge.ts',
+        'modules/order-api/edge/order-api.errors.ts',
+      ]);
+    });
+
+    it('keeps the edge away from orders: no ingestion, repository, DTO or request body', () => {
+      const offenders = edge
+        .filter(({ source }) =>
+          /from\s+'[^']*(\/order-ingestion\/|\/repositories\/|\/dto\/|channel-adapter)[^']*'|\.(body|rawBody)\b|headers\.authorization/.test(
+            source,
+          ),
+        )
+        .map(({ path }) => path);
+
+      expect(offenders).toEqual([]);
     });
 
     it('imports nothing that persists, dispatches, bills or builds an envelope', () => {
@@ -153,10 +183,18 @@ describe('Standalone ingestion boundary', () => {
         path.endsWith('order-api.controller.ts'),
       )!.source;
 
-      expect(controller).toContain('@UseGuards(IntegrationApiKeyGuard)');
+      // The key guard sits between the pre-auth ceiling and the limits of the
+      // integration it authenticated; all three run before the handler.
+      expect(controller).toMatch(
+        /@UseGuards\(\s*OrderApiIngressThrottleGuard,\s*IntegrationApiKeyGuard,\s*OrderApiThrottleGuard,?\s*\)/,
+      );
       expect(controller).not.toMatch(/DualAuthGuard|CurrentUser\b/);
+      // The edge names the tenant to throttle and log it, read from the key's
+      // principal; the channel never names it at all.
       expect(
-        api.filter(({ source }) => /\b(orgId|integrationId)\b/.test(source)),
+        channel.filter(({ source }) =>
+          /\b(orgId|integrationId)\b/.test(source),
+        ),
       ).toEqual([]);
     });
   });

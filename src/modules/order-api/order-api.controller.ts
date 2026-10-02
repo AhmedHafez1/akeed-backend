@@ -5,10 +5,13 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
   ValidationPipe,
   type ValidationError,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { normalizeIdempotencyKey } from '../../shared/validation/idempotency-key';
 import { IntegrationApiKeyGuard } from '../integration-keys/guards/integration-api-key.guard';
 import {
@@ -27,6 +30,12 @@ import {
   CreateApiOrderDto,
   type CreateApiOrderResponseDto,
 } from './dto/create-api-order.dto';
+import { OrderApiExceptionFilter } from './edge/order-api-exception.filter';
+import { OrderApiOutcomeInterceptor } from './edge/order-api-outcome.interceptor';
+import {
+  OrderApiIngressThrottleGuard,
+  OrderApiThrottleGuard,
+} from './edge/order-api-throttle.guard';
 
 /** A route pipe answering API_VALIDATION_FAILED with per-field errors. */
 export const createApiOrderPipe = new ValidationPipe({
@@ -51,9 +60,20 @@ export const createApiOrderPipe = new ValidationPipe({
  * translates the request and submits it to the same ingestion command the
  * manual form and file import use; the tenant and source come from the key,
  * never from the request.
+ *
+ * Protection comes first (US-05-04): the API's own rate limits replace the
+ * app-wide IP throttler, so a throttled request never reaches the adapter or
+ * the ingestion command, and every error leaves in one envelope.
  */
 @Controller('api/v1/orders')
-@UseGuards(IntegrationApiKeyGuard)
+@SkipThrottle()
+@UseGuards(
+  OrderApiIngressThrottleGuard,
+  IntegrationApiKeyGuard,
+  OrderApiThrottleGuard,
+)
+@UseFilters(OrderApiExceptionFilter)
+@UseInterceptors(OrderApiOutcomeInterceptor)
 export class OrderApiController {
   constructor(
     private readonly ingestion: StandaloneOrderIngestionService,

@@ -14,6 +14,7 @@ import {
   BULK_IMPORT_CONFIG,
   parseBulkImportConfig,
 } from './bulk-import.config';
+import { ORDER_API_CONFIG, parseOrderApiConfig } from './order-api.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -107,5 +108,6 @@ export function validateEnv(
     [STANDALONE_BILLING_OBSERVABILITY_CONFIG]:
       parseStandaloneBillingObservabilityConfig(config),
     [BULK_IMPORT_CONFIG]: parseBulkImportConfig(config),
+    [ORDER_API_CONFIG]: parseOrderApiConfig(config),
   };
 }

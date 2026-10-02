@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Technical enabler
-- **Status:** Backlog
+- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-05 and US-05-06; see [evidence](../../US-05-04-API-ABUSE-CONTROLS-EVIDENCE.md)
 - **Dependencies:** [US-05-03](US-05-03-idempotency-and-conflict-handling.md)
 
 ## User story and value
