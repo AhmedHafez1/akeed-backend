@@ -498,8 +498,9 @@ export class OrderImportMappingService {
 
   /**
    * The mapping as the batch page shows it after a refresh or resume: the
-   * stored columns and their origin, the matcher's confidence and
-   * alternatives for the file, and the payment values and date check for the
+   * stored columns and their origin, the matcher's confidence (until the
+   * merchant saves the mapping) and alternatives for the file, and the
+   * payment values and date check for the
    * mapped columns, computed the same way as at upload and save.
    */
   async describe(
@@ -525,10 +526,12 @@ export class OrderImportMappingService {
         const chosen = columnsOf(columns, suggestion.field);
         const source: MappingSource =
           stored?.sources[suggestion.field] ?? suggestion.source;
+        // A mapping the merchant saved is settled: a guess they kept is no
+        // longer a guess, so the page must not ask about it again.
         const confidence =
           chosen.length === 0
             ? 'none'
-            : source === 'auto'
+            : source === 'auto' && !stored?.confirmed
               ? sameColumns(suggestion.columns, chosen)
                 ? suggestion.confidence
                 : 'partial'

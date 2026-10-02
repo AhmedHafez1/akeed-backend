@@ -660,4 +660,54 @@ describe('OrderImportMappingService', () => {
       });
     });
   });
+
+  describe('describe (batch page)', () => {
+    // `Order Value` only contains an amount alias: a partial match.
+    const headers = ['Phone', 'Customer Name', 'Order Value'];
+    const guessed = {
+      dictionaryVersion: MAPPING_DICTIONARY_VERSION,
+      columns: {
+        phone: 'Phone',
+        customerName: ['Customer Name'],
+        amount: 'Order Value',
+      },
+      sources: { phone: 'auto', customerName: 'auto', amount: 'auto' },
+    };
+    const amountOf = async (confirmed: boolean) => {
+      const state = await service.describe(
+        'org-1',
+        {
+          batchId: 'batch-1',
+          headers,
+          mapping: { ...guessed, confirmed },
+          options: {},
+        },
+        [],
+      );
+      return {
+        mappingConfirmed: state.mappingConfirmed,
+        amount: state.suggestions.fields.find(
+          (field) => field.field === 'amount',
+        ),
+      };
+    };
+
+    it('reports a guess as partial until the merchant saves the mapping', async () => {
+      expect(await amountOf(false)).toMatchObject({
+        mappingConfirmed: false,
+        amount: { columns: ['Order Value'], confidence: 'partial' },
+      });
+    });
+
+    it('does not ask again about a guess the merchant saved', async () => {
+      expect(await amountOf(true)).toMatchObject({
+        mappingConfirmed: true,
+        amount: {
+          columns: ['Order Value'],
+          confidence: 'exact',
+          source: 'auto',
+        },
+      });
+    });
+  });
 });

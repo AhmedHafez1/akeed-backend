@@ -99,10 +99,12 @@ const AC2_ALIASES: [ImportField, string[]][] = [
 
 /**
  * Aliases added after AC2, from real files: `الهاتف` in Arabic Excel exports
- * (US-04.6-10 gate observation G1), dictionary version 2.
+ * (US-04.6-10 gate observation G1), dictionary version 2; `إجمالي المبلغ`
+ * and its siblings, which were only a partial match on `المبلغ`, version 3.
  */
 const FOLLOW_UP_ALIASES: [ImportField, string[]][] = [
   ['phone', ['الهاتف', 'هاتف']],
+  ['amount', ['total amount', 'اجمالي المبلغ', 'المبلغ الاجمالي']],
 ];
 
 /** The same header as a merchant might really type it. */
@@ -124,7 +126,7 @@ function suggestionFor(field: ImportField, headers: string[]) {
 
 describe('alias dictionary (US-04.6-03 AC2)', () => {
   it('is versioned', () => {
-    expect(MAPPING_DICTIONARY_VERSION).toBe(2);
+    expect(MAPPING_DICTIONARY_VERSION).toBe(3);
   });
 
   describe.each(AC2_ALIASES.concat(FOLLOW_UP_ALIASES))(
