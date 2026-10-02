@@ -297,7 +297,7 @@ describe('standalone source provisioning PostgreSQL contract', () => {
       escalationEnabled: true,
       escalationDelayMinutes: 360,
       quietHoursEnabled: false,
-      assumeCodWhenPaymentMissing: false,
+      assumeCodWhenPaymentMissing: true,
       onboardingStatus: 'pending',
     });
 

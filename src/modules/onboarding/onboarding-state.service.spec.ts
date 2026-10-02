@@ -445,6 +445,32 @@ describe('OnboardingStateService', () => {
         ).testSendLanguage,
       ).toBe('en');
     });
+
+    it('keeps the store phone apart from the saved test number', () => {
+      const state = callToState(
+        service,
+        makeIntegration({
+          merchantWhatsappPhone: null,
+          shopPhone: '+201001234567',
+        }),
+      );
+
+      expect(state.merchantWhatsappPhone).toBeNull();
+      expect(state.shopPhone).toBe('+201001234567');
+    });
+
+    it('reports the saved test number and no store phone when none is known', () => {
+      const state = callToState(
+        service,
+        makeIntegration({
+          merchantWhatsappPhone: '+201001234567',
+          shopPhone: null,
+        }),
+      );
+
+      expect(state.merchantWhatsappPhone).toBe('+201001234567');
+      expect(state.shopPhone).toBeNull();
+    });
   });
 
   describe('prefillStoreNameIfMissing', () => {

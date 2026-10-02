@@ -249,7 +249,10 @@ export interface OnboardingStateDto {
   /** The store's Shopify zone, offered first as "store time"; null if unknown. */
   shopTimezone: string | null;
   sendDelayMinutes: number;
+  /** The saved number the free test is sent to; null until one is saved. */
   merchantWhatsappPhone: string | null;
+  /** The Shopify billing-address phone, offered as a prefill only. */
+  shopPhone: string | null;
   /** Template language the merchant's own test message would use. */
   testSendLanguage: 'ar' | 'en';
   activation: OnboardingActivationDto;

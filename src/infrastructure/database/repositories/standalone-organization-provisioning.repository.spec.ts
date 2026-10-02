@@ -221,7 +221,7 @@ describe('provisionStandaloneSourceForOrganization', () => {
       escalation_enabled: true,
       escalation_delay_minutes: 360,
       quiet_hours_enabled: false,
-      assume_cod_when_payment_missing: false,
+      assume_cod_when_payment_missing: true,
       onboarding_status: 'pending',
     });
   });

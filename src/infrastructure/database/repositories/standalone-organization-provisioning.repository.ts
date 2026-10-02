@@ -41,7 +41,8 @@ export function buildStandaloneSourceIdentity(orgId: string): string {
  * (docs/standalone-onboarding-v2.md), so a new source starts ready to send:
  * immediate first send, one follow-up after 2 h, escalation after 6 h. They are
  * written explicitly so a column default change cannot alter them. Only new
- * sources get them; existing rows keep what the merchant saved.
+ * sources get them; existing rows keep what the merchant saved. Orders with no
+ * payment method are treated as COD from the start, since COD is the core case.
  */
 export const STANDALONE_SOURCE_DEFAULTS = {
   isAutoVerifyEnabled: true,
@@ -51,7 +52,7 @@ export const STANDALONE_SOURCE_DEFAULTS = {
   escalationEnabled: true,
   escalationDelayMinutes: 360,
   quietHoursEnabled: false,
-  assumeCodWhenPaymentMissing: false,
+  assumeCodWhenPaymentMissing: true,
 } as const satisfies Partial<typeof integrations.$inferInsert>;
 
 export type StandaloneProvisioningTransaction = Parameters<

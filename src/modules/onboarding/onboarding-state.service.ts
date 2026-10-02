@@ -420,8 +420,10 @@ export class OnboardingStateService {
       shopTimezone: this.resolveShopTimezone(integration),
       sendDelayMinutes:
         integration.sendDelayMinutes ?? DEFAULT_SEND_DELAY_MINUTES,
-      merchantWhatsappPhone:
-        integration.merchantWhatsappPhone ?? integration.shopPhone ?? null,
+      // The saved number only: the test send reads nothing else, so a merged
+      // value would promise a recipient the send then refuses.
+      merchantWhatsappPhone: integration.merchantWhatsappPhone ?? null,
+      shopPhone: integration.shopPhone ?? null,
       testSendLanguage: resolveTemplateLanguageForPhone(
         integration.defaultLanguage,
         integration.merchantWhatsappPhone ?? '',
