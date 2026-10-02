@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { IntegrationApiKeysRepository } from '../../infrastructure/database/repositories/integration-api-keys.repository';
 import {
+  ManualOrderIdentityConflictError,
   ManualOrderPayloadConflictError,
   type ManualOrderAcceptanceInput,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
@@ -107,7 +108,10 @@ describe('POST /api/v1/orders', () => {
       [ManualOrderAcceptanceInput]
     >(),
   };
-  const dispatcher = { dispatchById: jest.fn<Promise<string>, [string]>() };
+  const dispatcher = {
+    dispatchById: jest.fn<Promise<string>, [string]>(),
+    isAlreadyDispatched: jest.fn<Promise<boolean>, [string]>(),
+  };
   const verifications = { findByOrderId: jest.fn() };
   const creditEligibility = { resolveDenial: jest.fn() };
   const entitlements = {
@@ -192,6 +196,7 @@ describe('POST /api/v1/orders', () => {
       duplicate: false,
     });
     dispatcher.dispatchById.mockResolvedValue('dispatched');
+    dispatcher.isAlreadyDispatched.mockResolvedValue(false);
     verifications.findByOrderId.mockResolvedValue({ id: 'verification-1' });
   });
 
@@ -640,6 +645,50 @@ describe('POST /api/v1/orders', () => {
         code: 'API_ORDER_IDEMPOTENCY_CONFLICT',
       });
       expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 when the order already exists with different data under a new key', async () => {
+      acceptance.accept.mockRejectedValue(
+        new ManualOrderIdentityConflictError(),
+      );
+      const response = await post().send(order).expect(409);
+      expect(response.body).toMatchObject({
+        statusCode: 409,
+        code: 'API_ORDER_EXTERNAL_ID_CONFLICT',
+      });
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+    });
+
+    it('answers 202 duplicate without dispatching when the order already exists unchanged', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'event-of-first-request',
+        order: { id: 'order-1' },
+        duplicate: true,
+        replay: 'external_id',
+      } as never);
+      const response = await post().send(order).expect(202);
+      expect(response.body).toMatchObject({
+        orderId: 'order-1',
+        status: 'accepted',
+        duplicate: true,
+      });
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+    });
+
+    it('answers 202 duplicate when a retry finds its event already dispatched', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'event-1',
+        order: { id: 'order-1' },
+        duplicate: true,
+        replay: 'event_key',
+      } as never);
+      dispatcher.dispatchById.mockResolvedValue('not_claimed');
+      dispatcher.isAlreadyDispatched.mockResolvedValue(true);
+      const response = await post().send(order).expect(202);
+      expect(response.body).toMatchObject({
+        orderId: 'order-1',
+        duplicate: true,
+      });
     });
 
     it('answers 503 without leaking the cause when nothing was stored', async () => {

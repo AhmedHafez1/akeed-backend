@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Technical enabler (core)
-- **Status:** Backlog
+- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-04; see [evidence](../../US-05-03-IDEMPOTENCY-AND-EXTERNAL-ID-EVIDENCE.md)
 - **Dependencies:** [US-05-02](US-05-02-authenticated-order-ingestion-endpoint.md)
 
 ## User story and value

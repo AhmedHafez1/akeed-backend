@@ -4,6 +4,7 @@ import {
   StandaloneIngestionAcceptanceError,
   StandaloneIngestionConflictError,
   StandaloneIngestionDispatchError,
+  StandaloneIngestionExternalIdConflictError,
 } from '../order-ingestion/standalone-order-ingestion.errors';
 import { ApiOrderChannelAdapter } from './api-order.channel-adapter';
 import type { CreateApiOrderDto } from './dto/create-api-order.dto';
@@ -170,6 +171,16 @@ describe('ApiOrderChannelAdapter', () => {
           message:
             'Idempotency-Key was already used with different order data.',
           code: 'API_ORDER_IDEMPOTENCY_CONFLICT',
+        },
+      ],
+      [
+        new StandaloneIngestionExternalIdConflictError(),
+        {
+          statusCode: 409,
+          error: 'Conflict',
+          message:
+            'An order with this externalOrderId already exists with different order data.',
+          code: 'API_ORDER_EXTERNAL_ID_CONFLICT',
         },
       ],
       [

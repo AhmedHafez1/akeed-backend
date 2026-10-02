@@ -14,6 +14,17 @@ export class StandaloneIngestionConflictError extends Error {
   }
 }
 
+/**
+ * A new idempotency key for an order identity the source already has, with
+ * different order content. Nothing was written; the stored order is unchanged.
+ */
+export class StandaloneIngestionExternalIdConflictError extends Error {
+  constructor() {
+    super('An order with this external id already exists with different data');
+    this.name = StandaloneIngestionExternalIdConflictError.name;
+  }
+}
+
 /** The order could not be durably accepted; nothing was committed. Retry safely. */
 export class StandaloneIngestionAcceptanceError extends Error {
   constructor() {

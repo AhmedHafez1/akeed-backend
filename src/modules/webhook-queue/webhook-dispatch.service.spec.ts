@@ -98,6 +98,80 @@ describe('WebhookDispatchService', () => {
     expect(logged).toContain('"webhookEventId":"event-1"');
   });
 
+  describe('isAlreadyDispatched', () => {
+    const pending = {
+      status: 'pending',
+      dispatchedAt: null,
+      dispatchLeaseUntil: null,
+    };
+
+    it.each([
+      [
+        'queued and waiting for the worker',
+        { ...pending, dispatchedAt: '2026-09-03T00:00:01.000Z' },
+      ],
+      ['being processed', { ...pending, status: 'processing' }],
+      ['completed', { ...pending, status: 'completed' }],
+      ['skipped', { ...pending, status: 'skipped' }],
+      ['failed', { ...pending, status: 'failed' }],
+      [
+        'being dispatched by another caller right now',
+        {
+          ...pending,
+          dispatchLeaseUntil: new Date(Date.now() + 30_000).toISOString(),
+        },
+      ],
+      [
+        'leased, in the form PostgreSQL returns a timestamp',
+        {
+          ...pending,
+          dispatchLeaseUntil: new Date(Date.now() + 30_000)
+            .toISOString()
+            .replace('T', ' ')
+            .replace('Z', '+00'),
+        },
+      ],
+    ])('is true for an event that is %s', async (_case, stored) => {
+      const { service, events } = setup();
+      events.findById.mockResolvedValue(event(stored));
+      await expect(service.isAlreadyDispatched('event-1')).resolves.toBe(true);
+      expect(events.findById).toHaveBeenCalledWith('event-1');
+    });
+
+    it.each([
+      [
+        'waiting out a dispatch back-off',
+        { ...pending, nextDispatchAt: '2999-01-01T00:00:00.000Z' },
+      ],
+      [
+        'pending under a lease that expired',
+        { ...pending, dispatchLeaseUntil: '2026-09-03T00:00:30.000Z' },
+      ],
+    ])('is false for an event that is %s', async (_case, stored) => {
+      const { service, events } = setup();
+      events.findById.mockResolvedValue(event(stored));
+      await expect(service.isAlreadyDispatched('event-1')).resolves.toBe(false);
+    });
+
+    it('is false for an event that does not exist', async () => {
+      const { service, events } = setup();
+      events.findById.mockResolvedValue(undefined);
+      await expect(service.isAlreadyDispatched('event-1')).resolves.toBe(false);
+    });
+
+    it('leaves the outcome of dispatchById as it was', async () => {
+      // Callers that pin `not_claimed` (the Shopify producer, the recovery
+      // sweep) see no difference for an event that is already completed.
+      const { service, events } = setup();
+      events.claimForDispatch.mockResolvedValue(null);
+      events.findById.mockResolvedValue(event({ status: 'completed' }));
+      jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+      await expect(service.dispatchById('event-1')).resolves.toBe(
+        'not_claimed',
+      );
+    });
+  });
+
   it('gives each claim of the same event a distinct job ID so a re-dispatch cannot be deduped', async () => {
     const { service, queue, events } = setup();
     // `resetForRedispatch` rewinds dispatchAttempts, so a retry re-uses the

@@ -302,8 +302,8 @@ describe('order API PostgreSQL contract (US-05-02)', () => {
   });
 
   it('a retry with the same key and content never creates a second order, event or send', async () => {
-    // What the retry answers after the first dispatch is US-05-03's subject
-    // (replay semantics); this pins only that it has no second effect.
+    // The replay semantics themselves are US-05-03's subject
+    // (`order-api-idempotency.contract-spec.ts`).
     const merchant = await gate.merchant();
     const key = `order-${randomUUID()}`;
     const body = order({ externalOrderId: 'R-1' });
@@ -311,10 +311,11 @@ describe('order API PostgreSQL contract (US-05-02)', () => {
     await gate.drain();
     const sendsAfterFirst = gate.sends.length;
 
-    await submit(merchant, body, key).then(
-      (answer) => expect(answer.orderId).toBe(first.orderId),
-      () => undefined,
-    );
+    await expect(submit(merchant, body, key)).resolves.toMatchObject({
+      orderId: first.orderId,
+      status: 'accepted',
+      duplicate: true,
+    });
     await gate.drain();
 
     const state = await stateOf(merchant.orgId);

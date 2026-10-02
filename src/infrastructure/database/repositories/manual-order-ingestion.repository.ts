@@ -26,6 +26,17 @@ export class ManualOrderAcceptanceStateError extends Error {
 }
 
 /**
+ * A new idempotency key for an order identity the source already has, whose
+ * content differs from the stored order. Nothing is written.
+ */
+export class ManualOrderIdentityConflictError extends Error {
+  constructor() {
+    super('The order identity already exists with different order data');
+    this.name = ManualOrderIdentityConflictError.name;
+  }
+}
+
+/**
  * Rolls one row's savepoint back without failing its chunk.
  *
  * Thrown inside the per-row nested transaction when the order identity is
@@ -38,6 +49,31 @@ class RowRollback extends Error {
     this.name = RowRollback.name;
   }
 }
+
+/**
+ * Rolls a non-held acceptance back and answers with the order that already
+ * owns the identity.
+ *
+ * Thrown inside the acceptance transaction when a new idempotency key carries
+ * an order the source already has, with identical content. The rollback
+ * discards the event just inserted, so a replay leaves no second event to be
+ * dispatched or swept. Never escapes `accept`.
+ */
+class IdentityReplayRollback extends Error {
+  constructor(
+    readonly existing: { eventId: string; order: typeof orders.$inferSelect },
+  ) {
+    super('acceptance rolled back to replay the existing order');
+    this.name = IdentityReplayRollback.name;
+  }
+}
+
+/**
+ * Which identity a duplicate was recognised by: the request's own idempotency
+ * key (`event_key`, the same request again) or the order's external identity
+ * under a new key (`external_id`, the same order again).
+ */
+export type AcceptanceReplayKind = 'event_key' | 'external_id';
 
 export interface ManualOrderAcceptanceInput {
   event: {
@@ -60,15 +96,18 @@ export interface ManualOrderAcceptanceResult {
   eventId: string;
   order: typeof orders.$inferSelect;
   duplicate: boolean;
+  /** Set on a duplicate only. An `external_id` replay owns no event of its own. */
+  replay?: AcceptanceReplayKind;
 }
 
 /**
  * One row's outcome.
  *
- * `already_imported` only ever occurs on a held (bulk) acceptance: the manual
- * path keeps throwing, because a manual key collision on a generated identity
- * is a bug, while an import racing another batch for the same merchant
- * reference is an ordinary, expected outcome the caller reports per row.
+ * `already_imported` only ever occurs on a held (bulk) acceptance: an import
+ * racing another batch for the same merchant reference is an ordinary,
+ * expected outcome the caller reports per row. A non-held acceptance that
+ * meets an existing identity replays it or throws
+ * `ManualOrderIdentityConflictError` instead.
  */
 export type AcceptanceRowResult =
   | ({ status: 'accepted' } & ManualOrderAcceptanceResult)
@@ -86,9 +125,20 @@ export class ManualOrderIngestionRepository {
   async accept(
     input: ManualOrderAcceptanceInput,
   ): Promise<ManualOrderAcceptanceResult> {
-    const result = await this.db.transaction((tx) =>
-      this.acceptWithinTransaction(tx, input),
-    );
+    let result: AcceptanceRowResult;
+    try {
+      result = await this.db.transaction((tx) =>
+        this.acceptWithinTransaction(tx, input),
+      );
+    } catch (error) {
+      if (!(error instanceof IdentityReplayRollback)) throw error;
+      result = {
+        status: 'accepted',
+        ...error.existing,
+        duplicate: true,
+        replay: 'external_id',
+      };
+    }
     if (result.status === 'already_imported') {
       // Unreachable without `hold`; kept so the union stays total and a future
       // held caller of `accept()` fails loudly instead of silently.
@@ -190,7 +240,14 @@ export class ManualOrderIngestionRepository {
    * The single implementation behind both `accept` (one manual order) and
    * `acceptMany` (a chunk of held import rows). The only difference between the
    * two paths is `input.event.hold`, which makes the event undispatchable and
-   * turns an identity collision into a reported result instead of a throw.
+   * turns an identity collision into a reported result instead of a replay.
+   *
+   * Two identities are checked, in this order: the event key (is this the same
+   * request again?) and the order's external identity (is this the same order
+   * again, under another key or from another channel?). Both compare the same
+   * strict fingerprint, and neither takes a lock: the two unique indexes
+   * decide the winner, and under READ COMMITTED the loser's next statement
+   * sees the winner's committed rows.
    */
   private async acceptWithinTransaction(
     tx: Transaction,
@@ -280,6 +337,7 @@ export class ManualOrderIngestionRepository {
         eventId: existingEvent.id,
         order: existingOrder,
         duplicate: true,
+        replay: 'event_key',
       };
     }
 
@@ -295,9 +353,7 @@ export class ManualOrderIngestionRepository {
       // The caller marks the row a duplicate; the savepoint discards the event
       // just inserted, so nothing is left orphaned.
       if (input.event.hold) return { status: 'already_imported' };
-      throw new ManualOrderAcceptanceStateError(
-        'The generated manual order identity already exists',
-      );
+      return this.replayExistingIdentity(tx, input);
     }
     await tx
       .update(webhookEvents)
@@ -309,6 +365,52 @@ export class ManualOrderIngestionRepository {
       order: createdOrder,
       duplicate: false,
     };
+  }
+
+  /**
+   * A new key for an order identity the source already has. Identical content
+   * replays the stored order; anything else is a conflict. Either way this
+   * throws, so the transaction rolls back and the event inserted for this
+   * request does not survive.
+   */
+  private async replayExistingIdentity(
+    tx: Transaction,
+    input: ManualOrderAcceptanceInput,
+  ): Promise<never> {
+    const existingOrder = await this.findOrder(tx, input.order);
+    if (!existingOrder) {
+      throw new ManualOrderAcceptanceStateError(
+        'The order identity is taken but its order could not be reloaded',
+      );
+    }
+    // An order with no stored fingerprint (redacted, or not created by this
+    // repository) cannot be shown to be the same order, so it is a conflict.
+    if (
+      this.submissionFingerprint(existingOrder.rawPayload) !==
+      input.event.submissionFingerprint
+    ) {
+      throw new ManualOrderIdentityConflictError();
+    }
+    const [owningEvent] = await tx
+      .select({ id: webhookEvents.id })
+      .from(webhookEvents)
+      .where(
+        and(
+          eq(webhookEvents.orderId, existingOrder.id),
+          eq(webhookEvents.orgId, input.event.orgId),
+          eq(webhookEvents.integrationId, input.event.integrationId),
+        ),
+      )
+      .limit(1);
+    if (!owningEvent) {
+      throw new ManualOrderAcceptanceStateError(
+        'The existing order has no acceptance event',
+      );
+    }
+    throw new IdentityReplayRollback({
+      eventId: owningEvent.id,
+      order: existingOrder,
+    });
   }
 
   private async findOrder(

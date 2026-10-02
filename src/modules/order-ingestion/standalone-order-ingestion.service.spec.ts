@@ -1,5 +1,6 @@
 import {
   ManualOrderAcceptanceStateError,
+  ManualOrderIdentityConflictError,
   ManualOrderPayloadConflictError,
   type ManualOrderAcceptanceInput,
 } from '../../infrastructure/database/repositories/manual-order-ingestion.repository';
@@ -13,6 +14,7 @@ import {
   StandaloneIngestionAcceptanceError,
   StandaloneIngestionConflictError,
   StandaloneIngestionDispatchError,
+  StandaloneIngestionExternalIdConflictError,
 } from './standalone-order-ingestion.errors';
 import { StandaloneOrderIngestionService } from './standalone-order-ingestion.service';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
@@ -35,11 +37,19 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
   };
   const acceptance = {
     accept: jest.fn<
-      Promise<{ eventId: string; order: { id: string }; duplicate: boolean }>,
+      Promise<{
+        eventId: string;
+        order: { id: string };
+        duplicate: boolean;
+        replay?: 'event_key' | 'external_id';
+      }>,
       [ManualOrderAcceptanceInput]
     >(),
   };
-  const dispatcher = { dispatchById: jest.fn<Promise<string>, [string]>() };
+  const dispatcher = {
+    dispatchById: jest.fn<Promise<string>, [string]>(),
+    isAlreadyDispatched: jest.fn<Promise<boolean>, [string]>(),
+  };
   const verifications = {
     findByOrderId: jest.fn<Promise<{ id: string } | undefined>, [string]>(),
   };
@@ -53,6 +63,7 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
       duplicate: false,
     });
     dispatcher.dispatchById.mockResolvedValue('dispatched');
+    dispatcher.isAlreadyDispatched.mockResolvedValue(false);
     verifications.findByOrderId.mockResolvedValue({ id: 'verification-1' });
     service = new StandaloneOrderIngestionService(
       acceptance as never,
@@ -161,6 +172,185 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
       }),
     ).rejects.toBeInstanceOf(StandaloneIngestionAcceptanceError);
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+  });
+
+  describe('replays (US-05-03)', () => {
+    let logged: jest.SpyInstance;
+    let errors: jest.SpyInstance;
+    const acceptLogs = () =>
+      (logged.mock.calls as [string][]).map(
+        ([entry]) => JSON.parse(entry) as Record<string, unknown>,
+      );
+
+    beforeEach(() => {
+      logged = jest
+        .spyOn(service['logger'], 'log')
+        .mockImplementation(() => undefined);
+      errors = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+    });
+
+    it('answers an external-id replay without dispatching anything', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'event-of-first-request',
+        order: { id: 'order-1' },
+        duplicate: true,
+        replay: 'external_id',
+      });
+
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'api',
+          idempotencyKey: 'a-new-key-1',
+        }),
+      ).resolves.toEqual({
+        orderId: 'order-1',
+        eventId: 'event-of-first-request',
+        verificationId: 'verification-1',
+        duplicate: true,
+        held: false,
+      });
+      // Not even the existing order's own event: it may be a held or
+      // withdrawn import, and this request owns no event to send.
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+      expect(verifications.findByOrderId).toHaveBeenCalledWith('order-1');
+      expect(acceptLogs()).toEqual([
+        expect.objectContaining({
+          action: 'api-order-accept',
+          outcome: 'success',
+          duplicate: true,
+          replay: 'external_id',
+        }),
+      ]);
+    });
+
+    it('answers an external-id replay of an order that has no verification yet', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'held-import-event',
+        order: { id: 'order-1' },
+        duplicate: true,
+        replay: 'external_id',
+      });
+      verifications.findByOrderId.mockResolvedValue(undefined);
+
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'api',
+          idempotencyKey: 'a-new-key-1',
+        }),
+      ).resolves.toEqual({
+        orderId: 'order-1',
+        eventId: 'held-import-event',
+        duplicate: true,
+        held: false,
+      });
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+    });
+
+    it('maps a differing order under the same identity and never dispatches', async () => {
+      acceptance.accept.mockRejectedValue(
+        new ManualOrderIdentityConflictError(),
+      );
+
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'api',
+          idempotencyKey: 'a-new-key-1',
+        }),
+      ).rejects.toBeInstanceOf(StandaloneIngestionExternalIdConflictError);
+      expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+      expect(verifications.findByOrderId).not.toHaveBeenCalled();
+      // A refusal of the caller's content, not a fault of ours.
+      expect(errors).not.toHaveBeenCalled();
+    });
+
+    it('still re-dispatches the same event on a same-key replay', async () => {
+      acceptance.accept.mockResolvedValue({
+        eventId: 'event-1',
+        order: { id: 'order-1' },
+        duplicate: true,
+        replay: 'event_key',
+      });
+
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'api',
+          idempotencyKey: 'key-00001',
+        }),
+      ).resolves.toMatchObject({ orderId: 'order-1', duplicate: true });
+      expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
+      expect(acceptLogs()).toEqual([
+        expect.objectContaining({ duplicate: true, replay: 'event_key' }),
+      ]);
+    });
+
+    it.each([true, false])(
+      'answers success when the event was already dispatched (duplicate: %s)',
+      async (duplicate) => {
+        // A retry after a lost response, or the recovery sweep winning the
+        // claim between the commit and this dispatch.
+        acceptance.accept.mockResolvedValue({
+          eventId: 'event-1',
+          order: { id: 'order-1' },
+          duplicate,
+          ...(duplicate ? { replay: 'event_key' as const } : {}),
+        });
+        dispatcher.dispatchById.mockResolvedValue('not_claimed');
+        dispatcher.isAlreadyDispatched.mockResolvedValue(true);
+
+        await expect(
+          service.acceptOne(ctx, input, {
+            channel: 'manual',
+            idempotencyKey: 'key-00001',
+          }),
+        ).resolves.toEqual({
+          orderId: 'order-1',
+          eventId: 'event-1',
+          verificationId: 'verification-1',
+          duplicate,
+          held: false,
+        });
+        expect(dispatcher.isAlreadyDispatched).toHaveBeenCalledWith('event-1');
+        expect(errors).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps the dispatch failure when the event state cannot be read', async () => {
+      dispatcher.dispatchById.mockResolvedValue('not_claimed');
+      dispatcher.isAlreadyDispatched.mockRejectedValue(
+        new Error('connection reset'),
+      );
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'manual',
+          idempotencyKey: 'key-00001',
+        }),
+      ).rejects.toBeInstanceOf(StandaloneIngestionDispatchError);
+    });
+
+    it('never asks whether a failed dispatch was already dispatched', async () => {
+      dispatcher.dispatchById.mockResolvedValue('failed');
+      dispatcher.isAlreadyDispatched.mockResolvedValue(true);
+      await expect(
+        service.acceptOne(ctx, input, {
+          channel: 'manual',
+          idempotencyKey: 'key-00001',
+        }),
+      ).rejects.toBeInstanceOf(StandaloneIngestionDispatchError);
+      expect(dispatcher.isAlreadyDispatched).not.toHaveBeenCalled();
+    });
+
+    it('logs no replay kind for a new order', async () => {
+      await service.acceptOne(ctx, input, {
+        channel: 'manual',
+        idempotencyKey: 'key-00001',
+      });
+      expect(acceptLogs()).toHaveLength(1);
+      expect(acceptLogs()[0]).not.toHaveProperty('replay');
+      // Nothing of the order itself is logged.
+      expect(JSON.stringify(acceptLogs())).not.toContain('+201001234567');
+    });
   });
 
   it('still answers when the verification read fails', async () => {

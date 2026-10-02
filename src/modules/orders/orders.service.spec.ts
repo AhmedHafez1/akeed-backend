@@ -72,6 +72,7 @@ describe('OrdersService manual creation', () => {
   };
   const dispatcher = {
     dispatchById: jest.fn<Promise<string>, [string]>(),
+    isAlreadyDispatched: jest.fn<Promise<boolean>, [string]>(),
   };
   const webhookEvents = {
     resetForRedispatch: jest.fn(),
@@ -102,6 +103,7 @@ describe('OrdersService manual creation', () => {
       duplicate: false,
     });
     dispatcher.dispatchById.mockResolvedValue('dispatched');
+    dispatcher.isAlreadyDispatched.mockResolvedValue(false);
     verifications.findByOrderId.mockResolvedValue(undefined);
     const readiness = new StandaloneSendReadinessService(
       entitlements as never,
@@ -391,6 +393,28 @@ describe('OrdersService manual creation', () => {
       service.createManualOrder(owner, 'submission-key-123', payload),
     ).resolves.toEqual({
       orderId: 'order-1',
+      status: 'accepted',
+      duplicate: true,
+    });
+  });
+
+  it('answers a retry whose first attempt was already dispatched (US-05-03)', async () => {
+    // The lost-response retry: the first request committed and queued the
+    // event, so the retry has nothing left to dispatch and nothing to fail.
+    creditEligibility.resolveDenial.mockResolvedValue(null);
+    manualOrders.accept.mockResolvedValue({
+      eventId: 'event-1',
+      order: { id: 'order-1' },
+      duplicate: true,
+    });
+    dispatcher.dispatchById.mockResolvedValue('not_claimed');
+    dispatcher.isAlreadyDispatched.mockResolvedValue(true);
+    verifications.findByOrderId.mockResolvedValue({ id: 'verification-1' });
+    await expect(
+      service.createManualOrder(owner, 'submission-key-123', payload),
+    ).resolves.toEqual({
+      orderId: 'order-1',
+      verificationId: 'verification-1',
       status: 'accepted',
       duplicate: true,
     });

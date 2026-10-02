@@ -65,6 +65,31 @@ export class WebhookDispatchService {
     return this.dispatchClaimed(claimed);
   }
 
+  /**
+   * Whether an event `dispatchById` would not claim is already past dispatch.
+   *
+   * `not_claimed` covers two different situations: the event is still owed a
+   * dispatch (in back-off, or not dispatchable), or nothing is owed because it
+   * was queued or processed before. A caller replaying an accepted order -- a
+   * retry after a lost response, or one of several concurrent identical
+   * requests -- lands in the second and must not report it as a failure.
+   *
+   * An unexpired dispatch lease counts: the claim's winner is queueing the
+   * event now, and if that fails it records the failure for the recovery
+   * sweep.
+   */
+  async isAlreadyDispatched(eventId: string): Promise<boolean> {
+    const event = await this.events.findById(eventId);
+    if (!event) return false;
+    if (event.dispatchedAt) return true;
+    if (['processing', 'completed', 'skipped', 'failed'].includes(event.status))
+      return true;
+    return (
+      !!event.dispatchLeaseUntil &&
+      Date.parse(event.dispatchLeaseUntil) > Date.now()
+    );
+  }
+
   private async dispatchClaimed(event: WebhookEvent): Promise<DispatchOutcome> {
     try {
       if (!isPlatformType(event.platform)) {

@@ -12,6 +12,7 @@ import {
   StandaloneIngestionAcceptanceError,
   StandaloneIngestionConflictError,
   StandaloneIngestionDispatchError,
+  StandaloneIngestionExternalIdConflictError,
 } from '../order-ingestion/standalone-order-ingestion.errors';
 import type {
   AcceptOneResult,
@@ -131,6 +132,15 @@ export class ApiOrderChannelAdapter {
         error: 'Conflict',
         message: 'Idempotency-Key was already used with different order data.',
         code: 'API_ORDER_IDEMPOTENCY_CONFLICT',
+      });
+    }
+    if (error instanceof StandaloneIngestionExternalIdConflictError) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message:
+          'An order with this externalOrderId already exists with different order data.',
+        code: 'API_ORDER_EXTERNAL_ID_CONFLICT',
       });
     }
     if (error instanceof StandaloneIngestionAcceptanceError) {

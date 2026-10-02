@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   ManualOrderAcceptanceStateError,
+  ManualOrderIdentityConflictError,
   ManualOrderIngestionRepository,
   ManualOrderPayloadConflictError,
   type AcceptanceRowResult,
@@ -27,6 +28,7 @@ import {
   StandaloneIngestionAcceptanceError,
   StandaloneIngestionConflictError,
   StandaloneIngestionDispatchError,
+  StandaloneIngestionExternalIdConflictError,
 } from './standalone-order-ingestion.errors';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertSendReady } from './standalone-readiness-gate';
@@ -174,6 +176,9 @@ export class StandaloneOrderIngestionService {
       if (error instanceof ManualOrderPayloadConflictError) {
         throw new StandaloneIngestionConflictError();
       }
+      if (error instanceof ManualOrderIdentityConflictError) {
+        throw new StandaloneIngestionExternalIdConflictError();
+      }
       this.logger.error(
         buildBackendLog(StandaloneOrderIngestionService.name, {
           action: `${logPrefix}-accept`,
@@ -213,45 +218,58 @@ export class StandaloneOrderIngestionService {
       };
     }
 
-    // `dispatchById` reports 'not_claimed' and 'failed' by returning them, not
-    // by throwing. Discarding the return value meant an order whose job never
-    // reached the queue still answered 202 "accepted" and logged success, which
-    // is why these failures were invisible from both the UI and the logs.
-    let outcome: DispatchOutcome;
-    try {
-      outcome = await this.dispatcher.dispatchById(acceptance.eventId);
-    } catch (error) {
-      this.logger.error(
-        buildBackendLog(StandaloneOrderIngestionService.name, {
-          action: `${logPrefix}-dispatch`,
-          outcome: 'failure',
-          channel,
-          orgId: ctx.orgId,
-          integrationId: ctx.source.id,
-          orderId: acceptance.order.id,
-          webhookEventId: acceptance.eventId,
-          ...normalizeError(error),
-        }),
-      );
-      outcome = 'failed';
-    }
-    if (outcome !== 'dispatched') {
-      this.logger.error(
-        buildBackendLog(StandaloneOrderIngestionService.name, {
-          action: `${logPrefix}-dispatch`,
-          outcome: 'failure',
-          reason: outcome,
-          channel,
-          orgId: ctx.orgId,
-          integrationId: ctx.source.id,
-          orderId: acceptance.order.id,
-          webhookEventId: acceptance.eventId,
-        }),
-      );
-      // The order and its event are committed, so retrying with the same key
-      // takes the duplicate branch of `accept()` and re-dispatches that same
-      // event. The retry cannot create a second order.
-      throw new StandaloneIngestionDispatchError();
+    // An order recognised by its external identity under a new key belongs to
+    // another request's event, possibly another channel's. This request has
+    // nothing of its own to dispatch, and dispatching that event would start
+    // an import the merchant is still holding or has withdrawn.
+    if (acceptance.replay !== 'external_id') {
+      // `dispatchById` reports 'not_claimed' and 'failed' by returning them,
+      // not by throwing. Discarding the return value meant an order whose job
+      // never reached the queue still answered 202 "accepted" and logged
+      // success, which is why these failures were invisible from both the UI
+      // and the logs.
+      let outcome: DispatchOutcome;
+      try {
+        outcome = await this.dispatcher.dispatchById(acceptance.eventId);
+      } catch (error) {
+        this.logger.error(
+          buildBackendLog(StandaloneOrderIngestionService.name, {
+            action: `${logPrefix}-dispatch`,
+            outcome: 'failure',
+            channel,
+            orgId: ctx.orgId,
+            integrationId: ctx.source.id,
+            orderId: acceptance.order.id,
+            webhookEventId: acceptance.eventId,
+            ...normalizeError(error),
+          }),
+        );
+        outcome = 'failed';
+      }
+      // A retry after a lost response is not claimed either: the first
+      // request queued the event, so there is nothing left to recover and
+      // nothing to report as a failure.
+      const recovered =
+        outcome === 'not_claimed' &&
+        (await this.alreadyDispatched(acceptance.eventId));
+      if (outcome !== 'dispatched' && !recovered) {
+        this.logger.error(
+          buildBackendLog(StandaloneOrderIngestionService.name, {
+            action: `${logPrefix}-dispatch`,
+            outcome: 'failure',
+            reason: outcome,
+            channel,
+            orgId: ctx.orgId,
+            integrationId: ctx.source.id,
+            orderId: acceptance.order.id,
+            webhookEventId: acceptance.eventId,
+          }),
+        );
+        // The order and its event are committed, so retrying with the same
+        // key takes the duplicate branch of `accept()` and re-dispatches that
+        // same event. The retry cannot create a second order.
+        throw new StandaloneIngestionDispatchError();
+      }
     }
 
     let verificationId: string | undefined;
@@ -283,6 +301,7 @@ export class StandaloneOrderIngestionService {
         orderId: acceptance.order.id,
         webhookEventId: acceptance.eventId,
         duplicate: acceptance.duplicate,
+        ...(acceptance.replay ? { replay: acceptance.replay } : {}),
       }),
     );
     return {
@@ -292,6 +311,15 @@ export class StandaloneOrderIngestionService {
       duplicate: acceptance.duplicate,
       held: false,
     };
+  }
+
+  /** A failed read is not proof of a dispatch, so it stays a dispatch failure. */
+  private async alreadyDispatched(eventId: string): Promise<boolean> {
+    try {
+      return await this.dispatcher.isAlreadyDispatched(eventId);
+    } catch {
+      return false;
+    }
   }
 
   /**

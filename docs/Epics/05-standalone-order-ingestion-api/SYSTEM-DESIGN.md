@@ -134,7 +134,7 @@ Unknown fields are a 400. `orgId`, `integrationId` and `platform` can't be suppl
 | Situation | Status | Body |
 | --- | --- | --- |
 | New order accepted and dispatched | 202 | `{orderId, verificationId?, status:'accepted', duplicate:false}` |
-| Same key, same body (lost response) | 202 | the original identifiers, `duplicate:true`. **Requires the core fix in §4.6:** today this path answers 503 once the event has been dispatched |
+| Same key, same body (lost response) | 202 | the original identifiers, `duplicate:true` (the §4.6 core fix, landed in US-05-03) |
 | New key, identical existing order | 202 | the original identifiers, `duplicate:true`, **no dispatch** |
 | Known non-COD | 202 | accepted and visible on the dashboard, never sent (same as manual) |
 | Validation / bad key / throttled / too large | 400 / 401 / 429 / 413 | the envelope |
@@ -172,7 +172,7 @@ Two identities, two jobs:
 | Event key exists? | Order identity exists? | Fingerprint | Result |
 | --- | --- | --- | --- |
 | no | no | — | insert event and order → dispatch |
-| yes | (its order) | equal | replay `duplicate:true` → re-dispatch own event **only if it is still recoverable** (§4.6) |
+| yes | (its order) | equal | replay `duplicate:true` → re-dispatch own event; `not_claimed` on an event that is already dispatched is success (§4.6) |
 | yes | — | different | `StandaloneIngestionConflictError` → 409 IDEMPOTENCY |
 | no | yes (non-held path) | equal | **external-ID replay**: roll back the new event, `duplicate:true`, **no dispatch** (US-05-03) |
 | no | yes | different | `StandaloneIngestionExternalIdConflictError` → 409 EXTERNAL_ID (US-05-03) |
@@ -210,7 +210,7 @@ This check is **advisory**. The send path's transactional credit and slot reserv
 - Dispatch reuses `WebhookDispatchService.dispatchById` and the existing `webhook-dispatch-reconciler` sweep. If Redis is down after commit, the client gets a 503 and the event stays `dispatch_required`. Either the client's retry or the sweep enqueues it. No E05-specific job exists.
 - An external-ID replay never dispatches. That is what keeps a held import order held and a withdrawn one withdrawn (US-05-03).
 
-**Core gap found while writing this design (found by reading the code, not yet reproduced in a test).**
+**Core gap found while writing this design — fixed in US-05-03 (2026-10-02).** `dispatchById` is unchanged (other callers and the Shopify contract suite pin `'not_claimed'`). On `'not_claimed'`, `acceptOne` asks the new `WebhookDispatchService.isAlreadyDispatched(eventId)`: true when the event is queued, processing, finished, or under another caller's live dispatch lease, and that is answered as success. An event still in back-off, an unreadable event and `'failed'` keep the 503. The contract test is in `test/order-api-idempotency.contract-spec.ts`. The original finding is kept below for the record.
 
 - **Where:** `StandaloneOrderIngestionService.acceptOne` calls `dispatchById` for every non-held acceptance, duplicates included, and throws `StandaloneIngestionDispatchError` for any outcome other than `'dispatched'`. `WebhookEventsRepository.claimForDispatch` only claims an event that is still recoverable:
   - `pending` and never dispatched, or
@@ -309,7 +309,7 @@ In order of when it will bite:
 
 ## 8. Open questions
 
-0. **Same-key replay after dispatch (§4.6).** This must be fixed in the core before the API ships, because lost-response retries are the API's main recovery path. Decide whether it lands in US-05-02 or US-05-03.
+0. **Same-key replay after dispatch (§4.6).** Resolved in US-05-03: fixed in the core, so manual and the API both answer 202 `duplicate:true` on a lost-response retry.
 1. **Sandbox for integrators.** Today, testing an integration against production sends real WhatsApp messages and uses credits. Options:
    - (a) `ak_test_` keys that validate and resolve but never accept or dispatch (a dry-run 200 echoing the canonical order);
    - (b) a documented "use a non-COD paymentMethod to test" workaround;
