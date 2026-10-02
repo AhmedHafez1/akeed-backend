@@ -57,6 +57,33 @@ export const MANUAL_ORDER_SOURCE_CODES: StandaloneSourceCodeMap = {
 };
 
 /**
+ * Issuing an integration API key (US-05-01). A key is bound to the source
+ * resolved here, so it answers the same situations as the order channels.
+ */
+export const API_KEY_SOURCE_CODES: StandaloneSourceCodeMap = {
+  roleRequired: {
+    code: 'API_KEY_ROLE_REQUIRED',
+    message: 'Owner or admin role is required to manage API keys.',
+  },
+  sourceUnavailable: {
+    code: 'API_KEY_SOURCE_UNAVAILABLE',
+    message: 'Exactly one active commerce source is required.',
+  },
+  sourceAmbiguous: {
+    code: 'API_KEY_SOURCE_AMBIGUOUS',
+    message: 'Exactly one active commerce source is required.',
+  },
+  sourceUnsupported: {
+    code: 'API_KEY_SOURCE_UNSUPPORTED',
+    message: 'API keys are available only for Standalone.',
+  },
+  setupIncomplete: {
+    code: 'API_KEY_SETUP_INCOMPLETE',
+    message: 'Complete Standalone setup before creating an API key.',
+  },
+};
+
+/**
  * The epic has one "unsupported source" code for import: a merchant without
  * exactly one active Standalone source cannot import, whatever the cause.
  */

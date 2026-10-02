@@ -2235,3 +2235,79 @@ export const orderImportMappingProfiles = pgTable(
     }),
   ],
 ).enableRLS();
+
+/**
+ * Server credentials for one Standalone integration (US-05-01, 0046). Only the
+ * SHA-256 of the secret is stored; `prefix` is the non-secret lookup handle.
+ * Members may read the metadata through RLS but never the hash, and only the
+ * API issues or revokes keys (see the migration's grants).
+ */
+export const integrationApiKeys = pgTable(
+  'integration_api_keys',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    prefix: text().notNull(),
+    keyHash: text('key_hash').notNull(),
+    name: text().notNull(),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    lastUsedAt: timestamp('last_used_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'string' }),
+    revokedBy: uuid('revoked_by'),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'integration_api_keys_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'integration_api_keys_integration_id_fkey',
+    }).onDelete('cascade'),
+    unique('integration_api_keys_prefix_key').on(table.prefix),
+    check(
+      'integration_api_keys_prefix_check',
+      sql`${table.prefix} ~ '^ak_live_[a-z0-9]{8}$'`,
+    ),
+    check(
+      'integration_api_keys_key_hash_check',
+      sql`${table.keyHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'integration_api_keys_name_check',
+      sql`char_length(${table.name}) BETWEEN 1 AND 60`,
+    ),
+    check(
+      'integration_api_keys_revoked_check',
+      sql`${table.revokedBy} IS NULL OR ${table.revokedAt} IS NOT NULL`,
+    ),
+    index('idx_integration_api_keys_integration_revoked').using(
+      'btree',
+      table.integrationId.asc().nullsLast().op('uuid_ops'),
+      table.revokedAt.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('idx_integration_api_keys_org_created').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+    ),
+    pgPolicy('Members read integration api key metadata', {
+      as: 'permissive',
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`(org_id = get_user_org_id())`,
+    }),
+  ],
+).enableRLS();

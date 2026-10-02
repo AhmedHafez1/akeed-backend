@@ -37,6 +37,10 @@ const REDACTED_KEYS = new Set([
   'passcode',
   'otp',
   'secret',
+  // Integration API keys (US-05-01): the stored hash and the full key.
+  'key_hash',
+  'keyhash',
+  'plaintext',
   'client_secret',
   'clientsecret',
   'api_key',

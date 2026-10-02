@@ -530,6 +530,43 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Store platform port            | `shared/ports/store-platform.port.ts`                                        | Interface for billing and shop metadata.                                    |
 | Phone service                  | `shared/services/phone.service.ts`                                           | Phone number normalization and validation.                                  |
 
+## Integration API Keys (Standalone, US-05-01)
+
+Server credentials that let a merchant's own back end submit orders to their Standalone store. A key belongs to exactly one integration and grants exactly one capability: submitting orders to it (the order endpoint arrives in US-05-02). It is not a general authentication framework.
+
+**Format.** `ak_live_<8 lowercase alphanumerics>_<43 base64url chars>`. The first 16 characters are the non-secret, unique **prefix**. The rest encodes 32 random bytes. Only the SHA-256 of those 32 bytes is stored (`integration_api_keys.key_hash`), and the full key is returned once, in the create response.
+
+**Management (session auth).** All three endpoints sit behind `DualAuthGuard` and answer `Cache-Control: no-store`.
+
+| Method | Endpoint | Who | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/integration-keys` | any member | Metadata only (`id, name, prefix, status, createdAt, lastUsedAt, revokedAt`), active keys first, at most 50. Also returns `maxActive`. |
+| `POST` | `/api/integration-keys` | owner, admin | Body `{ name }` (1-60 chars). The source comes from `StandaloneSourceResolver.resolveWritable(user, API_KEY_SOURCE_CODES)`. 201 `{ key, secret }`. |
+| `DELETE` | `/api/integration-keys/:id` | owner, admin | Revokes immediately and idempotently: an already revoked key keeps its original time and actor. It does not require a ready source, so an owner can always cut access. Returns the key's metadata. |
+
+At most **5 active keys** per integration, which leaves room for zero-downtime rotation. A per-integration advisory lock holds the cap under concurrent creates.
+
+**Error codes.**
+- `API_KEY_ROLE_REQUIRED` (403)
+- `API_KEY_SOURCE_UNAVAILABLE` / `API_KEY_SOURCE_AMBIGUOUS` / `API_KEY_SETUP_INCOMPLETE` (409)
+- `API_KEY_SOURCE_UNSUPPORTED` (403)
+- `API_KEY_LIMIT_REACHED` (409, with `maxActive`)
+- `API_KEY_NOT_FOUND` (404; this includes another organization's key and a malformed id)
+- `API_KEY_VALIDATION_FAILED` (400, with `fieldErrors`)
+
+**`IntegrationApiKeyGuard`** (`modules/integration-keys/guards/integration-api-key.guard.ts`, exported by `IntegrationKeysModule`):
+- It accepts only `Authorization: Bearer <key>`. A request with a key-like query parameter (`api_key`, `apikey`, `key`, `access_token`, `token`, `authorization`) or any query value containing `ak_live_` is refused, even when the header also holds a valid key.
+- It looks the key up by prefix, compares hashes in constant time (an unknown prefix still runs a comparison) and refuses revoked keys.
+- Every failure answers the same 401 `API_KEY_INVALID`. The reason (`malformed`, `unknown`, `mismatch`, `revoked`, `query_string`, `missing_header`) appears only in the warn log, beside the prefix.
+- On success it attaches `request.integrationApiKey = { orgId, integrationId, keyId, prefix }`, which a handler reads with `@CurrentIntegrationKey()`. It never builds a `StandaloneIngestionContext`: US-05-02 turns the principal into one through the source resolver.
+- `last_used_at` is written at most once a minute per key, by a conditional `UPDATE` that never touches `revoked_at`. A failed write never fails the request.
+
+**Data and RLS.** `integration_api_keys` (migration `0046`) has a composite FK to `integrations (id, org_id)`, a unique `prefix`, and indexes `(integration_id, revoked_at)` and `(org_id, created_at DESC)`. RLS is enabled. `anon` and `authenticated` lose every grant, then get back `SELECT` on the metadata columns only, under an `org_id = get_user_org_id()` policy. Members can read their organization's key metadata, never the hash, and cannot insert, update or delete through PostgREST.
+
+**Audit.** Create and revoke log `integration-api-key-create` / `integration-api-key-revoke` with `orgId`, `userId` (the actor), `integrationId`, `keyId` and `keyPrefix`. Logs never contain the secret or the hash. `key_hash`, `keyhash` and `plaintext` are in `REDACTED_KEYS` as a backstop.
+
+**Operations.** Accepted orders survive key revocation; only disabling the source stops their processing. Idempotency is scoped to the source, so rotating a key resets neither usage nor idempotency history. Contract suite: `npm run test:contract:integration-keys`, or `scripts/test-integration-api-keys-contract.ps1` for a disposable PostgreSQL.
+
 ## API Reference
 
 ### Shopify Webhooks (Inbound)

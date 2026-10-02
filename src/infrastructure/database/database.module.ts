@@ -23,6 +23,7 @@ import { ManualOrderIngestionRepository } from './repositories/manual-order-inge
 import { VerificationMessageDispatchesRepository } from './repositories/verification-message-dispatches.repository';
 import { OrderImportsRepository } from './repositories/order-imports.repository';
 import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
+import { IntegrationApiKeysRepository } from './repositories/integration-api-keys.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -49,6 +50,7 @@ import { OrderImportReleaseRepository } from './repositories/order-import-releas
     VerificationMessageDispatchesRepository,
     OrderImportsRepository,
     OrderImportReleaseRepository,
+    IntegrationApiKeysRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -73,6 +75,7 @@ import { OrderImportReleaseRepository } from './repositories/order-import-releas
     VerificationMessageDispatchesRepository,
     OrderImportsRepository,
     OrderImportReleaseRepository,
+    IntegrationApiKeysRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

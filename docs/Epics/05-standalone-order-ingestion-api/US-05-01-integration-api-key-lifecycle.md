@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-02 to US-05-04; see [evidence](../../US-05-01-INTEGRATION-API-KEY-LIFECYCLE-EVIDENCE.md)
 - **Dependencies:** [US-04.5-08](../04.5-standalone-paymob-usage-billing/US-04.5-08-sandbox-and-production-release-gate.md), [US-04.6-10](../04.6-standalone-bulk-order-import/US-04.6-10-bulk-import-release-gate.md) (both implemented)
 
 ## User story and value

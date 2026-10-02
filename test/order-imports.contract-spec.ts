@@ -149,6 +149,7 @@ describe('order imports PostgreSQL contract', () => {
     created = true;
     await client.unsafe(`
       DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       CREATE FUNCTION get_user_org_id() RETURNS uuid LANGUAGE sql STABLE
         AS $fn$ SELECT nullif(current_setting('akeed.test_org', true), '')::uuid $fn$;
       CREATE TABLE organizations (
@@ -253,6 +254,8 @@ describe('order imports PostgreSQL contract', () => {
         '0039_order_import_release.sql',
         '0040_order_import_row_retention.sql',
         '0044_order_import_payment_classifications.sql',
+        // US-05-01: keys reference integrations; proves 0046 layers on the base.
+        '0046_integration_api_keys.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
