@@ -24,14 +24,15 @@ function filesMatching(pattern: RegExp, scope?: RegExp): string[] {
     .sort();
 }
 
-const CHANNELS = /^modules\/(orders|order-imports|order-ingestion)\//;
+/** Every Standalone channel and the command they share (the API since E05). */
+const CHANNELS = /^modules\/(orders|order-imports|order-api|order-ingestion)\//;
 
 /**
- * US-04.6-10 AC3: the epic README "Reuse map" row by row. Every rule the
- * manual path and the import share exists exactly once; a second copy is a
- * place for the two paths to drift apart.
+ * US-04.6-10 AC3 and US-05-06 AC2: the epic README "Reuse map" row by row.
+ * Every rule the manual form, the import and the server API share exists
+ * exactly once; a second copy is a place for the channels to drift apart.
  */
-describe('E04.6 release gate: one implementation per rule (Reuse map)', () => {
+describe('E04.6 and E05 release gates: one implementation per rule (Reuse map)', () => {
   it('source resolution: one resolver decides the writable Standalone source', () => {
     expect(
       filesMatching(
@@ -71,15 +72,38 @@ describe('E04.6 release gate: one implementation per rule (Reuse map)', () => {
     ).toEqual(['modules/onboarding/dto/onboarding.dto.ts']);
   });
 
-  it('COD eligibility: bulk import never re-decides COD itself', () => {
+  it('COD eligibility: bulk import and the API never re-decide COD themselves', () => {
     // The row's ready/excluded decision is OrderEligibilityService's; import
-    // code only maps merchant values to a canonical payment method.
+    // code only maps merchant values to a canonical payment method, and the
+    // API passes the integrator's value through.
     expect(
       filesMatching(
         /\.assumeCodWhenPaymentMissing\b|classifyCodStatus/,
-        /^modules\/order-imports\//,
+        /^modules\/(order-imports|order-api)\//,
       ),
     ).toEqual([]);
+  });
+
+  it('order identity: one normalizer turns a merchant reference into ref:<key>', () => {
+    // File import and the API call it, so an order sent by both is one order.
+    expect(filesMatching(/`ref:\$\{/)).toEqual([
+      'modules/order-ingestion/standalone-ingestion-keys.ts',
+    ]);
+    expect(filesMatching(/\bnormalizeOrderReference\(/, CHANNELS)).toEqual([
+      'modules/order-api/api-order.channel-adapter.ts',
+      'modules/order-imports/validation/reference.ts',
+      'modules/order-ingestion/standalone-ingestion-keys.ts',
+    ]);
+  });
+
+  it('idempotency-key namespacing: one prefix table, in the ingestion command', () => {
+    expect(filesMatching(/'(?:api|import):'/)).toEqual([
+      'modules/order-ingestion/standalone-ingestion-keys.ts',
+    ]);
+    expect(filesMatching(/\bnamespaceIdempotencyKey\(/)).toEqual([
+      'modules/order-ingestion/standalone-ingestion-keys.ts',
+      'modules/order-ingestion/standalone-order-ingestion.service.ts',
+    ]);
   });
 
   it('phone parsing: one libphonenumber instance', () => {

@@ -141,6 +141,10 @@ describe('POST /api/v1/orders', () => {
       Promise<{ eventId: string; order: { id: string }; duplicate: boolean }>,
       [ManualOrderAcceptanceInput]
     >(),
+    // Nothing is stored yet unless a test says so.
+    isKnown: jest
+      .fn<Promise<boolean>, [ManualOrderAcceptanceInput]>()
+      .mockResolvedValue(false),
   };
   const dispatcher = {
     dispatchById: jest.fn<Promise<string>, [string]>(),

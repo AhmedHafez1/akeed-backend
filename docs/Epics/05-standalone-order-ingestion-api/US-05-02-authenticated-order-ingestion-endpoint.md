@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature + core extraction
-- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-03 and US-05-04; see [evidence](../../US-05-02-API-ORDER-INGESTION-ENDPOINT-EVIDENCE.md)
+- **Status:** Done — E05 gate passed locally and the pilot is reported working as expected (product owner, 2026-10-02); see [evidence](../../US-05-02-API-ORDER-INGESTION-ENDPOINT-EVIDENCE.md)
 - **Dependencies:** [US-05-01](US-05-01-integration-api-key-lifecycle.md)
 
 ## User story and value

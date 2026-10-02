@@ -196,6 +196,8 @@ entitlement → auto-verify → credit (E04.5 codes as-is) → slot / plan limit
 
 This check is **advisory**. The send path's transactional credit and slot reservation is the source of truth. An order accepted under a race, where credits ran out between the check and the send, is still stored and fails at send exactly as a manual order would. The API adds no second credit check.
 
+**The gate refuses new orders only (changed by the US-05-06 gate, 2026-10-02).** When the source has a blocker, `submitOne` first asks the acceptance repository whether the request's namespaced key or the order's identity is already stored (`ManualOrderIngestionRepository.isKnown`). If it is, the request goes on to `acceptOne`, which replays or answers a conflict and creates nothing. Before this change a response lost on the store's last credit was retried into `INSUFFICIENT_CREDITS` for an order that had been accepted and sent. A ready source never makes the extra read. The source resolver still runs first: an inactive or unfinished source refuses every request.
+
 ### 4.5 Error handling and retries (client's view)
 
 ```text

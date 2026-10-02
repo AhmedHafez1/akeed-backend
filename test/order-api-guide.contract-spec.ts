@@ -1,29 +1,17 @@
-import { ValidationPipe, type INestApplication } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Test } from '@nestjs/testing';
-import { ThrottlerModule } from '@nestjs/throttler';
+import type { INestApplication } from '@nestjs/common';
 import { existsSync, readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
 import { resolve } from 'node:path';
-import request from 'supertest';
 import { IntegrationApiKeysRepository } from '../src/infrastructure/database/repositories/integration-api-keys.repository';
-import { IntegrationApiKeyGuard } from '../src/modules/integration-keys/guards/integration-api-key.guard';
 import { generateIntegrationApiKey } from '../src/modules/integration-keys/integration-api-key.secret';
 import { MAX_ACTIVE_INTEGRATION_API_KEYS } from '../src/modules/integration-keys/integration-keys.service';
-import { ApiOrderChannelAdapter } from '../src/modules/order-api/api-order.channel-adapter';
-import {
-  OrderApiIngressThrottleGuard,
-  OrderApiThrottleGuard,
-} from '../src/modules/order-api/edge/order-api-throttle.guard';
-import { applyOrderApiEdge } from '../src/modules/order-api/edge/order-api.edge';
-import { OrderApiController } from '../src/modules/order-api/order-api.controller';
-import { StandaloneOrderIngestionService } from '../src/modules/order-ingestion/standalone-order-ingestion.service';
 import { CANONICAL_ORDER_CURRENCIES } from '../src/shared/commerce/canonical-order.rules';
 import {
-  ORDER_API_CONFIG,
-  parseOrderApiConfig,
-} from '../src/shared/config/order-api.config';
-import { PhoneService } from '../src/shared/services/phone.service';
+  createOrderApiApp,
+  DEFAULT_ORDER_API_LIMITS,
+  migrateIntegrationApiKeys,
+  ORDER_API_PATH,
+  postOrder,
+} from './contracts/order-api-app';
 import { releaseGateHarness } from './contracts/release-gate-harness';
 
 type Scenario =
@@ -121,53 +109,9 @@ const PLACEHOLDER = /^<[A-Z_]+>$/;
 
 const gate = releaseGateHarness();
 const keys = new IntegrationApiKeysRepository(gate.db);
-/** The limits a deployment runs with when no variable overrides them. */
-const limits = parseOrderApiConfig({});
+const limits = DEFAULT_ORDER_API_LIMITS;
 
 type TextResponse = { status: number; headers: Record<string, string> };
-
-/**
- * The order API as `main.ts` mounts it, over PostgreSQL: the production edge,
- * guards, route pipe, controller and adapter in front of the real ingestion
- * command. Each app has its own throttler buckets.
- */
-async function createApp(): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
-    imports: [
-      ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 60 }] }),
-    ],
-    controllers: [OrderApiController],
-    providers: [
-      ApiOrderChannelAdapter,
-      PhoneService,
-      IntegrationApiKeyGuard,
-      OrderApiIngressThrottleGuard,
-      OrderApiThrottleGuard,
-      {
-        provide: ConfigService,
-        useValue: {
-          get: (key: string) => (key === ORDER_API_CONFIG ? limits : undefined),
-        },
-      },
-      { provide: IntegrationApiKeysRepository, useValue: keys },
-      {
-        provide: StandaloneOrderIngestionService,
-        useValue: gate.services.ingestion,
-      },
-    ],
-  }).compile();
-  const app = moduleRef.createNestApplication({ logger: false });
-  applyOrderApiEdge(app);
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: false,
-    }),
-  );
-  await app.init();
-  return app;
-}
 
 /** A store in the state the example describes, with a key issued for it. */
 async function prepare(scenario: Scenario) {
@@ -212,19 +156,7 @@ function bodyOf(step: GuideStep): Record<string, unknown> {
   return body;
 }
 
-function send(
-  app: INestApplication,
-  apiKey: string,
-  idempotencyKey: string | null,
-  body: Record<string, unknown>,
-) {
-  const call = request(app.getHttpServer() as Server)
-    .post(fixture.path)
-    .set('Authorization', `Bearer ${apiKey}`);
-  return (
-    idempotencyKey === null ? call : call.set('Idempotency-Key', idempotencyKey)
-  ).send(body);
-}
+const send = postOrder;
 
 /**
  * The documented body, key for key. A placeholder stands for any non-empty
@@ -284,17 +216,16 @@ describe('order API guide examples (US-05-05)', () => {
 
   beforeAll(async () => {
     await gate.setup();
-    for (const statement of readFileSync(
-      resolve(BACKEND_ROOT, 'drizzle/0046_integration_api_keys.sql'),
-      'utf8',
-    ).split('--> statement-breakpoint'))
-      if (statement.trim()) await gate.client.unsafe(statement);
+    await migrateIntegrationApiKeys(gate);
   });
   afterAll(() => gate.teardown());
 
   // A new app for each test, so no test starts with a used rate-limit bucket.
   beforeEach(async () => {
-    app = await createApp();
+    app = await createOrderApiApp({
+      keys,
+      ingestion: gate.services.ingestion,
+    });
   });
   afterEach(() => app.close());
 
@@ -346,7 +277,8 @@ describe('order API guide examples (US-05-05)', () => {
       expect(new Set(documented).size).toBe(documented.length);
     });
 
-    it('documents the limits a deployment runs with by default', () => {
+    it('documents the path and the limits a deployment runs with by default', () => {
+      expect(fixture.path).toBe(ORDER_API_PATH);
       expect(fixture.limits.perStorePerMinute).toBe(
         limits.perIntegrationPerMinute,
       );

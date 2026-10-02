@@ -51,6 +51,10 @@ describe('OrdersService manual creation', () => {
       }>,
       [ManualOrderAcceptanceInput]
     >(),
+    // Nothing is stored yet unless a test says so.
+    isKnown: jest
+      .fn<Promise<boolean>, [ManualOrderAcceptanceInput]>()
+      .mockResolvedValue(false),
   };
   const phone = { standardize: jest.fn<string, [string]>() };
   const creditEligibility = { resolveDenial: jest.fn() };

@@ -123,6 +123,40 @@ describe('E04.6 release gate: adapter boundary', () => {
     expect(normalizer).not.toMatch(/'manual'|'bulk_import'|'api'/);
   });
 
+  it('mentions ingestionType in four files of the whole backend, and nowhere else (US-05-06)', () => {
+    // The envelope declares it, the ingestion service and the preview write
+    // it, and the Standalone normalizer checks it is a known channel. A fifth
+    // file would be a reader the three channels could start to differ in:
+    // the hub, a strategy, a repository query or a report.
+    const mentions = files
+      .filter(({ source }) =>
+        /ingestionType|ingestion_type|isStandaloneIngestionChannel|STANDALONE_INGESTION_CHANNELS/.test(
+          source,
+        ),
+      )
+      .map(({ path }) => path)
+      .sort();
+
+    expect(mentions).toEqual([
+      'modules/order-ingestion/standalone-order-ingestion.service.ts',
+      'modules/order-ingestion/standalone-order-preview.ts',
+      'modules/webhook-queue/normalizers/standalone-manual-order.normalizer.ts',
+      'shared/commerce/standalone-order-envelope.ts',
+    ]);
+    // The channel's type travels further (options, log-action and key-prefix
+    // maps), but only inside the ingestion module and the envelope.
+    expect(
+      files
+        .filter(({ source }) => /\bStandaloneIngestionChannel\b/.test(source))
+        .map(({ path }) => path)
+        .filter(
+          (path) =>
+            !path.startsWith('modules/order-ingestion/') &&
+            path !== 'shared/commerce/standalone-order-envelope.ts',
+        ),
+    ).toEqual([]);
+  });
+
   it('names the API channel only where a channel is declared or chosen (E05)', () => {
     // `'api'` is audit metadata: appended to the channel list, the key
     // namespace and the log-action map, and passed by the API controller.
@@ -139,6 +173,30 @@ describe('E04.6 release gate: adapter boundary', () => {
       'modules/order-ingestion/standalone-ingestion-keys.ts',
       'modules/order-ingestion/standalone-order-ingestion.service.ts',
       'shared/commerce/standalone-order-envelope.ts',
+    ]);
+  });
+
+  it('keeps the order API out of the core: nothing downstream imports it or its keys (US-05-06)', () => {
+    const importers = files
+      .filter(
+        ({ path }) =>
+          !path.startsWith('modules/order-api/') &&
+          !path.startsWith('modules/integration-keys/'),
+      )
+      .flatMap(({ path, source }) =>
+        [
+          ...source.matchAll(
+            /from\s+'[^']*\/(order-api|integration-keys)\/[^']*'/g,
+          ),
+        ].map(([, module]) => `${path}: ${module}`),
+      )
+      .sort();
+
+    // Only the composition root mounts them.
+    expect([...new Set(importers)]).toEqual([
+      'app.module.ts: integration-keys',
+      'app.module.ts: order-api',
+      'main.ts: order-api',
     ]);
   });
 

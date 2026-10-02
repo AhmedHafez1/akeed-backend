@@ -151,6 +151,41 @@ export class ManualOrderIngestionRepository {
   }
 
   /**
+   * Whether the source already holds this request (its event key) or this
+   * order (its external identity).
+   *
+   * Read-only, and only a hint: `accept` still decides between a replay and a
+   * conflict. It lets the caller tell a request that would create an order
+   * from one that can only answer what is stored.
+   */
+  async isKnown(input: ManualOrderAcceptanceInput): Promise<boolean> {
+    const [event] = await this.db
+      .select({ id: webhookEvents.id })
+      .from(webhookEvents)
+      .where(
+        and(
+          eq(webhookEvents.platform, 'standalone'),
+          eq(webhookEvents.storeDomain, input.event.storeDomain),
+          eq(webhookEvents.idempotencyKey, input.event.idempotencyKey),
+        ),
+      )
+      .limit(1);
+    if (event) return true;
+    const [order] = await this.db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.orgId, input.order.orgId),
+          eq(orders.integrationId, input.order.integrationId),
+          eq(orders.externalOrderId, input.order.externalOrderId),
+        ),
+      )
+      .limit(1);
+    return order !== undefined;
+  }
+
+  /**
    * Accept a batch of held orders, one transaction per chunk.
    *
    * Each row runs in its own savepoint, so a row that loses the race for a

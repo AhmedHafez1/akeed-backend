@@ -771,8 +771,18 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
 
     it('two batches with overlapping references: one order per reference, the loser row is ALREADY_IMPORTED with no orphan event', async () => {
       const merchant = await gate.merchant();
+      // Two members of the store: an upload replaces the uploader's own
+      // earlier draft, so one person cannot hold two drafts at once.
+      const colleague: Merchant = {
+        ...merchant,
+        user: { ...merchant.user, userId: randomUUID(), role: 'admin' },
+      };
       const first = await draft(merchant, ['OV-1', 'OV-2', 'OV-3']);
-      const second = await draft(merchant, ['OV-2', 'OV-3', 'OV-4'], '0101888');
+      const second = await draft(
+        colleague,
+        ['OV-2', 'OV-3', 'OV-4'],
+        '0101888',
+      );
       await Promise.all([first.commit(), second.commit()]);
 
       const created = await gate.db

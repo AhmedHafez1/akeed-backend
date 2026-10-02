@@ -28,12 +28,17 @@ async function consume(
   key: string,
   limit: number,
 ): Promise<number | null> {
+  const bucket = `${THROTTLER_NAME}:${key}`;
   const record = await storage.increment(
-    `${THROTTLER_NAME}:${key}`,
+    bucket,
     ORDER_API_RATE_WINDOW_MS,
     limit,
     ORDER_API_RATE_WINDOW_MS,
-    THROTTLER_NAME,
+    // The in-memory storage keeps its expiry timers per throttler name and
+    // cancels all of them when one key of that name leaves its block. A name
+    // shared by every bucket would freeze the counts of the other
+    // integrations and of the global bucket, so each bucket is its own name.
+    bucket,
   );
   return record.isBlocked ? Math.max(1, record.timeToBlockExpire) : null;
 }

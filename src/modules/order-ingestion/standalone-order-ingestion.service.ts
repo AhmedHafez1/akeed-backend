@@ -141,12 +141,37 @@ export class StandaloneOrderIngestionService {
             principal,
             codes.source as StandaloneSourceCodeMap,
           );
+    const ctx: StandaloneIngestionContext = { orgId: principal.orgId, source };
     const readiness = await this.readiness.evaluate(source, { required: 1 });
-    assertSendReady(readiness.blockers, codes.readiness);
-    return this.acceptOne(
-      { orgId: principal.orgId, source },
-      input,
-      acceptOptions,
+    // A source that cannot send refuses new orders only. A retry of a request
+    // it already accepted, or an order it already has, sends nothing new and
+    // is answered from what is stored. Otherwise a response lost on the
+    // store's last credit would be retried into a credit refusal for an order
+    // that was accepted and sent.
+    if (
+      readiness.blockers.length > 0 &&
+      !(await this.isAlreadyStored(ctx, input, acceptOptions))
+    ) {
+      assertSendReady(readiness.blockers, codes.readiness);
+    }
+    return this.acceptOne(ctx, input, acceptOptions);
+  }
+
+  private isAlreadyStored(
+    ctx: StandaloneIngestionContext,
+    input: CanonicalOrderInput,
+    options: AcceptOneOptions,
+  ): Promise<boolean> {
+    return this.acceptance.isKnown(
+      this.toAcceptanceInput(
+        ctx,
+        buildStandaloneOrderEnvelope({
+          ingestionType: options.channel,
+          order: input,
+          extras: options.envelopeExtras,
+        }),
+        { channel: options.channel, idempotencyKey: options.idempotencyKey },
+      ),
     );
   }
 

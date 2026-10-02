@@ -143,6 +143,33 @@ describe('Standalone ingestion boundary', () => {
       expect(offenders).toEqual([]);
     });
 
+    it('reaches the database, the queues and the providers through nothing of its own (US-05-06)', () => {
+      // The named list above is the README's; this is the rule behind it. The
+      // module file wires DatabaseModule for the key guard, and nothing else
+      // in the module may name a repository, the schema, a queue or a spoke.
+      const reaches = api.flatMap(({ path, source }) =>
+        [
+          ...source.matchAll(
+            /from\s+'([^']*(?:\/infrastructure\/|\/webhook-queue\/|\/verification-automation\/|\/commerce-outcomes\/|\/billing\/|\/orders\/|\/order-imports\/)[^']*|bullmq|@nestjs\/bullmq|drizzle-orm[^']*|postgres)'/g,
+          ),
+        ].map(([, target]) => `${path}: ${target}`),
+      );
+
+      expect(reaches).toEqual([
+        'modules/order-api/order-api.module.ts: ../../infrastructure/database/database.module',
+      ]);
+    });
+
+    it('never holds an order: the hold primitive stays with file import', () => {
+      expect(
+        api
+          .filter(({ source }) =>
+            /\bhold\s*:|holdGroup|hold_state/.test(source),
+          )
+          .map(({ path }) => path),
+      ).toEqual([]);
+    });
+
     it('reaches the ingestion command only through submitOne', () => {
       const calls = api.flatMap(({ path, source }) =>
         [
@@ -196,6 +223,56 @@ describe('Standalone ingestion boundary', () => {
           /\b(orgId|integrationId)\b/.test(source),
         ),
       ).toEqual([]);
+    });
+  });
+
+  describe('integration API keys are credentials and nothing else (E05)', () => {
+    const keys = files.filter(({ path }) =>
+      path.startsWith('modules/integration-keys/'),
+    );
+
+    it('touch only their own table, and resolve the source through the ingestion command', () => {
+      const repositories = keys.flatMap(({ path, source }) =>
+        [...source.matchAll(/from\s+'[^']*\/repositories\/([^']+)'/g)].map(
+          ([, repository]) => `${path}: ${repository}`,
+        ),
+      );
+
+      expect(repositories.sort()).toEqual([
+        'modules/integration-keys/guards/integration-api-key.guard.ts: integration-api-keys.repository',
+        'modules/integration-keys/integration-keys.service.ts: integration-api-keys.repository',
+      ]);
+      expect(
+        keys
+          .filter(({ source }) =>
+            /\.findActiveByOrg\(|platformType|onboardingStatus|\.(submitOne|acceptOne|acceptMany|dispatchById)\(/.test(
+              source,
+            ),
+          )
+          .map(({ path }) => path),
+      ).toEqual([]);
+    });
+
+    it('are read by the guard alone: the core never learns which credential sent an order', () => {
+      // The principal's key id and prefix are log metadata. Only the key
+      // module, the API module and the principal's type may name them.
+      const readers = files
+        .filter(({ source }) =>
+          /\bkeyId\b|\bkeyPrefix\b|integrationApiKey\b|IntegrationApiKeyPrincipal\b/.test(
+            source,
+          ),
+        )
+        .map(({ path }) => path)
+        .filter(
+          (path) =>
+            !path.startsWith('modules/integration-keys/') &&
+            !path.startsWith('modules/order-api/'),
+        )
+        .sort();
+
+      expect(readers).toEqual([
+        'modules/order-ingestion/standalone-order-ingestion.types.ts',
+      ]);
     });
   });
 

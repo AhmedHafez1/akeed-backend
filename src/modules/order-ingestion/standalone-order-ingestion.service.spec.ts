@@ -406,6 +406,7 @@ describe('StandaloneOrderIngestionService.submitOne', () => {
       Promise<{ eventId: string; order: { id: string }; duplicate: boolean }>,
       [ManualOrderAcceptanceInput]
     >(),
+    isKnown: jest.fn<Promise<boolean>, [ManualOrderAcceptanceInput]>(),
   };
   const dispatcher = { dispatchById: jest.fn<Promise<string>, [string]>() };
   const verifications = { findByOrderId: jest.fn() };
@@ -423,6 +424,7 @@ describe('StandaloneOrderIngestionService.submitOne', () => {
       order: { id: 'order-1' },
       duplicate: false,
     });
+    acceptance.isKnown.mockResolvedValue(false);
     dispatcher.dispatchById.mockResolvedValue('dispatched');
     verifications.findByOrderId.mockResolvedValue({ id: 'verification-1' });
     resolver.resolveWritable.mockResolvedValue(source);
@@ -542,6 +544,54 @@ describe('StandaloneOrderIngestionService.submitOne', () => {
     });
     expect(acceptance.accept).not.toHaveBeenCalled();
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
+  });
+
+  it('answers a request or an order it already stored, even while the source cannot send', async () => {
+    readiness.evaluate.mockResolvedValue({
+      ready: false,
+      blockers: [{ kind: 'credit_denied', code: 'INSUFFICIENT_CREDITS' }],
+    });
+    acceptance.isKnown.mockResolvedValue(true);
+    acceptance.accept.mockResolvedValue({
+      eventId: 'event-1',
+      order: { id: 'order-1' },
+      duplicate: true,
+    });
+
+    await expect(
+      service.submitOne(apiKey, input, {
+        channel: 'api',
+        idempotencyKey: 'order-1001',
+        codes,
+      }),
+    ).resolves.toMatchObject({ orderId: 'order-1', duplicate: true });
+
+    // Asked about the request's own namespaced key and the order's identity
+    // in the resolved source, which is what `accept` will look up.
+    const [asked] = acceptance.isKnown.mock.calls[0];
+    expect(asked.event).toMatchObject({
+      idempotencyKey: 'api:order-1001',
+      storeDomain: 'standalone:org-1',
+      orgId: 'org-1',
+      integrationId: 'int-1',
+    });
+    expect(asked.order).toMatchObject({
+      orgId: 'org-1',
+      integrationId: 'int-1',
+      externalOrderId: 'ref:1001',
+    });
+    expect(acceptance.accept).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not look for a stored order while the source can send', async () => {
+    await service.submitOne(user, input, {
+      channel: 'manual',
+      idempotencyKey: 'manual-key-0001',
+      codes,
+    });
+
+    expect(acceptance.isKnown).not.toHaveBeenCalled();
+    expect(acceptance.accept).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -161,6 +161,25 @@ describe('order API throttling', () => {
     expect(await call('integration-a')).toEqual({ allowed: true });
   });
 
+  it('keeps counting each bucket on its own clock when another bucket leaves its block', async () => {
+    // integration-a is blocked for a minute.
+    for (let index = 0; index < LIMITS.perIntegrationPerMinute + 1; index++)
+      await call('integration-a');
+    // Half a minute later integration-b uses two of its three requests.
+    jest.advanceTimersByTime(30_000);
+    await call('integration-b');
+    await call('integration-b');
+    // integration-a's block ends and it calls again.
+    jest.advanceTimersByTime(31_000);
+    expect(await call('integration-a')).toEqual({ allowed: true });
+
+    // Over a minute later every earlier request has aged out, so
+    // integration-b has its whole budget again.
+    jest.advanceTimersByTime(61_000);
+    for (let index = 0; index < LIMITS.perIntegrationPerMinute; index++)
+      expect(await call('integration-b')).toEqual({ allowed: true });
+  });
+
   it('refuses to run without the principal of the key guard', async () => {
     await expect(attempt(guard, {})).rejects.toThrow(
       'OrderApiThrottleGuard used before IntegrationApiKeyGuard',

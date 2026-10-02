@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** Backlog
+- **Status:** Done — E05 gate passed locally and the pilot is reported working as expected (product owner, 2026-10-02); see [evidence](../../US-05-06-API-RELEASE-GATE-EVIDENCE.md) and the [pilot checklist](US-05-06-pilot-checklist.md)
 - **Dependencies:** [US-05-05](US-05-05-server-integration-guide.md)
 
 ## User story and value

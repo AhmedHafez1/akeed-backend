@@ -1,7 +1,7 @@
 # E05 — Standalone Order Ingestion API
 
 - **Horizon:** NEXT
-- **Status:** Backlog (stories refactored 2026-10-02 against the implemented E04 / E04.6 ingestion core)
+- **Status:** Done (2026-10-02). All six stories are implemented, the US-05-06 gate passes locally, and the product owner reports the [pilot](US-05-06-pilot-checklist.md) working as expected. The open points of the gate are closed as accepted or moved to [Deferred](#deferred-post-pilot).
 - **Stories:** 6
 - **Prerequisite epics (implemented):** [E04.5 — Standalone Paymob Usage-Based Billing MVP](../04.5-standalone-paymob-usage-billing/README.md), [E04.6 — Standalone Bulk Order Import](../04.6-standalone-bulk-order-import/README.md) (GA 2026-10-01)
 - **Implementation prompts:** [one prompt per story](IMPLEMENTATION-PROMPTS.md)
@@ -106,16 +106,16 @@ E04.6 Import ──┘
 
 ## Prioritized user stories
 
-Delivery rank is the execution order. All stories start in Backlog.
+Delivery rank is the execution order.
 
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [US-05-01 — Manage integration API keys securely](US-05-01-integration-api-key-lifecycle.md) | P0 | Feature | E04.5, E04.6 (implemented) | Implemented locally (release blocked) |
-| 2 | [US-05-02 — Submit API orders to the existing ingestion command](US-05-02-authenticated-order-ingestion-endpoint.md) | P0 | Feature + core extraction | [US-05-01](US-05-01-integration-api-key-lifecycle.md) | Implemented locally (release blocked) |
-| 3 | [US-05-03 — Extend shared idempotency to external order identity](US-05-03-idempotency-and-conflict-handling.md) | P0 | Technical enabler (core) | [US-05-02](US-05-02-authenticated-order-ingestion-endpoint.md) | Implemented locally (release blocked) |
-| 4 | [US-05-04 — Add API abuse controls and safe operational errors](US-05-04-api-abuse-controls-and-audit.md) | P0 | Technical enabler | [US-05-03](US-05-03-idempotency-and-conflict-handling.md) | Implemented locally (release blocked) |
-| 5 | [US-05-05 — Publish server-side integration guidance](US-05-05-server-integration-guide.md) | P1 | Feature | [US-05-04](US-05-04-api-abuse-controls-and-audit.md) | Implemented locally (release blocked) |
-| 6 | [US-05-06 — Prove cross-channel equivalence, isolation and recovery](US-05-06-api-security-and-recovery-release-gate.md) | P0 | Quality gate | [US-05-05](US-05-05-server-integration-guide.md) | Backlog |
+| 1 | [US-05-01 — Manage integration API keys securely](US-05-01-integration-api-key-lifecycle.md) | P0 | Feature | E04.5, E04.6 (implemented) | Done |
+| 2 | [US-05-02 — Submit API orders to the existing ingestion command](US-05-02-authenticated-order-ingestion-endpoint.md) | P0 | Feature + core extraction | [US-05-01](US-05-01-integration-api-key-lifecycle.md) | Done |
+| 3 | [US-05-03 — Extend shared idempotency to external order identity](US-05-03-idempotency-and-conflict-handling.md) | P0 | Technical enabler (core) | [US-05-02](US-05-02-authenticated-order-ingestion-endpoint.md) | Done |
+| 4 | [US-05-04 — Add API abuse controls and safe operational errors](US-05-04-api-abuse-controls-and-audit.md) | P0 | Technical enabler | [US-05-03](US-05-03-idempotency-and-conflict-handling.md) | Done |
+| 5 | [US-05-05 — Publish server-side integration guidance](US-05-05-server-integration-guide.md) | P1 | Feature | [US-05-04](US-05-04-api-abuse-controls-and-audit.md) | Done |
+| 6 | [US-05-06 — Prove cross-channel equivalence, isolation and recovery](US-05-06-api-security-and-recovery-release-gate.md) | P0 | Quality gate | [US-05-05](US-05-05-server-integration-guide.md) | Done |
 
 ## Measurable exit criteria
 
@@ -136,10 +136,19 @@ Deliberately out of the MVP, matching the minimal-operations approach taken for 
 - Redis-backed throttler storage (required before running more than one API instance).
 - Key scopes, multiple keys per purpose, and status or callback endpoints.
 
+Carried over from the US-05-06 gate (decisions D1 to D8 of the [pilot checklist](US-05-06-pilot-checklist.md), closed 2026-10-02 as accepted for the current single-instance deployment):
+
+- A global kill switch for the order API (`ORDER_API_ENABLED`). Until then, stopping the API is key revocation or a redeploy (checklist section 5).
+- A test mode or sandbox key. Every accepted cash-on-delivery order sends a real message and spends a credit.
+- Reading a local phone number with the store's country, as file import does. The API requires international format.
+- `trust proxy` for the deployment's proxy chain, so the pre-auth limit counts per client.
+- Counting unauthenticated bad or oversized bodies against a limit (they are read before authentication, at most 32 KB each).
+- The shared-throttler-name behavior fixed for the order API also exists in `OrderImportUploadThrottleGuard` and the app-wide `ThrottlerGuard`; Redis-backed storage, above, removes it everywhere.
+
 ## Dependency and rollout notes
 
 Follow story dependency order and preserve existing Shopify, manual and file-import behavior. Core extractions (US-05-02, US-05-03) land before any API-only code in the same story and must keep the manual and import response bodies and codes byte-identical. No calendar estimate or staffing commitment is implied by priority.
 
 ## Evidence discipline
 
-The product sequence is approved; all E05 implementation remains proposed. The "Core gaps" table and the code references in each story were verified against the `develop` branch on 2026-10-02 and are not test runs.
+The product sequence is approved. The "Core gaps" table and the code references in each story were verified against the `develop` branch on 2026-10-02 and are not test runs; the test runs are in each story's evidence file (`docs/US-05-0N-*-EVIDENCE.md`). The pilot result is the product owner's report of 2026-10-02 ("tested the API, working as expected"); its step-by-step records are not in this repository.

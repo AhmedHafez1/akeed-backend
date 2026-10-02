@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Implemented locally (2026-10-02) — release blocked until US-05-06; see [evidence](../../US-05-05-SERVER-INTEGRATION-GUIDE-EVIDENCE.md)
+- **Status:** Done — E05 gate passed locally and the pilot is reported working as expected (product owner, 2026-10-02); see [evidence](../../US-05-05-SERVER-INTEGRATION-GUIDE-EVIDENCE.md)
 - **Dependencies:** [US-05-04](US-05-04-api-abuse-controls-and-audit.md)
 
 ## User story and value
