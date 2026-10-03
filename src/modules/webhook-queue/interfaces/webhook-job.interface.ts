@@ -36,4 +36,7 @@ export interface WebhookJobPayload {
 
   /** ISO-8601 timestamp of when the event was received by our ingestion layer. */
   receivedAt: string;
+
+  /** How many times the worker rescheduled this job on a provider's request. */
+  deferrals?: number;
 }

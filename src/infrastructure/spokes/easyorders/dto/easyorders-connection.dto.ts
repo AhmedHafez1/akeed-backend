@@ -26,6 +26,22 @@ export class SaveEasyOrdersWebhookSecretsDto {
   statusSecret!: string;
 }
 
+/**
+ * The two setup inputs the order payload does not carry (contract record
+ * section 4). The service checks them against the supported values.
+ */
+export class SaveEasyOrdersOrderSettingsDto {
+  @IsString()
+  @TrimString()
+  @Matches(/^[A-Za-z]{3}$/)
+  currency!: string;
+
+  @IsString()
+  @TrimString()
+  @Matches(/^[A-Za-z]{2}$/)
+  phoneCountry!: string;
+}
+
 export interface EasyOrdersInstallStartedDto {
   /**
    * The authorized-app link. It carries the install's tokens, so it is
@@ -45,7 +61,10 @@ export type EasyOrdersConnectionState =
   | 'expired'
   | 'connected';
 
-export type EasyOrdersConnectionHealth = 'ok' | 'store_inactive';
+export type EasyOrdersConnectionHealth =
+  | 'ok'
+  | 'store_inactive'
+  | 'credentials_rejected';
 
 export interface EasyOrdersConnectionStatusDto {
   state: EasyOrdersConnectionState;
@@ -65,6 +84,12 @@ export interface EasyOrdersConnectionStatusDto {
     webhookUrlHint: string;
     ordersSecretSet: boolean;
     statusSecretSet: boolean;
+    /** Store currency for every order; null until the merchant chooses it. */
+    currency: string | null;
+    /** Country local phone numbers are read in; null until chosen. */
+    phoneCountry: string | null;
+    /** Webhooks refused for a wrong secret since the connection was made. */
+    rejectedDeliveries: number;
     connectedAt: string;
   } | null;
 }

@@ -1,5 +1,10 @@
 import type { Job } from 'bullmq';
-import { WebhookQueueProcessor } from './webhook-queue.processor';
+import { DelayedError } from 'bullmq';
+import {
+  WEBHOOK_JOB_MAX_DEFERRALS,
+  WebhookQueueProcessor,
+} from './webhook-queue.processor';
+import { RetryAfterError } from '../../shared/http/bounded-http';
 import { WebhookJobType } from './webhook-queue.constants';
 import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
 import type { WebhookJobPayload } from './interfaces/webhook-job.interface';
@@ -115,6 +120,136 @@ function createMocks(
 }
 
 describe('WebhookQueueProcessor', () => {
+  describe('normalizer results', () => {
+    it('waits for a normalizer that answers asynchronously', async () => {
+      const { processor, normalizer, webhookEventsRepo, verificationHub } =
+        createMocks();
+      normalizer.normalizeOrder = jest.fn(() => Promise.resolve(buildOrder()));
+
+      await processor.process(buildJob(buildPayload()));
+
+      expect(verificationHub.handleNewOrder).toHaveBeenCalledWith(
+        buildOrder(),
+        expect.objectContaining({ id: 'int-1' }),
+      );
+      expect(webhookEventsRepo.markCompleted).toHaveBeenCalledWith('event-1');
+    });
+
+    it('records a normalizer’s skip reason and never reaches the hub', async () => {
+      const { processor, normalizer, webhookEventsRepo, verificationHub } =
+        createMocks();
+      normalizer.normalizeOrder = jest.fn(() =>
+        Promise.resolve({ skipped: true as const, reason: 'missing_currency' }),
+      );
+
+      await processor.process(buildJob(buildPayload()));
+
+      expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+        'event-1',
+        'missing_currency',
+      );
+      expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
+      expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retry after a provider-named delay', () => {
+    const NOW = new Date('2026-10-03T10:00:00.000Z');
+
+    function deferringJob(deferrals?: number) {
+      const payload = buildPayload({ deferrals });
+      const updateData = jest.fn().mockResolvedValue(undefined);
+      const moveToDelayed = jest.fn().mockResolvedValue(undefined);
+      const job = buildJob(payload, {
+        attemptsMade: 0,
+        opts: { attempts: 5 },
+        updateData,
+        moveToDelayed,
+      } as never);
+      return { job, updateData, moveToDelayed };
+    }
+
+    beforeEach(() => jest.useFakeTimers().setSystemTime(NOW));
+    afterEach(() => jest.useRealTimers());
+
+    it('releases the event and reschedules the job without spending an attempt', async () => {
+      const { processor, normalizer, webhookEventsRepo } = createMocks();
+      normalizer.normalizeOrder = jest.fn(() =>
+        Promise.reject(new RetryAfterError('source_rate_limited', 42_000)),
+      );
+      const { job, updateData, moveToDelayed } = deferringJob();
+
+      await expect(processor.process(job, 'lock-token')).rejects.toBeInstanceOf(
+        DelayedError,
+      );
+
+      expect(webhookEventsRepo.markProcessingRetryable).toHaveBeenCalledWith(
+        'event-1',
+        'source_rate_limited',
+        0,
+      );
+      expect(updateData).toHaveBeenCalledWith(
+        expect.objectContaining({ webhookEventId: 'event-1', deferrals: 1 }),
+      );
+      expect(moveToDelayed).toHaveBeenCalledWith(
+        NOW.getTime() + 42_000,
+        'lock-token',
+      );
+      expect(webhookEventsRepo.markSkipped).not.toHaveBeenCalled();
+      expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    });
+
+    it('never waits longer than five minutes in one step', async () => {
+      const { processor, normalizer } = createMocks();
+      normalizer.normalizeOrder = jest.fn(() =>
+        Promise.reject(new RetryAfterError('source_store_inactive', 3_600_000)),
+      );
+      const { job, moveToDelayed } = deferringJob();
+
+      await expect(processor.process(job, 'lock-token')).rejects.toBeInstanceOf(
+        DelayedError,
+      );
+
+      expect(moveToDelayed).toHaveBeenCalledWith(
+        NOW.getTime() + 5 * 60_000,
+        'lock-token',
+      );
+    });
+
+    it('stops rescheduling after the bound and fails like any other error', async () => {
+      const { processor, normalizer } = createMocks();
+      const failure = new RetryAfterError('source_rate_limited', 42_000);
+      normalizer.normalizeOrder = jest.fn(() => Promise.reject(failure));
+      const { job, moveToDelayed } = deferringJob(WEBHOOK_JOB_MAX_DEFERRALS);
+
+      await expect(processor.process(job, 'lock-token')).rejects.toBe(failure);
+
+      expect(moveToDelayed).not.toHaveBeenCalled();
+    });
+
+    it('fails normally when the worker gave no lock token', async () => {
+      const { processor, normalizer } = createMocks();
+      const failure = new RetryAfterError('source_rate_limited', 42_000);
+      normalizer.normalizeOrder = jest.fn(() => Promise.reject(failure));
+      const { job, moveToDelayed } = deferringJob();
+
+      await expect(processor.process(job)).rejects.toBe(failure);
+
+      expect(moveToDelayed).not.toHaveBeenCalled();
+    });
+
+    it('leaves every other error to the queue’s own backoff', async () => {
+      const { processor, normalizer } = createMocks();
+      const failure = new Error('source_unavailable');
+      normalizer.normalizeOrder = jest.fn(() => Promise.reject(failure));
+      const { job, moveToDelayed } = deferringJob();
+
+      await expect(processor.process(job, 'lock-token')).rejects.toBe(failure);
+
+      expect(moveToDelayed).not.toHaveBeenCalled();
+    });
+  });
+
   it('explicitly skips a runtime payload with an unknown platform', async () => {
     const { processor, webhookEventsRepo, integrationsRepo } = createMocks();
     const payload = { ...buildPayload(), platform: 'magento' };

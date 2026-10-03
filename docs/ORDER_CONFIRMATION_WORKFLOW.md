@@ -33,7 +33,7 @@ Out of scope:
 
 - Creating Shopify orders before checkout submission.
 - Automatically canceling Shopify orders on a customer cancel reply. The current customer cancel flow marks and tags the order, but does not call Shopify order cancellation.
-- Platforms other than Shopify and Standalone. EasyOrders and WooCommerce are roadmap items.
+- Platforms other than Shopify and Standalone. EasyOrders order ingestion is built and switched off (US-06-03); its outcome writes and WooCommerce are roadmap items.
 
 ## Lifecycle States
 

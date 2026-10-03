@@ -81,6 +81,17 @@ export type ConnectEasyOrdersResult =
   | { kind: 'source_exists'; orgId: string }
   | { kind: 'store_unavailable'; orgId: string };
 
+export type EasyOrdersConnectionHealthState =
+  | 'ok'
+  | 'store_inactive'
+  | 'credentials_rejected';
+
+/** What a webhook URL token resolves to: one connection and its source. */
+export interface EasyOrdersWebhookSource {
+  connection: EasyOrdersConnection;
+  sourceActive: boolean;
+}
+
 export interface EasyOrdersConnectionOverview {
   organizationName: string | null;
   /** Platform types of every source the organization has, active or not. */
@@ -331,6 +342,132 @@ export class EasyOrdersConnectionsRepository {
       connection: connections[0],
       latestPending: pendings[0],
     };
+  }
+
+  /**
+   * The only tenant resolver for webhooks: they are unauthenticated and the
+   * URL token's hash is what binds a delivery to one integration. A rotated
+   * or unknown token resolves to nothing.
+   */
+  async findByWebhookTokenHash(
+    webhookTokenHash: string,
+  ): Promise<EasyOrdersWebhookSource | undefined> {
+    const [row] = await this.db
+      .select({
+        connection: easyordersConnections,
+        isActive: integrations.isActive,
+      })
+      .from(easyordersConnections)
+      .innerJoin(
+        integrations,
+        and(
+          eq(integrations.id, easyordersConnections.integrationId),
+          eq(integrations.orgId, easyordersConnections.orgId),
+        ),
+      )
+      .where(eq(easyordersConnections.webhookTokenHash, webhookTokenHash))
+      .limit(1);
+    return row
+      ? { connection: row.connection, sourceActive: row.isActive === true }
+      : undefined;
+  }
+
+  async findByIntegration(
+    integrationId: string,
+    orgId: string,
+  ): Promise<EasyOrdersConnection | undefined> {
+    const [connection] = await this.db
+      .select()
+      .from(easyordersConnections)
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, integrationId),
+          eq(easyordersConnections.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return connection;
+  }
+
+  /** A delivery that reached a valid URL token with a wrong secret. */
+  async recordRejectedDelivery(
+    integrationId: string,
+    orgId: string,
+  ): Promise<void> {
+    await this.db
+      .update(easyordersConnections)
+      .set({
+        rejectedDeliveries: sql`${easyordersConnections.rejectedDeliveries} + 1`,
+        lastRejectedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, integrationId),
+          eq(easyordersConnections.orgId, orgId),
+        ),
+      );
+  }
+
+  async setHealth(
+    integrationId: string,
+    orgId: string,
+    health: EasyOrdersConnectionHealthState,
+  ): Promise<void> {
+    await this.db
+      .update(easyordersConnections)
+      .set({ health, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, integrationId),
+          eq(easyordersConnections.orgId, orgId),
+          ne(easyordersConnections.health, health),
+        ),
+      );
+  }
+
+  /**
+   * Turns the store claim into a verified one, once data fetched with the
+   * stored key carried the same store id. `taken` means another integration
+   * already holds the store's one verified slot.
+   */
+  async markStoreVerified(
+    integrationId: string,
+    orgId: string,
+    storeId: string,
+  ): Promise<'verified' | 'taken'> {
+    try {
+      await this.db
+        .update(easyordersConnections)
+        .set({
+          storeVerifiedAt: sql`now()`,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(easyordersConnections.integrationId, integrationId),
+            eq(easyordersConnections.orgId, orgId),
+            eq(easyordersConnections.storeId, storeId),
+            isNull(easyordersConnections.storeVerifiedAt),
+          ),
+        );
+      return 'verified';
+    } catch (error) {
+      if (databaseErrorCode(error) === '23505') return 'taken';
+      throw error;
+    }
+  }
+
+  /** Answers whether the organization has a connection to update. */
+  async saveOrderSettings(
+    orgId: string,
+    settings: { currency: string; phoneCountry: string },
+  ): Promise<boolean> {
+    const updated = await this.db
+      .update(easyordersConnections)
+      .set({ ...settings, updatedAt: new Date().toISOString() })
+      .where(eq(easyordersConnections.orgId, orgId))
+      .returning({ integrationId: easyordersConnections.integrationId });
+    return updated.length > 0;
   }
 
   /** Write-only: answers whether the organization has a connection to update. */

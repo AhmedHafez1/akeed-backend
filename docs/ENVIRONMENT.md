@@ -232,7 +232,7 @@ Every `/api/v1/orders` error answers `{code, message, correlationId}` (validatio
 
 ## EasyOrders Connection (E06)
 
-The authorized connection of an EasyOrders store (US-06-02). It ships dark. Order ingestion and remote status writes are not part of it and have no switch yet.
+The authorized connection of an EasyOrders store (US-06-02) and its order-webhook ingestion (US-06-03). Both ship dark, each behind its own switch. Remote status writes are not built yet and have no switch.
 
 | Variable | Notes |
 | --- | --- |
@@ -240,9 +240,12 @@ The authorized connection of an EasyOrders store (US-06-02). It ships dark. Orde
 | `EASYORDERS_PILOT_ORG_IDS` | Pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Only listed organizations may start an install or have a callback honoured. Empty (default) means nobody, even with the switch on. Removing a UUID stops new installs for that organization; an existing connection is not removed. |
 | `EASYORDERS_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the two webhook URLs. Must be `https` outside development (the API key travels through the seller's browser to it). No trailing slash, query or fragment. |
 | `EASYORDERS_APP_BASE_URL` | Required when enabled. Public base of the web app: the post-install redirect (`/<locale>/onboarding`) and the app icon. Same rules as above. |
-| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the EasyOrders API key and webhook secrets, so startup fails when EasyOrders is enabled without it. |
+| `EASYORDERS_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /webhooks/easyorders/orders/:token` and `.../status/:token` answer `404` and store nothing, which is what they answered before US-06-03. Independent of the connect switch, so a store can be connected and checked before its orders are accepted. Rollback is turning it off; events already queued are still processed. Keep it off for real merchants until the US-06-01 go-live verification has observed a real delivery. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the EasyOrders API key and webhook secrets, so startup fails when EasyOrders connect or ingestion is enabled without it. |
 
 The frontend shows the source picker on signup only when `NEXT_PUBLIC_EASYORDERS_CONNECT_ENABLED=true`. Turn the backend switch on first: an account that picked EasyOrders while the backend switch is off gets a normal Standalone organization.
+
+EasyOrders order lookups are limited to 30 requests a minute per integration (20 of them for lookups), counted in memory: correct for one backend instance, like the other throttlers. An order that fails while the queue is down is recovered by the webhook reconciler, which is off unless `WEBHOOK_RECONCILIATION_ENABLED=true`.
 
 The install callback is called by the seller's browser from `https://app.easy-orders.net`. Its CORS answer is fixed to that origin in `src/shared/config/route-scoped-cors.config.ts` and ignores `CORS_ALLOWED_ORIGINS`.
 

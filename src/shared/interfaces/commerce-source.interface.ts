@@ -1,9 +1,9 @@
 /**
  * Mirrors the `platform_type` CHECK constraint on `integrations` and
- * `billing_free_plan_claims` (see akeed-backend/drizzle schema). Only
- * 'shopify' and 'standalone' have a spoke implementation under
- * src/infrastructure/spokes/ today — 'salla', 'zid', 'woocommerce', and
- * 'easyorders' are reserved for future platforms, not implemented ones.
+ * `billing_free_plan_claims` (see akeed-backend/drizzle schema). 'shopify'
+ * and 'standalone' have a full spoke under src/infrastructure/spokes/;
+ * 'easyorders' has connection and order ingestion but no outcome adapter yet.
+ * 'salla', 'zid' and 'woocommerce' are reserved, not implemented.
  * Adding/removing a value here requires a matching DB migration to the
  * CHECK constraint, not just a type change.
  */

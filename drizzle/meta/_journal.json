@@ -337,6 +337,13 @@
       "when": 1790985600000,
       "tag": "0047_easyorders_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791072000000,
+      "tag": "0048_easyorders_ingestion",
+      "breakpoints": true
     }
   ]
 }

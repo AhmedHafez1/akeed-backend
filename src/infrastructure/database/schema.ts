@@ -2402,6 +2402,15 @@ export const easyordersConnections = pgTable(
     ordersWebhookSecretEncrypted: text('orders_webhook_secret_encrypted'),
     statusWebhookSecretEncrypted: text('status_webhook_secret_encrypted'),
     health: text().default('ok').notNull(),
+    // Setup inputs (US-06-03): the order payload carries neither, and a
+    // missing one makes an order not eligible instead of being guessed.
+    currency: text(),
+    phoneCountry: varchar('phone_country', { length: 2 }),
+    rejectedDeliveries: integer('rejected_deliveries').default(0).notNull(),
+    lastRejectedAt: timestamp('last_rejected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     connectedBy: uuid('connected_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .notNull()
@@ -2434,7 +2443,19 @@ export const easyordersConnections = pgTable(
     ),
     check(
       'easyorders_connections_health_check',
-      sql`${table.health} = ANY (ARRAY['ok'::text, 'store_inactive'::text])`,
+      sql`${table.health} = ANY (ARRAY['ok'::text, 'store_inactive'::text, 'credentials_rejected'::text])`,
+    ),
+    check(
+      'easyorders_connections_currency_check',
+      sql`${table.currency} IS NULL OR ${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+    check(
+      'easyorders_connections_phone_country_check',
+      sql`${table.phoneCountry} IS NULL OR ${table.phoneCountry} ~ '^[A-Z]{2}$'`,
+    ),
+    check(
+      'easyorders_connections_rejected_deliveries_check',
+      sql`${table.rejectedDeliveries} >= 0`,
     ),
     check(
       'easyorders_connections_api_key_encrypted_check',

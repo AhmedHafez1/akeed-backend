@@ -16,6 +16,7 @@ import {
 } from '../../../modules/auth/guards/dual-auth.guard';
 import { CurrentUser } from '../../../modules/auth/guards/current-user.decorator';
 import {
+  SaveEasyOrdersOrderSettingsDto,
   SaveEasyOrdersWebhookSecretsDto,
   StartEasyOrdersInstallDto,
   type EasyOrdersConnectionStatusDto,
@@ -39,6 +40,16 @@ export const saveEasyOrdersWebhookSecretsPipe = new ValidationPipe({
   transform: true,
   exceptionFactory: (errors) =>
     easyOrdersError('EASYORDERS_SECRETS_INVALID', {
+      fields: errors.map((error) => error.property),
+    }),
+});
+
+export const saveEasyOrdersOrderSettingsPipe = new ValidationPipe({
+  expectedType: SaveEasyOrdersOrderSettingsDto,
+  whitelist: true,
+  transform: true,
+  exceptionFactory: (errors) =>
+    easyOrdersError('EASYORDERS_ORDER_SETTINGS_INVALID', {
       fields: errors.map((error) => error.property),
     }),
 });
@@ -82,6 +93,18 @@ export class EasyOrdersConnectionController {
     return this.easyOrders.saveWebhookSecrets(
       user,
       body as SaveEasyOrdersWebhookSecretsDto,
+    );
+  }
+
+  @Put('connection/order-settings')
+  @Header('Cache-Control', 'no-store')
+  saveOrderSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(saveEasyOrdersOrderSettingsPipe) body: object,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    return this.easyOrders.saveOrderSettings(
+      user,
+      body as SaveEasyOrdersOrderSettingsDto,
     );
   }
 }

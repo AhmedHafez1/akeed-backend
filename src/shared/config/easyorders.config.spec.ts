@@ -18,9 +18,35 @@ const ENABLED = {
 };
 
 describe('EasyOrders configuration', () => {
+  it('switches ingestion on separately from connect', () => {
+    expect(
+      parseEasyOrdersConfig({
+        EASYORDERS_INGESTION_ENABLED: 'true',
+        SHOPIFY_TOKEN_ENCRYPTION_KEY: 'k'.repeat(32),
+      }),
+    ).toMatchObject({ enabled: false, ingestionEnabled: true });
+    expect(
+      parseEasyOrdersConfig({
+        ...ENABLED,
+        EASYORDERS_INGESTION_ENABLED: 'true',
+      }),
+    ).toMatchObject({ enabled: true, ingestionEnabled: true });
+  });
+
+  it.each([
+    [{ EASYORDERS_INGESTION_ENABLED: 'on' }, /must be true or false/],
+    [
+      { EASYORDERS_INGESTION_ENABLED: 'true' },
+      /SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders ingestion/,
+    ],
+  ])('fails boot on an unusable ingestion switch %#', (env, message) => {
+    expect(() => parseEasyOrdersConfig(env)).toThrow(message);
+  });
+
   it('is off and needs nothing by default', () => {
     expect(parseEasyOrdersConfig({})).toEqual({
       enabled: false,
+      ingestionEnabled: false,
       pilotOrgIds: [],
       publicApiBaseUrl: '',
       appBaseUrl: '',
@@ -35,6 +61,7 @@ describe('EasyOrders configuration', () => {
       }),
     ).toEqual({
       enabled: true,
+      ingestionEnabled: false,
       pilotOrgIds: [ORG_A, ORG_B],
       publicApiBaseUrl: 'https://api.akeed.test',
       appBaseUrl: 'https://app.akeed.test',

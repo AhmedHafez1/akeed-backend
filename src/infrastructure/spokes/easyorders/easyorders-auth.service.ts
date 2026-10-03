@@ -19,12 +19,19 @@ import {
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 import type {
+  EasyOrdersConnectionHealth,
   EasyOrdersConnectionState,
   EasyOrdersConnectionStatusDto,
   EasyOrdersInstallStartedDto,
+  SaveEasyOrdersOrderSettingsDto,
   SaveEasyOrdersWebhookSecretsDto,
   StartEasyOrdersInstallDto,
 } from './dto/easyorders-connection.dto';
+import {
+  isCanonicalCurrency,
+  normalizeCanonicalCurrency,
+} from '../../../shared/commerce/canonical-order.rules';
+import { PhoneService } from '../../../shared/services/phone.service';
 import { EasyOrdersApiClient } from './easyorders-api.client';
 import { buildEasyOrdersInstallLink } from './easyorders-install-link';
 import {
@@ -96,6 +103,7 @@ export class EasyOrdersAuthService {
     private readonly connections: EasyOrdersConnectionsRepository,
     private readonly api: EasyOrdersApiClient,
     private readonly config: ConfigService,
+    private readonly phones: PhoneService,
   ) {}
 
   async startInstall(
@@ -262,6 +270,46 @@ export class EasyOrdersAuthService {
     return this.getStatus(user);
   }
 
+  /**
+   * The store currency and the country local phone numbers are read in. The
+   * order payload has neither (contract record section 4), so until both are
+   * chosen every order is recorded as not eligible.
+   */
+  async saveOrderSettings(
+    user: AuthenticatedUser,
+    input: SaveEasyOrdersOrderSettingsDto,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    assertOrganizationWriteAllowed(user.role, EASYORDERS_ROLE_REQUIRED);
+    const currency = normalizeCanonicalCurrency(input.currency);
+    const phoneCountry = input.phoneCountry.toUpperCase();
+    const fields = [
+      ...(isCanonicalCurrency(currency) ? [] : ['currency']),
+      ...(this.phones.callingCode(phoneCountry) === null
+        ? ['phoneCountry']
+        : []),
+    ];
+    if (fields.length > 0 || !isCanonicalCurrency(currency))
+      throw easyOrdersError('EASYORDERS_ORDER_SETTINGS_INVALID', { fields });
+
+    const saved = await this.connections.saveOrderSettings(user.orgId, {
+      currency,
+      phoneCountry,
+    });
+    if (!saved) throw easyOrdersError('EASYORDERS_NOT_CONNECTED');
+
+    this.logger.log(
+      buildBackendLog(EasyOrdersAuthService.name, {
+        action: 'easyorders-order-settings-save',
+        outcome: 'success',
+        orgId: user.orgId,
+        userId: user.userId,
+        currency,
+        phoneCountry,
+      }),
+    );
+    return this.getStatus(user);
+  }
+
   private assertCanConnect(user: AuthenticatedUser): EasyOrdersConfig {
     // An embedded Shopify session always has a Shopify source already.
     if (user.source !== 'supabase')
@@ -314,11 +362,13 @@ export class EasyOrdersAuthService {
         connection: {
           storeId: connection.storeId,
           storeVerified: connection.storeVerifiedAt !== null,
-          health:
-            connection.health === 'store_inactive' ? 'store_inactive' : 'ok',
+          health: toHealth(connection.health),
           webhookUrlHint: connection.webhookTokenHint,
           ordersSecretSet: connection.ordersWebhookSecretEncrypted !== null,
           statusSecretSet: connection.statusWebhookSecretEncrypted !== null,
+          currency: connection.currency,
+          phoneCountry: connection.phoneCountry,
+          rejectedDeliveries: connection.rejectedDeliveries,
           connectedAt: connection.createdAt,
         },
       };
@@ -333,6 +383,12 @@ export class EasyOrdersAuthService {
   private encryptionKey(): string {
     return this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY');
   }
+}
+
+function toHealth(value: string): EasyOrdersConnectionHealth {
+  return value === 'store_inactive' || value === 'credentials_rejected'
+    ? value
+    : 'ok';
 }
 
 /**

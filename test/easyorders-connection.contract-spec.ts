@@ -19,6 +19,7 @@ import {
   EASYORDERS_CONFIG,
   type EasyOrdersConfig,
 } from '../src/shared/config/easyorders.config';
+import { PhoneService } from '../src/shared/services/phone.service';
 import { decryptToken } from '../src/shared/utils/token-encryption.util';
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 
@@ -61,6 +62,7 @@ const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 const settings: EasyOrdersConfig & { pilotOrgIds: string[] } = {
   enabled: true,
+  ingestionEnabled: false,
   pilotOrgIds: [],
   publicApiBaseUrl: 'https://api.akeed.test',
   appBaseUrl: 'https://app.akeed.test',
@@ -113,6 +115,7 @@ const service = new EasyOrdersAuthService(
   repository,
   new EasyOrdersApiClient(fakeEasyOrders),
   config,
+  new PhoneService(),
 );
 
 /** Every value that must never be logged, returned or stored in clear. */
@@ -307,13 +310,19 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
       );
       CREATE UNIQUE INDEX integrations_one_active_source_per_org_idx ON integrations (org_id) WHERE is_active = true;
     `);
-    // Applied twice: the migration must be re-runnable.
+    // Applied twice: the migrations must be re-runnable. 0048 (US-06-03)
+    // adds the columns the repository now selects.
     for (let pass = 0; pass < 2; pass++) {
-      for (const statement of readFileSync(
-        resolve(__dirname, '../drizzle/0047_easyorders_connection.sql'),
-        'utf8',
-      ).split('--> statement-breakpoint')) {
-        if (statement.trim()) await client.unsafe(statement);
+      for (const migration of [
+        '0047_easyorders_connection.sql',
+        '0048_easyorders_ingestion.sql',
+      ]) {
+        for (const statement of readFileSync(
+          resolve(__dirname, '../drizzle', migration),
+          'utf8',
+        ).split('--> statement-breakpoint')) {
+          if (statement.trim()) await client.unsafe(statement);
+        }
       }
     }
     // Fault injection for the partial-failure case: while the flag row says

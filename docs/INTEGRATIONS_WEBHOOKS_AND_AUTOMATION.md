@@ -569,7 +569,7 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 
 ## EasyOrders Connection (US-06-02)
 
-The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This story covers the authorized connection only: no webhook route, normalizer, eligibility strategy or outcome adapter is registered, so no EasyOrders order can enter verification. EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
+The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This section covers the authorized connection; order webhooks are in [EasyOrders Webhook Ingestion](#easyorders-webhook-ingestion-us-06-03) below. No outcome adapter is registered yet (US-06-04). EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
 
 **Flow.**
 
@@ -586,13 +586,59 @@ The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This stor
 - `easyorders_connections`: the API key and both webhook secrets as `encryptToken` ciphertext (a CHECK refuses anything that is not a `v1:` envelope), the webhook URL token's hash and its last six characters, `health` (`ok` or `store_inactive`), and the claimed `store_id`.
 - Both tables have RLS on with no policy and all `anon` / `authenticated` grants revoked.
 
-**Store ownership.** The callback's `store_id` is a claim (`store_verified_at` NULL). A partial unique index makes a store unique only once verified, so a claim never blocks the real owner. A callback naming a store that is verified for another organization is refused (`409 EASYORDERS_STORE_UNAVAILABLE`). Verification on the first matching order is US-06-03.
+**Store ownership.** The callback's `store_id` is a claim (`store_verified_at` NULL). A partial unique index makes a store unique only once verified, so a claim never blocks the real owner. A callback naming a store that is verified for another organization is refused (`409 EASYORDERS_STORE_UNAVAILABLE`). The claim is verified on the first order (US-06-03, below).
 
 **Secrets.** The key, both tokens, both secrets and the install link are never logged (added to `REDACTED_KEYS`) and never returned, with one exception: the install link is returned once to the member who started the install, because the browser has to carry it to EasyOrders. `GET /api/easyorders/connection` reports state, store id, health, the URL hint and whether each secret is set.
 
-**Not in this story.** Disconnect and reconnect (US-06-05): until then any existing integration row, active or not, blocks a connect. Currency and phone country (US-06-05). Webhook ingestion (US-06-03): the webhook URLs given to EasyOrders answer `404` until then.
+**Not in this story.** Disconnect and reconnect (US-06-05): until then any existing integration row, active or not, blocks a connect.
 
 **Validate.** `scripts/test-easyorders-connection-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders`.
+
+## EasyOrders Webhook Ingestion (US-06-03)
+
+Order-created webhooks enter the common queue through the EasyOrders spoke. It ships dark behind `EASYORDERS_INGESTION_ENABLED`. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 2 to 4, 6 and 8.
+
+**Routes.** `POST /webhooks/easyorders/orders/:token` and `POST /webhooks/easyorders/status/:token` (`EasyOrdersWebhookController`). Public, with a per-address flood cap instead of the app-wide limit.
+
+**Acceptance (`EasyOrdersWebhookService`), in this order.**
+
+1. Switch off: `404`, nothing read or stored.
+2. The URL token is looked up by its SHA-256 (`findByWebhookTokenHash`). It alone decides the tenant. An unknown or rotated token, or a source that is not active, is `401 EASYORDERS_WEBHOOK_UNAUTHORIZED`.
+3. The `secret` header must equal that webhook's stored secret (orders and status have different ones). It is a static shared secret, not a signature: it is compared in constant time after a length check. A secret Akeed does not hold yet, a missing header or a wrong value is the same `401`. A wrong value on a valid token also increments `easyorders_connections.rejected_deliveries`.
+4. An order's `store_id` must equal the integration's store: otherwise `403 EASYORDERS_WEBHOOK_STORE_MISMATCH`.
+5. An order payload has no `event_type`. One that has, or one without a text `id`, is `400 EASYORDERS_WEBHOOK_MALFORMED`, so status and unknown events never reach the create path.
+6. `WebhookQueueProducer.ingest` writes the `webhook_events` row and dispatches. The answer is `200` only after the row is written. A queue outage still answers `200`: the row is the durable record and the dispatcher recovers it. A database failure answers `5xx` and logs `easyorders-webhook-not-persisted`, which should alert, because EasyOrders is assumed not to retry.
+
+Nothing is stored for steps 1 to 5.
+
+**Idempotency.** EasyOrders sends no delivery id. The key is `order.create:<integrationId>:<orderId>`, and `order.status:<integrationId>:<orderId>:<old>:<new>` for a status event, under source identity `easyorders:<orgId>`. Repeated and concurrent deliveries collapse into one event; the order and verification unique constraints are the second line.
+
+**Status events** are authenticated and recorded as `order.update` only. The worker has no handler for that job type and marks them skipped, so no order is read or changed. Handling them is US-06-04.
+
+**Normalization (`EasyOrdersOrderNormalizer`, in the worker).** Registered in `WEBHOOK_ORDER_NORMALIZERS` next to the Shopify and Standalone ones.
+
+- Currency and phone country come from `easyorders_connections.currency` and `phone_country`, set by an owner or admin through `PUT /api/easyorders/connection/order-settings`. While either is NULL the order is recorded as `missing_currency` or `missing_phone_country`. Nothing is inferred from the payload, `government` or an IP country.
+- The phone is read with `PhoneService.standardizeMobile` in that country; a number that does not parse or is a landline is `invalid_phone`. The amount is `total_cost` as decimal text; zero, negative or malformed is `invalid_amount`.
+- `orderNumber` is the first eight characters of the order id, because the payload has no reference field.
+- Skip reasons are written to `webhook_events.last_error` with status `skipped`: `store_mismatch`, `store_unverified`, `store_unavailable`, `source_credentials_rejected`, `order_not_found`, `incomplete_payload`, `missing_currency`, `missing_phone_country`, `invalid_phone`, `invalid_amount`, `source_connection_missing`.
+
+**Eligibility (`EasyOrdersOrderEligibilityStrategy`).** `payment_method` equal to `cod` is `cod_match`. Any other value is `non_cod_payment_method` and a missing one is `missing_payment_signal`, until the real value list is observed.
+
+**Order lookup.** Never while a webhook is being received. In the worker, `GET orders/:id` with the integration's own key runs only when `total_cost`, `phone`, `full_name` or `payment_method` is missing, or while the store is still an unverified claim. Fetched values only fill what the webhook lacked.
+
+- A fetched order naming the same store sets `store_verified_at`. One naming another store, or none, stops the order and verifies nothing. If another integration already holds the verified store the order is `store_unavailable`.
+- Budget (`EasyOrdersRateLimiter`): 30 requests a minute per integration, 20 of them for lookups so outcome writes keep headroom, on the clock minute. In memory, per instance.
+- `429`: the integration's calls pause for `Retry-After`, or until the next clock minute plus up to 10 seconds, and the job is rescheduled for that delay. Timeout, network failure and `5xx` use the queue's normal backoff. The inactive-store `400` sets health `store_inactive` and retries after 5 minutes. `401` and `403` set health `credentials_rejected` and are not retried.
+
+**Queue contract change.** A normalizer may now answer asynchronously and may return `{ skipped: true, reason }`. One that throws `RetryAfterError` (`src/shared/http/bounded-http.ts`) has its job moved to the delayed set for that long, at most 5 minutes and at most 5 times, without spending an attempt; after that it fails and retries like any other error. The Shopify and Standalone normalizers are unchanged.
+
+**Sources that must not send.** A source that is not active is refused at the route and skipped in the worker (`integration_inactive`). One whose onboarding is not complete is accepted and skipped by the hub (`onboarding_incomplete`), like every other source.
+
+**Migration.** `0048_easyorders_ingestion.sql` adds `currency`, `phone_country`, `rejected_deliveries` and `last_rejected_at` to `easyorders_connections` and allows the health value `credentials_rejected`. Additive and re-runnable. Rollback: move any `credentials_rejected` row back to `ok`, restore the two-value check, drop the four columns.
+
+**Logs.** `easyorders-webhook-accept` (outcome, `reason` or `errorCode`), `easyorders-webhook-not-persisted`, `easyorders-order-lookup`, `easyorders-order-normalize`, `easyorders-order-settings-save`, `webhook-job-defer`. None carries the token, a secret, the key or the payload.
+
+**Validate.** `scripts/test-easyorders-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/webhook-queue`.
 
 ## Server API Guide (US-05-05)
 

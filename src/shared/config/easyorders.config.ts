@@ -9,6 +9,11 @@ export const EASYORDERS_CONFIG = 'easyOrders';
  */
 export interface EasyOrdersConfig {
   enabled: boolean;
+  /**
+   * Order-webhook ingestion (US-06-03), switched separately from connect so
+   * a store can be connected and checked before its orders are accepted.
+   */
+  ingestionEnabled: boolean;
   pilotOrgIds: readonly string[];
   /** Public base of this API: the install callback and webhook URLs. */
   publicApiBaseUrl: string;
@@ -60,6 +65,10 @@ export function parseEasyOrdersConfig(
   if (flag && flag !== 'true' && flag !== 'false')
     errors.push('EASYORDERS_CONNECT_ENABLED must be true or false.');
   const enabled = flag === 'true';
+  const ingestionFlag = read('EASYORDERS_INGESTION_ENABLED');
+  if (ingestionFlag && ingestionFlag !== 'true' && ingestionFlag !== 'false')
+    errors.push('EASYORDERS_INGESTION_ENABLED must be true or false.');
+  const ingestionEnabled = ingestionFlag === 'true';
 
   const pilotOrgIds = [
     ...new Set(
@@ -99,12 +108,23 @@ export function parseEasyOrdersConfig(
         'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders is enabled.',
       );
   }
+  // Every webhook is checked against a decrypted secret.
+  if (ingestionEnabled && !enabled && !read('SHOPIFY_TOKEN_ENCRYPTION_KEY'))
+    errors.push(
+      'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders ingestion is enabled.',
+    );
 
   if (errors.length)
     throw new Error(
       `Invalid environment configuration:\n - ${errors.join('\n - ')}`,
     );
-  return { enabled, pilotOrgIds, publicApiBaseUrl, appBaseUrl };
+  return {
+    enabled,
+    ingestionEnabled,
+    pilotOrgIds,
+    publicApiBaseUrl,
+    appBaseUrl,
+  };
 }
 
 /**

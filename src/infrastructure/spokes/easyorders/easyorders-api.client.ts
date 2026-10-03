@@ -10,6 +10,9 @@ export const EASYORDERS_INACTIVE_STORE_MESSAGE =
   'Store not active or has over due';
 
 const PROBE_DEADLINE_MS = 10_000;
+const LOOKUP_DEADLINE_MS = 10_000;
+/** A `Retry-After` longer than this is not believed. */
+const MAX_RETRY_AFTER_MS = 10 * 60_000;
 
 export const EASYORDERS_HTTP = Symbol('EASYORDERS_HTTP');
 export type EasyOrdersHttp = typeof fetch;
@@ -26,6 +29,22 @@ export type EasyOrdersKeyProbe =
   | 'store_inactive'
   | 'rejected'
   | 'unavailable';
+
+/**
+ * - `found`: the order, as EasyOrders returned it.
+ * - `not_found`: this key cannot see such an order.
+ * - `store_inactive`: the key is recognized, the store is not active.
+ * - `credentials_rejected`: 401 or 403. Permanent until the merchant acts.
+ * - `rate_limited`: 429, with the wait EasyOrders asked for if it gave one.
+ * - `unavailable`: no verdict (timeout, network failure, 5xx, anything else).
+ */
+export type EasyOrdersOrderLookup =
+  | { kind: 'found'; order: Record<string, unknown> }
+  | { kind: 'not_found' }
+  | { kind: 'store_inactive' }
+  | { kind: 'credentials_rejected' }
+  | { kind: 'rate_limited'; retryAfterMs: number | null }
+  | { kind: 'unavailable' };
 
 @Injectable()
 export class EasyOrdersApiClient {
@@ -66,6 +85,84 @@ export class EasyOrdersApiClient {
       return 'unavailable';
     }
   }
+
+  /**
+   * Reads one order with the integration's own key. One attempt with a
+   * deadline: the caller owns the retry, through the queue and the rate
+   * budget. The key and the error bodies never leave this method.
+   */
+  async getOrder(
+    apiKey: string,
+    orderId: string,
+    now: () => number = Date.now,
+  ): Promise<EasyOrdersOrderLookup> {
+    try {
+      return await boundedCall<EasyOrdersOrderLookup>(
+        async () => {
+          const response = await this.http(
+            `${EASYORDERS_API_BASE}/orders/${encodeURIComponent(orderId)}`,
+            {
+              method: 'GET',
+              headers: { 'Api-Key': apiKey, Accept: 'application/json' },
+              redirect: 'error',
+              signal: AbortSignal.timeout(LOOKUP_DEADLINE_MS),
+            },
+          );
+          if (response.ok) {
+            const order = await readObject(response);
+            return order ? { kind: 'found', order } : { kind: 'unavailable' };
+          }
+          if (response.status === 429)
+            return {
+              kind: 'rate_limited',
+              retryAfterMs: parseRetryAfter(
+                response.headers.get('retry-after'),
+                now(),
+              ),
+            };
+          if (response.status === 401 || response.status === 403)
+            return { kind: 'credentials_rejected' };
+          if (response.status === 404) return { kind: 'not_found' };
+          if (response.status === 400 && (await isInactiveStore(response)))
+            return { kind: 'store_inactive' };
+          return { kind: 'unavailable' };
+        },
+        { policy: NO_RETRY },
+      );
+    } catch {
+      return { kind: 'unavailable' };
+    }
+  }
+}
+
+async function readObject(
+  response: Response,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const body: unknown = await response.json();
+    return body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Seconds or an HTTP date; null when absent, unreadable or implausible. */
+export function parseRetryAfter(
+  header: string | null,
+  now: number,
+): number | null {
+  const value = header?.trim();
+  if (!value) return null;
+  const delayMs = /^\d+$/.test(value)
+    ? Number(value) * 1_000
+    : Date.parse(value) - now;
+  return Number.isFinite(delayMs) &&
+    delayMs >= 0 &&
+    delayMs <= MAX_RETRY_AFTER_MS
+    ? delayMs
+    : null;
 }
 
 async function isInactiveStore(response: Response): Promise<boolean> {

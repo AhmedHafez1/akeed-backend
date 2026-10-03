@@ -11,11 +11,14 @@ import { PhoneService } from '../../shared/services/phone.service';
 import { WebhookDispatchService } from './webhook-dispatch.service';
 import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service';
 import { StandaloneManualOrderNormalizer } from './normalizers/standalone-manual-order.normalizer';
+import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
+import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorders/easyorders-order.normalizer';
 
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
+    EasyOrdersIngestionModule,
 
     BullModule.registerQueue({ name: WEBHOOK_QUEUE_NAME }),
   ],
@@ -34,8 +37,13 @@ import { StandaloneManualOrderNormalizer } from './normalizers/standalone-manual
       useFactory: (
         shopify: ShopifyOrderNormalizer,
         standalone: StandaloneManualOrderNormalizer,
-      ) => [shopify, standalone],
-      inject: [ShopifyOrderNormalizer, StandaloneManualOrderNormalizer],
+        easyOrders: EasyOrdersOrderNormalizer,
+      ) => [shopify, standalone, easyOrders],
+      inject: [
+        ShopifyOrderNormalizer,
+        StandaloneManualOrderNormalizer,
+        EasyOrdersOrderNormalizer,
+      ],
     },
   ],
   exports: [

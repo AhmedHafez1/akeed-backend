@@ -51,6 +51,20 @@ export function backoffDelay(
 
 export class RetryableProviderError extends Error {}
 
+/**
+ * A provider said, or its rate budget says, "not before this long". Backoff
+ * cannot express that: a queue worker that sees this error reschedules the job
+ * for `delayMs` from now instead of spending one of its attempts.
+ */
+export class RetryAfterError extends RetryableProviderError {
+  constructor(
+    message: string,
+    readonly delayMs: number,
+  ) {
+    super(message);
+  }
+}
+
 export interface BoundedCallOptions {
   policy?: RetryPolicy;
   sleep?: (ms: number) => Promise<void>;

@@ -258,6 +258,8 @@ describe('order imports PostgreSQL contract', () => {
         '0046_integration_api_keys.sql',
         // US-06-02: both tables reference integrations; proves 0047 re-runs.
         '0047_easyorders_connection.sql',
+        // US-06-03: alters the EasyOrders connection table; proves 0048 re-runs.
+        '0048_easyorders_ingestion.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

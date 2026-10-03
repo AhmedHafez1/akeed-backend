@@ -9,6 +9,7 @@ import {
   EASYORDERS_CONFIG,
   type EasyOrdersConfig,
 } from '../../../shared/config/easyorders.config';
+import { PhoneService } from '../../../shared/services/phone.service';
 import type { EasyOrdersApiClient } from './easyorders-api.client';
 import {
   EASYORDERS_INSTALL_TTL_MS,
@@ -53,6 +54,7 @@ function pendingInstall(
 function createService(settings: Partial<EasyOrdersConfig> = {}) {
   const config: EasyOrdersConfig = {
     enabled: true,
+    ingestionEnabled: false,
     pilotOrgIds: [ORG_ID],
     publicApiBaseUrl: 'https://api.akeed.test',
     appBaseUrl: 'https://app.akeed.test',
@@ -66,6 +68,7 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
     connect: jest.fn(),
     getOverview: jest.fn(),
     saveWebhookSecrets: jest.fn(),
+    saveOrderSettings: jest.fn(),
   };
   const api = { probeKey: jest.fn() };
   const configService = {
@@ -76,6 +79,7 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
     connections as unknown as EasyOrdersConnectionsRepository,
     api as unknown as EasyOrdersApiClient,
     configService as unknown as ConfigService,
+    new PhoneService(),
   );
   return { service, connections, api };
 }
@@ -326,6 +330,68 @@ describe('EasyOrdersAuthService', () => {
     });
   });
 
+  describe('saveOrderSettings', () => {
+    it('stores the currency and phone country in canonical form', async () => {
+      const { service, connections } = createService();
+      connections.saveOrderSettings.mockResolvedValue(true);
+      connections.getOverview.mockResolvedValue({
+        organizationName: 'Noor Store',
+        sourcePlatforms: ['easyorders'],
+        latestPending: undefined,
+        connection: undefined,
+      });
+
+      await service.saveOrderSettings(owner, {
+        currency: 'egp',
+        phoneCountry: 'eg',
+      });
+
+      expect(connections.saveOrderSettings).toHaveBeenCalledWith(ORG_ID, {
+        currency: 'EGP',
+        phoneCountry: 'EG',
+      });
+    });
+
+    it.each([
+      [{ currency: 'XXX', phoneCountry: 'EG' }, ['currency']],
+      [{ currency: 'EGP', phoneCountry: 'ZZ' }, ['phoneCountry']],
+      [{ currency: 'XXX', phoneCountry: 'ZZ' }, ['currency', 'phoneCountry']],
+    ])(
+      'refuses unsupported values %j without storing',
+      async (input, fields) => {
+        const { service, connections } = createService();
+
+        const error = await service
+          .saveOrderSettings(owner, input)
+          .catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getResponse()).toMatchObject({
+          code: 'EASYORDERS_ORDER_SETTINGS_INVALID',
+          fields,
+        });
+        expect(connections.saveOrderSettings).not.toHaveBeenCalled();
+      },
+    );
+
+    it('is refused for a viewer and for an organization without a connection', async () => {
+      const { service, connections } = createService();
+      const input = { currency: 'EGP', phoneCountry: 'EG' };
+
+      expect(
+        await codeOf(
+          service.saveOrderSettings({ ...owner, role: 'viewer' }, input),
+        ),
+      ).toBe('EASYORDERS_ROLE_REQUIRED');
+      expect(connections.saveOrderSettings).not.toHaveBeenCalled();
+
+      connections.saveOrderSettings.mockResolvedValue(false);
+      expect(await codeOf(service.saveOrderSettings(owner, input))).toBe(
+        'EASYORDERS_NOT_CONNECTED',
+      );
+    });
+  });
+
   describe('getStatus', () => {
     it('reports a connection without any credential, hash or token', async () => {
       const { service, connections } = createService();
@@ -344,6 +410,10 @@ describe('EasyOrdersAuthService', () => {
           ordersWebhookSecretEncrypted: 'v1:ciphertext-orders',
           statusWebhookSecretEncrypted: null,
           health: 'store_inactive',
+          currency: 'EGP',
+          phoneCountry: null,
+          rejectedDeliveries: 3,
+          lastRejectedAt: NOW.toISOString(),
           connectedBy: 'user-1',
           createdAt: NOW.toISOString(),
           updatedAt: NOW.toISOString(),
@@ -365,6 +435,9 @@ describe('EasyOrdersAuthService', () => {
           webhookUrlHint: 'abc123',
           ordersSecretSet: true,
           statusSecretSet: false,
+          currency: 'EGP',
+          phoneCountry: null,
+          rejectedDeliveries: 3,
           connectedAt: NOW.toISOString(),
         },
       });

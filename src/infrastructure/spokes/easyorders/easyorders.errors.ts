@@ -16,7 +16,12 @@ export type EasyOrdersErrorCode =
   | 'EASYORDERS_PROVIDER_UNAVAILABLE'
   | 'EASYORDERS_STORE_UNAVAILABLE'
   | 'EASYORDERS_NOT_CONNECTED'
-  | 'EASYORDERS_SECRETS_INVALID';
+  | 'EASYORDERS_SECRETS_INVALID'
+  | 'EASYORDERS_ORDER_SETTINGS_INVALID'
+  | 'EASYORDERS_INGESTION_UNAVAILABLE'
+  | 'EASYORDERS_WEBHOOK_UNAUTHORIZED'
+  | 'EASYORDERS_WEBHOOK_STORE_MISMATCH'
+  | 'EASYORDERS_WEBHOOK_MALFORMED';
 
 /** Used with `assertOrganizationWriteAllowed`; viewers are read-only. */
 export const EASYORDERS_ROLE_REQUIRED = {
@@ -38,6 +43,11 @@ const STATUS: Record<EasyOrdersErrorCode, HttpStatus> = {
   EASYORDERS_STORE_UNAVAILABLE: HttpStatus.CONFLICT,
   EASYORDERS_NOT_CONNECTED: HttpStatus.NOT_FOUND,
   EASYORDERS_SECRETS_INVALID: HttpStatus.BAD_REQUEST,
+  EASYORDERS_ORDER_SETTINGS_INVALID: HttpStatus.BAD_REQUEST,
+  EASYORDERS_INGESTION_UNAVAILABLE: HttpStatus.NOT_FOUND,
+  EASYORDERS_WEBHOOK_UNAUTHORIZED: HttpStatus.UNAUTHORIZED,
+  EASYORDERS_WEBHOOK_STORE_MISMATCH: HttpStatus.FORBIDDEN,
+  EASYORDERS_WEBHOOK_MALFORMED: HttpStatus.BAD_REQUEST,
 };
 
 const MESSAGES: Record<EasyOrdersErrorCode, string> = {
@@ -60,6 +70,15 @@ const MESSAGES: Record<EasyOrdersErrorCode, string> = {
     'This EasyOrders store is already connected to another account.',
   EASYORDERS_NOT_CONNECTED: 'EasyOrders is not connected.',
   EASYORDERS_SECRETS_INVALID: 'The webhook secrets are invalid.',
+  EASYORDERS_ORDER_SETTINGS_INVALID:
+    'The store currency or phone country is invalid.',
+  EASYORDERS_INGESTION_UNAVAILABLE: 'Not Found',
+  // One answer for an unknown or rotated URL token, a disconnected source and
+  // a missing or wrong secret: it never says which.
+  EASYORDERS_WEBHOOK_UNAUTHORIZED: 'The webhook is not authorized.',
+  EASYORDERS_WEBHOOK_STORE_MISMATCH:
+    'The webhook does not belong to the connected store.',
+  EASYORDERS_WEBHOOK_MALFORMED: 'The webhook payload is not supported.',
 };
 
 const ERROR_NAME: Partial<Record<HttpStatus, string>> = {

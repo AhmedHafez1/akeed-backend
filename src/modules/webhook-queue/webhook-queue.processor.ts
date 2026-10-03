@@ -1,6 +1,6 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import {
   WEBHOOK_ORDER_NORMALIZERS,
@@ -16,6 +16,14 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import { RetryAfterError } from '../../shared/http/bounded-http';
+
+/**
+ * A job that keeps being told "later" is rescheduled this many times without
+ * spending an attempt; after that it fails and retries like any other error.
+ */
+export const WEBHOOK_JOB_MAX_DEFERRALS = 5;
+const WEBHOOK_JOB_MAX_DEFERRAL_MS = 5 * 60_000;
 
 /**
  * BullMQ consumer that processes webhook jobs.
@@ -28,6 +36,8 @@ import {
  *
  * Retry semantics are handled by BullMQ (exponential backoff, 5 attempts).
  * After all retries are exhausted the `failed` handler persists the error.
+ * A normalizer that throws `RetryAfterError` is rescheduled for the delay it
+ * names instead: the backoff is shorter than a provider's rate window.
  */
 @Processor(WEBHOOK_QUEUE_NAME, {
   concurrency: 10,
@@ -60,7 +70,57 @@ export class WebhookQueueProcessor extends WorkerHost {
     );
   }
 
-  async process(job: Job<WebhookJobPayload>): Promise<void> {
+  async process(job: Job<WebhookJobPayload>, token?: string): Promise<void> {
+    try {
+      await this.handle(job);
+    } catch (error) {
+      if (
+        error instanceof RetryAfterError &&
+        (await this.defer(job, token, error))
+      )
+        throw new DelayedError();
+      throw error;
+    }
+  }
+
+  /**
+   * Releases the event and moves the job to the delayed set. Answers false
+   * when the job cannot be rescheduled, so the caller fails it normally.
+   */
+  private async defer(
+    job: Job<WebhookJobPayload>,
+    token: string | undefined,
+    error: RetryAfterError,
+  ): Promise<boolean> {
+    const deferrals = job.data.deferrals ?? 0;
+    if (!token || deferrals >= WEBHOOK_JOB_MAX_DEFERRALS) return false;
+    const delayMs = Math.min(
+      Math.max(Math.ceil(error.delayMs), 0),
+      WEBHOOK_JOB_MAX_DEFERRAL_MS,
+    );
+    await this.webhookEventsRepo.markProcessingRetryable(
+      job.data.webhookEventId,
+      error.message,
+      job.attemptsMade,
+    );
+    await job.updateData({ ...job.data, deferrals: deferrals + 1 });
+    await job.moveToDelayed(Date.now() + delayMs, token);
+    this.logger.warn(
+      buildBackendLog(WebhookQueueProcessor.name, {
+        action: 'webhook-job-defer',
+        outcome: 'skipped',
+        jobId: String(job.id),
+        webhookEventId: job.data.webhookEventId,
+        platform: job.data.platform,
+        reason: error.message,
+        delayMs,
+        deferrals: deferrals + 1,
+      }),
+    );
+    return true;
+  }
+
+  private async handle(job: Job<WebhookJobPayload>): Promise<void> {
     const { data } = job;
     const claim = await this.webhookEventsRepo.claimForProcessing(
       data.webhookEventId,
@@ -253,7 +313,7 @@ export class WebhookQueueProcessor extends WorkerHost {
       return false;
     }
 
-    const normalizedOrder = normalizer.normalizeOrder(
+    const normalizedOrder = await normalizer.normalizeOrder(
       data.rawPayload,
       integration.id,
       integration.orgId,
@@ -263,6 +323,25 @@ export class WebhookQueueProcessor extends WorkerHost {
       await this.webhookEventsRepo.markSkipped(
         data.webhookEventId,
         'normalisation_failed',
+      );
+      return false;
+    }
+
+    if ('skipped' in normalizedOrder) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-create-handle',
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          orgId: data.orgId,
+          integrationId: data.integrationId,
+          reason: normalizedOrder.reason,
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        normalizedOrder.reason,
       );
       return false;
     }
