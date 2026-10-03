@@ -131,4 +131,4 @@ No frontend file changed. What the story's frontend note asks for is covered as 
 - No migration. The backend change is the two fixes above; the rest is tests, scripts and documents.
 - Rollback of the fixes is reverting the commit. Defect 2's fix writes nothing, so no stored data needs repair either way.
 - Stopping the API without removing it, keeping every accepted order: checklist section 5.
-- The gate is complete, so E08 may reuse the ingestion boundary.
+- The gate is complete, so E06 may reuse the ingestion boundary.

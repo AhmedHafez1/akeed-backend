@@ -18,7 +18,7 @@ As a merchant, I want verification scheduling and usage to remain reliable, so t
 
 Current billing eligibility, usage reservation, delays, follow-ups, quiet hours and environment sender.
 
-**Out of scope:** Tenant-owned credentials or changing existing automation defaults.
+**Out of scope:** Changing existing automation defaults.
 
 ## Acceptance criteria
 
@@ -42,22 +42,22 @@ Current billing eligibility, usage reservation, delays, follow-ups, quiet hours 
 
 ## Migration and rollout
 
-Tests become required before E06 sender changes; document any existing ambiguity rather than hiding it.
+Tests are required before any sender change; document any existing ambiguity rather than hiding it.
 
 ## Evidence and references
 
-**Implementation evidence (2026-08-31):** [Entitlement, retry, sender and message-identity checks](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md). US-06-02 owns durable dispatch/message identity and uncertain-send reconciliation; urgent reproduced reliability defects must be triaged independently of the merchant-owned sender rollout.
+**Implementation evidence (2026-08-31):** [Entitlement, retry, sender and message-identity checks](../../E01-BASELINE-EVIDENCE.md). The durable dispatch ledger was added later by [US-04-03](../04-standalone-manual-order-mvp/US-04-03-manual-order-verification-lifecycle.md); urgent reproduced reliability defects must be triaged independently.
 
 **VERIFIED FROM CODE:** Sending uses global environment credentials; follow-up persistence replaces the verification's current message ID.
 
-- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../akeed-backend/src/modules/verification-core/verification-send.service.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
-- [akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts](../../akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts)
-- [akeed-backend/src/infrastructure/database/repositories/verifications.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/verifications.repository.ts)
-- [akeed-backend/src/shared/utils/billing.util.ts](../../akeed-backend/src/shared/utils/billing.util.ts)
+- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../../src/modules/verification-core/verification-send.service.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts](../../../src/infrastructure/spokes/meta/whatsapp.service.ts)
+- [akeed-backend/src/infrastructure/database/repositories/verifications.repository.ts](../../../src/infrastructure/database/repositories/verifications.repository.ts)
+- [akeed-backend/src/shared/utils/billing.util.ts](../../../src/shared/utils/billing.util.ts)
 
-**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02/E06 reliability work remains open; repeat the gate on the next candidate.
+**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02 reliability work remains open; repeat the gate on the next candidate.
 
 **EXTERNAL PLATFORM DEPENDENCY:** Revalidate relevant provider behavior before enabling live traffic. These primary sources are reference inputs, not proof of this integration's readiness.
 

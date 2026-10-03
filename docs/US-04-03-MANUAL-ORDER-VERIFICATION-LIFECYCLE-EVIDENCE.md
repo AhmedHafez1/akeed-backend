@@ -45,4 +45,3 @@ Rollback is application-only: disable new manual processing and deploy the prior
 - No production migration or target-environment worker rollout was performed.
 - No live Meta send, delayed callback or staff reconciliation was performed.
 - US-04-04 still owns merchant rendering and retry controls; US-04-05 owns end-to-end merchant acceptance.
-- The dispatch ledger is partial US-06-02 groundwork only. Tenant connection identity, merchant sender selection, credential lifecycle and the E06 release gate remain incomplete.

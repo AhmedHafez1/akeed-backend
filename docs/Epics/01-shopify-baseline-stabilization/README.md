@@ -6,7 +6,7 @@
 - **Prerequisite epics:** None
 - **Roadmap:** [Expansion backlog](../README.md)
 
-**Adopted delivery plan (2026-08-31):** [Scope review and implementation plan](REVIEW-AND-IMPLEMENTATION-PLAN.md) is implemented as package A (US-01-01), B (US-01-02/03), C (US-01-04/05), and the US-01-06 release gate. See the [single implementation evidence record](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md) for tests, repeated release checks and known limitations.
+**Adopted delivery plan (2026-08-31):** [Scope review and implementation plan](REVIEW-AND-IMPLEMENTATION-PLAN.md) is implemented as package A (US-01-01), B (US-01-02/03), C (US-01-04/05), and the US-01-06 release gate. See the [single implementation evidence record](../../E01-BASELINE-EVIDENCE.md) for tests, repeated release checks and known limitations.
 
 **Closure validation (2026-08-31):** The repeated automated gate passes: 354 backend tests, 5 isolated PostgreSQL contracts, backend build/full types/non-fixing lint and frontend types/build/lint. Authenticated Chrome checks cover both modes and locales using the owner's existing development sessions; standalone organization bootstrap passes. Two frontend smoke findings are fixed: the standalone settings Polaris-loader crash and embedded preview key warning. Eight isolated cancellation sequences pass through the real hooks/tables with providers excluded. Transient development failures and remaining baseline limitations are preserved in the evidence. This completes E01's compatibility gate, not a deployment or live-provider reliability approval.
 
@@ -18,7 +18,7 @@ Protect the revenue-producing Shopify workflow with deterministic evidence befor
 
 Test baseline, webhook and normalization characterization, lifecycle semantics, entitlement/automation compatibility, and dual-mode release checks.
 
-**Out of scope:** Platform refactoring, new integrations, tenant-owned senders and billing/provider behavior changes. Closure includes the two small frontend rendering corrections found by the required smoke gate; production billing and Shopify GraphQL behavior remain unchanged.
+**Out of scope:** Platform refactoring, new integrations and billing/provider behavior changes. Closure includes the two small frontend rendering corrections found by the required smoke gate; production billing and Shopify GraphQL behavior remain unchanged.
 
 ## Prioritized user stories
 
@@ -47,4 +47,4 @@ No calendar estimate or staffing commitment is implied by priority.
 
 ## Evidence discipline
 
-The product sequence is approved. E01 implementation and release-gate evidence is dated 2026-08-31 and identifies the actual commits plus uncommitted closure changes. The prior review and 2026-08-30 baseline remain historical. Characterization and browser checks do not establish live-provider readiness, recoverable dispatch or exactly-once sending; the linked E02/E06 repairs remain open.
+The product sequence is approved. E01 implementation and release-gate evidence is dated 2026-08-31 and identifies the actual commits plus uncommitted closure changes. The prior review and 2026-08-30 baseline remain historical. Characterization and browser checks do not establish live-provider readiness, recoverable dispatch or exactly-once sending; the linked E02 repairs remain open.

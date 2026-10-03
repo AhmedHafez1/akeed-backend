@@ -1,9 +1,9 @@
-# E09 — WooCommerce Integration
+# E07 — WooCommerce Integration
 
 - **Horizon:** LATER
 - **Status:** Backlog
 - **Stories:** 6
-- **Prerequisite epics:** [E08 — EasyOrders Integration](../08-easyorders-integration/README.md)
+- **Prerequisite epics:** [E06 — EasyOrders Integration](../06-easyorders-integration/README.md)
 - **Roadmap:** [Expansion backlog](../README.md)
 
 ## Business objective
@@ -22,12 +22,12 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [US-09-01 — Validate WooCommerce hosting, authentication and mappings](US-09-01-woocommerce-compatibility-and-auth-validation.md) | P0 | Validation spike | [US-08-06](../08-easyorders-integration/US-08-06-easyorders-contract-and-pilot-release-gate.md) | Backlog |
-| 2 | [US-09-02 — Connect WooCommerce through application authentication](US-09-02-woocommerce-application-auth-connection.md) | P0 | Feature | [US-09-01](../09-woocommerce-integration/US-09-01-woocommerce-compatibility-and-auth-validation.md) | Backlog |
-| 3 | [US-09-03 — Ingest signed WooCommerce order webhooks](US-09-03-woocommerce-signed-webhook-ingestion.md) | P0 | Feature | [US-09-02](../09-woocommerce-integration/US-09-02-woocommerce-application-auth-connection.md) | Backlog |
-| 4 | [US-09-04 — Apply approved verification outcomes in WooCommerce](US-09-04-woocommerce-outcome-status-adapter.md) | P0 | Feature | [US-09-03](../09-woocommerce-integration/US-09-03-woocommerce-signed-webhook-ingestion.md) | Backlog |
-| 5 | [US-09-05 — Provide WooCommerce diagnostics and reconnection](US-09-05-woocommerce-diagnostics-and-reconnection.md) | P1 | Feature | [US-09-04](../09-woocommerce-integration/US-09-04-woocommerce-outcome-status-adapter.md) | Backlog |
-| 6 | [US-09-06 — Qualify WooCommerce for pilot release](US-09-06-woocommerce-compatibility-and-pilot-release-gate.md) | P0 | Quality gate | [US-09-05](../09-woocommerce-integration/US-09-05-woocommerce-diagnostics-and-reconnection.md) | Backlog |
+| 1 | [US-07-01 — Validate WooCommerce hosting, authentication and mappings](US-07-01-woocommerce-compatibility-and-auth-validation.md) | P0 | Validation spike | [US-06-06](../06-easyorders-integration/US-06-06-easyorders-contract-and-pilot-release-gate.md) | Backlog |
+| 2 | [US-07-02 — Connect WooCommerce through application authentication](US-07-02-woocommerce-application-auth-connection.md) | P0 | Feature | [US-07-01](../07-woocommerce-integration/US-07-01-woocommerce-compatibility-and-auth-validation.md) | Backlog |
+| 3 | [US-07-03 — Ingest signed WooCommerce order webhooks](US-07-03-woocommerce-signed-webhook-ingestion.md) | P0 | Feature | [US-07-02](../07-woocommerce-integration/US-07-02-woocommerce-application-auth-connection.md) | Backlog |
+| 4 | [US-07-04 — Apply approved verification outcomes in WooCommerce](US-07-04-woocommerce-outcome-status-adapter.md) | P0 | Feature | [US-07-03](../07-woocommerce-integration/US-07-03-woocommerce-signed-webhook-ingestion.md) | Backlog |
+| 5 | [US-07-05 — Provide WooCommerce diagnostics and reconnection](US-07-05-woocommerce-diagnostics-and-reconnection.md) | P1 | Feature | [US-07-04](../07-woocommerce-integration/US-07-04-woocommerce-outcome-status-adapter.md) | Backlog |
+| 6 | [US-07-06 — Qualify WooCommerce for pilot release](US-07-06-woocommerce-compatibility-and-pilot-release-gate.md) | P0 | Quality gate | [US-07-05](../07-woocommerce-integration/US-07-05-woocommerce-diagnostics-and-reconnection.md) | Backlog |
 
 ## Measurable exit criteria
 

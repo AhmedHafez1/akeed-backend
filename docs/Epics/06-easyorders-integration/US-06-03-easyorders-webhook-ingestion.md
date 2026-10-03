@@ -1,12 +1,12 @@
-# US-08-03 — Ingest and normalize EasyOrders order webhooks
+# US-06-03 — Ingest and normalize EasyOrders order webhooks
 
-- **Epic:** [E08 — EasyOrders Integration](README.md)
+- **Epic:** [E06 — EasyOrders Integration](README.md)
 - **Delivery rank:** 3 of 6
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-08-02](../08-easyorders-integration/US-08-02-easyorders-authorized-connection.md)
+- **Dependencies:** [US-06-02](../06-easyorders-integration/US-06-02-easyorders-authorized-connection.md)
 
 ## User story and value
 
@@ -49,11 +49,11 @@ Start with captured synthetic fixtures and qualified pilot stores; keep unsuppor
 
 **VERIFIED FROM CODE:** The existing queue accepts registered normalizers but currently registers only Shopify; NormalizedOrder already carries the target fields.
 
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../../src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

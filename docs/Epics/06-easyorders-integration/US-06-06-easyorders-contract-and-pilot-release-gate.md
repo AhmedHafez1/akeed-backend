@@ -1,12 +1,12 @@
-# US-08-06 — Qualify the EasyOrders adapter for pilot release
+# US-06-06 — Qualify the EasyOrders adapter for pilot release
 
-- **Epic:** [E08 — EasyOrders Integration](README.md)
+- **Epic:** [E06 — EasyOrders Integration](README.md)
 - **Delivery rank:** 6 of 6
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
 - **Status:** Backlog
-- **Dependencies:** [US-08-05](../08-easyorders-integration/US-08-05-easyorders-onboarding-health-and-disconnect.md)
+- **Dependencies:** [US-06-05](../06-easyorders-integration/US-06-05-easyorders-onboarding-health-and-disconnect.md)
 
 ## User story and value
 
@@ -18,7 +18,7 @@ As a product owner, I want end-to-end proof of the first native expansion adapte
 
 Adapter contracts, installation/ingestion/outcome journey, fault recovery and live-pilot evidence.
 
-**Out of scope:** Broad rollout, E07 completion as a prerequisite, and unsupported provider guarantees.
+**Out of scope:** Broad rollout and unsupported provider guarantees.
 
 ## Acceptance criteria
 
@@ -26,7 +26,7 @@ Adapter contracts, installation/ingestion/outcome journey, fault recovery and li
 2. Shared adapter contracts plus EasyOrders-specific authentication/mapping fixtures all pass.
 3. Duplicate/replayed webhooks, wrong-store credentials, key revocation, rate limits and queue/provider outages cannot cross tenants or duplicate business effects.
 4. Disconnect/reconnect preserves history and no automatic no_reply cancellation occurs.
-5. E01/E04/E05 regression gates pass and unresolved US-08-01 platform questions block release.
+5. E01/E04/E05 regression gates pass and unresolved US-06-01 platform questions block release.
 
 ## Implementation notes
 
@@ -49,12 +49,12 @@ Use fresh/unprovisioned pilot organizations; WooCommerce remains later and inher
 
 **VERIFIED FROM CODE:** The code has no EasyOrders adapter; its production readiness cannot be inferred from platform enum expansion alone.
 
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

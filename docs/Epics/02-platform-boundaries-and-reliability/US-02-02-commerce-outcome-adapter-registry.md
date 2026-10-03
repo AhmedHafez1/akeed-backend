@@ -48,11 +48,11 @@ Introduce the contract behind compatibility tests before moving existing call si
 
 **VERIFIED FROM CODE:** AppModule globally binds order administration/tagging to ShopifyApiService, preventing per-integration selection.
 
-- [akeed-backend/src/app.module.ts](../../akeed-backend/src/app.module.ts)
-- [akeed-backend/src/shared/ports](../../akeed-backend/src/shared/ports)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/app.module.ts](../../../src/app.module.ts)
+- [akeed-backend/src/shared/ports](../../../src/shared/ports)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 
@@ -62,4 +62,4 @@ Introduce the contract behind compatibility tests before moving existing call si
 
 **Implemented 2026-09-02:** The backend now has a capability-aware, in-process outcome registry selected from the persisted order integration, source-relationship validation, typed remote synchronization results, safe structured logging, and explicit no-call results for unsupported or invalid dispatch. Matching frontend models are defined for later UI adoption. Existing Shopify call sites remain on their compatibility path until US-02-03.
 
-The detailed [validation and rollback record](../../akeed-backend/docs/US-02-02-COMMERCE-OUTCOME-REGISTRY-EVIDENCE.md) records 399 passing backend tests, successful backend/frontend builds and static checks, and the unavailable dedicated Shopify contract run. That command remains pending because the isolated `E01_TEST_DATABASE_URL` is not configured; the harness correctly refused to use the application database.
+The detailed [validation and rollback record](../../US-02-02-COMMERCE-OUTCOME-REGISTRY-EVIDENCE.md) records 399 passing backend tests, successful backend/frontend builds and static checks, and the unavailable dedicated Shopify contract run. That command remains pending because the isolated `E01_TEST_DATABASE_URL` is not configured; the harness correctly refused to use the application database.

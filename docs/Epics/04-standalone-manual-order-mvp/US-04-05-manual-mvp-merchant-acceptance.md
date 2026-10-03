@@ -18,7 +18,7 @@ As a product owner, I want evidence that a non-Shopify merchant can complete the
 
 Signup-to-real-order acceptance, fault recovery, permissions and dual-mode release checks.
 
-**Out of scope:** Public API launch or merchant-owned-number onboarding.
+**Out of scope:** Public API launch.
 
 ## Acceptance criteria
 
@@ -47,17 +47,17 @@ Start with assisted pilot users; rollback disables new manual entry without dele
 
 ## Evidence and references
 
-**LOCAL IMPLEMENTATION EVIDENCE:** The composed acceptance harness and sequential E04 gate are implemented. The harness passes its synthetic provider/Shopify-isolation checks; frontend typecheck, fixture typecheck, lint, isolated production build, and the live LTR select check pass. The dated record is [US-04-05 merchant acceptance evidence](../../akeed-backend/docs/US-04-05-MANUAL-MVP-MERCHANT-ACCEPTANCE-EVIDENCE.md).
+**LOCAL IMPLEMENTATION EVIDENCE:** The composed acceptance harness and sequential E04 gate are implemented. The harness passes its synthetic provider/Shopify-isolation checks; frontend typecheck, fixture typecheck, lint, isolated production build, and the live LTR select check pass. The dated record is [US-04-05 merchant acceptance evidence](../../US-04-05-MANUAL-MVP-MERCHANT-ACCEPTANCE-EVIDENCE.md).
 
 **RELEASE BLOCK:** The dedicated PostgreSQL contract is not run without `E01_TEST_DATABASE_URL`; the inherited E03/E02 gate stops at the platform migration rehearsal because Docker is unavailable; and the authorized live Meta pilot is not run because the available target Standalone source is disconnected and verification is paused. E04 and this story remain release-blocked; no completion claim is made.
 
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
-- [akeed-backend/src/modules/verifications/test-verification.service.ts](../../akeed-backend/src/modules/verifications/test-verification.service.ts)
-- [akeed-backend/src/modules/orders/orders.controller.ts](../../akeed-backend/src/modules/orders/orders.controller.ts)
-- [akeed-frontend/src/features/dashboard](../../akeed-frontend/src/features/dashboard)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-backend/src/modules/verifications/test-verification.service.ts](../../../src/modules/verifications/test-verification.service.ts)
+- [akeed-backend/src/modules/orders/orders.controller.ts](../../../src/modules/orders/orders.controller.ts)
+- [akeed-frontend/src/features/dashboard](../../../../akeed-frontend/src/features/dashboard)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
 
 **TARGET VALIDATION REQUIRED:** Authenticated owner/admin/viewer walkthroughs, both locales/directions, the disposable PostgreSQL contract, inherited E01/E02/E03 target gates, and the single approved Meta recipient pilot must be rerun and attached before release closure.
 

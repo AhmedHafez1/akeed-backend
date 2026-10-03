@@ -1,12 +1,12 @@
-# US-09-02 — Connect WooCommerce through application authentication
+# US-07-02 — Connect WooCommerce through application authentication
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 2 of 6
 - **Priority:** P0
 - **Horizon:** LATER
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-09-01](../09-woocommerce-integration/US-09-01-woocommerce-compatibility-and-auth-validation.md)
+- **Dependencies:** [US-07-01](../07-woocommerce-integration/US-07-01-woocommerce-compatibility-and-auth-validation.md)
 
 ## User story and value
 
@@ -33,7 +33,7 @@ Store URL validation, application-auth callback, encrypted consumer credentials 
 - **Backend:** Implement the core application-auth flow and restricted outbound HTTP client; reuse pending-install and credential primitives.
 - **Frontend:** Provide localized URL/setup/authorization/denial/error states and RTL-compatible guidance using existing source onboarding.
 - **Data:** Persist canonical store identity, encrypted credentials and connection state transactionally; retain original identity on same-store reconnect.
-- **Operations:** Support only US-09-01-qualified stores; revoke/clean incomplete credentials using validated procedures.
+- **Operations:** Support only US-07-01-qualified stores; revoke/clean incomplete credentials using validated procedures.
 
 ## Test requirements
 
@@ -49,11 +49,11 @@ Pilot-only; no production polling or order mutations before connection validatio
 
 **VERIFIED FROM CODE:** The shared integration/auth model can be reused, but WooCommerce authorization and outbound store-URL handling do not exist yet.
 
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/shared/utils/token-encryption.util.ts](../../akeed-backend/src/shared/utils/token-encryption.util.ts)
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/shared/utils/token-encryption.util.ts](../../../src/shared/utils/token-encryption.util.ts)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

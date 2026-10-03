@@ -1,12 +1,12 @@
-# US-09-06 — Qualify WooCommerce for pilot release
+# US-07-06 — Qualify WooCommerce for pilot release
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 6 of 6
 - **Priority:** P0
 - **Horizon:** LATER
 - **Story type:** Quality gate
 - **Status:** Backlog
-- **Dependencies:** [US-09-05](../09-woocommerce-integration/US-09-05-woocommerce-diagnostics-and-reconnection.md)
+- **Dependencies:** [US-07-05](../07-woocommerce-integration/US-07-05-woocommerce-diagnostics-and-reconnection.md)
 
 ## User story and value
 
@@ -22,7 +22,7 @@ Compatibility/security/contract tests and an authorized end-to-end pilot.
 
 ## Acceptance criteria
 
-1. Every supported configuration in US-09-01 passes authorization, REST access, signed ingestion and approved outcome synchronization.
+1. Every supported configuration in US-07-01 passes authorization, REST access, signed ingestion and approved outcome synchronization.
 2. A pilot COD order completes Akeed send/reply/status lifecycle without changing payment or fulfillment unintentionally.
 3. Forgery, SSRF, cross-tenant credentials/events, duplicates, throttling, webhook disablement and revocation are covered by automated or documented live checks.
 4. Disconnect/reconnect and queue/provider outages preserve history and do not duplicate verification or harmful status changes.
@@ -37,7 +37,7 @@ Compatibility/security/contract tests and an authorized end-to-end pilot.
 
 ## Test requirements
 
-- E09 compatibility/auth/security/status matrix plus E01, E04, E05 and E08 regressions.
+- E07 compatibility/auth/security/status matrix plus E01, E04, E05 and E06 regressions.
 - Live authorized webhook and recovery drill on each selected representative configuration.
 - Satisfy the applicable [shared Definition of Done](../README.md); record test results during implementation, not when this backlog is authored.
 
@@ -49,12 +49,12 @@ Pause new WooCommerce connections on failures while preserving other sources and
 
 **VERIFIED FROM CODE:** WooCommerce enum membership is architectural intent, not an implemented adapter; this gate requires new operational proof.
 
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts)
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../../src/modules/webhook-queue/webhook-queue.constants.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

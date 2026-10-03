@@ -1,12 +1,12 @@
-# US-08-05 — Provide EasyOrders setup and connection-health guidance
+# US-06-05 — Provide EasyOrders setup and connection-health guidance
 
-- **Epic:** [E08 — EasyOrders Integration](README.md)
+- **Epic:** [E06 — EasyOrders Integration](README.md)
 - **Delivery rank:** 5 of 6
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-08-04](../08-easyorders-integration/US-08-04-easyorders-outcome-status-adapter.md)
+- **Dependencies:** [US-06-04](../06-easyorders-integration/US-06-04-easyorders-outcome-status-adapter.md)
 
 ## User story and value
 
@@ -33,7 +33,7 @@ Source-specific onboarding, safe diagnostics, local disconnect and support guida
 - **Backend:** Expose safe integration health and capability DTOs using common onboarding/settings services.
 - **Frontend:** Extend existing source-driven skins/hooks; never create EasyOrders-specific branching inside verification core.
 - **Data:** Retain original integration/order identity and lifecycle/audit history across disconnect/reconnect.
-- **Operations:** Document provider-side removal steps validated in US-08-01 and a safe support escalation path.
+- **Operations:** Document provider-side removal steps validated in US-06-01 and a safe support escalation path.
 
 ## Test requirements
 
@@ -49,11 +49,11 @@ Ship with the native pilot; do not advertise instant self-service recovery for u
 
 **VERIFIED FROM CODE:** Platform-neutral onboarding is needed because current onboarding resolution is Shopify-specific despite reusable settings skins.
 
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
-- [akeed-frontend/src/features/onboarding](../../akeed-frontend/src/features/onboarding)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-frontend/src/features/onboarding](../../../../akeed-frontend/src/features/onboarding)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

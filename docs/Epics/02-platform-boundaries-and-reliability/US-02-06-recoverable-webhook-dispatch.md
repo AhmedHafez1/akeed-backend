@@ -47,17 +47,17 @@ Enable reconciliation cautiously on a bounded existing pending-event set; dry-ru
 
 ## Evidence and references
 
-**Implementation evidence (2026-09-03):** [US-02-06 evidence](../../akeed-backend/docs/US-02-06-RECOVERABLE-WEBHOOK-DISPATCH-EVIDENCE.md) records the PostgreSQL outbox fields, atomic dispatch/processing claims, deterministic missing-header identity, bounded reconciliation, operational SQL, and verification results.
+**Implementation evidence (2026-09-03):** [US-02-06 evidence](../../US-02-06-RECOVERABLE-WEBHOOK-DISPATCH-EVIDENCE.md) records the PostgreSQL outbox fields, atomic dispatch/processing claims, deterministic missing-header identity, bounded reconciliation, operational SQL, and verification results.
 
-**Reproduced E01 defect (2026-08-31):** [E01 evidence](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md) and the isolated PostgreSQL contract demonstrate a durable pending event after `queue.add` rejection, followed by duplicate redelivery that does not enqueue it. **Owner: E02 backend reliability implementer.** Keep this P0 recovery work prominent; E01 characterization does not repair lost dispatch.
+**Reproduced E01 defect (2026-08-31):** [E01 evidence](../../E01-BASELINE-EVIDENCE.md) and the isolated PostgreSQL contract demonstrate a durable pending event after `queue.add` rejection, followed by duplicate redelivery that does not enqueue it. **Owner: E02 backend reliability implementer.** Keep this P0 recovery work prominent; E01 characterization does not repair lost dispatch.
 
 **VERIFIED FROM CODE:** The producer inserts an event before queue.add and exits early on duplicate insertion, leaving a recovery gap.
 
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

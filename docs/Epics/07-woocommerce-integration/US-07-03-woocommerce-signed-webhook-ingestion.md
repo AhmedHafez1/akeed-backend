@@ -1,12 +1,12 @@
-# US-09-03 — Ingest signed WooCommerce order webhooks
+# US-07-03 — Ingest signed WooCommerce order webhooks
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 3 of 6
 - **Priority:** P0
 - **Horizon:** LATER
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-09-02](../09-woocommerce-integration/US-09-02-woocommerce-application-auth-connection.md)
+- **Dependencies:** [US-07-02](../07-woocommerce-integration/US-07-02-woocommerce-application-auth-connection.md)
 
 ## User story and value
 
@@ -49,12 +49,12 @@ Enable only supported topics/configurations; order-updated events cannot acciden
 
 **VERIFIED FROM CODE:** Queue normalizer registration is reusable but currently only Shopify is supplied.
 
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../../src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

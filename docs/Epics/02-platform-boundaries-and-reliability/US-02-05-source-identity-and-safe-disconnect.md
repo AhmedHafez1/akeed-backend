@@ -46,14 +46,14 @@ Repair only unambiguous mappings; stop migration on ambiguous ownership and reta
 
 ## Evidence and references
 
-Implementation, rollout and test results: [US-02-05 evidence](../../akeed-backend/docs/US-02-05-SOURCE-IDENTITY-AND-SAFE-DISCONNECT-EVIDENCE.md).
+Implementation, rollout and test results: [US-02-05 evidence](../../US-02-05-SOURCE-IDENTITY-AND-SAFE-DISCONNECT-EVIDENCE.md).
 
 **IMPLEMENTED FROM CODE:** Order lookup now scopes by organization, integration and external ID. Composite foreign keys verify source ownership, and normal source-linked history foreign keys no longer cascade integration deletion. Organization deletion and the admin lifecycle retain their explicit privacy/lifecycle cascade semantics.
 
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/orders.repository.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../akeed-backend/src/modules/verification-core/verification-send.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../../src/modules/verification-core/verification-send.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
 
 **RELEASE VALIDATION PENDING:** Local unit, PostgreSQL contract, Shopify contract, build, lint, typecheck and production UI build results are recorded in the implementation evidence. Dedicated staging preflight/migration and authenticated embedded/Standalone locale smoke checks remain open; no live source was disconnected.
 

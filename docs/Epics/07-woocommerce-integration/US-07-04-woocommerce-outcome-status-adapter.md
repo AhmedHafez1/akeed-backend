@@ -1,12 +1,12 @@
-# US-09-04 — Apply approved verification outcomes in WooCommerce
+# US-07-04 — Apply approved verification outcomes in WooCommerce
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 4 of 6
 - **Priority:** P0
 - **Horizon:** LATER
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-09-03](../09-woocommerce-integration/US-09-03-woocommerce-signed-webhook-ingestion.md)
+- **Dependencies:** [US-07-03](../07-woocommerce-integration/US-07-03-woocommerce-signed-webhook-ingestion.md)
 
 ## User story and value
 
@@ -16,7 +16,7 @@ As a WooCommerce merchant, I want verification outcomes reflected safely in my s
 
 ## Scope
 
-Capability-aware REST status updates using the mapping approved by US-09-01.
+Capability-aware REST status updates using the mapping approved by US-07-01.
 
 **Out of scope:** Marking COD orders paid/completed by default, refunds, fulfillment or automatic no-reply cancellation.
 
@@ -49,11 +49,11 @@ Start with explicitly mapped pilot states; changes to store mappings require mer
 
 **VERIFIED FROM CODE:** Existing Shopify outcomes have different tagging/cancellation semantics; the common registry must preserve those while adding WooCommerce behavior.
 
-- [akeed-backend/src/shared/ports](../../akeed-backend/src/shared/ports)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
+- [akeed-backend/src/shared/ports](../../../src/shared/ports)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

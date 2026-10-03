@@ -42,20 +42,20 @@ E02 integration/contract acceptance and phased database/application rollout rehe
 
 ## Migration and rollout
 
-E03 and E06 remain blocked until all E02 P0 exit criteria are demonstrated.
+E03 remains blocked until all E02 P0 exit criteria are demonstrated.
 
 ## Evidence and references
 
-**Implementation evidence (2026-09-03):** [US-02-07 release-gate evidence](../../akeed-backend/docs/US-02-07-PLATFORM-BOUNDARY-RELEASE-GATE-EVIDENCE.md) records the reusable adapter contract, core-without-Shopify suite, explicit boundary/recovery coverage, phased synthetic migration rehearsal, dual-mode fixture smoke, commands, results, rollback procedure, and release stop criteria. The local gate passes; the evidence retains a NO-GO decision until the listed staging and authenticated checks pass.
+**Implementation evidence (2026-09-03):** [US-02-07 release-gate evidence](../../US-02-07-PLATFORM-BOUNDARY-RELEASE-GATE-EVIDENCE.md) records the reusable adapter contract, core-without-Shopify suite, explicit boundary/recovery coverage, phased synthetic migration rehearsal, dual-mode fixture smoke, commands, results, rollback procedure, and release stop criteria. The local gate passes; the evidence retains a NO-GO decision until the listed staging and authenticated checks pass.
 
 **VERIFIED FROM CODE:** The existing registry-shaped normalizer/eligibility architecture and repository tests offer seams for these contracts.
 
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

@@ -1,12 +1,12 @@
-# US-08-04 — Synchronize approved outcomes to EasyOrders
+# US-06-04 — Synchronize approved outcomes to EasyOrders
 
-- **Epic:** [E08 — EasyOrders Integration](README.md)
+- **Epic:** [E06 — EasyOrders Integration](README.md)
 - **Delivery rank:** 4 of 6
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-08-03](../08-easyorders-integration/US-08-03-easyorders-webhook-ingestion.md)
+- **Dependencies:** [US-06-03](../06-easyorders-integration/US-06-03-easyorders-webhook-ingestion.md)
 
 ## User story and value
 
@@ -22,7 +22,7 @@ Capability-aware EasyOrders status updates and explicit local-versus-remote resu
 
 ## Acceptance criteria
 
-1. The adapter uses the US-08-01 approved mapping: customer confirmation to confirmed and customer/merchant-authorized cancellation to canceled only after side effects are validated.
+1. The adapter uses the US-06-01 approved mapping: customer confirmation to confirmed and customer/merchant-authorized cancellation to canceled only after side effects are validated.
 2. Automatic no_reply remains local/unsupported for remote cancellation unless separately approved; it never reuses merchant cancellation authority.
 3. Remote operations use the order's own integration/key and handle unsupported or invalid current states explicitly.
 4. Retryable failures retain local customer intent and visible pending/failed synchronization; remote success is not falsely reported.
@@ -49,11 +49,11 @@ Enable synchronization only for mapped pilot states; retain Shopify's distinct t
 
 **VERIFIED FROM CODE:** Current commerce actions are Shopify-specific and must move behind the common outcome contract before this adapter is added.
 
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
-- [akeed-backend/src/shared/ports](../../akeed-backend/src/shared/ports)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/shared/ports](../../../src/shared/ports)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

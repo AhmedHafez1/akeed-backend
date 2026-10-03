@@ -46,17 +46,17 @@ Treat these tests as required compatibility checks for every adapter refactor.
 
 ## Evidence and references
 
-**Implementation evidence (2026-08-31):** [Adapter and composed customer-reply checks](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md), alongside existing merchant ownership, late-reply and provider-failure tests. Merchant UI smoke evidence remains part of US-01-06.
+**Implementation evidence (2026-08-31):** [Adapter and composed customer-reply checks](../../E01-BASELINE-EVIDENCE.md), alongside existing merchant ownership, late-reply and provider-failure tests. Merchant UI smoke evidence remains part of US-01-06.
 
 **VERIFIED FROM CODE:** Customer outcomes use tagging; merchant no-reply cancellation returns shopifyJobId through a different service path.
 
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
-- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
+- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
 
-**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02/E06 reliability work remains open; repeat the gate on the next candidate.
+**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02 reliability work remains open; repeat the gate on the next candidate.
 
 **EXTERNAL PLATFORM DEPENDENCY:** Revalidate relevant provider behavior before enabling live traffic. These primary sources are reference inputs, not proof of this integration's readiness.
 

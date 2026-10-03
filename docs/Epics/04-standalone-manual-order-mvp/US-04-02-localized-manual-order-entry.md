@@ -49,13 +49,13 @@ Expose only when Standalone onboarding is ready; preserve dashboard navigation i
 
 **IMPLEMENTED AND LOCALLY VERIFIED (2026-09-05):** The Standalone dashboard now provides the localized accessible manual-order modal, permission/source fail-closed states, 30-second abort, memory-only same-token recovery, duplicate-safe success, and the corrected Standalone verifications route. The embedded Shopify skin remains unchanged.
 
-- [Manual order Standalone skin](../../akeed-frontend/src/features/orders/skins/standalone/ManualOrderEntryStandalone.tsx)
-- [Manual order state and retry hook](../../akeed-frontend/src/features/orders/domain/useManualOrderEntry.ts)
-- [Standalone dashboard integration](../../akeed-frontend/src/features/dashboard/skins/standalone/DashboardStandaloneSkin.tsx)
-- [Manual order API helper](../../akeed-frontend/src/features/orders/api/manualOrderApi.ts)
-- [Verification page permission](../../akeed-backend/src/modules/verifications/verifications.controller.ts)
-- [Implementation evidence](../../akeed-backend/docs/US-04-02-LOCALIZED-MANUAL-ORDER-ENTRY-EVIDENCE.md)
-- [UI/API recovery contract](../../akeed-backend/docs/MANUAL_ORDER_CREATION.md)
+- [Manual order Standalone skin](../../../../akeed-frontend/src/features/orders/skins/standalone/ManualOrderEntryStandalone.tsx)
+- [Manual order state and retry hook](../../../../akeed-frontend/src/features/orders/domain/useManualOrderEntry.ts)
+- [Standalone dashboard integration](../../../../akeed-frontend/src/features/dashboard/skins/standalone/DashboardStandaloneSkin.tsx)
+- [Manual order API helper](../../../../akeed-frontend/src/features/orders/api/manualOrderApi.ts)
+- [Verification page permission](../../../src/modules/verifications/verifications.controller.ts)
+- [Implementation evidence](../../US-04-02-LOCALIZED-MANUAL-ORDER-ENTRY-EVIDENCE.md)
+- [UI/API recovery contract](../../MANUAL_ORDER_CREATION.md)
 
 **LOCAL RESULT:** Frontend application and fixture typechecks, zero-warning frontend lint, production build, 22 targeted backend tests, the 590-test backend regression, backend build/non-fixing lint/structured-log checks, the E03 compatibility gate, the five-case PostgreSQL manual-order contract, and English/Arabic loopback browser checks pass.
 

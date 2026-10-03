@@ -46,16 +46,16 @@ Ship coordinated backend/frontend contract changes with a compatibility bridge i
 
 ## Evidence and references
 
-**E01 input-boundary discrepancy (2026-08-31):** The real HTTP harness proves the global whitelist removes `transactions`, although the real Shopify eligibility strategy accepts transaction-only COD evidence. [Reproduction and limits](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md). **Owner: E02 Shopify adapter implementer.** Preserve this characterization and separately review DTO/raw-payload retention when changing the adapter boundary; do not silently claim parity between direct strategy fixtures and HTTP ingestion.
+**E01 input-boundary discrepancy (2026-08-31):** The real HTTP harness proves the global whitelist removes `transactions`, although the real Shopify eligibility strategy accepts transaction-only COD evidence. [Reproduction and limits](../../E01-BASELINE-EVIDENCE.md). **Owner: E02 Shopify adapter implementer.** Preserve this characterization and separately review DTO/raw-payload retention when changing the adapter boundary; do not silently claim parity between direct strategy fixtures and HTTP ingestion.
 
-**IMPLEMENTED 2026-09-02:** Core outcomes use trusted registry dispatch; sends require the linked integration. Both dashboard hooks consume the neutral cancellation response. The controller retains `shopifyJobId` only as a temporary compatibility alias. [Implementation, tests, limits and rollout evidence](../../akeed-backend/docs/US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).
+**IMPLEMENTED 2026-09-02:** Core outcomes use trusted registry dispatch; sends require the linked integration. Both dashboard hooks consume the neutral cancellation response. The controller retains `shopifyJobId` only as a temporary compatibility alias. [Implementation, tests, limits and rollout evidence](../../US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).
 
-- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../akeed-backend/src/modules/verification-core/verification-send.service.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../akeed-backend/src/modules/verification-automation/verification-automation.processor.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
+- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../../src/modules/verification-core/verification-send.service.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/verification-automation/verification-automation.processor.ts](../../../src/modules/verification-automation/verification-automation.processor.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
 
 **RELEASE VALIDATION PENDING:** Implementation and local verification are recorded in the evidence above. The isolated PostgreSQL contract needs its dedicated environment; authenticated application smoke and live provider validation remain release checks. This story is not a live-rollout approval.
 

@@ -46,15 +46,15 @@ Do not migrate existing Shopify merchants to not_required; activation of Standal
 
 ## Evidence and references
 
-Implementation and test results: [US-02-04 evidence](../../akeed-backend/docs/US-02-04-PROVIDER-NEUTRAL-ENTITLEMENTS-EVIDENCE.md). Staff activation/backfill remains in US-03-02; this story adds no activation writer or migration.
+Implementation and test results: [US-02-04 evidence](../../US-02-04-PROVIDER-NEUTRAL-ENTITLEMENTS-EVIDENCE.md). Staff activation/backfill remains in US-03-02; this story adds no activation writer or migration.
 
 **VERIFIED FROM CODE:** BillingService is Shopify-centric while isBillingStatusActive already accepts active and not_required.
 
-- [akeed-backend/src/modules/onboarding/billing.service.ts](../../akeed-backend/src/modules/onboarding/billing.service.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-backend/src/shared/utils/billing.util.ts](../../akeed-backend/src/shared/utils/billing.util.ts)
-- [akeed-backend/src/shared/ports](../../akeed-backend/src/shared/ports)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/onboarding/billing.service.ts](../../../src/modules/onboarding/billing.service.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-backend/src/shared/utils/billing.util.ts](../../../src/shared/utils/billing.util.ts)
+- [akeed-backend/src/shared/ports](../../../src/shared/ports)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
 
 **RELEASE VALIDATION PENDING:** Local unit, HTTP, build, lint, typecheck, and isolated UI results are recorded in the implementation evidence. Dedicated PostgreSQL execution and authenticated live-app validation remain open; no live readiness is claimed.
 

@@ -5,12 +5,12 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** Done — E05 gate passed locally and the pilot is reported working as expected (product owner, 2026-10-02); see [evidence](../../US-05-06-API-RELEASE-GATE-EVIDENCE.md) and the [pilot checklist](US-05-06-pilot-checklist.md)
+- **Status:** Done — E05 gate passed locally; shipped to production 2026-10-02 and validated 2026-10-03 (product-owner-reported); see [evidence](../../US-05-06-API-RELEASE-GATE-EVIDENCE.md) and the [pilot checklist](US-05-06-pilot-checklist.md)
 - **Dependencies:** [US-05-05](US-05-05-server-integration-guide.md)
 
 ## User story and value
 
-As a product owner, I want proof that adding the API left the ingestion architecture intact and that the API is safe to pilot, so that customers can trust it with real orders and credentials and the next channel (E08) can reuse the same boundary.
+As a product owner, I want proof that adding the API left the ingestion architecture intact and that the API is safe to pilot, so that customers can trust it with real orders and credentials and the next channel (E06) can reuse the same boundary.
 
 **Business value:** The gate answers "does adding the API leave the existing ingestion architecture intact?", not only "does the API work?".
 
@@ -48,7 +48,7 @@ Cross-channel equivalence, architecture guards, tenant isolation, revocation, an
 
 ## Migration and rollout
 
-Close out as "Implemented locally — release blocked (pilot pending)" until pilot results are provided. E08 may reuse the common ingestion boundary only after this gate is complete.
+Closed as Done on the product owner's report: shipped to production 2026-10-02 and validated 2026-10-03. E06 may reuse the common ingestion boundary only after this gate is complete.
 
 ## Evidence and references
 

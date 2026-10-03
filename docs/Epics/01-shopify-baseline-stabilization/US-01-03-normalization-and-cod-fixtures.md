@@ -46,15 +46,15 @@ Characterization only; unexpected mappings require a separate product decision.
 
 ## Evidence and references
 
-**Implementation evidence (2026-08-31):** [Real phone/normalizer/eligibility fixtures](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md). The HTTP harness also records global validation stripping transaction-only payment evidence before ingestion; direct normalizer/strategy coverage is not proof that every raw field survives HTTP validation.
+**Implementation evidence (2026-08-31):** [Real phone/normalizer/eligibility fixtures](../../E01-BASELINE-EVIDENCE.md). The HTTP harness also records global validation stripping transaction-only payment evidence before ingestion; direct normalizer/strategy coverage is not proof that every raw field survives HTTP validation.
 
 **VERIFIED FROM CODE:** NormalizedOrder is shared, while the registered eligibility strategy and normalizer are Shopify-specific.
 
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/modules/verification-core/strategies/shopify-order-eligibility.strategy.ts](../../akeed-backend/src/modules/verification-core/strategies/shopify-order-eligibility.strategy.ts)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../../src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy.ts)
 
-**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02/E06 reliability work remains open; repeat the gate on the next candidate.
+**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02 reliability work remains open; repeat the gate on the next candidate.
 
 **EXTERNAL PLATFORM DEPENDENCY:** No new provider capability is assumed by this story; inherited Shopify/Meta dependencies remain subject to their owning epic gates.

@@ -49,14 +49,14 @@ Block Standalone launch on any tenant or role bypass; keep support intervention 
 
 **VERIFIED LOCALLY:** Request authentication now carries a freshly resolved membership role, service-level owner/admin guards cover every organization-scoped mutation in this story, viewer UI permissions fail closed, and the existing primary-source index passes a competing-insert PostgreSQL race. The complete E03 gate passed on 2026-09-04.
 
-- [Dated US-03-05 implementation and validation evidence](../../akeed-backend/docs/US-03-05-STANDALONE-TENANT-AND-PRIMARY-SOURCE-GUARDS-EVIDENCE.md)
+- [Dated US-03-05 implementation and validation evidence](../../US-03-05-STANDALONE-TENANT-AND-PRIMARY-SOURCE-GUARDS-EVIDENCE.md)
 
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/organizations/organizations.controller.ts](../../akeed-backend/src/modules/organizations/organizations.controller.ts)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/modules/auth/services/token-validator.service.ts](../../akeed-backend/src/modules/auth/services/token-validator.service.ts)
-- [akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts)
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/organizations/organizations.controller.ts](../../../src/modules/organizations/organizations.controller.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/modules/auth/services/token-validator.service.ts](../../../src/modules/auth/services/token-validator.service.ts)
+- [akeed-backend/src/infrastructure/database/repositories/memberships.repository.ts](../../../src/infrastructure/database/repositories/memberships.repository.ts)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
 
 **REQUIRES TARGET-ENVIRONMENT VALIDATION:** Authenticated owner/admin/viewer English/Arabic smoke, same-token membership changes, live Meta send/callback, Shopify billing, reviewed migrations, and inherited E02 external checks remain release blockers.
 

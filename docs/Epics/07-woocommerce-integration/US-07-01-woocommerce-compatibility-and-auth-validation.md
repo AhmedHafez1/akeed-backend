@@ -1,12 +1,12 @@
-# US-09-01 — Validate WooCommerce hosting, authentication and mappings
+# US-07-01 — Validate WooCommerce hosting, authentication and mappings
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 1 of 6
 - **Priority:** P0
 - **Horizon:** LATER
 - **Story type:** Validation spike
 - **Status:** Backlog
-- **Dependencies:** [US-08-06](../08-easyorders-integration/US-08-06-easyorders-contract-and-pilot-release-gate.md)
+- **Dependencies:** [US-06-06](../06-easyorders-integration/US-06-06-easyorders-contract-and-pilot-release-gate.md)
 
 ## User story and value
 
@@ -43,16 +43,16 @@ Core REST/application-auth/webhook feasibility, supported store matrix and merch
 
 ## Migration and rollout
 
-US-09-02 depends on this gate; a store outside the supported matrix is not silently enrolled.
+US-07-02 depends on this gate; a store outside the supported matrix is not silently enrolled.
 
 ## Evidence and references
 
 **VERIFIED FROM CODE:** WooCommerce exists in the platform type but no registered normalizer or concrete adapter is present.
 
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts)
-- [akeed-backend/src/modules/webhook-queue](../../akeed-backend/src/modules/webhook-queue)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/shared/ports](../../akeed-backend/src/shared/ports)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../../src/modules/webhook-queue/webhook-queue.constants.ts)
+- [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/shared/ports](../../../src/shared/ports)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

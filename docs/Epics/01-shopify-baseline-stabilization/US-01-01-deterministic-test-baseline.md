@@ -46,14 +46,14 @@ Test-only change; any newly discovered failure blocks the baseline gate and is r
 
 ## Evidence and references
 
-**Implementation evidence (2026-08-31):** [E01 evidence and release checklist](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md). Package A passes with a frozen May 15 clock and explicit May 31 boundary expectations. Production billing code is unchanged.
+**Implementation evidence (2026-08-31):** [E01 evidence and release checklist](../../E01-BASELINE-EVIDENCE.md). Package A passes with a frozen May 15 clock and explicit May 31 boundary expectations. Production billing code is unchanged.
 
 **VERIFIED FROM CODE:** The onboarding spec uses a May 2026 activation/period expectation. The previous repository assessment recorded one real-clock-dependent failure.
 
-- [akeed-backend/src/modules/onboarding/onboarding.service.spec.ts](../../akeed-backend/src/modules/onboarding/onboarding.service.spec.ts)
-- [akeed-backend/AGENTS.md](../../akeed-backend/AGENTS.md)
-- [akeed-frontend/AGENTS.md](../../akeed-frontend/AGENTS.md)
+- [akeed-backend/src/modules/onboarding/onboarding.service.spec.ts](../../../src/modules/onboarding/onboarding.service.spec.ts)
+- [akeed-backend/AGENTS.md](../../../AGENTS.md)
+- [akeed-frontend/AGENTS.md](../../../../akeed-frontend/AGENTS.md)
 
-**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02/E06 reliability work remains open; repeat the gate on the next candidate.
+**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02 reliability work remains open; repeat the gate on the next candidate.
 
 **EXTERNAL PLATFORM DEPENDENCY:** No new provider capability is assumed by this story; inherited Shopify/Meta dependencies remain subject to their owning epic gates.

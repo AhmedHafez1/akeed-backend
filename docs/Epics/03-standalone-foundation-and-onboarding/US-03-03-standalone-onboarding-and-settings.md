@@ -46,16 +46,16 @@ Enable after source and entitlement backfill; existing completed Shopify onboard
 
 ## Evidence and references
 
-**IMPLEMENTED 2026-09-04:** Dedicated Standalone onboarding/settings, explicit idempotent completion, role guards, source/readiness errors, route gating, localized recovery states, and isolated browser coverage are implemented locally. See [US-03-03 implementation evidence](../../akeed-backend/docs/US-03-03-STANDALONE-ONBOARDING-AND-SETTINGS-EVIDENCE.md) for commands, results, limitations, recovery, and basic test instructions.
+**IMPLEMENTED 2026-09-04:** Dedicated Standalone onboarding/settings, explicit idempotent completion, role guards, source/readiness errors, route gating, localized recovery states, and isolated browser coverage are implemented locally. See [US-03-03 implementation evidence](../../US-03-03-STANDALONE-ONBOARDING-AND-SETTINGS-EVIDENCE.md) for commands, results, limitations, recovery, and basic test instructions.
 
 **VERIFIED FROM CODE:** OnboardingStateService resolves Shopify and Standalone settings skins already exist.
 
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
-- [akeed-backend/src/modules/onboarding/settings.controller.ts](../../akeed-backend/src/modules/onboarding/settings.controller.ts)
-- [akeed-frontend/src/features/onboarding](../../akeed-frontend/src/features/onboarding)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-backend/src/modules/onboarding/settings.controller.ts](../../../src/modules/onboarding/settings.controller.ts)
+- [akeed-frontend/src/features/onboarding](../../../../akeed-frontend/src/features/onboarding)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
 
 **REQUIRES RELEASE VALIDATION:** Local acceptance coverage passes. The disposable PostgreSQL contracts, inherited E02 staging/authentication gate, target-environment owner/admin/viewer smoke, and dependent US-03-04/05 work remain release blockers.
 

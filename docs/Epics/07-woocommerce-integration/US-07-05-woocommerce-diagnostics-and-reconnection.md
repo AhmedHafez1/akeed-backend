@@ -1,12 +1,12 @@
-# US-09-05 — Provide WooCommerce diagnostics and reconnection
+# US-07-05 — Provide WooCommerce diagnostics and reconnection
 
-- **Epic:** [E09 — WooCommerce Integration](README.md)
+- **Epic:** [E07 — WooCommerce Integration](README.md)
 - **Delivery rank:** 5 of 6
 - **Priority:** P1
 - **Horizon:** LATER
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-09-04](../09-woocommerce-integration/US-09-04-woocommerce-outcome-status-adapter.md)
+- **Dependencies:** [US-07-04](../07-woocommerce-integration/US-07-04-woocommerce-outcome-status-adapter.md)
 
 ## User story and value
 
@@ -49,11 +49,11 @@ Deploy with the pilot matrix and runbook; no automated unsafe URL probing or plu
 
 **VERIFIED FROM CODE:** Existing platform-neutral settings work must replace Shopify-only resolution before WooCommerce diagnostics can be exposed.
 
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
-- [akeed-frontend/src/features/settings](../../akeed-frontend/src/features/settings)
-- [akeed-frontend/src/features/onboarding](../../akeed-frontend/src/features/onboarding)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-frontend/src/features/settings](../../../../akeed-frontend/src/features/settings)
+- [akeed-frontend/src/features/onboarding](../../../../akeed-frontend/src/features/onboarding)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

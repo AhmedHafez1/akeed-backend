@@ -46,15 +46,15 @@ Add tests without changing the accepted webhook HTTP contract.
 
 ## Evidence and references
 
-**Implementation evidence (2026-08-31):** [HTTP, producer and real PostgreSQL contracts](../../akeed-backend/docs/E01-BASELINE-EVIDENCE.md). The isolated race proves one persisted event/one enqueue, not exactly-once delivery. Failed enqueue followed by duplicate redelivery remains unrecovered under US-02-06.
+**Implementation evidence (2026-08-31):** [HTTP, producer and real PostgreSQL contracts](../../E01-BASELINE-EVIDENCE.md). The isolated race proves one persisted event/one enqueue, not exactly-once delivery. Failed enqueue followed by duplicate redelivery remains unrecovered under US-02-06.
 
 **VERIFIED FROM CODE:** The Shopify ingestion service derives idempotency from the delivery header, with a timestamp fallback; the producer skips existing events.
 
-- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts](../../akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
-- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order-webhook.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/infrastructure/database/repositories/webhook-events.repository.ts](../../../src/infrastructure/database/repositories/webhook-events.repository.ts)
 
-**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02/E06 reliability work remains open; repeat the gate on the next candidate.
+**VALIDATION BOUNDARY:** The linked evidence records the repeated automated gate, authenticated existing-session checks in both modes/locales, and isolated cancellation feedback. US-01-06 is complete for this recorded working tree. Fresh credential submission/new-account creation, live-provider readiness, recoverable dispatch and exactly-once sending are not claimed. Known E02 reliability work remains open; repeat the gate on the next candidate.
 
 **EXTERNAL PLATFORM DEPENDENCY:** Revalidate relevant provider behavior before enabling live traffic. These primary sources are reference inputs, not proof of this integration's readiness.
 

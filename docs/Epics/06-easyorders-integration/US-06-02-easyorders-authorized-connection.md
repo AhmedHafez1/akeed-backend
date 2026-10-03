@@ -1,12 +1,12 @@
-# US-08-02 — Connect EasyOrders and secure its credentials
+# US-06-02 — Connect EasyOrders and secure its credentials
 
-- **Epic:** [E08 — EasyOrders Integration](README.md)
+- **Epic:** [E06 — EasyOrders Integration](README.md)
 - **Delivery rank:** 2 of 6
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
 - **Status:** Backlog
-- **Dependencies:** [US-08-01](../08-easyorders-integration/US-08-01-easyorders-integration-validation.md)
+- **Dependencies:** [US-06-01](../06-easyorders-integration/US-06-01-easyorders-integration-validation.md)
 
 ## User story and value
 
@@ -23,7 +23,7 @@ Authorized-app link, secure callback, store binding and connection lifecycle.
 ## Acceptance criteria
 
 1. Owner/admin starts installation with minimum verified permissions and a single-use expiring context tied to their authenticated organization.
-2. The callback is validated using the US-08-01 contract, credentials are checked against the expected store, and replay/mismatched-store callbacks cannot replace credentials.
+2. The callback is validated using the US-06-01 contract, credentials are checked against the expected store, and replay/mismatched-store callbacks cannot replace credentials.
 3. API keys and webhook secrets are encrypted and never returned/logged; unauthorized roles cannot connect or disconnect.
 4. A successful install provisions one easyorders source for a fresh/unprovisioned organization with the existing pilot entitlement and onboarding settings.
 5. Existing active sources are rejected without mutation; native signup chooses its source before default Standalone provisioning, so no silent source conversion is needed.
@@ -33,7 +33,7 @@ Authorized-app link, secure callback, store binding and connection lifecycle.
 - **Backend:** Add an EasyOrders spoke/auth service and trusted pending-install context; reuse source/entitlement/credential primitives.
 - **Frontend:** Provide Arabic/English, RTL-compatible connect/deny/error states and clearly identify the chosen store.
 - **Data:** Persist verified store_id, encrypted credentials and installation/readiness state atomically; preserve history on reconnect.
-- **Operations:** Use the Akeed sender unless the merchant independently completed an explicit E07 migration; avoid requesting unnecessary permissions.
+- **Operations:** Use the Akeed sender; avoid requesting unnecessary permissions.
 
 ## Test requirements
 
@@ -49,11 +49,11 @@ Restrict to qualified pilot accounts and disable real-order ingestion until auth
 
 **VERIFIED FROM CODE:** Source provisioning and credentials currently revolve around Shopify; E03's source rules must be extended without adding source switching.
 
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/shared/utils/token-encryption.util.ts](../../akeed-backend/src/shared/utils/token-encryption.util.ts)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../akeed-backend/src/modules/onboarding/onboarding-state.service.ts)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/shared/utils/token-encryption.util.ts](../../../src/shared/utils/token-encryption.util.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

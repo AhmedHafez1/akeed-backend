@@ -63,7 +63,7 @@ Important current symbols:
 - [`VerificationSendService`](../../../src/modules/verification-core/verification-send.service.ts)
 - [`MessageDispatchResolutionService`](../../../src/modules/admin/message-dispatch-resolution.service.ts)
 - [`AdminAccessGuard`](../../../src/modules/admin/admin-access.guard.ts)
-- [`SettingsStandaloneSkin`](../../../../akeed-frontend/src/features/settings/skins/standalone/SettingsStandaloneSkin.tsx)
+- `SettingsStandaloneSkin` (removed in frontend commit f56f2a6; Standalone settings now live under `features/settings/skins/standalone/settings-page`)
 
 ## Scope and boundaries
 

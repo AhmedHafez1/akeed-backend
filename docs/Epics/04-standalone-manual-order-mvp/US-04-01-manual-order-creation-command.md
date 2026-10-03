@@ -49,21 +49,21 @@ Keep the endpoint restricted to Standalone sources until other platform manual-e
 
 **IMPLEMENTED LOCALLY — 2026-09-04:** Owner/admin sessions can durably accept a validated Standalone manual order through `POST /api/orders`. The API requires a source-scoped `Idempotency-Key`, derives tenant/source authority from authentication, returns stable field/readiness/role errors, atomically stores the order and recoverable event, and safely replays concurrent retries. The ignored Next route declarations are regenerated before the inherited frontend gate checks. Local gates pass; the Standalone worker lifecycle, entry UI, target-environment identities, and live provider flow remain release blockers.
 
-- [US-04-01 implementation and validation evidence](../../akeed-backend/docs/US-04-01-MANUAL-ORDER-CREATION-EVIDENCE.md)
-- [Manual order API and recovery contract](../../akeed-backend/docs/MANUAL_ORDER_CREATION.md)
-- [Manual order command service](../../akeed-backend/src/modules/orders/orders.service.ts)
-- [Atomic manual order ingestion repository](../../akeed-backend/src/infrastructure/database/repositories/manual-order-ingestion.repository.ts)
-- [PostgreSQL concurrency contract](../../akeed-backend/test/manual-order-ingestion.contract-spec.ts)
-- [Frontend manual order API contract](../../akeed-frontend/src/features/orders/api/manualOrderApi.ts)
+- [US-04-01 implementation and validation evidence](../../US-04-01-MANUAL-ORDER-CREATION-EVIDENCE.md)
+- [Manual order API and recovery contract](../../MANUAL_ORDER_CREATION.md)
+- [Manual order command service](../../../src/modules/orders/orders.service.ts)
+- [Atomic manual order ingestion repository](../../../src/infrastructure/database/repositories/manual-order-ingestion.repository.ts)
+- [PostgreSQL concurrency contract](../../../test/manual-order-ingestion.contract-spec.ts)
+- [Frontend manual order API contract](../../../../akeed-frontend/src/features/orders/api/manualOrderApi.ts)
 
 **VERIFIED FROM CODE:** OrdersController now exposes authenticated reads and manual creation; the shared order schema, durable event schema, and repositories contain the required normalized fields and source-scoped uniqueness constraints.
 
-- [akeed-backend/src/modules/orders/orders.controller.ts](../../akeed-backend/src/modules/orders/orders.controller.ts)
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/orders.repository.ts)
-- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../akeed-backend/src/modules/auth/guards/dual-auth.guard.ts)
-- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../akeed-backend/src/modules/verification-core/verification-hub.service.ts)
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts)
+- [akeed-backend/src/modules/orders/orders.controller.ts](../../../src/modules/orders/orders.controller.ts)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/modules/auth/guards/dual-auth.guard.ts](../../../src/modules/auth/guards/dual-auth.guard.ts)
+- [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Durable acceptance is implemented, but US-04-03 still owns Standalone normalization and verification processing. Do not interpret `status: accepted` as a delivery claim or release the endpoint to merchants before the remaining E04 gates pass.
 

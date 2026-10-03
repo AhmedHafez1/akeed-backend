@@ -48,10 +48,10 @@ Expand constraints before deploying writes of new values; rollback must not remo
 
 **VERIFIED FROM CODE:** PlatformType and schema checks lack standalone/easyorders; NormalizedOrder includes platform-specific comments and an any payload.
 
-- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/shared/interfaces/order.interface.ts](../../akeed-backend/src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/modules/webhook-queue/webhook-queue.constants.ts](../../../src/modules/webhook-queue/webhook-queue.constants.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 
@@ -61,4 +61,4 @@ Expand constraints before deploying writes of new values; rollback must not remo
 
 **Implemented 2026-09-02:** The shared platform/order contract, Shopify compatibility path, explicit unsupported-platform handling, expanded Drizzle constraints, migration, and automated contract coverage are implemented. The full backend suite passes with 380 tests; build, structured-log validation, and non-fixing lint pass. No frontend selectors or native adapters were added, and no existing integration rows are rewritten.
 
-The detailed [validation and rollout record](../../akeed-backend/docs/US-02-01-CANONICAL-COMMERCE-CONTRACT-EVIDENCE.md) records commands and limitations. The migration was verified directly against the configured Supabase development database using rollback-only probes: both new values were accepted, unknown values were rejected, both constraints were validated, and the representative Shopify rows remained unchanged. The disposable Docker harness remains unavailable on this host, but is no longer the database validation blocker for this story.
+The detailed [validation and rollout record](../../US-02-01-CANONICAL-COMMERCE-CONTRACT-EVIDENCE.md) records commands and limitations. The migration was verified directly against the configured Supabase development database using rollback-only probes: both new values were accepted, unknown values were rejected, both constraints were validated, and the representative Shopify rows remained unchanged. The disposable Docker harness remains unavailable on this host, but is no longer the database validation blocker for this story.

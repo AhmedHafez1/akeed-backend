@@ -48,11 +48,11 @@ Back up/reconcile affected IDs and counts, apply in bounded batches, and roll ba
 
 **VERIFIED FROM CODE:** Billing activity already permits not_required, while existing Standalone provisioning lacks integration/entitlement records.
 
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [akeed-backend/src/shared/utils/billing.util.ts](../../akeed-backend/src/shared/utils/billing.util.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
-- [akeed-backend/src/modules/onboarding/billing.service.ts](../../akeed-backend/src/modules/onboarding/billing.service.ts)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-backend/src/shared/utils/billing.util.ts](../../../src/shared/utils/billing.util.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
+- [akeed-backend/src/modules/onboarding/billing.service.ts](../../../src/modules/onboarding/billing.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 
@@ -60,4 +60,4 @@ Back up/reconcile affected IDs and counts, apply in bounded batches, and roll ba
 
 ## Implementation evidence
 
-**Implementation evidence (2026-09-03):** [US-03-02 Standalone pilot entitlement evidence](../../akeed-backend/docs/US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) records staff-only preview/apply APIs, deterministic exclusions, per-account serializable activation and audit, direct-write restrictions, the localized admin workflow, PostgreSQL rehearsal, compatibility tests, rollout preflight, and rollback conditions. Activation defaults off; no application-database migration or live account activation was performed.
+**Implementation evidence (2026-09-03):** [US-03-02 Standalone pilot entitlement evidence](../../US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) records staff-only preview/apply APIs, deterministic exclusions, per-account serializable activation and audit, direct-write restrictions, the localized admin workflow, PostgreSQL rehearsal, compatibility tests, rollout preflight, and rollback conditions. Activation defaults off; no application-database migration or live account activation was performed.

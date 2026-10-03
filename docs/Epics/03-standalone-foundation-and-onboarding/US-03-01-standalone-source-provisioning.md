@@ -46,14 +46,14 @@ Roll out only to new Standalone registrations first; existing accounts are handl
 
 ## Evidence and references
 
-**Implementation evidence (2026-09-03):** [US-03-01 implementation evidence](../../akeed-backend/docs/US-03-01-STANDALONE-SOURCE-PROVISIONING-EVIDENCE.md) records transactional provisioning, stable source identity, concurrent retry/rollback PostgreSQL contracts, Standalone payment eligibility, localized recovery copy, compatibility gates, and rollout stop criteria. Local checks pass; no migration or live account rollout was performed.
+**Implementation evidence (2026-09-03):** [US-03-01 implementation evidence](../../US-03-01-STANDALONE-SOURCE-PROVISIONING-EVIDENCE.md) records transactional provisioning, stable source identity, concurrent retry/rollback PostgreSQL contracts, Standalone payment eligibility, localized recovery copy, compatibility gates, and rollout stop criteria. Local checks pass; no migration or live account rollout was performed.
 
 **IMPLEMENTED IN CODE:** Standalone provisioning now writes the organization, owner membership, and stable Standalone integration transactionally; eligibility registration includes independent Shopify and Standalone strategies.
 
-- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
-- [akeed-frontend/src/shared/auth/AuthGuard.tsx](../../akeed-frontend/src/shared/auth/AuthGuard.tsx)
-- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../akeed-backend/src/modules/verification-core/order-eligibility.service.ts)
-- [akeed-backend/src/infrastructure/database/schema.ts](../../akeed-backend/src/infrastructure/database/schema.ts)
+- [akeed-backend/src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts](../../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository.ts)
+- [akeed-frontend/src/shared/auth/AuthGuard.tsx](../../../../akeed-frontend/src/shared/auth/AuthGuard.tsx)
+- [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
+- [akeed-backend/src/infrastructure/database/schema.ts](../../../src/infrastructure/database/schema.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 

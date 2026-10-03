@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Technical enabler (core)
-- **Status:** Done — E05 gate passed locally and the pilot is reported working as expected (product owner, 2026-10-02); see [evidence](../../US-05-03-IDEMPOTENCY-AND-EXTERNAL-ID-EVIDENCE.md)
+- **Status:** Done — E05 gate passed locally; shipped to production 2026-10-02 and validated 2026-10-03 (product-owner-reported); see [evidence](../../US-05-03-IDEMPOTENCY-AND-EXTERNAL-ID-EVIDENCE.md)
 - **Dependencies:** [US-05-02](US-05-02-authenticated-order-ingestion-endpoint.md)
 
 ## User story and value

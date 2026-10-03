@@ -1,7 +1,7 @@
 # E05 — Standalone Order Ingestion API
 
 - **Horizon:** NEXT
-- **Status:** Done (2026-10-02). All six stories are implemented, the US-05-06 gate passes locally, and the product owner reports the [pilot](US-05-06-pilot-checklist.md) working as expected. The open points of the gate are closed as accepted or moved to [Deferred](#deferred-post-pilot).
+- **Status:** Done. All six stories are implemented and the US-05-06 gate passes locally. The product owner reports that E05 shipped to production on 2026-10-02 and was validated on 2026-10-03 (see the [pilot checklist](US-05-06-pilot-checklist.md); step-level records are not in this repository). The open points of the gate are closed as accepted or moved to [Deferred](#deferred-post-pilot).
 - **Stories:** 6
 - **Prerequisite epics (implemented):** [E04.5 — Standalone Paymob Usage-Based Billing MVP](../04.5-standalone-paymob-usage-billing/README.md), [E04.6 — Standalone Bulk Order Import](../04.6-standalone-bulk-order-import/README.md) (GA 2026-10-01)
 - **Implementation prompts:** [one prompt per story](IMPLEMENTATION-PROMPTS.md)
@@ -83,7 +83,7 @@ Dependency picture:
 
 ```text
 E04.5 Billing ─┐
-E04 Manual ────┼──► Standalone ingestion core ──► E05 Server API ──► (E08 may reuse the boundary after US-05-06)
+E04 Manual ────┼──► Standalone ingestion core ──► E05 Server API ──► (E06 may reuse the boundary after US-05-06)
 E04.6 Import ──┘
 ```
 
@@ -151,4 +151,4 @@ Follow story dependency order and preserve existing Shopify, manual and file-imp
 
 ## Evidence discipline
 
-The product sequence is approved. The "Core gaps" table and the code references in each story were verified against the `develop` branch on 2026-10-02 and are not test runs; the test runs are in each story's evidence file (`docs/US-05-0N-*-EVIDENCE.md`). The pilot result is the product owner's report of 2026-10-02 ("tested the API, working as expected"); its step-by-step records are not in this repository.
+The product sequence is approved. The "Core gaps" table and the code references in each story were verified against the `develop` branch on 2026-10-02 and are not test runs; the test runs are in each story's evidence file (`docs/US-05-0N-*-EVIDENCE.md`). The release result is the product owner's report: shipped to production 2026-10-02, validated 2026-10-03 (an earlier report of 2026-10-02 said "tested the API, working as expected"). Its step-by-step records, commands and commit identifiers are not in this repository.

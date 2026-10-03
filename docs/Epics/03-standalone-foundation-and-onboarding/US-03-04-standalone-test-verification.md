@@ -18,7 +18,7 @@ As a Standalone merchant, I want to test the message before submitting real orde
 
 Source-aware test-send API and existing dashboard test panel.
 
-**Out of scope:** Real commerce actions, test sends bypassing authorization, or merchant-owned sender onboarding.
+**Out of scope:** Real commerce actions or test sends bypassing authorization.
 
 ## Acceptance criteria
 
@@ -48,10 +48,10 @@ Pilot with authorized test recipients; do not silently enable real-order automat
 
 **VERIFIED FROM CODE:** The current test service explicitly requires an active Shopify integration, while a Standalone test panel exists.
 
-- [akeed-backend/src/modules/verifications/test-verification.service.ts](../../akeed-backend/src/modules/verifications/test-verification.service.ts)
-- [akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneTestVerificationPanel.tsx](../../akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneTestVerificationPanel.tsx)
-- [akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts](../../akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts)
-- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../akeed-backend/src/modules/verification-core/verification-send.service.ts)
+- [akeed-backend/src/modules/verifications/test-verification.service.ts](../../../src/modules/verifications/test-verification.service.ts)
+- `akeed-frontend/src/features/dashboard/skins/standalone/components/StandaloneTestVerificationPanel.tsx` (no longer in the tree)
+- [akeed-backend/src/infrastructure/spokes/meta/whatsapp.service.ts](../../../src/infrastructure/spokes/meta/whatsapp.service.ts)
+- [akeed-backend/src/modules/verification-core/verification-send.service.ts](../../../src/modules/verification-core/verification-send.service.ts)
 
 **ASSUMPTION / REQUIRES VALIDATION:** Acceptance criteria above describe approved proposed work, not completed functionality. Resolve any implementation discovery against the epic exit criteria; do not silently expand scope.
 
@@ -59,4 +59,4 @@ Pilot with authorized test recipients; do not silently enable real-order automat
 
 ## Implementation evidence
 
-See [US-03-04 standalone test verification evidence](../../akeed-backend/docs/US-03-04-STANDALONE-TEST-VERIFICATION-EVIDENCE.md).
+See [US-03-04 standalone test verification evidence](../../US-03-04-STANDALONE-TEST-VERIFICATION-EVIDENCE.md).

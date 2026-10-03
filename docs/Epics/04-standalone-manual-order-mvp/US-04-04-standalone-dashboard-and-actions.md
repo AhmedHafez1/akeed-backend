@@ -49,13 +49,13 @@ Validate sample dashboard totals against repository queries before exposing manu
 
 **IMPLEMENTED AND LOCALLY VERIFIED (2026-09-05):** Organization-scoped order lists and stats now share one lifecycle projection, retain orders without verifications and inactive-source history, apply merchant-local date bounds, expose stable pagination/totals and capability-driven actions, and include synthetic test rows. Standalone renders the order list with localized lifecycle explanations, action feedback and locale/timezone-aware formatting while the embedded Shopify surface remains unchanged.
 
-- [akeed-frontend/src/features/dashboard](../../akeed-frontend/src/features/dashboard)
-- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
-- [akeed-backend/src/modules/verifications/verifications.service.ts](../../akeed-backend/src/modules/verifications/verifications.service.ts)
-- [akeed-backend/src/modules/orders/orders.controller.ts](../../akeed-backend/src/modules/orders/orders.controller.ts)
-- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../akeed-backend/src/infrastructure/database/repositories/orders.repository.ts)
-- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../akeed-backend/src/modules/verification-core/billing-entitlement.service.ts)
+- [akeed-frontend/src/features/dashboard](../../../../akeed-frontend/src/features/dashboard)
+- [akeed-frontend/src/features/dashboard/domain/useDashboard.ts](../../../../akeed-frontend/src/features/dashboard/domain/useDashboard.ts)
+- [akeed-backend/src/modules/verifications/verifications.service.ts](../../../src/modules/verifications/verifications.service.ts)
+- [akeed-backend/src/modules/orders/orders.controller.ts](../../../src/modules/orders/orders.controller.ts)
+- [akeed-backend/src/infrastructure/database/repositories/orders.repository.ts](../../../src/infrastructure/database/repositories/orders.repository.ts)
+- [akeed-backend/src/modules/verification-core/billing-entitlement.service.ts](../../../src/modules/verification-core/billing-entitlement.service.ts)
 
-- [Implementation evidence](../../akeed-backend/docs/US-04-04-STANDALONE-DASHBOARD-AND-ACTIONS-EVIDENCE.md)
+- [Implementation evidence](../../US-04-04-STANDALONE-DASHBOARD-AND-ACTIONS-EVIDENCE.md)
 
 **EXTERNAL PLATFORM DEPENDENCY:** No new provider capability is assumed by this story; inherited Shopify/Meta dependencies remain subject to their owning epic gates.
