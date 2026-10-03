@@ -8,7 +8,9 @@
 //   node scripts/spikes/easyorders/capture-server.mjs
 //
 // Routes (token in the path, or in `?t=` for the query-survival test):
-//   POST /cb/:token       authorized-app callback
+//   POST /cb/:token       authorized-app callback. The EasyOrders install
+//                         page calls it from the seller's browser, so the
+//                         CORS preflight is answered for that origin.
 //   POST /orders/:token   order-created webhook
 //   POST /status/:token   order-status webhook
 //   GET  /done/:token     redirect_url landing page
@@ -36,6 +38,7 @@ const PORT = Number(process.env.EO_CAPTURE_PORT ?? 3199);
 const SLOW_MS = Number(process.env.EO_SLOW_MS ?? 35_000);
 const EXPECTED_SECRET = process.env.EO_WEBHOOK_SECRET?.trim() || null;
 const KINDS = new Set(['cb', 'orders', 'status', 'done']);
+const EASYORDERS_ORIGIN = 'https://app.easy-orders.net';
 const SAFE_HEADERS = [
   'content-type',
   'content-length',
@@ -90,6 +93,16 @@ function readBody(request) {
   });
 }
 
+function corsHeaders(request) {
+  return {
+    'Access-Control-Allow-Origin': EASYORDERS_ORIGIN,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers':
+      request.headers['access-control-request-headers'] ?? 'content-type',
+    Vary: 'Origin',
+  };
+}
+
 function decideStatus(kind, token, secret) {
   if (kind === 'done') return { status: 200, mode: 'page' };
   if (token.state !== 'valid')
@@ -138,7 +151,11 @@ const server = createServer(async (request, response) => {
   const rawToken = pathToken ?? url.searchParams.get('t') ?? '';
   const token = classifyToken(rawToken);
   const secret = classifySecret(request.headers.secret);
-  const decision = decideStatus(kind, token, secret);
+  const isPreflight = request.method === 'OPTIONS';
+  const decision = isPreflight
+    ? { status: 204, mode: 'preflight' }
+    : decideStatus(kind, token, secret);
+  const cors = kind === 'cb' ? corsHeaders(request) : {};
 
   let body;
   try {
@@ -168,6 +185,12 @@ const server = createServer(async (request, response) => {
         (name) => [name, request.headers[name]],
       ),
     ),
+    preflight: isPreflight
+      ? {
+          requestMethod: request.headers['access-control-request-method'],
+          requestHeaders: request.headers['access-control-request-headers'],
+        }
+      : undefined,
     secretHeader: secret,
     bodySha256: createHash('sha256').update(rawBody).digest('hex'),
     bodyBytes: rawBody.length,
@@ -183,6 +206,10 @@ const server = createServer(async (request, response) => {
   if (decision.delayMs) {
     await new Promise((resolve) => setTimeout(resolve, decision.delayMs));
   }
+  if (isPreflight) {
+    response.writeHead(204, cors).end();
+    return;
+  }
   if (kind === 'done') {
     response
       .writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -190,7 +217,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   response
-    .writeHead(decision.status, { 'Content-Type': 'application/json' })
+    .writeHead(decision.status, { 'Content-Type': 'application/json', ...cors })
     .end(JSON.stringify({ ok: decision.status < 300 }));
 });
 

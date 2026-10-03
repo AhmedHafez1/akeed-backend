@@ -15,6 +15,13 @@ after the steps below have been run against a test store.
 - Evidence is written to `.tmp/spikes/easyorders/` (gitignored). API keys, the `secret` header and URL tokens are stored as a 12-character SHA-256 fingerprint (`fp`), which is enough to tell whether two values are the same.
 - `capture.jsonl` contains the customer fields of your test orders. It stays local. Fixtures are made from it with `sanitize-fixture.mjs`.
 - Scripts marked **live** call the EasyOrders API or change the test store.
+- The store must be active (wallet topped up). An inactive store answers every API call with `400 Store not active or has over due`, and no webhook was seen from one.
+
+## Status after the first run (2026-10-03)
+
+The first run was on an inactive store, with a capture server that did not answer the CORS preflight of the install callback (fixed since). What it established is in the [contract record](../../../docs/Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md). Still owed, on an active store, before any live traffic: steps 1, 5, 6, 7, 8, 10, 11 and 12, plus a second store for the cross-tenant and two-key checks.
+
+Before rerunning, delete the API keys and webhooks the failed installs left behind (**Public API → Webhooks** and **Public API**). Each Accept creates new ones even when the callback fails.
 
 ## Setup
 
@@ -50,7 +57,9 @@ Each step lists who acts, the command, and what to write down. "Capture" means t
 node scripts/spikes/easyorders/build-install-link.mjs --label storeA
 ```
 
-You: open the printed link while signed in to the test store and accept.
+You: open the printed link while signed in to the test store, with DevTools → Network open, and accept.
+
+The install page does the work from your browser: it creates the webhooks and an API key, then calls `callback_url` itself as a cross-origin request. In DevTools, open the `webhooks` and `api-keys` responses (status 201) and write down their field **names only**, never the values. That shows whether the page holds the webhook secret at the moment it calls us.
 
 Write down:
 
@@ -112,7 +121,7 @@ Write down: whether order webhooks carry a `secret` header at all (`secretHeader
 
 ### 5. Order created (AC 2, 3, 4) — live
 
-You: place a COD order on the test storefront with your own phone number. Set `$env:EO_ORDER_ID` to the `id` in the captured payload.
+You: place a COD order on the test storefront with your own phone number. Set `$env:EO_ORDER_ID` to the `id` in the captured payload: the UUID, not the short order number shown in the dashboard. Also create one order from the dashboard (**Create Order**) and write down whether it produces a webhook too.
 
 Write down:
 
