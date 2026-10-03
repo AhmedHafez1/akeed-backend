@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented, disabled (2026-10-03) — [evidence](../../US-06-05-EASYORDERS-ONBOARDING-HEALTH-EVIDENCE.md), [runbook](evidence/US-06-05-disconnect-and-support-runbook.md); live onboarding blocked on US-06-01 go-live verification
 - **Dependencies:** [US-06-04](../06-easyorders-integration/US-06-04-easyorders-outcome-status-adapter.md)
 
 ## User story and value
@@ -48,6 +48,8 @@ Ship with the native pilot; do not advertise instant self-service recovery for u
 ## Evidence and references
 
 **VERIFIED FROM CODE:** Platform-neutral onboarding is needed because current onboarding resolution is Shopify-specific despite reusable settings skins.
+
+**Reconciled during implementation (2026-10-03):** source resolution and the test message were already platform-neutral. What was tied to a platform was the store-name prefill, the setup block (Standalone only, so no other source could complete onboarding) and the `404` for a source that is not active. Those are what changed; see the evidence file. Provider-side removal is manual by product-owner decision, because the delete-by-URL call in section 6 of the contract record is unverified.
 
 - [akeed-backend/src/modules/onboarding/onboarding-state.service.ts](../../../src/modules/onboarding/onboarding-state.service.ts)
 - [akeed-frontend/src/features/onboarding](../../../../akeed-frontend/src/features/onboarding)

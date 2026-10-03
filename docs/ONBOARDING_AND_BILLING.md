@@ -101,6 +101,10 @@ The store name is prefilled from the organization name (the signup company name)
 
 A new standalone source is provisioned ready to send, so onboarding does not ask for confirmation rules: auto-verify on, first send immediate, one follow-up after 120 minutes, escalation after 360 minutes, quiet hours off, COD fallback off (`STANDALONE_SOURCE_DEFAULTS`). Existing sources keep their saved values; there is no migration.
 
+### Connected sources (US-06-05)
+
+A source whose spoke registers a setup contributor (EasyOrders today) gets a `sourceSetup` block on the state: connection state, store, order defaults, Akeed sender status and blocked reasons. It finishes through the same `POST /api/onboarding/complete` as Standalone, after the free test. The state and settings stay readable after the merchant disconnects the source, and `GET /api/settings/source-health` reports its health. Details are in [Integrations, Webhooks and Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#easyorders-setup-health-and-disconnect-us-06-05).
+
 ## Billing Plans
 
 Plan definitions are in `akeed-backend/src/modules/onboarding/onboarding.service.helpers.ts`.

@@ -232,7 +232,7 @@ Every `/api/v1/orders` error answers `{code, message, correlationId}` (validatio
 
 ## EasyOrders Connection (E06)
 
-The authorized connection of an EasyOrders store (US-06-02) and its order-webhook ingestion (US-06-03). Both ship dark, each behind its own switch. Remote status writes are not built yet and have no switch.
+The authorized connection of an EasyOrders store (US-06-02), its order-webhook ingestion (US-06-03) and its remote status writes (US-06-04). All three ship dark, each behind its own switch. Setup, health, disconnect and reconnect (US-06-05) add no variable: connect and reconnect follow the connect switch and the pilot list, while disconnect and the health read work with everything off, so turning the feature off never traps a merchant in a connection.
 
 | Variable | Notes |
 | --- | --- |

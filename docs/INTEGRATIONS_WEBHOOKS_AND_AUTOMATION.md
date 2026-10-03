@@ -574,7 +574,7 @@ The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This sect
 **Flow.**
 
 1. Signup records the chosen source. `POST /api/organizations` with `sourceMode: "connect"` creates the organization and owner membership with no source (`StandaloneOrganizationProvisioningRepository.provisionWithoutSource`). Nothing is converted later.
-2. `POST /api/easyorders/install` (owner or admin, Supabase session, switch on, organization on the allow-list, organization has no integration row) opens a context in `easyorders_pending_installs` and returns the authorized-app link. The link asks for `orders:read,orders:update` only. It carries two different 256-bit tokens in URL paths: the one-time callback token and the webhook URL token. Only their SHA-256 is stored. A new install retires the organization's earlier open context. A context lives 15 minutes.
+2. `POST /api/easyorders/install` (owner or admin, Supabase session, switch on, organization on the allow-list, organization has no integration row or only its own disconnected EasyOrders source) opens a context in `easyorders_pending_installs` and returns the authorized-app link. The link asks for `orders:read,orders:update` only. It carries two different 256-bit tokens in URL paths: the one-time callback token and the webhook URL token. Only their SHA-256 is stored. A new install retires the organization's earlier open context. A context lives 15 minutes.
 3. The seller accepts in EasyOrders. Their browser calls `POST /api/easyorders/install/callback/:token` with `{ api_key, store_id }`. The endpoint is public; the path token is the only tenant binding.
 4. The callback looks the context up by hash. Unknown, expired, used, retired or exhausted (5 refused callbacks) contexts all answer `401 EASYORDERS_INSTALL_CONTEXT_INVALID`. The key is then checked server-side with `GET orders/<random UUID>`: only a 2xx or the exact inactive-store `400` passes (fail closed, a `404` does not). A timeout, `429` or `5xx` is `503 EASYORDERS_PROVIDER_UNAVAILABLE` and the same link may be retried.
 5. One transaction (`EasyOrdersConnectionsRepository.connect`, in `withSerializableRetry`) locks the context and the organization, re-checks that no source exists, inserts the `easyorders` integration and its `easyorders_connections` row, and marks the context used. The answer is an empty `204`.
@@ -590,9 +590,27 @@ The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This sect
 
 **Secrets.** The key, both tokens, both secrets and the install link are never logged (added to `REDACTED_KEYS`) and never returned, with one exception: the install link is returned once to the member who started the install, because the browser has to carry it to EasyOrders. `GET /api/easyorders/connection` reports state, store id, health, the URL hint and whether each secret is set.
 
-**Not in this story.** Disconnect and reconnect (US-06-05): until then any existing integration row, active or not, blocks a connect.
+**Disconnect and reconnect** are in [EasyOrders Setup, Health and Disconnect](#easyorders-setup-health-and-disconnect-us-06-05) below. A source of another platform, active or not, still blocks a connect: there is no source switching.
 
 **Validate.** `scripts/test-easyorders-connection-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders`.
+
+## EasyOrders Setup, Health and Disconnect (US-06-05)
+
+No switch of its own. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 1, 2, 4, 6 and 7. Operations are in the [runbook](Epics/06-easyorders-integration/evidence/US-06-05-disconnect-and-support-runbook.md).
+
+**Source setup seam.** A source whose connection has state of its own registers a `SourceSetupContributor` in `SOURCE_SETUP_CONTRIBUTORS` (`src/shared/commerce/source-setup.ts`, bound in `onboarding.module.ts`). `SourceSetupService` reads it by platform type; the onboarding module never names a provider. `EasyOrdersSetupContributor` answers from the connection row alone, with no provider call.
+
+- `GET /api/onboarding/state` and `GET /api/settings` carry `sourceSetup` for such a source: connection state, store, order defaults, the Akeed sender status and the blocked reasons (`order_defaults_missing`, `webhook_secrets_missing`, `credentials_rejected`, `source_disconnected`, after the common ones). The key is absent for Shopify and Standalone.
+- `POST /api/onboarding/complete` refuses with `409 ONBOARDING_BLOCKED` and those reasons.
+- Both reads stay available for a source its merchant disconnected. Every write still answers `404 ONBOARDING_SOURCE_INACTIVE`.
+
+**Health.** `GET /api/settings/source-health` (any member) returns separate signals and no overall status: credentials (the provider's last answer, not a live check), the last accepted event and the count in the last 7 days, processing failures, events waiting, store updates that failed or are pending, deliveries refused before processing, and each outcome action with whether the store takes it now. A null last event means "no events yet" and is never a fault.
+
+**Disconnect.** `DELETE /api/easyorders/connection` (owner or admin; not gated by the connect switch or the pilot list). One transaction: open install contexts are retired, `integrations.is_active` becomes false, and the API key, the URL token, both webhook secrets and the verified-store claim are wiped. The store id, the settings and all history stay. Waiting store updates are then closed as `integration_inactive`. Queued events, messages and store writes are stopped by the same `is_active` checks that already guarded them. Nothing is removed at EasyOrders; the merchant deletes the key and webhooks there.
+
+**Reconnect.** The same install and callback. Only when the organization's one source is its own disconnected EasyOrders source, and only for the same `store_id` (`409 EASYORDERS_RECONNECT_STORE_MISMATCH` otherwise). The same integration row is reactivated in place with a new key and a new URL token and no secrets, so webhooks are refused until the two new secrets are pasted.
+
+**Validate.** The three `scripts/test-easyorders-*-contract.ps1` suites, `npx jest src/modules/onboarding src/infrastructure/spokes/easyorders`.
 
 ## EasyOrders Webhook Ingestion (US-06-03)
 
