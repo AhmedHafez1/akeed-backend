@@ -92,24 +92,24 @@ export class CommerceOutcomeSyncTracker {
     if (!sync) return;
     try {
       const plan = planOutcomeSync(result, sync);
+      const dueAt =
+        plan.retryDelayMs === null ? null : Date.now() + plan.retryDelayMs;
       const settled = await this.syncs.settle(sync.id, sync.orgId, {
         state: plan.state,
         errorCode: plan.errorCode,
         providerStatus: plan.providerStatus,
         requiresAssistance: plan.requiresAssistance,
         spent: plan.spent,
-        nextAttemptAt:
-          plan.retryDelayMs === null
-            ? null
-            : new Date(Date.now() + plan.retryDelayMs).toISOString(),
+        nextAttemptAt: dueAt === null ? null : new Date(dueAt).toISOString(),
       });
-      if (!settled || plan.retryDelayMs === null) return;
+      if (!settled || plan.retryDelayMs === null || dueAt === null) return;
       try {
         await this.producer.scheduleRetry({
           syncId: settled.id,
           orgId: settled.orgId,
           attempts: settled.attempts,
           deferrals: settled.deferrals,
+          dueAt,
           delayMs: plan.retryDelayMs,
         });
       } catch (error) {

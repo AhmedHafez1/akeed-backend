@@ -135,35 +135,41 @@ export class EasyOrdersConnectionsRepository {
    * earlier open ones, so at most one context per organization can connect.
    * The organization row is locked, so a callback finishing at the same time
    * is seen either before or after, never half-way.
+   *
+   * It takes the organization and then the open contexts, the reverse of
+   * `connect`, so a callback in flight can deadlock with it. Nothing was
+   * committed by the aborted side, so the whole transaction is run again.
    */
   async createPendingInstall(
     input: NewEasyOrdersPendingInstall,
   ): Promise<CreatePendingInstallResult> {
-    return this.db.transaction(async (tx) => {
-      await tx
-        .select({ id: organizations.id })
-        .from(organizations)
-        .where(eq(organizations.id, input.orgId))
-        .for('update');
-      const slot = await this.readSourceSlot(tx, input.orgId);
-      if (slot.kind === 'taken') return { kind: 'source_exists' as const };
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        await tx
+          .select({ id: organizations.id })
+          .from(organizations)
+          .where(eq(organizations.id, input.orgId))
+          .for('update');
+        const slot = await this.readSourceSlot(tx, input.orgId);
+        if (slot.kind === 'taken') return { kind: 'source_exists' as const };
 
-      await tx
-        .update(easyordersPendingInstalls)
-        .set({ supersededAt: sql`now()` })
-        .where(
-          and(
-            eq(easyordersPendingInstalls.orgId, input.orgId),
-            isNull(easyordersPendingInstalls.consumedAt),
-            isNull(easyordersPendingInstalls.supersededAt),
-          ),
-        );
-      const [pending] = await tx
-        .insert(easyordersPendingInstalls)
-        .values(input)
-        .returning();
-      return { kind: 'created' as const, pending };
-    });
+        await tx
+          .update(easyordersPendingInstalls)
+          .set({ supersededAt: sql`now()` })
+          .where(
+            and(
+              eq(easyordersPendingInstalls.orgId, input.orgId),
+              isNull(easyordersPendingInstalls.consumedAt),
+              isNull(easyordersPendingInstalls.supersededAt),
+            ),
+          );
+        const [pending] = await tx
+          .insert(easyordersPendingInstalls)
+          .values(input)
+          .returning();
+        return { kind: 'created' as const, pending };
+      }),
+    );
   }
 
   /**

@@ -310,6 +310,7 @@ describe('commerce outcome synchronization tracking', () => {
         orgId: 'org-1',
         attempts: 1,
         deferrals: 0,
+        dueAt: Date.parse(syncs.rows[0].nextAttemptAt!),
         delayMs: outcomeSyncBackoffMs(1),
       },
     ]);

@@ -866,6 +866,43 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
       expect(open).toHaveLength(1);
     });
 
+    it('a new install started while a callback holds the open context is retried past the deadlock', async () => {
+      const tenant = await createTenant();
+      await start(tenant);
+      let restarted: Promise<StartedInstall> | undefined;
+
+      // The callback's lock order, by hand: the open context, then the
+      // organization. The new install takes them the other way round.
+      const callbackTx = await client.reserve();
+      try {
+        await callbackTx`BEGIN`;
+        await callbackTx`
+          SELECT id FROM easyorders_pending_installs
+          WHERE org_id = ${tenant.orgId} FOR UPDATE`;
+        restarted = start(tenant);
+        for (let waited = 0; waited < 50; waited++) {
+          const [blocked] = await client<{ waiting: number }[]>`
+            SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND datname = current_database()`;
+          if (blocked.waiting > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await callbackTx`
+          SELECT id FROM organizations WHERE id = ${tenant.orgId} FOR UPDATE`;
+        await callbackTx`COMMIT`;
+      } finally {
+        callbackTx.release();
+      }
+
+      await expect(restarted).resolves.toMatchObject({
+        callbackToken: expect.any(String) as string,
+      });
+      const open = await client`
+        SELECT id FROM easyorders_pending_installs
+        WHERE org_id = ${tenant.orgId} AND consumed_at IS NULL AND superseded_at IS NULL`;
+      expect(open).toHaveLength(1);
+    });
+
     it('rolls the whole provisioning back when a write fails, and the same link then succeeds', async () => {
       const tenant = await createTenant();
       const started = await start(tenant);
