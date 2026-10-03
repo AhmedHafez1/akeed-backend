@@ -1,3 +1,6 @@
+import type { AuthenticatedUser } from '../src/modules/auth/guards/dual-auth.guard';
+import { PhoneService } from '../src/shared/services/phone.service';
+import { EasyOrdersAuthService } from '../src/infrastructure/spokes/easyorders/easyorders-auth.service';
 import { HttpException, Logger, type LoggerService } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
@@ -223,6 +226,23 @@ const registry = new CommerceOutcomeRegistryService(
   new CommerceOutcomeSyncTracker(syncs, retryProducer),
 );
 const retryWorker = new CommerceOutcomeSyncProcessor(syncs, registry);
+/** The real disconnect (US-06-05), with the real outcome-sync repository. */
+const connectionService = new EasyOrdersAuthService(
+  connections,
+  new EasyOrdersApiClient(fakeEasyOrders),
+  config,
+  new PhoneService(),
+  syncs,
+);
+
+function ownerOf(merchant: { orgId: string }): AuthenticatedUser {
+  return {
+    userId: randomUUID(),
+    orgId: merchant.orgId,
+    role: 'owner',
+    source: 'supabase',
+  };
+}
 
 async function runRetries(limit = 20): Promise<number> {
   let ran = 0;
@@ -554,6 +574,8 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
     await migrate('0048_easyorders_ingestion.sql');
     for (let pass = 0; pass < 2; pass++)
       await migrate('0049_commerce_outcome_syncs.sql');
+    // US-06-05: the credentials become nullable for a disconnect.
+    await migrate('0050_easyorders_disconnect.sql');
   });
 
   afterAll(async () => {
@@ -1070,6 +1092,190 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
       expect(await eventsOf(other)).toHaveLength(0);
       expect(await syncsOf(theirs)).toEqual([before]);
       expect(await localStatus(theirs)).toBe('confirmed');
+    });
+  });
+
+  describe('a disconnected source (US-06-05)', () => {
+    it('a retry queued before the disconnect makes no request and ends failed', async () => {
+      const order = await orderWith(merchant, { status: 'confirmed' });
+      readFaults.push('unavailable');
+      await dispatch(merchant, order, 'customer_confirmation');
+      expect((await syncsOf(order))[0]).toMatchObject({ state: 'pending' });
+      expect(scheduled).toHaveLength(1);
+      const requestsBefore = providerRequests.length;
+
+      await connectionService.disconnect(ownerOf(merchant));
+
+      // Closed at the disconnect, not left waiting for a job that may be lost.
+      expect((await syncsOf(order))[0]).toMatchObject({
+        state: 'failed',
+        error_code: 'integration_inactive',
+      });
+      await runRetries();
+      expect(providerRequests).toHaveLength(requestsBefore);
+      expect(remoteOrders.get(order.externalOrderId)!.status).toBe('pending');
+      expect((await syncsOf(order))[0]).toMatchObject({
+        state: 'failed',
+        error_code: 'integration_inactive',
+      });
+      expect(await localStatus(order)).toBe('confirmed');
+    });
+
+    it('a reply after the disconnect is kept locally and nothing is sent to EasyOrders', async () => {
+      const order = await orderWith(merchant, { status: 'canceled' });
+      await connectionService.disconnect(ownerOf(merchant));
+
+      const result = await dispatch(merchant, order, 'customer_cancellation');
+
+      expect(result).toMatchObject({
+        status: 'permanent_failure',
+        errorCode: 'integration_inactive',
+      });
+      expect(providerRequests).toHaveLength(0);
+      expect(scheduled).toHaveLength(0);
+      expect(remoteOrders.get(order.externalOrderId)!.status).toBe('pending');
+      expect(await localStatus(order)).toBe('canceled');
+    });
+
+    it('the adapter itself refuses a disconnected connection, without a request', async () => {
+      const order = await orderWith(merchant, { status: 'confirmed' });
+      await connectionService.disconnect(ownerOf(merchant));
+
+      // Past the registry's check, as a disconnect landing mid-dispatch would be.
+      const result = await adapter.execute({
+        orgId: merchant.orgId,
+        integrationId: merchant.integrationId,
+        externalOrderId: order.externalOrderId,
+        action: 'customer_confirmation',
+        correlationId: order.verificationId,
+        connection: {
+          id: merchant.integrationId,
+          orgId: merchant.orgId,
+          platformType: 'easyorders',
+          platformStoreUrl: `easyorders:${merchant.orgId}`,
+          accessToken: null,
+          isActive: true,
+          metadata: {},
+        },
+      });
+
+      expect(result).toEqual({
+        status: 'permanent_failure',
+        errorCode: 'integration_inactive',
+      });
+      expect(providerRequests).toHaveLength(0);
+    });
+
+    it('closes only its own waiting rows, and another tenant cannot disconnect it', async () => {
+      const other = await connectMerchant();
+      const mine = await orderWith(merchant, { status: 'confirmed' });
+      const theirs = await orderWith(other, { status: 'confirmed' });
+      readFaults.push('unavailable', 'unavailable');
+      await dispatch(merchant, mine, 'customer_confirmation');
+      await dispatch(other, theirs, 'customer_confirmation');
+
+      await connectionService.disconnect(ownerOf(other));
+
+      expect((await syncsOf(mine))[0]).toMatchObject({ state: 'pending' });
+      expect((await syncsOf(theirs))[0]).toMatchObject({ state: 'failed' });
+      const [source] = await client<{ is_active: boolean }[]>`
+        SELECT is_active FROM integrations WHERE id = ${merchant.integrationId}`;
+      expect(source.is_active).toBe(true);
+      expect(
+        await syncs.failPendingForIntegration(
+          other.orgId,
+          merchant.integrationId,
+          'integration_inactive',
+        ),
+      ).toBe(0);
+      expect((await syncsOf(mine))[0]).toMatchObject({ state: 'pending' });
+    });
+  });
+
+  describe('store-update health (US-06-05)', () => {
+    const since = () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const summaryOf = (target: Merchant) =>
+      syncs.summarizeForIntegration(
+        target.orgId,
+        target.integrationId,
+        since(),
+      );
+
+    it('reports nothing for a store with no outcomes yet', async () => {
+      await expect(summaryOf(merchant)).resolves.toEqual({
+        failedCount: 0,
+        lastFailedAt: null,
+        requiresAssistance: false,
+        pendingCount: 0,
+      });
+    });
+
+    it('an unsupported outcome is not counted as a failed store update', async () => {
+      const order = await orderWith(merchant, { status: 'no_reply' });
+      await dispatch(merchant, order, 'automatic_no_reply_tagging');
+      const done = await orderWith(merchant, { status: 'confirmed' });
+      await dispatch(merchant, done, 'customer_confirmation');
+
+      await expect(summaryOf(merchant)).resolves.toEqual({
+        failedCount: 0,
+        lastFailedAt: null,
+        requiresAssistance: false,
+        pendingCount: 0,
+      });
+    });
+
+    it('counts failures and waiting rows apart, and flags a rejected key', async () => {
+      const waiting = await orderWith(merchant, { status: 'confirmed' });
+      readFaults.push('unavailable');
+      await dispatch(merchant, waiting, 'customer_confirmation');
+      const conflict = await orderWith(merchant, {
+        status: 'confirmed',
+        remoteStatus: 'delivered',
+      });
+      await dispatch(merchant, conflict, 'customer_confirmation');
+
+      const before = await summaryOf(merchant);
+      expect(before).toMatchObject({
+        failedCount: 1,
+        requiresAssistance: false,
+        pendingCount: 1,
+      });
+      expect(before.lastFailedAt).not.toBeNull();
+
+      const revoked = await orderWith(merchant, { status: 'confirmed' });
+      writeFaults.push('revoked');
+      await dispatch(merchant, revoked, 'customer_confirmation');
+
+      await expect(summaryOf(merchant)).resolves.toMatchObject({
+        failedCount: 2,
+        requiresAssistance: true,
+        pendingCount: 1,
+      });
+    });
+
+    it('never reports another tenant’s store updates, and still reports after a disconnect', async () => {
+      const other = await connectMerchant();
+      const order = await orderWith(merchant, {
+        status: 'confirmed',
+        remoteStatus: 'delivered',
+      });
+      await dispatch(merchant, order, 'customer_confirmation');
+
+      await expect(summaryOf(other)).resolves.toMatchObject({ failedCount: 0 });
+      await expect(
+        syncs.summarizeForIntegration(
+          other.orgId,
+          merchant.integrationId,
+          since(),
+        ),
+      ).resolves.toMatchObject({ failedCount: 0, pendingCount: 0 });
+
+      await connectionService.disconnect(ownerOf(merchant));
+      await expect(summaryOf(merchant)).resolves.toMatchObject({
+        failedCount: 1,
+        pendingCount: 0,
+      });
+      expect(await syncsOf(order)).toHaveLength(1);
     });
   });
 

@@ -15,6 +15,7 @@ export type EasyOrdersErrorCode =
   | 'EASYORDERS_KEY_REJECTED'
   | 'EASYORDERS_PROVIDER_UNAVAILABLE'
   | 'EASYORDERS_STORE_UNAVAILABLE'
+  | 'EASYORDERS_RECONNECT_STORE_MISMATCH'
   | 'EASYORDERS_NOT_CONNECTED'
   | 'EASYORDERS_SECRETS_INVALID'
   | 'EASYORDERS_ORDER_SETTINGS_INVALID'
@@ -41,6 +42,7 @@ const STATUS: Record<EasyOrdersErrorCode, HttpStatus> = {
   EASYORDERS_KEY_REJECTED: HttpStatus.UNPROCESSABLE_ENTITY,
   EASYORDERS_PROVIDER_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
   EASYORDERS_STORE_UNAVAILABLE: HttpStatus.CONFLICT,
+  EASYORDERS_RECONNECT_STORE_MISMATCH: HttpStatus.CONFLICT,
   EASYORDERS_NOT_CONNECTED: HttpStatus.NOT_FOUND,
   EASYORDERS_SECRETS_INVALID: HttpStatus.BAD_REQUEST,
   EASYORDERS_ORDER_SETTINGS_INVALID: HttpStatus.BAD_REQUEST,
@@ -68,6 +70,8 @@ const MESSAGES: Record<EasyOrdersErrorCode, string> = {
     'EasyOrders could not be reached to check the API key.',
   EASYORDERS_STORE_UNAVAILABLE:
     'This EasyOrders store is already connected to another account.',
+  EASYORDERS_RECONNECT_STORE_MISMATCH:
+    'Only the EasyOrders store that was connected before can be reconnected.',
   EASYORDERS_NOT_CONNECTED: 'EasyOrders is not connected.',
   EASYORDERS_SECRETS_INVALID: 'The webhook secrets are invalid.',
   EASYORDERS_ORDER_SETTINGS_INVALID:

@@ -45,6 +45,7 @@ import {
   resolveFallbackActiveIntegration,
   resolveShopifyLinkedIntegration,
 } from '../../shared/commerce/current-integration-resolver';
+import { SourceSetupService } from './source-setup.service';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_AVG_SHIPPING_COST = 3;
@@ -70,10 +71,14 @@ export class OnboardingStateService {
     private readonly phoneService: PhoneService = new PhoneService(),
     @Optional()
     private readonly organizationsRepo?: OrganizationsRepository,
+    @Optional()
+    private readonly sourceSetup?: SourceSetupService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
-    const integration = await this.resolveCurrentIntegration(user);
+    const integration = await this.resolveCurrentIntegration(user, {
+      allowDisconnected: true,
+    });
     const hydratedIntegration =
       await this.prefillStoreNameIfMissing(integration);
     return this.toState(hydratedIntegration);
@@ -260,8 +265,15 @@ export class OnboardingStateService {
     }
   }
 
+  /**
+   * `allowDisconnected` is for reads only (state, settings, health): a source
+   * its merchant disconnected stays readable when its spoke says so, so the
+   * history and the way back are not lost behind a 404. Every write still
+   * needs an active source.
+   */
   async resolveCurrentIntegration(
     user: AuthenticatedUser,
+    options: { allowDisconnected?: boolean } = {},
   ): Promise<IntegrationRecord> {
     if (user.shop) {
       const resolution = await resolveShopifyLinkedIntegration(
@@ -290,6 +302,12 @@ export class OnboardingStateService {
     }
     if (resolution.outcome === 'found') return resolution.integration;
 
+    if (options.allowDisconnected && resolution.hasInactiveSource) {
+      const disconnected =
+        await this.sourceSetup?.findReadableDisconnectedSource(user.orgId);
+      if (disconnected) return disconnected;
+    }
+
     throw new NotFoundException({
       statusCode: 404,
       error: 'Not Found',
@@ -306,12 +324,6 @@ export class OnboardingStateService {
     integration: IntegrationRecord,
   ): Promise<IntegrationRecord> {
     if (integration.storeName) return integration;
-    if (
-      integration.platformType !== 'shopify' &&
-      integration.platformType !== 'standalone'
-    ) {
-      return integration;
-    }
 
     try {
       const storeName =
@@ -339,8 +351,8 @@ export class OnboardingStateService {
   }
 
   /**
-   * A Standalone store starts with the company name given at signup, which is
-   * the organization name. Trimmed to fit the WhatsApp template variable.
+   * A store without a platform to ask starts with the company name given at
+   * signup, which is the organization name. Trimmed to fit the WhatsApp template variable.
    */
   private async readOrganizationStoreName(
     orgId: string,

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -82,6 +83,15 @@ export class EasyOrdersConnectionController {
       user,
       body as StartEasyOrdersInstallDto,
     );
+  }
+
+  /** Local only: nothing is removed at EasyOrders (US-06-05 runbook). */
+  @Delete('connection')
+  @Header('Cache-Control', 'no-store')
+  disconnect(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    return this.easyOrders.disconnect(user);
   }
 
   @Put('connection/webhook-secrets')

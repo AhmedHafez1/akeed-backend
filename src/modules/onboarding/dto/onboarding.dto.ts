@@ -1,6 +1,7 @@
 import type { CreditAccountStatus } from '../../../shared/ports/credit-accounting.port';
 import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
 import type { BillingManagement } from '../../../shared/billing/entitlement';
+import type { SourceSetupDto } from '../../../shared/commerce/source-setup';
 import {
   IsBoolean,
   IsIn,
@@ -266,6 +267,11 @@ export interface OnboardingStateDto {
     blockedReasons: StandaloneSetupBlockedReason[];
     accountStatus: CreditAccountStatus | null;
   } | null;
+  /**
+   * The connection of a source whose spoke describes one (US-06-05). The key
+   * is absent for every other source.
+   */
+  sourceSetup?: SourceSetupDto;
 }
 
 export interface OnboardingBillingResponseDto {

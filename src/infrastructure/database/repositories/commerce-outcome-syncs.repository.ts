@@ -30,6 +30,18 @@ export interface CommerceOutcomeSyncSettlement {
   spent: 'attempt' | 'deferral';
 }
 
+export interface CommerceOutcomeSyncSummary {
+  failedCount: number;
+  lastFailedAt: string | null;
+  requiresAssistance: boolean;
+  pendingCount: number;
+}
+
+/** Raw aggregates come back as driver text; the API speaks ISO 8601. */
+function toIsoOrNull(value: string | Date | null | undefined): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
 /**
  * Whether a store has an outcome yet, per order and action (US-06-04). Every
  * method is scoped by the organization the caller already trusts.
@@ -146,6 +158,68 @@ export class CommerceOutcomeSyncsRepository {
           eq(commerceOutcomeSyncs.state, 'pending'),
         ),
       );
+  }
+
+  /**
+   * Closes every row of one source that is still waiting, when the source
+   * stops being able to write (a disconnect). Answers how many were closed.
+   */
+  async failPendingForIntegration(
+    orgId: string,
+    integrationId: string,
+    errorCode: string,
+  ): Promise<number> {
+    const closed = await this.db
+      .update(commerceOutcomeSyncs)
+      .set({
+        state: 'failed',
+        errorCode,
+        nextAttemptAt: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(commerceOutcomeSyncs.orgId, orgId),
+          eq(commerceOutcomeSyncs.integrationId, integrationId),
+          eq(commerceOutcomeSyncs.state, 'pending'),
+        ),
+      )
+      .returning({ id: commerceOutcomeSyncs.id });
+    return closed.length;
+  }
+
+  /**
+   * One source's store updates for its health view: failures since `since`,
+   * and what is still waiting now. An unsupported action is neither.
+   */
+  async summarizeForIntegration(
+    orgId: string,
+    integrationId: string,
+    since: Date,
+  ): Promise<CommerceOutcomeSyncSummary> {
+    const sinceIso = since.toISOString();
+    const [row] = await this.db
+      .select({
+        failedCount: sql<number>`count(*) FILTER (WHERE ${commerceOutcomeSyncs.state} = 'failed' AND ${commerceOutcomeSyncs.updatedAt} >= ${sinceIso})::int`,
+        lastFailedAt: sql<
+          string | null
+        >`max(${commerceOutcomeSyncs.updatedAt}) FILTER (WHERE ${commerceOutcomeSyncs.state} = 'failed' AND ${commerceOutcomeSyncs.updatedAt} >= ${sinceIso})`,
+        requiresAssistance: sql<boolean>`coalesce(bool_or(${commerceOutcomeSyncs.requiresAssistance}) FILTER (WHERE ${commerceOutcomeSyncs.state} = 'failed' AND ${commerceOutcomeSyncs.updatedAt} >= ${sinceIso}), false)`,
+        pendingCount: sql<number>`count(*) FILTER (WHERE ${commerceOutcomeSyncs.state} = 'pending')::int`,
+      })
+      .from(commerceOutcomeSyncs)
+      .where(
+        and(
+          eq(commerceOutcomeSyncs.orgId, orgId),
+          eq(commerceOutcomeSyncs.integrationId, integrationId),
+        ),
+      );
+    return {
+      failedCount: row?.failedCount ?? 0,
+      lastFailedAt: toIsoOrNull(row?.lastFailedAt),
+      requiresAssistance: row?.requiresAssistance ?? false,
+      pendingCount: row?.pendingCount ?? 0,
+    };
   }
 
   /**

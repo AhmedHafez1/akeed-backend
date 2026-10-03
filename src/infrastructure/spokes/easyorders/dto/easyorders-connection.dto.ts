@@ -59,7 +59,9 @@ export type EasyOrdersConnectionState =
   | 'pending'
   | 'failed'
   | 'expired'
-  | 'connected';
+  | 'connected'
+  /** Disconnected by an owner or admin; only the same store can reconnect. */
+  | 'disconnected';
 
 export type EasyOrdersConnectionHealth =
   | 'ok'
@@ -80,8 +82,11 @@ export interface EasyOrdersConnectionStatusDto {
     /** False until data fetched with the key carries the same store id. */
     storeVerified: boolean;
     health: EasyOrdersConnectionHealth;
-    /** Last characters of the webhook URLs, to find them in EasyOrders. */
-    webhookUrlHint: string;
+    /**
+     * Last characters of the webhook URLs, to find them in EasyOrders. Null
+     * once disconnected: the address is retired and answers nothing.
+     */
+    webhookUrlHint: string | null;
     ordersSecretSet: boolean;
     statusSecretSet: boolean;
     /** Store currency for every order; null until the merchant chooses it. */
@@ -91,5 +96,10 @@ export interface EasyOrdersConnectionStatusDto {
     /** Webhooks refused for a wrong secret since the connection was made. */
     rejectedDeliveries: number;
     connectedAt: string;
+    /**
+     * Set while the source is disconnected, including while a reconnect is
+     * `pending`, `failed` or `expired`.
+     */
+    disconnectedAt: string | null;
   } | null;
 }

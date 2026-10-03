@@ -12,10 +12,11 @@ import { EasyOrdersWebhookController } from './easyorders-webhook.controller';
 import { EasyOrdersWebhookService } from './easyorders-webhook.service';
 
 /**
- * The EasyOrders spoke: the authorized connection (US-06-02) and the webhook
- * routes that feed the common queue (US-06-03). The order normalizer lives in
- * `EasyOrdersIngestionModule` and the eligibility strategy is bound in
- * `app.module.ts`. No outcome adapter is registered yet (US-06-04).
+ * The EasyOrders spoke: the authorized connection with its disconnect and
+ * reconnect (US-06-02, US-06-05) and the webhook routes that feed the common
+ * queue (US-06-03). The order normalizer, the outcome adapter (US-06-04) and
+ * the setup contributor live in `EasyOrdersIngestionModule`; the eligibility
+ * strategy is bound in `app.module.ts`.
  */
 @Module({
   imports: [

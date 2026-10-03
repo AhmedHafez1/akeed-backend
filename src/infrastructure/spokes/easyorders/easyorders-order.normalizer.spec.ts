@@ -39,6 +39,8 @@ function connection(
     webhookTokenHash: 'h'.repeat(64),
     webhookTokenHint: 'abc123',
     ordersWebhookSecretEncrypted: null,
+    disconnectedAt: null,
+    disconnectedBy: null,
     statusWebhookSecretEncrypted: null,
     health: 'ok',
     currency: 'EGP',

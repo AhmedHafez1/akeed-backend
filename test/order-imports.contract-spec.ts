@@ -264,6 +264,8 @@ describe('order imports PostgreSQL contract', () => {
         '0048_easyorders_ingestion.sql',
         // US-06-04: references integrations and orders; proves 0049 re-runs.
         '0049_commerce_outcome_syncs.sql',
+        // US-06-05: relaxes the EasyOrders credentials; proves 0050 re-runs.
+        '0050_easyorders_disconnect.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

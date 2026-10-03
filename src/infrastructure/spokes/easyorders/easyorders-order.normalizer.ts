@@ -101,8 +101,10 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
       integrationId,
       orgId,
     );
-    if (!connection)
+    // A disconnected connection has no key to look an order up with.
+    if (!connection || !connection.apiKeyEncrypted)
       return this.skip(orgId, integrationId, 'source_connection_missing');
+    const apiKeyEncrypted = connection.apiKeyEncrypted;
     if (rawPayload.store_id !== connection.storeId)
       return this.skip(orgId, integrationId, 'store_mismatch');
 
@@ -116,7 +118,7 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
     ) {
       if (!orderId)
         return this.skip(orgId, integrationId, 'incomplete_payload');
-      const fetched = await this.lookup(connection, orderId);
+      const fetched = await this.lookup(connection, apiKeyEncrypted, orderId);
       if ('skipped' in fetched) return fetched;
       order = fillMissing(rawPayload, fetched.order);
     }
@@ -161,6 +163,7 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
    */
   private async lookup(
     connection: EasyOrdersConnection,
+    apiKeyEncrypted: string,
     orderId: string,
   ): Promise<
     | { order: Record<string, unknown> }
@@ -176,7 +179,7 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
 
     const result = await this.api.getOrder(
       decryptToken(
-        connection.apiKeyEncrypted,
+        apiKeyEncrypted,
         this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY'),
       ),
       orderId,

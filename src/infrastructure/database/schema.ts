@@ -2396,11 +2396,18 @@ export const easyordersConnections = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
-    apiKeyEncrypted: text('api_key_encrypted').notNull(),
-    webhookTokenHash: text('webhook_token_hash').notNull(),
-    webhookTokenHint: text('webhook_token_hint').notNull(),
+    // Null only on a disconnected row (US-06-05): a disconnect wipes every
+    // credential and keeps the store id for a same-store reconnect.
+    apiKeyEncrypted: text('api_key_encrypted'),
+    webhookTokenHash: text('webhook_token_hash'),
+    webhookTokenHint: text('webhook_token_hint'),
     ordersWebhookSecretEncrypted: text('orders_webhook_secret_encrypted'),
     statusWebhookSecretEncrypted: text('status_webhook_secret_encrypted'),
+    disconnectedAt: timestamp('disconnected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    disconnectedBy: uuid('disconnected_by'),
     health: text().default('ok').notNull(),
     // Setup inputs (US-06-03): the order payload carries neither, and a
     // missing one makes an order not eligible instead of being guessed.
@@ -2468,6 +2475,10 @@ export const easyordersConnections = pgTable(
     check(
       'easyorders_connections_status_secret_encrypted_check',
       sql`${table.statusWebhookSecretEncrypted} IS NULL OR ${table.statusWebhookSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'easyorders_connections_credentials_state_check',
+      sql`(${table.disconnectedAt} IS NULL AND ${table.apiKeyEncrypted} IS NOT NULL AND ${table.webhookTokenHash} IS NOT NULL AND ${table.webhookTokenHint} IS NOT NULL) OR (${table.disconnectedAt} IS NOT NULL AND ${table.apiKeyEncrypted} IS NULL AND ${table.webhookTokenHash} IS NULL AND ${table.webhookTokenHint} IS NULL AND ${table.ordersWebhookSecretEncrypted} IS NULL AND ${table.statusWebhookSecretEncrypted} IS NULL AND ${table.storeVerifiedAt} IS NULL)`,
     ),
     uniqueIndex('easyorders_connections_verified_store_key')
       .on(table.storeId)

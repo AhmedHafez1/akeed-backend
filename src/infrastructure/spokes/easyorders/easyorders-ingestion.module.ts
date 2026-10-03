@@ -7,11 +7,12 @@ import { EasyOrdersOrderNormalizer } from './easyorders-order.normalizer';
 import { EasyOrdersOutcomeAdapter } from './easyorders-outcome.adapter';
 import { EasyOrdersStatusUpdateHandler } from './easyorders-status-update.handler';
 import { EasyOrdersRateLimiter } from './easyorders-rate-limiter';
+import { EasyOrdersSetupContributor } from './easyorders-setup.contributor';
 
 /**
  * What the workers need from the EasyOrders spoke: the order normalizer, the
- * status-event handler, the outcome adapter, and the API client and rate
- * budget they share. Kept apart from `EasyOrdersModule`, which imports the
+ * status-event handler, the outcome adapter, the setup contributor that
+ * onboarding reads, and the API client and rate budget they share. Kept apart from `EasyOrdersModule`, which imports the
  * webhook queue for its routes, so the queue and the outcome registry can
  * import this without a cycle. One instance, so one rate budget.
  */
@@ -23,6 +24,7 @@ import { EasyOrdersRateLimiter } from './easyorders-rate-limiter';
     EasyOrdersOrderNormalizer,
     EasyOrdersOutcomeAdapter,
     EasyOrdersStatusUpdateHandler,
+    EasyOrdersSetupContributor,
     PhoneService,
     {
       provide: EASYORDERS_HTTP,
@@ -35,6 +37,7 @@ import { EasyOrdersRateLimiter } from './easyorders-rate-limiter';
     EasyOrdersOrderNormalizer,
     EasyOrdersOutcomeAdapter,
     EasyOrdersStatusUpdateHandler,
+    EasyOrdersSetupContributor,
   ],
 })
 export class EasyOrdersIngestionModule {}

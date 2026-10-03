@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -44,6 +45,11 @@ import {
   assertOrganizationWriteAllowed,
   canWriteOrganization,
 } from '../auth/organization-role';
+import { SourceSetupService } from './source-setup.service';
+import type {
+  SourceHealthDto,
+  SourceSetupDto,
+} from '../../shared/commerce/source-setup';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -61,11 +67,15 @@ export class OnboardingService {
     private readonly messageDispatches?: VerificationMessageDispatchesRepository,
     @Optional()
     private readonly ordersRepo?: OrdersRepository,
+    @Optional()
+    private readonly sourceSetup?: SourceSetupService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
-    const integration =
-      await this.onboardingState.resolveCurrentIntegration(user);
+    const integration = await this.onboardingState.resolveCurrentIntegration(
+      user,
+      { allowDisconnected: true },
+    );
     const hydratedIntegration =
       await this.onboardingState.prefillStoreNameIfMissing(integration);
     return this.buildState(user, hydratedIntegration);
@@ -136,9 +146,24 @@ export class OnboardingService {
     );
   }
 
+  /**
+   * The source's health as separate signals (US-06-05). Any member may read
+   * it, and it stays readable after a disconnect: it holds no credential.
+   */
+  async getSourceHealth(user: AuthenticatedUser): Promise<SourceHealthDto> {
+    if (!this.sourceSetup) throw new NotFoundException();
+    const integration = await this.onboardingState.resolveCurrentIntegration(
+      user,
+      { allowDisconnected: true },
+    );
+    return this.sourceSetup.health(integration);
+  }
+
   async getSettings(user: AuthenticatedUser): Promise<SettingsResponseDto> {
-    const integration =
-      await this.onboardingState.resolveCurrentIntegration(user);
+    const integration = await this.onboardingState.resolveCurrentIntegration(
+      user,
+      { allowDisconnected: true },
+    );
     const hydratedIntegration =
       await this.onboardingState.prefillStoreNameIfMissing(integration);
 
@@ -186,14 +211,14 @@ export class OnboardingService {
       return { state: currentState };
     }
 
-    const blockedReasons = currentState.standaloneSetup?.blockedReasons ?? [
-      'source_invalid',
-    ];
+    const blockedReasons: string[] = currentState.standaloneSetup
+      ?.blockedReasons ??
+      currentState.sourceSetup?.blockedReasons ?? ['source_invalid'];
     if (blockedReasons.length > 0) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: 'Standalone onboarding prerequisites are incomplete',
+        message: 'Onboarding prerequisites are incomplete',
         code: 'ONBOARDING_BLOCKED',
         blockedReasons,
       });
@@ -301,9 +326,10 @@ export class OnboardingService {
       ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
 
-    const [activation, usage] = await Promise.all([
+    const [activation, usage, sourceSetup] = await Promise.all([
       this.readActivation(integration, state.isOnboardingComplete),
       this.readUsage(integration),
+      this.readSourceSetup(integration, accountStatus),
     ]);
 
     return {
@@ -322,6 +348,35 @@ export class OnboardingService {
             accountStatus,
           }
         : null,
+      // Present only for a source whose spoke describes its connection, so
+      // every other source's response is exactly what it was.
+      ...(sourceSetup ? { sourceSetup } : {}),
+    };
+  }
+
+  private async readSourceSetup(
+    integration: IntegrationRecord,
+    accountStatus: CreditAccountStatus | null,
+  ): Promise<SourceSetupDto | null> {
+    const contribution = await this.sourceSetup?.describe(integration);
+    if (!this.sourceSetup || !contribution) return null;
+    // A disconnected source has one thing to fix; the common checks would
+    // only add noise that reconnecting clears by itself.
+    const blockedReasons =
+      contribution.connectionState === 'disconnected'
+        ? contribution.blockedReasons
+        : [
+            ...this.getCommonBlockedReasons(integration, accountStatus),
+            ...contribution.blockedReasons,
+          ];
+    return {
+      connectionState: contribution.connectionState,
+      disconnectedAt: contribution.disconnectedAt,
+      store: contribution.store,
+      orderDefaults: contribution.orderDefaults,
+      sender: this.sourceSetup.senderStatus(),
+      canComplete: blockedReasons.length === 0,
+      blockedReasons,
     };
   }
 
@@ -384,6 +439,16 @@ export class OnboardingService {
     if (integration.platformType !== 'standalone' || !integration.isActive) {
       reasons.push('source_invalid');
     }
+    reasons.push(...this.getCommonBlockedReasons(integration, accountStatus));
+    return reasons;
+  }
+
+  /** The setup checks every source shares, whatever platform it is. */
+  private getCommonBlockedReasons(
+    integration: IntegrationRecord,
+    accountStatus: CreditAccountStatus | null,
+  ): StandaloneSetupBlockedReason[] {
+    const reasons: StandaloneSetupBlockedReason[] = [];
 
     // A suspended account cannot send regardless of entitlement, so reporting
     // both reasons would just be noise.

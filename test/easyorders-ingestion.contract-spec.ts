@@ -266,6 +266,9 @@ const auth = new EasyOrdersAuthService(
   new EasyOrdersApiClient(fakeEasyOrders),
   easyOrdersConfig,
   phones,
+  // No outcome rows exist in this suite's schema; the outcome-sync contract
+  // covers closing them at a disconnect.
+  { failPendingForIntegration: () => Promise.resolve(0) } as never,
 );
 
 /** How one job ended: done, moved to the delayed set, or thrown for a retry. */
@@ -641,6 +644,8 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
     for (let pass = 0; pass < 2; pass++) {
       await migrate('0047_easyorders_connection.sql');
       await migrate('0048_easyorders_ingestion.sql');
+      // US-06-05: the credentials become nullable for a disconnect.
+      await migrate('0050_easyorders_disconnect.sql');
     }
   });
 
@@ -1409,7 +1414,258 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
     });
   });
 
-  describe('a disconnected source', () => {
+  describe('source health (US-06-05)', () => {
+    const since = () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const summaryOf = (merchant: Merchant) =>
+      events.summarizeForIntegration(
+        merchant.orgId,
+        merchant.integrationId,
+        since(),
+      );
+
+    it('reports a store with no events as having none, not as failing', async () => {
+      const merchant = await connectMerchant();
+
+      await expect(summaryOf(merchant)).resolves.toEqual({
+        lastAcceptedAt: null,
+        acceptedCount: 0,
+        failedCount: 0,
+        lastFailedAt: null,
+        waitingCount: 0,
+        oldestWaitingAt: null,
+      });
+    });
+
+    it('reports events waiting while the queue is down and none after recovery', async () => {
+      const merchant = await connectMerchant();
+      queue.down = true;
+      await deliverOrder(merchant, orderFor(merchant));
+      await deliverOrder(merchant, orderFor(merchant));
+
+      const during = await summaryOf(merchant);
+      expect(during).toMatchObject({
+        acceptedCount: 2,
+        waitingCount: 2,
+        failedCount: 0,
+        lastFailedAt: null,
+      });
+      expect(during.oldestWaitingAt).not.toBeNull();
+      expect(during.lastAcceptedAt).not.toBeNull();
+
+      queue.down = false;
+      for (const stored of await eventsOf(merchant)) {
+        await client`
+          UPDATE webhook_events
+          SET next_dispatch_at = now(), dispatch_lease_until = NULL
+          WHERE id = ${stored.id}`;
+        await dispatcher.dispatchById(stored.id);
+      }
+      await drain();
+
+      await expect(summaryOf(merchant)).resolves.toMatchObject({
+        acceptedCount: 2,
+        waitingCount: 0,
+        oldestWaitingAt: null,
+        failedCount: 0,
+      });
+    });
+
+    it('counts a processing failure apart from the backlog and from skipped orders', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant));
+      await deliverOrder(
+        merchant,
+        orderFor(merchant, { payment_method: 'online' }),
+      );
+      await drain();
+      const [first] = await eventsOf(merchant);
+      await events.markFailed(first.id, 'processing_error', 5);
+
+      await expect(summaryOf(merchant)).resolves.toMatchObject({
+        acceptedCount: 2,
+        failedCount: 1,
+        waitingCount: 0,
+      });
+    });
+
+    it('never reports another tenant’s events', async () => {
+      const tenantA = await connectMerchant();
+      const tenantB = await connectMerchant();
+      await deliverOrder(tenantA, orderFor(tenantA));
+      await drain();
+
+      await expect(summaryOf(tenantB)).resolves.toMatchObject({
+        lastAcceptedAt: null,
+        acceptedCount: 0,
+        waitingCount: 0,
+      });
+      // Tenant A's integration id under tenant B's organization reads nothing.
+      await expect(
+        events.summarizeForIntegration(
+          tenantB.orgId,
+          tenantA.integrationId,
+          since(),
+        ),
+      ).resolves.toMatchObject({ lastAcceptedAt: null, acceptedCount: 0 });
+    });
+  });
+
+  describe('a disconnected source (US-06-05)', () => {
+    it('answers the old webhook address with 401, stores nothing and stops an order already queued', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant));
+      await auth.disconnect(merchant.owner);
+      const before = await totalEvents();
+
+      const order = await deliverOrder(merchant, orderFor(merchant));
+      const status = await deliverStatus(merchant, {
+        ...orderStatusFixture(),
+        order_id: randomUUID(),
+      });
+      await drain();
+
+      for (const ack of [order, status])
+        expect(ack).toEqual({
+          status: 401,
+          code: 'EASYORDERS_WEBHOOK_UNAUTHORIZED',
+        });
+      expect(await totalEvents()).toBe(before);
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: 'integration_inactive' },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+      expect(providerRequests).toHaveLength(0);
+    });
+
+    it('an event accepted during a queue outage is recovered into a skip, never an order', async () => {
+      const merchant = await connectMerchant();
+      queue.down = true;
+      await deliverOrder(merchant, orderFor(merchant));
+      const [stored] = await eventsOf(merchant);
+      await auth.disconnect(merchant.owner);
+
+      queue.down = false;
+      await client`
+        UPDATE webhook_events
+        SET next_dispatch_at = now(), dispatch_lease_until = NULL
+        WHERE id = ${stored.id}`;
+      await dispatcher.dispatchById(stored.id);
+      await drain();
+
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: 'integration_inactive' },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('a reminder queued before the disconnect sends nothing', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant));
+      await drain();
+      const [verification] = await verificationsOf(merchant);
+      expect(sends).toHaveLength(1);
+
+      await auth.disconnect(merchant.owner);
+
+      await expect(send.sendFollowUp(verification.id)).resolves.toMatchObject({
+        status: 'skipped',
+        reason: 'integration_inactive',
+      });
+      expect(sends).toHaveLength(1);
+    });
+
+    it('keeps orders, verifications and events after a disconnect, and health still reports them', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant));
+      await deliverOrder(merchant, orderFor(merchant));
+      await drain();
+      const before = {
+        orders: await ordersOf(merchant),
+        verifications: await verificationsOf(merchant),
+        events: await eventsOf(merchant),
+      };
+      expect(before.orders).toHaveLength(2);
+
+      await auth.disconnect(merchant.owner);
+
+      expect(await ordersOf(merchant)).toEqual(before.orders);
+      expect(await verificationsOf(merchant)).toEqual(before.verifications);
+      expect(await eventsOf(merchant)).toEqual(before.events);
+      const [source] = await client<{ id: string; is_active: boolean }[]>`
+        SELECT id, is_active FROM integrations WHERE org_id = ${merchant.orgId}`;
+      expect(source).toEqual({ id: merchant.integrationId, is_active: false });
+      const summary = await events.summarizeForIntegration(
+        merchant.orgId,
+        merchant.integrationId,
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      );
+      expect(summary).toMatchObject({ acceptedCount: 2, waitingCount: 0 });
+      expect(summary.lastAcceptedAt).not.toBeNull();
+      // The history cannot be dropped by removing the source either.
+      await expect(
+        client`DELETE FROM integrations WHERE id = ${merchant.integrationId}`,
+      ).rejects.toThrow();
+    });
+
+    it('after a reconnect the new address feeds the same source and the old one stays dead', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant));
+      await drain();
+      await auth.disconnect(merchant.owner);
+
+      const started = await auth.startInstall(merchant.owner, { locale: 'ar' });
+      const params = new URLSearchParams(started.installUrl.split('?')[1]);
+      const callbackToken = params.get('callback_url')!.split('/').pop()!;
+      const webhookToken = params.get('orders_webhook')!.split('/').pop()!;
+      const apiKey = `eo_${randomBytes(24).toString('base64url')}`;
+      secrets.add(callbackToken).add(webhookToken).add(apiKey);
+      await auth.handleCallback(callbackToken, {
+        api_key: apiKey,
+        store_id: merchant.storeId,
+      });
+      const reconnected: Merchant = {
+        ...merchant,
+        apiKey,
+        webhookToken,
+        ordersSecret: secret(),
+        statusSecret: secret(),
+      };
+
+      // Until the seller pastes the new secrets, nothing is accepted.
+      await expect(
+        deliverOrder(reconnected, orderFor(reconnected)),
+      ).resolves.toMatchObject({ status: 401 });
+      await auth.saveWebhookSecrets(reconnected.owner, {
+        ordersSecret: reconnected.ordersSecret,
+        statusSecret: reconnected.statusSecret,
+      });
+
+      await expect(
+        deliverOrder(merchant, orderFor(merchant)),
+      ).resolves.toMatchObject({ status: 401 });
+      // The new key has proven nothing, so the first order is read back with
+      // it, and data naming the same store verifies the claim again.
+      expect((await connectionOf(merchant)).store_verified_at).toBeNull();
+      const next = orderFor(reconnected);
+      orderAnswers.set(next.id, () => Response.json(next));
+      await expect(deliverOrder(reconnected, next)).resolves.toMatchObject({
+        status: 200,
+      });
+      await drain();
+
+      expect(providerRequests).toEqual([{ key: apiKey, orderId: next.id }]);
+      expect((await connectionOf(merchant)).store_verified_at).not.toBeNull();
+      // One source throughout: the earlier order and the new one side by side.
+      expect(await ordersOf(merchant)).toHaveLength(2);
+      const sources = await client`
+        SELECT id FROM integrations WHERE org_id = ${merchant.orgId}`;
+      expect(sources).toEqual([{ id: merchant.integrationId }]);
+    });
+  });
+
+  describe('a source switched off without a disconnect', () => {
     it('rejects new webhooks and stops an order that was already queued', async () => {
       const merchant = await connectMerchant();
       const queuedBefore = orderFor(merchant);

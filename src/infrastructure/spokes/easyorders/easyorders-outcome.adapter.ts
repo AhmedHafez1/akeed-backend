@@ -118,6 +118,10 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
     );
     if (!connection)
       return { status: 'permanent_failure', errorCode: 'connection_missing' };
+    // The registry refuses an inactive source before calling; this covers a
+    // disconnect landing between its check and this read.
+    if (connection.disconnectedAt)
+      return { status: 'permanent_failure', errorCode: 'integration_inactive' };
 
     const apiKey = this.readApiKey(connection);
     if (!apiKey)
@@ -178,6 +182,7 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
    * sent anywhere.
    */
   private readApiKey(connection: EasyOrdersConnection): string | null {
+    if (!connection.apiKeyEncrypted) return null;
     try {
       const apiKey = decryptToken(
         connection.apiKeyEncrypted,

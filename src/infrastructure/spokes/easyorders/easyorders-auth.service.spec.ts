@@ -1,9 +1,11 @@
 import { HttpException, Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type {
+  EasyOrdersConnection,
   EasyOrdersConnectionsRepository,
   EasyOrdersPendingInstall,
 } from '../../database/repositories/easyorders-connections.repository';
+import type { CommerceOutcomeSyncsRepository } from '../../database/repositories/commerce-outcome-syncs.repository';
 import type { AuthenticatedUser } from '../../../modules/auth/guards/dual-auth.guard';
 import {
   EASYORDERS_CONFIG,
@@ -51,6 +53,48 @@ function pendingInstall(
   };
 }
 
+function connectionRow(
+  overrides: Partial<EasyOrdersConnection> = {},
+): EasyOrdersConnection {
+  return {
+    integrationId: 'integration-1',
+    orgId: ORG_ID,
+    storeId: 'store-1',
+    storeVerifiedAt: null,
+    apiKeyEncrypted: 'v1:ciphertext-key',
+    webhookTokenHash: 'h'.repeat(64),
+    webhookTokenHint: 'abc123',
+    ordersWebhookSecretEncrypted: 'v1:ciphertext-orders',
+    statusWebhookSecretEncrypted: null,
+    disconnectedAt: null,
+    disconnectedBy: null,
+    health: 'store_inactive',
+    currency: 'EGP',
+    phoneCountry: null,
+    rejectedDeliveries: 3,
+    lastRejectedAt: NOW.toISOString(),
+    connectedBy: 'user-1',
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    ...overrides,
+  };
+}
+
+/** What a disconnect leaves on the row: the store and settings, no credential. */
+function disconnectedRow(): EasyOrdersConnection {
+  return connectionRow({
+    apiKeyEncrypted: null,
+    webhookTokenHash: null,
+    webhookTokenHint: null,
+    ordersWebhookSecretEncrypted: null,
+    disconnectedAt: NOW.toISOString(),
+    disconnectedBy: 'user-1',
+    health: 'ok',
+    rejectedDeliveries: 0,
+    lastRejectedAt: null,
+  });
+}
+
 function createService(settings: Partial<EasyOrdersConfig> = {}) {
   const config: EasyOrdersConfig = {
     enabled: true,
@@ -70,6 +114,10 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
     getOverview: jest.fn(),
     saveWebhookSecrets: jest.fn(),
     saveOrderSettings: jest.fn(),
+    disconnect: jest.fn(),
+  };
+  const outcomeSyncs = {
+    failPendingForIntegration: jest.fn().mockResolvedValue(0),
   };
   const api = { probeKey: jest.fn() };
   const configService = {
@@ -81,8 +129,9 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
     api as unknown as EasyOrdersApiClient,
     configService as unknown as ConfigService,
     new PhoneService(),
+    outcomeSyncs as unknown as CommerceOutcomeSyncsRepository,
   );
-  return { service, connections, api };
+  return { service, connections, api, outcomeSyncs };
 }
 
 async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -274,6 +323,26 @@ describe('EasyOrdersAuthService', () => {
       expect(api.probeKey).not.toHaveBeenCalled();
     });
 
+    it('refuses a reconnect that names another store, and counts the attempt', async () => {
+      const { service, connections, api } = createService();
+      connections.findPendingByCallbackTokenHash.mockResolvedValue(
+        pendingInstall(),
+      );
+      api.probeKey.mockResolvedValue('live');
+      connections.connect.mockResolvedValue({
+        kind: 'store_mismatch',
+        orgId: ORG_ID,
+      });
+
+      await expect(codeOf(service.handleCallback(token, body))).resolves.toBe(
+        'EASYORDERS_RECONNECT_STORE_MISMATCH',
+      );
+      expect(connections.recordFailedAttempt).toHaveBeenCalledWith(
+        'pending-1',
+        'EASYORDERS_RECONNECT_STORE_MISMATCH',
+      );
+    });
+
     it('never writes the key, the token or the store into a log line', async () => {
       const lines: string[] = [];
       for (const level of ['log', 'warn', 'error'] as const)
@@ -393,32 +462,157 @@ describe('EasyOrdersAuthService', () => {
     });
   });
 
+  describe('disconnect', () => {
+    const overview = {
+      organizationName: 'Noor Store',
+      sourcePlatforms: ['easyorders'],
+      latestPending: undefined,
+      connection: disconnectedRow(),
+    };
+
+    it('deactivates the source, closes waiting store updates and answers disconnected', async () => {
+      const { service, connections, outcomeSyncs } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: true,
+      });
+      connections.getOverview.mockResolvedValue(overview);
+
+      const status = await service.disconnect(owner);
+
+      expect(connections.disconnect).toHaveBeenCalledWith(ORG_ID, 'user-1');
+      expect(outcomeSyncs.failPendingForIntegration).toHaveBeenCalledWith(
+        ORG_ID,
+        'integration-1',
+        'integration_inactive',
+      );
+      expect(status.state).toBe('disconnected');
+      expect(status.connection).toMatchObject({
+        storeId: 'store-1',
+        webhookUrlHint: null,
+        ordersSecretSet: false,
+        statusSecretSet: false,
+        disconnectedAt: NOW.toISOString(),
+      });
+    });
+
+    it('works with the connect switch off and off the pilot list', async () => {
+      const { service, connections } = createService({
+        enabled: false,
+        pilotOrgIds: [],
+      });
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: false,
+      });
+      connections.getOverview.mockResolvedValue(overview);
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+    });
+
+    it('is a no-op the second time', async () => {
+      const { service, connections, outcomeSyncs } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'already_disconnected',
+        integrationId: 'integration-1',
+      });
+      connections.getOverview.mockResolvedValue(overview);
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+      expect(outcomeSyncs.failPendingForIntegration).not.toHaveBeenCalled();
+    });
+
+    it('still disconnects when closing the waiting store updates fails', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const { service, connections, outcomeSyncs } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: false,
+      });
+      outcomeSyncs.failPendingForIntegration.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      connections.getOverview.mockResolvedValue(overview);
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+    });
+
+    it('is refused for a viewer and for an organization without a connection', async () => {
+      const { service, connections } = createService();
+
+      expect(
+        await codeOf(service.disconnect({ ...owner, role: 'viewer' })),
+      ).toBe('EASYORDERS_ROLE_REQUIRED');
+      expect(connections.disconnect).not.toHaveBeenCalled();
+
+      connections.disconnect.mockResolvedValue({ kind: 'not_connected' });
+      expect(await codeOf(service.disconnect(owner))).toBe(
+        'EASYORDERS_NOT_CONNECTED',
+      );
+    });
+  });
+
   describe('getStatus', () => {
+    it.each([
+      ['no reconnect opened', undefined, 'disconnected', null],
+      [
+        'an install retired by the disconnect',
+        pendingInstall({ supersededAt: NOW.toISOString() }),
+        'disconnected',
+        null,
+      ],
+      ['a reconnect waiting', pendingInstall(), 'pending', null],
+      [
+        'a refused reconnect',
+        pendingInstall({
+          lastErrorCode: 'EASYORDERS_RECONNECT_STORE_MISMATCH',
+        }),
+        'failed',
+        'EASYORDERS_RECONNECT_STORE_MISMATCH',
+      ],
+      [
+        'an expired reconnect',
+        pendingInstall({ expiresAt: NOW.toISOString() }),
+        'expired',
+        null,
+      ],
+    ])(
+      'reports a disconnected source with %s, even with the switch off',
+      async (_label, latestPending, state, lastErrorCode) => {
+        const { service, connections } = createService({ enabled: false });
+        connections.getOverview.mockResolvedValue({
+          organizationName: 'Noor Store',
+          sourcePlatforms: ['easyorders'],
+          latestPending,
+          connection: disconnectedRow(),
+        });
+
+        const status = await service.getStatus(owner);
+
+        expect(status).toMatchObject({ state, lastErrorCode });
+        expect(status.connection).toMatchObject({
+          storeId: 'store-1',
+          disconnectedAt: NOW.toISOString(),
+        });
+      },
+    );
+
     it('reports a connection without any credential, hash or token', async () => {
       const { service, connections } = createService();
       connections.getOverview.mockResolvedValue({
         organizationName: 'Noor Store',
         sourcePlatforms: ['easyorders'],
         latestPending: pendingInstall({ consumedAt: NOW.toISOString() }),
-        connection: {
-          integrationId: 'integration-1',
-          orgId: ORG_ID,
-          storeId: 'store-1',
-          storeVerifiedAt: null,
-          apiKeyEncrypted: 'v1:ciphertext-key',
-          webhookTokenHash: 'h'.repeat(64),
-          webhookTokenHint: 'abc123',
-          ordersWebhookSecretEncrypted: 'v1:ciphertext-orders',
-          statusWebhookSecretEncrypted: null,
-          health: 'store_inactive',
-          currency: 'EGP',
-          phoneCountry: null,
-          rejectedDeliveries: 3,
-          lastRejectedAt: NOW.toISOString(),
-          connectedBy: 'user-1',
-          createdAt: NOW.toISOString(),
-          updatedAt: NOW.toISOString(),
-        },
+        connection: connectionRow(),
       });
 
       const status = await service.getStatus({ ...owner, role: 'viewer' });
@@ -440,6 +634,7 @@ describe('EasyOrdersAuthService', () => {
           phoneCountry: null,
           rejectedDeliveries: 3,
           connectedAt: NOW.toISOString(),
+          disconnectedAt: null,
         },
       });
       const serialized = JSON.stringify(status);

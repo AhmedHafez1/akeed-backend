@@ -1,4 +1,7 @@
-import { ConfirmedMessageRejection } from '../../../shared/ports/messaging.port';
+import {
+  ConfirmedMessageRejection,
+  type MessagingSenderStatus,
+} from '../../../shared/ports/messaging.port';
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -53,6 +56,16 @@ export class WhatsAppService {
     }
 
     this.apiUrl = `https://graph.facebook.com/v24.0/${this.phoneNumberId}/messages`;
+  }
+
+  getSenderStatus(): MessagingSenderStatus {
+    return {
+      sender: 'akeed_shared',
+      status:
+        this.accessToken && this.phoneNumberId
+          ? 'configured'
+          : 'not_configured',
+    };
   }
 
   async sendVerificationTemplate(params: {

@@ -76,10 +76,35 @@ export interface ConnectEasyOrdersInput {
 }
 
 export type ConnectEasyOrdersResult =
-  | { kind: 'connected'; orgId: string; integrationId: string }
+  | {
+      kind: 'connected';
+      orgId: string;
+      integrationId: string;
+      /** True when a disconnected source was brought back in place. */
+      reconnected: boolean;
+    }
   | { kind: 'context_invalid' }
   | { kind: 'source_exists'; orgId: string }
-  | { kind: 'store_unavailable'; orgId: string };
+  | { kind: 'store_unavailable'; orgId: string }
+  /** A reconnect naming another store than the one that was connected. */
+  | { kind: 'store_mismatch'; orgId: string };
+
+export type DisconnectEasyOrdersResult =
+  | { kind: 'disconnected'; integrationId: string; storeWasVerified: boolean }
+  | { kind: 'already_disconnected'; integrationId: string }
+  | { kind: 'not_connected' };
+
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * What an organization's sources allow: a first connect, a reconnect of its
+ * own disconnected EasyOrders source, or nothing. Any other source, active or
+ * not, is `taken`: there is no source switching.
+ */
+type EasyOrdersSourceSlot =
+  | { kind: 'fresh' }
+  | { kind: 'reconnect'; connection: EasyOrdersConnection }
+  | { kind: 'taken' };
 
 export type EasyOrdersConnectionHealthState =
   | 'ok'
@@ -105,7 +130,8 @@ export class EasyOrdersConnectionsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   /**
-   * Opens an install context for a source-less organization and retires its
+   * Opens an install context for a source-less organization, or for one whose
+   * only source is its own disconnected EasyOrders one, and retires its
    * earlier open ones, so at most one context per organization can connect.
    * The organization row is locked, so a callback finishing at the same time
    * is seen either before or after, never half-way.
@@ -119,12 +145,8 @@ export class EasyOrdersConnectionsRepository {
         .from(organizations)
         .where(eq(organizations.id, input.orgId))
         .for('update');
-      const [existingSource] = await tx
-        .select({ id: integrations.id })
-        .from(integrations)
-        .where(eq(integrations.orgId, input.orgId))
-        .limit(1);
-      if (existingSource) return { kind: 'source_exists' as const };
+      const slot = await this.readSourceSlot(tx, input.orgId);
+      if (slot.kind === 'taken') return { kind: 'source_exists' as const };
 
       await tx
         .update(easyordersPendingInstalls)
@@ -196,6 +218,12 @@ export class EasyOrdersConnectionsRepository {
    * `easyorders` integration with the pilot entitlement and the onboarding
    * defaults, and its credentials. Either all of it is stored or none.
    *
+   * A disconnected source is brought back in place instead (US-06-05): the
+   * same integration row, so its orders and history stay attached, with a new
+   * key and URL token and no webhook secrets. The store must be the one that
+   * was connected, and its claim is unverified again because the new key has
+   * proven nothing yet.
+   *
    * Locks the context first, then the organization, so two callbacks on one
    * link and two links for one organization both serialize; the loser sees a
    * consumed context or an existing source and changes nothing. The partial
@@ -223,7 +251,7 @@ export class EasyOrdersConnectionsRepository {
   }
 
   private async connectInTransaction(
-    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    tx: Transaction,
     input: ConnectEasyOrdersInput,
     now: Date,
   ): Promise<ConnectEasyOrdersResult> {
@@ -243,12 +271,10 @@ export class EasyOrdersConnectionsRepository {
       .for('update');
     if (!organization) return { kind: 'context_invalid' };
 
-    const [existingSource] = await tx
-      .select({ id: integrations.id })
-      .from(integrations)
-      .where(eq(integrations.orgId, orgId))
-      .limit(1);
-    if (existingSource) return { kind: 'source_exists', orgId };
+    const slot = await this.readSourceSlot(tx, orgId, { lock: true });
+    if (slot.kind === 'taken') return { kind: 'source_exists', orgId };
+    if (slot.kind === 'reconnect' && slot.connection.storeId !== input.storeId)
+      return { kind: 'store_mismatch', orgId };
 
     const [verifiedElsewhere] = await tx
       .select({ integrationId: easyordersConnections.integrationId })
@@ -263,6 +289,47 @@ export class EasyOrdersConnectionsRepository {
     if (verifiedElsewhere) return { kind: 'store_unavailable', orgId };
 
     const timestamp = now.toISOString();
+    if (slot.kind === 'reconnect') {
+      const { integrationId } = slot.connection;
+      await tx
+        .update(integrations)
+        .set({ isActive: true, updatedAt: timestamp })
+        .where(
+          and(
+            eq(integrations.id, integrationId),
+            eq(integrations.orgId, orgId),
+          ),
+        );
+      await tx
+        .update(easyordersConnections)
+        .set({
+          storeVerifiedAt: null,
+          apiKeyEncrypted: input.apiKeyEncrypted,
+          webhookTokenHash: pending.webhookTokenHash,
+          webhookTokenHint: pending.webhookTokenHint,
+          ordersWebhookSecretEncrypted: null,
+          statusWebhookSecretEncrypted: null,
+          disconnectedAt: null,
+          disconnectedBy: null,
+          health: input.health,
+          rejectedDeliveries: 0,
+          lastRejectedAt: null,
+          connectedBy: pending.createdBy,
+          updatedAt: timestamp,
+        })
+        .where(
+          and(
+            eq(easyordersConnections.integrationId, integrationId),
+            eq(easyordersConnections.orgId, orgId),
+          ),
+        );
+      await tx
+        .update(easyordersPendingInstalls)
+        .set({ consumedAt: timestamp, lastErrorCode: null })
+        .where(eq(easyordersPendingInstalls.id, pending.id));
+      return { kind: 'connected', orgId, integrationId, reconnected: true };
+    }
+
     const [integration] = await tx
       .insert(integrations)
       .values({
@@ -309,7 +376,134 @@ export class EasyOrdersConnectionsRepository {
       .set({ consumedAt: timestamp, lastErrorCode: null })
       .where(eq(easyordersPendingInstalls.id, pending.id));
 
-    return { kind: 'connected', orgId, integrationId: integration.id };
+    return {
+      kind: 'connected',
+      orgId,
+      integrationId: integration.id,
+      reconnected: false,
+    };
+  }
+
+  /** Reads inside the caller's transaction, after it locked the organization. */
+  private async readSourceSlot(
+    tx: Transaction,
+    orgId: string,
+    options: { lock: boolean } = { lock: false },
+  ): Promise<EasyOrdersSourceSlot> {
+    const sources = await tx
+      .select({
+        id: integrations.id,
+        platformType: integrations.platformType,
+        isActive: integrations.isActive,
+      })
+      .from(integrations)
+      .where(eq(integrations.orgId, orgId))
+      .limit(2);
+    if (sources.length === 0) return { kind: 'fresh' };
+    const [source] = sources;
+    if (
+      sources.length > 1 ||
+      source.platformType !== 'easyorders' ||
+      source.isActive === true
+    )
+      return { kind: 'taken' };
+
+    const query = tx
+      .select()
+      .from(easyordersConnections)
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, source.id),
+          eq(easyordersConnections.orgId, orgId),
+        ),
+      );
+    const [connection] = await (options.lock ? query.for('update') : query);
+    // An EasyOrders source that is inactive without a recorded disconnect was
+    // switched off by something else; it is not the merchant's to reconnect.
+    return connection?.disconnectedAt
+      ? { kind: 'reconnect', connection }
+      : { kind: 'taken' };
+  }
+
+  /**
+   * The local half of a disconnect (US-06-05), in one transaction: the source
+   * stops being active, which every queued effect already checks, and every
+   * credential is wiped. The store id stays for a same-store reconnect, and
+   * the integration, its orders and its history are not touched.
+   *
+   * Open install contexts are retired first, in the order `connect` locks
+   * (context, then organization), so a link opened before the disconnect
+   * cannot reconnect behind it.
+   */
+  async disconnect(
+    orgId: string,
+    userId: string,
+    now = new Date(),
+  ): Promise<DisconnectEasyOrdersResult> {
+    const timestamp = now.toISOString();
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        await tx
+          .update(easyordersPendingInstalls)
+          .set({ supersededAt: timestamp })
+          .where(
+            and(
+              eq(easyordersPendingInstalls.orgId, orgId),
+              isNull(easyordersPendingInstalls.consumedAt),
+              isNull(easyordersPendingInstalls.supersededAt),
+            ),
+          );
+        await tx
+          .select({ id: organizations.id })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .for('update');
+        const [connection] = await tx
+          .select()
+          .from(easyordersConnections)
+          .where(eq(easyordersConnections.orgId, orgId))
+          .for('update');
+        if (!connection) return { kind: 'not_connected' as const };
+        const { integrationId } = connection;
+        if (connection.disconnectedAt)
+          return { kind: 'already_disconnected' as const, integrationId };
+
+        await tx
+          .update(integrations)
+          .set({ isActive: false, updatedAt: timestamp })
+          .where(
+            and(
+              eq(integrations.id, integrationId),
+              eq(integrations.orgId, orgId),
+              eq(integrations.platformType, 'easyorders'),
+            ),
+          );
+        await tx
+          .update(easyordersConnections)
+          .set({
+            apiKeyEncrypted: null,
+            webhookTokenHash: null,
+            webhookTokenHint: null,
+            ordersWebhookSecretEncrypted: null,
+            statusWebhookSecretEncrypted: null,
+            storeVerifiedAt: null,
+            disconnectedAt: timestamp,
+            disconnectedBy: userId,
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(easyordersConnections.integrationId, integrationId),
+              eq(easyordersConnections.orgId, orgId),
+            ),
+          );
+        return {
+          kind: 'disconnected' as const,
+          integrationId,
+          storeWasVerified: connection.storeVerifiedAt !== null,
+        };
+      }),
+    );
   }
 
   async getOverview(orgId: string): Promise<EasyOrdersConnectionOverview> {
@@ -448,6 +642,7 @@ export class EasyOrdersConnectionsRepository {
             eq(easyordersConnections.orgId, orgId),
             eq(easyordersConnections.storeId, storeId),
             isNull(easyordersConnections.storeVerifiedAt),
+            isNull(easyordersConnections.disconnectedAt),
           ),
         );
       return 'verified';
@@ -457,7 +652,7 @@ export class EasyOrdersConnectionsRepository {
     }
   }
 
-  /** Answers whether the organization has a connection to update. */
+  /** Answers whether the organization has a live connection to update. */
   async saveOrderSettings(
     orgId: string,
     settings: { currency: string; phoneCountry: string },
@@ -465,12 +660,17 @@ export class EasyOrdersConnectionsRepository {
     const updated = await this.db
       .update(easyordersConnections)
       .set({ ...settings, updatedAt: new Date().toISOString() })
-      .where(eq(easyordersConnections.orgId, orgId))
+      .where(
+        and(
+          eq(easyordersConnections.orgId, orgId),
+          isNull(easyordersConnections.disconnectedAt),
+        ),
+      )
       .returning({ integrationId: easyordersConnections.integrationId });
     return updated.length > 0;
   }
 
-  /** Write-only: answers whether the organization has a connection to update. */
+  /** Write-only: answers whether the organization has a live connection to update. */
   async saveWebhookSecrets(
     orgId: string,
     secrets: {
@@ -481,7 +681,12 @@ export class EasyOrdersConnectionsRepository {
     const updated = await this.db
       .update(easyordersConnections)
       .set({ ...secrets, updatedAt: new Date().toISOString() })
-      .where(eq(easyordersConnections.orgId, orgId))
+      .where(
+        and(
+          eq(easyordersConnections.orgId, orgId),
+          isNull(easyordersConnections.disconnectedAt),
+        ),
+      )
       .returning({ integrationId: easyordersConnections.integrationId });
     return updated.length > 0;
   }

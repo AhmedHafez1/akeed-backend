@@ -6,6 +6,7 @@ import {
   type EasyOrdersConnectionOverview,
   type EasyOrdersPendingInstall,
 } from '../../database/repositories/easyorders-connections.repository';
+import { CommerceOutcomeSyncsRepository } from '../../database/repositories/commerce-outcome-syncs.repository';
 import type { AuthenticatedUser } from '../../../modules/auth/guards/dual-auth.guard';
 import {
   assertOrganizationWriteAllowed,
@@ -16,7 +17,10 @@ import {
   readEasyOrdersConfig,
   type EasyOrdersConfig,
 } from '../../../shared/config/easyorders.config';
-import { buildBackendLog } from '../../../shared/logging/backend-log.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../../shared/logging/backend-log.util';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 import type {
   EasyOrdersConnectionHealth,
@@ -104,6 +108,7 @@ export class EasyOrdersAuthService {
     private readonly api: EasyOrdersApiClient,
     private readonly config: ConfigService,
     private readonly phones: PhoneService,
+    private readonly outcomeSyncs: CommerceOutcomeSyncsRepository,
   ) {}
 
   async startInstall(
@@ -221,6 +226,8 @@ export class EasyOrdersAuthService {
       throw await this.reject(pending, 'EASYORDERS_SOURCE_EXISTS');
     if (result.kind === 'store_unavailable')
       throw await this.reject(pending, 'EASYORDERS_STORE_UNAVAILABLE');
+    if (result.kind === 'store_mismatch')
+      throw await this.reject(pending, 'EASYORDERS_RECONNECT_STORE_MISMATCH');
 
     this.logger.log(
       buildBackendLog(EasyOrdersAuthService.name, {
@@ -230,8 +237,86 @@ export class EasyOrdersAuthService {
         integrationId: result.integrationId,
         pendingInstallId: pending.id,
         connectionHealth: probe === 'store_inactive' ? 'store_inactive' : 'ok',
+        reconnected: result.reconnected,
       }),
     );
+  }
+
+  /**
+   * Stops the source on Akeed's side (US-06-05): no new webhook is accepted,
+   * nothing queued sends a message or writes to the store, and every stored
+   * credential is wiped. History stays. Nothing is removed at EasyOrders: the
+   * call that would do it is unverified (contract record section 6), so the
+   * merchant deletes the key and webhooks there by hand.
+   *
+   * Not gated by the connect switch or the pilot list: turning the feature
+   * off must never trap a merchant in a connection.
+   */
+  async disconnect(
+    user: AuthenticatedUser,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    assertOrganizationWriteAllowed(user.role, EASYORDERS_ROLE_REQUIRED);
+    const result = await this.connections.disconnect(user.orgId, user.userId);
+    if (result.kind === 'not_connected')
+      throw easyOrdersError('EASYORDERS_NOT_CONNECTED');
+
+    if (result.kind === 'already_disconnected') {
+      this.logger.log(
+        buildBackendLog(EasyOrdersAuthService.name, {
+          action: 'easyorders-disconnect',
+          outcome: 'skipped',
+          orgId: user.orgId,
+          userId: user.userId,
+          integrationId: result.integrationId,
+        }),
+      );
+      return this.getStatus(user);
+    }
+
+    this.logger.log(
+      buildBackendLog(EasyOrdersAuthService.name, {
+        action: 'easyorders-disconnect',
+        outcome: 'success',
+        orgId: user.orgId,
+        userId: user.userId,
+        integrationId: result.integrationId,
+        storeWasVerified: result.storeWasVerified,
+        closedPendingSyncs: await this.closePendingSyncs(
+          user.orgId,
+          result.integrationId,
+        ),
+      }),
+    );
+    return this.getStatus(user);
+  }
+
+  /**
+   * Store updates still waiting would be refused when their job runs; closing
+   * them now also covers a row whose job was lost. Best effort: the source is
+   * already inactive, which is what stops the write.
+   */
+  private async closePendingSyncs(
+    orgId: string,
+    integrationId: string,
+  ): Promise<number | null> {
+    try {
+      return await this.outcomeSyncs.failPendingForIntegration(
+        orgId,
+        integrationId,
+        'integration_inactive',
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(EasyOrdersAuthService.name, {
+          action: 'easyorders-disconnect-close-syncs',
+          outcome: 'failure',
+          orgId,
+          integrationId,
+          ...normalizeError(error),
+        }),
+      );
+      return null;
+    }
   }
 
   /** Any member may read the status; it never contains a credential. */
@@ -355,23 +440,33 @@ export class EasyOrdersAuthService {
       lastErrorCode: null,
       connection: null,
     };
-    if (connection)
+    if (connection) {
+      const details = {
+        storeId: connection.storeId,
+        storeVerified: connection.storeVerifiedAt !== null,
+        health: toHealth(connection.health),
+        webhookUrlHint: connection.webhookTokenHint,
+        ordersSecretSet: connection.ordersWebhookSecretEncrypted !== null,
+        statusSecretSet: connection.statusWebhookSecretEncrypted !== null,
+        currency: connection.currency,
+        phoneCountry: connection.phoneCountry,
+        rejectedDeliveries: connection.rejectedDeliveries,
+        connectedAt: connection.createdAt,
+        disconnectedAt: connection.disconnectedAt,
+      };
+      if (!connection.disconnectedAt)
+        return { ...base, state: 'connected', connection: details };
+      // Before the switch and the pilot list: a disconnected merchant can
+      // always see what happened. A reconnect attempt opened since shows as
+      // pending, failed or expired; a disconnect retires every earlier one.
+      const reconnect = pendingState(latestPending, new Date());
       return {
         ...base,
-        state: 'connected',
-        connection: {
-          storeId: connection.storeId,
-          storeVerified: connection.storeVerifiedAt !== null,
-          health: toHealth(connection.health),
-          webhookUrlHint: connection.webhookTokenHint,
-          ordersSecretSet: connection.ordersWebhookSecretEncrypted !== null,
-          statusSecretSet: connection.statusWebhookSecretEncrypted !== null,
-          currency: connection.currency,
-          phoneCountry: connection.phoneCountry,
-          rejectedDeliveries: connection.rejectedDeliveries,
-          connectedAt: connection.createdAt,
-        },
+        ...reconnect,
+        state: reconnect.state === 'ready' ? 'disconnected' : reconnect.state,
+        connection: details,
       };
+    }
     if (!settings.enabled) return { ...base, state: 'unavailable' };
     if (overview.sourcePlatforms.length > 0)
       return { ...base, state: 'source_exists' };

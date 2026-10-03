@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '../src/infrastructure/database';
+import type { CommerceOutcomeSyncsRepository } from '../src/infrastructure/database/repositories/commerce-outcome-syncs.repository';
 import { EasyOrdersConnectionsRepository } from '../src/infrastructure/database/repositories/easyorders-connections.repository';
 import { StandaloneOrganizationProvisioningRepository } from '../src/infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import {
@@ -19,6 +20,7 @@ import {
   EASYORDERS_CONFIG,
   type EasyOrdersConfig,
 } from '../src/shared/config/easyorders.config';
+import { hashInstallToken } from '../src/infrastructure/spokes/easyorders/easyorders-install-token';
 import { PhoneService } from '../src/shared/services/phone.service';
 import { decryptToken } from '../src/shared/utils/token-encryption.util';
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
@@ -117,6 +119,11 @@ const service = new EasyOrdersAuthService(
   new EasyOrdersApiClient(fakeEasyOrders),
   config,
   new PhoneService(),
+  // This suite's schema has no orders, so no outcome rows to close; the
+  // outcome-sync contract covers that half of a disconnect.
+  {
+    failPendingForIntegration: () => Promise.resolve(0),
+  } as unknown as CommerceOutcomeSyncsRepository,
 );
 
 /** Every value that must never be logged, returned or stored in clear. */
@@ -214,12 +221,17 @@ function connectionsOf(orgId: string) {
       integration_id: string;
       store_id: string;
       store_verified_at: Date | null;
-      api_key_encrypted: string;
-      webhook_token_hash: string;
-      webhook_token_hint: string;
+      api_key_encrypted: string | null;
+      webhook_token_hash: string | null;
+      webhook_token_hint: string | null;
       orders_webhook_secret_encrypted: string | null;
       status_webhook_secret_encrypted: string | null;
       health: string;
+      currency: string | null;
+      phone_country: string | null;
+      rejected_deliveries: number;
+      disconnected_at: Date | null;
+      disconnected_by: string | null;
     }[]
   >`SELECT * FROM easyorders_connections WHERE org_id = ${orgId}`;
 }
@@ -229,7 +241,7 @@ async function expectNothingProvisioned(tenant: Tenant) {
   await expect(connectionsOf(tenant.orgId)).resolves.toHaveLength(0);
 }
 
-describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
+describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () => {
   beforeAll(async () => {
     const capture: LoggerService = {
       log: (message: unknown) => logs.push(String(message)),
@@ -312,11 +324,13 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
       CREATE UNIQUE INDEX integrations_one_active_source_per_org_idx ON integrations (org_id) WHERE is_active = true;
     `);
     // Applied twice: the migrations must be re-runnable. 0048 (US-06-03)
-    // adds the columns the repository now selects.
+    // adds the columns the repository now selects; 0050 (US-06-05) makes the
+    // credentials nullable for a disconnect.
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0047_easyorders_connection.sql',
         '0048_easyorders_ingestion.sql',
+        '0050_easyorders_disconnect.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -404,7 +418,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
         webhook_token_hint: started.webhookToken.slice(-6),
       });
       expect(connection.api_key_encrypted).toMatch(/^v1:/);
-      expect(decryptToken(connection.api_key_encrypted, ENCRYPTION_KEY)).toBe(
+      expect(decryptToken(connection.api_key_encrypted!, ENCRYPTION_KEY)).toBe(
         key,
       );
       expect(connection.webhook_token_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -784,7 +798,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
       },
     );
 
-    it('refuses an inactive earlier source too: there is no reconnect or switch yet', async () => {
+    it('refuses an inactive source of another platform: there is no source switching', async () => {
       const tenant = await createTenant();
       await client`INSERT INTO integrations (org_id, platform_type, platform_store_url, is_active) VALUES (${tenant.orgId}, 'standalone', ${`standalone:${tenant.orgId}`}, false)`;
 
@@ -928,6 +942,409 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02)', () => {
       await expect(
         client`UPDATE easyorders_connections SET api_key_encrypted = 'plain' WHERE org_id = ${tenant.orgId}`,
       ).rejects.toThrow(/api_key_encrypted_check/);
+    });
+  });
+
+  describe('disconnect and reconnect (US-06-05)', () => {
+    async function connectTenant(storeId: string, answer?: ProviderAnswer) {
+      const tenant = await createTenant();
+      const started = await start(tenant);
+      await expect(
+        callback(started.callbackToken, liveKey(answer), storeId),
+      ).resolves.toEqual({ status: 204 });
+      await service.saveOrderSettings(member(tenant), {
+        currency: 'EGP',
+        phoneCountry: 'EG',
+      });
+      await service.saveWebhookSecrets(member(tenant), {
+        ordersSecret: 'orders-secret-0001',
+        statusSecret: 'status-secret-0001',
+      });
+      return { tenant, started };
+    }
+
+    async function disconnect(tenant: Tenant, user = member(tenant)) {
+      const result = await service.disconnect(user);
+      responses.push(result);
+      return result;
+    }
+
+    it('stops the source and wipes every credential, keeping the store and the integration', async () => {
+      const { tenant } = await connectTenant('store-disconnect');
+      await client`UPDATE easyorders_connections SET store_verified_at = now() WHERE org_id = ${tenant.orgId}`;
+      const [before] = await integrationsOf(tenant.orgId);
+      const owner = member(tenant);
+
+      await expect(disconnect(tenant, owner)).resolves.toMatchObject({
+        state: 'disconnected',
+        connection: {
+          storeId: 'store-disconnect',
+          storeVerified: false,
+          webhookUrlHint: null,
+          ordersSecretSet: false,
+          statusSecretSet: false,
+          currency: 'EGP',
+          phoneCountry: 'EG',
+        },
+      });
+
+      const [after] = await integrationsOf(tenant.orgId);
+      expect(after).toMatchObject({
+        id: before.id,
+        is_active: false,
+        platform_store_url: before.platform_store_url,
+        onboarding_status: before.onboarding_status,
+        billing_plan_id: before.billing_plan_id,
+        store_name: before.store_name,
+      });
+      const [connection] = await connectionsOf(tenant.orgId);
+      expect(connection).toMatchObject({
+        integration_id: before.id,
+        store_id: 'store-disconnect',
+        store_verified_at: null,
+        api_key_encrypted: null,
+        webhook_token_hash: null,
+        webhook_token_hint: null,
+        orders_webhook_secret_encrypted: null,
+        status_webhook_secret_encrypted: null,
+        disconnected_by: owner.userId,
+      });
+      expect(connection.disconnected_at).not.toBeNull();
+    });
+
+    it('a second disconnect changes nothing', async () => {
+      const { tenant } = await connectTenant('store-twice');
+      await disconnect(tenant);
+      const [first] = await connectionsOf(tenant.orgId);
+
+      await expect(disconnect(tenant)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+
+      await expect(connectionsOf(tenant.orgId)).resolves.toEqual([first]);
+    });
+
+    it('stays readable as disconnected with the connect switch off', async () => {
+      const { tenant } = await connectTenant('store-switch-off');
+      settings.enabled = false;
+      try {
+        await expect(disconnect(tenant)).resolves.toMatchObject({
+          state: 'disconnected',
+        });
+        await expect(status(tenant)).resolves.toMatchObject({
+          state: 'disconnected',
+          connection: { storeId: 'store-switch-off' },
+        });
+      } finally {
+        settings.enabled = true;
+      }
+    });
+
+    it("refuses a viewer's disconnect and reconnect", async () => {
+      const { tenant } = await connectTenant('store-viewer');
+      const viewer = member(tenant, 'viewer');
+      const [before] = await connectionsOf(tenant.orgId);
+
+      await expect(outcome(service.disconnect(viewer))).resolves.toEqual({
+        status: 403,
+        code: 'EASYORDERS_ROLE_REQUIRED',
+      });
+      await expect(connectionsOf(tenant.orgId)).resolves.toEqual([before]);
+
+      await disconnect(tenant);
+      await expect(
+        outcome(service.startInstall(viewer, { locale: 'en' })),
+      ).resolves.toEqual({ status: 403, code: 'EASYORDERS_ROLE_REQUIRED' });
+      await expect(status(tenant, viewer)).resolves.toMatchObject({
+        state: 'disconnected',
+        canManage: false,
+      });
+    });
+
+    it('answers an organization with no connection as not connected', async () => {
+      const tenant = await createTenant();
+
+      await expect(
+        outcome(service.disconnect(member(tenant))),
+      ).resolves.toEqual({ status: 404, code: 'EASYORDERS_NOT_CONNECTED' });
+    });
+
+    it('retires an install link opened before the disconnect', async () => {
+      const { tenant } = await connectTenant('store-stale-link');
+      // A context left open, as if a second tab had started an install.
+      const [stale] = await client<{ id: string }[]>`
+        INSERT INTO easyorders_pending_installs
+          (org_id, created_by, callback_token_hash, webhook_token_hash, webhook_token_hint, expires_at)
+        VALUES (${tenant.orgId}, ${randomUUID()}, ${'a'.repeat(64)}, ${'b'.repeat(64)}, 'stale1', now() + interval '10 minutes')
+        RETURNING id`;
+
+      await disconnect(tenant);
+
+      const [row] = await client<{ superseded_at: Date | null }[]>`
+        SELECT superseded_at FROM easyorders_pending_installs WHERE id = ${stale.id}`;
+      expect(row.superseded_at).not.toBeNull();
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+    });
+
+    it('settings and secrets cannot be written to a disconnected source', async () => {
+      const { tenant } = await connectTenant('store-no-writes');
+      await disconnect(tenant);
+
+      await expect(
+        outcome(
+          service.saveWebhookSecrets(member(tenant), {
+            ordersSecret: 'orders-secret-0002',
+            statusSecret: 'status-secret-0002',
+          }),
+        ),
+      ).resolves.toEqual({ status: 404, code: 'EASYORDERS_NOT_CONNECTED' });
+      await expect(
+        outcome(
+          service.saveOrderSettings(member(tenant), {
+            currency: 'SAR',
+            phoneCountry: 'SA',
+          }),
+        ),
+      ).resolves.toEqual({ status: 404, code: 'EASYORDERS_NOT_CONNECTED' });
+      const [connection] = await connectionsOf(tenant.orgId);
+      expect(connection).toMatchObject({
+        currency: 'EGP',
+        orders_webhook_secret_encrypted: null,
+      });
+    });
+
+    it('a disconnected row can hold no credential and no verified claim', async () => {
+      const { tenant } = await connectTenant('store-check');
+      await disconnect(tenant);
+
+      for (const assignment of [
+        "api_key_encrypted = 'v1:left-behind'",
+        `webhook_token_hash = '${'c'.repeat(64)}'`,
+        "orders_webhook_secret_encrypted = 'v1:left-behind'",
+        'store_verified_at = now()',
+      ])
+        await expect(
+          client.unsafe(
+            `UPDATE easyorders_connections SET ${assignment} WHERE org_id = '${tenant.orgId}'`,
+          ),
+        ).rejects.toThrow(/credentials_state_check/);
+      await expect(
+        client`UPDATE easyorders_connections SET api_key_encrypted = NULL WHERE disconnected_at IS NULL`,
+      ).rejects.toThrow(/credentials_state_check/);
+    });
+
+    it('reconnects the same store in place, with a new key and address and no secrets', async () => {
+      const { tenant, started: first } = await connectTenant('store-same');
+      await client`UPDATE easyorders_connections SET store_verified_at = now(), rejected_deliveries = 4, last_rejected_at = now() WHERE org_id = ${tenant.orgId}`;
+      const [source] = await integrationsOf(tenant.orgId);
+      await client`UPDATE integrations SET onboarding_status = 'completed' WHERE id = ${source.id as string}`;
+      await disconnect(tenant);
+
+      const second = await start(tenant);
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'pending',
+        connection: { storeId: 'store-same' },
+      });
+      const key = liveKey();
+      await expect(
+        callback(second.callbackToken, key, 'store-same'),
+      ).resolves.toEqual({ status: 204 });
+
+      const sources = await integrationsOf(tenant.orgId);
+      expect(sources).toHaveLength(1);
+      expect(sources[0]).toMatchObject({
+        id: source.id,
+        platform_store_url: source.platform_store_url,
+        is_active: true,
+        onboarding_status: 'completed',
+      });
+      const [connection] = await connectionsOf(tenant.orgId);
+      expect(connection).toMatchObject({
+        integration_id: source.id,
+        store_id: 'store-same',
+        // The new key has proven nothing yet (contract record section 2).
+        store_verified_at: null,
+        orders_webhook_secret_encrypted: null,
+        status_webhook_secret_encrypted: null,
+        health: 'ok',
+        rejected_deliveries: 0,
+        disconnected_at: null,
+        disconnected_by: null,
+        currency: 'EGP',
+        phone_country: 'EG',
+      });
+      expect(decryptToken(connection.api_key_encrypted!, ENCRYPTION_KEY)).toBe(
+        key,
+      );
+      // The old address is gone and the new one resolves to this source.
+      await expect(
+        repository.findByWebhookTokenHash(hashInstallToken(first.webhookToken)),
+      ).resolves.toBeUndefined();
+      await expect(
+        repository.findByWebhookTokenHash(
+          hashInstallToken(second.webhookToken),
+        ),
+      ).resolves.toMatchObject({
+        sourceActive: true,
+        connection: { integrationId: source.id },
+      });
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'connected',
+        connection: {
+          ordersSecretSet: false,
+          statusSecretSet: false,
+          disconnectedAt: null,
+        },
+      });
+    });
+
+    it('a refused reconnect leaves the source disconnected and unchanged, and the next attempt connects', async () => {
+      const { tenant } = await connectTenant('store-retry');
+      await disconnect(tenant);
+      const [before] = await connectionsOf(tenant.orgId);
+
+      const wrongStore = await start(tenant);
+      await expect(
+        callback(wrongStore.callbackToken, liveKey(), 'store-other'),
+      ).resolves.toEqual({
+        status: 409,
+        code: 'EASYORDERS_RECONNECT_STORE_MISMATCH',
+      });
+      await expect(connectionsOf(tenant.orgId)).resolves.toEqual([before]);
+      await expect(integrationsOf(tenant.orgId)).resolves.toMatchObject([
+        { is_active: false },
+      ]);
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'failed',
+        lastErrorCode: 'EASYORDERS_RECONNECT_STORE_MISMATCH',
+        connection: { storeId: 'store-retry' },
+      });
+
+      const rejectedKey = await start(tenant);
+      await expect(
+        callback(
+          rejectedKey.callbackToken,
+          liveKey('unauthorized'),
+          'store-retry',
+        ),
+      ).resolves.toEqual({ status: 422, code: 'EASYORDERS_KEY_REJECTED' });
+      await expect(connectionsOf(tenant.orgId)).resolves.toEqual([before]);
+
+      const retry = await start(tenant);
+      await expect(
+        callback(retry.callbackToken, liveKey(), 'store-retry'),
+      ).resolves.toEqual({ status: 204 });
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'connected',
+      });
+    });
+
+    it('a key EasyOrders rejects is recovered by disconnect then reconnect, on the same source', async () => {
+      const { tenant } = await connectTenant('store-expired-key');
+      const [source] = await integrationsOf(tenant.orgId);
+      await repository.setHealth(
+        source.id as string,
+        tenant.orgId,
+        'credentials_rejected',
+      );
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'connected',
+        connection: { health: 'credentials_rejected' },
+      });
+      // Reconnect is offered only from the disconnected state.
+      await expect(
+        outcome(service.startInstall(member(tenant), { locale: 'ar' })),
+      ).resolves.toEqual({ status: 409, code: 'EASYORDERS_SOURCE_EXISTS' });
+
+      await disconnect(tenant);
+      const again = await start(tenant);
+      await expect(
+        callback(again.callbackToken, liveKey(), 'store-expired-key'),
+      ).resolves.toEqual({ status: 204 });
+
+      await expect(status(tenant)).resolves.toMatchObject({
+        state: 'connected',
+        connection: { health: 'ok' },
+      });
+      await expect(integrationsOf(tenant.orgId)).resolves.toMatchObject([
+        { id: source.id, is_active: true },
+      ]);
+    });
+
+    it('refuses a reconnect when another organization has verified the store since', async () => {
+      const { tenant } = await connectTenant('store-taken-since');
+      await client`UPDATE easyorders_connections SET store_verified_at = now() WHERE org_id = ${tenant.orgId}`;
+      await disconnect(tenant);
+      // The slot is free once disconnected: the real owner connects and proves it.
+      const { tenant: owner } = await connectTenant('store-taken-since');
+      await client`UPDATE easyorders_connections SET store_verified_at = now() WHERE org_id = ${owner.orgId}`;
+
+      const again = await start(tenant);
+      await expect(
+        callback(again.callbackToken, liveKey(), 'store-taken-since'),
+      ).resolves.toEqual({ status: 409, code: 'EASYORDERS_STORE_UNAVAILABLE' });
+      await expect(integrationsOf(tenant.orgId)).resolves.toMatchObject([
+        { is_active: false },
+      ]);
+    });
+
+    it('another tenant cannot disconnect this connection or reconnect into its store', async () => {
+      const { tenant: tenantA } = await connectTenant('store-tenant-a-live');
+      await client`UPDATE easyorders_connections SET store_verified_at = now() WHERE org_id = ${tenantA.orgId}`;
+      const [before] = await connectionsOf(tenantA.orgId);
+      const { tenant: tenantB } = await connectTenant('store-tenant-b');
+
+      // B has no way to name A: every call is scoped by B's own organization.
+      await disconnect(tenantB);
+      await expect(connectionsOf(tenantA.orgId)).resolves.toEqual([before]);
+      await expect(integrationsOf(tenantA.orgId)).resolves.toMatchObject([
+        { is_active: true },
+      ]);
+
+      // B reconnecting with A's store id is a different store than B's own.
+      const asA = await start(tenantB);
+      await expect(
+        callback(asA.callbackToken, liveKey(), 'store-tenant-a-live'),
+      ).resolves.toEqual({ status: 409, code: 'EASYORDERS_STORE_UNAVAILABLE' });
+      await expect(connectionsOf(tenantA.orgId)).resolves.toEqual([before]);
+      await expect(status(tenantB)).resolves.toMatchObject({
+        state: 'failed',
+        connection: { storeId: 'store-tenant-b' },
+      });
+
+      // A tenant that never connected gets nothing to disconnect.
+      const tenantC = await createTenant();
+      await expect(
+        outcome(service.disconnect(member(tenantC))),
+      ).resolves.toEqual({ status: 404, code: 'EASYORDERS_NOT_CONNECTED' });
+    });
+
+    it('does not let a merchant reconnect a source that was switched off without a disconnect', async () => {
+      const { tenant } = await connectTenant('store-staff-off');
+      await client`UPDATE integrations SET is_active = false WHERE org_id = ${tenant.orgId}`;
+
+      await expect(
+        outcome(service.startInstall(member(tenant), { locale: 'en' })),
+      ).resolves.toEqual({ status: 409, code: 'EASYORDERS_SOURCE_EXISTS' });
+    });
+
+    it('two reconnect callbacks at once bring the source back once', async () => {
+      const { tenant } = await connectTenant('store-reconnect-race');
+      await disconnect(tenant);
+      const again = await start(tenant);
+
+      const results = await Promise.all([
+        callback(again.callbackToken, liveKey(), 'store-reconnect-race'),
+        callback(again.callbackToken, liveKey(), 'store-reconnect-race'),
+      ]);
+
+      expect(results.map((result) => result.status).sort()).toEqual([204, 401]);
+      await expect(integrationsOf(tenant.orgId)).resolves.toHaveLength(1);
+      await expect(connectionsOf(tenant.orgId)).resolves.toMatchObject([
+        { disconnected_at: null },
+      ]);
     });
   });
 

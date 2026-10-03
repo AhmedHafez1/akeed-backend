@@ -40,6 +40,8 @@ function connection(
     webhookTokenHash: hashInstallToken(TOKEN),
     webhookTokenHint: TOKEN.slice(-6),
     ordersWebhookSecretEncrypted: encryptToken(ORDERS_SECRET, ENCRYPTION_KEY),
+    disconnectedAt: null,
+    disconnectedBy: null,
     statusWebhookSecretEncrypted: encryptToken(STATUS_SECRET, ENCRYPTION_KEY),
     health: 'ok',
     currency: 'EGP',

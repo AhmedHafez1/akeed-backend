@@ -69,6 +69,15 @@ export interface WebhookEvent {
   withdrawnAt: string | null;
 }
 
+export interface WebhookEventSummary {
+  lastAcceptedAt: string | null;
+  acceptedCount: number;
+  failedCount: number;
+  lastFailedAt: string | null;
+  waitingCount: number;
+  oldestWaitingAt: string | null;
+}
+
 @Injectable()
 export class WebhookEventsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
@@ -171,6 +180,59 @@ export class WebhookEventsRepository {
       .where(this.recoverablePredicate(staleBefore, maxDispatchAttempts))
       .orderBy(webhookEvents.receivedAt)
       .limit(limit)) as WebhookEvent[];
+  }
+
+  /**
+   * One source's events for its health view, as separate facts: the last
+   * event accepted (ever; none is not a fault), what was accepted and what
+   * failed since `since`, and what is waiting to be processed now. Held
+   * events wait for the merchant, so they are not backlog.
+   */
+  async summarizeForIntegration(
+    orgId: string,
+    integrationId: string,
+    since: Date,
+  ): Promise<WebhookEventSummary> {
+    const source = sql`${webhookEvents.orgId} = ${orgId} AND ${webhookEvents.integrationId} = ${integrationId}`;
+    const [[latest], [recent], [waiting]] = await Promise.all([
+      this.db
+        .select({ receivedAt: webhookEvents.receivedAt })
+        .from(webhookEvents)
+        .where(source)
+        .orderBy(sql`${webhookEvents.receivedAt} DESC NULLS LAST`)
+        .limit(1),
+      this.db
+        .select({
+          acceptedCount: sql<number>`count(*)::int`,
+          failedCount: sql<number>`count(*) FILTER (WHERE ${webhookEvents.status} = 'failed')::int`,
+          lastFailedAt: sql<
+            string | null
+          >`max(${webhookEvents.updatedAt}) FILTER (WHERE ${webhookEvents.status} = 'failed')`,
+        })
+        .from(webhookEvents)
+        .where(
+          sql`${source} AND ${webhookEvents.receivedAt} >= ${since.toISOString()}`,
+        ),
+      this.db
+        .select({
+          waitingCount: sql<number>`count(*)::int`,
+          oldestWaitingAt: sql<string | null>`min(${webhookEvents.receivedAt})`,
+        })
+        .from(webhookEvents)
+        .where(
+          sql`${source} AND ${webhookEvents.status} IN ('pending', 'processing') AND ${this.dispatchableHold()}`,
+        ),
+    ]);
+    const iso = (value: string | null | undefined) =>
+      value ? new Date(value).toISOString() : null;
+    return {
+      lastAcceptedAt: iso(latest?.receivedAt),
+      acceptedCount: recent?.acceptedCount ?? 0,
+      failedCount: recent?.failedCount ?? 0,
+      lastFailedAt: iso(recent?.lastFailedAt),
+      waitingCount: waiting?.waitingCount ?? 0,
+      oldestWaitingAt: iso(waiting?.oldestWaitingAt),
+    };
   }
 
   /**

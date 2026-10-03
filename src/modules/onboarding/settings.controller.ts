@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Patch,
   UseGuards,
   UsePipes,
@@ -13,6 +14,7 @@ import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import type { SettingsResponseDto } from './dto/onboarding.dto';
 import { UpdateOnboardingSettingsDto } from './dto/onboarding.dto';
 import { OnboardingService } from './onboarding.service';
+import type { SourceHealthDto } from '../../shared/commerce/source-setup';
 
 @Controller('api/settings')
 @UseGuards(DualAuthGuard)
@@ -30,6 +32,14 @@ export class SettingsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<SettingsResponseDto> {
     return this.onboardingService.getSettings(user);
+  }
+
+  @Get('source-health')
+  @Header('Cache-Control', 'no-store')
+  async getSourceHealth(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SourceHealthDto> {
+    return this.onboardingService.getSourceHealth(user);
   }
 
   @Patch()

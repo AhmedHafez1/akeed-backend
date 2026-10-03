@@ -16,9 +16,18 @@ import { STORE_PLATFORM_PORT } from '../../shared/ports/store-platform.port';
 import { ShopifyApiService } from '../../infrastructure/spokes/shopify/services/shopify-api.service';
 import { AuthModule } from '../auth/auth.module';
 import { PhoneService } from '../../shared/services/phone.service';
+import { SOURCE_SETUP_CONTRIBUTORS } from '../../shared/commerce/source-setup';
+import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
+import { EasyOrdersSetupContributor } from '../../infrastructure/spokes/easyorders/easyorders-setup.contributor';
+import { SourceSetupService } from './source-setup.service';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, ShopifyModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    ShopifyModule,
+    EasyOrdersIngestionModule,
+  ],
   controllers: [
     OnboardingController,
     OnboardingBillingCallbackController,
@@ -34,6 +43,14 @@ import { PhoneService } from '../../shared/services/phone.service';
     PhoneService,
     { provide: SUBSCRIPTION_BILLING_PORT, useExisting: ShopifyBillingAdapter },
     { provide: STORE_PLATFORM_PORT, useExisting: ShopifyApiService },
+    // One contributor per source whose connection has state of its own. A
+    // new source adds its contributor here; the services never name one.
+    {
+      provide: SOURCE_SETUP_CONTRIBUTORS,
+      inject: [EasyOrdersSetupContributor],
+      useFactory: (easyOrders: EasyOrdersSetupContributor) => [easyOrders],
+    },
+    SourceSetupService,
   ],
   exports: [
     OnboardingService,
