@@ -1,0 +1,86 @@
+{
+  "_fixture": {
+    "source": "documented, not captured",
+    "reference": "https://public-api-docs.easy-orders.net/docs/webhooks (read 2026-10-03)",
+    "kind": "orders",
+    "synthetic": "Every ID, customer field, product name and timestamp is synthetic",
+    "replaceWith": "A sanitized capture from the US-06-01 go-live verification run"
+  },
+  "payload": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "updated_at": "2026-01-01T12:00:00.000000+02:00",
+    "created_at": "2026-01-01T12:00:00.000000+02:00",
+    "store_id": "00000000-0000-4000-8000-000000000002",
+    "cost": 730,
+    "shipping_cost": 20,
+    "total_cost": 750,
+    "status": "pending",
+    "full_name": "Test Customer",
+    "phone": "01000000000",
+    "government": "Cairo",
+    "address": "Synthetic address 1",
+    "payment_method": "cod",
+    "cart_items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "product_id": "00000000-0000-4000-8000-000000000004",
+        "variant_id": "00000000-0000-4000-8000-000000000005",
+        "store_id": "00000000-0000-4000-8000-000000000002",
+        "price": 220,
+        "quantity": 1,
+        "product": {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "updated_at": "2026-01-01T12:00:00.000000+02:00",
+          "created_at": "2026-01-01T12:00:00.000000+02:00",
+          "store_id": "00000000-0000-4000-8000-000000000002",
+          "name": "Sample item 1",
+          "price": 220,
+          "sku": "SYNTHETIC-0001",
+          "taager_code": "SYNTHETIC-0002",
+          "drop_shipping_provider": "taager"
+        },
+        "variant": {
+          "id": "00000000-0000-4000-8000-000000000005",
+          "product_id": "00000000-0000-4000-8000-000000000004",
+          "price": 220,
+          "sale_price": 0,
+          "quantity": 0,
+          "taager_code": "SYNTHETIC-0003",
+          "variation_props": [
+            {
+              "id": "00000000-0000-4000-8000-000000000006",
+              "variation": "color",
+              "variation_prop": "#808080",
+              "product_variant_id": "00000000-0000-4000-8000-000000000005"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000007",
+              "variation": "size",
+              "variation_prop": "L",
+              "product_variant_id": "00000000-0000-4000-8000-000000000005"
+            }
+          ]
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000008",
+        "product_id": "00000000-0000-4000-8000-000000000009",
+        "store_id": "00000000-0000-4000-8000-000000000002",
+        "order_id": "00000000-0000-4000-8000-000000000001",
+        "price": 510,
+        "quantity": 1,
+        "product": {
+          "id": "00000000-0000-4000-8000-000000000009",
+          "updated_at": "2026-01-01T12:00:00.000000+02:00",
+          "created_at": "2026-01-01T12:00:00.000000+02:00",
+          "store_id": "00000000-0000-4000-8000-000000000002",
+          "name": "Sample item 2",
+          "price": 510,
+          "sku": "SYNTHETIC-0004",
+          "taager_code": "SYNTHETIC-0005",
+          "drop_shipping_provider": "taager"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "_fixture": {
+    "source": "documented, not captured",
+    "reference": "https://public-api-docs.easy-orders.net/docs/webhooks (read 2026-10-03)",
+    "kind": "status",
+    "synthetic": "Every ID and reference is synthetic",
+    "replaceWith": "A sanitized capture from the US-06-01 go-live verification run"
+  },
+  "payload": {
+    "event_type": "order-status-update",
+    "order_id": "00000000-0000-4000-8000-000000000001",
+    "old_status": "pending",
+    "new_status": "confirmed",
+    "payment_ref_id": "SYNTHETIC-0001"
+  }
+}

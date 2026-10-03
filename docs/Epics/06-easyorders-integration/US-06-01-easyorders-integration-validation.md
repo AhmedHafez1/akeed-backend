@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Validation spike
-- **Status:** Backlog
+- **Status:** In progress — interim [contract record](evidence/US-06-01-contract-record.md) written 2026-10-03; live verification on an active store pending
 - **Dependencies:** [US-02-07](../02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md), [US-03-05](../03-standalone-foundation-and-onboarding/US-03-05-standalone-tenant-and-primary-source-guards.md), [US-05-06](../05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md) (satisfied: E05 is Done, shipped to production 2026-10-02 and validated 2026-10-03, product-owner-reported)
 
 ## User story and value
