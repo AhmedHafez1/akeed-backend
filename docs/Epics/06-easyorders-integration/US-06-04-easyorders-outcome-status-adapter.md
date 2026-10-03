@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented, disabled (2026-10-03) — [evidence](../../US-06-04-EASYORDERS-OUTCOME-SYNC-EVIDENCE.md); remote status writes blocked on US-06-01 go-live verification
 - **Dependencies:** [US-06-03](../06-easyorders-integration/US-06-03-easyorders-webhook-ingestion.md)
 
 ## User story and value
@@ -47,7 +47,7 @@ Enable synchronization only for mapped pilot states; retain Shopify's distinct t
 
 ## Evidence and references
 
-**VERIFIED FROM CODE:** Current commerce actions are Shopify-specific and must move behind the common outcome contract before this adapter is added.
+**VERIFIED FROM CODE (corrected 2026-10-03):** This note used to say commerce actions were still Shopify-specific and had to move behind a common outcome contract first. They already were behind one when the story was implemented: `src/shared/commerce/commerce-outcome.ts` and `CommerceOutcomeRegistryService` (E02), with `ShopifyOutcomeAdapter` as the first adapter. What was missing was stored sync state, retry and status-event routing around that contract; see the [evidence](../../US-06-04-EASYORDERS-OUTCOME-SYNC-EVIDENCE.md).
 
 - [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-api.service.ts](../../../src/infrastructure/spokes/shopify/services/shopify-api.service.ts)
 - [akeed-backend/src/modules/verification-core/verification-hub.service.ts](../../../src/modules/verification-core/verification-hub.service.ts)
