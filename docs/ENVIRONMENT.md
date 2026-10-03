@@ -230,6 +230,22 @@ The counters live in memory, which is correct for one backend instance. Do not r
 
 Every `/api/v1/orders` error answers `{code, message, correlationId}` (validation failures add `fieldErrors`), and every response carries `X-Correlation-Id`. A client may send its own `X-Correlation-Id` (8–64 letters, digits, `.`, `_` or `-`); any other value is replaced. Support triage starts from that ID: ask the integrator for it, then filter the backend log for `"action":"order-api-request"` and the ID. The line holds the integration, the key prefix, the outcome code, the HTTP status, the duration and the order ID, and never the key, the body or customer data.
 
+## EasyOrders Connection (E06)
+
+The authorized connection of an EasyOrders store (US-06-02). It ships dark. Order ingestion and remote status writes are not part of it and have no switch yet.
+
+| Variable | Notes |
+| --- | --- |
+| `EASYORDERS_CONNECT_ENABLED` | `true` or `false` (default). While `false`, `POST /api/easyorders/install` and the install callback answer `404 EASYORDERS_CONNECT_UNAVAILABLE`, the status endpoint reports `unavailable`, and signup cannot create a source-less organization (`409 SOURCE_CONNECT_UNAVAILABLE`). Rollback is turning it off; connected integrations and both EasyOrders tables stay. |
+| `EASYORDERS_PILOT_ORG_IDS` | Pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Only listed organizations may start an install or have a callback honoured. Empty (default) means nobody, even with the switch on. Removing a UUID stops new installs for that organization; an existing connection is not removed. |
+| `EASYORDERS_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the two webhook URLs. Must be `https` outside development (the API key travels through the seller's browser to it). No trailing slash, query or fragment. |
+| `EASYORDERS_APP_BASE_URL` | Required when enabled. Public base of the web app: the post-install redirect (`/<locale>/onboarding`) and the app icon. Same rules as above. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the EasyOrders API key and webhook secrets, so startup fails when EasyOrders is enabled without it. |
+
+The frontend shows the source picker on signup only when `NEXT_PUBLIC_EASYORDERS_CONNECT_ENABLED=true`. Turn the backend switch on first: an account that picked EasyOrders while the backend switch is off gets a normal Standalone organization.
+
+The install callback is called by the seller's browser from `https://app.easy-orders.net`. Its CORS answer is fixed to that origin in `src/shared/config/route-scoped-cors.config.ts` and ignores `CORS_ALLOWED_ORIGINS`.
+
 ## WhatsApp (Meta) Configuration
 
 - Use global Meta Cloud API credentials for sending and webhook verification:

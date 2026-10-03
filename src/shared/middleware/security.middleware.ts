@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
 import { buildBackendLog } from '../logging/backend-log.util';
 import { randomUUID } from 'crypto';
+import { findRouteScopedCors } from '../config/route-scoped-cors.config';
 
 /**
  * Security Middleware
@@ -138,6 +139,21 @@ export class SecurityMiddleware implements NestMiddleware {
    */
   private setCORSHeaders(res: Response, req: Request) {
     const origin = req.headers.origin;
+
+    // A provider page calling one public route: that origin only, and no
+    // credentials, regardless of the app-wide list.
+    const scoped = findRouteScopedCors(req.originalUrl.split('?')[0]);
+    if (scoped) {
+      if (origin === scoped.origin) {
+        res.setHeader('Access-Control-Allow-Origin', scoped.origin);
+      }
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', scoped.methods);
+      res.setHeader('Access-Control-Allow-Headers', scoped.headers);
+      res.setHeader('Access-Control-Max-Age', '600');
+      return;
+    }
+
     const allowedOrigins = this.getAllowedOrigins();
 
     // Check if origin is allowed

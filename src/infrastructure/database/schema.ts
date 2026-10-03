@@ -2311,3 +2311,153 @@ export const integrationApiKeys = pgTable(
     }),
   ],
 ).enableRLS();
+
+/**
+ * EasyOrders install contexts (US-06-02). EasyOrders has no `state`
+ * parameter, so a one-time token rides in the path of the callback URL; only
+ * its hash is stored, bound to the organization that started the install.
+ * API-only: RLS is on with no policy, and the table grants are revoked.
+ */
+export const easyordersPendingInstalls = pgTable(
+  'easyorders_pending_installs',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    createdBy: uuid('created_by').notNull(),
+    callbackTokenHash: text('callback_token_hash').notNull(),
+    webhookTokenHash: text('webhook_token_hash').notNull(),
+    webhookTokenHint: text('webhook_token_hint').notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    consumedAt: timestamp('consumed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    supersededAt: timestamp('superseded_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    attempts: integer().default(0).notNull(),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'easyorders_pending_installs_org_id_fkey',
+    }).onDelete('cascade'),
+    unique('easyorders_pending_installs_callback_token_hash_key').on(
+      table.callbackTokenHash,
+    ),
+    unique('easyorders_pending_installs_webhook_token_hash_key').on(
+      table.webhookTokenHash,
+    ),
+    check(
+      'easyorders_pending_installs_callback_token_hash_check',
+      sql`${table.callbackTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'easyorders_pending_installs_webhook_token_hash_check',
+      sql`${table.webhookTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'easyorders_pending_installs_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    index('idx_easyorders_pending_installs_org_created').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+    ),
+  ],
+).enableRLS();
+
+/**
+ * One integration's EasyOrders credentials (US-06-02): ciphertext for the API
+ * key and the two seller-copied webhook secrets, the hash of the per-install
+ * webhook URL token, and the store the callback claimed. Only a verified
+ * claim holds the one-store slot. API-only, like the install contexts.
+ */
+export const easyordersConnections = pgTable(
+  'easyorders_connections',
+  {
+    integrationId: uuid('integration_id').primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    storeId: text('store_id').notNull(),
+    storeVerifiedAt: timestamp('store_verified_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    apiKeyEncrypted: text('api_key_encrypted').notNull(),
+    webhookTokenHash: text('webhook_token_hash').notNull(),
+    webhookTokenHint: text('webhook_token_hint').notNull(),
+    ordersWebhookSecretEncrypted: text('orders_webhook_secret_encrypted'),
+    statusWebhookSecretEncrypted: text('status_webhook_secret_encrypted'),
+    health: text().default('ok').notNull(),
+    connectedBy: uuid('connected_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'easyorders_connections_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'easyorders_connections_integration_id_fkey',
+    }).onDelete('cascade'),
+    unique('easyorders_connections_webhook_token_hash_key').on(
+      table.webhookTokenHash,
+    ),
+    check(
+      'easyorders_connections_webhook_token_hash_check',
+      sql`${table.webhookTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'easyorders_connections_store_id_check',
+      sql`char_length(${table.storeId}) BETWEEN 1 AND 128`,
+    ),
+    check(
+      'easyorders_connections_health_check',
+      sql`${table.health} = ANY (ARRAY['ok'::text, 'store_inactive'::text])`,
+    ),
+    check(
+      'easyorders_connections_api_key_encrypted_check',
+      sql`${table.apiKeyEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'easyorders_connections_orders_secret_encrypted_check',
+      sql`${table.ordersWebhookSecretEncrypted} IS NULL OR ${table.ordersWebhookSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'easyorders_connections_status_secret_encrypted_check',
+      sql`${table.statusWebhookSecretEncrypted} IS NULL OR ${table.statusWebhookSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    uniqueIndex('easyorders_connections_verified_store_key')
+      .on(table.storeId)
+      .where(sql`${table.storeVerifiedAt} IS NOT NULL`),
+    index('idx_easyorders_connections_store').using(
+      'btree',
+      table.storeId.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_easyorders_connections_org').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+  ],
+).enableRLS();

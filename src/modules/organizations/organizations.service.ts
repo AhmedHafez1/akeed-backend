@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CreateOrganizationDto,
   OrganizationResponseDto,
@@ -21,6 +23,7 @@ import type {
   AuthenticatedUser,
 } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
+import { isSourceConnectEnabled } from '../../shared/config/easyorders.config';
 import {
   buildBackendLog,
   normalizeError,
@@ -33,6 +36,7 @@ export class OrganizationsService {
   constructor(
     private readonly organizationsRepo: OrganizationsRepository,
     private readonly standaloneProvisioningRepo: StandaloneOrganizationProvisioningRepository,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   async createOrganization(
@@ -59,6 +63,10 @@ export class OrganizationsService {
       };
     }
 
+    if (payload.sourceMode === 'connect') {
+      return this.createSourcelessOrganization(user.userId, payload.name);
+    }
+
     try {
       const result = await this.standaloneProvisioningRepo.provision(
         user.userId,
@@ -77,6 +85,65 @@ export class OrganizationsService {
           action: 'standalone-organization-provision',
           outcome: 'failure',
           userId: user.userId,
+          ...normalizeError(error),
+        }),
+      );
+      if (error instanceof StandaloneSourceConflictError) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message:
+            'Standalone setup is unavailable for an account that already owns another commerce source',
+          code: 'STANDALONE_SOURCE_CONFLICT',
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Signup chose a store platform, so the source is left for that platform's
+   * install to provision. Refused while no connectable platform is switched
+   * on, which would leave the organization with no way to get a source.
+   */
+  private async createSourcelessOrganization(
+    userId: string,
+    name: string,
+  ): Promise<{ organization: OrganizationResponseDto; created: boolean }> {
+    if (!this.config || !isSourceConnectEnabled(this.config)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Connecting a store platform is not available',
+        code: 'SOURCE_CONNECT_UNAVAILABLE',
+      });
+    }
+
+    try {
+      const result =
+        await this.standaloneProvisioningRepo.provisionWithoutSource(
+          userId,
+          name,
+        );
+      this.logger.log(
+        buildBackendLog(OrganizationsService.name, {
+          action: 'sourceless-organization-provision',
+          outcome: 'success',
+          provisioningResult: result.created ? 'created' : 'existing',
+          userId,
+          orgId: result.organization.id,
+        }),
+      );
+      return {
+        organization: this.toResponse(result.organization),
+        created: result.created,
+      };
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(OrganizationsService.name, {
+          action: 'sourceless-organization-provision',
+          outcome: 'failure',
+          userId,
           ...normalizeError(error),
         }),
       );

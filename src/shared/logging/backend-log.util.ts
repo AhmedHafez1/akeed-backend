@@ -41,6 +41,19 @@ const REDACTED_KEYS = new Set([
   'key_hash',
   'keyhash',
   'plaintext',
+  // EasyOrders install (US-06-02): the one-time callback token, the webhook
+  // URL token, the seller-copied webhook secrets and the link carrying both
+  // tokens.
+  'callback_token',
+  'callbacktoken',
+  'webhook_token',
+  'webhooktoken',
+  'webhook_secret',
+  'webhooksecret',
+  'orderssecret',
+  'statussecret',
+  'install_url',
+  'installurl',
   'client_secret',
   'clientsecret',
   'api_key',

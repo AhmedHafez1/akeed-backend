@@ -19,6 +19,11 @@ export interface StandaloneOrganizationProvisioningResult {
   sourceCreated: boolean;
 }
 
+export interface SourcelessOrganizationProvisioningResult {
+  organization: typeof organizations.$inferSelect;
+  created: boolean;
+}
+
 export class StandaloneSourceConflictError extends Error {
   constructor(
     message = 'The authenticated user already owns a non-Standalone source',
@@ -263,6 +268,58 @@ export class StandaloneOrganizationProvisioningRepository {
         created: Boolean(inserted),
         sourceCreated,
       };
+    });
+  }
+
+  /**
+   * The organization and its owner membership, with no source: for a merchant
+   * who chose at signup to connect a store platform. That platform's install
+   * provisions the source, so no Standalone source is created here and none
+   * has to be converted later.
+   *
+   * A user who already owns an organization gets it back untouched, whatever
+   * source it has.
+   */
+  async provisionWithoutSource(
+    userId: string,
+    name: string,
+  ): Promise<SourcelessOrganizationProvisioningResult> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+      );
+
+      const [owned] = await tx
+        .select({ organization: organizations })
+        .from(memberships)
+        .innerJoin(organizations, eq(memberships.orgId, organizations.id))
+        .where(
+          and(eq(memberships.userId, userId), eq(memberships.role, 'owner')),
+        )
+        .orderBy(asc(memberships.createdAt), asc(memberships.id))
+        .limit(1);
+      if (owned) return { organization: owned.organization, created: false };
+
+      const [organization] = await tx
+        .insert(organizations)
+        .values({ name, slug: buildStandaloneOrganizationSlug(userId) })
+        .onConflictDoNothing({ target: organizations.slug })
+        .returning();
+      if (!organization) {
+        throw new StandaloneSourceConflictError(
+          'The stable Standalone organization identity is already owned',
+        );
+      }
+
+      await tx
+        .insert(memberships)
+        .values({ orgId: organization.id, userId, role: 'owner' })
+        .onConflictDoUpdate({
+          target: [memberships.orgId, memberships.userId],
+          set: { role: 'owner' },
+        });
+
+      return { organization, created: true };
     });
   }
 }

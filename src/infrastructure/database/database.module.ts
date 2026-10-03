@@ -24,6 +24,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
 import { OrderImportsRepository } from './repositories/order-imports.repository';
 import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
 import { IntegrationApiKeysRepository } from './repositories/integration-api-keys.repository';
+import { EasyOrdersConnectionsRepository } from './repositories/easyorders-connections.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -51,6 +52,7 @@ import { IntegrationApiKeysRepository } from './repositories/integration-api-key
     OrderImportsRepository,
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
+    EasyOrdersConnectionsRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -76,6 +78,7 @@ import { IntegrationApiKeysRepository } from './repositories/integration-api-key
     OrderImportsRepository,
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
+    EasyOrdersConnectionsRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

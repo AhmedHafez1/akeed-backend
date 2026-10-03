@@ -256,6 +256,8 @@ describe('order imports PostgreSQL contract', () => {
         '0044_order_import_payment_classifications.sql',
         // US-05-01: keys reference integrations; proves 0046 layers on the base.
         '0046_integration_api_keys.sql',
+        // US-06-02: both tables reference integrations; proves 0047 re-runs.
+        '0047_easyorders_connection.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

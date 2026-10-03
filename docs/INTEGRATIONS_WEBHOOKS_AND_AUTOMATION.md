@@ -567,6 +567,33 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 
 **Operations.** Accepted orders survive key revocation; only disabling the source stops their processing. Idempotency is scoped to the source, so rotating a key resets neither usage nor idempotency history. Contract suite: `npm run test:contract:integration-keys`, or `scripts/test-integration-api-keys-contract.ps1` for a disposable PostgreSQL.
 
+## EasyOrders Connection (US-06-02)
+
+The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This story covers the authorized connection only: no webhook route, normalizer, eligibility strategy or outcome adapter is registered, so no EasyOrders order can enter verification. EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
+
+**Flow.**
+
+1. Signup records the chosen source. `POST /api/organizations` with `sourceMode: "connect"` creates the organization and owner membership with no source (`StandaloneOrganizationProvisioningRepository.provisionWithoutSource`). Nothing is converted later.
+2. `POST /api/easyorders/install` (owner or admin, Supabase session, switch on, organization on the allow-list, organization has no integration row) opens a context in `easyorders_pending_installs` and returns the authorized-app link. The link asks for `orders:read,orders:update` only. It carries two different 256-bit tokens in URL paths: the one-time callback token and the webhook URL token. Only their SHA-256 is stored. A new install retires the organization's earlier open context. A context lives 15 minutes.
+3. The seller accepts in EasyOrders. Their browser calls `POST /api/easyorders/install/callback/:token` with `{ api_key, store_id }`. The endpoint is public; the path token is the only tenant binding.
+4. The callback looks the context up by hash. Unknown, expired, used, retired or exhausted (5 refused callbacks) contexts all answer `401 EASYORDERS_INSTALL_CONTEXT_INVALID`. The key is then checked server-side with `GET orders/<random UUID>`: only a 2xx or the exact inactive-store `400` passes (fail closed, a `404` does not). A timeout, `429` or `5xx` is `503 EASYORDERS_PROVIDER_UNAVAILABLE` and the same link may be retried.
+5. One transaction (`EasyOrdersConnectionsRepository.connect`, in `withSerializableRetry`) locks the context and the organization, re-checks that no source exists, inserts the `easyorders` integration and its `easyorders_connections` row, and marks the context used. The answer is an empty `204`.
+6. The seller copies the two webhook secrets from EasyOrders into `PUT /api/easyorders/connection/webhook-secrets` (owner or admin, write-only).
+
+**What is stored.**
+
+- `integrations`: `platform_type = 'easyorders'`, source identity `easyorders:<orgId>`, the Starter / `not_required` pilot entitlement, the Standalone onboarding defaults with `assume_cod_when_payment_missing = false`. `access_token` and `webhook_secret` stay NULL.
+- `easyorders_connections`: the API key and both webhook secrets as `encryptToken` ciphertext (a CHECK refuses anything that is not a `v1:` envelope), the webhook URL token's hash and its last six characters, `health` (`ok` or `store_inactive`), and the claimed `store_id`.
+- Both tables have RLS on with no policy and all `anon` / `authenticated` grants revoked.
+
+**Store ownership.** The callback's `store_id` is a claim (`store_verified_at` NULL). A partial unique index makes a store unique only once verified, so a claim never blocks the real owner. A callback naming a store that is verified for another organization is refused (`409 EASYORDERS_STORE_UNAVAILABLE`). Verification on the first matching order is US-06-03.
+
+**Secrets.** The key, both tokens, both secrets and the install link are never logged (added to `REDACTED_KEYS`) and never returned, with one exception: the install link is returned once to the member who started the install, because the browser has to carry it to EasyOrders. `GET /api/easyorders/connection` reports state, store id, health, the URL hint and whether each secret is set.
+
+**Not in this story.** Disconnect and reconnect (US-06-05): until then any existing integration row, active or not, blocks a connect. Currency and phone country (US-06-05). Webhook ingestion (US-06-03): the webhook URLs given to EasyOrders answer `404` until then.
+
+**Validate.** `scripts/test-easyorders-connection-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders`.
+
 ## Server API Guide (US-05-05)
 
 The integrator-facing guide for `POST /api/v1/orders` is public: `akeed-frontend/content/docs/en/server-api.md` (`/en/docs/server-api`), with a short Arabic overview at `content/docs/ar/server-api.md`. Settings → API keys links to it and shows the endpoint address.

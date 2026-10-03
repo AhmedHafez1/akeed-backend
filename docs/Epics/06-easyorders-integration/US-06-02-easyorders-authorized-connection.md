@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented, disabled (2026-10-03). Built against the interim contract record and shipped behind `EASYORDERS_CONNECT_ENABLED=false`. No real merchant may connect until the US-06-01 go-live verification observes the callback payload. Evidence: [US-06-02 evidence](../../US-06-02-EASYORDERS-CONNECTION-EVIDENCE.md)
 - **Dependencies:** [US-06-01](../06-easyorders-integration/US-06-01-easyorders-integration-validation.md)
 
 ## User story and value
