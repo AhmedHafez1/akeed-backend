@@ -18,6 +18,7 @@ import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import {
   VerificationsService,
   type ManualConfirmationResponse,
+  type OutcomeSyncRetryResponse,
 } from './verifications.service';
 import { TestVerificationService } from './test-verification.service';
 import { SendTestVerificationDto } from './dto/send-test-verification.dto';
@@ -137,6 +138,15 @@ export class VerificationsController {
     @Param('id', new ParseUUIDPipe()) verificationId: string,
   ): Promise<ManualConfirmationResponse> {
     return this.verificationsService.confirmManually(user, verificationId);
+  }
+
+  @Post(':id/outcome-sync/retry')
+  @HttpCode(200)
+  async retryOutcomeSync(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) verificationId: string,
+  ): Promise<OutcomeSyncRetryResponse> {
+    return this.verificationsService.retryOutcomeSync(user, verificationId);
   }
 
   @Post(':id/cancel')

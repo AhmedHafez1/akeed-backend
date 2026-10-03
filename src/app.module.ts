@@ -33,6 +33,7 @@ import { EasyOrdersModule } from './infrastructure/spokes/easyorders/easyorders.
 import { PaymobPaymentsAdapter } from './infrastructure/spokes/paymob/paymob-payments.adapter';
 import { PAYMENTS_PORT } from './shared/ports/payments.port';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
+import { CommerceOutcomeSyncModule } from './modules/commerce-outcomes/commerce-outcome-sync.module';
 import { DEFAULT_QUEUE_JOB_OPTIONS } from './shared/queue/job-options';
 import { validateEnv } from './shared/config/env-validation';
 
@@ -109,6 +110,7 @@ const billingModule = BillingModule.register({
     // receive this one billing module instance instead of registering another.
     AdminModule.register({ imports: [billingModule] }),
     CommerceOutcomeModule,
+    CommerceOutcomeSyncModule,
     billingModule,
   ],
   controllers: [AppController],

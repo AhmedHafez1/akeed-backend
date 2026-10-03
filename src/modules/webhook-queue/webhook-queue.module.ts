@@ -7,6 +7,7 @@ import { WebhookQueueProducer } from './webhook-queue.producer';
 import { WebhookQueueProcessor } from './webhook-queue.processor';
 import { ShopifyOrderNormalizer } from './normalizers/shopify-order.normalizer';
 import { WEBHOOK_ORDER_NORMALIZERS } from './interfaces/webhook-normalizer.interface';
+import { WEBHOOK_ORDER_UPDATE_HANDLERS } from './interfaces/webhook-order-update-handler.interface';
 import { PhoneService } from '../../shared/services/phone.service';
 import { WebhookDispatchService } from './webhook-dispatch.service';
 import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service';
@@ -45,6 +46,8 @@ import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorder
         EasyOrdersOrderNormalizer,
       ],
     },
+    // --- Order-update handlers (status changes made in the store) ---
+    { provide: WEBHOOK_ORDER_UPDATE_HANDLERS, useValue: [] },
   ],
   exports: [
     WebhookQueueProducer,

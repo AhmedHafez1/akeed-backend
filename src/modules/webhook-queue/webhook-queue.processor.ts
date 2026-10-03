@@ -1,5 +1,5 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DelayedError, Job } from 'bullmq';
 import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import {
@@ -17,6 +17,10 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { RetryAfterError } from '../../shared/http/bounded-http';
+import {
+  WEBHOOK_ORDER_UPDATE_HANDLERS,
+  type WebhookOrderUpdateHandler,
+} from './interfaces/webhook-order-update-handler.interface';
 
 /**
  * A job that keeps being told "later" is rescheduled this many times without
@@ -49,6 +53,10 @@ export class WebhookQueueProcessor extends WorkerHost {
     PlatformType,
     WebhookOrderNormalizer
   >;
+  private readonly updateHandlersByPlatform: Map<
+    PlatformType,
+    WebhookOrderUpdateHandler
+  >;
 
   constructor(
     @Inject(WEBHOOK_ORDER_NORMALIZERS)
@@ -56,8 +64,14 @@ export class WebhookQueueProcessor extends WorkerHost {
     private readonly webhookEventsRepo: WebhookEventsRepository,
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly verificationHub: VerificationHubService,
+    @Optional()
+    @Inject(WEBHOOK_ORDER_UPDATE_HANDLERS)
+    updateHandlers: WebhookOrderUpdateHandler[] = [],
   ) {
     super();
+    this.updateHandlersByPlatform = new Map(
+      updateHandlers.map((handler) => [handler.platform, handler]),
+    );
     this.normalizersByPlatform = new Map(
       normalizers.map((n) => [n.platform, n]),
     );
@@ -175,23 +189,11 @@ export class WebhookQueueProcessor extends WorkerHost {
           await this.webhookEventsRepo.markCompleted(data.webhookEventId);
         }
         break;
+      case WebhookJobType.ORDER_UPDATE:
+        await this.handleOrderUpdate(job);
+        break;
       default:
-        this.logger.warn(
-          buildBackendLog(WebhookQueueProcessor.name, {
-            action: 'webhook-job-process',
-            outcome: 'skipped',
-            jobId: String(job.id),
-            webhookEventId: data.webhookEventId,
-            platform: data.platform,
-            jobType: data.jobType,
-            shopDomain: data.storeDomain,
-            reason: 'unhandled_job_type',
-          }),
-        );
-        await this.webhookEventsRepo.markSkipped(
-          data.webhookEventId,
-          `unhandled_job_type:${data.jobType}`,
-        );
+        await this.skipUnhandled(job);
         return;
     }
   }
@@ -228,11 +230,20 @@ export class WebhookQueueProcessor extends WorkerHost {
     );
   }
 
-  private async handleOrderCreate(data: WebhookJobPayload): Promise<boolean> {
+  /**
+   * The active source the event was accepted for, or null once the event has
+   * been marked skipped with the reason.
+   */
+  private async resolveSource(
+    data: WebhookJobPayload,
+    action: string,
+  ): Promise<Awaited<
+    ReturnType<IntegrationsRepository['findBySourceIdentity']>
+  > | null> {
     if (!data.integrationId || !data.orgId) {
       this.logger.warn(
         buildBackendLog(WebhookQueueProcessor.name, {
-          action: 'webhook-order-create-handle',
+          action,
           outcome: 'skipped',
           webhookEventId: data.webhookEventId,
           platform: data.platform,
@@ -244,7 +255,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'missing_source_identity',
       );
-      return false;
+      return null;
     }
 
     const integration = await this.integrationsRepo.findBySourceIdentity({
@@ -257,7 +268,7 @@ export class WebhookQueueProcessor extends WorkerHost {
     if (!integration) {
       this.logger.warn(
         buildBackendLog(WebhookQueueProcessor.name, {
-          action: 'webhook-order-create-handle',
+          action,
           outcome: 'skipped',
           webhookEventId: data.webhookEventId,
           platform: data.platform,
@@ -271,13 +282,13 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'source_identity_mismatch',
       );
-      return false;
+      return null;
     }
 
     if (integration.isActive !== true) {
       this.logger.warn(
         buildBackendLog(WebhookQueueProcessor.name, {
-          action: 'webhook-order-create-handle',
+          action,
           outcome: 'skipped',
           webhookEventId: data.webhookEventId,
           platform: data.platform,
@@ -291,8 +302,79 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'integration_inactive',
       );
-      return false;
+      return null;
     }
+
+    return integration ?? null;
+  }
+
+  /**
+   * Hands a status change to its platform's handler. A platform without one
+   * keeps the event unhandled, exactly as before handlers existed.
+   */
+  private async handleOrderUpdate(job: Job<WebhookJobPayload>): Promise<void> {
+    const { data } = job;
+    const handler = this.updateHandlersByPlatform.get(data.platform);
+    if (!handler) return this.skipUnhandled(job);
+
+    const integration = await this.resolveSource(
+      data,
+      'webhook-order-update-handle',
+    );
+    if (!integration) return;
+
+    const result = await handler.handleOrderUpdate(
+      data.rawPayload,
+      integration.id,
+      integration.orgId,
+    );
+    if ('skipped' in result) {
+      this.logger.log(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'webhook-order-update-handle',
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          reason: result.reason,
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        result.reason,
+      );
+      return;
+    }
+    await this.webhookEventsRepo.markCompleted(data.webhookEventId);
+  }
+
+  private async skipUnhandled(job: Job<WebhookJobPayload>): Promise<void> {
+    const { data } = job;
+    this.logger.warn(
+      buildBackendLog(WebhookQueueProcessor.name, {
+        action: 'webhook-job-process',
+        outcome: 'skipped',
+        jobId: String(job.id),
+        webhookEventId: data.webhookEventId,
+        platform: data.platform,
+        jobType: data.jobType,
+        shopDomain: data.storeDomain,
+        reason: 'unhandled_job_type',
+      }),
+    );
+    await this.webhookEventsRepo.markSkipped(
+      data.webhookEventId,
+      `unhandled_job_type:${data.jobType}`,
+    );
+  }
+
+  private async handleOrderCreate(data: WebhookJobPayload): Promise<boolean> {
+    const integration = await this.resolveSource(
+      data,
+      'webhook-order-create-handle',
+    );
+    if (!integration) return false;
 
     const normalizer = this.normalizersByPlatform.get(data.platform);
     if (!normalizer) {
@@ -334,8 +416,8 @@ export class WebhookQueueProcessor extends WorkerHost {
           outcome: 'skipped',
           webhookEventId: data.webhookEventId,
           platform: data.platform,
-          orgId: data.orgId,
-          integrationId: data.integrationId,
+          orgId: integration.orgId,
+          integrationId: integration.id,
           reason: normalizedOrder.reason,
         }),
       );

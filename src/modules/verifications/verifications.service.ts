@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
@@ -37,8 +38,15 @@ import {
   encodeCursor,
 } from '../orders/services/pagination.helpers';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
+import { CommerceOutcomeSyncsRepository } from '../../infrastructure/database/repositories/commerce-outcome-syncs.repository';
+import {
+  selectOutcomeSync,
+  toRemoteSync,
+  type RemoteSyncDto,
+} from '../../shared/verification/outcome-sync';
 import type {
   CancelOrderResponse,
+  CommerceOutcomeAction,
   CommerceOutcomeOperationResult,
 } from '../../shared/commerce/commerce-outcome';
 import {
@@ -76,6 +84,12 @@ import type {
 } from '../orders/dto/dashboard.dto';
 
 /** What POST /api/verifications/:id/confirm answers. */
+export interface OutcomeSyncRetryResponse {
+  success: true;
+  verificationId: string;
+  remote_sync: RemoteSyncDto | null;
+}
+
 export interface ManualConfirmationResponse {
   success: true;
   verificationId: string;
@@ -253,6 +267,8 @@ export class VerificationsService {
     private readonly ordersRepo: OrdersRepository,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
     private readonly verificationHub: VerificationHubService,
+    @Optional()
+    private readonly outcomeSyncs?: CommerceOutcomeSyncsRepository,
   ) {}
 
   async listByOrg(
@@ -347,6 +363,14 @@ export class VerificationsService {
         ? encodeCursor(items[items.length - 1])
         : null;
 
+    // One query for the page. Sources that do not track synchronization
+    // have no rows, and their items report null.
+    const syncRows =
+      (await this.outcomeSyncs?.findByCorrelationIds(
+        orgId,
+        items.filter((item) => !isHeldRow(item)).map((item) => item.id),
+      )) ?? [];
+
     const now = new Date();
     const sourceOf = (integrationId: string | null | undefined) =>
       integrations.find((integration) => integration.id === integrationId);
@@ -366,6 +390,7 @@ export class VerificationsService {
         cancellation_operation: this.readCancellationOperation(
           verification.metadata,
         ),
+        remote_sync: this.readRemoteSync(verification, syncRows),
         id: verification.id,
         status: verification.status as VerificationStatus,
         reason: readVerificationReason(verification.metadata),
@@ -838,6 +863,91 @@ export class VerificationsService {
         money_saved: moneySaved,
       },
     };
+  }
+
+  /**
+   * Asks the store again for a result it failed to take. The local result is
+   * not touched: only the failed sync of the verification's current result is
+   * reopened, and it goes through the same registry as the first try.
+   */
+  async retryOutcomeSync(
+    user: AuthenticatedUser,
+    verificationId: string,
+  ): Promise<OutcomeSyncRetryResponse> {
+    assertOrganizationWriteAllowed(user.role, {
+      message: 'Owner or admin role is required to retry a store update.',
+      code: 'VERIFICATION_ROLE_REQUIRED',
+    });
+    const orgId = user.orgId;
+    const verification = await this.verificationsRepo.findByIdForOrg(
+      verificationId,
+      orgId,
+    );
+    if (!verification || verification.orgId !== orgId) {
+      throw new NotFoundException({
+        message: 'Verification not found',
+        code: 'VERIFICATION_NOT_FOUND',
+      });
+    }
+    const notRetryable = () =>
+      new ConflictException({
+        message: 'This verification has no failed store update to retry',
+        code: 'OUTCOME_SYNC_NOT_RETRYABLE',
+      });
+    const failed = selectOutcomeSync(
+      verification,
+      (await this.outcomeSyncs?.findByCorrelationIds(orgId, [
+        verificationId,
+      ])) ?? [],
+    );
+    if (!failed || !toRemoteSync(failed).retryable) throw notRetryable();
+    // Only one of two concurrent retries reopens the row.
+    const reopened = await this.outcomeSyncs?.resetForRetry(failed.id, orgId);
+    if (!reopened) throw notRetryable();
+
+    await this.commerceOutcomes.dispatch({
+      orgId,
+      integrationId: reopened.integrationId,
+      externalOrderId: reopened.externalOrderId,
+      action: reopened.action as CommerceOutcomeAction,
+      correlationId: verificationId,
+      retryInBackground: true,
+    });
+    const current = await this.outcomeSyncs?.findByIdForOrg(reopened.id, orgId);
+    this.logger.log(
+      buildBackendLog(VerificationsService.name, {
+        action: 'verification-outcome-sync-retry',
+        outcome: current?.state === 'failed' ? 'failure' : 'success',
+        orgId,
+        verificationId,
+        synchronizationState: current?.state,
+      }),
+    );
+    return {
+      success: true,
+      verificationId,
+      remote_sync: current ? toRemoteSync(current) : null,
+    };
+  }
+
+  private readRemoteSync(
+    verification: {
+      id: string;
+      status: string | null;
+      cancellationSource?: string | null;
+    },
+    rows: Parameters<typeof selectOutcomeSync>[1],
+  ): RemoteSyncDto | null {
+    if (isHeldRow(verification)) return null;
+    const row = selectOutcomeSync(
+      {
+        id: verification.id,
+        status: verification.status,
+        cancellationSource: verification.cancellationSource,
+      },
+      rows,
+    );
+    return row ? toRemoteSync(row) : null;
   }
 
   async cancelNoReplyOrder(

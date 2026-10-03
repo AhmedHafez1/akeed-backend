@@ -2482,3 +2482,90 @@ export const easyordersConnections = pgTable(
     ),
   ],
 ).enableRLS();
+
+/**
+ * Whether a store has an outcome yet (US-06-04): one row per order and outcome
+ * action, written only for sources whose adapter tracks synchronization. The
+ * verification row keeps the local decision whatever this row says. Codes
+ * only: no provider text, customer data or credential. API-only.
+ */
+export const commerceOutcomeSyncs = pgTable(
+  'commerce_outcome_syncs',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    orderId: uuid('order_id').notNull(),
+    externalOrderId: text('external_order_id').notNull(),
+    correlationId: text('correlation_id').notNull(),
+    action: text().notNull(),
+    state: text().notNull(),
+    attempts: integer().default(0).notNull(),
+    deferrals: integer().default(0).notNull(),
+    retryInBackground: boolean('retry_in_background').default(false).notNull(),
+    requiresAssistance: boolean('requires_assistance').default(false).notNull(),
+    providerStatus: text('provider_status'),
+    errorCode: text('error_code'),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'commerce_outcome_syncs_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'commerce_outcome_syncs_integration_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.orderId, table.orgId],
+      foreignColumns: [orders.id, orders.orgId],
+      name: 'commerce_outcome_syncs_order_id_fkey',
+    }).onDelete('cascade'),
+    unique('commerce_outcome_syncs_source_order_action_key').on(
+      table.integrationId,
+      table.orderId,
+      table.action,
+    ),
+    check(
+      'commerce_outcome_syncs_action_check',
+      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text])`,
+    ),
+    check(
+      'commerce_outcome_syncs_state_check',
+      sql`${table.state} = ANY (ARRAY['pending'::text, 'succeeded'::text, 'failed'::text, 'unsupported'::text])`,
+    ),
+    check(
+      'commerce_outcome_syncs_attempts_check',
+      sql`${table.attempts} >= 0 AND ${table.deferrals} >= 0`,
+    ),
+    check(
+      'commerce_outcome_syncs_provider_status_check',
+      sql`${table.providerStatus} IS NULL OR char_length(${table.providerStatus}) BETWEEN 1 AND 64`,
+    ),
+    check(
+      'commerce_outcome_syncs_error_code_check',
+      sql`${table.errorCode} IS NULL OR char_length(${table.errorCode}) BETWEEN 1 AND 64`,
+    ),
+    index('idx_commerce_outcome_syncs_org_correlation').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.correlationId.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_commerce_outcome_syncs_order').using(
+      'btree',
+      table.orderId.asc().nullsLast().op('uuid_ops'),
+    ),
+  ],
+).enableRLS();

@@ -344,6 +344,13 @@
       "when": 1791072000000,
       "tag": "0048_easyorders_ingestion",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791158400000,
+      "tag": "0049_commerce_outcome_syncs",
+      "breakpoints": true
     }
   ]
 }

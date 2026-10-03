@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import {
   COMMERCE_OUTCOME_ADAPTERS,
@@ -13,6 +13,7 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
+import { CommerceOutcomeSyncTracker } from './commerce-outcome-sync-tracker.service';
 
 @Injectable()
 export class CommerceOutcomeRegistryService {
@@ -26,6 +27,9 @@ export class CommerceOutcomeRegistryService {
     private readonly ordersRepository: OrdersRepository,
     @Inject(COMMERCE_OUTCOME_ADAPTERS)
     adapters: readonly CommerceOutcomeAdapter[],
+    // Absent where nothing tracks synchronization; dispatch is then exactly
+    // what it was before sync states existed.
+    @Optional() private readonly tracker?: CommerceOutcomeSyncTracker,
   ) {
     const adaptersByPlatform = new Map<string, CommerceOutcomeAdapter>();
     for (const adapter of adapters) {
@@ -67,15 +71,21 @@ export class CommerceOutcomeRegistryService {
     }
 
     const adapter = this.adaptersByPlatform.get(order.integration.platformType);
+    const tracker =
+      adapter?.tracksSynchronization === true && !isSyntheticOrder(order)
+        ? this.tracker
+        : undefined;
 
     if (
       order.integration.isActive !== true &&
       (adapter?.requiresActiveConnection ?? true)
     ) {
-      return this.complete(command, {
+      const inactive: CommerceOutcomeOperationResult = {
         status: 'permanent_failure',
         errorCode: 'integration_inactive',
-      });
+      };
+      await tracker?.recordWithoutAttempt(command, order.id, inactive);
+      return this.complete(command, inactive);
     }
 
     if (!adapter) {
@@ -86,21 +96,25 @@ export class CommerceOutcomeRegistryService {
     }
 
     if (!adapter.capabilities.has(command.action)) {
-      return this.complete(command, {
+      const unsupported: CommerceOutcomeOperationResult = {
         status: 'unsupported',
         reason: 'capability_not_supported',
-      });
+      };
+      await tracker?.recordWithoutAttempt(command, order.id, unsupported);
+      return this.complete(command, unsupported);
     }
 
     if (isSyntheticOrder(order)) {
       return this.complete(command, { status: 'applied' });
     }
 
+    const sync = await tracker?.begin(command, order.id);
     try {
       const result = await adapter.execute({
         ...command,
         connection: order.integration,
       });
+      await tracker?.settle(sync, command, result);
       return this.complete(command, result);
     } catch (error: unknown) {
       this.logger.error(
@@ -117,10 +131,12 @@ export class CommerceOutcomeRegistryService {
           ...normalizeError(error),
         }),
       );
-      return this.complete(command, {
+      const failed: CommerceOutcomeOperationResult = {
         status: 'retryable_failure',
         errorCode: 'adapter_execution_failed',
-      });
+      };
+      await tracker?.settle(sync, command, failed);
+      return this.complete(command, failed);
     }
   }
 

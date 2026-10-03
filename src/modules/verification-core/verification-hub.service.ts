@@ -625,6 +625,9 @@ export class VerificationHubService {
             ? 'customer_confirmation'
             : 'customer_cancellation',
         correlationId: verificationId,
+        // The customer has answered; a source that tracks synchronization
+        // keeps trying to tell the store without anyone asking again.
+        retryInBackground: true,
       });
     } catch (error) {
       this.logger.error(

@@ -176,7 +176,9 @@ describe('order imports PostgreSQL contract', () => {
         customer_phone text NOT NULL,
         total_price numeric(12, 2),
         created_at timestamptz DEFAULT now(),
-        CONSTRAINT unique_external_order_per_integration UNIQUE (integration_id, external_order_id)
+        CONSTRAINT unique_external_order_per_integration UNIQUE (integration_id, external_order_id),
+        -- Migration 0024's key; 0049 references it.
+        CONSTRAINT orders_id_org_id_key UNIQUE (id, org_id)
       );
       -- The rest of the columns a commit writes (US-04.6-06).
       ALTER TABLE orders
@@ -260,6 +262,8 @@ describe('order imports PostgreSQL contract', () => {
         '0047_easyorders_connection.sql',
         // US-06-03: alters the EasyOrders connection table; proves 0048 re-runs.
         '0048_easyorders_ingestion.sql',
+        // US-06-04: references integrations and orders; proves 0049 re-runs.
+        '0049_commerce_outcome_syncs.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

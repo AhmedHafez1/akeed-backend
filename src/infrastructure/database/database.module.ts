@@ -25,6 +25,7 @@ import { OrderImportsRepository } from './repositories/order-imports.repository'
 import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
 import { IntegrationApiKeysRepository } from './repositories/integration-api-keys.repository';
 import { EasyOrdersConnectionsRepository } from './repositories/easyorders-connections.repository';
+import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -53,6 +54,7 @@ import { EasyOrdersConnectionsRepository } from './repositories/easyorders-conne
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
     EasyOrdersConnectionsRepository,
+    CommerceOutcomeSyncsRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -79,6 +81,7 @@ import { EasyOrdersConnectionsRepository } from './repositories/easyorders-conne
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
     EasyOrdersConnectionsRepository,
+    CommerceOutcomeSyncsRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

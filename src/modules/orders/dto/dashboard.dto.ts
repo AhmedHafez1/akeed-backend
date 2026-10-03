@@ -1,5 +1,6 @@
 import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
+import type { RemoteSyncDto } from '../../../shared/verification/outcome-sync';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
 import {
   VERIFICATION_LIST_TABS,
@@ -86,6 +87,11 @@ export class GetVerificationStatsQueryDto {
 export interface VerificationListItemDto {
   capabilities: VerificationRowCapability[];
   cancellation_operation?: CommerceOutcomeOperationResult;
+  /**
+   * Whether the store has this row's result yet, for sources that track it.
+   * Separate from `status`, which is always the local result.
+   */
+  remote_sync: RemoteSyncDto | null;
   id: string;
   status: string;
   /**
