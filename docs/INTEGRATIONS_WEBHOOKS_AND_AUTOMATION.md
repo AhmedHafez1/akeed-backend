@@ -569,7 +569,7 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 
 ## EasyOrders Connection (US-06-02)
 
-The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This section covers the authorized connection; order webhooks are in [EasyOrders Webhook Ingestion](#easyorders-webhook-ingestion-us-06-03) below. No outcome adapter is registered yet (US-06-04). EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
+The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This section covers the authorized connection; order webhooks are in [EasyOrders Webhook Ingestion](#easyorders-webhook-ingestion-us-06-03) and status writes in [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization-us-06-04) below. EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
 
 **Flow.**
 
@@ -639,6 +639,55 @@ Nothing is stored for steps 1 to 5.
 **Logs.** `easyorders-webhook-accept` (outcome, `reason` or `errorCode`), `easyorders-webhook-not-persisted`, `easyorders-order-lookup`, `easyorders-order-normalize`, `easyorders-order-settings-save`, `webhook-job-defer`. None carries the token, a secret, the key or the payload.
 
 **Validate.** `scripts/test-easyorders-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/webhook-queue`.
+
+## EasyOrders Outcome Synchronization (US-06-04)
+
+Approved outcomes are written to EasyOrders as an order status, and the local result is kept apart from whether the store has it. It ships dark behind `EASYORDERS_OUTCOME_SYNC_ENABLED`. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 2, 5, 6 and 8.
+
+**Shared part (platform-neutral).** The outcome contract is the one Shopify already uses (`src/shared/commerce/commerce-outcome.ts`, `CommerceOutcomeRegistryService`). This story added what was missing around it:
+
+- An adapter may set `tracksSynchronization`. For such an adapter the registry records every dispatch in `commerce_outcome_syncs` (one row per order and action): `pending` before the adapter runs, then `succeeded`, `failed` or `unsupported`. Shopify and Standalone do not set it and dispatch exactly as before, with no row.
+- A caller may pass `retryInBackground`. The hub does, for customer confirmation and cancellation (and the merchant's manual confirmation, which takes the same path). A merchant no-reply cancellation does not: its failure goes back to the merchant, who is the retry.
+- `CommerceOutcomeSyncProcessor` (queue `commerce-outcome-sync`) tries a `pending` row again through the same registry. `planOutcomeSync` decides: at most 5 attempts, backing off 30 seconds, 2, 8 and 30 minutes; a wait the provider names (`retryAfterMs`) is honored up to 10 minutes and up to 5 times without spending an attempt. A permanent failure is never retried. If the retry cannot be queued the row becomes `failed` with `retry_not_scheduled` instead of waiting forever.
+- A tracking failure is logged and never changes the dispatch result. The verification's status is never changed by any of this.
+- `GET /api/verifications` reports `remote_sync` (`state`, `action`, `error_code`, `requires_assistance`, `retryable`, `updated_at`) for the row's current local result, or `null` for a source that does not track. `POST /api/verifications/:id/outcome-sync/retry` (owner or admin) reopens a `failed` background-retryable sync with a fresh set of tries; anything else is `409 OUTCOME_SYNC_NOT_RETRYABLE`.
+- `WebhookQueueProcessor` routes `order.update` events to `WEBHOOK_ORDER_UPDATE_HANDLERS`, after the same source checks as an order. A platform without a handler keeps `unhandled_job_type`.
+
+**Mapping (`easyorders-outcome.mapping.ts`).**
+
+| Akeed action | EasyOrders |
+| --- | --- |
+| `customer_confirmation` | status `confirmed` |
+| `customer_cancellation` | status `canceled` |
+| `merchant_no_reply_cancellation` | status `canceled`, only on the merchant's own action |
+| `automatic_no_reply_tagging`, `merchant_cancellation_tagging` | none: `unsupported` / `capability_not_supported`, no request |
+
+Automatic no-reply is local only. It never becomes a cancellation and never borrows the merchant action's authority.
+
+**Adapter (`EasyOrdersOutcomeAdapter`), per outcome.**
+
+1. Load the connection of the order's own integration (`findByIntegration(integrationId, orgId)`) and decrypt its key. The registry has already refused a command whose organization, integration and order do not belong together (`source_identity_mismatch`).
+2. Read the order. It must name the integration's store and carry a status, or nothing is written (`store_unverified`, `store_mismatch`, `remote_state_unreadable`).
+3. Already at the target: `applied`, no write. Anything other than `pending`: `permanent_failure` `remote_state_conflict` with the status seen. A terminal or advanced state is never overwritten.
+4. `PATCH orders/:id/status`, one attempt. A `2xx` is `applied`.
+5. Timeout, network failure or `5xx` on the write is ambiguous: the order is read back. At the target is `applied`; still `pending`, or unreadable, is `retryable_failure` `write_unconfirmed`, and the next attempt starts with a read again, so the write is never repeated blindly.
+
+| Provider answer | Result |
+| --- | --- |
+| `429`, or the integration's budget is spent | `retryable_failure` with the wait (`Retry-After`, else the next clock minute plus jitter); the integration's other EasyOrders calls pause too |
+| Timeout, network failure, `5xx` on the read | `retryable_failure` `source_unavailable` |
+| Inactive-store `400` | health `store_inactive`, retried after 5 minutes |
+| `401` / `403` | health `credentials_rejected`, `permanent_failure` with `requiresAssistance`; never retried |
+| `404` | `permanent_failure` `order_not_found` |
+| Any other answer to the write | `permanent_failure` `remote_rejected` |
+
+**Status webhooks (`EasyOrdersStatusUpdateHandler`).** The tenant is the one the URL token resolved to (US-06-03). The handler never writes to EasyOrders and never changes a verification, so a status event cannot start a loop. It records what the event was on `webhook_events.last_error`: `reflected_outcome` when the new status is the one Akeed asked for on that order (matched from a `pending` or `failed` row too, for a write whose answer was lost), `remote_status_observed` for any other change, `order_not_owned` for an order id the integration does not own, `malformed_status_event` otherwise.
+
+**Migration.** `0049_commerce_outcome_syncs.sql` creates the table, API-only (RLS on, grants revoked). Additive and re-runnable. Rollback: drop the table; no other row is touched.
+
+**Logs.** `commerce-outcome-dispatch`, `easyorders-outcome-sync` (`errorCode`, `providerStatus`), `commerce-outcome-sync-schedule`, `commerce-outcome-sync-retry`, `commerce-outcome-sync-settle` / `-begin` / `-schedule` (failures of the tracking itself), `verification-outcome-sync-retry`, `webhook-order-update-handle`. None carries the key or a payload.
+
+**Validate.** `scripts/test-easyorders-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/commerce-outcomes src/modules/webhook-queue`.
 
 ## Server API Guide (US-05-05)
 

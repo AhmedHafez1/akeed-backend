@@ -124,8 +124,9 @@ export class EasyOrdersWebhookService {
   }
 
   /**
-   * Status events are recorded and nothing else: the worker has no handler
-   * for them, so no order is read or changed (US-06-04 owns that).
+   * Status events are recorded here and classified by the worker's
+   * `EasyOrdersStatusUpdateHandler`, which never acts on one: no order is
+   * written and no verification changes.
    */
   async handleStatusUpdate(
     token: string,

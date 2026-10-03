@@ -14,6 +14,11 @@ export interface EasyOrdersConfig {
    * a store can be connected and checked before its orders are accepted.
    */
   ingestionEnabled: boolean;
+  /**
+   * Remote status writes (US-06-04). Off means the outcome adapter has no
+   * capability: nothing is sent to EasyOrders and every outcome stays local.
+   */
+  outcomeSyncEnabled: boolean;
   pilotOrgIds: readonly string[];
   /** Public base of this API: the install callback and webhook URLs. */
   publicApiBaseUrl: string;
@@ -69,6 +74,14 @@ export function parseEasyOrdersConfig(
   if (ingestionFlag && ingestionFlag !== 'true' && ingestionFlag !== 'false')
     errors.push('EASYORDERS_INGESTION_ENABLED must be true or false.');
   const ingestionEnabled = ingestionFlag === 'true';
+  const outcomeSyncFlag = read('EASYORDERS_OUTCOME_SYNC_ENABLED');
+  if (
+    outcomeSyncFlag &&
+    outcomeSyncFlag !== 'true' &&
+    outcomeSyncFlag !== 'false'
+  )
+    errors.push('EASYORDERS_OUTCOME_SYNC_ENABLED must be true or false.');
+  const outcomeSyncEnabled = outcomeSyncFlag === 'true';
 
   const pilotOrgIds = [
     ...new Set(
@@ -113,6 +126,11 @@ export function parseEasyOrdersConfig(
     errors.push(
       'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders ingestion is enabled.',
     );
+  // Every status write decrypts the integration's own API key.
+  if (outcomeSyncEnabled && !enabled && !read('SHOPIFY_TOKEN_ENCRYPTION_KEY'))
+    errors.push(
+      'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders outcome sync is enabled.',
+    );
 
   if (errors.length)
     throw new Error(
@@ -121,6 +139,7 @@ export function parseEasyOrdersConfig(
   return {
     enabled,
     ingestionEnabled,
+    outcomeSyncEnabled,
     pilotOrgIds,
     publicApiBaseUrl,
     appBaseUrl,

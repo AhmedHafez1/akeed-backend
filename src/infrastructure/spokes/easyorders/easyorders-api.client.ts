@@ -11,6 +11,7 @@ export const EASYORDERS_INACTIVE_STORE_MESSAGE =
 
 const PROBE_DEADLINE_MS = 10_000;
 const LOOKUP_DEADLINE_MS = 10_000;
+const STATUS_UPDATE_DEADLINE_MS = 10_000;
 /** A `Retry-After` longer than this is not believed. */
 const MAX_RETRY_AFTER_MS = 10 * 60_000;
 
@@ -45,6 +46,25 @@ export type EasyOrdersOrderLookup =
   | { kind: 'credentials_rejected' }
   | { kind: 'rate_limited'; retryAfterMs: number | null }
   | { kind: 'unavailable' };
+
+/**
+ * - `updated`: EasyOrders answered 2xx.
+ * - `ambiguous`: no answer, or a 5xx. The status may or may not have changed;
+ *   the caller must read the order before trying again.
+ * - `rate_limited`: 429. Not applied.
+ * - `credentials_rejected`: 401 or 403. Permanent until the merchant acts.
+ * - `store_inactive`: the key is recognized, the store is not active.
+ * - `not_found`: this key cannot see such an order.
+ * - `rejected`: any other answer, such as a transition EasyOrders refuses.
+ */
+export type EasyOrdersStatusUpdate =
+  | { kind: 'updated' }
+  | { kind: 'ambiguous' }
+  | { kind: 'rate_limited'; retryAfterMs: number | null }
+  | { kind: 'credentials_rejected' }
+  | { kind: 'store_inactive' }
+  | { kind: 'not_found' }
+  | { kind: 'rejected' };
 
 @Injectable()
 export class EasyOrdersApiClient {
@@ -131,6 +151,59 @@ export class EasyOrdersApiClient {
       );
     } catch {
       return { kind: 'unavailable' };
+    }
+  }
+
+  /**
+   * Asks EasyOrders to set one order's status, with the integration's own
+   * key. One attempt with a deadline and never a retry here: a repeat could
+   * act on an order whose state has moved since. The key and the response
+   * bodies never leave this method.
+   */
+  async updateOrderStatus(
+    apiKey: string,
+    orderId: string,
+    status: string,
+    now: () => number = Date.now,
+  ): Promise<EasyOrdersStatusUpdate> {
+    try {
+      return await boundedCall<EasyOrdersStatusUpdate>(
+        async () => {
+          const response = await this.http(
+            `${EASYORDERS_API_BASE}/orders/${encodeURIComponent(orderId)}/status`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Api-Key': apiKey,
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status }),
+              redirect: 'error',
+              signal: AbortSignal.timeout(STATUS_UPDATE_DEADLINE_MS),
+            },
+          );
+          if (response.ok) return { kind: 'updated' };
+          if (response.status >= 500) return { kind: 'ambiguous' };
+          if (response.status === 429)
+            return {
+              kind: 'rate_limited',
+              retryAfterMs: parseRetryAfter(
+                response.headers.get('retry-after'),
+                now(),
+              ),
+            };
+          if (response.status === 401 || response.status === 403)
+            return { kind: 'credentials_rejected' };
+          if (response.status === 404) return { kind: 'not_found' };
+          if (response.status === 400 && (await isInactiveStore(response)))
+            return { kind: 'store_inactive' };
+          return { kind: 'rejected' };
+        },
+        { policy: NO_RETRY },
+      );
+    } catch {
+      return { kind: 'ambiguous' };
     }
   }
 }

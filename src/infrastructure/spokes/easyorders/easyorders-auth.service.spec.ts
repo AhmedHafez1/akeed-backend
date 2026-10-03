@@ -55,6 +55,7 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
   const config: EasyOrdersConfig = {
     enabled: true,
     ingestionEnabled: false,
+    outcomeSyncEnabled: false,
     pilotOrgIds: [ORG_ID],
     publicApiBaseUrl: 'https://api.akeed.test',
     appBaseUrl: 'https://app.akeed.test',

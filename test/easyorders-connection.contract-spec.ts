@@ -63,6 +63,7 @@ const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 const settings: EasyOrdersConfig & { pilotOrgIds: string[] } = {
   enabled: true,
   ingestionEnabled: false,
+  outcomeSyncEnabled: false,
   pilotOrgIds: [],
   publicApiBaseUrl: 'https://api.akeed.test',
   appBaseUrl: 'https://app.akeed.test',

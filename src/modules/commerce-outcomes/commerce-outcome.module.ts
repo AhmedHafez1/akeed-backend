@@ -5,19 +5,26 @@ import { CommerceOutcomeRegistryService } from './commerce-outcome-registry.serv
 import { ShopifyCommerceModule } from '../../infrastructure/spokes/shopify/shopify-commerce.module';
 import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { StandaloneOutcomeAdapter } from '../../infrastructure/spokes/standalone/services/standalone-outcome.adapter';
+import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
+import { EasyOrdersOutcomeAdapter } from '../../infrastructure/spokes/easyorders/easyorders-outcome.adapter';
 
 @Global()
 @Module({
-  imports: [DatabaseModule, ShopifyCommerceModule],
+  imports: [DatabaseModule, ShopifyCommerceModule, EasyOrdersIngestionModule],
   providers: [
     StandaloneOutcomeAdapter,
     {
       provide: COMMERCE_OUTCOME_ADAPTERS,
-      inject: [ShopifyOutcomeAdapter, StandaloneOutcomeAdapter],
+      inject: [
+        ShopifyOutcomeAdapter,
+        StandaloneOutcomeAdapter,
+        EasyOrdersOutcomeAdapter,
+      ],
       useFactory: (
         shopify: ShopifyOutcomeAdapter,
         standalone: StandaloneOutcomeAdapter,
-      ) => [shopify, standalone],
+        easyOrders: EasyOrdersOutcomeAdapter,
+      ) => [shopify, standalone, easyOrders],
     },
     CommerceOutcomeRegistryService,
   ],

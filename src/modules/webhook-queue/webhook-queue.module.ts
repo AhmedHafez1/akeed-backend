@@ -14,6 +14,7 @@ import { WebhookDispatchReconciler } from './webhook-dispatch-reconciler.service
 import { StandaloneManualOrderNormalizer } from './normalizers/standalone-manual-order.normalizer';
 import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
 import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorders/easyorders-order.normalizer';
+import { EasyOrdersStatusUpdateHandler } from '../../infrastructure/spokes/easyorders/easyorders-status-update.handler';
 
 @Module({
   imports: [
@@ -47,7 +48,11 @@ import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorder
       ],
     },
     // --- Order-update handlers (status changes made in the store) ---
-    { provide: WEBHOOK_ORDER_UPDATE_HANDLERS, useValue: [] },
+    {
+      provide: WEBHOOK_ORDER_UPDATE_HANDLERS,
+      useFactory: (easyOrders: EasyOrdersStatusUpdateHandler) => [easyOrders],
+      inject: [EasyOrdersStatusUpdateHandler],
+    },
   ],
   exports: [
     WebhookQueueProducer,

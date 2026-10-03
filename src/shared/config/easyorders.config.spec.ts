@@ -43,10 +43,32 @@ describe('EasyOrders configuration', () => {
     expect(() => parseEasyOrdersConfig(env)).toThrow(message);
   });
 
+  it('switches remote status writes on separately, and only with a key', () => {
+    expect(
+      parseEasyOrdersConfig({
+        EASYORDERS_OUTCOME_SYNC_ENABLED: 'true',
+        SHOPIFY_TOKEN_ENCRYPTION_KEY: 'k'.repeat(32),
+      }),
+    ).toMatchObject({
+      enabled: false,
+      ingestionEnabled: false,
+      outcomeSyncEnabled: true,
+    });
+    expect(() =>
+      parseEasyOrdersConfig({ EASYORDERS_OUTCOME_SYNC_ENABLED: 'yes' }),
+    ).toThrow(/EASYORDERS_OUTCOME_SYNC_ENABLED must be true or false/);
+    expect(() =>
+      parseEasyOrdersConfig({ EASYORDERS_OUTCOME_SYNC_ENABLED: 'true' }),
+    ).toThrow(
+      /SHOPIFY_TOKEN_ENCRYPTION_KEY is required when EasyOrders outcome sync/,
+    );
+  });
+
   it('is off and needs nothing by default', () => {
     expect(parseEasyOrdersConfig({})).toEqual({
       enabled: false,
       ingestionEnabled: false,
+      outcomeSyncEnabled: false,
       pilotOrgIds: [],
       publicApiBaseUrl: '',
       appBaseUrl: '',
@@ -62,6 +84,7 @@ describe('EasyOrders configuration', () => {
     ).toEqual({
       enabled: true,
       ingestionEnabled: false,
+      outcomeSyncEnabled: false,
       pilotOrgIds: [ORG_A, ORG_B],
       publicApiBaseUrl: 'https://api.akeed.test',
       appBaseUrl: 'https://app.akeed.test',
