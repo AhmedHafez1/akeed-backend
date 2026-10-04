@@ -22,6 +22,7 @@ describe('WooCommerce configuration', () => {
     expect(parseWooCommerceConfig({})).toEqual({
       enabled: false,
       ingestionEnabled: false,
+      outcomeSyncEnabled: false,
       pilotOrgIds: [],
       publicApiBaseUrl: '',
       appBaseUrl: '',
@@ -37,6 +38,7 @@ describe('WooCommerce configuration', () => {
     ).toEqual({
       enabled: true,
       ingestionEnabled: false,
+      outcomeSyncEnabled: false,
       pilotOrgIds: [ORG_A, ORG_B],
       publicApiBaseUrl: 'https://api.akeed.test',
       appBaseUrl: 'https://app.akeed.test',
@@ -49,6 +51,11 @@ describe('WooCommerce configuration', () => {
       'WOOCOMMERCE_INGESTION_ENABLED',
       '1',
       /WOOCOMMERCE_INGESTION_ENABLED must be true or false/,
+    ],
+    [
+      'WOOCOMMERCE_OUTCOME_SYNC_ENABLED',
+      'yes',
+      /WOOCOMMERCE_OUTCOME_SYNC_ENABLED must be true or false/,
     ],
     ['WOOCOMMERCE_PILOT_ORG_IDS', 'not-a-uuid', /organization UUIDs/],
     ['WOOCOMMERCE_PUBLIC_API_BASE_URL', '', /WOOCOMMERCE_PUBLIC_API_BASE_URL/],
@@ -91,6 +98,30 @@ describe('WooCommerce configuration', () => {
       parseWooCommerceConfig({ WOOCOMMERCE_INGESTION_ENABLED: 'true' }),
     ).toThrow(
       /SHOPIFY_TOKEN_ENCRYPTION_KEY is required when WooCommerce ingestion is enabled/,
+    );
+  });
+
+  it('switches outcome sync on apart from connect, and needs the encryption key for it', () => {
+    expect(
+      parseWooCommerceConfig({
+        WOOCOMMERCE_OUTCOME_SYNC_ENABLED: 'true',
+        SHOPIFY_TOKEN_ENCRYPTION_KEY: 'a'.repeat(64),
+      }),
+    ).toMatchObject({
+      enabled: false,
+      ingestionEnabled: false,
+      outcomeSyncEnabled: true,
+    });
+    expect(
+      parseWooCommerceConfig({
+        ...ENABLED,
+        WOOCOMMERCE_OUTCOME_SYNC_ENABLED: 'false',
+      }),
+    ).toMatchObject({ enabled: true, outcomeSyncEnabled: false });
+    expect(() =>
+      parseWooCommerceConfig({ WOOCOMMERCE_OUTCOME_SYNC_ENABLED: 'true' }),
+    ).toThrow(
+      /SHOPIFY_TOKEN_ENCRYPTION_KEY is required when WooCommerce outcome sync is enabled/,
     );
   });
 

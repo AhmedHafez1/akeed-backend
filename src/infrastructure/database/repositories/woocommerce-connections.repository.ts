@@ -35,6 +35,12 @@ export type WooCommercePendingInstall =
   typeof woocommercePendingInstalls.$inferSelect;
 export type WooCommerceConnection = typeof woocommerceConnections.$inferSelect;
 
+/** The values `woocommerce_connections_health_check` allows. */
+export type WooCommerceConnectionHealthState =
+  | 'ok'
+  | 'credentials_rejected'
+  | 'permission_denied';
+
 /** A context that failed this many callbacks is dead; the merchant starts again. */
 export const WOOCOMMERCE_MAX_CALLBACK_ATTEMPTS = 5;
 
@@ -488,6 +494,24 @@ export class WooCommerceConnectionsRepository {
       )
       .limit(1);
     return connection;
+  }
+
+  /** What the store's last answer to an authenticated call said of the keys. */
+  async setHealth(
+    integrationId: string,
+    orgId: string,
+    health: WooCommerceConnectionHealthState,
+  ): Promise<void> {
+    await this.db
+      .update(woocommerceConnections)
+      .set({ health, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(woocommerceConnections.integrationId, integrationId),
+          eq(woocommerceConnections.orgId, orgId),
+          ne(woocommerceConnections.health, health),
+        ),
+      );
   }
 
   /**

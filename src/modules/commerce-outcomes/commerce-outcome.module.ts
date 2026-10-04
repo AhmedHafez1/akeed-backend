@@ -7,10 +7,17 @@ import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/servi
 import { StandaloneOutcomeAdapter } from '../../infrastructure/spokes/standalone/services/standalone-outcome.adapter';
 import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
 import { EasyOrdersOutcomeAdapter } from '../../infrastructure/spokes/easyorders/easyorders-outcome.adapter';
+import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
+import { WooCommerceOutcomeAdapter } from '../../infrastructure/spokes/woocommerce/woocommerce-outcome.adapter';
 
 @Global()
 @Module({
-  imports: [DatabaseModule, ShopifyCommerceModule, EasyOrdersIngestionModule],
+  imports: [
+    DatabaseModule,
+    ShopifyCommerceModule,
+    EasyOrdersIngestionModule,
+    WooCommerceIngestionModule,
+  ],
   providers: [
     StandaloneOutcomeAdapter,
     {
@@ -19,12 +26,14 @@ import { EasyOrdersOutcomeAdapter } from '../../infrastructure/spokes/easyorders
         ShopifyOutcomeAdapter,
         StandaloneOutcomeAdapter,
         EasyOrdersOutcomeAdapter,
+        WooCommerceOutcomeAdapter,
       ],
       useFactory: (
         shopify: ShopifyOutcomeAdapter,
         standalone: StandaloneOutcomeAdapter,
         easyOrders: EasyOrdersOutcomeAdapter,
-      ) => [shopify, standalone, easyOrders],
+        wooCommerce: WooCommerceOutcomeAdapter,
+      ) => [shopify, standalone, easyOrders, wooCommerce],
     },
     CommerceOutcomeRegistryService,
   ],

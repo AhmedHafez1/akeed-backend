@@ -6,6 +6,13 @@ import {
   type RestrictedHttpRequest,
   type RestrictedHttpResponse,
 } from '../../../shared/http/restricted-http';
+import { WOOCOMMERCE_OUTCOME_META_KEY } from './woocommerce-delivery';
+import { readWooCommerceOrderId } from './woocommerce-ingestion.policy';
+import {
+  readWooCommerceOutcomeMarkers,
+  readWooCommerceStatus,
+} from './woocommerce-outcome.mapping';
+import { canonicalizeWooCommerceStoreUrl } from './woocommerce-store-url';
 
 export const WOOCOMMERCE_HTTP = Symbol('WOOCOMMERCE_HTTP');
 
@@ -58,6 +65,59 @@ export interface NewWooCommerceWebhook {
   secret: string;
 }
 
+/** What Akeed reads of an order, once the answer is proven to be this store's. */
+export interface WooCommerceOrderState {
+  /** Null when the store's value is not a status name. */
+  status: string | null;
+  /** The values of the order's `akeed_outcome` meta entries. */
+  markers: string[];
+}
+
+/**
+ * Why an order call gave no usable answer (contract record, section 5).
+ *
+ * - `credentials_rejected`: a 401. `permission_denied`: a 403.
+ * - `not_found`: a 404 on the order.
+ * - `throttled`: a 429 or a 503, with the wait the answer named if any.
+ * - `unavailable`: no verdict, and nothing was changed.
+ * - `refused`: the restricted client would not make the call or keep its
+ *   answer. Not something a retry clears.
+ */
+export type WooCommerceOrderCallFailure =
+  | { kind: 'credentials_rejected' }
+  | { kind: 'permission_denied' }
+  | { kind: 'not_found' }
+  | { kind: 'throttled'; status: 429 | 503; retryAfterMs: number | null }
+  | { kind: 'unavailable' }
+  | { kind: 'refused' };
+
+/** `unverified`: an answer that does not prove it is this store's order. */
+export type WooCommerceOrderRead =
+  | { kind: 'found'; order: WooCommerceOrderState }
+  | { kind: 'unverified' }
+  | WooCommerceOrderCallFailure;
+
+/**
+ * - `updated`: a 2xx carrying this store's order, as it is after the write.
+ * - `rejected`: the store refused the change.
+ * - `method_refused`: a 405 or a 501; the host does not accept `PUT`.
+ * - `ambiguous`: the write may or may not have been taken. The order has to
+ *   be read before anything is tried again.
+ */
+export type WooCommerceOrderWrite =
+  | { kind: 'updated'; order: WooCommerceOrderState }
+  | { kind: 'rejected' }
+  | { kind: 'method_refused' }
+  | { kind: 'ambiguous' }
+  | WooCommerceOrderCallFailure;
+
+export interface WooCommerceOrderChange {
+  /** The value of the `akeed_outcome` meta entry to add. */
+  marker: string;
+  /** Sent only when the outcome changes the status. */
+  status?: string;
+}
+
 type Exchange =
   | { kind: 'answered'; response: RestrictedHttpResponse }
   | { kind: 'failed'; reason: WooCommerceCallFailure };
@@ -95,6 +155,73 @@ function statusFailure(status: number): WooCommerceCallFailure {
   if (status === 403) return 'permission_denied';
   if (status === 404) return 'rest_not_found';
   return 'unreachable';
+}
+
+/**
+ * `Retry-After` in seconds or as an HTTP date (rule 8.1); null when absent or
+ * unreadable. A long wait is kept: the outcome sync policy clamps it.
+ */
+export function parseRetryAfter(
+  header: string | undefined,
+  now: number,
+): number | null {
+  const value = header?.trim();
+  if (!value) return null;
+  let delayMs = Number.NaN;
+  if (/^\d{1,9}$/.test(value)) delayMs = Number(value) * 1_000;
+  // An HTTP date starts with the day's name; `Date.parse` alone would read
+  // a bare number as a date too.
+  else if (/^[A-Za-z]/.test(value)) delayMs = Date.parse(value) - now;
+  return Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : null;
+}
+
+/** What an order call's status means, the same for a read and a write. */
+function orderStatusFailure(
+  response: RestrictedHttpResponse,
+): WooCommerceOrderCallFailure | undefined {
+  const { status } = response;
+  if (status === 401) return { kind: 'credentials_rejected' };
+  if (status === 403) return { kind: 'permission_denied' };
+  if (status === 404) return { kind: 'not_found' };
+  if (status === 429 || status === 503)
+    return {
+      kind: 'throttled',
+      status,
+      retryAfterMs: parseRetryAfter(
+        response.headers['retry-after'],
+        Date.now(),
+      ),
+    };
+  return undefined;
+}
+
+/** An order id as it goes into a path: decimal digits and nothing else. */
+const ORDER_ID_PATTERN = /^[1-9]\d{0,15}$/;
+
+/**
+ * The order in an answer, only when the answer is this store's order: its
+ * `id` is the one asked for and its own link is that order's address under
+ * the canonical store URL (finding 5.7). Equality, not a prefix: a store at
+ * a domain's root must not take the answer of one in a subdirectory.
+ */
+function readOrderOf(
+  storeUrl: string,
+  orderId: string,
+  body: unknown,
+): WooCommerceOrderState | null {
+  if (!isRecord(body) || readWooCommerceOrderId(body.id) !== orderId)
+    return null;
+  const links = isRecord(body._links) ? body._links.self : undefined;
+  const self: unknown = Array.isArray(links) ? links[0] : undefined;
+  const href = isRecord(self) ? self.href : undefined;
+  const path = `${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}`;
+  if (typeof href !== 'string' || !href.endsWith(path)) return null;
+  const base = canonicalizeWooCommerceStoreUrl(href.slice(0, -path.length));
+  if (!base.ok || base.url !== storeUrl) return null;
+  return {
+    status: readWooCommerceStatus(body.status),
+    markers: readWooCommerceOutcomeMarkers(body.meta_data),
+  };
 }
 
 /**
@@ -250,6 +377,115 @@ export class WooCommerceApiClient {
     if ((status >= 200 && status < 300) || status === 404)
       return { kind: 'ok' };
     return failed(statusFailure(status));
+  }
+
+  /**
+   * One read of an order. Nothing was changed whatever the answer is, so a
+   * timeout or a broken connection is only `unavailable`.
+   */
+  async getOrder(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    orderId: string,
+  ): Promise<WooCommerceOrderRead> {
+    if (!ORDER_ID_PATTERN.test(orderId)) return { kind: 'not_found' };
+    let response: RestrictedHttpResponse;
+    try {
+      response = await this.http({
+        url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}`,
+        method: 'GET',
+        authorization: basicAuthorization(credentials),
+      });
+    } catch (error) {
+      return error instanceof RestrictedHttpError &&
+        error.code !== 'timeout' &&
+        error.code !== 'network'
+        ? { kind: 'refused' }
+        : { kind: 'unavailable' };
+    }
+    const failure = orderStatusFailure(response);
+    if (failure) return failure;
+    if (response.status !== 200)
+      return response.status >= 200 && response.status < 300
+        ? { kind: 'unverified' }
+        : { kind: 'unavailable' };
+    const order = readOrderOf(storeUrl, orderId, readJson(response));
+    return order ? { kind: 'found', order } : { kind: 'unverified' };
+  }
+
+  /**
+   * One `PUT` carrying the marker and, when the outcome has one, the status,
+   * so a repeat cannot leave one without the other. Never `set_paid`.
+   *
+   * Once the request may have left, anything short of an answer that shows
+   * the order is `ambiguous`: a timeout, a broken connection, a 5xx, a body
+   * too large to keep, a 2xx that is not this store's order.
+   */
+  async updateOrder(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    orderId: string,
+    change: WooCommerceOrderChange,
+  ): Promise<WooCommerceOrderWrite> {
+    if (!ORDER_ID_PATTERN.test(orderId)) return { kind: 'not_found' };
+    let response: RestrictedHttpResponse;
+    try {
+      response = await this.http({
+        url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}`,
+        method: 'PUT',
+        authorization: basicAuthorization(credentials),
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...(change.status ? { status: change.status } : {}),
+          meta_data: [
+            { key: WOOCOMMERCE_OUTCOME_META_KEY, value: change.marker },
+          ],
+        }),
+      });
+    } catch (error) {
+      // Refused before a connection carried the request, or answered with a
+      // redirect: the store took nothing.
+      return error instanceof RestrictedHttpError &&
+        error.code !== 'timeout' &&
+        error.code !== 'network' &&
+        error.code !== 'response_too_large'
+        ? { kind: 'refused' }
+        : { kind: 'ambiguous' };
+    }
+    const failure = orderStatusFailure(response);
+    if (failure) return failure;
+    const { status } = response;
+    if (status === 405 || status === 501) return { kind: 'method_refused' };
+    if (status >= 400 && status < 500) return { kind: 'rejected' };
+    if (status < 200 || status >= 300) return { kind: 'ambiguous' };
+    const order = readOrderOf(storeUrl, orderId, readJson(response));
+    return order ? { kind: 'updated', order } : { kind: 'ambiguous' };
+  }
+
+  /**
+   * Adds one internal order note (`customer_note: false`: the customer is not
+   * shown it and not notified). Notes have no idempotency (finding 5.6), so
+   * the caller sends this at most once and a failure is not retried.
+   */
+  async addOrderNote(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    orderId: string,
+    note: string,
+  ): Promise<boolean> {
+    if (!ORDER_ID_PATTERN.test(orderId)) return false;
+    try {
+      const { status } = await this.http({
+        url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}/notes`,
+        method: 'POST',
+        authorization: basicAuthorization(credentials),
+        contentType: 'application/json',
+        body: JSON.stringify({ note, customer_note: false }),
+      });
+      return status >= 200 && status < 300;
+    } catch {
+      return false;
+    }
   }
 
   private async exchange(request: RestrictedHttpRequest): Promise<Exchange> {

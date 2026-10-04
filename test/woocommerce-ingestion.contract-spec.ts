@@ -110,6 +110,7 @@ const BEFORE_FIXTURES = '2025-12-31T00:00:00.000Z';
 const settings: WooCommerceConfig & { pilotOrgIds: string[] } = {
   enabled: true,
   ingestionEnabled: true,
+  outcomeSyncEnabled: false,
   pilotOrgIds: [],
   publicApiBaseUrl: 'https://api.akeed.test',
   appBaseUrl: 'https://app.akeed.test',

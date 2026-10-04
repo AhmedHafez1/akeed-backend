@@ -24,6 +24,14 @@ import type {
  * - Saving an active webhook pings its delivery URL at once, with no topic
  *   header (findings 3.9 and 3.10: the ping's headers and body are UNKNOWN).
  * - `secret` is write-only: no response ever carries it (finding 2.10).
+ * - A `meta_data` entry sent without an id is added even when its key is
+ *   already there (finding 5.3: UNKNOWN; a second entry is the worst case for
+ *   a repeated write).
+ * - Any status is accepted on an order update (finding 5.11: which
+ *   transitions the store allows is UNKNOWN), and every note is stored
+ *   (finding 5.6: nothing prevents the same note twice).
+ * - An order update sends no delivery by itself (finding 5.12: UNKNOWN). A
+ *   suite delivers `orderBody` as `order.updated`, which is the worst case.
  */
 
 /** A public address for the fake DNS; nothing is ever sent to it. */
@@ -34,7 +42,30 @@ export type FakeWooCommerceRoute =
   | 'system_status'
   | 'list'
   | 'create'
-  | 'delete';
+  | 'delete'
+  | 'order_read'
+  | 'order_write'
+  | 'note_create';
+
+export interface FakeWooCommerceOrder {
+  id: number;
+  status: string;
+  meta_data: { id: number; key: string; value: unknown }[];
+  notes: { note: string; customer_note: boolean }[];
+  date_modified_gmt: string;
+  /** The rest of the order as the store holds it. */
+  fields: Record<string, unknown>;
+}
+
+/**
+ * An exchange that ends without an answer. `before`: the store never took
+ * the request. `after`: it did, and the answer was lost. `timeout` leaves the
+ * request hanging until the caller's deadline; `reset` breaks the connection.
+ */
+export interface FakeWooCommerceLoss {
+  when: 'before' | 'after';
+  how: 'timeout' | 'reset';
+}
 
 export interface FakeWooCommerceWebhook {
   id: number;
@@ -54,6 +85,8 @@ export interface FakeWooCommerceRequest {
   authenticated: boolean;
   /** The HTTP status answered, or `error` when the exchange failed. */
   answered: number | 'error';
+  /** The JSON body of an order update or a note, as the store received it. */
+  body?: unknown;
 }
 
 interface ScriptedFault {
@@ -61,6 +94,20 @@ interface ScriptedFault {
   /** Matching requests to let through first. */
   skip: number;
   status: number;
+  headers: Record<string, string>;
+}
+
+interface ScriptedLoss extends FakeWooCommerceLoss {
+  route: FakeWooCommerceRoute;
+  skip: number;
+}
+
+interface FakeWooCommerceAnswer {
+  route: FakeWooCommerceRequest['route'];
+  authenticated: boolean;
+  response: RestrictedHttpResponse;
+  /** Set when the exchange ends without the answer reaching the caller. */
+  lose?: FakeWooCommerceLoss['how'];
 }
 
 interface IssuedKey {
@@ -78,8 +125,22 @@ const json = (
   body: Buffer.from(JSON.stringify(body)),
 });
 
-const restError = (status: number, code: string) =>
-  json(status, { code, message: 'Refused.', data: { status } });
+const restError = (
+  status: number,
+  code: string,
+  headers: Record<string, string> = {},
+) => json(status, { code, message: 'Refused.', data: { status } }, headers);
+
+function parseBody(body: string | undefined): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(body ?? '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 export class FakeWooCommerceStore {
   /** What the fake DNS answers for the host. */
@@ -103,16 +164,92 @@ export class FakeWooCommerceStore {
   readonly webhooks = new Map<number, FakeWooCommerceWebhook>();
   /** Every webhook ever created, including ones deleted since. */
   readonly everCreated: FakeWooCommerceWebhook[] = [];
+  readonly orders = new Map<number, FakeWooCommerceOrder>();
+  /** What an order's own link is built from; the store's address by default. */
+  orderLinkBase: string;
+  /** The `id` an order answers with instead of its own, when set. */
+  answerOrderIdAs: number | null = null;
   private readonly basePath: string;
   private readonly keys = new Map<string, IssuedKey>();
   private readonly faults: ScriptedFault[] = [];
+  private readonly losses: ScriptedLoss[] = [];
   private nextWebhookId = 100;
+  private nextMetaId = 5000;
+  private modifications = 0;
 
   constructor(readonly url: string) {
     const parsed = new URL(url);
     this.host = parsed.hostname;
     this.basePath = parsed.pathname.replace(/\/+$/, '');
     this.homeUrl = url;
+    this.orderLinkBase = url;
+  }
+
+  /** An order a customer placed in the store. */
+  placeOrder(order: Record<string, unknown> & { id: number }): void {
+    // What the store keeps itself: a placed order starts with no Akeed meta.
+    const owned = new Set(['id', 'status', 'meta_data', '_links']);
+    const fields = Object.fromEntries(
+      Object.entries(order).filter(([field]) => !owned.has(field)),
+    );
+    this.orders.set(order.id, {
+      id: order.id,
+      status: typeof order.status === 'string' ? order.status : 'processing',
+      meta_data: [],
+      notes: [],
+      date_modified_gmt:
+        typeof fields.date_modified_gmt === 'string'
+          ? fields.date_modified_gmt
+          : '2026-01-01T10:00:00',
+      fields,
+    });
+  }
+
+  /** The merchant changes the order in the store's own admin. */
+  setOrderStatus(id: number, status: string): void {
+    const order = this.orders.get(id);
+    if (!order) throw new Error(`fake store has no order ${id}`);
+    order.status = status;
+    this.touch(order);
+  }
+
+  /**
+   * The order as the REST API returns it, which is also what an
+   * `order.created` or `order.updated` delivery carries (finding 3.3).
+   */
+  orderBody(id: number): Record<string, unknown> {
+    const order = this.orders.get(id);
+    if (!order) throw new Error(`fake store has no order ${id}`);
+    const base = `${this.orderLinkBase}/wp-json/wc/v3/orders`;
+    return {
+      ...order.fields,
+      id: this.answerOrderIdAs ?? order.id,
+      status: order.status,
+      date_modified_gmt: order.date_modified_gmt,
+      meta_data: order.meta_data.map((entry) => ({ ...entry })),
+      _links: {
+        self: [{ href: `${base}/${order.id}` }],
+        collection: [{ href: base }],
+      },
+    };
+  }
+
+  /** The next matching exchange (after `skip` of them) ends unanswered. */
+  loseNext(
+    route: FakeWooCommerceRoute,
+    loss: FakeWooCommerceLoss,
+    skip = 0,
+  ): void {
+    this.losses.push({ route, skip, ...loss });
+  }
+
+  private touch(order: FakeWooCommerceOrder): void {
+    this.modifications += 1;
+    order.date_modified_gmt = new Date(
+      Date.UTC(2026, 0, 2) + this.modifications * 1000,
+    )
+      .toISOString()
+      .slice(0, 19);
   }
 
   /** The merchant approves on the authorize page: the store issues keys. */
@@ -134,8 +271,13 @@ export class FakeWooCommerceStore {
   }
 
   /** The next matching request (after `skip` of them) answers `status`. */
-  failNext(route: FakeWooCommerceRoute, status: number, skip = 0): void {
-    this.faults.push({ route, status, skip });
+  failNext(
+    route: FakeWooCommerceRoute,
+    status: number,
+    skip = 0,
+    headers: Record<string, string> = {},
+  ): void {
+    this.faults.push({ route, status, skip, headers });
   }
 
   /** A webhook somebody else created in the store. */
@@ -149,11 +291,7 @@ export class FakeWooCommerceStore {
     }).id;
   }
 
-  async answer(target: PinnedTarget): Promise<{
-    route: FakeWooCommerceRequest['route'];
-    authenticated: boolean;
-    response: RestrictedHttpResponse;
-  }> {
+  async answer(target: PinnedTarget): Promise<FakeWooCommerceAnswer> {
     const url = new URL(`https://${this.host}${target.path}`);
     const restBase = `${this.basePath}/wp-json/wc/v3`;
     const authenticated = this.authenticate(target.headers.Authorization);
@@ -183,8 +321,25 @@ export class FakeWooCommerceStore {
         return {
           route,
           authenticated: authenticated === 'ok',
-          response: restError(fault.status, 'injected'),
+          response: restError(fault.status, 'injected', fault.headers),
         };
+      }
+    }
+
+    let lose: FakeWooCommerceLoss['how'] | undefined;
+    const loss = this.losses.find((candidate) => candidate.route === route);
+    if (loss) {
+      if (loss.skip > 0) loss.skip -= 1;
+      else {
+        this.losses.splice(this.losses.indexOf(loss), 1);
+        if (loss.when === 'before')
+          return {
+            route,
+            authenticated: authenticated === 'ok',
+            response: restError(0, 'lost'),
+            lose: loss.how,
+          };
+        lose = loss.how;
       }
     }
 
@@ -211,6 +366,7 @@ export class FakeWooCommerceStore {
       route,
       authenticated: true,
       response: await this.serve(route, target, url, rest),
+      lose,
     };
   }
 
@@ -223,6 +379,10 @@ export class FakeWooCommerceStore {
     if (method === 'GET' && rest === '/webhooks') return 'list';
     if (method === 'POST' && rest === '/webhooks') return 'create';
     if (method === 'DELETE' && /^\/webhooks\/\d+$/.test(rest)) return 'delete';
+    if (method === 'GET' && /^\/orders\/\d+$/.test(rest)) return 'order_read';
+    if (method === 'PUT' && /^\/orders\/\d+$/.test(rest)) return 'order_write';
+    if (method === 'POST' && /^\/orders\/\d+\/notes$/.test(rest))
+      return 'note_create';
     return undefined;
   }
 
@@ -286,6 +446,46 @@ export class FakeWooCommerceStore {
         if (!webhook) return restError(404, 'woocommerce_rest_invalid_id');
         this.webhooks.delete(id);
         return json(200, publicFields(webhook));
+      }
+      case 'order_read': {
+        const id = Number(rest.split('/').pop());
+        return this.orders.has(id)
+          ? json(200, this.orderBody(id))
+          : restError(404, 'woocommerce_rest_shop_order_invalid_id');
+      }
+      case 'order_write': {
+        const id = Number(rest.split('/').pop());
+        const order = this.orders.get(id);
+        if (!order)
+          return restError(404, 'woocommerce_rest_shop_order_invalid_id');
+        const input = parseBody(target.body);
+        if (typeof input.status === 'string') order.status = input.status;
+        if (Array.isArray(input.meta_data))
+          for (const entry of input.meta_data as {
+            key?: unknown;
+            value?: unknown;
+          }[])
+            if (typeof entry?.key === 'string')
+              order.meta_data.push({
+                id: this.nextMetaId++,
+                key: entry.key,
+                value: entry.value,
+              });
+        this.touch(order);
+        return json(200, this.orderBody(id));
+      }
+      case 'note_create': {
+        const id = Number(rest.split('/').slice(-2)[0]);
+        const order = this.orders.get(id);
+        if (!order)
+          return restError(404, 'woocommerce_rest_shop_order_invalid_id');
+        const input = parseBody(target.body);
+        const note = {
+          note: typeof input.note === 'string' ? input.note : '',
+          customer_note: input.customer_note === true,
+        };
+        order.notes.push(note);
+        return json(201, { id: order.notes.length, ...note });
       }
     }
   }
@@ -351,6 +551,9 @@ export class FakeWooCommerce {
         route,
         authenticated,
         answered,
+        ...(route === 'order_write' || route === 'note_create'
+          ? { body: parseBody(target.body) }
+          : {}),
       });
     const fail = (code: string): never => {
       log('unknown', false, 'error');
@@ -362,7 +565,16 @@ export class FakeWooCommerce {
       await new Promise((resolve) => setTimeout(resolve, store.latencyMs));
     if (!store.validCertificate) return fail('DEPTH_ZERO_SELF_SIGNED_CERT');
 
-    const { route, authenticated, response } = await store.answer(target);
+    const { route, authenticated, response, lose } = await store.answer(target);
+    if (lose) {
+      log(route, authenticated, 'error');
+      // Never settles: the restricted client's own deadline ends it.
+      if (lose === 'timeout')
+        return new Promise<RestrictedHttpResponse>(() => undefined);
+      throw Object.assign(new Error('fake transport failure'), {
+        code: 'ECONNRESET',
+      });
+    }
     log(route, authenticated, response.status);
     return response;
   };

@@ -734,13 +734,55 @@ An inactive source with a live token is not refused: the event is recorded and t
 | Update | A create event for the order exists | `order.update` | `order.update:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
 | Skipped | Neither | `order.create` | `order.skip:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
 
-The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stored for audit and is never a key. A skipped delivery never takes the create key, so a checkout draft followed by the placed order gives one verification. Update events are recorded only: no handler is registered until US-07-04, so the processor marks them `unhandled_job_type:order.update`.
+The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stored for audit and is never a key. A skipped delivery never takes the create key, so a checkout draft followed by the placed order gives one verification. Update events go to `WooCommerceOrderUpdateHandler` (US-07-04, below), which records what the update was and changes nothing.
 
 **What an event keeps (`woocommerce-delivery.ts`).** `raw_payload` is `{ topic, webhookId, deliveryId, order }`, where `order` holds only `id`, `number`, `status`, `currency`, the two GMT dates, `total`, `payment_method`, the billing name, phone and country, and `meta_data` entries whose key is `akeed_outcome`. Email, addresses, IP address, line items and other plugins' meta are not stored.
 
 **Normalization (`WooCommerceOrderNormalizer`, in the worker).** Registered in `WEBHOOK_ORDER_NORMALIZERS`. It applies the same start rule, so a skipped delivery is recorded with `order_predates_connection`, `order_not_placed`, `non_cod_payment_method` or `missing_payment_signal`. Currency, total and the billing country a local phone is read in come from the order: `missing_currency`, `invalid_amount`, `incomplete_payload` (no phone), `missing_phone_country`, `invalid_phone`. No request is sent to the store and there is no rate limiter. `WooCommerceOrderEligibilityStrategy` repeats the `cod` test in `ORDER_ELIGIBILITY_STRATEGIES`.
 
 **Validate.** `scripts/test-woocommerce-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
+
+## WooCommerce Outcome Synchronization (US-07-04)
+
+Approved outcomes are written to the merchant's WooCommerce store, and the local result is kept apart from whether the store has it. It ships dark behind `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 5 and 8, and its US-07-04 amendment. Nothing shared was changed: the outcome contract, the registry, `commerce_outcome_syncs`, the retry worker and policy, the retry endpoint and the processor's `order.update` routing are the ones described under [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization-us-06-04).
+
+**Mapping (`woocommerce-outcome.mapping.ts`).**
+
+| Akeed action | Store effect |
+| --- | --- |
+| `customer_confirmation` (the customer's reply, or the merchant confirming in Akeed) | The meta entry `akeed_outcome` = `<action>:<verification id>` and one internal order note with a fixed text. No status change. |
+| `customer_cancellation`, `merchant_no_reply_cancellation` | `status: cancelled` and the marker, in one update. No note. |
+| `automatic_no_reply_tagging`, `merchant_cancellation_tagging` | None: `unsupported` / `capability_not_supported`, and no request. |
+
+It never sends `processing`, `completed`, `refunded` or `set_paid`. With the switch off the adapter has no capability, so every action is `unsupported`.
+
+**Adapter (`WooCommerceOutcomeAdapter`), per outcome.** Every call is built from the stored canonical store URL and decrypted keys of the order's own integration (`findByIntegration(integrationId, orgId)`), and goes through the restricted outbound client.
+
+1. Read `GET /wp-json/wc/v3/orders/<id>`. The answer is taken only when its `id` is the one asked for and its `_links.self[0].href` is exactly that order's address under the canonical store URL; otherwise `store_unverified` and nothing is written.
+2. Decide from the read. A cancellation on an order already `cancelled`, or a confirmation whose marker is there, is `applied` with no request. A status other than `processing` or `on-hold` (terminal, custom, unreadable) is `remote_state_conflict` and is not overwritten. A cancellation's marker on an order that is no longer cancelled is a conflict too: the merchant reopened it.
+3. Write one `PUT` with the marker and, for a cancellation, the status. Success is what the answer shows, not that there was one.
+4. For a confirmation, and only when the read in step 1 showed no marker, add one note (`POST …/notes`, `customer_note: false`). A note that fails is logged (`woocommerce-outcome-note`) and never tried again; a repeat sees the marker and adds none.
+5. A timeout, a broken connection, a `5xx`, or a `2xx` that does not show the write is ambiguous: the order is read back. Marker shown: `applied`. Still writable without it: `write_unconfirmed`, retried. Anything else: `remote_state_conflict`.
+
+| Answer | Result |
+| --- | --- |
+| `401` | `source_credentials_rejected`, needs assistance; `woocommerce_connections.health` = `credentials_rejected` |
+| `403` | `source_permission_denied`, needs assistance; health = `permission_denied` |
+| `404` on the order | `order_not_found` |
+| `400` or another `4xx` on the write | `remote_rejected` |
+| `405` or `501` on the write | `store_write_method_refused`, needs assistance |
+| `429` | retried, `source_rate_limited`; `Retry-After` becomes `retryAfterMs` |
+| `503` | retried, `source_unavailable`; `Retry-After` becomes `retryAfterMs` |
+| Another `5xx`, a timeout or a network failure on a read | retried, `source_unavailable` |
+| Refused by the restricted client (address not public, redirect, TLS, oversized answer to a read) | `store_unreachable`, needs assistance |
+
+A successful read sets the health back to `ok`. There is no rate limiter.
+
+**Update events (`WooCommerceOrderUpdateHandler`).** An `order.updated` delivery for an order Akeed already has is looked up under the integration the URL token resolved to (`order_not_owned` if this integration has no such order). It is `reflected_outcome` when the delivered `meta_data` carries the marker of an outcome recorded for that order in any state but `unsupported`, **and** the delivered status is one that write could have left (`cancelled` for a cancellation, `processing` or `on-hold` for a confirmation). Anything else is `remote_status_observed`. The marker stays on the order, so without the status test every later change by the merchant would be called a reflection. Neither writes to the store, changes a verification or starts one.
+
+**Logs.** `woocommerce-outcome-sync` (`errorCode`, `providerStatus`), `woocommerce-outcome-note`, and the shared `commerce-outcome-dispatch`, `commerce-outcome-sync-retry` and `webhook-order-update-handle`. None carries a key or a payload.
+
+**Validate.** `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
 ## Server API Guide (US-05-05)
 

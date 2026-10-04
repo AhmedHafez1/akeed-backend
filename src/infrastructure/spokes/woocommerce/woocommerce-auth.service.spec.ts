@@ -79,6 +79,7 @@ function createService(settingsOverrides: Partial<WooCommerceConfig> = {}) {
   const settings: WooCommerceConfig = {
     enabled: true,
     ingestionEnabled: false,
+    outcomeSyncEnabled: false,
     pilotOrgIds: [ORG],
     publicApiBaseUrl: 'https://api.akeed.test',
     appBaseUrl: 'https://app.akeed.test',

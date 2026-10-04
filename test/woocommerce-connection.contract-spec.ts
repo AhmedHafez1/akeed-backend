@@ -68,6 +68,7 @@ const settings: WooCommerceConfig & { pilotOrgIds: string[] } = {
   enabled: true,
   // Order ingestion is US-07-03 and has its own suite; here it stays off.
   ingestionEnabled: false,
+  outcomeSyncEnabled: false,
   pilotOrgIds: [],
   publicApiBaseUrl: 'https://api.akeed.test',
   appBaseUrl: 'https://app.akeed.test',

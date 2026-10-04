@@ -17,6 +17,7 @@ import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorder
 import { EasyOrdersStatusUpdateHandler } from '../../infrastructure/spokes/easyorders/easyorders-status-update.handler';
 import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
 import { WooCommerceOrderNormalizer } from '../../infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
+import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/woocommerce/woocommerce-order-update.handler';
 
 @Module({
   imports: [
@@ -55,8 +56,11 @@ import { WooCommerceOrderNormalizer } from '../../infrastructure/spokes/woocomme
     // --- Order-update handlers (status changes made in the store) ---
     {
       provide: WEBHOOK_ORDER_UPDATE_HANDLERS,
-      useFactory: (easyOrders: EasyOrdersStatusUpdateHandler) => [easyOrders],
-      inject: [EasyOrdersStatusUpdateHandler],
+      useFactory: (
+        easyOrders: EasyOrdersStatusUpdateHandler,
+        wooCommerce: WooCommerceOrderUpdateHandler,
+      ) => [easyOrders, wooCommerce],
+      inject: [EasyOrdersStatusUpdateHandler, WooCommerceOrderUpdateHandler],
     },
   ],
   exports: [

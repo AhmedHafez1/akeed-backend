@@ -252,7 +252,7 @@ The install callback is called by the seller's browser from `https://app.easy-or
 
 ## WooCommerce Connection (E07)
 
-The application-authentication connection of a WooCommerce store (US-07-02) and signed order-webhook ingestion (US-07-03). Both ship dark, each behind its own switch. Outcome writes (US-07-04) are not built yet and add their own.
+The application-authentication connection of a WooCommerce store (US-07-02) and signed order-webhook ingestion (US-07-03) and outcome writes to the store (US-07-04). All three ship dark, each behind its own switch.
 
 | Variable | Notes |
 | --- | --- |
@@ -261,11 +261,14 @@ The application-authentication connection of a WooCommerce store (US-07-02) and 
 | `WOOCOMMERCE_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the webhook delivery URL Akeed registers in the store. Must be `https` outside development (the store posts the new API keys to it). No trailing slash, query or fragment. |
 | `WOOCOMMERCE_APP_BASE_URL` | Required when enabled. Public base of the web app: the `return_url` the store sends the merchant back to (`/<locale>/onboarding`). Same rules as above. |
 | `WOOCOMMERCE_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /api/woocommerce/webhooks/:token` answers `404 WOOCOMMERCE_INGESTION_UNAVAILABLE` to every order delivery and stores nothing; the ping on a known token is still answered `200`. Independent of the connect switch. Rollback is turning it off; events already queued are still processed. |
-| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect or ingestion is enabled without it. |
+| `WOOCOMMERCE_OUTCOME_SYNC_ENABLED` | `true` or `false` (default). While `false` the WooCommerce outcome adapter has no capability: no order is ever read from or written to a store, every outcome is recorded as `unsupported` in `commerce_outcome_syncs`, and the merchant's cancel action is not offered. Independent of the other two switches. Rollback is turning it off; a retry already queued then records `unsupported` and stops. Keep it off for every merchant until the US-07-06 live run has shown the real effect of the note, the marker and `cancelled` on a store and the product owner has accepted it. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect, ingestion or outcome sync is enabled without it. |
 
 The frontend offers WooCommerce on signup only when `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED=true`. Turn the backend switch on first.
 
 Every request Akeed sends to a store goes through the restricted outbound client (`src/shared/http/restricted-http.ts`): HTTPS on port 443, public addresses only, no redirects, 10 seconds and a capped response. It has no setting. The install callback is expected from the store's server and has no route-scoped CORS entry.
+
+WooCommerce has no request budget: no rate limit is documented, and Akeed sends two or three requests per outcome (a read, a write, and a note for a confirmation; one more read when an answer is lost). A `429` or `503` from the store's host is retried, and its `Retry-After` is honored through the outcome retry policy. Outcome retries run on the `commerce-outcome-sync` BullMQ queue, which needs Redis like the other queues.
 
 WooCommerce disables a webhook after five consecutive answers that are not `2xx`. While `WOOCOMMERCE_INGESTION_ENABLED` is `false` every order delivery is such an answer, so turn ingestion on before a pilot organization connects. A store connected earlier needs its webhooks re-enabled (US-07-05) once ingestion is on. Orders placed in between are not imported later.
 
