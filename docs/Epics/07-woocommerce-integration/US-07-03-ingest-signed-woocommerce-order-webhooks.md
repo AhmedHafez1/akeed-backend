@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Done (2026-10-04), shipped disabled behind `WOOCOMMERCE_INGESTION_ENABLED`; real-store proof is owed to US-07-06 — [evidence](../../US-07-03-WOOCOMMERCE-INGESTION-EVIDENCE.md)
 - **Dependencies:** [US-07-02](US-07-02-connect-woocommerce-through-application-authentication.md)
 
 ## User story and value
