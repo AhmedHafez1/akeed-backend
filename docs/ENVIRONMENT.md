@@ -252,7 +252,7 @@ The install callback is called by the seller's browser from `https://app.easy-or
 
 ## WooCommerce Connection (E07)
 
-The application-authentication connection of a WooCommerce store (US-07-02). It ships dark. Order ingestion (US-07-03) and outcome writes (US-07-04) are not built yet and add their own switches.
+The application-authentication connection of a WooCommerce store (US-07-02) and signed order-webhook ingestion (US-07-03). Both ship dark, each behind its own switch. Outcome writes (US-07-04) are not built yet and add their own.
 
 | Variable | Notes |
 | --- | --- |
@@ -260,13 +260,14 @@ The application-authentication connection of a WooCommerce store (US-07-02). It 
 | `WOOCOMMERCE_PILOT_ORG_IDS` | Pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Only listed organizations may start an install or have a callback honoured. Empty (default) means nobody, even with the switch on. |
 | `WOOCOMMERCE_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the webhook delivery URL Akeed registers in the store. Must be `https` outside development (the store posts the new API keys to it). No trailing slash, query or fragment. |
 | `WOOCOMMERCE_APP_BASE_URL` | Required when enabled. Public base of the web app: the `return_url` the store sends the merchant back to (`/<locale>/onboarding`). Same rules as above. |
-| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect is enabled without it. |
+| `WOOCOMMERCE_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /api/woocommerce/webhooks/:token` answers `404 WOOCOMMERCE_INGESTION_UNAVAILABLE` to every order delivery and stores nothing; the ping on a known token is still answered `200`. Independent of the connect switch. Rollback is turning it off; events already queued are still processed. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect or ingestion is enabled without it. |
 
 The frontend offers WooCommerce on signup only when `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED=true`. Turn the backend switch on first.
 
 Every request Akeed sends to a store goes through the restricted outbound client (`src/shared/http/restricted-http.ts`): HTTPS on port 443, public addresses only, no redirects, 10 seconds and a capped response. It has no setting. The install callback is expected from the store's server and has no route-scoped CORS entry.
 
-Until US-07-03 the webhook delivery URL answers `404` to every order delivery (and `200` to the ping WooCommerce sends when a webhook is saved), so a store connected now has its webhooks disabled by WooCommerce after five orders. Do not connect a real merchant before ingestion is built and on.
+WooCommerce disables a webhook after five consecutive answers that are not `2xx`. While `WOOCOMMERCE_INGESTION_ENABLED` is `false` every order delivery is such an answer, so turn ingestion on before a pilot organization connects. A store connected earlier needs its webhooks re-enabled (US-07-05) once ingestion is on. Orders placed in between are not imported later.
 
 ## WhatsApp (Meta) Configuration
 

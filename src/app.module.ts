@@ -1,6 +1,7 @@
 import { ShopifyOrderEligibilityStrategy } from './infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
 import { StandaloneOrderEligibilityStrategy } from './infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { EasyOrdersOrderEligibilityStrategy } from './infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
+import { WooCommerceOrderEligibilityStrategy } from './infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { ORDER_ELIGIBILITY_STRATEGIES } from './modules/verification-core/strategies/order-eligibility.strategy';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -79,18 +80,21 @@ const billingModule = BillingModule.register({
       ports: [
         StandaloneOrderEligibilityStrategy,
         EasyOrdersOrderEligibilityStrategy,
+        WooCommerceOrderEligibilityStrategy,
         {
           provide: ORDER_ELIGIBILITY_STRATEGIES,
           inject: [
             ShopifyOrderEligibilityStrategy,
             StandaloneOrderEligibilityStrategy,
             EasyOrdersOrderEligibilityStrategy,
+            WooCommerceOrderEligibilityStrategy,
           ],
           useFactory: (
             shopify: ShopifyOrderEligibilityStrategy,
             standalone: StandaloneOrderEligibilityStrategy,
             easyOrders: EasyOrdersOrderEligibilityStrategy,
-          ) => [shopify, standalone, easyOrders],
+            wooCommerce: WooCommerceOrderEligibilityStrategy,
+          ) => [shopify, standalone, easyOrders, wooCommerce],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
       ],

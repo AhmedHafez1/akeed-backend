@@ -1,7 +1,7 @@
 export const WOOCOMMERCE_CONFIG = 'wooCommerce';
 
 /**
- * WooCommerce connection (US-07-02).
+ * WooCommerce connection (US-07-02) and order ingestion (US-07-03).
  *
  * The switch hides the start-install and callback routes. The allow-list is
  * the pilot gate: an organization may start or finish an install only while
@@ -9,6 +9,8 @@ export const WOOCOMMERCE_CONFIG = 'wooCommerce';
  */
 export interface WooCommerceConfig {
   enabled: boolean;
+  /** While false the delivery URL answers 404 to every order delivery. */
+  ingestionEnabled: boolean;
   pilotOrgIds: readonly string[];
   /** Public base of this API: the install callback and webhook delivery URLs. */
   publicApiBaseUrl: string;
@@ -60,6 +62,10 @@ export function parseWooCommerceConfig(
   if (flag && flag !== 'true' && flag !== 'false')
     errors.push('WOOCOMMERCE_CONNECT_ENABLED must be true or false.');
   const enabled = flag === 'true';
+  const ingestionFlag = read('WOOCOMMERCE_INGESTION_ENABLED');
+  if (ingestionFlag && ingestionFlag !== 'true' && ingestionFlag !== 'false')
+    errors.push('WOOCOMMERCE_INGESTION_ENABLED must be true or false.');
+  const ingestionEnabled = ingestionFlag === 'true';
 
   const pilotOrgIds = [
     ...new Set(
@@ -99,12 +105,23 @@ export function parseWooCommerceConfig(
         'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when WooCommerce is enabled.',
       );
   }
+  // Every delivery is checked against a decrypted webhook secret.
+  if (ingestionEnabled && !enabled && !read('SHOPIFY_TOKEN_ENCRYPTION_KEY'))
+    errors.push(
+      'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when WooCommerce ingestion is enabled.',
+    );
 
   if (errors.length)
     throw new Error(
       `Invalid environment configuration:\n - ${errors.join('\n - ')}`,
     );
-  return { enabled, pilotOrgIds, publicApiBaseUrl, appBaseUrl };
+  return {
+    enabled,
+    ingestionEnabled,
+    pilotOrgIds,
+    publicApiBaseUrl,
+    appBaseUrl,
+  };
 }
 
 /**

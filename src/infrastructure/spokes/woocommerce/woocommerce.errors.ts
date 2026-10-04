@@ -1,8 +1,8 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 /**
- * The codes the WooCommerce connection answers with (US-07-01 contract
- * record, support boundary). The frontend translates by code, so these are
+ * The codes the WooCommerce connection and delivery URL answer with (US-07-01
+ * contract record, support boundary). The frontend translates by code, so these are
  * never renamed.
  */
 export type WooCommerceErrorCode =
@@ -26,7 +26,8 @@ export type WooCommerceErrorCode =
   | 'WOOCOMMERCE_STORE_URL_MISMATCH'
   | 'WOOCOMMERCE_WEBHOOK_SETUP_FAILED'
   | 'WOOCOMMERCE_STORE_UNAVAILABLE'
-  | 'WOOCOMMERCE_INGESTION_UNAVAILABLE';
+  | 'WOOCOMMERCE_INGESTION_UNAVAILABLE'
+  | 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED';
 
 /** Used with `assertOrganizationWriteAllowed`; viewers are read-only. */
 export const WOOCOMMERCE_ROLE_REQUIRED = {
@@ -57,6 +58,7 @@ const STATUS: Record<WooCommerceErrorCode, HttpStatus> = {
   WOOCOMMERCE_WEBHOOK_SETUP_FAILED: HttpStatus.SERVICE_UNAVAILABLE,
   WOOCOMMERCE_STORE_UNAVAILABLE: HttpStatus.CONFLICT,
   WOOCOMMERCE_INGESTION_UNAVAILABLE: HttpStatus.NOT_FOUND,
+  WOOCOMMERCE_WEBHOOK_UNAUTHORIZED: HttpStatus.UNAUTHORIZED,
 };
 
 const MESSAGES: Record<WooCommerceErrorCode, string> = {
@@ -99,6 +101,8 @@ const MESSAGES: Record<WooCommerceErrorCode, string> = {
   WOOCOMMERCE_STORE_UNAVAILABLE:
     'This store is already connected to another Akeed account.',
   WOOCOMMERCE_INGESTION_UNAVAILABLE: 'Not Found',
+  // One answer for a wrong token, signature or source: it never says which.
+  WOOCOMMERCE_WEBHOOK_UNAUTHORIZED: 'This delivery was not accepted.',
 };
 
 const ERROR_NAME: Partial<Record<HttpStatus, string>> = {

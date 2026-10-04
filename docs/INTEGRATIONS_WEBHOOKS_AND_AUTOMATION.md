@@ -150,7 +150,7 @@ After 5 failed attempts, the `@OnWorkerEvent('failed')` listener marks the webho
 
 **Extensibility:**
 
-Order normalizers are registered via the `WEBHOOK_ORDER_NORMALIZERS` multi-token, allowing future platforms (Salla, WooCommerce, Zid) to plug in without modifying the processor.
+Order normalizers are registered via the `WEBHOOK_ORDER_NORMALIZERS` multi-token (Shopify, Standalone, EasyOrders, WooCommerce), allowing future platforms (Salla, Zid) to plug in without modifying the processor.
 
 ### Queue: `verification-automation`
 
@@ -706,6 +706,41 @@ Automatic no-reply is local only. It never becomes a cancellation and never borr
 **Logs.** `commerce-outcome-dispatch`, `easyorders-outcome-sync` (`errorCode`, `providerStatus`), `commerce-outcome-sync-schedule`, `commerce-outcome-sync-retry`, `commerce-outcome-sync-settle` / `-begin` / `-schedule` (failures of the tracking itself), `verification-outcome-sync-retry`, `webhook-order-update-handle`. None carries the key or a payload.
 
 **Validate.** `scripts/test-easyorders-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/commerce-outcomes src/modules/webhook-queue`.
+
+## WooCommerce Webhook Ingestion (US-07-03)
+
+Order deliveries enter the common queue through the WooCommerce spoke (`src/infrastructure/spokes/woocommerce/`). It ships dark behind `WOOCOMMERCE_INGESTION_ENABLED`. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 2, 3, 4 and 6, and its amendments.
+
+**Route.** `POST /api/woocommerce/webhooks/:token` (`WooCommerceWebhookController`), one URL for both `order.created` and `order.updated`. Public, with a per-address flood cap. `applyWooCommerceWebhookEdge` (`main.ts`) hands the route the body as raw bytes whatever the content type is; the signature is over those bytes.
+
+**Acceptance (`WooCommerceWebhookService`), in this order.**
+
+1. A request whose `X-WC-Webhook-Topic` is not one of the two order topics is the ping: `200` on a token Akeed issued (a connection, or an install still connecting), nothing stored. On an unknown token it is `401`, or `404` while ingestion is off.
+2. Switch off: `404 WOOCOMMERCE_INGESTION_UNAVAILABLE` for an order delivery, nothing read or stored.
+3. The URL token is looked up by its SHA-256 (`findByWebhookTokenHash`). It alone decides the tenant. An unknown, malformed or rotated token is `401 WOOCOMMERCE_WEBHOOK_UNAUTHORIZED`. The token of an install whose callback is still running is answered `200` with nothing stored.
+4. `X-WC-Webhook-Signature` must be the base64 HMAC-SHA256 of the raw body with that install's decrypted secret, compared with `timingSafeEqual` after a length check.
+5. `X-WC-Webhook-Source`, canonicalized by the store-URL rules, must equal the connection's canonical store URL.
+6. A failure of step 4 or 5 is the same `401` and increments `woocommerce_connections.rejected_deliveries`. The answer never says which part failed; the log line (`woocommerce-webhook-refused`) does.
+7. The bytes are parsed as JSON. A body that is not an order with an integer `id` is answered `200` and not stored.
+8. `WebhookQueueProducer.ingest` writes the `webhook_events` row and dispatches. The answer is `200` with an empty body only after the row is written. A queue outage still answers `200`. A database failure answers `5xx` and logs `woocommerce-webhook-not-persisted`, which should alert.
+
+An inactive source with a live token is not refused: the event is recorded and the processor marks it `integration_inactive`. A non-`2xx` answer would count toward WooCommerce disabling the webhook.
+
+**Routing and idempotency (`woocommerce-ingestion.policy.ts`).** A delivery starts a verification, on either topic, when `payment_method` is `cod`, `status` is `processing` or `on-hold`, and `date_created_gmt` is not earlier than `woocommerce_connections.connected_at` (compared at second resolution).
+
+| Route | When | Job type | Key |
+| --- | --- | --- | --- |
+| Create | No create event for the order yet, and the start rule holds | `order.create` | `order.create:<integrationId>:<orderId>` |
+| Update | A create event for the order exists | `order.update` | `order.update:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
+| Skipped | Neither | `order.create` | `order.skip:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
+
+The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stored for audit and is never a key. A skipped delivery never takes the create key, so a checkout draft followed by the placed order gives one verification. Update events are recorded only: no handler is registered until US-07-04, so the processor marks them `unhandled_job_type:order.update`.
+
+**What an event keeps (`woocommerce-delivery.ts`).** `raw_payload` is `{ topic, webhookId, deliveryId, order }`, where `order` holds only `id`, `number`, `status`, `currency`, the two GMT dates, `total`, `payment_method`, the billing name, phone and country, and `meta_data` entries whose key is `akeed_outcome`. Email, addresses, IP address, line items and other plugins' meta are not stored.
+
+**Normalization (`WooCommerceOrderNormalizer`, in the worker).** Registered in `WEBHOOK_ORDER_NORMALIZERS`. It applies the same start rule, so a skipped delivery is recorded with `order_predates_connection`, `order_not_placed`, `non_cod_payment_method` or `missing_payment_signal`. Currency, total and the billing country a local phone is read in come from the order: `missing_currency`, `invalid_amount`, `incomplete_payload` (no phone), `missing_phone_country`, `invalid_phone`. No request is sent to the store and there is no rate limiter. `WooCommerceOrderEligibilityStrategy` repeats the `cod` test in `ORDER_ELIGIBILITY_STRATEGIES`.
+
+**Validate.** `scripts/test-woocommerce-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
 ## Server API Guide (US-05-05)
 

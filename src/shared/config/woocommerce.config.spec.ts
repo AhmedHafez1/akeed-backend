@@ -21,6 +21,7 @@ describe('WooCommerce configuration', () => {
   it('ships dark by default and needs nothing else', () => {
     expect(parseWooCommerceConfig({})).toEqual({
       enabled: false,
+      ingestionEnabled: false,
       pilotOrgIds: [],
       publicApiBaseUrl: '',
       appBaseUrl: '',
@@ -35,6 +36,7 @@ describe('WooCommerce configuration', () => {
       }),
     ).toEqual({
       enabled: true,
+      ingestionEnabled: false,
       pilotOrgIds: [ORG_A, ORG_B],
       publicApiBaseUrl: 'https://api.akeed.test',
       appBaseUrl: 'https://app.akeed.test',
@@ -43,6 +45,11 @@ describe('WooCommerce configuration', () => {
 
   it.each([
     ['WOOCOMMERCE_CONNECT_ENABLED', 'yes', /must be true or false/],
+    [
+      'WOOCOMMERCE_INGESTION_ENABLED',
+      '1',
+      /WOOCOMMERCE_INGESTION_ENABLED must be true or false/,
+    ],
     ['WOOCOMMERCE_PILOT_ORG_IDS', 'not-a-uuid', /organization UUIDs/],
     ['WOOCOMMERCE_PUBLIC_API_BASE_URL', '', /WOOCOMMERCE_PUBLIC_API_BASE_URL/],
     [
@@ -64,6 +71,26 @@ describe('WooCommerce configuration', () => {
   ])('fails startup on a bad %s (%s)', (key, value, message) => {
     expect(() => parseWooCommerceConfig({ ...ENABLED, [key]: value })).toThrow(
       message,
+    );
+  });
+
+  it('switches ingestion on apart from connect, and needs the encryption key for it', () => {
+    expect(
+      parseWooCommerceConfig({
+        WOOCOMMERCE_INGESTION_ENABLED: 'true',
+        SHOPIFY_TOKEN_ENCRYPTION_KEY: 'a'.repeat(64),
+      }),
+    ).toMatchObject({ enabled: false, ingestionEnabled: true });
+    expect(
+      parseWooCommerceConfig({
+        ...ENABLED,
+        WOOCOMMERCE_INGESTION_ENABLED: 'true',
+      }),
+    ).toMatchObject({ enabled: true, ingestionEnabled: true });
+    expect(() =>
+      parseWooCommerceConfig({ WOOCOMMERCE_INGESTION_ENABLED: 'true' }),
+    ).toThrow(
+      /SHOPIFY_TOKEN_ENCRYPTION_KEY is required when WooCommerce ingestion is enabled/,
     );
   });
 

@@ -66,6 +66,8 @@ const DELIVERY_BASE = 'https://api.akeed.test/api/woocommerce/webhooks/';
 
 const settings: WooCommerceConfig & { pilotOrgIds: string[] } = {
   enabled: true,
+  // Order ingestion is US-07-03 and has its own suite; here it stays off.
+  ingestionEnabled: false,
   pilotOrgIds: [],
   publicApiBaseUrl: 'https://api.akeed.test',
   appBaseUrl: 'https://app.akeed.test',
@@ -89,7 +91,13 @@ const service = new WooCommerceAuthService(
   ),
   config,
 );
-const webhooks = new WooCommerceWebhookService(repository);
+// With ingestion off the delivery URL reads no event and writes none.
+const webhooks = new WooCommerceWebhookService(
+  repository,
+  {} as never,
+  {} as never,
+  config,
+);
 
 /** Every value that must never be logged, returned or stored in clear. */
 const secrets = new Set<string>();
@@ -216,7 +224,7 @@ function callback(
 }
 
 function deliver(token: string, topic?: string) {
-  return outcome(webhooks.handleDelivery(token, topic));
+  return outcome(webhooks.handleDelivery(token, { topic }, Buffer.alloc(0)));
 }
 
 async function status(tenant: Tenant, user = member(tenant)) {

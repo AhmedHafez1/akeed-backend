@@ -458,6 +458,61 @@ export class WooCommerceConnectionsRepository {
   }
 
   /**
+   * The connection a delivery URL token belongs to. Not scoped by
+   * organization: the delivery is unauthenticated and the token's hash is the
+   * tenant signal, so one token resolves to one connection or to nothing.
+   */
+  async findByWebhookTokenHash(
+    webhookTokenHash: string,
+  ): Promise<WooCommerceConnection | undefined> {
+    const [connection] = await this.db
+      .select()
+      .from(woocommerceConnections)
+      .where(eq(woocommerceConnections.webhookTokenHash, webhookTokenHash))
+      .limit(1);
+    return connection;
+  }
+
+  async findByIntegration(
+    integrationId: string,
+    orgId: string,
+  ): Promise<WooCommerceConnection | undefined> {
+    const [connection] = await this.db
+      .select()
+      .from(woocommerceConnections)
+      .where(
+        and(
+          eq(woocommerceConnections.integrationId, integrationId),
+          eq(woocommerceConnections.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return connection;
+  }
+
+  /**
+   * A delivery that reached a valid URL token and failed the signature or the
+   * source check.
+   */
+  async recordRejectedDelivery(
+    integrationId: string,
+    orgId: string,
+  ): Promise<void> {
+    await this.db
+      .update(woocommerceConnections)
+      .set({
+        rejectedDeliveries: sql`${woocommerceConnections.rejectedDeliveries} + 1`,
+        lastRejectedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(woocommerceConnections.integrationId, integrationId),
+          eq(woocommerceConnections.orgId, orgId),
+        ),
+      );
+  }
+
+  /**
    * Whether a delivery URL token is one Akeed issued and still honours: the
    * token of a connection, or of an install that can still connect. The
    * second matters because the store pings the URL while the callback is

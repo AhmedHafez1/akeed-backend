@@ -15,12 +15,15 @@ import { StandaloneManualOrderNormalizer } from './normalizers/standalone-manual
 import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
 import { EasyOrdersOrderNormalizer } from '../../infrastructure/spokes/easyorders/easyorders-order.normalizer';
 import { EasyOrdersStatusUpdateHandler } from '../../infrastructure/spokes/easyorders/easyorders-status-update.handler';
+import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
+import { WooCommerceOrderNormalizer } from '../../infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
 
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
     EasyOrdersIngestionModule,
+    WooCommerceIngestionModule,
 
     BullModule.registerQueue({ name: WEBHOOK_QUEUE_NAME }),
   ],
@@ -40,11 +43,13 @@ import { EasyOrdersStatusUpdateHandler } from '../../infrastructure/spokes/easyo
         shopify: ShopifyOrderNormalizer,
         standalone: StandaloneManualOrderNormalizer,
         easyOrders: EasyOrdersOrderNormalizer,
-      ) => [shopify, standalone, easyOrders],
+        wooCommerce: WooCommerceOrderNormalizer,
+      ) => [shopify, standalone, easyOrders, wooCommerce],
       inject: [
         ShopifyOrderNormalizer,
         StandaloneManualOrderNormalizer,
         EasyOrdersOrderNormalizer,
+        WooCommerceOrderNormalizer,
       ],
     },
     // --- Order-update handlers (status changes made in the store) ---

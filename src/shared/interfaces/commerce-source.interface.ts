@@ -3,7 +3,8 @@
  * `billing_free_plan_claims` (see akeed-backend/drizzle schema). 'shopify'
  * 'standalone' and 'easyorders' have a full spoke under
  * src/infrastructure/spokes/ (EasyOrders ships behind its switches).
- * 'woocommerce' has its connection only so far (US-07-02), behind its switch.
+ * 'woocommerce' has its connection and order ingestion (US-07-02, US-07-03),
+ * each behind its switch; outcome writes are not built yet.
  * 'salla' and 'zid' are reserved, not implemented.
  * Adding/removing a value here requires a matching DB migration to the
  * CHECK constraint, not just a type change.

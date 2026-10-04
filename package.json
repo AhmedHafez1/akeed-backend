@@ -39,6 +39,7 @@
     "test:contract:easyorders-outcome-sync": "jest --config ./test/jest-easyorders-outcome-sync-contract.json --runInBand",
     "test:contract:easyorders-release-gate": "jest --config ./test/jest-easyorders-release-gate-contract.json --runInBand",
     "test:contract:woocommerce-connection": "jest --config ./test/jest-woocommerce-connection-contract.json --runInBand",
+    "test:contract:woocommerce-ingestion": "jest --config ./test/jest-woocommerce-ingestion-contract.json --runInBand",
     "test:contract:order-api": "jest --config ./test/jest-order-api-contract.json --runInBand",
     "test:contract:order-api-release-gate": "jest --config ./test/jest-order-api-release-gate-contract.json --runInBand",
     "test:contract:verification-overview": "jest --config ./test/jest-verification-overview-contract.json --runInBand",
