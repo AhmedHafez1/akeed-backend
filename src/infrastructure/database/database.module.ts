@@ -25,6 +25,7 @@ import { OrderImportsRepository } from './repositories/order-imports.repository'
 import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
 import { IntegrationApiKeysRepository } from './repositories/integration-api-keys.repository';
 import { EasyOrdersConnectionsRepository } from './repositories/easyorders-connections.repository';
+import { WooCommerceConnectionsRepository } from './repositories/woocommerce-connections.repository';
 import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
 
 @Module({
@@ -54,6 +55,7 @@ import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
     EasyOrdersConnectionsRepository,
+    WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
   ],
   exports: [
@@ -81,6 +83,7 @@ import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
     EasyOrdersConnectionsRepository,
+    WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
   ],
 })

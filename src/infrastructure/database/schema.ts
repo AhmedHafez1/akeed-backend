@@ -19,6 +19,7 @@ import {
   uniqueIndex,
   char,
   primaryKey,
+  bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -2488,6 +2489,208 @@ export const easyordersConnections = pgTable(
       table.storeId.asc().nullsLast().op('text_ops'),
     ),
     index('idx_easyorders_connections_org').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+    ),
+  ],
+).enableRLS();
+
+/**
+ * WooCommerce install contexts (US-07-02). The authorize link has no `state`
+ * and the callback names no store, so both the organization and the store
+ * come from this row: a one-time token rides in the path of the callback URL
+ * and only its hash is stored, next to the canonical store URL the merchant
+ * entered. The callback writes the hash of the webhook URL token here just
+ * before it creates the webhooks, because the store pings the delivery URL
+ * before the connection exists. API-only: RLS is on with no policy, and the
+ * table grants are revoked.
+ */
+export const woocommercePendingInstalls = pgTable(
+  'woocommerce_pending_installs',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    createdBy: uuid('created_by').notNull(),
+    storeUrl: text('store_url').notNull(),
+    callbackTokenHash: text('callback_token_hash').notNull(),
+    // Sent as `user_id`. Not a secret: it comes back in the merchant's browser.
+    installReference: text('install_reference').notNull(),
+    // Null until a callback is about to create the webhooks.
+    webhookTokenHash: text('webhook_token_hash'),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    consumedAt: timestamp('consumed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    supersededAt: timestamp('superseded_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // While in the future, one callback is running this install's store
+    // calls and a second one is refused.
+    claimedUntil: timestamp('claimed_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    attempts: integer().default(0).notNull(),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'woocommerce_pending_installs_org_id_fkey',
+    }).onDelete('cascade'),
+    unique('woocommerce_pending_installs_callback_token_hash_key').on(
+      table.callbackTokenHash,
+    ),
+    unique('woocommerce_pending_installs_install_reference_key').on(
+      table.installReference,
+    ),
+    unique('woocommerce_pending_installs_webhook_token_hash_key').on(
+      table.webhookTokenHash,
+    ),
+    check(
+      'woocommerce_pending_installs_callback_token_hash_check',
+      sql`${table.callbackTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'woocommerce_pending_installs_webhook_token_hash_check',
+      sql`${table.webhookTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'woocommerce_pending_installs_install_reference_check',
+      sql`${table.installReference} ~ '^[0-9]{15}$'`,
+    ),
+    check(
+      'woocommerce_pending_installs_store_url_check',
+      sql`${table.storeUrl} LIKE 'https://%' AND char_length(${table.storeUrl}) <= 255`,
+    ),
+    check(
+      'woocommerce_pending_installs_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    index('idx_woocommerce_pending_installs_org_created').using(
+      'btree',
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.desc().nullsFirst().op('timestamptz_ops'),
+    ),
+  ],
+).enableRLS();
+
+/**
+ * One integration's WooCommerce credentials (US-07-02): ciphertext for the
+ * consumer key, the consumer secret and the webhook secret Akeed generated,
+ * the hash of the per-install delivery URL token, the two webhooks Akeed
+ * created, and the canonical store URL. The store is verified at connect and
+ * a verified store belongs to one integration. API-only, like the contexts.
+ */
+export const woocommerceConnections = pgTable(
+  'woocommerce_connections',
+  {
+    integrationId: uuid('integration_id').primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    storeUrl: text('store_url').notNull(),
+    storeVerifiedAt: timestamp('store_verified_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    consumerKeyEncrypted: text('consumer_key_encrypted').notNull(),
+    consumerSecretEncrypted: text('consumer_secret_encrypted').notNull(),
+    webhookSecretEncrypted: text('webhook_secret_encrypted').notNull(),
+    webhookTokenHash: text('webhook_token_hash').notNull(),
+    orderCreatedWebhookId: bigint('order_created_webhook_id', {
+      mode: 'number',
+    }).notNull(),
+    orderUpdatedWebhookId: bigint('order_updated_webhook_id', {
+      mode: 'number',
+    }).notNull(),
+    // What the store reported at connect, kept for support only.
+    wooVersion: text('woo_version'),
+    health: text().default('ok').notNull(),
+    rejectedDeliveries: integer('rejected_deliveries').default(0).notNull(),
+    lastRejectedAt: timestamp('last_rejected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    connectedBy: uuid('connected_by').notNull(),
+    // An order placed before this moment never starts a verification.
+    connectedAt: timestamp('connected_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'woocommerce_connections_org_id_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'woocommerce_connections_integration_id_fkey',
+    }).onDelete('cascade'),
+    unique('woocommerce_connections_webhook_token_hash_key').on(
+      table.webhookTokenHash,
+    ),
+    check(
+      'woocommerce_connections_webhook_token_hash_check',
+      sql`${table.webhookTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'woocommerce_connections_store_url_check',
+      sql`${table.storeUrl} LIKE 'https://%' AND char_length(${table.storeUrl}) <= 255`,
+    ),
+    check(
+      'woocommerce_connections_health_check',
+      sql`${table.health} = ANY (ARRAY['ok'::text, 'credentials_rejected'::text, 'permission_denied'::text])`,
+    ),
+    check(
+      'woocommerce_connections_webhook_ids_check',
+      sql`${table.orderCreatedWebhookId} > 0 AND ${table.orderUpdatedWebhookId} > 0`,
+    ),
+    check(
+      'woocommerce_connections_woo_version_check',
+      sql`${table.wooVersion} IS NULL OR char_length(${table.wooVersion}) BETWEEN 1 AND 32`,
+    ),
+    check(
+      'woocommerce_connections_rejected_deliveries_check',
+      sql`${table.rejectedDeliveries} >= 0`,
+    ),
+    check(
+      'woocommerce_connections_consumer_key_encrypted_check',
+      sql`${table.consumerKeyEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'woocommerce_connections_consumer_secret_encrypted_check',
+      sql`${table.consumerSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'woocommerce_connections_webhook_secret_encrypted_check',
+      sql`${table.webhookSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    uniqueIndex('woocommerce_connections_verified_store_key')
+      .on(table.storeUrl)
+      .where(sql`${table.storeVerifiedAt} IS NOT NULL`),
+    index('idx_woocommerce_connections_org').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
     ),

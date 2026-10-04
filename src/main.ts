@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter';
 import { runMigrations } from './infrastructure/database/migrate';
 import { applyOrderApiEdge } from './modules/order-api/edge/order-api.edge';
+import { applyWooCommerceWebhookEdge } from './infrastructure/spokes/woocommerce/woocommerce-webhook.edge';
 import {
   buildBackendLog,
   normalizeError,
@@ -19,6 +20,9 @@ async function bootstrap() {
   // Before anything else registers middleware: the order API reads its body
   // under its own size limit, ahead of the app-wide parser.
   applyOrderApiEdge(app);
+  // Likewise: WooCommerce deliveries are read as raw bytes, whatever their
+  // content type.
+  applyWooCommerceWebhookEdge(app);
   const adapterHost = app.get(HttpAdapterHost);
   app.useGlobalFilters(new GlobalExceptionFilter(adapterHost));
   app.useGlobalPipes(

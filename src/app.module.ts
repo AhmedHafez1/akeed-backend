@@ -30,6 +30,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { PaymobModule } from './infrastructure/spokes/paymob/paymob.module';
 import { EasyOrdersModule } from './infrastructure/spokes/easyorders/easyorders.module';
+import { WooCommerceModule } from './infrastructure/spokes/woocommerce/woocommerce.module';
 import { PaymobPaymentsAdapter } from './infrastructure/spokes/paymob/paymob-payments.adapter';
 import { PAYMENTS_PORT } from './shared/ports/payments.port';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
@@ -101,6 +102,7 @@ const billingModule = BillingModule.register({
     OrderImportsModule,
     IntegrationKeysModule,
     EasyOrdersModule,
+    WooCommerceModule,
     OrderApiModule,
     VerificationsModule,
     WebhookQueueModule,

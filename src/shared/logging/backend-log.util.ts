@@ -54,6 +54,14 @@ const REDACTED_KEYS = new Set([
   'statussecret',
   'install_url',
   'installurl',
+  // WooCommerce install (US-07-02): the keys the store posts to the callback
+  // and the authorize link, which carries the one-time callback token.
+  'consumer_key',
+  'consumerkey',
+  'consumer_secret',
+  'consumersecret',
+  'authorize_url',
+  'authorizeurl',
   'client_secret',
   'clientsecret',
   'api_key',
