@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** Backlog
+- **Status:** In progress, release blocked (2026-10-03) — automated gate run, [evidence](evidence/US-06-06-release-gate.md); live pilot ([script](evidence/US-06-06-live-pilot-script.md)) NOT RUN and US-06-01 go-live verification owed; recommendation no-go
 - **Dependencies:** [US-06-05](../06-easyorders-integration/US-06-05-easyorders-onboarding-health-and-disconnect.md)
 
 ## User story and value
