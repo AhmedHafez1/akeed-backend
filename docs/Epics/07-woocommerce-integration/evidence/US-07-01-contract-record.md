@@ -685,3 +685,13 @@ Found while reading. None blocks; each is handled by a rule above.
 - **`delivery_url` is marked READ-ONLY** in the S2 property table, and every create example sets it.
 - **Issue #37958 is closed.** The story called it open when it was written; GitHub shows it closed as completed on 2026-09-25. S10 describes the new behavior without naming a version, so older stores must still be assumed to send a draft delivery.
 - **The draft status is in the merchant docs (S10) and not among the REST `status` options (S5).**
+
+## Amendments
+
+### 2026-10-04, US-07-02 build (product owner)
+
+Three points the record did not settle, decided while building the connect flow. Recorded in the [US-07-02 evidence](../../../US-07-02-WOOCOMMERCE-CONNECTION-EVIDENCE.md).
+
+1. **The start probe.** The Detection paragraph under "Support boundary" and the unsupported-cases table disagreed on a `5xx` and a body that is not JSON at start. Decided: at start a `5xx` is refused as `WOOCOMMERCE_REST_UNREACHABLE` and the body is never read. The table's "body that is not JSON" applies to the callback's authenticated read only.
+2. **One callback at a time per install.** The webhooks are replaced outside any transaction (section 2), so two callbacks on one link at the same moment could delete each other's webhooks. `woocommerce_pending_installs` gains `claimed_until`: a callback claims the install for 45 seconds before any store call, a concurrent one gets `WOOCOMMERCE_INSTALL_CONTEXT_INVALID` without counting an attempt, and every refusal releases the claim.
+3. **When the webhook URL token is generated.** Section 6 said "generated when the install starts" and section 7 "stored only as a SHA-256 hash", but the callback has to put the token itself into the delivery URL. Decided: the token is generated in the callback from the CSPRNG, and its hash is written to the pending install just before the webhooks are created, so the ping still finds a known token (section 3). It stays hash-only at rest and independent of the callback token. `webhook_token_hash` on a pending install is NULL until then, and a retried callback issues a fresh token.
