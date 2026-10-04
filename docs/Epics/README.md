@@ -25,9 +25,9 @@ Creating this backlog did not implement code, run migrations, activate connectio
 | 4.6   | [E04.6 — Standalone Bulk Order Import (CSV / XLSX)](04.6-standalone-bulk-order-import/README.md) | NEXT | 10 | [E04](04-standalone-manual-order-mvp/README.md), [E04.5](04.5-standalone-paymob-usage-billing/README.md) | [US-04.6-10](04.6-standalone-bulk-order-import/US-04.6-10-bulk-import-release-gate.md) |
 | 5     | [E05 — Standalone Order Ingestion API](05-standalone-order-ingestion-api/README.md)             | NEXT    | 6       | [E04.5](04.5-standalone-paymob-usage-billing/README.md), [E04.6](04.6-standalone-bulk-order-import/README.md)                                                     | [US-05-06](05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md)            |
 | 6     | [E06 — EasyOrders Integration](06-easyorders-integration/README.md) | NEXT | 6 | [E02](02-platform-boundaries-and-reliability/README.md), [E03](03-standalone-foundation-and-onboarding/README.md), [E05](05-standalone-order-ingestion-api/README.md) | [US-06-06](06-easyorders-integration/US-06-06-easyorders-contract-and-pilot-release-gate.md) |
-| 7     | [E07 — WooCommerce Integration](07-woocommerce-integration/README.md) | LATER | 6 | [E06](06-easyorders-integration/README.md) | [US-07-06](07-woocommerce-integration/US-07-06-woocommerce-compatibility-and-pilot-release-gate.md) |
+| 7     | [E07 — WooCommerce Integration](07-woocommerce-integration/README.md) | NEXT | 6 | [E02](02-platform-boundaries-and-reliability/README.md), [E03](03-standalone-foundation-and-onboarding/README.md), [E05](05-standalone-order-ingestion-api/README.md), [E06](06-easyorders-integration/README.md) shared code and automated gate only | [US-07-06](07-woocommerce-integration/US-07-06-woocommerce-release-gate-and-pilot.md) |
 
-E01 → E02 → E03 → E04 → E04.5 → E04.6 → E05 → E06 → E07 is the commerce delivery sequence. E07 is deliberately later than E06. E04.5 and E04.6 are decimal insertions; apart from the 2026-10-03 renumbering above, epic and story IDs are not renumbered.
+E01 → E02 → E03 → E04 → E04.5 → E04.6 → E05 → E06 → E07 is the commerce delivery sequence. E07 follows E06 in build order because it reuses the shared code E06 added, but since 2026-10-04 it does not wait for E06 go-live: US-06-06 may stay release-blocked on EasyOrders provider questions while E07 proceeds. E04.5 and E04.6 are decimal insertions; apart from the 2026-10-03 renumbering above, epic and story IDs are not renumbered.
 
 Every epic has a prioritized story table. Each story's direct dependency links form the minimum execution chain; dependencies are transitive. The last story in each epic is its release/acceptance gate. A gate cannot be marked complete while an acceptance criterion or a required predecessor remains unresolved.
 
@@ -35,7 +35,7 @@ Every epic has a prioritized story table. Each story's direct dependency links f
 
 - **P0:** Required capability, prerequisite, security/reliability control or release gate for its epic.
 - **P1:** Supporting merchant usability, documentation or operational enablement. Still part of the approved epic; complete it before any gate that depends on it.
-- **Horizon is separate from priority:** a P0 WooCommerce story remains LATER, not a reason to displace Shopify stabilization.
+- **Horizon is separate from priority:** a P0 story in a LATER epic remains LATER, not a reason to displace Shopify stabilization.
 - **Delivery rank** is the story order inside its epic. Dependencies override priority labels and prevent release gates from jumping ahead of supporting work.
 - IDs such as `US-05-03` are stable. Reprioritize the index/rank deliberately rather than renaming IDs or silently changing dependencies.
 - Record implementation and release status separately with evidence. E01 is complete for its recorded working trees; E02 and E03 are implemented locally but release blocked; E04 has all five stories implemented locally but remains release blocked; E04.5 is Done per its epic evidence; E04.6 is implemented and its pilot is reported complete (product owner, 2026-10-01; the story evidence files have not been updated to say so); E05 is Done: its gate passes locally and, per the product owner, it shipped to production on 2026-10-02 and was validated on 2026-10-03 (step-level records are not in the repository); E06 and E07 remain **Backlog**. A validation spike can be Done with a no-go finding while its dependent feature remains Blocked.
@@ -45,7 +45,7 @@ Every epic has a prioritized story table. Each story's direct dependency links f
 
 Each story provides metadata, a user/value statement, scope/exclusions, numbered acceptance criteria, backend/frontend/data/operations notes, test requirements, migration/rollout guidance and linked evidence.
 
-Story types distinguish **Feature**, **Technical enabler**, **Quality gate**, **Validation spike**, and **Operations**. Technical and operational stories still state a user or business outcome.
+Story types distinguish **Feature**, **Technical enabler**, **Quality gate**, **Validation spike**, **Contract and plan**, and **Operations**. A contract-and-plan story (first used by US-07-01) freezes a provider's documented contract and the adapter design without live provider requests; it is used instead of a validation spike when the provider's official documentation is explicit, and live proof then belongs to the epic's release gate. Technical and operational stories still state a user or business outcome.
 
 Implementation notes identify the relevant boundary and safety constraints; they are not permission to make unrelated architectural changes.
 
@@ -85,7 +85,7 @@ These are explicit backlog design assumptions, not claims about current function
 - Native adapter pilots use fresh or unprovisioned organizations and source-selecting signup, rather than silently replacing an already active Standalone/Shopify source.
 - Idempotency is source-scoped and survives credential rotation. Creation retries do not become implicit order edits.
 - Per-send ledger state records ambiguous provider acceptance. Do not promise exactly-once delivery or blindly retry an uncertain send.
-- Automatic no_reply escalation is not authority for remote cancellation. Native status mappings require the owning validation spike and merchant-approved effects.
+- Automatic no_reply escalation is not authority for remote cancellation. Native status mappings require the owning validation spike or contract story and merchant-approved effects.
 - Normal disconnect preserves order/verification/usage history and stops queued effects; privacy redaction remains a separate authorized workflow.
 - WooCommerce store-URL access must prevent SSRF and unsafe redirects as part of its connection security.
 
@@ -137,7 +137,7 @@ Primary references used by provider stories are listed below. The original 15 li
 - [Paymob — Inquiry by order/reference](https://developers.paymob.com/paymob-docs/developers/transaction-inquiry-apis/transaction-inquiry/by-order-id-or-reference)
 - [Paymob — Transaction inquiry and reports](https://developers.paymob.com/paymob-docs/payments-and-features/core-features/transaction-inquiry-and-reports)
 
-Meta, Paymob, EasyOrders and WooCommerce validation stories explicitly record supported, unsupported and unknown behavior and block dependent live rollout when safety requirements remain unresolved.
+Meta, Paymob and EasyOrders validation stories, and the WooCommerce contract story (US-07-01) with its release gate (US-07-06), explicitly record supported, unsupported and unknown behavior and block dependent live rollout when safety requirements remain unresolved.
 
 ## Deferred — do not turn into new epics in this delivery
 
@@ -177,3 +177,10 @@ The following are separate checks: documentation integrity now; software tests a
 - Added three provider questions to US-06-01: tenant resolution for order-status webhooks, webhook-secret delivery, and the 40 requests/minute rate-limit budget.
 - Confirmed 9 epic folders, 60 story files and 10 README files (56 P0, 4 P1). Every relative Markdown link under `docs/Epics` resolves, including repository-relative source links that pointed one level too deep, story IDs are unique and match their folders, and dependencies are acyclic.
 - Application source remained unchanged. No application test, migration, provider call or WhatsApp send was executed.
+
+### Authoring validation — 2026-10-04
+
+- Refactored E07 (WooCommerce) after E06 was built. US-07-01 changed from a validation spike to a contract-and-plan story written from the official WooCommerce documentation; the hosting matrix was replaced by a support boundary; live validation moved to the US-07-06 release gate; US-07-02 to US-07-06 were rewritten against the extension points E06 left in the code. US-07-01 and US-07-05 were retitled. Story IDs and file names are unchanged, so no link was renamed.
+- E07 no longer depends on E06 go-live (US-06-06). It depends on E02, E03, E05 and the E06 shared code and automated gate. Its horizon moved from LATER to NEXT. Seven product decisions (product owner, 2026-10-04) are recorded in the E07 README.
+- Added `07-woocommerce-integration/IMPLEMENTATION-PROMPTS.md`. The inventory is unchanged: 9 epic folders, 60 story files, 10 README files (56 P0, 4 P1).
+- WooCommerce documentation pages for authentication and webhooks were reopened on 2026-10-04. Application source remained unchanged. No application test, migration, provider call or WhatsApp send was executed.
