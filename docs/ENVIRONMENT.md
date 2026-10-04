@@ -236,7 +236,7 @@ The authorized connection of an EasyOrders store (US-06-02), its order-webhook i
 
 | Variable | Notes |
 | --- | --- |
-| `EASYORDERS_CONNECT_ENABLED` | `true` or `false` (default). While `false`, `POST /api/easyorders/install` and the install callback answer `404 EASYORDERS_CONNECT_UNAVAILABLE`, the status endpoint reports `unavailable`, and signup cannot create a source-less organization (`409 SOURCE_CONNECT_UNAVAILABLE`). Rollback is turning it off; connected integrations and both EasyOrders tables stay. |
+| `EASYORDERS_CONNECT_ENABLED` | `true` or `false` (default). While `false`, `POST /api/easyorders/install` and the install callback answer `404 EASYORDERS_CONNECT_UNAVAILABLE`, the status endpoint reports `unavailable`, and signup cannot create a source-less organization (`409 SOURCE_CONNECT_UNAVAILABLE`) unless another connectable source (`WOOCOMMERCE_CONNECT_ENABLED`) is on. Rollback is turning it off; connected integrations and both EasyOrders tables stay. |
 | `EASYORDERS_PILOT_ORG_IDS` | Pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Only listed organizations may start an install or have a callback honoured. Empty (default) means nobody, even with the switch on. Removing a UUID stops new installs for that organization; an existing connection is not removed. |
 | `EASYORDERS_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the two webhook URLs. Must be `https` outside development (the API key travels through the seller's browser to it). No trailing slash, query or fragment. |
 | `EASYORDERS_APP_BASE_URL` | Required when enabled. Public base of the web app: the post-install redirect (`/<locale>/onboarding`) and the app icon. Same rules as above. |
@@ -249,6 +249,24 @@ The frontend shows the source picker on signup only when `NEXT_PUBLIC_EASYORDERS
 EasyOrders requests are limited to 30 a minute per integration (at most 20 of them order lookups, so outcome writes keep headroom), counted in memory: correct for one backend instance, like the other throttlers. An outcome costs two requests, three when a lost answer forces a read-back. Outcome retries run on the `commerce-outcome-sync` BullMQ queue, which needs Redis like the other queues. An order that fails while the queue is down is recovered by the webhook reconciler, which is off unless `WEBHOOK_RECONCILIATION_ENABLED=true`.
 
 The install callback is called by the seller's browser from `https://app.easy-orders.net`. Its CORS answer is fixed to that origin in `src/shared/config/route-scoped-cors.config.ts` and ignores `CORS_ALLOWED_ORIGINS`.
+
+## WooCommerce Connection (E07)
+
+The application-authentication connection of a WooCommerce store (US-07-02). It ships dark. Order ingestion (US-07-03) and outcome writes (US-07-04) are not built yet and add their own switches.
+
+| Variable | Notes |
+| --- | --- |
+| `WOOCOMMERCE_CONNECT_ENABLED` | `true` or `false` (default). While `false`, `POST /api/woocommerce/install` and the install callback answer `404 WOOCOMMERCE_CONNECT_UNAVAILABLE` and the status endpoint reports `unavailable`. Signup can create a source-less organization while this switch or `EASYORDERS_CONNECT_ENABLED` is on. Rollback is turning it off; connected integrations and both WooCommerce tables stay. |
+| `WOOCOMMERCE_PILOT_ORG_IDS` | Pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Only listed organizations may start an install or have a callback honoured. Empty (default) means nobody, even with the switch on. |
+| `WOOCOMMERCE_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the webhook delivery URL Akeed registers in the store. Must be `https` outside development (the store posts the new API keys to it). No trailing slash, query or fragment. |
+| `WOOCOMMERCE_APP_BASE_URL` | Required when enabled. Public base of the web app: the `return_url` the store sends the merchant back to (`/<locale>/onboarding`). Same rules as above. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect is enabled without it. |
+
+The frontend offers WooCommerce on signup only when `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED=true`. Turn the backend switch on first.
+
+Every request Akeed sends to a store goes through the restricted outbound client (`src/shared/http/restricted-http.ts`): HTTPS on port 443, public addresses only, no redirects, 10 seconds and a capped response. It has no setting. The install callback is expected from the store's server and has no route-scoped CORS entry.
+
+Until US-07-03 the webhook delivery URL answers `404` to every order delivery (and `200` to the ping WooCommerce sends when a webhook is saved), so a store connected now has its webhooks disabled by WooCommerce after five orders. Do not connect a real merchant before ingestion is built and on.
 
 ## WhatsApp (Meta) Configuration
 

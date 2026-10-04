@@ -16,6 +16,10 @@ import {
 } from './bulk-import.config';
 import { ORDER_API_CONFIG, parseOrderApiConfig } from './order-api.config';
 import { EASYORDERS_CONFIG, parseEasyOrdersConfig } from './easyorders.config';
+import {
+  parseWooCommerceConfig,
+  WOOCOMMERCE_CONFIG,
+} from './woocommerce.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -111,5 +115,6 @@ export function validateEnv(
     [BULK_IMPORT_CONFIG]: parseBulkImportConfig(config),
     [ORDER_API_CONFIG]: parseOrderApiConfig(config),
     [EASYORDERS_CONFIG]: parseEasyOrdersConfig(config),
+    [WOOCOMMERCE_CONFIG]: parseWooCommerceConfig(config),
   };
 }

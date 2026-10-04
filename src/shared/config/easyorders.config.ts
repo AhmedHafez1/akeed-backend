@@ -1,3 +1,5 @@
+import { WOOCOMMERCE_CONFIG } from './woocommerce.config';
+
 export const EASYORDERS_CONFIG = 'easyOrders';
 
 /**
@@ -166,6 +168,9 @@ export function isEasyOrdersPilotOrganization(
   return config.enabled && config.pilotOrgIds.includes(orgId.toLowerCase());
 }
 
+/** Every source a merchant connects after signup, by its config key. */
+const CONNECTABLE_SOURCE_CONFIGS = [EASYORDERS_CONFIG, WOOCOMMERCE_CONFIG];
+
 /**
  * Whether signup may create an organization that connects its source
  * afterwards. True while at least one connectable source is switched on.
@@ -173,5 +178,7 @@ export function isEasyOrdersPilotOrganization(
 export function isSourceConnectEnabled(config: {
   get<T>(key: string): T | undefined;
 }): boolean {
-  return config.get<EasyOrdersConfig>(EASYORDERS_CONFIG)?.enabled === true;
+  return CONNECTABLE_SOURCE_CONFIGS.some(
+    (key) => config.get<{ enabled: boolean }>(key)?.enabled === true,
+  );
 }
