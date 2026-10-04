@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Done (2026-10-04), shipped disabled behind `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`; real-store proof is owed to US-07-06 — [evidence](../../US-07-04-WOOCOMMERCE-OUTCOME-SYNC-EVIDENCE.md)
 - **Dependencies:** [US-07-03](US-07-03-ingest-signed-woocommerce-order-webhooks.md)
 
 ## User story and value

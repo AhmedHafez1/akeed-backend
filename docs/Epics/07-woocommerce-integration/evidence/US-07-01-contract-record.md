@@ -709,3 +709,19 @@ Clarified in the same build, within the rules above:
 - **Section 4, the age rule.** `date_created_gmt` has no fraction (4.4), so the connection moment is floored to the second before comparing.
 - **Section 4, the update and skip keys.** `status` and `date_modified_gmt` are store text. Each is used in a key only when it is 1 to 64 printable ASCII characters without spaces; otherwise the key holds the literal `invalid`.
 - **Section 2, part two of the check.** A stored secret that cannot be decrypted, or that is not in the `v1:` envelope, fails the check: `401`, counted. A stored value is never used as an HMAC key itself.
+
+### 2026-10-04, US-07-04 build (product owner)
+
+Three points the record did not settle, decided while building outcome writes. Recorded in the [US-07-04 evidence](../../../US-07-04-WOOCOMMERCE-OUTCOME-SYNC-EVIDENCE.md).
+
+1. **The echo rule.** Section 5 called an update `reflected_outcome` whenever its `meta_data` held the marker of a recorded outcome. The marker stays on the order, so every later change by the merchant would have been called a reflection, against US-07-04 AC 7. Decided: an update is `reflected_outcome` when it holds such a marker **and** its status is one that write could have left: `cancelled` for a cancellation, `processing` or `on-hold` for a confirmation. Anything else is `remote_status_observed`. A waiting or failed row still counts. Neither result changes a verification, writes to the store or starts a verification.
+2. **The confirmation note (5.18).** The text is fixed and bilingual: `Akeed: order confirmed. / أكيد: تم تأكيد الطلب.`, with `customer_note: false`. It does not say who confirmed, because a merchant's confirmation in Akeed is the same action as the customer's reply.
+3. **A `405` or `501` on a write (8.4).** The failure table in section 5 had no row for it. Decided: `permanent_failure` / `store_write_method_refused`, `requiresAssistance`. Health is not changed: the keys were accepted.
+
+Clarified in the same build, within the rules above:
+
+- **Section 5, step 1, "this store's order".** `_links.self[0].href` must be exactly `<canonical store URL>/wp-json/wc/v3/orders/<id>` once the part before `/wp-json/` is canonicalized by the rules of section 2. "Lies under" is read as equality, so a store at a domain root does not take the answer of a store in a subdirectory of it.
+- **Section 5, the decision table.** A cancellation whose marker is on an order that is not `cancelled` is `remote_state_conflict`, not a write: the cancellation was taken and the merchant reopened the order. A status that is missing or is not 1 to 64 printable ASCII characters without spaces is a conflict with no `providerStatus`.
+- **Section 5, step 5, the read-back.** It uses the decision table of step 2, so a cancellation read back as `cancelled` is `applied` with or without the marker. For a confirmation whose first read showed no marker, the note is added once the read-back shows the marker, in that same run.
+- **Section 5, the failure table.** `429` is `source_rate_limited` and `503` is `source_unavailable`; both are retryable on a read and on a write, without a read-back, because every retry starts with a read. A `4xx` on the write other than those named is `remote_rejected`. An oversized answer to a write is ambiguous and is read back; to a read it is `store_unreachable`. `403` sets the health to `permission_denied`, and a successful read sets it back to `ok`.
+- **Section 8, `Retry-After`.** Seconds or an HTTP date, non-negative, passed on as it is. The existing policy clamps it to 10 minutes.
