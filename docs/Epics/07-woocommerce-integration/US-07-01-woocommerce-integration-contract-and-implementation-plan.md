@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Contract and plan
-- **Status:** Backlog
+- **Status:** Done, awaiting product-owner review (2026-10-04) — [contract record](evidence/US-07-01-contract-record.md) and [fixtures](../../../test/fixtures/woocommerce/README.md) written from the official documentation; verdict: US-07-02 to US-07-06 unblocked to build. No store was contacted. Evidence: [US-07-01 evidence](../../US-07-01-WOOCOMMERCE-CONTRACT-EVIDENCE.md)
 - **Dependencies:** [US-02-07](../02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md), [US-03-05](../03-standalone-foundation-and-onboarding/US-03-05-standalone-tenant-and-primary-source-guards.md), [US-05-06](../05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md); the E06 shared code on `develop` (US-06-02 to US-06-05). Not US-06-06.
 
 Retitled on 2026-10-04 (was "Validate WooCommerce hosting, authentication and mappings", a validation spike). The filename was aligned with the title on 2026-10-04.
@@ -70,7 +70,7 @@ Registration is still a hardcoded list per spoke in [webhook-queue.module.ts](..
 - REST calls use Basic authentication over HTTPS.
 - Webhook deliveries carry `X-WC-Webhook-Source`, `-Topic`, `-Resource`, `-Event`, `-Signature`, `-ID` and `-Delivery-ID`. The signature is a base64 HMAC-SHA256 of the body with the webhook secret.
 - A webhook is disabled after 5 consecutive failed deliveries and must be re-enabled through the REST API. A ping is sent when a webhook is first saved as active.
-- `order.created` fires for a checkout draft under the Checkout block ([WooCommerce issue #37958](https://github.com/woocommerce/woocommerce/issues/37958), open).
+- `order.created` fires for a checkout draft under the Checkout block ([WooCommerce issue #37958](https://github.com/woocommerce/woocommerce/issues/37958); written here as open, found closed as completed on 2026-09-25 when the contract record was written, see its finding 3.6).
 
 **ASSUMPTION / REQUIRES VALIDATION:** Core behavior not found on the doc pages goes into the gate-observation list, not into the contract as fact: that the callback is sent by the store's server, the ping's body, that a placed COD order sits in `processing` or `on-hold`, the exact side effects of `cancelled`, and that API keys cannot be removed through REST.
 

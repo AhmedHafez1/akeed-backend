@@ -1,0 +1,122 @@
+{
+  "_fixture": {
+    "source": "documented, not captured",
+    "reference": "https://developer.woocommerce.com/docs/apis/rest-api/v3/orders/ and https://developer.woocommerce.com/docs/apis/rest-api/v3/webhooks/ (read 2026-10-04)",
+    "kind": "order updated in the store",
+    "headers": {
+      "X-WC-Webhook-Source": "https://example.com/",
+      "X-WC-Webhook-Topic": "order.updated",
+      "X-WC-Webhook-Resource": "order",
+      "X-WC-Webhook-Event": "updated",
+      "X-WC-Webhook-ID": "9002",
+      "X-WC-Webhook-Delivery-ID": "synthetic-delivery-0004"
+    },
+    "notes": "The order of order-placed-cod.json after the merchant completed it in WooCommerce: a change Akeed did not make. It carries no akeed_outcome entry in meta_data; a test that needs the echo of Akeed's own write adds one. X-WC-Webhook-Signature is left out on purpose.",
+    "synthetic": "Every ID, customer field, product name and timestamp is synthetic",
+    "replaceWith": "A sanitized capture from the US-07-06 live run"
+  },
+  "payload": {
+    "id": 1001,
+    "parent_id": 0,
+    "number": "1001",
+    "order_key": "wc_order_SYNTHETIC0001",
+    "created_via": "checkout",
+    "version": "0.0.0",
+    "status": "completed",
+    "currency": "EGP",
+    "date_created": "2026-01-01T12:00:00",
+    "date_created_gmt": "2026-01-01T10:00:00",
+    "date_modified": "2026-01-02T09:30:00",
+    "date_modified_gmt": "2026-01-02T07:30:00",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "50.00",
+    "shipping_tax": "0.00",
+    "cart_tax": "0.00",
+    "total": "450.00",
+    "total_tax": "0.00",
+    "prices_include_tax": false,
+    "customer_id": 0,
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "customer_note": "",
+    "billing": {
+      "first_name": "Test",
+      "last_name": "Customer",
+      "company": "",
+      "address_1": "Synthetic address 1",
+      "address_2": "",
+      "city": "Cairo",
+      "state": "",
+      "postcode": "",
+      "country": "EG",
+      "email": "test.customer@example.com",
+      "phone": "01000000000"
+    },
+    "shipping": {
+      "first_name": "Test",
+      "last_name": "Customer",
+      "company": "",
+      "address_1": "Synthetic address 1",
+      "address_2": "",
+      "city": "Cairo",
+      "state": "",
+      "postcode": "",
+      "country": "EG"
+    },
+    "payment_method": "cod",
+    "payment_method_title": "Cash on delivery",
+    "transaction_id": "",
+    "date_paid": "2026-01-02T09:30:00",
+    "date_paid_gmt": "2026-01-02T07:30:00",
+    "date_completed": "2026-01-02T09:30:00",
+    "date_completed_gmt": "2026-01-02T07:30:00",
+    "cart_hash": "",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 2001,
+        "name": "Sample item 1",
+        "product_id": 3001,
+        "variation_id": 0,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "400.00",
+        "subtotal_tax": "0.00",
+        "total": "400.00",
+        "total_tax": "0.00",
+        "taxes": [],
+        "meta_data": [],
+        "sku": "SYNTHETIC-0001",
+        "price": 200
+      }
+    ],
+    "tax_lines": [],
+    "shipping_lines": [
+      {
+        "id": 2002,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "total": "50.00",
+        "total_tax": "0.00",
+        "taxes": [],
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://example.com/wp-json/wc/v3/orders/1001"
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://example.com/wp-json/wc/v3/orders"
+        }
+      ]
+    }
+  }
+}
