@@ -96,6 +96,11 @@ export class SourceSetupService {
     now = new Date(),
   ): Promise<SourceHealthDto> {
     const since = new Date(now.getTime() - SOURCE_HEALTH_WINDOW_DAYS * DAY_MS);
+    // Asked first: the store's answer is also its latest word on the
+    // credentials, which `describe` then reports.
+    const webhooks = await this.contributors
+      .get(integration.platformType)
+      ?.inspectWebhooks?.({ id: integration.id, orgId: integration.orgId });
     const [contribution, events, syncs] = await Promise.all([
       this.describe(integration),
       this.webhookEvents.summarizeForIntegration(
@@ -141,6 +146,7 @@ export class SourceSetupService {
           active &&
           this.commerceOutcomes.supports(integration.platformType, action),
       })),
+      ...(webhooks ? { webhooks } : {}),
     };
   }
 }

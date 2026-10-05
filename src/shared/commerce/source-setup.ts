@@ -15,6 +15,7 @@ export const SOURCE_SETUP_BLOCKED_REASONS = [
   'webhook_secrets_missing',
   'credentials_rejected',
   'source_disconnected',
+  'webhook_disabled',
 ] as const;
 export type SourceSetupBlockedReason =
   (typeof SOURCE_SETUP_BLOCKED_REASONS)[number];
@@ -48,6 +49,26 @@ export interface SourceSetupContribution {
   };
 }
 
+/**
+ * What the store says of a webhook Akeed created there. `missing`: the store
+ * no longer has it. `unknown`: the store could not be asked, or gave an answer
+ * that names no state.
+ */
+export type SourceWebhookState =
+  | 'active'
+  | 'paused'
+  | 'disabled'
+  | 'missing'
+  | 'unknown';
+
+export type SourceWebhookKind = 'order_created' | 'order_updated';
+
+/** Each webhook's state as the store answered at `checkedAt`. */
+export interface SourceWebhookHealth {
+  checkedAt: string;
+  items: { kind: SourceWebhookKind; state: SourceWebhookState }[];
+}
+
 export interface SourceSetupContributor {
   readonly platformType: string;
   /** State, settings and health stay readable after a disconnect. */
@@ -57,6 +78,16 @@ export interface SourceSetupContributor {
     id: string;
     orgId: string;
   }): Promise<SourceSetupContribution | null>;
+  /**
+   * Asks the store for the state of Akeed's webhooks. Only a source whose
+   * provider lets them be read has this, and only a health read calls it:
+   * `describe` runs on every state read and must not wait on a store. Null
+   * when there is no live connection to ask.
+   */
+  inspectWebhooks?(source: {
+    id: string;
+    orgId: string;
+  }): Promise<SourceWebhookHealth | null>;
 }
 
 /** The setup block of the onboarding state, for a source with a contributor. */
@@ -100,6 +131,8 @@ export interface SourceHealthDto {
   delivery: SourceSetupContribution['delivery'] | null;
   /** What Akeed can write to this store right now, per outcome. */
   capabilities: { action: CommerceOutcomeAction; supported: boolean }[];
+  /** Present only for a source whose webhooks can be read from its store. */
+  webhooks?: SourceWebhookHealth;
 }
 
 export const SOURCE_HEALTH_WINDOW_DAYS = 7;
