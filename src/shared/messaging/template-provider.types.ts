@@ -105,3 +105,33 @@ export function isSendableReviewStatus(
 ): boolean {
   return status === SENDABLE_REVIEW_STATUS;
 }
+
+/** A registry row as sync and template events see it. */
+export interface SyncedTemplateRow {
+  id: string;
+  key: string;
+  purpose: TemplatePurpose;
+  isActive: boolean;
+  isDefault: boolean;
+  templateName: string;
+  languageCode: string;
+  providerTemplateId: string | null;
+  reviewStatus: TemplateReviewStatus | null;
+  category: TemplateCategory | null;
+  pendingCategory: TemplateCategory | null;
+  quality: TemplateQuality | null;
+  components: TemplateComponentsSnapshot | null;
+  statusEventAt: string | null;
+  qualityEventAt: string | null;
+  categoryEventAt: string | null;
+}
+
+/** The provider-side values a sync or an event writes on a row. */
+export interface ProviderState {
+  providerTemplateId: string | null;
+  reviewStatus: TemplateReviewStatus | null;
+  category: TemplateCategory | null;
+  pendingCategory: TemplateCategory | null;
+  quality: TemplateQuality | null;
+  components: TemplateComponentsSnapshot | null;
+}

@@ -21,6 +21,8 @@ const columns: AdminHealthColumns = {
   billingStatus: sql`subscription_status`,
   lastActivityAt: sql`last_activity_at`,
   creditBalanceState: sql`credit_balance_state`,
+  templateUnavailable: sql`template_unavailable`,
+  templateDegraded: sql`template_degraded`,
 };
 
 function render(env: Record<string, string> = {}) {
@@ -46,6 +48,7 @@ function signalOrder(params: unknown[]) {
     'subscription_blocked',
     'credits_exhausted',
     'credits_low',
+    'template_unavailable',
     'no_recent_activity',
   ]);
   return params.filter(
@@ -65,6 +68,7 @@ describe('AdminHealthRuleService', () => {
       'webhook_failures',
       'subscription_blocked',
       'credits_exhausted',
+      'template_unavailable',
       'no_recent_activity',
     ]);
     expect(signalOrder(attention.params)).toEqual([
@@ -76,6 +80,7 @@ describe('AdminHealthRuleService', () => {
       'webhook_failures',
       'auto_confirmation_disabled',
       'credits_low',
+      'template_unavailable',
       'no_recent_activity',
     ]);
   });
@@ -110,13 +115,24 @@ describe('AdminHealthRuleService', () => {
     const signalCases = /::text END/g;
     const gatedCases = /CASE WHEN uninstalled_at IS NULL AND \(/g;
 
-    expect(count(critical.sql, signalCases)).toBe(8);
-    expect(count(critical.sql, gatedCases)).toBe(8);
+    expect(count(critical.sql, signalCases)).toBe(9);
+    expect(count(critical.sql, gatedCases)).toBe(9);
 
-    expect(count(attention.sql, signalCases)).toBe(9);
-    expect(count(attention.sql, gatedCases)).toBe(8);
+    expect(count(attention.sql, signalCases)).toBe(10);
+    expect(count(attention.sql, gatedCases)).toBe(9);
     expect(attention.sql).toMatch(
       /^array_remove\(ARRAY\[CASE WHEN NOT \(uninstalled_at IS NULL\) THEN/,
+    );
+  });
+
+  it('raises template_unavailable as critical when nothing can be sent, and as attention when a template in use is unhealthy (US-08-04)', () => {
+    const { critical, attention } = render();
+
+    expect(critical.sql).toContain(
+      'CASE WHEN uninstalled_at IS NULL AND (template_unavailable) THEN',
+    );
+    expect(attention.sql).toContain(
+      'CASE WHEN uninstalled_at IS NULL AND (template_degraded AND NOT (template_unavailable)) THEN',
     );
   });
 

@@ -21,6 +21,10 @@ export interface AdminHealthColumns {
   billingStatus: SQL;
   lastActivityAt: SQL;
   creditBalanceState: SQL;
+  /** No template can be sent for a language the store sends in. */
+  templateUnavailable: SQL;
+  /** A template the store sends is unhealthy at the provider. */
+  templateDegraded: SQL;
 }
 
 const BLOCKED_SUBSCRIPTION_STATUSES = [
@@ -109,6 +113,7 @@ export class AdminHealthRuleService {
           [webhookCritical, 'webhook_failures'],
           [subscriptionBlocked, 'subscription_blocked'],
           [creditsExhausted, 'credits_exhausted'],
+          [columns.templateUnavailable, 'template_unavailable'],
           [idleCritical, 'no_recent_activity'],
         ]),
       ),
@@ -137,6 +142,10 @@ export class AdminHealthRuleService {
           ],
           [sql`NOT ${columns.autoEnabled}`, 'auto_confirmation_disabled'],
           [creditsLow, 'credits_low'],
+          [
+            sql`${columns.templateDegraded} AND NOT (${columns.templateUnavailable})`,
+            'template_unavailable',
+          ],
           [
             sql`${idleAttention} AND NOT (${idleCritical})`,
             'no_recent_activity',

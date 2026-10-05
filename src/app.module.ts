@@ -25,6 +25,8 @@ import { VerificationAutomationModule } from './modules/verification-automation/
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
 import { TEMPLATE_REGISTRY_PORT } from './shared/ports/template-registry.port';
 import { TemplateRegistryService } from './modules/template-registry/template-registry.service';
+import { TEMPLATE_CATALOG_PORT } from './shared/ports/template-catalog.port';
+import { MetaTemplateCatalogAdapter } from './infrastructure/spokes/meta/meta-template-catalog.adapter';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
@@ -110,6 +112,10 @@ const billingModule = BillingModule.register({
         {
           provide: TEMPLATE_REGISTRY_PORT,
           useExisting: TemplateRegistryService,
+        },
+        {
+          provide: TEMPLATE_CATALOG_PORT,
+          useExisting: MetaTemplateCatalogAdapter,
         },
       ],
     }),

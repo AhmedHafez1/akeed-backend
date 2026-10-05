@@ -26,6 +26,10 @@ import { BillingObservabilityRepository } from './billing-observability.reposito
 import { BillingObservabilityService } from './billing-observability.service';
 import { BillingReconciliationProducer } from './billing-reconciliation.producer';
 import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
+import { AdminTemplatesController } from './admin-templates.controller';
+import { AdminTemplatesService } from './admin-templates.service';
+import { WhatsappTemplateOperatorGuard } from './whatsapp-template-operator.guard';
+import { WhatsappTemplateSyncModule } from '../template-registry/whatsapp-template-sync.module';
 
 export interface AdminModuleOptions {
   /**
@@ -46,9 +50,14 @@ export class AdminModule {
         DatabaseModule,
         WebhookQueueModule,
         BillingReconciliationQueueModule,
+        WhatsappTemplateSyncModule,
         ...(options.imports ?? []),
       ],
-      controllers: [AdminController, StandaloneBillingController],
+      controllers: [
+        AdminController,
+        StandaloneBillingController,
+        AdminTemplatesController,
+      ],
       providers: [
         AdminAccessGuard,
         AdminQueryRepository,
@@ -67,6 +76,8 @@ export class AdminModule {
         BillingObservabilityService,
         BillingReconciliationProducer,
         BillingReconciliationProcessor,
+        AdminTemplatesService,
+        WhatsappTemplateOperatorGuard,
       ],
     };
   }

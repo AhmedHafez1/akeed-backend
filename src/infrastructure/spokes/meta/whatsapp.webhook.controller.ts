@@ -4,6 +4,7 @@ import {
   Post,
   Query,
   Body,
+  Req,
   HttpStatus,
   Logger,
   HttpCode,
@@ -17,6 +18,8 @@ import { ConfigService } from '@nestjs/config';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 import { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 import { MetaWebhookSignatureGuard } from '../../../shared/guards/meta-webhook-signature.guard';
+import type { RequestWithRawBody } from '../../../shared/models/request-with-raw-body.interface';
+import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 
 @SkipThrottle()
@@ -33,6 +36,7 @@ export class WhatsAppWebhookController {
   constructor(
     private readonly service: WhatsAppWebhookService,
     private readonly configService: ConfigService,
+    private readonly templateWebhook: MetaTemplateWebhookHandler,
   ) {}
 
   @Get()
@@ -79,7 +83,12 @@ export class WhatsAppWebhookController {
   @HttpCode(200)
   async handleIncoming(
     @Body() payload: WhatsAppWebhookPayloadDto,
+    @Req() request: RequestWithRawBody,
   ): Promise<{ status: string; message?: string }> {
-    return this.service.processIncoming(payload);
+    const result = await this.service.processIncoming(payload);
+    // Template fields are read from the signed raw body: the DTO above is
+    // shaped for messages and statuses only. The handler never throws.
+    await this.templateWebhook.handle(request.rawBody);
+    return result;
   }
 }

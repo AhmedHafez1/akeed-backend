@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
 import type { AdminHealthColumns } from './admin-health-rule.service';
+import { templateHealthSql } from './admin-template-health.sql';
 
 export interface AdminStoreQueryRow {
   [key: string]: unknown;
@@ -609,6 +610,8 @@ export class AdminQueryRepository {
       billingStatus: sql`(CASE WHEN is_credit THEN NULL ELSE subscription_status END)`,
       lastActivityAt: sql`last_activity_at`,
       creditBalanceState: sql`credit_balance_state`,
+      templateUnavailable: sql`template_unavailable`,
+      templateDegraded: sql`template_degraded`,
     });
 
     return sql`
@@ -675,6 +678,7 @@ export class AdminQueryRepository {
   }
 
   private storeQuery(extraColumns: SQL, where: SQL): SQL {
+    const templateHealth = templateHealthSql(sql`i`);
     return sql`
       SELECT
         i.id AS integration_id,
@@ -719,7 +723,9 @@ export class AdminQueryRepository {
         verification_metrics.first_resolved_at AS derived_first_resolved_at,
         ca.status::text AS credit_account_status,
         ca.posted_balance AS credit_posted_balance,
-        ca.held_credits AS credit_held_credits${extraColumns}
+        ca.held_credits AS credit_held_credits,
+        ${templateHealth.unavailable} AS template_unavailable,
+        ${templateHealth.degraded} AS template_degraded${extraColumns}
       FROM integrations i
       INNER JOIN organizations o ON o.id = i.org_id
       LEFT JOIN credit_accounts ca ON ca.org_id = i.org_id

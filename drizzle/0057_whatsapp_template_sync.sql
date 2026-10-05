@@ -24,11 +24,8 @@
 -- allows one 'running' run at a time across every instance. A failed run
 -- changed no registry row; "error_code" is neutral.
 --
--- "verification_message_dispatches" gains "template_fallback_reason" and
--- "template_skipped_key": why the store's stored choice was not the template
--- sent, and which key was passed over. Older rows stay NULL.
---
--- All three tables are service-role only, like "whatsapp_templates".
+-- The two new tables are service-role only, like "whatsapp_templates". The
+-- dispatch columns of this story are in 0056.
 -- Everything here is additive and safe to replay.
 --
 -- Rollback: set WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=false and
@@ -40,8 +37,6 @@
 --   ALTER TABLE "whatsapp_templates" DROP COLUMN IF EXISTS "pending_category",
 --     DROP COLUMN IF EXISTS "status_event_at", DROP COLUMN IF EXISTS "quality_event_at",
 --     DROP COLUMN IF EXISTS "category_event_at", DROP COLUMN IF EXISTS "components_drift_at";
---   ALTER TABLE "verification_message_dispatches" DROP COLUMN IF EXISTS "template_fallback_reason",
---     DROP COLUMN IF EXISTS "template_skipped_key";
 -- The synced values in the 0054 columns can stay: the previous release does
 -- not read them.
 ALTER TABLE "whatsapp_templates" ADD COLUMN IF NOT EXISTS "pending_category" text;--> statement-breakpoint
@@ -91,6 +86,4 @@ CREATE INDEX IF NOT EXISTS "idx_whatsapp_template_sync_runs_started_at" ON "what
 ALTER TABLE "whatsapp_template_sync_runs" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 REVOKE ALL ON "whatsapp_template_sync_runs" FROM PUBLIC, anon, authenticated;--> statement-breakpoint
 DROP POLICY IF EXISTS "Service role manages whatsapp template sync runs" ON "whatsapp_template_sync_runs";--> statement-breakpoint
-CREATE POLICY "Service role manages whatsapp template sync runs" ON "whatsapp_template_sync_runs" AS PERMISSIVE FOR ALL TO "service_role" USING (true) WITH CHECK (true);--> statement-breakpoint
-ALTER TABLE "verification_message_dispatches" ADD COLUMN IF NOT EXISTS "template_fallback_reason" text;--> statement-breakpoint
-ALTER TABLE "verification_message_dispatches" ADD COLUMN IF NOT EXISTS "template_skipped_key" text;
+CREATE POLICY "Service role manages whatsapp template sync runs" ON "whatsapp_template_sync_runs" AS PERMISSIVE FOR ALL TO "service_role" USING (true) WITH CHECK (true);
