@@ -27,6 +27,8 @@ import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes
 import { StandaloneOutcomeAdapter } from '../src/infrastructure/spokes/standalone/services/standalone-outcome.adapter';
 import { WooCommerceApiClient } from '../src/infrastructure/spokes/woocommerce/woocommerce-api.client';
 import { WooCommerceAuthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-auth.service';
+import { WooCommerceConnectionHealthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-connection-health.service';
+import { WooCommerceSetupContributor } from '../src/infrastructure/spokes/woocommerce/woocommerce-setup.contributor';
 import { hashInstallToken } from '../src/infrastructure/spokes/woocommerce/woocommerce-install-token';
 import { WooCommerceOrderEligibilityStrategy } from '../src/infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { WooCommerceOrderNormalizer } from '../src/infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
@@ -241,13 +243,23 @@ const webhooks = new WooCommerceWebhookService(
 // The fake is the DNS and the transport of the real restricted client: no
 // request leaves the process, and ingestion itself never calls a store.
 const fake = new FakeWooCommerce();
-const auth = new WooCommerceAuthService(
+const storeApi = new WooCommerceApiClient(
+  createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
+);
+const storeHealth = new WooCommerceConnectionHealthService(
   connections,
-  new WooCommerceApiClient(
-    createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
-  ),
+  storeApi,
   wooCommerceConfig,
 );
+const auth = new WooCommerceAuthService(
+  connections,
+  storeApi,
+  wooCommerceConfig,
+  // This suite has no outcome-sync table; closing them is the outcome suite's.
+  { failPendingForIntegration: () => Promise.resolve(0) } as never,
+  storeHealth,
+);
+const contributor = new WooCommerceSetupContributor(connections, storeHealth);
 
 async function runJob(payload: WebhookJobPayload): Promise<'done' | 'failed'> {
   const job = {
@@ -486,6 +498,11 @@ function verificationsOf(merchant: Merchant) {
     SELECT * FROM verifications WHERE org_id = ${merchant.orgId} ORDER BY created_at`;
 }
 
+function integrationsOfOrg(orgId: string) {
+  return client<{ id: string; is_active: boolean }[]>`
+    SELECT id, is_active FROM integrations WHERE org_id = ${orgId}`;
+}
+
 async function rejectedDeliveriesOf(merchant: Merchant): Promise<number> {
   const [row] = await client<{ rejected_deliveries: number }[]>`
     SELECT rejected_deliveries FROM woocommerce_connections
@@ -610,10 +627,12 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
       '0045_provider_message_receipts.sql',
     ])
       await migrate(name);
-    // This story adds no migration: it runs on the US-07-02 tables as they
-    // are. Applied twice, as every suite that uses it does.
-    for (let pass = 0; pass < 2; pass++)
+    // The WooCommerce tables as the migrations leave them. Applied twice,
+    // as every suite that uses them does.
+    for (let pass = 0; pass < 2; pass++) {
       await migrate('0051_woocommerce_connection.sql');
+      await migrate('0052_woocommerce_disconnect.sql');
+    }
     // Fault injection for the database-failure case: while the flag row says
     // so, no event can be written.
     await client.unsafe(`
@@ -1644,6 +1663,234 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
       ).resolves.toEqual({ status: 200 });
       await drain();
       expect(await verificationsOf(merchant)).toHaveLength(1);
+    });
+  });
+
+  describe('a disconnected source (US-07-05)', () => {
+    const ownerOf = (merchant: Merchant): AuthenticatedUser => ({
+      userId: randomUUID(),
+      orgId: merchant.orgId,
+      role: 'owner',
+      source: 'supabase',
+    });
+
+    async function disconnect(merchant: Merchant) {
+      const result = await auth.disconnect(ownerOf(merchant));
+      responses.push(result);
+      return result;
+    }
+
+    /** The same install flow, for the store that was connected. */
+    async function reconnect(
+      merchant: Merchant,
+      connectedAt?: string,
+    ): Promise<Merchant> {
+      const started = await auth.startInstall(ownerOf(merchant), {
+        storeUrl: merchant.store.url,
+        locale: 'ar',
+      });
+      const params = new URL(started.authorizeUrl).searchParams;
+      const keys = merchant.store.issueKeys();
+      track(keys.consumerKey);
+      track(keys.consumerSecret);
+      await auth.handleCallback(
+        track(params.get('callback_url')!.split('/').pop()!),
+        {
+          key_id: 2,
+          user_id: params.get('user_id'),
+          consumer_key: keys.consumerKey,
+          consumer_secret: keys.consumerSecret,
+          key_permissions: 'read_write',
+        },
+      );
+      if (connectedAt)
+        await client`
+          UPDATE woocommerce_connections SET connected_at = ${connectedAt}
+          WHERE integration_id = ${merchant.integrationId}`;
+      const [webhook] = [...merchant.store.webhooks.values()];
+      return {
+        ...merchant,
+        webhookToken: track(webhook.delivery_url.split('/').pop()!),
+        webhookSecret: track(webhook.secret),
+      };
+    }
+
+    it('refuses the old address at once and stores nothing', async () => {
+      const merchant = await connectMerchant();
+      await disconnect(merchant);
+      const before = await totalEvents();
+
+      for (const topic of ['order.created', 'order.updated'])
+        await expect(
+          deliver(merchant, placedCodFixture().payload, { topic }),
+        ).resolves.toEqual({
+          status: 401,
+          code: 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED',
+        });
+
+      await expectNothingStored(before);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('does not process an order that was queued before the disconnect: no order, no message', async () => {
+      const merchant = await connectMerchant();
+      await expect(
+        deliver(merchant, placedCodFixture().payload),
+      ).resolves.toEqual({ status: 200 });
+      expect(queued).toHaveLength(1);
+
+      await disconnect(merchant);
+      await drain();
+
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: 'integration_inactive' },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(await verificationsOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('does not process one that was waiting out a queue outage either', async () => {
+      const merchant = await connectMerchant();
+      queue.down = true;
+      await expect(
+        deliver(merchant, placedCodFixture().payload),
+      ).resolves.toEqual({ status: 200 });
+      expect(queued).toHaveLength(0);
+
+      await disconnect(merchant);
+      // The queue returns; the backoff has elapsed.
+      queue.down = false;
+      const [event] = await eventsOf(merchant);
+      await client`
+        UPDATE webhook_events
+        SET next_dispatch_at = now(), dispatch_lease_until = NULL
+        WHERE id = ${event.id}`;
+      await dispatcher.dispatchById(event.id);
+      await drain();
+
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: 'integration_inactive' },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('keeps orders, verifications and events, and setup and health still read them', async () => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, placedCodFixture().payload);
+      await drain();
+      const ordersBefore = await ordersOf(merchant);
+      const verificationsBefore = await verificationsOf(merchant);
+      const eventsBefore = await eventsOf(merchant);
+      expect(ordersBefore).toHaveLength(1);
+      expect(verificationsBefore).toHaveLength(1);
+      const requestsBefore = fake.requestsTo(merchant.store).length;
+
+      await disconnect(merchant);
+
+      expect(await ordersOf(merchant)).toEqual(ordersBefore);
+      expect(await verificationsOf(merchant)).toEqual(verificationsBefore);
+      expect(await eventsOf(merchant)).toEqual(eventsBefore);
+      const source = { id: merchant.integrationId, orgId: merchant.orgId };
+      await expect(contributor.describe(source)).resolves.toMatchObject({
+        connectionState: 'disconnected',
+        credentials: { status: 'removed' },
+        blockedReasons: ['source_disconnected'],
+      });
+      // The health read holds no key any more, so it asks the store nothing
+      // beyond the two deletions the disconnect itself made.
+      await expect(contributor.inspectWebhooks(source)).resolves.toBeNull();
+      expect(
+        fake
+          .requestsTo(merchant.store)
+          .slice(requestsBefore)
+          .map((request) => request.route),
+      ).toEqual(['delete', 'delete']);
+      const summary = await events.summarizeForIntegration(
+        merchant.orgId,
+        merchant.integrationId,
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      );
+      expect(summary.acceptedCount).toBe(1);
+      expect(summary.lastAcceptedAt).not.toBeNull();
+    });
+
+    it('never reports another tenant’s events after a disconnect', async () => {
+      const merchant = await connectMerchant();
+      const other = await connectMerchant();
+      await deliver(other, placedCodFixture().payload);
+      await drain();
+      await disconnect(merchant);
+
+      const summary = await events.summarizeForIntegration(
+        merchant.orgId,
+        other.integrationId,
+        new Date(0),
+      );
+
+      expect(summary).toMatchObject({ acceptedCount: 0, lastAcceptedAt: null });
+      expect((await integrationsOfOrg(other.orgId))[0].is_active).toBe(true);
+    });
+
+    it('after a reconnect the new address feeds the same source and the old one stays dead', async () => {
+      const first = await connectMerchant();
+      await deliver(first, placedCodFixture().payload);
+      await drain();
+      await disconnect(first);
+
+      const second = await reconnect(first, BEFORE_FIXTURES);
+
+      expect(second.webhookToken).not.toBe(first.webhookToken);
+      expect(second.webhookSecret).not.toBe(first.webhookSecret);
+      await expect(
+        deliver(first, placed({ id: 880021, number: '880021' })),
+      ).resolves.toEqual({
+        status: 401,
+        code: 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED',
+      });
+      await expect(
+        deliver(second, placed({ id: 880021, number: '880021' })),
+      ).resolves.toEqual({ status: 200 });
+      await drain();
+
+      // One source throughout: the order from before and the one after.
+      const stored = await ordersOf(second);
+      expect(stored.map((order) => order.external_order_id).sort()).toEqual(
+        [String(placedCodFixture().payload.id), '880021'].sort(),
+      );
+      expect(await verificationsOf(second)).toHaveLength(2);
+      expect(sends).toHaveLength(2);
+    });
+
+    it('an order placed while the source was disconnected starts nothing after the reconnect', async () => {
+      const first = await connectMerchant();
+      await disconnect(first);
+      // The fixtures are dated before this reconnect, as an order placed
+      // while disconnected is.
+      const second = await reconnect(first);
+
+      await expect(
+        deliver(second, placedCodFixture().payload),
+      ).resolves.toEqual({ status: 200 });
+      await drain();
+
+      expect(await eventsOf(second)).toMatchObject([
+        { status: 'skipped', last_error: 'order_predates_connection' },
+      ]);
+      expect(await ordersOf(second)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('counts a refused delivery from zero again after a reconnect', async () => {
+      const first = await connectMerchant();
+      await deliver(first, placedCodFixture().payload, { secret: 'wrong' });
+      expect(await rejectedDeliveriesOf(first)).toBe(1);
+      await disconnect(first);
+
+      const second = await reconnect(first);
+
+      expect(await rejectedDeliveriesOf(second)).toBe(0);
     });
   });
 

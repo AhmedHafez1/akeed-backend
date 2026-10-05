@@ -2593,6 +2593,10 @@ export const woocommercePendingInstalls = pgTable(
  * the hash of the per-install delivery URL token, the two webhooks Akeed
  * created, and the canonical store URL. The store is verified at connect and
  * a verified store belongs to one integration. API-only, like the contexts.
+ *
+ * A disconnect (US-07-05) keeps the row and the store URL, wipes the three
+ * ciphertexts, the token hash and the webhook ids, and gives up the verified
+ * slot; `woocommerce_connections_credentials_state_check` ties them together.
  */
 export const woocommerceConnections = pgTable(
   'woocommerce_connections',
@@ -2604,16 +2608,25 @@ export const woocommerceConnections = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
-    consumerKeyEncrypted: text('consumer_key_encrypted').notNull(),
-    consumerSecretEncrypted: text('consumer_secret_encrypted').notNull(),
-    webhookSecretEncrypted: text('webhook_secret_encrypted').notNull(),
-    webhookTokenHash: text('webhook_token_hash').notNull(),
+    // Null only while disconnected, as are the token hash and webhook ids.
+    consumerKeyEncrypted: text('consumer_key_encrypted'),
+    consumerSecretEncrypted: text('consumer_secret_encrypted'),
+    webhookSecretEncrypted: text('webhook_secret_encrypted'),
+    webhookTokenHash: text('webhook_token_hash'),
     orderCreatedWebhookId: bigint('order_created_webhook_id', {
       mode: 'number',
-    }).notNull(),
+    }),
     orderUpdatedWebhookId: bigint('order_updated_webhook_id', {
       mode: 'number',
-    }).notNull(),
+    }),
+    // What the store last answered for each webhook, and when it was asked.
+    // Nothing polls: health reads, connection checks and re-enables write it.
+    orderCreatedWebhookState: text('order_created_webhook_state'),
+    orderUpdatedWebhookState: text('order_updated_webhook_state'),
+    webhooksCheckedAt: timestamp('webhooks_checked_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     // What the store reported at connect, kept for support only.
     wooVersion: text('woo_version'),
     health: text().default('ok').notNull(),
@@ -2623,13 +2636,19 @@ export const woocommerceConnections = pgTable(
       mode: 'string',
     }),
     connectedBy: uuid('connected_by').notNull(),
-    // An order placed before this moment never starts a verification.
+    // An order placed before this moment never starts a verification. A
+    // reconnect moves it to the reconnect.
     connectedAt: timestamp('connected_at', {
       withTimezone: true,
       mode: 'string',
     })
       .notNull()
       .defaultNow(),
+    disconnectedAt: timestamp('disconnected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    disconnectedBy: uuid('disconnected_by'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .notNull()
       .defaultNow(),
@@ -2686,6 +2705,14 @@ export const woocommerceConnections = pgTable(
     check(
       'woocommerce_connections_webhook_secret_encrypted_check',
       sql`${table.webhookSecretEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'woocommerce_connections_credentials_state_check',
+      sql`(${table.disconnectedAt} IS NULL AND ${table.consumerKeyEncrypted} IS NOT NULL AND ${table.consumerSecretEncrypted} IS NOT NULL AND ${table.webhookSecretEncrypted} IS NOT NULL AND ${table.webhookTokenHash} IS NOT NULL AND ${table.orderCreatedWebhookId} IS NOT NULL AND ${table.orderUpdatedWebhookId} IS NOT NULL) OR (${table.disconnectedAt} IS NOT NULL AND ${table.consumerKeyEncrypted} IS NULL AND ${table.consumerSecretEncrypted} IS NULL AND ${table.webhookSecretEncrypted} IS NULL AND ${table.webhookTokenHash} IS NULL AND ${table.orderCreatedWebhookId} IS NULL AND ${table.orderUpdatedWebhookId} IS NULL AND ${table.orderCreatedWebhookState} IS NULL AND ${table.orderUpdatedWebhookState} IS NULL AND ${table.storeVerifiedAt} IS NULL)`,
+    ),
+    check(
+      'woocommerce_connections_webhook_state_check',
+      sql`(${table.orderCreatedWebhookState} IS NULL OR ${table.orderCreatedWebhookState} = ANY (ARRAY['active'::text, 'paused'::text, 'disabled'::text, 'missing'::text])) AND (${table.orderUpdatedWebhookState} IS NULL OR ${table.orderUpdatedWebhookState} = ANY (ARRAY['active'::text, 'paused'::text, 'disabled'::text, 'missing'::text]))`,
     ),
     uniqueIndex('woocommerce_connections_verified_store_key')
       .on(table.storeUrl)

@@ -10,6 +10,8 @@ import { StandaloneOrganizationProvisioningRepository } from '../src/infrastruct
 import { WooCommerceConnectionsRepository } from '../src/infrastructure/database/repositories/woocommerce-connections.repository';
 import { WooCommerceApiClient } from '../src/infrastructure/spokes/woocommerce/woocommerce-api.client';
 import { WooCommerceAuthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-auth.service';
+import { WooCommerceConnectionHealthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-connection-health.service';
+import { WooCommerceSetupContributor } from '../src/infrastructure/spokes/woocommerce/woocommerce-setup.contributor';
 import { WooCommerceWebhookService } from '../src/infrastructure/spokes/woocommerce/woocommerce-webhook.service';
 import type { AuthenticatedUser } from '../src/modules/auth/guards/dual-auth.guard';
 import {
@@ -85,13 +87,30 @@ const config = {
 // The fake is the DNS and the transport of the real restricted client, so
 // every store call below runs the production address checks.
 const fake = new FakeWooCommerce();
+const api = new WooCommerceApiClient(
+  createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
+);
+const health = new WooCommerceConnectionHealthService(repository, api, config);
+/** Waiting store updates a disconnect closed; the table is not in this suite. */
+const closedSyncs: { orgId: string; integrationId: string; reason: string }[] =
+  [];
 const service = new WooCommerceAuthService(
   repository,
-  new WooCommerceApiClient(
-    createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
-  ),
+  api,
   config,
+  {
+    failPendingForIntegration: (
+      orgId: string,
+      integrationId: string,
+      reason: string,
+    ) => {
+      closedSyncs.push({ orgId, integrationId, reason });
+      return Promise.resolve(0);
+    },
+  } as never,
+  health,
 );
+const contributor = new WooCommerceSetupContributor(repository, health);
 // With ingestion off the delivery URL reads no event and writes none.
 const webhooks = new WooCommerceWebhookService(
   repository,
@@ -252,6 +271,11 @@ function connectionsOf(orgId: string) {
       webhook_token_hash: string;
       order_created_webhook_id: string;
       order_updated_webhook_id: string;
+      order_created_webhook_state: string | null;
+      order_updated_webhook_state: string | null;
+      webhooks_checked_at: Date | null;
+      disconnected_at: Date | null;
+      disconnected_by: string | null;
       woo_version: string | null;
       health: string;
       rejected_deliveries: number;
@@ -383,14 +407,18 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
       );
       CREATE UNIQUE INDEX integrations_one_active_source_per_org_idx ON integrations (org_id) WHERE is_active = true;
     `);
-    // Applied twice: the migration must be re-runnable.
+    // Applied twice: the migrations must be re-runnable.
     for (let pass = 0; pass < 2; pass++) {
-      for (const statement of readFileSync(
-        resolve(__dirname, '../drizzle/0051_woocommerce_connection.sql'),
-        'utf8',
-      ).split('--> statement-breakpoint')) {
-        if (statement.trim()) await client.unsafe(statement);
-      }
+      for (const name of [
+        '0051_woocommerce_connection.sql',
+        '0052_woocommerce_disconnect.sql',
+      ])
+        for (const statement of readFileSync(
+          resolve(__dirname, '../drizzle', name),
+          'utf8',
+        ).split('--> statement-breakpoint')) {
+          if (statement.trim()) await client.unsafe(statement);
+        }
     }
     // Fault injection for the partial-failure case: while the flag row says
     // so, the credentials insert fails after the integration was inserted.
@@ -541,6 +569,13 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
           storeUrl: store.url,
           health: 'ok',
           connectedAt: expect.any(String) as string,
+          rejectedDeliveries: 0,
+          webhooks: [
+            { kind: 'order_created', state: 'active' },
+            { kind: 'order_updated', state: 'active' },
+          ],
+          webhooksCheckedAt: expect.any(String) as string,
+          disconnectedAt: null,
         },
       });
     });
@@ -1862,6 +1897,1138 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
       await expect(deliver(token)).resolves.toEqual({
         status: 404,
         code: 'WOOCOMMERCE_INGESTION_UNAVAILABLE',
+      });
+    });
+  });
+
+  describe('setup, health, re-enable, disconnect and reconnect (US-07-05)', () => {
+    /** Keeps the answer for the secrets check, then hands it back. */
+    async function answered<T>(promise: Promise<T>): Promise<T> {
+      const result = await promise;
+      responses.push(result);
+      return result;
+    }
+
+    async function sourceOf(tenant: Tenant) {
+      const [integration] = await integrationsOf(tenant.orgId);
+      return { id: String(integration.id), orgId: tenant.orgId };
+    }
+
+    function webhookOf(store: FakeWooCommerceStore, topic: string) {
+      return akeedWebhooks(store).find((webhook) => webhook.topic === topic)!;
+    }
+
+    function routesSince(store: FakeWooCommerceStore, from: number) {
+      return fake
+        .requestsTo(store)
+        .slice(from)
+        .map((request) => request.route);
+    }
+
+    /** As a deployment that takes orders has it; this suite's default is off. */
+    async function withIngestion<T>(run: () => Promise<T>): Promise<T> {
+      settings.ingestionEnabled = true;
+      try {
+        return await run();
+      } finally {
+        settings.ingestionEnabled = false;
+      }
+    }
+
+    /** The same install flow a first connect uses. */
+    async function reconnect(tenant: Tenant, store: FakeWooCommerceStore) {
+      const started = await start(tenant, store);
+      const keys = approve(store);
+      return { started, keys, answer: await callback(started, keys) };
+    }
+
+    describe('setup', () => {
+      it('describes the connected store from the row alone, and needs no currency or phone country', async () => {
+        const { tenant, store } = await connect();
+        const before = fake.requestsTo(store).length;
+
+        const described = await contributor.describe(await sourceOf(tenant));
+
+        expect(described).toEqual({
+          connectionState: 'connected',
+          disconnectedAt: null,
+          store: { reference: store.url, verified: true },
+          orderDefaults: { currency: null, phoneCountry: null },
+          blockedReasons: [],
+          credentials: { status: 'ok' },
+          delivery: {
+            secretsMissing: false,
+            rejectedCount: 0,
+            lastRejectedAt: null,
+          },
+        });
+        // Setup and settings are read on every route: no store is called.
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+
+      it('has nothing to say of another tenant’s source, and asks no store for it', async () => {
+        const { tenant, store } = await connect();
+        const other = await createTenant();
+        const source = await sourceOf(tenant);
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          contributor.describe({ id: source.id, orgId: other.orgId }),
+        ).resolves.toBeNull();
+        await expect(
+          contributor.inspectWebhooks({ id: source.id, orgId: other.orgId }),
+        ).resolves.toBeNull();
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+    });
+
+    describe('webhook state in health', () => {
+      it('reads each webhook from the bound store when health is read, with two requests', async () => {
+        const { tenant, store } = await connect();
+        const before = fake.requestsTo(store).length;
+
+        const read = await contributor.inspectWebhooks(await sourceOf(tenant));
+
+        expect(read?.items).toEqual([
+          { kind: 'order_created', state: 'active' },
+          { kind: 'order_updated', state: 'active' },
+        ]);
+        expect(routesSince(store, before)).toEqual([
+          'webhook_read',
+          'webhook_read',
+        ]);
+        // Every request went to this store, authenticated with its own keys.
+        for (const request of fake.requestsTo(store).slice(before))
+          expect(request).toMatchObject({
+            host: store.host,
+            authenticated: true,
+            answered: 200,
+          });
+      });
+
+      it.each([
+        ['disabled', ['webhook_disabled']],
+        ['paused', []],
+      ] as const)(
+        'shows a webhook the store has as %s, and only a disabled one blocks setup',
+        async (state, blockedReasons) => {
+          const { tenant, store } = await connect();
+          const source = await sourceOf(tenant);
+          store.setWebhookStatus(webhookOf(store, 'order.updated').id, state);
+
+          // Nothing polls: until the store is asked, the last state stands.
+          await expect(contributor.describe(source)).resolves.toMatchObject({
+            blockedReasons: [],
+          });
+
+          const read = await contributor.inspectWebhooks(source);
+
+          expect(read?.items).toEqual([
+            { kind: 'order_created', state: 'active' },
+            { kind: 'order_updated', state },
+          ]);
+          await expect(contributor.describe(source)).resolves.toMatchObject({
+            blockedReasons,
+          });
+          const [row] = await connectionsOf(tenant.orgId);
+          expect(row).toMatchObject({
+            order_created_webhook_state: 'active',
+            order_updated_webhook_state: state,
+          });
+          expect((await status(tenant)).connection?.webhooks).toEqual(
+            read?.items,
+          );
+        },
+      );
+
+      it('shows a webhook deleted at the store as missing', async () => {
+        const { tenant, store } = await connect();
+        const source = await sourceOf(tenant);
+        store.removeWebhook(webhookOf(store, 'order.created').id);
+
+        const read = await contributor.inspectWebhooks(source);
+
+        expect(read?.items).toEqual([
+          { kind: 'order_created', state: 'missing' },
+          { kind: 'order_updated', state: 'active' },
+        ]);
+        // The fix is a reconnect, not something that blocks setup by itself.
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          blockedReasons: [],
+        });
+      });
+
+      it('a key revoked in the store shows as rejected credentials on the next health read', async () => {
+        const { tenant, store, keys } = await connect();
+        const source = await sourceOf(tenant);
+        store.revokeKey(keys.consumerKey);
+
+        const read = await contributor.inspectWebhooks(source);
+
+        expect(read?.items.map((item) => item.state)).toEqual([
+          'unknown',
+          'unknown',
+        ]);
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          credentials: { status: 'rejected' },
+          blockedReasons: ['credentials_rejected'],
+        });
+        expect((await connectionsOf(tenant.orgId))[0]).toMatchObject({
+          health: 'credentials_rejected',
+          // What was last read stands; the store said nothing new of them.
+          order_created_webhook_state: 'active',
+          order_updated_webhook_state: 'active',
+        });
+      });
+
+      it('a key whose user lost the permission shows as rejected, and clears once it is back', async () => {
+        const { tenant, store, keys } = await connect();
+        const source = await sourceOf(tenant);
+        store.setKeyCanManage(keys.consumerKey, false);
+
+        await contributor.inspectWebhooks(source);
+        expect((await status(tenant)).connection?.health).toBe(
+          'permission_denied',
+        );
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          blockedReasons: ['credentials_rejected'],
+        });
+
+        store.setKeyCanManage(keys.consumerKey, true);
+        await contributor.inspectWebhooks(source);
+
+        expect((await status(tenant)).connection?.health).toBe('ok');
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          credentials: { status: 'ok' },
+          blockedReasons: [],
+        });
+      });
+
+      it('a store that does not answer is unknown, not a fault of the keys or the webhooks', async () => {
+        const { tenant, store } = await connect();
+        const source = await sourceOf(tenant);
+        store.down = true;
+
+        const read = await contributor.inspectWebhooks(source);
+
+        expect(read?.items.map((item) => item.state)).toEqual([
+          'unknown',
+          'unknown',
+        ]);
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          credentials: { status: 'ok' },
+          blockedReasons: [],
+        });
+      });
+
+      it('never sends the keys to a store that now resolves to a private address', async () => {
+        const { tenant, store } = await connect();
+        store.addresses = ['10.0.0.8'];
+        const before = fake.requestsTo(store).length;
+
+        const read = await contributor.inspectWebhooks(await sourceOf(tenant));
+
+        expect(read?.items.map((item) => item.state)).toEqual([
+          'unknown',
+          'unknown',
+        ]);
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+    });
+
+    describe('connection check', () => {
+      interface CheckCase {
+        label: string;
+        break: (store: FakeWooCommerceStore, keys: Keys) => void;
+        problems: string[];
+        /** Whether any request may reach the store at all. */
+        reachesStore?: boolean;
+      }
+      const cases: CheckCase[] = [
+        { label: 'a healthy store', break: () => undefined, problems: [] },
+        {
+          label: 'a REST API that is not there (plain permalinks)',
+          break: (store) => {
+            store.permalinks = false;
+          },
+          problems: ['WOOCOMMERCE_REST_NOT_FOUND'],
+        },
+        {
+          label: 'a store that does not answer',
+          break: (store) => {
+            store.down = true;
+          },
+          problems: ['WOOCOMMERCE_REST_UNREACHABLE'],
+        },
+        {
+          label: 'an invalid TLS certificate',
+          break: (store) => {
+            store.validCertificate = false;
+          },
+          problems: ['WOOCOMMERCE_STORE_TLS_FAILED'],
+        },
+        {
+          label: 'an address that now redirects',
+          break: (store) => {
+            store.redirectTo = 'https://elsewhere.example.org/';
+          },
+          problems: ['WOOCOMMERCE_STORE_REDIRECTS'],
+        },
+        {
+          label: 'an address that is no longer public',
+          break: (store) => {
+            store.addresses = ['169.254.169.254'];
+          },
+          problems: ['WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC'],
+          reachesStore: false,
+        },
+        {
+          label: 'keys the store rejects',
+          break: (store, keys) => store.revokeKey(keys.consumerKey),
+          problems: ['WOOCOMMERCE_CREDENTIALS_REJECTED'],
+        },
+        {
+          label: 'a user who may no longer manage WooCommerce',
+          break: (store, keys) =>
+            store.setKeyCanManage(keys.consumerKey, false),
+          problems: ['WOOCOMMERCE_PERMISSION_DENIED'],
+        },
+        {
+          label: 'a store that now calls itself by another address',
+          break: (store) => {
+            store.homeUrl = 'https://renamed-store.example.org';
+          },
+          problems: ['WOOCOMMERCE_STORE_URL_MISMATCH'],
+        },
+        {
+          label: 'a disabled webhook',
+          break: (store) =>
+            store.setWebhookStatus(akeedWebhooks(store)[0].id, 'disabled'),
+          problems: ['WOOCOMMERCE_WEBHOOK_DISABLED'],
+        },
+        {
+          label: 'a webhook deleted at the store',
+          break: (store) => store.removeWebhook(akeedWebhooks(store)[1].id),
+          problems: ['WOOCOMMERCE_WEBHOOK_MISSING'],
+        },
+        {
+          label: 'a paused webhook',
+          break: (store) =>
+            store.setWebhookStatus(akeedWebhooks(store)[0].id, 'paused'),
+          problems: ['WOOCOMMERCE_WEBHOOK_PAUSED'],
+        },
+      ];
+
+      it.each(cases)(
+        'tells $label apart by its own code',
+        async ({ break: breakStore, problems, reachesStore }) => {
+          const { tenant, store, keys } = await connect();
+          breakStore(store, keys);
+          const before = fake.requestsTo(store).length;
+          const elsewhere = fake.requests.length - before;
+
+          const check = await answered(service.checkConnection(member(tenant)));
+
+          expect(check.problems).toEqual(problems);
+          expect(check.status).toMatchObject({
+            state: 'connected',
+            storeUrl: store.url,
+          });
+          if (reachesStore === false)
+            expect(fake.requestsTo(store)).toHaveLength(before);
+          // No request went anywhere but the bound store.
+          expect(fake.requests.length - fake.requestsTo(store).length).toBe(
+            elsewhere,
+          );
+          expect(JSON.stringify(check)).not.toContain('renamed-store');
+        },
+      );
+
+      it('runs with the connect switch off and off the pilot list', async () => {
+        const { tenant } = await connect();
+        settings.enabled = false;
+        const listed = settings.pilotOrgIds.splice(0);
+        try {
+          await expect(
+            answered(service.checkConnection(member(tenant))),
+          ).resolves.toMatchObject({ problems: [] });
+        } finally {
+          settings.enabled = true;
+          settings.pilotOrgIds.push(...listed);
+        }
+      });
+
+      it('refuses a viewer, and an organization with no connection', async () => {
+        const { tenant, store } = await connect();
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          outcome(service.checkConnection(member(tenant, 'viewer'))),
+        ).resolves.toEqual({ status: 403, code: 'WOOCOMMERCE_ROLE_REQUIRED' });
+        await expect(
+          outcome(service.checkConnection(member(await createTenant()))),
+        ).resolves.toEqual({ status: 404, code: 'WOOCOMMERCE_NOT_CONNECTED' });
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+    });
+
+    describe('re-enabling a disabled webhook', () => {
+      it('sets it active again at the store, confirms by reading, and answers the ping', async () => {
+        const { tenant, store } = await connect();
+        const disabled = webhookOf(store, 'order.updated');
+        store.setWebhookStatus(disabled.id, 'disabled');
+        await contributor.inspectWebhooks(await sourceOf(tenant));
+        const pings: { status: number; code?: string }[] = [];
+        store.onPing = async (deliveryUrl) => {
+          pings.push(await deliver(tokenOf(deliveryUrl)));
+        };
+        const before = fake.requestsTo(store).length;
+
+        const result = await withIngestion(() =>
+          answered(service.enableWebhooks(member(tenant, 'admin'))),
+        );
+
+        expect(result.connection?.webhooks).toEqual([
+          { kind: 'order_created', state: 'active' },
+          { kind: 'order_updated', state: 'active' },
+        ]);
+        expect(store.webhooks.get(disabled.id)?.status).toBe('active');
+        expect(routesSince(store, before)).toEqual([
+          'webhook_read',
+          'webhook_read',
+          'webhook_write',
+          'webhook_read',
+          'webhook_read',
+        ]);
+        // A ping after re-enabling is answered 2xx: one failure could
+        // disable the webhook again (finding 3.17).
+        expect(pings).toEqual([{ status: 200 }]);
+        await expect(
+          contributor.describe(await sourceOf(tenant)),
+        ).resolves.toMatchObject({ blockedReasons: [] });
+        // Same webhooks, same address: nothing was created or replaced.
+        expect(akeedWebhooks(store)).toHaveLength(2);
+      });
+
+      it('refuses while ingestion is off, without calling the store', async () => {
+        const { tenant, store } = await connect();
+        const disabled = webhookOf(store, 'order.created');
+        store.setWebhookStatus(disabled.id, 'disabled');
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          outcome(service.enableWebhooks(member(tenant))),
+        ).resolves.toEqual({
+          status: 503,
+          code: 'WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE',
+        });
+        expect(fake.requestsTo(store)).toHaveLength(before);
+        expect(store.webhooks.get(disabled.id)?.status).toBe('disabled');
+      });
+
+      it('needs neither the connect switch nor the pilot list', async () => {
+        const { tenant, store } = await connect();
+        store.setWebhookStatus(akeedWebhooks(store)[0].id, 'disabled');
+        settings.enabled = false;
+        const listed = settings.pilotOrgIds.splice(0);
+        try {
+          const result = await withIngestion(() =>
+            answered(service.enableWebhooks(member(tenant))),
+          );
+          expect(
+            result.connection?.webhooks.map((webhook) => webhook.state),
+          ).toEqual(['active', 'active']);
+        } finally {
+          settings.enabled = true;
+          settings.pilotOrgIds.push(...listed);
+        }
+      });
+
+      it('cannot bring back a webhook that was deleted at the store, and changes the other one not at all', async () => {
+        const { tenant, store } = await connect();
+        store.removeWebhook(webhookOf(store, 'order.created').id);
+        const other = webhookOf(store, 'order.updated');
+        store.setWebhookStatus(other.id, 'disabled');
+
+        await expect(
+          withIngestion(() => outcome(service.enableWebhooks(member(tenant)))),
+        ).resolves.toEqual({
+          status: 409,
+          code: 'WOOCOMMERCE_WEBHOOK_MISSING',
+        });
+        expect(store.webhooks.get(other.id)?.status).toBe('disabled');
+        expect(akeedWebhooks(store)).toHaveLength(1);
+      });
+
+      it('does not report success for a webhook the store still shows as disabled', async () => {
+        const { tenant, store } = await connect();
+        store.setWebhookStatus(akeedWebhooks(store)[0].id, 'disabled');
+        store.ignoreWebhookStatusChange = true;
+
+        await expect(
+          withIngestion(() => outcome(service.enableWebhooks(member(tenant)))),
+        ).resolves.toEqual({
+          status: 503,
+          code: 'WOOCOMMERCE_WEBHOOK_ENABLE_FAILED',
+        });
+        await expect(
+          contributor.describe(await sourceOf(tenant)),
+        ).resolves.toMatchObject({ blockedReasons: ['webhook_disabled'] });
+      });
+
+      it('leaves a webhook the merchant paused as it is', async () => {
+        const { tenant, store } = await connect();
+        const paused = akeedWebhooks(store)[0];
+        store.setWebhookStatus(paused.id, 'paused');
+        const before = fake.requestsTo(store).length;
+
+        await withIngestion(() =>
+          answered(service.enableWebhooks(member(tenant))),
+        );
+
+        expect(store.webhooks.get(paused.id)?.status).toBe('paused');
+        expect(routesSince(store, before)).toEqual([
+          'webhook_read',
+          'webhook_read',
+        ]);
+      });
+
+      it('refuses a viewer, and never touches another tenant’s store', async () => {
+        const { tenant, store } = await connect();
+        const disabled = akeedWebhooks(store)[0];
+        store.setWebhookStatus(disabled.id, 'disabled');
+        const before = fake.requestsTo(store).length;
+
+        await withIngestion(async () => {
+          await expect(
+            outcome(service.enableWebhooks(member(tenant, 'viewer'))),
+          ).resolves.toEqual({
+            status: 403,
+            code: 'WOOCOMMERCE_ROLE_REQUIRED',
+          });
+          // Another organization's owner acts on their own source: none.
+          await expect(
+            outcome(service.enableWebhooks(member(await createTenant()))),
+          ).resolves.toEqual({
+            status: 404,
+            code: 'WOOCOMMERCE_NOT_CONNECTED',
+          });
+        });
+        expect(fake.requestsTo(store)).toHaveLength(before);
+        expect(store.webhooks.get(disabled.id)?.status).toBe('disabled');
+      });
+    });
+
+    describe('disconnect', () => {
+      it('stops the source, deletes Akeed’s webhooks at the store and wipes every credential, keeping the store and the integration', async () => {
+        const { tenant, store } = await connect();
+        const foreign = store.addForeignWebhook('https://other.example/hook');
+        const [integration] = await integrationsOf(tenant.orgId);
+        const [connected] = await connectionsOf(tenant.orgId);
+        const user = member(tenant);
+        const before = fake.requestsTo(store).length;
+
+        const result = await answered(service.disconnect(user));
+
+        expect(result).toEqual({
+          state: 'disconnected',
+          canManage: true,
+          organizationName: tenant.name,
+          storeUrl: store.url,
+          expiresAt: null,
+          lastErrorCode: null,
+          webhookCleanup: 'removed',
+          connection: {
+            storeUrl: store.url,
+            health: 'ok',
+            connectedAt: expect.any(String) as string,
+            rejectedDeliveries: 0,
+            webhooks: [],
+            webhooksCheckedAt: expect.any(String) as string,
+            disconnectedAt: expect.any(String) as string,
+          },
+        });
+        // Exactly the two deletions, at the bound store, and nothing else.
+        expect(routesSince(store, before)).toEqual(['delete', 'delete']);
+        expect(akeedWebhooks(store)).toHaveLength(0);
+        expect(store.webhooks.has(foreign)).toBe(true);
+
+        const [source] = await integrationsOf(tenant.orgId);
+        expect(source).toMatchObject({
+          id: integration.id,
+          is_active: false,
+          platform_type: 'woocommerce',
+          platform_store_url: `woocommerce:${tenant.orgId}`,
+          onboarding_status: integration.onboarding_status,
+          billing_plan_id: 'starter',
+        });
+        const [row] = await connectionsOf(tenant.orgId);
+        expect(row).toMatchObject({
+          integration_id: connected.integration_id,
+          store_url: store.url,
+          store_verified_at: null,
+          consumer_key_encrypted: null,
+          consumer_secret_encrypted: null,
+          webhook_secret_encrypted: null,
+          webhook_token_hash: null,
+          order_created_webhook_id: null,
+          order_updated_webhook_id: null,
+          order_created_webhook_state: null,
+          order_updated_webhook_state: null,
+          disconnected_by: user.userId,
+        });
+        expect(row.disconnected_at).not.toBeNull();
+        expect(closedSyncs).toContainEqual({
+          orgId: tenant.orgId,
+          integrationId: connected.integration_id,
+          reason: 'integration_inactive',
+        });
+      });
+
+      it('a second disconnect changes nothing and calls no store', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const [row] = await connectionsOf(tenant.orgId);
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          answered(service.disconnect(member(tenant))),
+        ).resolves.toMatchObject({
+          state: 'disconnected',
+          webhookCleanup: 'not_attempted',
+        });
+
+        expect(fake.requestsTo(store)).toHaveLength(before);
+        await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+      });
+
+      it.each([
+        [
+          'the store refuses the deletion',
+          (store: FakeWooCommerceStore) => store.failNext('delete', 500),
+        ],
+        [
+          'the store does not answer',
+          (store: FakeWooCommerceStore) => {
+            store.down = true;
+          },
+        ],
+        [
+          'the keys were revoked in the store',
+          (store: FakeWooCommerceStore, keys: Keys) =>
+            store.revokeKey(keys.consumerKey),
+        ],
+      ] as const)(
+        'still disconnects and says the webhooks are left when %s',
+        async (_label, breakStore) => {
+          const { tenant, store, keys } = await connect();
+          const oldToken = tokenOf(akeedWebhooks(store)[0].delivery_url);
+          breakStore(store, keys);
+
+          const result = await answered(service.disconnect(member(tenant)));
+
+          expect(result).toMatchObject({
+            state: 'disconnected',
+            webhookCleanup: 'failed',
+          });
+          const [row] = await connectionsOf(tenant.orgId);
+          expect(row).toMatchObject({
+            consumer_key_encrypted: null,
+            webhook_token_hash: null,
+          });
+          expect(row.disconnected_at).not.toBeNull();
+          expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(false);
+          // A webhook left behind reaches an address Akeed no longer honours,
+          // so the store disables it by itself (contract record section 3).
+          expect(akeedWebhooks(store).length).toBeGreaterThan(0);
+          await withIngestion(async () => {
+            for (const topic of [undefined, 'order.created', 'order.updated'])
+              await expect(deliver(oldToken, topic)).resolves.toEqual({
+                status: 401,
+                code: 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED',
+              });
+          });
+        },
+      );
+
+      it('is not gated by the connect switch or the pilot list, and stays readable', async () => {
+        const { tenant } = await connect();
+        settings.enabled = false;
+        const listed = settings.pilotOrgIds.splice(0);
+        try {
+          await expect(
+            answered(service.disconnect(member(tenant))),
+          ).resolves.toMatchObject({ state: 'disconnected' });
+          await expect(
+            status(tenant, member(tenant, 'viewer')),
+          ).resolves.toMatchObject({
+            state: 'disconnected',
+            canManage: false,
+            connection: { webhooks: [] },
+          });
+        } finally {
+          settings.enabled = true;
+          settings.pilotOrgIds.push(...listed);
+        }
+      });
+
+      it('refuses a viewer’s disconnect and reconnect', async () => {
+        const { tenant, store } = await connect();
+        const viewer = member(tenant, 'viewer');
+
+        await expect(outcome(service.disconnect(viewer))).resolves.toEqual({
+          status: 403,
+          code: 'WOOCOMMERCE_ROLE_REQUIRED',
+        });
+        expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(true);
+        expect(akeedWebhooks(store)).toHaveLength(2);
+
+        await answered(service.disconnect(member(tenant)));
+        await expect(
+          outcome(
+            service.startInstall(viewer, { storeUrl: store.url, locale: 'ar' }),
+          ),
+        ).resolves.toEqual({ status: 403, code: 'WOOCOMMERCE_ROLE_REQUIRED' });
+      });
+
+      it('answers an organization with no connection as not connected', async () => {
+        await expect(
+          outcome(service.disconnect(member(await createTenant()))),
+        ).resolves.toEqual({ status: 404, code: 'WOOCOMMERCE_NOT_CONNECTED' });
+      });
+
+      it('another tenant cannot disconnect this connection', async () => {
+        const { tenant, store } = await connect();
+        const [row] = await connectionsOf(tenant.orgId);
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          outcome(service.disconnect(member(await createTenant()))),
+        ).resolves.toEqual({ status: 404, code: 'WOOCOMMERCE_NOT_CONNECTED' });
+
+        await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+        expect(akeedWebhooks(store)).toHaveLength(2);
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+
+      it('keeps setup and health readable afterwards, and asks the store nothing', async () => {
+        const { tenant, store } = await connect();
+        const source = await sourceOf(tenant);
+        await answered(service.disconnect(member(tenant)));
+        const before = fake.requestsTo(store).length;
+
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          connectionState: 'disconnected',
+          store: { reference: store.url, verified: false },
+          credentials: { status: 'removed' },
+          blockedReasons: ['source_disconnected'],
+        });
+        await expect(contributor.inspectWebhooks(source)).resolves.toBeNull();
+        await expect(
+          outcome(service.checkConnection(member(tenant))),
+        ).resolves.toEqual({ status: 404, code: 'WOOCOMMERCE_NOT_CONNECTED' });
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+
+      it('a disconnected row can hold no credential and no verified slot, and a connected one cannot lose any', async () => {
+        const live = await connect();
+        const gone = await connect();
+        await answered(service.disconnect(member(gone.tenant)));
+
+        for (const change of [
+          "consumer_key_encrypted = 'v1:left-behind'",
+          "webhook_token_hash = repeat('a', 64)",
+          'order_created_webhook_id = 7',
+          'store_verified_at = now()',
+        ])
+          await expect(
+            client.unsafe(
+              `UPDATE woocommerce_connections SET ${change} WHERE org_id = '${gone.tenant.orgId}'`,
+            ),
+          ).rejects.toThrow(/credentials_state_check/);
+        for (const column of [
+          'consumer_secret_encrypted',
+          'webhook_secret_encrypted',
+          'order_updated_webhook_id',
+        ])
+          await expect(
+            client.unsafe(
+              `UPDATE woocommerce_connections SET ${column} = NULL WHERE org_id = '${live.tenant.orgId}'`,
+            ),
+          ).rejects.toThrow(/credentials_state_check/);
+        await expect(
+          client.unsafe(
+            `UPDATE woocommerce_connections SET order_created_webhook_state = 'enabled' WHERE org_id = '${live.tenant.orgId}'`,
+          ),
+        ).rejects.toThrow(/webhook_state_check/);
+      });
+    });
+
+    describe('reconnect', () => {
+      it('brings the same store back in place, with new keys, a new delivery address and its webhooks replaced', async () => {
+        const first = await connect();
+        const { tenant, store } = first;
+        const [integration] = await integrationsOf(tenant.orgId);
+        const [before] = await connectionsOf(tenant.orgId);
+        const oldToken = tokenOf(akeedWebhooks(store)[0].delivery_url);
+        const oldIds = akeedWebhooks(store).map((webhook) => webhook.id);
+        // The store kept the old webhooks: the deletion at disconnect failed.
+        store.failNext('delete', 500);
+        store.failNext('delete', 500);
+        await expect(
+          answered(service.disconnect(member(tenant))),
+        ).resolves.toMatchObject({ webhookCleanup: 'failed' });
+        expect(akeedWebhooks(store)).toHaveLength(2);
+        await client`UPDATE integrations SET onboarding_status = 'completed' WHERE org_id = ${tenant.orgId}`;
+
+        const second = await reconnect(tenant, store);
+
+        expect(second.answer).toEqual({ status: 200 });
+        // The same source: its orders and history stay attached.
+        const sources = await integrationsOf(tenant.orgId);
+        expect(sources).toHaveLength(1);
+        expect(sources[0]).toMatchObject({
+          id: integration.id,
+          is_active: true,
+          onboarding_status: 'completed',
+        });
+        const rows = await connectionsOf(tenant.orgId);
+        expect(rows).toHaveLength(1);
+        const [row] = rows;
+        expect(row).toMatchObject({
+          integration_id: before.integration_id,
+          store_url: store.url,
+          health: 'ok',
+          rejected_deliveries: 0,
+          disconnected_at: null,
+          disconnected_by: null,
+          order_created_webhook_state: 'active',
+          order_updated_webhook_state: 'active',
+        });
+        expect(row.store_verified_at).not.toBeNull();
+        // An order placed while disconnected is older than this moment.
+        expect(new Date(row.connected_at).getTime()).toBeGreaterThan(
+          new Date(before.connected_at).getTime(),
+        );
+        expect(decryptToken(row.consumer_key_encrypted, ENCRYPTION_KEY)).toBe(
+          second.keys.consumerKey,
+        );
+        expect(
+          decryptToken(row.consumer_secret_encrypted, ENCRYPTION_KEY),
+        ).toBe(second.keys.consumerSecret);
+        expect(row.consumer_key_encrypted).not.toBe(
+          before.consumer_key_encrypted,
+        );
+        expect(row.webhook_secret_encrypted).not.toBe(
+          before.webhook_secret_encrypted,
+        );
+        expect(row.webhook_token_hash).not.toBe(before.webhook_token_hash);
+
+        // Replaced, never added to: exactly two, neither of them an old one.
+        const current = akeedWebhooks(store);
+        expect(current.map((webhook) => webhook.topic).sort()).toEqual([
+          'order.created',
+          'order.updated',
+        ]);
+        for (const webhook of current) expect(oldIds).not.toContain(webhook.id);
+        expect(Number(row.order_created_webhook_id)).toBe(
+          webhookOf(store, 'order.created').id,
+        );
+        const newToken = tokenOf(current[0].delivery_url);
+        expect(sha256(newToken)).toBe(row.webhook_token_hash);
+        expect(newToken).not.toBe(oldToken);
+
+        await withIngestion(async () => {
+          await expect(deliver(newToken)).resolves.toEqual({ status: 200 });
+          await expect(deliver(oldToken)).resolves.toEqual({
+            status: 401,
+            code: 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED',
+          });
+        });
+        await expect(status(tenant)).resolves.toMatchObject({
+          state: 'connected',
+          storeUrl: store.url,
+          connection: { disconnectedAt: null, health: 'ok' },
+        });
+        await expect(
+          contributor.describe(await sourceOf(tenant)),
+        ).resolves.toMatchObject({
+          connectionState: 'connected',
+          store: { verified: true },
+          blockedReasons: [],
+        });
+      });
+
+      it.each([
+        ['a different store', () => newStore().url],
+        [
+          'the same host under another path',
+          (store: FakeWooCommerceStore) => `${store.url}/other-shop`,
+        ],
+        [
+          'the www form of the same host',
+          (store: FakeWooCommerceStore) =>
+            store.url.replace('https://', 'https://www.'),
+        ],
+      ] as const)(
+        'refuses %s at the start, without calling it',
+        async (_label, otherUrl) => {
+          const { tenant, store } = await connect();
+          await answered(service.disconnect(member(tenant)));
+          const [row] = await connectionsOf(tenant.orgId);
+          const requestsBefore = fake.requests.length;
+
+          await expect(
+            outcome(
+              service.startInstall(member(tenant), {
+                storeUrl: otherUrl(store),
+                locale: 'ar',
+              }),
+            ),
+          ).resolves.toEqual({
+            status: 409,
+            code: 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+          });
+
+          // A disconnected organization cannot make Akeed call another host.
+          expect(fake.requests).toHaveLength(requestsBefore);
+          await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+          await expect(status(tenant)).resolves.toMatchObject({
+            state: 'disconnected',
+          });
+          await expect(pendingOf(tenant.orgId)).resolves.toHaveLength(1);
+        },
+      );
+
+      it('refuses a callback whose install names another store, and leaves nothing at that store', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const other = newStore();
+        const started = await start(tenant, store);
+        // An install row that names another store, however it came to.
+        await client`
+          UPDATE woocommerce_pending_installs SET store_url = ${other.url}
+          WHERE org_id = ${tenant.orgId} AND consumed_at IS NULL AND superseded_at IS NULL`;
+        const [row] = await connectionsOf(tenant.orgId);
+
+        await expect(callback(started, approve(other))).resolves.toEqual({
+          status: 409,
+          code: 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+        });
+
+        await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+        expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(false);
+        expect(akeedWebhooks(other)).toHaveLength(0);
+      });
+
+      it('refuses a reconnect when another organization has verified the store since, and leaves that connection and its webhooks untouched', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        // The disconnect released the store, so another organization took it.
+        const taker = await createTenant();
+        await expect(
+          callback(await start(taker, store), approve(store)),
+        ).resolves.toEqual({ status: 200 });
+        const takerWebhooks = akeedWebhooks(store).map((webhook) => webhook.id);
+        const [takerRow] = await connectionsOf(taker.orgId);
+
+        const started = await start(tenant, store);
+        const before = fake.requestsTo(store).length;
+        await expect(callback(started, approve(store))).resolves.toEqual({
+          status: 409,
+          code: 'WOOCOMMERCE_STORE_UNAVAILABLE',
+        });
+
+        // Refused before any request: the webhooks there are the other's.
+        expect(fake.requestsTo(store)).toHaveLength(before);
+        expect(akeedWebhooks(store).map((webhook) => webhook.id)).toEqual(
+          takerWebhooks,
+        );
+        await expect(connectionsOf(taker.orgId)).resolves.toEqual([takerRow]);
+        await expect(status(tenant)).resolves.toMatchObject({
+          state: 'failed',
+          lastErrorCode: 'WOOCOMMERCE_STORE_UNAVAILABLE',
+          connection: { storeUrl: store.url },
+        });
+        expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(false);
+      });
+
+      it('another tenant cannot reconnect into this organization’s disconnected source', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const [row] = await connectionsOf(tenant.orgId);
+        const [integration] = await integrationsOf(tenant.orgId);
+        const stranger = await createTenant();
+
+        // The stranger connects the store as a new source of their own.
+        await expect(
+          callback(await start(stranger, store), approve(store)),
+        ).resolves.toEqual({ status: 200 });
+
+        await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+        await expect(integrationsOf(tenant.orgId)).resolves.toEqual([
+          integration,
+        ]);
+        const [theirs] = await integrationsOf(stranger.orgId);
+        expect(theirs.id).not.toBe(integration.id);
+      });
+
+      it('a refused reconnect leaves the source disconnected and unchanged, and the next attempt connects', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const [row] = await connectionsOf(tenant.orgId);
+        const started = await start(tenant, store);
+        const rejected = approve(store);
+        store.revokeKey(rejected.consumerKey);
+
+        await expect(callback(started, rejected)).resolves.toEqual({
+          status: 422,
+          code: 'WOOCOMMERCE_CREDENTIALS_REJECTED',
+        });
+
+        await expect(connectionsOf(tenant.orgId)).resolves.toEqual([row]);
+        await expect(status(tenant)).resolves.toMatchObject({
+          state: 'failed',
+          lastErrorCode: 'WOOCOMMERCE_CREDENTIALS_REJECTED',
+          connection: { storeUrl: store.url },
+        });
+        expect(akeedWebhooks(store)).toHaveLength(0);
+
+        // The same link, with keys the store accepts.
+        await expect(callback(started, approve(store))).resolves.toEqual({
+          status: 200,
+        });
+        expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(true);
+        expect(akeedWebhooks(store)).toHaveLength(2);
+      });
+
+      it('keys the store rejects are recovered by disconnect then reconnect, on the same source', async () => {
+        const { tenant, store, keys } = await connect();
+        const source = await sourceOf(tenant);
+        store.revokeKey(keys.consumerKey);
+        await expect(
+          answered(service.checkConnection(member(tenant))),
+        ).resolves.toMatchObject({
+          problems: ['WOOCOMMERCE_CREDENTIALS_REJECTED'],
+        });
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          blockedReasons: ['credentials_rejected'],
+        });
+
+        // The rejected keys cannot delete the webhooks: they are left.
+        await expect(
+          answered(service.disconnect(member(tenant))),
+        ).resolves.toMatchObject({ webhookCleanup: 'failed' });
+        const { answer } = await reconnect(tenant, store);
+
+        expect(answer).toEqual({ status: 200 });
+        expect((await sourceOf(tenant)).id).toBe(source.id);
+        expect(akeedWebhooks(store)).toHaveLength(2);
+        await expect(contributor.describe(source)).resolves.toMatchObject({
+          credentials: { status: 'ok' },
+          blockedReasons: [],
+        });
+      });
+
+      it('a webhook deleted at the store is recovered the same way, with no duplicate', async () => {
+        const { tenant, store } = await connect();
+        store.removeWebhook(webhookOf(store, 'order.created').id);
+
+        await expect(
+          answered(service.disconnect(member(tenant))),
+        ).resolves.toMatchObject({ webhookCleanup: 'removed' });
+        expect(akeedWebhooks(store)).toHaveLength(0);
+        const { answer } = await reconnect(tenant, store);
+
+        expect(answer).toEqual({ status: 200 });
+        expect(
+          akeedWebhooks(store)
+            .map((webhook) => webhook.topic)
+            .sort(),
+        ).toEqual(['order.created', 'order.updated']);
+      });
+
+      it('needs the connect switch and the pilot list, unlike the disconnect', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const input = { storeUrl: store.url, locale: 'en' as const };
+
+        settings.enabled = false;
+        try {
+          await expect(
+            outcome(service.startInstall(member(tenant), input)),
+          ).resolves.toEqual({
+            status: 404,
+            code: 'WOOCOMMERCE_CONNECT_UNAVAILABLE',
+          });
+        } finally {
+          settings.enabled = true;
+        }
+        const listed = settings.pilotOrgIds.splice(0);
+        try {
+          await expect(
+            outcome(service.startInstall(member(tenant), input)),
+          ).resolves.toEqual({
+            status: 403,
+            code: 'WOOCOMMERCE_PILOT_REQUIRED',
+          });
+        } finally {
+          settings.pilotOrgIds.push(...listed);
+        }
+        await expect(status(tenant)).resolves.toMatchObject({
+          state: 'disconnected',
+        });
+      });
+
+      it('a disconnect retires a reconnect link opened before it', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const started = await start(tenant, store);
+        await answered(service.disconnect(member(tenant)));
+
+        await expect(callback(started, approve(store))).resolves.toEqual({
+          status: 401,
+          code: 'WOOCOMMERCE_INSTALL_CONTEXT_INVALID',
+        });
+        expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(false);
+        expect(akeedWebhooks(store)).toHaveLength(0);
+      });
+
+      it('does not let a merchant reconnect a source that was switched off without a disconnect', async () => {
+        const { tenant, store } = await connect();
+        await client`UPDATE integrations SET is_active = false WHERE org_id = ${tenant.orgId}`;
+        const before = fake.requestsTo(store).length;
+
+        await expect(
+          outcome(
+            service.startInstall(member(tenant), {
+              storeUrl: store.url,
+              locale: 'ar',
+            }),
+          ),
+        ).resolves.toEqual({ status: 409, code: 'WOOCOMMERCE_SOURCE_EXISTS' });
+        expect(fake.requestsTo(store)).toHaveLength(before);
+      });
+
+      it('two reconnect callbacks at once bring the source back once, with exactly its two webhooks', async () => {
+        const { tenant, store } = await connect();
+        await answered(service.disconnect(member(tenant)));
+        const started = await start(tenant, store);
+        const keys = approve(store);
+        store.latencyMs = 15;
+
+        const answers = await Promise.all([
+          callback(started, keys),
+          callback(started, keys),
+        ]);
+        store.latencyMs = 0;
+
+        expect(answers.map((answer) => answer.status).sort()).toEqual([
+          200, 401,
+        ]);
+        await expect(integrationsOf(tenant.orgId)).resolves.toHaveLength(1);
+        await expect(connectionsOf(tenant.orgId)).resolves.toHaveLength(1);
+        expect(akeedWebhooks(store)).toHaveLength(2);
       });
     });
   });

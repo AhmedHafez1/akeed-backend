@@ -32,6 +32,10 @@ import type {
  *   (finding 5.6: nothing prevents the same note twice).
  * - An order update sends no delivery by itself (finding 5.12: UNKNOWN). A
  *   suite delivers `orderBody` as `order.updated`, which is the worst case.
+ * - Setting a webhook back to `active` pings its delivery URL again (finding
+ *   3.17: whether it does is UNKNOWN; a ping is the case Akeed must answer).
+ *   A suite disables a webhook with `setWebhookStatus`: the fake does not
+ *   count failed deliveries, because the real threshold is the store's own.
  */
 
 /** A public address for the fake DNS; nothing is ever sent to it. */
@@ -43,6 +47,8 @@ export type FakeWooCommerceRoute =
   | 'list'
   | 'create'
   | 'delete'
+  | 'webhook_read'
+  | 'webhook_write'
   | 'order_read'
   | 'order_write'
   | 'note_create';
@@ -157,6 +163,8 @@ export class FakeWooCommerceStore {
   down = false;
   /** Widens race windows: every exchange waits this long first. */
   latencyMs = 0;
+  /** The store answers 200 to a webhook change and does not make it. */
+  ignoreWebhookStatusChange = false;
   /** Called when an active webhook is saved, as the store's ping. */
   onPing: ((deliveryUrl: string) => Promise<void> | void) | null = null;
 
@@ -270,6 +278,13 @@ export class FakeWooCommerceStore {
     this.keys.delete(consumerKey);
   }
 
+  /** The key's WordPress user gains or loses the right to manage WooCommerce. */
+  setKeyCanManage(consumerKey: string, canManage: boolean): void {
+    const issued = this.keys.get(consumerKey);
+    if (!issued) throw new Error('fake store has no such key');
+    issued.canManage = canManage;
+  }
+
   /** The next matching request (after `skip` of them) answers `status`. */
   failNext(
     route: FakeWooCommerceRoute,
@@ -278,6 +293,19 @@ export class FakeWooCommerceStore {
     headers: Record<string, string> = {},
   ): void {
     this.faults.push({ route, status, skip, headers });
+  }
+
+  /** The store disables a webhook, or the merchant pauses or re-enables it. */
+  setWebhookStatus(id: number, status: string): void {
+    const webhook = this.webhooks.get(id);
+    if (!webhook) throw new Error(`fake store has no webhook ${id}`);
+    webhook.status = status;
+  }
+
+  /** The merchant deletes a webhook in the store's own admin. */
+  removeWebhook(id: number): void {
+    if (!this.webhooks.delete(id))
+      throw new Error(`fake store has no webhook ${id}`);
   }
 
   /** A webhook somebody else created in the store. */
@@ -379,6 +407,10 @@ export class FakeWooCommerceStore {
     if (method === 'GET' && rest === '/webhooks') return 'list';
     if (method === 'POST' && rest === '/webhooks') return 'create';
     if (method === 'DELETE' && /^\/webhooks\/\d+$/.test(rest)) return 'delete';
+    if (method === 'GET' && /^\/webhooks\/\d+$/.test(rest))
+      return 'webhook_read';
+    if (method === 'PUT' && /^\/webhooks\/\d+$/.test(rest))
+      return 'webhook_write';
     if (method === 'GET' && /^\/orders\/\d+$/.test(rest)) return 'order_read';
     if (method === 'PUT' && /^\/orders\/\d+$/.test(rest)) return 'order_write';
     if (method === 'POST' && /^\/orders\/\d+\/notes$/.test(rest))
@@ -445,6 +477,25 @@ export class FakeWooCommerceStore {
         const webhook = this.webhooks.get(id);
         if (!webhook) return restError(404, 'woocommerce_rest_invalid_id');
         this.webhooks.delete(id);
+        return json(200, publicFields(webhook));
+      }
+      case 'webhook_read': {
+        const webhook = this.webhooks.get(Number(rest.split('/').pop()));
+        return webhook
+          ? json(200, publicFields(webhook))
+          : restError(404, 'woocommerce_rest_invalid_id');
+      }
+      case 'webhook_write': {
+        const webhook = this.webhooks.get(Number(rest.split('/').pop()));
+        if (!webhook) return restError(404, 'woocommerce_rest_invalid_id');
+        const input = parseBody(target.body);
+        if (typeof input.status === 'string') {
+          const activated =
+            input.status === 'active' && webhook.status !== 'active';
+          if (!this.ignoreWebhookStatusChange) webhook.status = input.status;
+          if (activated && webhook.status === 'active')
+            await this.onPing?.(webhook.delivery_url);
+        }
         return json(200, publicFields(webhook));
       }
       case 'order_read': {

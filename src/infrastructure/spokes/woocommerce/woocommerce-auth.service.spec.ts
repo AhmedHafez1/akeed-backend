@@ -1,6 +1,8 @@
 import { HttpException, Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import type { CommerceOutcomeSyncsRepository } from '../../database/repositories/commerce-outcome-syncs.repository';
 import type {
+  WooCommerceConnection,
   WooCommerceConnectionsRepository,
   WooCommercePendingInstall,
 } from '../../database/repositories/woocommerce-connections.repository';
@@ -9,7 +11,10 @@ import {
   WOOCOMMERCE_CONFIG,
   type WooCommerceConfig,
 } from '../../../shared/config/woocommerce.config';
-import { decryptToken } from '../../../shared/utils/token-encryption.util';
+import {
+  decryptToken,
+  encryptToken,
+} from '../../../shared/utils/token-encryption.util';
 import type {
   WooCommerceApiClient,
   WooCommerceCallFailure,
@@ -20,6 +25,7 @@ import {
   WOOCOMMERCE_WEBHOOK_LIST_MAX_PAGES,
   WooCommerceAuthService,
 } from './woocommerce-auth.service';
+import type { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
 import { hashInstallToken } from './woocommerce-install-token';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -70,6 +76,58 @@ function pendingInstall(
   };
 }
 
+const INTEGRATION = '44444444-4444-4444-8444-444444444444';
+const CONNECTED_AT = '2026-10-04T10:00:00.000Z';
+const DISCONNECTED_AT = '2026-10-05T09:00:00.000Z';
+
+function storedConnection(
+  overrides: Partial<WooCommerceConnection> = {},
+): WooCommerceConnection {
+  return {
+    integrationId: INTEGRATION,
+    orgId: ORG,
+    storeUrl: STORE,
+    storeVerifiedAt: CONNECTED_AT,
+    consumerKeyEncrypted: encryptToken(CONSUMER_KEY, ENCRYPTION_KEY),
+    consumerSecretEncrypted: encryptToken(CONSUMER_SECRET, ENCRYPTION_KEY),
+    webhookSecretEncrypted: encryptToken('whsec-synthetic', ENCRYPTION_KEY),
+    webhookTokenHash: 'h'.repeat(64),
+    orderCreatedWebhookId: 101,
+    orderUpdatedWebhookId: 102,
+    orderCreatedWebhookState: 'active',
+    orderUpdatedWebhookState: 'active',
+    webhooksCheckedAt: CONNECTED_AT,
+    wooVersion: '9.8.1',
+    health: 'ok',
+    rejectedDeliveries: 0,
+    lastRejectedAt: null,
+    connectedBy: USER,
+    connectedAt: CONNECTED_AT,
+    disconnectedAt: null,
+    disconnectedBy: null,
+    createdAt: CONNECTED_AT,
+    updatedAt: CONNECTED_AT,
+    ...overrides,
+  };
+}
+
+/** The row as a disconnect leaves it: the store URL and nothing to use it with. */
+function disconnectedConnection(): WooCommerceConnection {
+  return storedConnection({
+    storeVerifiedAt: null,
+    consumerKeyEncrypted: null,
+    consumerSecretEncrypted: null,
+    webhookSecretEncrypted: null,
+    webhookTokenHash: null,
+    orderCreatedWebhookId: null,
+    orderUpdatedWebhookId: null,
+    orderCreatedWebhookState: null,
+    orderUpdatedWebhookState: null,
+    disconnectedAt: DISCONNECTED_AT,
+    disconnectedBy: USER,
+  });
+}
+
 const failed = (reason: WooCommerceCallFailure) => ({
   kind: 'failed' as const,
   reason,
@@ -99,6 +157,8 @@ function createService(settingsOverrides: Partial<WooCommerceConfig> = {}) {
       connection: undefined,
       latestPending: undefined,
     }),
+    readSourceSlot: jest.fn().mockResolvedValue({ kind: 'fresh' }),
+    disconnect: jest.fn(),
     createPendingInstall: jest.fn((input: { expiresAt: string }) =>
       Promise.resolve({
         kind: 'created',
@@ -121,8 +181,16 @@ function createService(settingsOverrides: Partial<WooCommerceConfig> = {}) {
         kind: 'connected',
         orgId: ORG,
         integrationId: 'integration-1',
+        reconnected: false,
       }),
     ),
+  };
+  const outcomeSyncs = {
+    failPendingForIntegration: jest.fn().mockResolvedValue(0),
+  };
+  const health = {
+    check: jest.fn(),
+    enableWebhooks: jest.fn().mockResolvedValue([]),
   };
   const api = {
     probeRestApi: jest.fn(track('probe', { kind: 'ok' })),
@@ -146,8 +214,18 @@ function createService(settingsOverrides: Partial<WooCommerceConfig> = {}) {
     connections as unknown as WooCommerceConnectionsRepository,
     api as unknown as WooCommerceApiClient,
     config as unknown as ConfigService,
+    outcomeSyncs as unknown as CommerceOutcomeSyncsRepository,
+    health as unknown as WooCommerceConnectionHealthService,
   );
-  return { service, connections, api, calls, settings };
+  return {
+    service,
+    connections,
+    api,
+    calls,
+    settings,
+    outcomeSyncs,
+    health,
+  };
 }
 
 async function answerOf(promise: Promise<unknown>) {
@@ -219,19 +297,14 @@ describe('WooCommerceAuthService', () => {
         await expect(
           answerOf(service.startInstall(owner, { storeUrl, locale: 'ar' })),
         ).resolves.toEqual({ status: 400, code });
-        expect(connections.getOverview).not.toHaveBeenCalled();
+        expect(connections.readSourceSlot).not.toHaveBeenCalled();
         expect(api.probeRestApi).not.toHaveBeenCalled();
       },
     );
 
     it('does not call the store for an organization that already has a source', async () => {
       const { service, connections, api } = createService();
-      connections.getOverview.mockResolvedValue({
-        organizationName: 'Noor',
-        sourcePlatforms: ['standalone'],
-        connection: undefined,
-        latestPending: undefined,
-      });
+      connections.readSourceSlot.mockResolvedValue({ kind: 'taken' });
 
       await expect(
         answerOf(
@@ -288,10 +361,68 @@ describe('WooCommerceAuthService', () => {
             service.startInstall(user, { storeUrl: STORE, locale: 'ar' }),
           ),
         ).resolves.toEqual({ status, code });
-        expect(connections.getOverview).not.toHaveBeenCalled();
+        expect(connections.readSourceSlot).not.toHaveBeenCalled();
         expect(api.probeRestApi).not.toHaveBeenCalled();
       },
     );
+
+    describe('reconnect', () => {
+      it('opens a context for the store that was connected, after probing it', async () => {
+        const { service, connections, api } = createService();
+        connections.readSourceSlot.mockResolvedValue({
+          kind: 'reconnect',
+          connection: disconnectedConnection(),
+        });
+
+        const started = await service.startInstall(owner, {
+          storeUrl: `${STORE}/`,
+          locale: 'en',
+        });
+
+        expect(started.storeUrl).toBe(STORE);
+        expect(api.probeRestApi).toHaveBeenCalledWith(STORE);
+        expect(connections.createPendingInstall).toHaveBeenCalledTimes(1);
+      });
+
+      it.each([
+        'https://other.example.com',
+        'https://www.example.com/private-shop',
+      ])(
+        'refuses %s without calling it: only the same canonical store',
+        async (storeUrl) => {
+          const { service, connections, api } = createService();
+          connections.readSourceSlot.mockResolvedValue({
+            kind: 'reconnect',
+            connection: disconnectedConnection(),
+          });
+
+          await expect(
+            answerOf(service.startInstall(owner, { storeUrl, locale: 'ar' })),
+          ).resolves.toEqual({
+            status: 409,
+            code: 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+          });
+          expect(api.probeRestApi).not.toHaveBeenCalled();
+          expect(connections.createPendingInstall).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses when the store changed between the read and the transaction', async () => {
+        const { service, connections } = createService();
+        connections.createPendingInstall.mockResolvedValue({
+          kind: 'store_mismatch',
+        } as never);
+
+        await expect(
+          answerOf(
+            service.startInstall(owner, { storeUrl: STORE, locale: 'ar' }),
+          ),
+        ).resolves.toEqual({
+          status: 409,
+          code: 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+        });
+      });
+    });
   });
 
   describe('handleCallback', () => {
@@ -577,6 +708,7 @@ describe('WooCommerceAuthService', () => {
       ['context_invalid', 401, 'WOOCOMMERCE_INSTALL_CONTEXT_INVALID', false],
       ['source_exists', 409, 'WOOCOMMERCE_SOURCE_EXISTS', true],
       ['store_unavailable', 409, 'WOOCOMMERCE_STORE_UNAVAILABLE', true],
+      ['store_mismatch', 409, 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH', true],
     ] as const)(
       'removes its two webhooks when the final transaction answers %s',
       async (kind, status, code, counted) => {
@@ -697,6 +829,294 @@ describe('WooCommerceAuthService', () => {
       await expect(
         service.getStatus({ ...owner, role: 'viewer' }),
       ).resolves.toMatchObject({ state: 'ready', canManage: false });
+    });
+
+    it('describes a connection with the last webhook states read, and no credential', async () => {
+      const { service, connections } = createService();
+      connections.getOverview.mockResolvedValue({
+        ...overview(undefined, ['woocommerce']),
+        connection: storedConnection({
+          health: 'permission_denied',
+          rejectedDeliveries: 3,
+          orderUpdatedWebhookState: 'disabled',
+        }),
+      });
+
+      const status = await service.getStatus(owner);
+
+      expect(status).toMatchObject({
+        state: 'connected',
+        storeUrl: STORE,
+        connection: {
+          storeUrl: STORE,
+          health: 'permission_denied',
+          rejectedDeliveries: 3,
+          webhooks: [
+            { kind: 'order_created', state: 'active' },
+            { kind: 'order_updated', state: 'disabled' },
+          ],
+          webhooksCheckedAt: CONNECTED_AT,
+          disconnectedAt: null,
+        },
+      });
+      expect(JSON.stringify(status)).not.toMatch(/v1:|ck_|cs_|whsec|h{64}/);
+    });
+
+    it('reports a webhook nobody has read yet as unknown', async () => {
+      const { service, connections } = createService();
+      connections.getOverview.mockResolvedValue({
+        ...overview(undefined, ['woocommerce']),
+        connection: storedConnection({
+          orderCreatedWebhookState: null,
+          orderUpdatedWebhookState: null,
+          webhooksCheckedAt: null,
+        }),
+      });
+
+      expect((await service.getStatus(owner)).connection?.webhooks).toEqual([
+        { kind: 'order_created', state: 'unknown' },
+        { kind: 'order_updated', state: 'unknown' },
+      ]);
+    });
+
+    it.each([
+      ['with the switch on', {}],
+      ['with the switch off', { enabled: false }],
+      ['off the pilot list', { pilotOrgIds: [] }],
+    ])('shows a disconnected source %s', async (_label, settings) => {
+      const { service, connections } = createService(settings);
+      connections.getOverview.mockResolvedValue({
+        ...overview(pendingInstall({ supersededAt: DISCONNECTED_AT }), [
+          'woocommerce',
+        ]),
+        connection: disconnectedConnection(),
+      });
+
+      await expect(service.getStatus(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+        storeUrl: STORE,
+        connection: {
+          storeUrl: STORE,
+          webhooks: [],
+          disconnectedAt: DISCONNECTED_AT,
+        },
+      });
+    });
+
+    it.each([
+      [pendingInstall(), 'pending', null],
+      [
+        pendingInstall({
+          lastErrorCode: 'WOOCOMMERCE_STORE_UNAVAILABLE',
+          attempts: 1,
+        }),
+        'failed',
+        'WOOCOMMERCE_STORE_UNAVAILABLE',
+      ],
+      [
+        pendingInstall({ expiresAt: new Date(Date.now() - 1).toISOString() }),
+        'expired',
+        null,
+      ],
+    ] as const)(
+      'shows a reconnect under way with the connection still described (%#)',
+      async (latestPending, state, lastErrorCode) => {
+        const { service, connections } = createService();
+        connections.getOverview.mockResolvedValue({
+          ...overview(latestPending, ['woocommerce']),
+          connection: disconnectedConnection(),
+        });
+
+        await expect(service.getStatus(owner)).resolves.toMatchObject({
+          state,
+          lastErrorCode,
+          storeUrl: STORE,
+          connection: { disconnectedAt: DISCONNECTED_AT },
+        });
+      },
+    );
+  });
+
+  describe('disconnect', () => {
+    function disconnecting() {
+      const setup = createService({ enabled: false, pilotOrgIds: [] });
+      const previous = storedConnection();
+      setup.connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: INTEGRATION,
+        previous,
+      });
+      setup.connections.getOverview.mockResolvedValue({
+        organizationName: 'Noor',
+        sourcePlatforms: ['woocommerce'],
+        connection: disconnectedConnection(),
+        latestPending: undefined,
+      });
+      return setup;
+    }
+
+    it('stops the source first, then deletes both webhooks at the bound store with the keys it read, and closes waiting store updates', async () => {
+      const { service, connections, api, outcomeSyncs, calls } =
+        disconnecting();
+      connections.disconnect.mockImplementation(() => {
+        calls.push('disconnect');
+        return Promise.resolve({
+          kind: 'disconnected',
+          integrationId: INTEGRATION,
+          previous: storedConnection(),
+        });
+      });
+
+      const result = await service.disconnect(owner);
+
+      // Not gated: the switch is off and the organization is off the list.
+      expect(result).toMatchObject({
+        state: 'disconnected',
+        webhookCleanup: 'removed',
+      });
+      expect(calls).toEqual(['disconnect', 'delete', 'delete']);
+      expect(connections.disconnect).toHaveBeenCalledWith(ORG, USER);
+      expect(
+        api.deleteWebhook.mock.calls.map((call: unknown[]) => call.slice(0, 3)),
+      ).toEqual([
+        [
+          STORE,
+          { consumerKey: CONSUMER_KEY, consumerSecret: CONSUMER_SECRET },
+          101,
+        ],
+        [
+          STORE,
+          { consumerKey: CONSUMER_KEY, consumerSecret: CONSUMER_SECRET },
+          102,
+        ],
+      ]);
+      expect(outcomeSyncs.failPendingForIntegration).toHaveBeenCalledWith(
+        ORG,
+        INTEGRATION,
+        'integration_inactive',
+      );
+    });
+
+    it.each(['unreachable', 'credentials_rejected', 'tls_failed'] as const)(
+      'still disconnects when the store answers %s, and says the webhooks are left',
+      async (reason) => {
+        const { service, api, outcomeSyncs } = disconnecting();
+        api.deleteWebhook.mockResolvedValue(failed(reason));
+
+        await expect(service.disconnect(owner)).resolves.toMatchObject({
+          state: 'disconnected',
+          webhookCleanup: 'failed',
+        });
+        expect(outcomeSyncs.failPendingForIntegration).toHaveBeenCalled();
+      },
+    );
+
+    it('reports the cleanup as failed, without a store call, when the stored keys cannot be read', async () => {
+      const { service, connections, api } = disconnecting();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: INTEGRATION,
+        previous: storedConnection({ consumerKeyEncrypted: 'v1:not-a-key' }),
+      });
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        webhookCleanup: 'failed',
+      });
+      expect(api.deleteWebhook).not.toHaveBeenCalled();
+    });
+
+    it('still answers disconnected when the cleanup throws or the waiting updates cannot be closed', async () => {
+      const { service, api, outcomeSyncs } = disconnecting();
+      api.deleteWebhook.mockRejectedValue(new Error('socket'));
+      outcomeSyncs.failPendingForIntegration.mockRejectedValue(
+        new Error('database'),
+      );
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+        webhookCleanup: 'failed',
+      });
+    });
+
+    it('changes nothing on a second disconnect and calls no store', async () => {
+      const { service, connections, api, outcomeSyncs } = disconnecting();
+      connections.disconnect.mockResolvedValue({
+        kind: 'already_disconnected',
+        integrationId: INTEGRATION,
+      });
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+        webhookCleanup: 'not_attempted',
+      });
+      expect(api.deleteWebhook).not.toHaveBeenCalled();
+      expect(outcomeSyncs.failPendingForIntegration).not.toHaveBeenCalled();
+    });
+
+    it('answers an organization with no connection as not connected', async () => {
+      const { service, connections } = disconnecting();
+      connections.disconnect.mockResolvedValue({ kind: 'not_connected' });
+
+      await expect(answerOf(service.disconnect(owner))).resolves.toEqual({
+        status: 404,
+        code: 'WOOCOMMERCE_NOT_CONNECTED',
+      });
+    });
+
+    it('never writes a key, a secret or the store path into a log line or the answer', async () => {
+      const { service, api } = disconnecting();
+      api.deleteWebhook.mockResolvedValue(failed('unreachable'));
+
+      const result = await service.disconnect(owner);
+
+      const text = `${logged.join('\n')}${JSON.stringify(result)}`;
+      expect(logged.join('\n')).toContain('example.com');
+      for (const secret of [CONSUMER_KEY, CONSUMER_SECRET, 'whsec', 'v1:'])
+        expect(text).not.toContain(secret);
+      expect(logged.join('\n')).not.toContain('private-shop');
+    });
+  });
+
+  describe('owner or admin only', () => {
+    it.each(['disconnect', 'checkConnection', 'enableWebhooks'] as const)(
+      'refuses a viewer on %s before anything is read or called',
+      async (method) => {
+        const { service, connections, api, health } = createService();
+
+        await expect(
+          answerOf(service[method]({ ...owner, role: 'viewer' })),
+        ).resolves.toEqual({ status: 403, code: 'WOOCOMMERCE_ROLE_REQUIRED' });
+        expect(connections.disconnect).not.toHaveBeenCalled();
+        expect(health.check).not.toHaveBeenCalled();
+        expect(health.enableWebhooks).not.toHaveBeenCalled();
+        expect(api.deleteWebhook).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lets an admin check and re-enable, for their own organization only', async () => {
+      const { service, connections, health } = createService();
+      const admin = { ...owner, role: 'admin' as const };
+      connections.getOverview.mockResolvedValue({
+        organizationName: 'Noor',
+        sourcePlatforms: ['woocommerce'],
+        connection: storedConnection(),
+        latestPending: undefined,
+      });
+      health.check.mockResolvedValue({
+        checkedAt: CONNECTED_AT,
+        problems: ['WOOCOMMERCE_WEBHOOK_DISABLED'],
+        webhooks: [],
+      });
+
+      await expect(service.checkConnection(admin)).resolves.toMatchObject({
+        problems: ['WOOCOMMERCE_WEBHOOK_DISABLED'],
+        status: { state: 'connected' },
+      });
+      await expect(service.enableWebhooks(admin)).resolves.toMatchObject({
+        state: 'connected',
+      });
+      expect(health.check).toHaveBeenCalledWith(ORG);
+      expect(health.enableWebhooks).toHaveBeenCalledWith(ORG);
     });
   });
 });

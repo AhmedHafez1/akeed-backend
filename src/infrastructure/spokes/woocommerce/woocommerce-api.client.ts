@@ -58,6 +58,30 @@ export interface WooCommerceWebhookSummary {
   deliveryUrl: string;
 }
 
+/** The three states a webhook has at the store (finding 3.15). */
+export const WOOCOMMERCE_WEBHOOK_STATUSES = [
+  'active',
+  'paused',
+  'disabled',
+] as const;
+export type WooCommerceWebhookStatus =
+  (typeof WOOCOMMERCE_WEBHOOK_STATUSES)[number];
+
+/**
+ * - `found`: the store has the webhook; `status` is null when its value is
+ *   not one of the documented three.
+ * - `missing`: a 404. The webhook was deleted at the store.
+ */
+export type WooCommerceWebhookRead =
+  | { kind: 'found'; status: WooCommerceWebhookStatus | null }
+  | { kind: 'missing' }
+  | { kind: 'failed'; reason: WooCommerceCallFailure };
+
+export type WooCommerceWebhookWrite =
+  | { kind: 'ok' }
+  | { kind: 'missing' }
+  | { kind: 'failed'; reason: WooCommerceCallFailure };
+
 export interface NewWooCommerceWebhook {
   name: string;
   topic: string;
@@ -377,6 +401,61 @@ export class WooCommerceApiClient {
     if ((status >= 200 && status < 300) || status === 404)
       return { kind: 'ok' };
     return failed(statusFailure(status));
+  }
+
+  /**
+   * One webhook's state as the store holds it. Only `status` is read, and
+   * only from an answer that names the webhook asked for.
+   */
+  async getWebhook(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    webhookId: number,
+    signal?: AbortSignal,
+  ): Promise<WooCommerceWebhookRead> {
+    const exchange = await this.exchange({
+      url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/webhooks/${webhookId}`,
+      method: 'GET',
+      authorization: basicAuthorization(credentials),
+      signal,
+    });
+    if (exchange.kind === 'failed') return exchange;
+    const { status } = exchange.response;
+    if (status === 404) return { kind: 'missing' };
+    if (status !== 200) return failed(statusFailure(status));
+    const body = readJson(exchange.response);
+    if (!isRecord(body) || body.id !== webhookId) return failed('unreachable');
+    return {
+      kind: 'found',
+      status:
+        WOOCOMMERCE_WEBHOOK_STATUSES.find((known) => known === body.status) ??
+        null,
+    };
+  }
+
+  /**
+   * Sets a webhook back to `active` (finding 3.16). The answer's body is not
+   * trusted: the caller reads the webhook again to confirm.
+   */
+  async enableWebhook(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    webhookId: number,
+    signal?: AbortSignal,
+  ): Promise<WooCommerceWebhookWrite> {
+    const exchange = await this.exchange({
+      url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/webhooks/${webhookId}`,
+      method: 'PUT',
+      authorization: basicAuthorization(credentials),
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'active' }),
+      signal,
+    });
+    if (exchange.kind === 'failed') return exchange;
+    const { status } = exchange.response;
+    if (status === 404) return { kind: 'missing' };
+    if (status < 200 || status >= 300) return failed(statusFailure(status));
+    return { kind: 'ok' };
   }
 
   /**

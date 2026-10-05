@@ -169,18 +169,21 @@ export class WooCommerceWebhookService {
   ): Promise<void> {
     let reason: RefusalReason | undefined;
     let secret: string | undefined;
+    // Null only on a disconnected row, whose token resolves to nothing.
+    const stored = connection.webhookSecretEncrypted;
     try {
-      secret = decryptToken(
-        connection.webhookSecretEncrypted,
-        this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY'),
-      );
+      secret = stored
+        ? decryptToken(
+            stored,
+            this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY'),
+          )
+        : undefined;
     } catch {
       secret = undefined;
     }
     // `decryptToken` hands back what is not in its envelope unchanged. A
     // stored value is never used as a key itself.
-    if (secret === undefined || secret === connection.webhookSecretEncrypted)
-      reason = 'secret_unreadable';
+    if (secret === undefined || secret === stored) reason = 'secret_unreadable';
     else if (!isValidWooCommerceSignature(rawBody, headers.signature, secret))
       reason = 'signature_mismatch';
 

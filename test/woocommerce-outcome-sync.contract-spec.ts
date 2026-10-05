@@ -27,6 +27,7 @@ import { ShopifyOrderEligibilityStrategy } from '../src/infrastructure/spokes/sh
 import { StandaloneOrderEligibilityStrategy } from '../src/infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { WooCommerceApiClient } from '../src/infrastructure/spokes/woocommerce/woocommerce-api.client';
 import { WooCommerceAuthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-auth.service';
+import { WooCommerceConnectionHealthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-connection-health.service';
 import { WooCommerceOrderEligibilityStrategy } from '../src/infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { WooCommerceOrderNormalizer } from '../src/infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
 import { WooCommerceOrderUpdateHandler } from '../src/infrastructure/spokes/woocommerce/woocommerce-order-update.handler';
@@ -53,6 +54,7 @@ import { WebhookQueueProcessor } from '../src/modules/webhook-queue/webhook-queu
 import { WebhookQueueProducer } from '../src/modules/webhook-queue/webhook-queue.producer';
 import type {
   CommerceOutcomeAction,
+  CommerceOutcomeAdapterRequest,
   CommerceOutcomeDispatchResult,
 } from '../src/shared/commerce/commerce-outcome';
 import {
@@ -167,12 +169,19 @@ const creditEligibility = new CreditEligibilityService(credits, coreConfig);
 // request leaves the process, and every store call runs the production
 // address checks.
 const fake = new FakeWooCommerce();
+const connectApi = new WooCommerceApiClient(
+  createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
+);
 const auth = new WooCommerceAuthService(
   connections,
-  new WooCommerceApiClient(
-    createRestrictedHttp({ lookup: fake.lookup, transport: fake.transport }),
-  ),
+  connectApi,
   wooCommerceConfig,
+  syncs,
+  new WooCommerceConnectionHealthService(
+    connections,
+    connectApi,
+    wooCommerceConfig,
+  ),
 );
 
 /** Retries BullMQ would have been given; `runRetries` runs them. */
@@ -676,6 +685,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', (
     // are. Applied twice, as every suite that uses it does.
     for (let pass = 0; pass < 2; pass++)
       await migrate('0051_woocommerce_connection.sql');
+    await migrate('0052_woocommerce_disconnect.sql');
   });
 
   afterAll(async () => {
@@ -1653,6 +1663,107 @@ describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', (
       });
       expect(orderCalls(merchant)).toHaveLength(0);
       expect(scheduled).toHaveLength(0);
+    });
+  });
+
+  describe('a disconnected source (US-07-05)', () => {
+    const disconnect = (target: Merchant) =>
+      auth.disconnect({
+        userId: randomUUID(),
+        orgId: target.orgId,
+        role: 'owner',
+        source: 'supabase',
+      });
+
+    it('closes a store update that was waiting to retry, at the disconnect, without a request', async () => {
+      const order = await orderWith(merchant, { status: 'confirmed' });
+      merchant.store.failNext('order_read', 500);
+      await dispatch(merchant, order, 'customer_confirmation');
+      expect((await syncsOf(order))[0]).toMatchObject({ state: 'pending' });
+      expect(scheduled).toHaveLength(1);
+      const callsBefore = orderCalls(merchant).length;
+
+      await disconnect(merchant);
+
+      // Closed now, not when its job runs: a lost job cannot leave it waiting.
+      expect((await syncsOf(order))[0]).toMatchObject({
+        state: 'failed',
+        error_code: 'integration_inactive',
+      });
+      await runRetries();
+      expect(orderCalls(merchant)).toHaveLength(callsBefore);
+      expect(remote(merchant, order).meta_data).toHaveLength(0);
+      // The local decision is history and is kept.
+      expect(await localStatus(order)).toBe('confirmed');
+    });
+
+    it('records a reply that arrives afterwards and writes nothing to the store', async () => {
+      const order = await orderWith(merchant, { status: 'pending' });
+      await disconnect(merchant);
+      await client`
+        UPDATE verifications SET status = 'canceled' WHERE id = ${order.verificationId}`;
+      const callsBefore = orderCalls(merchant).length;
+
+      const result = await dispatch(merchant, order, 'customer_cancellation');
+
+      expect(result).toMatchObject({
+        status: 'permanent_failure',
+        errorCode: 'integration_inactive',
+      });
+      expect(orderCalls(merchant)).toHaveLength(callsBefore);
+      expect(scheduled).toHaveLength(0);
+      expect(remote(merchant, order).status).toBe('processing');
+      expect(await localStatus(order)).toBe('canceled');
+    });
+
+    it('the adapter itself refuses a disconnected connection, whatever the registry was told', async () => {
+      const order = await orderWith(merchant, { status: 'confirmed' });
+      await disconnect(merchant);
+      const callsBefore = orderCalls(merchant).length;
+
+      // A disconnect landing between the registry's check and the adapter.
+      const result = await adapter.execute({
+        orgId: merchant.orgId,
+        integrationId: merchant.integrationId,
+        externalOrderId: order.externalOrderId,
+        action: 'customer_confirmation',
+        correlationId: order.verificationId,
+        connection: {} as CommerceOutcomeAdapterRequest['connection'],
+      });
+
+      expect(result).toEqual({
+        status: 'permanent_failure',
+        errorCode: 'integration_inactive',
+      });
+      expect(orderCalls(merchant)).toHaveLength(callsBefore);
+    });
+
+    it('closes only its own waiting rows', async () => {
+      const other = await connectMerchant();
+      const theirs = await orderWith(other, { status: 'confirmed' });
+      other.store.failNext('order_read', 500);
+      await dispatch(other, theirs, 'customer_confirmation');
+      expect((await syncsOf(theirs))[0]).toMatchObject({ state: 'pending' });
+
+      await disconnect(merchant);
+
+      expect((await syncsOf(theirs))[0]).toMatchObject({ state: 'pending' });
+      await runRetries();
+      expect((await syncsOf(theirs))[0]).toMatchObject({ state: 'succeeded' });
+      expect(remote(other, theirs).meta_data).toHaveLength(1);
+    });
+
+    it('keeps what was already written and recorded', async () => {
+      const order = await orderWith(merchant, { status: 'confirmed' });
+      await dispatch(merchant, order, 'customer_confirmation');
+      const [before] = await syncsOf(order);
+      expect(before).toMatchObject({ state: 'succeeded' });
+
+      await disconnect(merchant);
+
+      expect(await syncsOf(order)).toEqual([before]);
+      expect(await localStatus(order)).toBe('confirmed');
+      expect(await verificationCount(merchant)).toBe(1);
     });
   });
 

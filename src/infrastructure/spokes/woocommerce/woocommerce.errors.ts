@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import type { WooCommerceCallFailure } from './woocommerce-api.client';
 
 /**
  * The codes the WooCommerce connection and delivery URL answer with (US-07-01
@@ -27,7 +28,14 @@ export type WooCommerceErrorCode =
   | 'WOOCOMMERCE_WEBHOOK_SETUP_FAILED'
   | 'WOOCOMMERCE_STORE_UNAVAILABLE'
   | 'WOOCOMMERCE_INGESTION_UNAVAILABLE'
-  | 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED';
+  | 'WOOCOMMERCE_WEBHOOK_UNAUTHORIZED'
+  | 'WOOCOMMERCE_NOT_CONNECTED'
+  | 'WOOCOMMERCE_RECONNECT_STORE_MISMATCH'
+  | 'WOOCOMMERCE_WEBHOOK_MISSING'
+  | 'WOOCOMMERCE_WEBHOOK_DISABLED'
+  | 'WOOCOMMERCE_WEBHOOK_PAUSED'
+  | 'WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE'
+  | 'WOOCOMMERCE_WEBHOOK_ENABLE_FAILED';
 
 /** Used with `assertOrganizationWriteAllowed`; viewers are read-only. */
 export const WOOCOMMERCE_ROLE_REQUIRED = {
@@ -59,6 +67,13 @@ const STATUS: Record<WooCommerceErrorCode, HttpStatus> = {
   WOOCOMMERCE_STORE_UNAVAILABLE: HttpStatus.CONFLICT,
   WOOCOMMERCE_INGESTION_UNAVAILABLE: HttpStatus.NOT_FOUND,
   WOOCOMMERCE_WEBHOOK_UNAUTHORIZED: HttpStatus.UNAUTHORIZED,
+  WOOCOMMERCE_NOT_CONNECTED: HttpStatus.NOT_FOUND,
+  WOOCOMMERCE_RECONNECT_STORE_MISMATCH: HttpStatus.CONFLICT,
+  WOOCOMMERCE_WEBHOOK_MISSING: HttpStatus.CONFLICT,
+  WOOCOMMERCE_WEBHOOK_DISABLED: HttpStatus.CONFLICT,
+  WOOCOMMERCE_WEBHOOK_PAUSED: HttpStatus.CONFLICT,
+  WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
+  WOOCOMMERCE_WEBHOOK_ENABLE_FAILED: HttpStatus.SERVICE_UNAVAILABLE,
 };
 
 const MESSAGES: Record<WooCommerceErrorCode, string> = {
@@ -103,6 +118,19 @@ const MESSAGES: Record<WooCommerceErrorCode, string> = {
   WOOCOMMERCE_INGESTION_UNAVAILABLE: 'Not Found',
   // One answer for a wrong token, signature or source: it never says which.
   WOOCOMMERCE_WEBHOOK_UNAUTHORIZED: 'This delivery was not accepted.',
+  WOOCOMMERCE_NOT_CONNECTED: 'WooCommerce is not connected to this account.',
+  WOOCOMMERCE_RECONNECT_STORE_MISMATCH:
+    'Only the store that was connected before can be reconnected. Nothing was changed.',
+  WOOCOMMERCE_WEBHOOK_MISSING:
+    'An Akeed order notification was deleted in the store. Disconnect, then connect the same store again.',
+  WOOCOMMERCE_WEBHOOK_DISABLED:
+    'The store disabled an Akeed order notification after failed deliveries.',
+  WOOCOMMERCE_WEBHOOK_PAUSED:
+    'An Akeed order notification is paused in the store.',
+  WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE:
+    'Order notifications cannot be re-enabled right now.',
+  WOOCOMMERCE_WEBHOOK_ENABLE_FAILED:
+    'The store did not re-enable the order notification.',
 };
 
 const ERROR_NAME: Partial<Record<HttpStatus, string>> = {
@@ -114,6 +142,44 @@ const ERROR_NAME: Partial<Record<HttpStatus, string>> = {
   [HttpStatus.UNPROCESSABLE_ENTITY]: 'Unprocessable Entity',
   [HttpStatus.SERVICE_UNAVAILABLE]: 'Service Unavailable',
 };
+
+/** The codes a failed store call maps to, whichever call it was. */
+const STORE_FAILURE_CODES: Partial<
+  Record<WooCommerceCallFailure, WooCommerceErrorCode>
+> = {
+  address_not_public: 'WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC',
+  redirects: 'WOOCOMMERCE_STORE_REDIRECTS',
+  tls_failed: 'WOOCOMMERCE_STORE_TLS_FAILED',
+  credentials_rejected: 'WOOCOMMERCE_CREDENTIALS_REJECTED',
+  permission_denied: 'WOOCOMMERCE_PERMISSION_DENIED',
+  budget_exceeded: 'WOOCOMMERCE_PROVIDER_UNAVAILABLE',
+};
+
+/** A failure while reaching the REST API itself: the probe and the key proof. */
+export function restFailureCode(
+  reason: WooCommerceCallFailure,
+): WooCommerceErrorCode {
+  return (
+    STORE_FAILURE_CODES[reason] ??
+    (reason === 'rest_not_found'
+      ? 'WOOCOMMERCE_REST_NOT_FOUND'
+      : 'WOOCOMMERCE_REST_UNREACHABLE')
+  );
+}
+
+/** A failure while replacing the webhooks, after the keys were proven. */
+export function webhookFailureCode(
+  reason: WooCommerceCallFailure,
+): WooCommerceErrorCode {
+  return STORE_FAILURE_CODES[reason] ?? 'WOOCOMMERCE_WEBHOOK_SETUP_FAILED';
+}
+
+/** A failure while re-enabling a webhook that the store was reached for. */
+export function webhookEnableFailureCode(
+  reason: WooCommerceCallFailure,
+): WooCommerceErrorCode {
+  return STORE_FAILURE_CODES[reason] ?? 'WOOCOMMERCE_WEBHOOK_ENABLE_FAILED';
+}
 
 export function wooCommerceError(code: WooCommerceErrorCode): HttpException {
   const status = STATUS[code];

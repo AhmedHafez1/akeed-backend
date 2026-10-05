@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -16,7 +17,9 @@ import {
 import { CurrentUser } from '../../../modules/auth/guards/current-user.decorator';
 import {
   StartWooCommerceInstallDto,
+  type WooCommerceConnectionCheckDto,
   type WooCommerceConnectionStatusDto,
+  type WooCommerceDisconnectedDto,
   type WooCommerceInstallStartedDto,
 } from './dto/woocommerce-connection.dto';
 import { WooCommerceAuthService } from './woocommerce-auth.service';
@@ -59,5 +62,33 @@ export class WooCommerceConnectionController {
       user,
       body as StartWooCommerceInstallDto,
     );
+  }
+
+  /** Works with the connect switch off: a disconnect is never gated. */
+  @Delete('connection')
+  @Header('Cache-Control', 'no-store')
+  disconnect(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WooCommerceDisconnectedDto> {
+    return this.wooCommerce.disconnect(user);
+  }
+
+  /** 200 with what was found: a diagnosis is an answer, not a failure. */
+  @Post('connection/check')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  checkConnection(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WooCommerceConnectionCheckDto> {
+    return this.wooCommerce.checkConnection(user);
+  }
+
+  @Post('connection/webhooks/enable')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  enableWebhooks(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WooCommerceConnectionStatusDto> {
+    return this.wooCommerce.enableWebhooks(user);
   }
 }

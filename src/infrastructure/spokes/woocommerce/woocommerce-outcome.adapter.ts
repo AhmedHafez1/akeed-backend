@@ -15,13 +15,13 @@ import {
   type WooCommerceConfig,
 } from '../../../shared/config/woocommerce.config';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
-import { decryptToken } from '../../../shared/utils/token-encryption.util';
 import {
   WooCommerceApiClient,
   type WooCommerceCredentials,
   type WooCommerceOrderCallFailure,
   type WooCommerceOrderState,
 } from './woocommerce-api.client';
+import { readWooCommerceCredentials } from './woocommerce-credentials';
 import {
   buildWooCommerceOutcomeMarker,
   WOOCOMMERCE_CONFIRMATION_NOTE,
@@ -135,6 +135,10 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
     );
     if (!connection)
       return { status: 'permanent_failure', errorCode: 'connection_missing' };
+    // The registry refuses an inactive source before calling; this covers a
+    // disconnect landing between its check and this read.
+    if (connection.disconnectedAt)
+      return { status: 'permanent_failure', errorCode: 'integration_inactive' };
 
     const credentials = this.readCredentials(connection);
     if (!credentials)
@@ -190,32 +194,15 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
     }
   }
 
-  /**
-   * `decryptToken` hands back what it cannot parse as an envelope, so a value
-   * that comes back unchanged is stored text, not a key, and is never sent
-   * anywhere.
-   */
+  /** Null for a stored value that is not a key Akeed can use. */
   private readCredentials(
     connection: WooCommerceConnection,
   ): WooCommerceCredentials | null {
     try {
-      const encryptionKey = this.config.getOrThrow<string>(
-        'SHOPIFY_TOKEN_ENCRYPTION_KEY',
+      return readWooCommerceCredentials(
+        connection,
+        this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY'),
       );
-      const consumerKey = decryptToken(
-        connection.consumerKeyEncrypted,
-        encryptionKey,
-      );
-      const consumerSecret = decryptToken(
-        connection.consumerSecretEncrypted,
-        encryptionKey,
-      );
-      return consumerKey &&
-        consumerSecret &&
-        consumerKey !== connection.consumerKeyEncrypted &&
-        consumerSecret !== connection.consumerSecretEncrypted
-        ? { consumerKey, consumerSecret }
-        : null;
     } catch {
       return null;
     }

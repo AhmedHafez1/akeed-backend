@@ -7,17 +7,20 @@ import {
   WooCommerceApiClient,
   WOOCOMMERCE_HTTP,
 } from './woocommerce-api.client';
+import { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
 import { WooCommerceOrderNormalizer } from './woocommerce-order.normalizer';
 import { WooCommerceOrderUpdateHandler } from './woocommerce-order-update.handler';
 import { WooCommerceOutcomeAdapter } from './woocommerce-outcome.adapter';
+import { WooCommerceSetupContributor } from './woocommerce-setup.contributor';
 
 /**
  * What the workers need from the WooCommerce spoke: the order normalizer
  * (US-07-03), the order-update handler and the outcome adapter (US-07-04),
- * and the API client on the restricted outbound client that every request to
- * a store goes through. Kept apart from `WooCommerceModule`, which imports
- * the webhook queue for its delivery route, so the queue and the outcome
- * registry can import this without a cycle.
+ * the setup contributor and the connection health service (US-07-05), and
+ * the API client on the restricted outbound client that every request to a
+ * store goes through. Kept apart from `WooCommerceModule`, which imports the
+ * webhook queue for its delivery route, so the queue, the outcome registry
+ * and onboarding can import this without a cycle.
  */
 @Module({
   imports: [ConfigModule, DatabaseModule],
@@ -26,6 +29,8 @@ import { WooCommerceOutcomeAdapter } from './woocommerce-outcome.adapter';
     WooCommerceOrderNormalizer,
     WooCommerceOrderUpdateHandler,
     WooCommerceOutcomeAdapter,
+    WooCommerceConnectionHealthService,
+    WooCommerceSetupContributor,
     PhoneService,
     { provide: WOOCOMMERCE_HTTP, useFactory: () => createRestrictedHttp() },
   ],
@@ -34,6 +39,8 @@ import { WooCommerceOutcomeAdapter } from './woocommerce-outcome.adapter';
     WooCommerceOrderNormalizer,
     WooCommerceOrderUpdateHandler,
     WooCommerceOutcomeAdapter,
+    WooCommerceConnectionHealthService,
+    WooCommerceSetupContributor,
   ],
 })
 export class WooCommerceIngestionModule {}

@@ -3,9 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import {
   WooCommerceConnectionsRepository,
   isUsablePendingInstall,
+  type WooCommerceConnection,
   type WooCommerceConnectionOverview,
   type WooCommercePendingInstall,
 } from '../../database/repositories/woocommerce-connections.repository';
+import { CommerceOutcomeSyncsRepository } from '../../database/repositories/commerce-outcome-syncs.repository';
 import type { AuthenticatedUser } from '../../../modules/auth/guards/dual-auth.guard';
 import {
   assertOrganizationWriteAllowed,
@@ -23,10 +25,14 @@ import {
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 import type {
   StartWooCommerceInstallDto,
+  WooCommerceConnectionCheckDto,
   WooCommerceConnectionHealth,
   WooCommerceConnectionState,
   WooCommerceConnectionStatusDto,
+  WooCommerceDisconnectedDto,
   WooCommerceInstallStartedDto,
+  WooCommerceWebhookCleanup,
+  WooCommerceWebhookStatesDto,
 } from './dto/woocommerce-connection.dto';
 import {
   WooCommerceApiClient,
@@ -34,6 +40,8 @@ import {
   type WooCommerceCallFailure,
   type WooCommerceCredentials,
 } from './woocommerce-api.client';
+import { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
+import { readWooCommerceCredentials } from './woocommerce-credentials';
 import {
   buildWooCommerceAuthorizeLink,
   buildWooCommerceWebhookDeliveryBase,
@@ -52,6 +60,8 @@ import {
   wooCommerceStoreHost,
 } from './woocommerce-store-url';
 import {
+  restFailureCode,
+  webhookFailureCode,
   WOOCOMMERCE_ROLE_REQUIRED,
   wooCommerceError,
   type WooCommerceErrorCode,
@@ -65,6 +75,12 @@ export const WOOCOMMERCE_INSTALL_TTL_MS = 15 * 60 * 1000;
  * and how long the store waits is unknown (finding 8.6).
  */
 export const WOOCOMMERCE_CALLBACK_BUDGET_MS = 30_000;
+
+/**
+ * How long a disconnect waits for the store to delete Akeed's webhooks. The
+ * source is already stopped by then; this only bounds the request.
+ */
+export const WOOCOMMERCE_DISCONNECT_CLEANUP_BUDGET_MS = 15_000;
 
 /** The store's webhooks are read at most this many pages deep. */
 export const WOOCOMMERCE_WEBHOOK_LIST_MAX_PAGES = 10;
@@ -124,7 +140,12 @@ interface Refusal {
 }
 
 type InstallOutcome =
-  | { kind: 'connected'; orgId: string; integrationId: string }
+  | {
+      kind: 'connected';
+      orgId: string;
+      integrationId: string;
+      reconnected: boolean;
+    }
   | ({ kind: 'refused' } & Refusal);
 
 function refused(
@@ -134,40 +155,15 @@ function refused(
   return { kind: 'refused', code, countAttempt };
 }
 
-/** The codes a failed store call maps to, whichever call it was. */
-const STORE_FAILURE_CODES: Partial<
-  Record<WooCommerceCallFailure, WooCommerceErrorCode>
-> = {
-  address_not_public: 'WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC',
-  redirects: 'WOOCOMMERCE_STORE_REDIRECTS',
-  tls_failed: 'WOOCOMMERCE_STORE_TLS_FAILED',
-  credentials_rejected: 'WOOCOMMERCE_CREDENTIALS_REJECTED',
-  permission_denied: 'WOOCOMMERCE_PERMISSION_DENIED',
-  budget_exceeded: 'WOOCOMMERCE_PROVIDER_UNAVAILABLE',
-};
-
-/** A failure while reaching the REST API itself: the probe and the key proof. */
-function restFailureCode(reason: WooCommerceCallFailure): WooCommerceErrorCode {
-  return (
-    STORE_FAILURE_CODES[reason] ??
-    (reason === 'rest_not_found'
-      ? 'WOOCOMMERCE_REST_NOT_FOUND'
-      : 'WOOCOMMERCE_REST_UNREACHABLE')
-  );
-}
-
-/** A failure while replacing the webhooks, after the keys were proven. */
-function webhookFailureCode(
-  reason: WooCommerceCallFailure,
-): WooCommerceErrorCode {
-  return STORE_FAILURE_CODES[reason] ?? 'WOOCOMMERCE_WEBHOOK_SETUP_FAILED';
-}
-
 /**
  * The WooCommerce install (US-07-02), as the US-07-01 contract record defines
  * it: an owner or admin of a source-less pilot organization names a store and
  * opens a single-use context, approves in the store, and the store posts keys
  * that are proven against that store before anything is stored.
+ *
+ * The same flow reconnects a source its merchant disconnected (US-07-05):
+ * only that organization's own disconnected WooCommerce source, and only to
+ * the store that was connected.
  */
 @Injectable()
 export class WooCommerceAuthService {
@@ -177,6 +173,8 @@ export class WooCommerceAuthService {
     private readonly connections: WooCommerceConnectionsRepository,
     private readonly api: WooCommerceApiClient,
     private readonly config: ConfigService,
+    private readonly outcomeSyncs: CommerceOutcomeSyncsRepository,
+    private readonly health: WooCommerceConnectionHealthService,
   ) {}
 
   async startInstall(
@@ -196,10 +194,17 @@ export class WooCommerceAuthService {
     const storeHost = wooCommerceStoreHost(store.url);
 
     // Before any request leaves: an organization that cannot connect must
-    // not be able to make Akeed call an address of its choosing.
-    const overview = await this.connections.getOverview(user.orgId);
-    if (overview.sourcePlatforms.length > 0)
+    // not be able to make Akeed call an address of its choosing, and one
+    // that is reconnecting may only name the store it had.
+    const slot = await this.connections.readSourceSlot(user.orgId);
+    if (slot.kind === 'taken')
       throw this.refuseStart(user, 'WOOCOMMERCE_SOURCE_EXISTS', storeHost);
+    if (slot.kind === 'reconnect' && slot.connection.storeUrl !== store.url)
+      throw this.refuseStart(
+        user,
+        'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+        storeHost,
+      );
 
     // Outside any transaction: a slow store must not hold row locks.
     const probe = await this.api.probeRestApi(store.url);
@@ -220,6 +225,12 @@ export class WooCommerceAuthService {
     });
     if (result.kind === 'source_exists')
       throw this.refuseStart(user, 'WOOCOMMERCE_SOURCE_EXISTS', storeHost);
+    if (result.kind === 'store_mismatch')
+      throw this.refuseStart(
+        user,
+        'WOOCOMMERCE_RECONNECT_STORE_MISMATCH',
+        storeHost,
+      );
 
     this.logger.log(
       buildBackendLog(WooCommerceAuthService.name, {
@@ -296,8 +307,172 @@ export class WooCommerceAuthService {
         integrationId: outcome.integrationId,
         pendingInstallId: pending.id,
         storeHost: wooCommerceStoreHost(pending.storeUrl),
+        reconnected: outcome.reconnected,
       }),
     );
+  }
+
+  /**
+   * Stops the source and removes what Akeed holds of the store (US-07-05).
+   *
+   * First, in one transaction: the source stops being active, which every
+   * queued message and store update already checks, and the keys, the
+   * delivery token hash and the webhook ids are wiped. Only then is the store
+   * asked to delete Akeed's two webhooks, with the keys that transaction
+   * read, held in memory for this request alone. That deletion is best
+   * effort and its failure is reported, never hidden: a webhook left behind
+   * gets a 401 for every delivery and the store disables it. The API key in
+   * the store is the merchant's to revoke (finding 7.5). History stays.
+   *
+   * Not gated by the connect switch or the pilot list: turning the feature
+   * off must never trap a merchant in a connection.
+   */
+  async disconnect(
+    user: AuthenticatedUser,
+  ): Promise<WooCommerceDisconnectedDto> {
+    assertOrganizationWriteAllowed(user.role, WOOCOMMERCE_ROLE_REQUIRED);
+    const result = await this.connections.disconnect(user.orgId, user.userId);
+    if (result.kind === 'not_connected')
+      throw wooCommerceError('WOOCOMMERCE_NOT_CONNECTED');
+
+    if (result.kind === 'already_disconnected') {
+      this.logger.log(
+        buildBackendLog(WooCommerceAuthService.name, {
+          action: 'woocommerce-disconnect',
+          outcome: 'skipped',
+          orgId: user.orgId,
+          userId: user.userId,
+          integrationId: result.integrationId,
+        }),
+      );
+      return {
+        ...(await this.getStatus(user)),
+        webhookCleanup: 'not_attempted',
+      };
+    }
+
+    const webhookCleanup = await this.removeWebhooks(result.previous);
+    this.logger.log(
+      buildBackendLog(WooCommerceAuthService.name, {
+        action: 'woocommerce-disconnect',
+        outcome: 'success',
+        orgId: user.orgId,
+        userId: user.userId,
+        integrationId: result.integrationId,
+        storeHost: wooCommerceStoreHost(result.previous.storeUrl),
+        webhookCleanup,
+        closedPendingSyncs: await this.closePendingSyncs(
+          user.orgId,
+          result.integrationId,
+        ),
+      }),
+    );
+    return { ...(await this.getStatus(user)), webhookCleanup };
+  }
+
+  /**
+   * Asks the store about the connection and tells the failures apart, each
+   * with its own code. Owner or admin: it makes Akeed call the store.
+   */
+  async checkConnection(
+    user: AuthenticatedUser,
+  ): Promise<WooCommerceConnectionCheckDto> {
+    assertOrganizationWriteAllowed(user.role, WOOCOMMERCE_ROLE_REQUIRED);
+    const check = await this.health.check(user.orgId);
+    return { ...check, status: await this.getStatus(user) };
+  }
+
+  /** Re-enables the webhooks the store disabled. Owner or admin. */
+  async enableWebhooks(
+    user: AuthenticatedUser,
+  ): Promise<WooCommerceConnectionStatusDto> {
+    assertOrganizationWriteAllowed(user.role, WOOCOMMERCE_ROLE_REQUIRED);
+    await this.health.enableWebhooks(user.orgId);
+    return this.getStatus(user);
+  }
+
+  /**
+   * Best effort, after the local disconnect: the row no longer holds what
+   * `previous` does. Never throws, because the source is already
+   * disconnected and the merchant must be told so either way.
+   */
+  private async removeWebhooks(
+    previous: WooCommerceConnection,
+  ): Promise<WooCommerceWebhookCleanup> {
+    let reason: string | undefined;
+    try {
+      const credentials = readWooCommerceCredentials(
+        previous,
+        this.encryptionKey(),
+      );
+      const webhookIds = [
+        previous.orderCreatedWebhookId,
+        previous.orderUpdatedWebhookId,
+      ].filter((webhookId): webhookId is number => webhookId !== null);
+      if (!credentials || webhookIds.length === 0)
+        reason = 'credentials_unreadable';
+      else {
+        const budget = AbortSignal.timeout(
+          WOOCOMMERCE_DISCONNECT_CLEANUP_BUDGET_MS,
+        );
+        const deleted = await Promise.all(
+          webhookIds.map((webhookId) =>
+            this.api.deleteWebhook(
+              previous.storeUrl,
+              credentials,
+              webhookId,
+              budget,
+            ),
+          ),
+        );
+        reason = deleted.flatMap((result) =>
+          result.kind === 'failed' ? [result.reason] : [],
+        )[0];
+      }
+    } catch {
+      reason = 'unexpected';
+    }
+    if (!reason) return 'removed';
+    this.logger.warn(
+      buildBackendLog(WooCommerceAuthService.name, {
+        action: 'woocommerce-disconnect-webhook-cleanup',
+        outcome: 'failure',
+        orgId: previous.orgId,
+        integrationId: previous.integrationId,
+        storeHost: wooCommerceStoreHost(previous.storeUrl),
+        reason,
+      }),
+    );
+    return 'failed';
+  }
+
+  /**
+   * Store updates still waiting would be refused when their job runs; closing
+   * them now also covers a row whose job was lost. Best effort: the source is
+   * already inactive, which is what stops the write.
+   */
+  private async closePendingSyncs(
+    orgId: string,
+    integrationId: string,
+  ): Promise<number | null> {
+    try {
+      return await this.outcomeSyncs.failPendingForIntegration(
+        orgId,
+        integrationId,
+        'integration_inactive',
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(WooCommerceAuthService.name, {
+          action: 'woocommerce-disconnect-close-syncs',
+          outcome: 'failure',
+          orgId,
+          integrationId,
+          ...normalizeError(error),
+        }),
+      );
+      return null;
+    }
   }
 
   /** Any member may read the status; it never contains a credential. */
@@ -419,6 +594,8 @@ export class WooCommerceAuthService {
     await this.deleteWebhooks(storeUrl, credentials, webhooks.ids);
     if (result.kind === 'context_invalid')
       return refused('WOOCOMMERCE_INSTALL_CONTEXT_INVALID', false);
+    if (result.kind === 'store_mismatch')
+      return refused('WOOCOMMERCE_RECONNECT_STORE_MISMATCH');
     return refused(
       result.kind === 'source_exists'
         ? 'WOOCOMMERCE_SOURCE_EXISTS'
@@ -617,19 +794,32 @@ export class WooCommerceAuthService {
       lastErrorCode: null,
       connection: null,
     };
-    // Before the switch and the pilot list: a connected merchant can always
-    // see the connection.
-    if (connection)
+    // Before the switch and the pilot list: a connected or disconnected
+    // merchant can always see the connection.
+    if (connection) {
+      const { storeUrl, disconnectedAt } = connection;
+      const details = {
+        storeUrl,
+        health: toHealth(connection.health),
+        connectedAt: connection.connectedAt,
+        rejectedDeliveries: connection.rejectedDeliveries,
+        webhooks: disconnectedAt ? [] : toWebhookStates(connection),
+        webhooksCheckedAt: connection.webhooksCheckedAt,
+        disconnectedAt,
+      };
+      if (!disconnectedAt)
+        return { ...base, state: 'connected', storeUrl, connection: details };
+      // A reconnect attempt opened since shows as pending, failed or
+      // expired; a disconnect retires every earlier one.
+      const reconnect = pendingState(latestPending, new Date());
       return {
         ...base,
-        state: 'connected',
-        storeUrl: connection.storeUrl,
-        connection: {
-          storeUrl: connection.storeUrl,
-          health: toHealth(connection.health),
-          connectedAt: connection.connectedAt,
-        },
+        ...reconnect,
+        storeUrl,
+        state: reconnect.state === 'ready' ? 'disconnected' : reconnect.state,
+        connection: details,
       };
+    }
     if (!settings.enabled) return { ...base, state: 'unavailable' };
     if (overview.sourcePlatforms.length > 0)
       return { ...base, state: 'source_exists' };
@@ -647,6 +837,26 @@ function toHealth(value: string): WooCommerceConnectionHealth {
   return value === 'credentials_rejected' || value === 'permission_denied'
     ? value
     : 'ok';
+}
+
+const WEBHOOK_STATES = ['active', 'paused', 'disabled', 'missing'] as const;
+
+/** The last state read for each webhook; `unknown` when none was. */
+function toWebhookStates(
+  connection: WooCommerceConnection,
+): WooCommerceWebhookStatesDto {
+  const stateOf = (stored: string | null) =>
+    WEBHOOK_STATES.find((known) => known === stored) ?? 'unknown';
+  return [
+    {
+      kind: 'order_created',
+      state: stateOf(connection.orderCreatedWebhookState),
+    },
+    {
+      kind: 'order_updated',
+      state: stateOf(connection.orderUpdatedWebhookState),
+    },
+  ];
 }
 
 /** Kept for support only, and only when it looks like a version. */

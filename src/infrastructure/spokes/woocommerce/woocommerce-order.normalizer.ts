@@ -77,7 +77,8 @@ export class WooCommerceOrderNormalizer implements WebhookOrderNormalizer {
       integrationId,
       orgId,
     );
-    if (!connection)
+    // A disconnected connection takes no order, whatever was queued for it.
+    if (!connection || connection.disconnectedAt)
       return this.skip(orgId, integrationId, 'source_connection_missing');
 
     // The rule the webhook service routed by, so a draft, a non-COD order and

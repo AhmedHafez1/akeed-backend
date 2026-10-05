@@ -19,6 +19,8 @@ import { PhoneService } from '../../shared/services/phone.service';
 import { SOURCE_SETUP_CONTRIBUTORS } from '../../shared/commerce/source-setup';
 import { EasyOrdersIngestionModule } from '../../infrastructure/spokes/easyorders/easyorders-ingestion.module';
 import { EasyOrdersSetupContributor } from '../../infrastructure/spokes/easyorders/easyorders-setup.contributor';
+import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
+import { WooCommerceSetupContributor } from '../../infrastructure/spokes/woocommerce/woocommerce-setup.contributor';
 import { SourceSetupService } from './source-setup.service';
 
 @Module({
@@ -27,6 +29,7 @@ import { SourceSetupService } from './source-setup.service';
     AuthModule,
     ShopifyModule,
     EasyOrdersIngestionModule,
+    WooCommerceIngestionModule,
   ],
   controllers: [
     OnboardingController,
@@ -47,8 +50,11 @@ import { SourceSetupService } from './source-setup.service';
     // new source adds its contributor here; the services never name one.
     {
       provide: SOURCE_SETUP_CONTRIBUTORS,
-      inject: [EasyOrdersSetupContributor],
-      useFactory: (easyOrders: EasyOrdersSetupContributor) => [easyOrders],
+      inject: [EasyOrdersSetupContributor, WooCommerceSetupContributor],
+      useFactory: (
+        easyOrders: EasyOrdersSetupContributor,
+        wooCommerce: WooCommerceSetupContributor,
+      ) => [easyOrders, wooCommerce],
     },
     SourceSetupService,
   ],
