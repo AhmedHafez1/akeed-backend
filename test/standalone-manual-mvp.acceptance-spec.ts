@@ -46,6 +46,7 @@ import type {
   DispatchRecord,
 } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import type { VerificationStatus } from '../src/shared/interfaces/verification.interface';
+import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 type OrderInsert = Parameters<OrdersRepository['create']>[0];
@@ -601,6 +602,7 @@ async function createHarness(): Promise<AcceptanceHarness> {
     creditEligibility,
     dispatchRepo as never,
     provider,
+    seededTemplateRegistry(),
   );
   const automation = {
     enqueueInitialSend: jest.fn(),

@@ -8,6 +8,7 @@ import {
 } from './dto/onboarding.dto';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import type { integrations } from '../../infrastructure/database/schema';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -76,6 +77,7 @@ describe('OnboardingStateService', () => {
     service = new OnboardingStateService(
       mockIntegrationsRepo as any,
       {} as any,
+      seededTemplateRegistry(),
     );
   });
 
@@ -494,6 +496,7 @@ describe('OnboardingStateService', () => {
       const svc = new OnboardingStateService(
         mockIntegrationsRepo as never,
         storePlatform as never,
+        seededTemplateRegistry(),
         undefined,
         undefined,
         organizationsRepo as never,

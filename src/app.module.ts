@@ -23,6 +23,8 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
+import { TEMPLATE_REGISTRY_PORT } from './shared/ports/template-registry.port';
+import { TemplateRegistryService } from './modules/template-registry/template-registry.service';
 import { MetaModule } from './infrastructure/spokes/meta/meta.module';
 import { ShopifyModule } from './infrastructure/spokes/shopify/shopify.module';
 import { WhatsAppService } from './infrastructure/spokes/meta/whatsapp.service';
@@ -104,6 +106,11 @@ const billingModule = BillingModule.register({
           ) => [shopify, standalone, easyOrders, wooCommerce],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
+        TemplateRegistryService,
+        {
+          provide: TEMPLATE_REGISTRY_PORT,
+          useExisting: TemplateRegistryService,
+        },
       ],
     }),
     AuthModule,

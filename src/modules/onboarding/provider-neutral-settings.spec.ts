@@ -15,6 +15,7 @@ import {
 } from '../auth/guards/dual-auth.guard';
 import type { integrations } from '../../infrastructure/database/schema';
 import type { OnboardingStateDto } from './dto/onboarding.dto';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 describe('manual entitlement HTTP boundary', () => {
   let app: INestApplication<Server>;
@@ -109,7 +110,11 @@ describe('manual entitlement HTTP boundary', () => {
       consumedCount: 12,
       includedLimit: 30,
     });
-    const state = new OnboardingStateService(repository as never, provider);
+    const state = new OnboardingStateService(
+      repository as never,
+      provider,
+      seededTemplateRegistry(),
+    );
     const billing = new BillingService(
       repository as never,
       claims as never,
@@ -125,6 +130,7 @@ describe('manual entitlement HTTP boundary', () => {
         usageAccountingFixture({ enabled: true }),
       ),
       { readStatus: () => Promise.resolve(accountStatus) } as never,
+      seededTemplateRegistry(),
     );
     const module = await Test.createTestingModule({
       controllers: [OnboardingController, SettingsController],

@@ -60,6 +60,7 @@ import {
   orderStatusFixture,
   type EasyOrdersOrderFixture,
 } from './fixtures/easyorders/load';
+import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
 
 function isolatedDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -197,6 +198,7 @@ const send = new VerificationSendService(
   creditEligibility,
   dispatches,
   messaging,
+  seededTemplateRegistry(),
 );
 const automation = {
   enqueueInitialSend: () => Promise.resolve(),

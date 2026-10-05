@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { OnboardingTestService } from './onboarding-test.service';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
@@ -94,6 +95,7 @@ function setup(
     hub as never,
     productEvents as never,
     lifecycles as never,
+    seededTemplateRegistry(),
   );
   return { service, hub, productEvents, lifecycles, verifications };
 }

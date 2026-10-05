@@ -7,7 +7,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
-import type { CodTemplateVariableKey } from '../../../shared/messaging/cod-template-catalog';
+import type { TemplateVariableKey } from '../../../shared/messaging/template-registry.types';
 import {
   toSentTemplateIdentity,
   type SelectedCodTemplate,
@@ -75,20 +75,22 @@ export class WhatsAppService {
     template: SelectedCodTemplate;
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
-    const bodyParameterValueByKey: Record<CodTemplateVariableKey, string> = {
+    const bodyParameterValueByKey: Record<TemplateVariableKey, string> = {
       customer: (params.customerName ?? '').trim() || 'Customer',
       store: (params.storeName ?? '').trim() || 'Akeed Store',
       order: params.orderNumber,
       total: params.totalPrice,
     };
 
-    const bodyParameters = template.bodyParameterOrder.map((parameterKey) => {
-      const text = bodyParameterValueByKey[parameterKey];
+    // The registry gives the format and the variables in send order; a named
+    // variable carries the parameter name the template was registered with.
+    const bodyParameters = template.variables.map((variable) => {
+      const text = bodyParameterValueByKey[variable.key];
 
-      if (template.bodyVariableMode === 'named') {
+      if (template.parameterFormat === 'named') {
         return {
           type: 'text' as const,
-          parameter_name: parameterKey,
+          parameter_name: variable.name ?? variable.key,
           text,
         };
       }

@@ -4,6 +4,7 @@ import {
 } from '../../shared/billing/entitlement';
 import { ConfirmedMessageRejection } from '../../shared/ports/messaging.port';
 import { VerificationSendService } from './verification-send.service';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /**
  * US-08-02: every send records which template it carried. All sources and
@@ -141,6 +142,7 @@ function createMocks(
     { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
     messageDispatches as never,
     messagingPort as never,
+    seededTemplateRegistry(),
   );
   return { service, messageDispatches, messagingPort };
 }

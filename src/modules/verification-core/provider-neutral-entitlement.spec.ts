@@ -2,6 +2,7 @@ import { usageAccountingFixture } from '../../../test/contracts/usage-accounting
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { VerificationSendService } from './verification-send.service';
 import type { EntitlementSource } from '../../shared/billing/entitlement';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
@@ -94,6 +95,7 @@ describe('provider-neutral entitlement boundary', () => {
       { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
       dispatches as never,
       messaging,
+      seededTemplateRegistry(),
     );
     return { repository, service, messaging, verifications, sender };
   }

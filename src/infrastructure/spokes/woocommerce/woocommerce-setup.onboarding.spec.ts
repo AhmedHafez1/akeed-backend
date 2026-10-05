@@ -26,6 +26,7 @@ import type {
 } from '../../../shared/commerce/source-setup';
 import type { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
 import { WooCommerceSetupContributor } from './woocommerce-setup.contributor';
+import { seededTemplateRegistry } from '../../../shared/messaging/testing/seeded-template-registry';
 
 type Source = typeof integrations.$inferSelect;
 
@@ -204,6 +205,7 @@ describe('WooCommerce setup through the onboarding routes', () => {
     const state = new OnboardingStateService(
       repository as never,
       { getShopName: jest.fn() },
+      seededTemplateRegistry(),
       undefined,
       undefined,
       { findById: () => Promise.resolve({ name: 'Noor Company' }) } as never,
@@ -227,6 +229,7 @@ describe('WooCommerce setup through the onboarding routes', () => {
         usageAccountingFixture({ enabled: true }),
       ),
       { readStatus: () => Promise.resolve(null) } as never,
+      seededTemplateRegistry(),
       undefined,
       undefined,
       undefined,

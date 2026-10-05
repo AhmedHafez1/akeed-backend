@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
@@ -24,19 +26,26 @@ import type {
   OnboardingBillingPlansResponseDto,
   OnboardingStateDto,
   SettingsResponseDto,
+  TemplateStyleDto,
   UpdateOnboardingSettingsDto,
   StandaloneSetupBlockedReason,
 } from './dto/onboarding.dto';
 import { OnboardingStateService } from './onboarding-state.service';
 import { BillingService, type BillingCallbackParams } from './billing.service';
 import {
-  COD_TEMPLATE_DEFAULTS,
-  getAvailableCodTemplateDefinitions,
-  getArabicCodTemplateDefinition,
-  getEnglishCodTemplateDefinition,
-  isArabicCodTemplateVariant,
-  isEnglishCodTemplateVariant,
-} from '../../shared/messaging/cod-template-catalog';
+  findDefaultTemplate,
+  resolveTemplate,
+  selectableTemplates,
+  storedTemplateKey,
+} from '../../shared/messaging/template-selector';
+import type {
+  RegistryTemplate,
+  TemplateLanguage,
+} from '../../shared/messaging/template-registry.types';
+import {
+  TEMPLATE_REGISTRY_PORT,
+  type TemplateRegistryPort,
+} from '../../shared/ports/template-registry.port';
 import { ONBOARDING_LANGUAGES } from './dto/onboarding.dto';
 import { isAllowedAutomationTimezone } from './automation-timezone';
 import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
@@ -54,6 +63,22 @@ import type {
 type IntegrationRecord = typeof integrations.$inferSelect;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * One selectable style as the settings response has always carried it. The
+ * field order is part of the response contract.
+ */
+function toTemplateStyleDto(template: RegistryTemplate): TemplateStyleDto {
+  return {
+    language: template.language,
+    variant: template.style,
+    metaTemplateName: template.templateName,
+    metaLanguageCode: template.languageCode,
+    bodyVariableMode: template.parameterFormat,
+    bodyParameterOrder: template.variables.map(({ key }) => key),
+    preview: template.preview,
+  };
+}
+
 @Injectable()
 export class OnboardingService {
   constructor(
@@ -61,6 +86,8 @@ export class OnboardingService {
     private readonly billingService: BillingService,
     private readonly billingEntitlements: BillingEntitlementService,
     private readonly creditEligibility: CreditEligibilityService,
+    @Inject(TEMPLATE_REGISTRY_PORT)
+    private readonly templateRegistry: TemplateRegistryPort,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
@@ -181,7 +208,7 @@ export class OnboardingService {
         usage,
         messagesSentLast30Days,
       },
-      template: this.getTemplateSettings(hydratedIntegration),
+      template: await this.getTemplateSettings(hydratedIntegration),
     };
   }
 
@@ -288,30 +315,65 @@ export class OnboardingService {
     });
   }
 
-  private getTemplateSettings(
+  /**
+   * The styles a merchant may choose, from the registry. A stored choice that
+   * is no longer selectable reads as the language default, which is also what
+   * a send would use.
+   */
+  private async getTemplateSettings(
     integration: IntegrationRecord,
-  ): SettingsResponseDto['template'] {
-    const selected = {
-      ar: isArabicCodTemplateVariant(integration.codTemplateArVariant)
-        ? integration.codTemplateArVariant
-        : COD_TEMPLATE_DEFAULTS.ar,
-      en: isEnglishCodTemplateVariant(integration.codTemplateEnVariant)
-        ? integration.codTemplateEnVariant
-        : COD_TEMPLATE_DEFAULTS.en,
+  ): Promise<SettingsResponseDto['template']> {
+    const templates = await this.templateRegistry.listTemplates();
+    const selectedTemplate = (language: TemplateLanguage) => {
+      const resolution = resolveTemplate(templates, {
+        language,
+        storedKey: storedTemplateKey({
+          language,
+          key:
+            language === 'ar'
+              ? integration.codTemplateArKey
+              : integration.codTemplateEnKey,
+          legacyVariant:
+            language === 'ar'
+              ? integration.codTemplateArVariant
+              : integration.codTemplateEnVariant,
+        }),
+      });
+      return this.requireTemplate(resolution.template, language);
     };
-    const variants = getAvailableCodTemplateDefinitions();
+    const defaultTemplate = (language: TemplateLanguage) =>
+      this.requireTemplate(findDefaultTemplate(templates, language), language);
+    const selected = { ar: selectedTemplate('ar'), en: selectedTemplate('en') };
 
     return {
       languages: ['ar', 'en'],
       defaultPreviewLanguage: 'en',
-      defaults: COD_TEMPLATE_DEFAULTS,
-      selected,
-      variants,
-      previews: {
-        ar: getArabicCodTemplateDefinition(selected.ar).preview,
-        en: getEnglishCodTemplateDefinition(selected.en).preview,
+      defaults: {
+        ar: defaultTemplate('ar').style,
+        en: defaultTemplate('en').style,
       },
+      selected: { ar: selected.ar.style, en: selected.en.style },
+      variants: {
+        ar: selectableTemplates(templates, 'ar').map(toTemplateStyleDto),
+        en: selectableTemplates(templates, 'en').map(toTemplateStyleDto),
+      },
+      previews: { ar: selected.ar.preview, en: selected.en.preview },
     };
+  }
+
+  private requireTemplate(
+    template: RegistryTemplate | null | undefined,
+    language: TemplateLanguage,
+  ): RegistryTemplate {
+    if (!template) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        message: `No default message template is available for ${language}`,
+        code: 'SETTINGS_TEMPLATE_DEFAULT_UNAVAILABLE',
+      });
+    }
+    return template;
   }
 
   private async buildState(

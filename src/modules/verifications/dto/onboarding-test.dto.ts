@@ -1,5 +1,5 @@
 import { IsBoolean, IsOptional } from 'class-validator';
-import type { CodTemplatePreview } from '../../../shared/messaging/cod-template-catalog';
+import type { TemplatePreview } from '../../../shared/messaging/template-registry.types';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 
 export class SendOnboardingTestDto {
@@ -21,7 +21,7 @@ export interface OnboardingTestAttemptDto {
 export interface OnboardingTestStatusDto {
   phone: string | null;
   language: 'ar' | 'en';
-  preview: CodTemplatePreview;
+  preview: TemplatePreview;
   sample: {
     customerName: string;
     orderNumber: string;

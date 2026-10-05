@@ -4,6 +4,7 @@ import { STANDALONE_SOURCE_DEFAULTS } from '../../infrastructure/database/reposi
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OnboardingStateService } from './onboarding-state.service';
 import { OnboardingService } from './onboarding.service';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
@@ -94,6 +95,7 @@ describe('OnboardingService', () => {
           usageAccountingFixture(),
         ),
         { readStatus: jest.fn().mockResolvedValue(null) } as never,
+        seededTemplateRegistry(),
       );
 
       const result = await service.getSettings({
@@ -174,6 +176,7 @@ describe('OnboardingService', () => {
         evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
       } as any,
       { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      seededTemplateRegistry(),
       undefined,
       messageDispatches as any,
     );
@@ -242,6 +245,7 @@ describe('OnboardingService', () => {
       const onboardingState = new OnboardingStateService(
         integrationsRepo as never,
         {} as never,
+        seededTemplateRegistry(),
         undefined,
         undefined,
         {
@@ -255,6 +259,7 @@ describe('OnboardingService', () => {
           evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
         } as never,
         { readStatus: jest.fn().mockResolvedValue(accountStatus) } as never,
+        seededTemplateRegistry(),
       );
       return { service, integrationsRepo, current: () => row };
     }

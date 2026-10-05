@@ -7,6 +7,7 @@ import {
 } from '../../../shared/billing/entitlement';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 import { WhatsAppService } from './whatsapp.service';
+import { seededTemplateRegistry } from '../../../shared/messaging/testing/seeded-template-registry';
 
 /**
  * US-08-02 payload characterization, and the baseline US-08-03 cuts over
@@ -282,6 +283,7 @@ async function sendThrough(definition: PayloadCase) {
       }),
     } as never,
     messaging,
+    seededTemplateRegistry(),
   );
 
   const outcome =

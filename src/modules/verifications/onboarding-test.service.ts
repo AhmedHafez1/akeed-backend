@@ -3,8 +3,10 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
@@ -27,10 +29,13 @@ import {
 } from '../../shared/analytics/product-events';
 import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
 import {
-  getCodTemplateDefinition,
-  isArabicCodTemplateVariant,
-  isEnglishCodTemplateVariant,
-} from '../../shared/messaging/cod-template-catalog';
+  resolveTemplate,
+  storedTemplateKey,
+} from '../../shared/messaging/template-selector';
+import {
+  TEMPLATE_REGISTRY_PORT,
+  type TemplateRegistryPort,
+} from '../../shared/ports/template-registry.port';
 import type { VerificationStatus } from '../../shared/interfaces/verification.interface';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import type {
@@ -60,6 +65,8 @@ export class OnboardingTestService {
     private readonly verificationHub: VerificationHubService,
     private readonly productEvents: ProductEventsRepository,
     private readonly adminLifecycles: AdminStoreLifecyclesRepository,
+    @Inject(TEMPLATE_REGISTRY_PORT)
+    private readonly templateRegistry: TemplateRegistryPort,
   ) {}
 
   async send(
@@ -282,17 +289,33 @@ export class OnboardingTestService {
         }
       : null;
 
-    const template = getCodTemplateDefinition({
-      language,
-      selection: {
-        ar: isArabicCodTemplateVariant(integration.codTemplateArVariant)
-          ? integration.codTemplateArVariant
-          : undefined,
-        en: isEnglishCodTemplateVariant(integration.codTemplateEnVariant)
-          ? integration.codTemplateEnVariant
-          : undefined,
+    // The same resolution a send uses, so the preview is the message the
+    // test would carry.
+    const { template } = resolveTemplate(
+      await this.templateRegistry.listTemplates(),
+      {
+        language,
+        storedKey: storedTemplateKey({
+          language,
+          key:
+            language === 'ar'
+              ? integration.codTemplateArKey
+              : integration.codTemplateEnKey,
+          legacyVariant:
+            language === 'ar'
+              ? integration.codTemplateArVariant
+              : integration.codTemplateEnVariant,
+        }),
       },
-    });
+    );
+    if (!template) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        message: `No default message template is available for ${language}`,
+        code: 'SETTINGS_TEMPLATE_DEFAULT_UNAVAILABLE',
+      });
+    }
 
     return {
       phone,

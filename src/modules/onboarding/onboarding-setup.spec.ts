@@ -3,6 +3,7 @@ import { usageAccountingFixture } from '../../../test/contracts/usage-accounting
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OnboardingService } from './onboarding.service';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
@@ -90,6 +91,7 @@ function setup(
       usageAccountingFixture(),
     ),
     { readStatus: jest.fn().mockResolvedValue(null) } as never,
+    seededTemplateRegistry(),
     lifecycles as never,
     undefined,
     ordersRepo as never,

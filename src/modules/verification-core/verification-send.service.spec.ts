@@ -4,6 +4,7 @@ import {
 } from '../../shared/billing/entitlement';
 import type { DispatchAcceptanceResult } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { VerificationSendService } from './verification-send.service';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 const baseIntegration = {
   platformType: 'shopify',
@@ -82,6 +83,7 @@ function createMocks() {
     { resolveDenial: jest.fn().mockResolvedValue(null) } as never,
     messageDispatches as never,
     messagingPort as never,
+    seededTemplateRegistry(),
   );
   return {
     service,

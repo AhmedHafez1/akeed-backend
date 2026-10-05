@@ -4,11 +4,31 @@ import {
 } from '../../../shared/billing/entitlement';
 import { of } from 'rxjs';
 import { WhatsAppService } from './whatsapp.service';
-import { selectCodTemplate } from '../../../shared/messaging/cod-template-selector';
+import type { SelectedCodTemplate } from '../../../shared/messaging/cod-template-selector';
+import { selectTemplateForSend } from '../../../shared/messaging/template-selector';
+import { seededRegistryTemplates } from '../../../shared/messaging/testing/seeded-template-registry';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
+import { seededTemplateRegistry } from '../../../shared/messaging/testing/seeded-template-registry';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
+/** The template the send service would hand the adapter for this store. */
+function selectCodTemplate(params: {
+  preferredLanguage: string;
+  phoneNumber: string;
+  arVariant?: string;
+  enVariant?: string;
+}): SelectedCodTemplate {
+  const selection = selectTemplateForSend(seededRegistryTemplates(), {
+    preferredLanguage: params.preferredLanguage,
+    phoneNumber: params.phoneNumber,
+    arLegacyVariant: params.arVariant,
+    enLegacyVariant: params.enVariant,
+  });
+  if (!selection.template) throw new Error('no template selected');
+  return selection.template;
+}
 
 describe('WhatsAppService', () => {
   function createService() {
@@ -106,6 +126,7 @@ describe('WhatsAppService', () => {
           markOutcomeUnknown: jest.fn(),
         } as never,
         messaging,
+        seededTemplateRegistry(),
       );
       await expect(sender[method]('ver-1')).resolves.toMatchObject({
         status: 'sent',

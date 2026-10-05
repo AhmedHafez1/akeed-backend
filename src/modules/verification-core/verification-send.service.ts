@@ -18,11 +18,15 @@ import { BillingEntitlementService } from './billing-entitlement.service';
 import { CreditEligibilityService } from './credit-eligibility.service';
 import {
   resolveTemplateSendPurpose,
-  selectCodTemplate,
   toSentTemplateIdentity,
   type SentTemplateIdentity,
   type TemplateSendPurpose,
 } from '../../shared/messaging/cod-template-selector';
+import { selectTemplateForSend } from '../../shared/messaging/template-selector';
+import {
+  TEMPLATE_REGISTRY_PORT,
+  type TemplateRegistryPort,
+} from '../../shared/ports/template-registry.port';
 import {
   VerificationMessageDispatchesRepository,
   type DispatchAcceptanceResult,
@@ -106,8 +110,8 @@ type ContextLoadResult =
  *
  * Responsibilities:
  *  - Reload the verification, order and integration with current state.
- *  - Select the template, then claim one logical dispatch with that identity
- *    and reserve usage transactionally.
+ *  - Select the template from the registry, then claim one logical dispatch
+ *    with that identity and reserve usage transactionally.
  *  - Call MessagingPort.sendVerificationTemplate.
  *  - Persist provider acceptance and verification projection atomically.
  *  - Preserve ambiguous provider outcomes for audited reconciliation.
@@ -126,6 +130,8 @@ export class VerificationSendService {
     private readonly creditEligibility: CreditEligibilityService,
     private readonly messageDispatches: VerificationMessageDispatchesRepository,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
+    @Inject(TEMPLATE_REGISTRY_PORT)
+    private readonly templateRegistry: TemplateRegistryPort,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
   ) {}
@@ -263,12 +269,55 @@ export class VerificationSendService {
     // Selected before the claim, so the ledger row and the message are built
     // from the same values and a send whose outcome is never learned still
     // says which template it carried.
-    const template = selectCodTemplate({
-      preferredLanguage: integration.defaultLanguage,
-      phoneNumber: order.customerPhone,
-      arVariant: integration.codTemplateArVariant,
-      enVariant: integration.codTemplateEnVariant,
-    });
+    const selection = selectTemplateForSend(
+      await this.templateRegistry.listTemplates(),
+      {
+        preferredLanguage: integration.defaultLanguage,
+        phoneNumber: order.customerPhone,
+        arKey: integration.codTemplateArKey,
+        enKey: integration.codTemplateEnKey,
+        arLegacyVariant: integration.codTemplateArVariant,
+        enLegacyVariant: integration.codTemplateEnVariant,
+      },
+    );
+    if (!selection.template) {
+      // No default to fall back to: skipped before the claim, so no usage is
+      // reserved and no other template is guessed.
+      this.logger.error(
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.templateSelection',
+          outcome: 'skipped',
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId: verification.id,
+          kind,
+          resolvedLanguage: selection.language,
+          storedTemplateKey: selection.storedKey,
+          reason: 'template_unavailable',
+        }),
+      );
+      return { status: 'skipped', reason: 'template_unavailable' };
+    }
+    const template = selection.template;
+    if (
+      selection.fallbackReason &&
+      selection.fallbackReason !== 'key_missing'
+    ) {
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.templateFallback',
+          outcome: 'success',
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId: verification.id,
+          kind,
+          storedTemplateKey: selection.storedKey,
+          variantKey: template.variantKey,
+          resolvedLanguage: template.language,
+          reason: selection.fallbackReason,
+        }),
+      );
+    }
     const purpose = resolveTemplateSendPurpose({
       kind,
       isTestOrder: order.isTest === true,

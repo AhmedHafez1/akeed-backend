@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OnboardingTestService } from '../verifications/onboarding-test.service';
 import { OnboardingService } from './onboarding.service';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /**
  * US-08-03 characterization of what a merchant sees: the `template` block of
@@ -150,6 +151,7 @@ function buildSettingsService(definition: StoreCase): OnboardingService {
       usageAccountingFixture(),
     ),
     { readStatus: jest.fn().mockResolvedValue(null) } as never,
+    seededTemplateRegistry(),
   );
 }
 
@@ -169,6 +171,7 @@ function buildOnboardingTestService(
       countSince: jest.fn().mockResolvedValue(0),
     } as never,
     { findCurrent: jest.fn().mockResolvedValue(undefined) } as never,
+    seededTemplateRegistry(),
   );
 }
 

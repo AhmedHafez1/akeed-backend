@@ -50,6 +50,7 @@
     "test:contract:billing-operations": "jest --config ./test/jest-standalone-billing-operations-contract.json --runInBand",
     "test:contract:billing-observability": "jest --config ./test/jest-billing-observability-contract.json --runInBand",
     "test:contract:template-identity": "jest --config ./test/jest-template-identity-contract.json --runInBand",
+    "test:contract:whatsapp-template-registry": "jest --config ./test/jest-whatsapp-template-registry-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",

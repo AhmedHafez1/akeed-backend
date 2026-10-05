@@ -31,10 +31,15 @@ import {
   STORE_PLATFORM_PORT,
   type StorePlatformPort,
 } from '../../shared/ports/store-platform.port';
+import { findSelectableByStyle } from '../../shared/messaging/template-selector';
+import type {
+  RegistryTemplate,
+  TemplateLanguage,
+} from '../../shared/messaging/template-registry.types';
 import {
-  isArabicCodTemplateVariant,
-  isEnglishCodTemplateVariant,
-} from '../../shared/messaging/cod-template-catalog';
+  TEMPLATE_REGISTRY_PORT,
+  type TemplateRegistryPort,
+} from '../../shared/ports/template-registry.port';
 import {
   buildBackendLog,
   normalizeError,
@@ -57,6 +62,25 @@ const DEFAULT_QUIET_HOURS_ENABLED = false;
 const DEFAULT_TIMEZONE: AutomationTimezone = 'Asia/Riyadh';
 const DEFAULT_SEND_DELAY_MINUTES = 0;
 
+/**
+ * The values the CHECK constraints on the old variant columns allow
+ * (migration 0021). Until those columns are dropped after the US-08-08 gate,
+ * a settings write sets them together with the registry key, so the previous
+ * release can be redeployed and still read the merchant's choice. A style
+ * added later is not in these lists and leaves the old column as it was.
+ */
+const LEGACY_VARIANT_COLUMN_VALUES: Record<
+  TemplateLanguage,
+  readonly string[]
+> = {
+  ar: ['standard', 'egyptian', 'gulf', 'short'],
+  en: ['friendly', 'professional', 'direct', 'short'],
+};
+
+function isLegacyVariant(language: TemplateLanguage, style: string): boolean {
+  return LEGACY_VARIANT_COLUMN_VALUES[language].includes(style);
+}
+
 @Injectable()
 export class OnboardingStateService {
   private readonly logger = new Logger(OnboardingStateService.name);
@@ -65,6 +89,8 @@ export class OnboardingStateService {
     private readonly integrationsRepo: IntegrationsRepository,
     @Inject(STORE_PLATFORM_PORT)
     private readonly storePlatform: StorePlatformPort,
+    @Inject(TEMPLATE_REGISTRY_PORT)
+    private readonly templateRegistry: TemplateRegistryPort,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
@@ -152,21 +178,33 @@ export class OnboardingStateService {
     if (payload.sendDelayMinutes !== undefined) {
       updates.sendDelayMinutes = payload.sendDelayMinutes;
     }
-    if (payload.codTemplateArVariant !== undefined) {
-      if (!isArabicCodTemplateVariant(payload.codTemplateArVariant)) {
-        throw new BadRequestException(
-          'Unsupported Arabic COD template variant',
+    if (
+      payload.codTemplateArVariant !== undefined ||
+      payload.codTemplateEnVariant !== undefined
+    ) {
+      const templates = await this.templateRegistry.listTemplates();
+      if (payload.codTemplateArVariant !== undefined) {
+        const template = this.requireSelectableStyle(
+          templates,
+          'ar',
+          payload.codTemplateArVariant,
         );
+        updates.codTemplateArKey = template.key;
+        if (isLegacyVariant('ar', template.style)) {
+          updates.codTemplateArVariant = template.style;
+        }
       }
-      updates.codTemplateArVariant = payload.codTemplateArVariant;
-    }
-    if (payload.codTemplateEnVariant !== undefined) {
-      if (!isEnglishCodTemplateVariant(payload.codTemplateEnVariant)) {
-        throw new BadRequestException(
-          'Unsupported English COD template variant',
+      if (payload.codTemplateEnVariant !== undefined) {
+        const template = this.requireSelectableStyle(
+          templates,
+          'en',
+          payload.codTemplateEnVariant,
         );
+        updates.codTemplateEnKey = template.key;
+        if (isLegacyVariant('en', template.style)) {
+          updates.codTemplateEnVariant = template.style;
+        }
       }
-      updates.codTemplateEnVariant = payload.codTemplateEnVariant;
     }
 
     // Cross-field validation: followUpDelayMinutes < escalationDelayMinutes
@@ -239,6 +277,30 @@ export class OnboardingStateService {
     );
 
     return this.toState(updated);
+  }
+
+  /**
+   * A merchant may only choose an active template of that language. A style
+   * that is unknown, retired or written for the other language is refused.
+   */
+  private requireSelectableStyle(
+    templates: readonly RegistryTemplate[],
+    language: TemplateLanguage,
+    style: string,
+  ): RegistryTemplate {
+    const template = findSelectableByStyle(templates, language, style);
+    if (!template) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message:
+          language === 'ar'
+            ? 'Unsupported Arabic COD template variant'
+            : 'Unsupported English COD template variant',
+        code: 'SETTINGS_TEMPLATE_STYLE_UNAVAILABLE',
+      });
+    }
+    return template;
   }
 
   /**

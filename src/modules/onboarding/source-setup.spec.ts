@@ -22,6 +22,7 @@ import type {
 } from '../../shared/commerce/source-setup';
 import type { CommerceOutcomeAction } from '../../shared/commerce/commerce-outcome';
 import type { OnboardingStateDto } from './dto/onboarding.dto';
+import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 type Source = typeof integrations.$inferSelect;
 
@@ -187,6 +188,7 @@ describe('source setup and health HTTP boundary', () => {
     const state = new OnboardingStateService(
       repository as never,
       provider,
+      seededTemplateRegistry(),
       undefined,
       undefined,
       { findById: () => Promise.resolve({ name: 'Noor Company' }) } as never,
@@ -210,6 +212,7 @@ describe('source setup and health HTTP boundary', () => {
         usageAccountingFixture({ enabled: true }),
       ),
       { readStatus: () => Promise.resolve(null) } as never,
+      seededTemplateRegistry(),
       undefined,
       undefined,
       undefined,

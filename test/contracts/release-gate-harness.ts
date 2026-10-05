@@ -62,6 +62,7 @@ import {
 import { PhoneService } from '../../src/shared/services/phone.service';
 import type { WebhookJobPayload } from '../../src/modules/webhook-queue/interfaces/webhook-job.interface';
 import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
+import { seededTemplateRegistry } from '../../src/shared/messaging/testing/seeded-template-registry';
 
 export const QUOTE_SECRET = 'release-gate-quote-secret-0123456789abcdef';
 
@@ -226,6 +227,7 @@ export function releaseGateHarness(
     creditEligibility,
     dispatches,
     messaging,
+    seededTemplateRegistry(),
   );
   const hub = new VerificationHubService(
     ordersRepo,

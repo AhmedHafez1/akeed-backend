@@ -289,6 +289,8 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         default_language text DEFAULT 'auto' NOT NULL,
         cod_template_ar_variant text DEFAULT 'standard' NOT NULL,
         cod_template_en_variant text DEFAULT 'friendly' NOT NULL,
+        cod_template_ar_key text,
+        cod_template_en_key text,
         shipping_currency text DEFAULT 'USD' NOT NULL,
         avg_shipping_cost numeric(10,2) DEFAULT 3 NOT NULL,
         is_auto_verify_enabled boolean DEFAULT true NOT NULL,

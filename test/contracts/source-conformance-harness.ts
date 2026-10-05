@@ -68,6 +68,7 @@ import { buildStandaloneOrderEnvelope } from '../../src/shared/commerce/standalo
 import type { MessagingPort } from '../../src/shared/ports/messaging.port';
 import { PhoneService } from '../../src/shared/services/phone.service';
 import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
+import { seededTemplateRegistry } from '../../src/shared/messaging/testing/seeded-template-registry';
 
 /**
  * The source conformance harness: what every connectable store source has to
@@ -607,6 +608,7 @@ export function assembleConformanceWorld(
     creditEligibility,
     dispatches,
     base.messaging,
+    seededTemplateRegistry(),
   );
   const hub = new VerificationHubService(
     ordersRepo,

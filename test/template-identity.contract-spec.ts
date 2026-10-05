@@ -43,6 +43,7 @@ import {
   releaseGateHarness,
   type ReleaseGateHarness,
 } from './contracts/release-gate-harness';
+import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
 
 /**
  * US-08-02 against real PostgreSQL: every send leaves the template it carried
@@ -119,6 +120,7 @@ function senderWith(messaging: MessagingPort) {
     creditEligibility,
     gate.repositories.dispatches,
     messaging,
+    seededTemplateRegistry(),
   );
 }
 

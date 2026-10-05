@@ -15,13 +15,12 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import {
-  ARABIC_COD_TEMPLATE_VARIANTS,
-  ENGLISH_COD_TEMPLATE_VARIANTS,
-  type ArabicCodTemplateVariantId,
-  type CodTemplateDefinition,
-  type EnglishCodTemplateVariantId,
-} from '../../../shared/messaging/cod-template-catalog';
+import type {
+  TemplateLanguage,
+  TemplateParameterFormat,
+  TemplatePreview,
+  TemplateVariableKey,
+} from '../../../shared/messaging/template-registry.types';
 import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 import {
   CLIENT_PRODUCT_EVENT_NAMES,
@@ -61,6 +60,9 @@ export type AutomationTimezone = (typeof AUTOMATION_TIMEZONES)[number];
  * real shop name and keeps the rendered bubble readable.
  */
 export const STORE_NAME_MAX_LENGTH = 60;
+
+/** A style id is a registry value, checked against the registry on write. */
+export const TEMPLATE_STYLE_MAX_LENGTH = 64;
 
 export const STANDALONE_SETUP_BLOCKED_REASONS = [
   'source_invalid',
@@ -157,15 +159,19 @@ export class UpdateOnboardingSettingsDto {
   @Max(1440)
   sendDelayMinutes?: number;
 
+  /** The style of an active Arabic template; checked in the service. */
   @IsOptional()
   @IsString()
-  @IsIn(ARABIC_COD_TEMPLATE_VARIANTS)
-  codTemplateArVariant?: ArabicCodTemplateVariantId;
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateArVariant?: string;
 
+  /** The style of an active English template; checked in the service. */
   @IsOptional()
   @IsString()
-  @IsIn(ENGLISH_COD_TEMPLATE_VARIANTS)
-  codTemplateEnVariant?: EnglishCodTemplateVariantId;
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateEnVariant?: string;
 
   @IsOptional()
   @IsString()
@@ -309,18 +315,10 @@ export interface SettingsResponseDto {
   template: {
     languages: Array<'ar' | 'en'>;
     defaultPreviewLanguage: 'ar' | 'en';
-    defaults: {
-      ar: ArabicCodTemplateVariantId;
-      en: EnglishCodTemplateVariantId;
-    };
-    selected: {
-      ar: ArabicCodTemplateVariantId;
-      en: EnglishCodTemplateVariantId;
-    };
-    variants: {
-      ar: CodTemplateDefinition[];
-      en: CodTemplateDefinition[];
-    };
+    /** Style ids, as listed in `variants`. */
+    defaults: { ar: string; en: string };
+    selected: { ar: string; en: string };
+    variants: { ar: TemplateStyleDto[]; en: TemplateStyleDto[] };
     previews: {
       ar: MessageTemplatePreviewDto;
       en: MessageTemplatePreviewDto;
@@ -328,13 +326,20 @@ export interface SettingsResponseDto {
   };
 }
 
-export interface MessageTemplatePreviewDto {
-  greeting: string;
-  body: string;
-  totalLabel: string;
-  ending: string;
-  confirmButton: string;
-  cancelButton: string;
+export type MessageTemplatePreviewDto = TemplatePreview;
+
+/**
+ * One style a merchant may choose. The shape predates the registry and is
+ * kept as it was, provider fields included, so the response does not change.
+ */
+export interface TemplateStyleDto {
+  language: TemplateLanguage;
+  variant: string;
+  metaTemplateName: string;
+  metaLanguageCode: string;
+  bodyVariableMode: TemplateParameterFormat;
+  bodyParameterOrder: TemplateVariableKey[];
+  preview: MessageTemplatePreviewDto;
 }
 
 export class OnboardingBillingRequestDto {
