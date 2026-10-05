@@ -1,7 +1,7 @@
 # US-07-06 WooCommerce release gate evidence (automated gate)
 
 **Validated:** 2026-10-05
-**Revision:** backend `develop` at `03da34f` with an uncommitted refactor of the store spokes on top (tree `1c8569c46d03`, see [Validation results](#validation-results-as-run-2026-10-05)); frontend `develop` at `cfac6ee`
+**Revision:** backend `develop` at `639c7bf`; frontend `develop` at `8c134ae` (the fourth gate run, after the three review fixes)
 **State:** automated gate run as scripts. **Live pilot NOT RUN.** The story stays open: acceptance criteria 4, 5 and 7 need the run on a real store, and the release-gate record with the go/no-go recommendation (`Epics/07-woocommerce-integration/evidence/US-07-06-release-gate.md`) is written after it.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md) and its amendments. No request was sent to any store, to Meta, to Shopify or to Paymob, no WhatsApp message was sent, and no shared database was touched: stores are the in-process fake (`test/contracts/woocommerce-provider-fake.ts`) under the real restricted outbound client, as its DNS and its transport.
@@ -28,7 +28,8 @@ Backend (`akeed-backend`, branch `develop`, no feature branch):
 | `f7e5fcf` | `scripts/test-e07-release-gate.ps1` and `test:gate:e07`. |
 | `57abec2` | The live pilot script, `scripts/woocommerce-pilot-reconcile.sql` (run by the gate suite against the schema) and `scripts/woocommerce-pilot-probe.mjs`. |
 | `03da34f` | One case of the WooCommerce connection contract aligned with `9161b3e` (below). Test only. |
-| the commit that adds this file | This file, the story status and the epic table. |
+| `cd6447f` | This file, the story status and the epic table. |
+| `639c7bf` | Two review findings fixed after the product owner's decision (below): the WooCommerce ingestion policy, webhook service and normalizer, with unit and contract cases; the contract record amendment; a pilot step. |
 
 Also on `develop` since US-07-05, by the product owner and not part of this story's work: `9161b3e`, which makes an **empty** pilot allow-list allow every organization while connect is on. This gate ran with it. It changes how one organization is paused; see [Operational notes](#operational-notes).
 
@@ -38,10 +39,12 @@ Frontend (`akeed-frontend`, branch `develop`):
 | --- | --- |
 | `52d02a4` | One defect fixed (below): `src/shared/auth/AuthGuard.tsx`, with a test. |
 | `cfac6ee` | `wooCommerce.types.test.ts`: every one of the backend's 30 WooCommerce error codes reads in Arabic and in English. Test only. |
+| `ea4c486` | The third review finding (below): `Frame`, `Panel` and `Notice` moved to `skins/connect/connectUi.tsx`. |
+| `8c134ae` | The sentences for the two new WooCommerce reasons, in Arabic and English, with tests. |
 
-No migration, no new environment variable, no feature. This story's commits edit no Shopify, Standalone or EasyOrders production file; the two shared files they change are the log helper and the exception filter.
+No migration, no new environment variable, no feature. This story's backend commits edit no Shopify, Standalone or EasyOrders production file; the two shared files they change are the log helper and the exception filter. In the frontend, `ea4c486` changes one import line in each of two EasyOrders screens (`EasyOrdersConnectPage.tsx`, `EasyOrdersSourcePanel.tsx`) and nothing else of theirs; the onboarding suites were run before and after it (21 files, 425 tests both times).
 
-Not part of this story, and uncommitted when the gate ran: a refactor of the three store spokes by another work session. The last gate run includes it; see [Validation results](#validation-results-as-run-2026-10-05).
+Not part of this story: a refactor of the three store spokes by another work session, uncommitted when the third gate run included it and committed since as `50a0604`. `git diff 1c8569c46d03 50a0604 --stat` lists only this story's three documentation files of `cd6447f`, so the tree the third run gated is that commit's code. See [Validation results](#validation-results-as-run-2026-10-05).
 
 ## Code review of US-07-02 to US-07-05
 
@@ -59,19 +62,24 @@ The gate started with a review of the four stories, as the E06 gate did. Ten fin
 
 The EasyOrders gate did not find this because its install callback does not log the fault itself. It was exposed there too, through Nest's handler.
 
+### Three findings fixed after the product owner's decision (2026-10-05)
+
+The review first left these three as they were, because the first two are what the contract record said and the third is not a defect in behavior. The product owner decided to fix all three. The first two are recorded as an amendment to the [contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md) ("2026-10-05, US-07-06 gate").
+
+5. **An order that could not be read was never verified, even after the merchant corrected it.** A placed COD order whose create event the normalizer skipped (a phone that does not parse, no billing country, an unsupported currency, a bad total, no phone) held the create key, so every later delivery was an update, and an update never starts a verification. Fix (`639c7bf`): a create event that ended on the order's own data has not taken the order. Its next delivery that passes the start rule is tried again as a create, under `order.retry:<integrationId>:<orderId>:<status>:<date_modified_gmt>`, until Akeed holds the order; after that every delivery is an update again. One state of the order is tried once. A create event that is waiting, done, failed, or skipped for the source, the account or the start rule keeps the update path. The order is looked up under the integration the URL token resolved to, and only in this case; nothing is asked of the store. Tests: the policy and webhook service specs; 13 cases in `test/woocommerce-ingestion.contract-spec.ts` ("an order corrected in the store"), among them two corrections arriving together, a correction that is still wrong, an order cancelled before it was corrected, an order placed before a reconnect and another tenant holding the same order id; one case in the gate suite, which also shows the customer's confirmation still comes back as an echo.
+6. **Two skip reasons showed EasyOrders wording for a WooCommerce order.** `missing_currency` and `missing_phone_country` tell the merchant to choose the value in the store connection settings. WooCommerce has no such settings: both come from the order. Fix (`639c7bf`, `8c134ae`): WooCommerce records `order_currency_unsupported` and `order_phone_country_missing`, each with its own sentence in Arabic and English. The second tells the merchant to correct the order in the store, which fix 5 makes true. The two existing sentences and the EasyOrders codes are unchanged.
+7. **The WooCommerce skin imported `Frame`, `Panel` and `Notice` from the EasyOrders skin.** Fix (`ea4c486`): the file moved unchanged to `skins/connect/connectUi.tsx`, beside the other pieces the store skins share. No store skin imports another one now. No markup or class changed.
+
 ### Findings checked and left as they are
 
-None of these was changed, because each is what the contract record says, or is not a defect. Three need the product owner's word.
+None of these was changed, because each is what the contract record says, or is not a defect.
 
 | # | Finding | Why it was left | Proposed |
 | --- | --- | --- | --- |
-| a | An order whose first placed delivery the normalizer skips (a phone that does not parse, a missing currency) is never verified, even after the merchant fixes it in the store: the next delivery is routed as an update. | Record, section 4: "Akeed already has a create event" is true from the first accepted create delivery, and an update never starts a verification. Shopify and EasyOrders behave the same way. | **Decision needed.** Either accept it as a stated limit, or a small story: a create event the normalizer skipped does not count as "has a create event". It changes the record first. |
 | b | The health read calls the store (two requests, up to 8 seconds) on every read, for any role, before the database summaries. | Record, section 3 and the US-07-05 amendment: the webhooks are read "when health is read". A check on a click costs about five store calls in all, bounded; there is no loop. | None for the pilot. If health reads grow, cache the last reading for a minute. |
 | c | The restricted client connects only to the first resolved address. A dual-stack store whose first address is unreachable from Akeed's host is reported as unreachable. | Record, section 8, rule 6: no retry inside the client. Every resolved address is still checked. | Known limit. If the pilot's host has no IPv6 route, test one IPv6-enabled store early. |
-| d | A WooCommerce order with a local phone and no billing country, or with no currency, is shown with the EasyOrders wording: "Choose it in the store connection settings". WooCommerce has no such setting. | Record, section 4 names these two reason codes on purpose, "so the frontend reason map already knows them". The codes are shared with EasyOrders. | **Decision needed.** Two WooCommerce-only reason codes with their own sentences (a record amendment and four message keys), or reword the two shared sentences. Both cases are rare: WooCommerce sends a currency with every order and asks for a billing country at checkout. |
 | e | A store already connected to another organization is refused at the callback, after the merchant approved, which leaves a key in the store. | Record, support boundary table: `WOOCOMMERCE_STORE_UNAVAILABLE` is detected at the callback. Refusing at the start would tell any organization on the pilot list whether a given address is an Akeed customer, before it has shown it controls the store. | None. |
 | f | `outcomeMarkers` in `woocommerce-delivery.ts` repeats `readWooCommerceOutcomeMarkers`, and `isRecord` is defined twice. | Not a defect: the two limits are equal today. | Tidy with the next WooCommerce change. |
-| g | The WooCommerce and shared connect components import `Notice`, `Frame` and `Panel` from the EasyOrders skin by a relative path. | Not a defect in behavior, and lint passes. Moving them edits EasyOrders files. | **Decision needed.** A small refactor of its own, with the EasyOrders tests run before and after. |
 
 ## The conformance harness
 
@@ -94,7 +102,7 @@ One thing reads differently and asserts the same: where the old suite compared a
 | 3. Duplicates, replays, another tenant's token, secret, key or order, key revocation and outages cannot cross tenants or duplicate an effect; disconnect and reconnect keep history; no automatic no-reply cancellation | **Met** on Akeed's side. | The matrix (table below). |
 | 4. A pilot organization completes the journey on a real store, and the run reconciles | **Not met. NOT RUN.** | The [pilot script](Epics/07-woocommerce-integration/evidence/US-07-06-live-pilot-script.md) is ready. |
 | 5. The record's observations are VERIFIED from that run | **Not met. NOT RUN.** | Each observation has its step in the pilot script. |
-| 6. Shopify, Standalone and EasyOrders regression gates pass, run as scripts with dev servers stopped; the localized screens are looked at by a person | **Gates: passed** in run 3, as scripts with the dev servers stopped. Run 1 failed in one WooCommerce case, which was out of date. The screens: **not done**, they are behind login. | [Validation results](#validation-results-as-run-2026-10-05); the pilot script's Part H for the screens. |
+| 6. Shopify, Standalone and EasyOrders regression gates pass, run as scripts with dev servers stopped; the localized screens are looked at by a person | **Gates: passed** in run 3 and again in run 4, after the three review fixes, as scripts with the dev servers stopped. Run 1 failed in one WooCommerce case, which was out of date. The screens: **not done**, they are behind login. | [Validation results](#validation-results-as-run-2026-10-05); the pilot script's Part H for the screens. |
 | 7. The product owner records a go/no-go decision | **Open.** | After the run. |
 
 ### The matrix, as WooCommerce runs it
@@ -139,6 +147,7 @@ All in `test/woocommerce-release-gate.contract-spec.ts`, on PostgreSQL, with rea
 | HMAC and source | The ping | `200` and nothing stored on an address Akeed issued, with ingestion on or off; `401` or `404` on any other |
 | HMAC and source | The same order id in two stores | Two orders, two verifications; only the answered store is written, with its own key |
 | Draft, then placed | A checkout draft, then the placed order on the other topic, then again | The draft is `skipped / order_not_placed`; one order, verification, send and usage unit; nothing asked of the store |
+| Draft, then placed | A placed order that could not be read, then corrected in the store | The unreadable order is `skipped / invalid_phone` and is tried once more when the store repeats it; after the correction: one order, verification, send and usage unit, to the corrected number; nothing asked of the store; the customer's confirmation is written, and its echo is `skipped / reflected_outcome` |
 | Draft, then placed | A non-COD order and a held COD order | The first is recorded and never sent; the second is verified, and confirmed without a status change |
 | Webhook state | A webhook the store disabled | Shown on a health read and as a setup blocker; re-enable refused with ingestion off and no store call; with it on, set active, confirmed by reading, the ping answered `200`; the next order is taken; the order placed meanwhile is never imported |
 | Webhook state | Paused, and deleted at the store | Paused is shown and never overridden; deleted is `WOOCOMMERCE_WEBHOOK_MISSING` and a reconnect |
@@ -150,7 +159,7 @@ The address rule was also checked the other way round: with the rule weakened by
 
 ## Validation results (as run, 2026-10-05)
 
-`npm run test:gate:e07` was run three times as a script. One run carries the other gates: E07 runs the E06 gate, which runs the E05 gate, which runs the E04.5 contracts and the E04 gate, which runs the E03 and E02 gates. E01 has no script: its command set (`docs/E01-BASELINE-EVIDENCE.md`) is what the E02 gate runs. The dev servers (the backend watcher and the Shopify CLI frontend) were stopped for every run. ngrok and the local Redis container were left running; no step uses either.
+`npm run test:gate:e07` was run four times as a script. The first three are described here; the fourth, after the three review fixes, is [at the end of this section](#run-4-after-the-three-review-fixes). One run carries the other gates: E07 runs the E06 gate, which runs the E05 gate, which runs the E04.5 contracts and the E04 gate, which runs the E03 and E02 gates. E01 has no script: its command set (`docs/E01-BASELINE-EVIDENCE.md`) is what the E02 gate runs. The dev servers (the backend watcher and the Shopify CLI frontend) were stopped for every run. ngrok and the local Redis container were left running; no step uses either.
 
 | | Run 1 | Run 2 | Run 3 |
 | --- | --- | --- | --- |
@@ -276,6 +285,30 @@ The backend and frontend lint warnings were there before this story. Every count
 | The full backend suite | `npm test -- --runInBand`, in the E02 gate | PASS, 212 suites, 5632 tests |
 | The full frontend suite | `vitest run`, in the E05 gate | PASS, 104 files, 1268 tests |
 
+### Run 4: after the three review fixes
+
+| | Run 4 |
+| --- | --- |
+| Backend | `639c7bf`, the main checkout, clean before and after |
+| Frontend | `8c134ae`, the main checkout, clean before and after |
+| Started, finished (UTC) | 10:34:50, 10:52:21 |
+| Result | **PASS**: 67 of 67 steps |
+| Reports, in `.tmp/release-gates` | `e07-20261005T103450Z.json`, `e06-20261005T103647Z.json`, `e05-20261005T103825Z.json` |
+| The full backend suite | 212 suites, 5664 tests |
+| The full frontend suite | 104 files, 1273 tests |
+
+It is the same script and the same 67 steps as run 3. Every step passed; the steps whose counts differ from run 3 are these, each in a suite the fixes added cases to:
+
+| Step | Run 4 | Run 3 |
+| --- | --- | --- |
+| E07: WooCommerce spoke: shared adapter contract, fixtures and unit specs | 21 suites, 831 tests | 21 suites, 799 tests |
+| E07: E07 release-gate contract (conformance matrix, HMAC and source, draft then placed, webhook re-enable, SSRF) | 103 tests | 102 tests |
+| E07: WooCommerce ingestion contract | 85 tests | 72 tests |
+| E02: full backend regression | 212 suites, 5664 tests | 212 suites, 5632 tests |
+| E05: frontend unit suite (API keys tab, localized errors, server API guide) | 104 files, 1273 tests | 104 files, 1268 tests |
+
+Before run 4 the changed suites were also run alone: the WooCommerce spoke unit specs, the four WooCommerce contracts, and in the frontend the onboarding suites (before and after the move) and the dashboard suites.
+
 ### Not run
 
 - **The live pilot**, and `scripts/woocommerce-pilot-probe.mjs` against a store.
@@ -290,9 +323,9 @@ The backend and frontend lint warnings were there before this story. Every count
 ## Open items and known limits
 
 - **The live pilot is NOT RUN**, so acceptance criteria 4, 5 and 7 are open and all eight observations of the contract record are still unverified.
-- **The spoke refactor in the main checkout is uncommitted**, and its module wiring has not been started once. The last gate run passed with it; the record is tied to it by a tree hash, not by a commit. Start the backend once before the pilot.
+- **The module wiring of the spoke refactor (`50a0604`) has not been started once.** The gate passed with it twice, but no test boots `AppModule`. Start the backend once before the pilot.
 - **No screen was looked at by a person.** The rendering tests and the locale tests pass; that shows the strings exist in both languages, not that a screen reads well in Arabic. Part H of the pilot script is the check.
-- **Three review findings need a decision** (a, d and g above).
+- **Limits of the corrected-order retry (fix 5).** It needs the store to send `order.updated` when the merchant edits the order, which is observation 9 of the pilot (step C5). A correction delivered before the first event has been processed is recorded as an update and is not tried; the delivery after it is. Shopify and EasyOrders do not have this behavior. As the US-07-03 evidence recorded, an order that was skipped is not listed in the dashboard, so the merchant learns of an unreadable order from the store and not from Akeed; that was not re-checked or changed here.
 - **Finding 5.3 cannot be observed by the pilot as written:** Akeed never repeats the marker write on a healthy run, and the probe does not write. It stays UNKNOWN with its worst-case rule unless a write test is asked for.
 - **The fake is Akeed's reading of the contract record.** A real store that behaves differently is exactly what the pilot is for.
 - **The queues are faked.** BullMQ against Redis (delays, the duplicate-id rule the fake copies) was not exercised.
