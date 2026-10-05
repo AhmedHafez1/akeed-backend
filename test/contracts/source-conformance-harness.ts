@@ -13,6 +13,10 @@ import { CommerceOutcomeSyncsRepository } from '../../src/infrastructure/databas
 import { CreditAccountingRepository } from '../../src/infrastructure/database/repositories/credit-accounting.repository';
 import { IntegrationMonthlyUsageRepository } from '../../src/infrastructure/database/repositories/integration-monthly-usage.repository';
 import { IntegrationsRepository } from '../../src/infrastructure/database/repositories/integrations.repository';
+import {
+  buildStandaloneSourceIdentity,
+  STANDALONE_SOURCE_DEFAULTS,
+} from '../../src/infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import { OrdersRepository } from '../../src/infrastructure/database/repositories/orders.repository';
 import { PeriodicPlanAccounting } from '../../src/infrastructure/database/repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from '../../src/infrastructure/database/repositories/prepaid-credit-accounting';
@@ -55,7 +59,12 @@ import type {
   CommerceOutcomeAction,
   CommerceOutcomeAdapter,
 } from '../../src/shared/commerce/commerce-outcome';
+import {
+  STANDALONE_BILLING_STATUS,
+  STANDALONE_DEFAULT_PLAN_ID,
+} from '../../src/shared/billing/billing-plan';
 import { COMMERCE_OUTCOME_ACTIONS } from '../../src/shared/commerce/commerce-outcome';
+import { buildStandaloneOrderEnvelope } from '../../src/shared/commerce/standalone-order-envelope';
 import type { MessagingPort } from '../../src/shared/ports/messaging.port';
 import { PhoneService } from '../../src/shared/services/phone.service';
 import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
@@ -960,6 +969,104 @@ export function assembleConformanceWorld(
     };
   }
 
+  // --- A Standalone source, with orders entered by hand ---
+
+  function standaloneBeside(): BesideSource {
+    let source: { orgId: string; integrationId: string; identity: string };
+    let journeys = 0;
+    return {
+      label: 'Standalone',
+      get journeys() {
+        return journeys;
+      },
+      async connect() {
+        const orgId = randomUUID();
+        const identity = buildStandaloneSourceIdentity(orgId);
+        await db
+          .insert(tables.organizations)
+          .values({ id: orgId, name: 'Gate Standalone store', slug: orgId });
+        const now = new Date().toISOString();
+        const [integration] = await db
+          .insert(tables.integrations)
+          .values({
+            orgId,
+            platformType: 'standalone',
+            platformStoreUrl: identity,
+            storeName: 'Gate Standalone store',
+            isActive: true,
+            // As provisioning creates a Standalone source: its defaults, and
+            // the plan it is granted with no external billing to settle.
+            ...STANDALONE_SOURCE_DEFAULTS,
+            onboardingStatus: 'completed',
+            billingStatus: STANDALONE_BILLING_STATUS,
+            billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
+            billingActivatedAt: now,
+            billingStatusUpdatedAt: now,
+          })
+          .returning({ id: tables.integrations.id });
+        source = { orgId, integrationId: integration.id, identity };
+      },
+      /** One manual order from its envelope to a confirmed local outcome. */
+      async journey() {
+        journeys += 1;
+        const id = `GATE-${randomUUID().slice(0, 8)}`;
+        const sendsBefore = sends.length;
+        const envelope = buildStandaloneOrderEnvelope({
+          ingestionType: 'manual',
+          order: {
+            externalOrderId: id,
+            orderNumber: id,
+            customerPhone: '+201000000777',
+            customerName: 'Test Customer',
+            totalPrice: '450.00',
+            currency: 'EGP',
+            paymentMethod: 'cod',
+          },
+        });
+        const ingested = await producer.ingest({
+          platform: 'standalone',
+          jobType: WebhookJobType.ORDER_CREATE,
+          idempotencyKey: `manual:${id}`,
+          storeDomain: source.identity,
+          rawPayload: envelope.rawPayload,
+        });
+        const ends = await drain();
+        const [verification] = await client<{ id: string }[]>`
+          SELECT v.id FROM verifications v JOIN orders o ON o.id = v.order_id
+          WHERE o.integration_id = ${source.integrationId}
+            AND o.external_order_id = ${id}`;
+        const sent = sends.slice(sendsBefore);
+        if (verification && sent[0])
+          await reply(verification.id, sent[0].to, 'confirm');
+        const [event] = await client<
+          { status: string; last_error: string | null }[]
+        >`
+          SELECT status, last_error FROM webhook_events
+          WHERE integration_id = ${source.integrationId}
+          ORDER BY received_at DESC, id DESC LIMIT 1`;
+        return {
+          ingested,
+          ends,
+          event: { status: event.status, reason: event.last_error },
+          sends: sent.length,
+          status: verification
+            ? await verificationStatus(verification.id)
+            : null,
+        };
+      },
+      expected() {
+        return {
+          ingested: { enqueued: true },
+          ends: [{ kind: 'done' }],
+          event: { status: 'completed', reason: null },
+          sends: 1,
+          status: 'confirmed',
+        };
+      },
+      counts: () => reconcile(source),
+    };
+  }
+
   // --- Schema: the Drizzle tables, then the real migrations ---
 
   async function scaffold(table: PgTable) {
@@ -1130,6 +1237,7 @@ export function assembleConformanceWorld(
     eventsOf,
     sentVerification,
     shopifyBeside,
+    standaloneBeside,
     setup,
     teardown,
     reset,
@@ -1157,6 +1265,45 @@ export async function sendOrder<
       merchant.integrationId,
       order.externalOrderId,
     )),
+  };
+}
+
+/**
+ * A source with its own driver, standing beside the one under test: one
+ * store, connected once, taking one order per journey to a confirmed outcome
+ * at its own provider.
+ */
+export function conformanceBeside<
+  M extends ConformanceMerchant,
+  O extends ConformanceOrder,
+  I,
+>(
+  world: ConformanceWorld,
+  driver: SourceConformanceDriver<M, O, I>,
+): BesideSource {
+  let merchant: M;
+  let journeys = 0;
+  return {
+    label: driver.label,
+    get journeys() {
+      return journeys;
+    },
+    async connect() {
+      merchant = await driver.connect();
+    },
+    async journey() {
+      journeys += 1;
+      const sendsBefore = world.sends.length;
+      const order = await sendOrder(world, driver, merchant);
+      await world.reply(order.verificationId, order.phone, 'confirm');
+      return {
+        sends: world.sends.length - sendsBefore,
+        status: await world.verificationStatus(order.verificationId),
+        remote: driver.remoteStateOf(merchant, order.order),
+      };
+    },
+    expected: () => ({ sends: 1, status: 'confirmed', remote: 'confirmed' }),
+    counts: () => world.reconcile(merchant, driver.appliedWrites(merchant)),
   };
 }
 

@@ -551,6 +551,14 @@ export class FakeWooCommerceStore {
   }
 }
 
+/** The username of a Basic `Authorization` header. */
+function consumerKeyOf(authorization: string | undefined): string | undefined {
+  const encoded = /^Basic (.+)$/.exec(authorization ?? '')?.[1];
+  return encoded
+    ? Buffer.from(encoded, 'base64').toString('utf8').split(':')[0]
+    : undefined;
+}
+
 /** `secret` is write-only in the REST API. */
 function publicFields(webhook: FakeWooCommerceWebhook) {
   return {
@@ -567,6 +575,12 @@ export class FakeWooCommerce {
   /** Names the fake DNS answers without a store behind them. */
   readonly bareHosts = new Map<string, string[]>();
   private readonly stores = new Map<string, FakeWooCommerceStore>();
+  /**
+   * The consumer key each request was sent with. Kept beside the log, not in
+   * it, so a suite can ask which key was used without a log entry ever
+   * carrying one.
+   */
+  private readonly keyUsed = new WeakMap<FakeWooCommerceRequest, string>();
 
   /** A store at `https://<generated host><path>`, resolving publicly. */
   addStore(path = ''): FakeWooCommerceStore {
@@ -594,8 +608,8 @@ export class FakeWooCommerce {
       route: FakeWooCommerceRequest['route'],
       authenticated: boolean,
       answered: FakeWooCommerceRequest['answered'],
-    ) =>
-      this.requests.push({
+    ) => {
+      const request: FakeWooCommerceRequest = {
         host: target.hostname,
         address: target.address,
         method: target.method,
@@ -605,7 +619,11 @@ export class FakeWooCommerce {
         ...(route === 'order_write' || route === 'note_create'
           ? { body: parseBody(target.body) }
           : {}),
-      });
+      };
+      this.requests.push(request);
+      const consumerKey = consumerKeyOf(target.headers.Authorization);
+      if (consumerKey) this.keyUsed.set(request, consumerKey);
+    };
     const fail = (code: string): never => {
       log('unknown', false, 'error');
       throw Object.assign(new Error('fake transport failure'), { code });
@@ -632,5 +650,12 @@ export class FakeWooCommerce {
 
   requestsTo(store: FakeWooCommerceStore): FakeWooCommerceRequest[] {
     return this.requests.filter((request) => request.host === store.host);
+  }
+
+  /** Requests sent with a consumer key, accepted by a store or not. */
+  requestsWithKey(consumerKey: string): FakeWooCommerceRequest[] {
+    return this.requests.filter(
+      (request) => this.keyUsed.get(request) === consumerKey,
+    );
   }
 }
