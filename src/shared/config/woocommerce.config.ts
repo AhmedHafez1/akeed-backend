@@ -4,9 +4,9 @@ export const WOOCOMMERCE_CONFIG = 'wooCommerce';
  * WooCommerce connection (US-07-02), order ingestion (US-07-03) and outcome
  * writes (US-07-04).
  *
- * The switch hides the start-install and callback routes. The allow-list is
- * the pilot gate: an organization may start or finish an install only while
- * it is listed, so an empty list with the switch on still connects nobody.
+ * The switch hides the start-install and callback routes. The optional
+ * allow-list restricts installs when populated; an empty list allows any
+ * organization.
  */
 export interface WooCommerceConfig {
   enabled: boolean;
@@ -161,5 +161,9 @@ export function isWooCommercePilotOrganization(
   config: WooCommerceConfig,
   orgId: string,
 ): boolean {
-  return config.enabled && config.pilotOrgIds.includes(orgId.toLowerCase());
+  return (
+    config.enabled &&
+    (config.pilotOrgIds.length === 0 ||
+      config.pilotOrgIds.includes(orgId.toLowerCase()))
+  );
 }

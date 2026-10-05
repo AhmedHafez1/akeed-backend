@@ -123,15 +123,16 @@ describe('EasyOrders configuration', () => {
     ).toBe('http://localhost:3000');
   });
 
-  it('connects nobody while the allow-list is empty, and only listed organizations otherwise', () => {
+  it('allows any organization with an empty list and only listed organizations otherwise', () => {
     const open = parseEasyOrdersConfig(ENABLED);
     const pilot = parseEasyOrdersConfig({
       ...ENABLED,
       EASYORDERS_PILOT_ORG_IDS: ORG_A,
     });
-    const off = parseEasyOrdersConfig({ EASYORDERS_PILOT_ORG_IDS: ORG_A });
+    const off = parseEasyOrdersConfig({ EASYORDERS_PILOT_ORG_IDS: '' });
 
-    expect(isEasyOrdersPilotOrganization(open, ORG_A)).toBe(false);
+    expect(isEasyOrdersPilotOrganization(open, ORG_A)).toBe(true);
+    expect(isEasyOrdersPilotOrganization(open, ORG_B)).toBe(true);
     expect(isEasyOrdersPilotOrganization(pilot, ORG_A.toUpperCase())).toBe(
       true,
     );

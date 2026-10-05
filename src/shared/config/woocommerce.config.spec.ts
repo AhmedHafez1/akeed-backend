@@ -135,15 +135,16 @@ describe('WooCommerce configuration', () => {
     ).toBe('http://localhost:3000');
   });
 
-  it('admits only listed organizations, and nobody while the switch is off', () => {
+  it('allows any organization with an empty list and only listed organizations otherwise', () => {
     const open = parseWooCommerceConfig(ENABLED);
     const pilot = parseWooCommerceConfig({
       ...ENABLED,
       WOOCOMMERCE_PILOT_ORG_IDS: ORG_A,
     });
-    const off = parseWooCommerceConfig({ WOOCOMMERCE_PILOT_ORG_IDS: ORG_A });
+    const off = parseWooCommerceConfig({ WOOCOMMERCE_PILOT_ORG_IDS: '' });
 
-    expect(isWooCommercePilotOrganization(open, ORG_A)).toBe(false);
+    expect(isWooCommercePilotOrganization(open, ORG_A)).toBe(true);
+    expect(isWooCommercePilotOrganization(open, ORG_B)).toBe(true);
     expect(isWooCommercePilotOrganization(pilot, ORG_A.toUpperCase())).toBe(
       true,
     );

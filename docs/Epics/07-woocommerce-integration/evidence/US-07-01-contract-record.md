@@ -615,7 +615,7 @@ Not registered: no route-scoped CORS entry (the EasyOrders callback has one; thi
 | Switch                                    | Repo     | Off means                                                                                    |
 | ----------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
 | `WOOCOMMERCE_CONNECT_ENABLED`             | backend  | The start and callback routes answer `404`. Status, disconnect and health still work.        |
-| `WOOCOMMERCE_PILOT_ORG_IDS`               | backend  | An organization not listed cannot start or finish an install. An empty list connects nobody. |
+| `WOOCOMMERCE_PILOT_ORG_IDS`               | backend  | A populated list restricts installs to listed organizations; an empty list allows any organization while connect is enabled. |
 | `WOOCOMMERCE_INGESTION_ENABLED`           | backend  | The delivery route answers `404` to order deliveries and `200` to a ping on a known token.   |
 | `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`        | backend  | The adapter has no capability. Nothing is sent to any store.                                 |
 | `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED` | frontend | WooCommerce is not in the signup source picker.                                              |

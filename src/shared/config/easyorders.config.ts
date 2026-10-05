@@ -5,9 +5,8 @@ export const EASYORDERS_CONFIG = 'easyOrders';
 /**
  * EasyOrders connection (US-06-02).
  *
- * The switch hides every connect route. The allow-list is the pilot gate: an
- * organization may start an install only while it is listed, so an empty list
- * with the switch on still connects nobody.
+ * The switch hides every connect route. The optional allow-list restricts
+ * installs when populated; an empty list allows any organization.
  */
 export interface EasyOrdersConfig {
   enabled: boolean;
@@ -165,7 +164,11 @@ export function isEasyOrdersPilotOrganization(
   config: EasyOrdersConfig,
   orgId: string,
 ): boolean {
-  return config.enabled && config.pilotOrgIds.includes(orgId.toLowerCase());
+  return (
+    config.enabled &&
+    (config.pilotOrgIds.length === 0 ||
+      config.pilotOrgIds.includes(orgId.toLowerCase()))
+  );
 }
 
 /** Every source a merchant connects after signup, by its config key. */

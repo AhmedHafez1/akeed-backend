@@ -51,12 +51,12 @@ Hand the results back so the contract record can be updated. Part B starts only 
 
    ```
    EASYORDERS_CONNECT_ENABLED=true
-   EASYORDERS_PILOT_ORG_IDS=<pilot organization uuid>
+   EASYORDERS_PILOT_ORG_IDS=
    EASYORDERS_PUBLIC_API_BASE_URL=https://<public API host>
    EASYORDERS_APP_BASE_URL=https://<public app host>
    ```
 
-   The organization id is only known after signup, so sign up first, then add the id and restart. Until then the account sees `EASYORDERS_PILOT_REQUIRED`, which is the expected screen. Record it (Part E, row 3).
+   An empty pilot list allows any organization while connect is enabled. For a restricted pilot, set the organization's UUID instead.
 4. Leave `EASYORDERS_INGESTION_ENABLED` and `EASYORDERS_OUTCOME_SYNC_ENABLED` off.
 5. Run the reconciliation and save it as `reconcile-0-before.txt`:
 

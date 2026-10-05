@@ -199,7 +199,11 @@ describe('EasyOrdersAuthService', () => {
         'EASYORDERS_SESSION_REQUIRED',
       ],
       [owner, { enabled: false }, 'EASYORDERS_CONNECT_UNAVAILABLE'],
-      [owner, { pilotOrgIds: [] }, 'EASYORDERS_PILOT_REQUIRED'],
+      [
+        owner,
+        { pilotOrgIds: ['33333333-3333-4333-8333-333333333333'] },
+        'EASYORDERS_PILOT_REQUIRED',
+      ],
     ])('refuses with %#: %s', async (user, settings, code) => {
       const { service, connections } = createService(settings);
 

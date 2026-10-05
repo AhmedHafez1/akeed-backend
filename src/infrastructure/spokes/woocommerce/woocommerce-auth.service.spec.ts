@@ -350,7 +350,12 @@ describe('WooCommerceAuthService', () => {
         'WOOCOMMERCE_SESSION_REQUIRED',
       ],
       [owner, { enabled: false }, 404, 'WOOCOMMERCE_CONNECT_UNAVAILABLE'],
-      [owner, { pilotOrgIds: [] }, 403, 'WOOCOMMERCE_PILOT_REQUIRED'],
+      [
+        owner,
+        { pilotOrgIds: ['33333333-3333-4333-8333-333333333333'] },
+        403,
+        'WOOCOMMERCE_PILOT_REQUIRED',
+      ],
     ])(
       'refuses who may not connect (%#)',
       async (user, settings, status, code) => {
@@ -804,9 +809,16 @@ describe('WooCommerceAuthService', () => {
         null,
       ],
       [
-        'not on the list',
+        'an empty allow-list',
         overview(pendingInstall()),
         { pilotOrgIds: [] },
+        'pending',
+        STORE,
+      ],
+      [
+        'not on the list',
+        overview(pendingInstall()),
+        { pilotOrgIds: ['33333333-3333-4333-8333-333333333333'] },
         'pilot_required',
         null,
       ],
@@ -882,7 +894,10 @@ describe('WooCommerceAuthService', () => {
     it.each([
       ['with the switch on', {}],
       ['with the switch off', { enabled: false }],
-      ['off the pilot list', { pilotOrgIds: [] }],
+      [
+        'off the pilot list',
+        { pilotOrgIds: ['33333333-3333-4333-8333-333333333333'] },
+      ],
     ])('shows a disconnected source %s', async (_label, settings) => {
       const { service, connections } = createService(settings);
       connections.getOverview.mockResolvedValue({
