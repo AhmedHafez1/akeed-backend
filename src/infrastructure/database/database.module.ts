@@ -27,6 +27,7 @@ import { IntegrationApiKeysRepository } from './repositories/integration-api-key
 import { EasyOrdersConnectionsRepository } from './repositories/easyorders-connections.repository';
 import { WooCommerceConnectionsRepository } from './repositories/woocommerce-connections.repository';
 import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
+import { WhatsappTemplatesRepository } from './repositories/whatsapp-templates.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -57,6 +58,7 @@ import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-
     EasyOrdersConnectionsRepository,
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
+    WhatsappTemplatesRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -85,6 +87,7 @@ import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-
     EasyOrdersConnectionsRepository,
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
+    WhatsappTemplatesRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

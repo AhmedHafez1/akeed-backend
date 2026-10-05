@@ -22,6 +22,13 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type {
+  TemplateLanguage,
+  TemplateParameterFormat,
+  TemplatePreview,
+  TemplatePurpose,
+  TemplateVariableKey,
+} from '../../shared/messaging/template-registry.types';
 
 export const verificationStatus = pgEnum('verification_status', [
   'pending',
@@ -179,6 +186,86 @@ export const memberships = pgTable(
   ],
 );
 
+/**
+ * The WhatsApp template registry (US-08-03): one row per template and
+ * language. The provider-side columns (`metaTemplateId`, `reviewStatus`,
+ * `category`, `quality`, `componentsSnapshot`, `lastSyncedAt`) are
+ * environment data filled by sync, never by a migration.
+ */
+export const whatsappTemplates = pgTable(
+  'whatsapp_templates',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    key: text('key').notNull(),
+    purpose: text('purpose').$type<TemplatePurpose>().notNull(),
+    language: text('language').$type<TemplateLanguage>().notNull(),
+    style: text('style').notNull(),
+    metaTemplateName: text('meta_template_name').notNull(),
+    metaLanguageCode: text('meta_language_code').notNull(),
+    parameterFormat: text('parameter_format')
+      .$type<TemplateParameterFormat>()
+      .notNull(),
+    variableMapping: jsonb('variable_mapping')
+      .$type<
+        Array<{ key: TemplateVariableKey; name?: string; position?: number }>
+      >()
+      .notNull(),
+    preview: jsonb('preview').$type<TemplatePreview>().notNull(),
+    componentsSnapshot: jsonb('components_snapshot'),
+    metaTemplateId: text('meta_template_id'),
+    reviewStatus: text('review_status'),
+    category: text('category'),
+    quality: text('quality'),
+    isActive: boolean('is_active').default(true).notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    lastSyncedAt: timestamp('last_synced_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+  },
+  (table) => [
+    unique('whatsapp_templates_key_key').on(table.key),
+    unique('whatsapp_templates_purpose_language_style_key').on(
+      table.purpose,
+      table.language,
+      table.style,
+    ),
+    uniqueIndex('whatsapp_templates_one_default_per_purpose_language_idx')
+      .on(table.purpose, table.language)
+      .where(sql`${table.isDefault}`),
+    check(
+      'whatsapp_templates_purpose_check',
+      sql`${table.purpose} IN ('cod_confirmation')`,
+    ),
+    check(
+      'whatsapp_templates_language_check',
+      sql`${table.language} IN ('ar', 'en')`,
+    ),
+    check(
+      'whatsapp_templates_parameter_format_check',
+      sql`${table.parameterFormat} IN ('named', 'positional')`,
+    ),
+    check(
+      'whatsapp_templates_default_is_active_check',
+      sql`NOT ${table.isDefault} OR ${table.isActive}`,
+    ),
+    pgPolicy('Service role manages whatsapp templates', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
 export const integrations = pgTable(
   'integrations',
   {
@@ -211,6 +298,10 @@ export const integrations = pgTable(
     codTemplateEnVariant: text('cod_template_en_variant')
       .default('friendly')
       .notNull(),
+    // Registry keys of the chosen styles (US-08-03). The two variant columns
+    // above are still written with them until a later migration drops them.
+    codTemplateArKey: text('cod_template_ar_key'),
+    codTemplateEnKey: text('cod_template_en_key'),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
     avgShippingCost: numeric('avg_shipping_cost', { precision: 10, scale: 2 })
       .default('3')
@@ -301,6 +392,16 @@ export const integrations = pgTable(
       table.platformStoreUrl,
     ),
     unique('integrations_id_org_id_key').on(table.id, table.orgId),
+    foreignKey({
+      columns: [table.codTemplateArKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_template_ar_key_fkey',
+    }).onUpdate('cascade'),
+    foreignKey({
+      columns: [table.codTemplateEnKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_template_en_key_fkey',
+    }).onUpdate('cascade'),
     pgPolicy('Multi-tenant integrations', {
       as: 'permissive',
       for: 'all',

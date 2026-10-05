@@ -379,6 +379,20 @@
       "when": 1791504000000,
       "tag": "0053_dispatch_template_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0054_whatsapp_templates_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791676800000,
+      "tag": "0055_integration_template_keys",
+      "breakpoints": true
     }
   ]
 }
