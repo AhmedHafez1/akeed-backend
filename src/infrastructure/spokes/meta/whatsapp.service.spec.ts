@@ -4,6 +4,7 @@ import {
 } from '../../../shared/billing/entitlement';
 import { of } from 'rxjs';
 import { WhatsAppService } from './whatsapp.service';
+import { selectCodTemplate } from '../../../shared/messaging/cod-template-selector';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -173,10 +174,11 @@ describe('WhatsAppService', () => {
       orderNumber: 'ORD-1001',
       totalPrice: '250 SAR',
       verificationId: 'ver-1',
-      preferredLanguage: 'en',
-      templateSelection: {
-        en: 'professional',
-      },
+      template: selectCodTemplate({
+        preferredLanguage: 'en',
+        phoneNumber: '+15551234567',
+        enVariant: 'professional',
+      }),
     });
 
     expect(httpService.post).toHaveBeenCalledTimes(1);
@@ -230,10 +232,11 @@ describe('WhatsAppService', () => {
       orderNumber: 'ORD-AR-22',
       totalPrice: '900 EGP',
       verificationId: 'ver-2',
-      preferredLanguage: 'ar',
-      templateSelection: {
-        ar: 'short',
-      },
+      template: selectCodTemplate({
+        preferredLanguage: 'ar',
+        phoneNumber: '+201001112223',
+        arVariant: 'short',
+      }),
     });
 
     const payload = httpService.post.mock.calls[0][1] as {

@@ -555,8 +555,10 @@ export const verifications = pgTable(
     orderId: uuid('order_id').notNull(),
     status: verificationStatus().default('pending').notNull(),
     waMessageId: text('wa_message_id'),
-    templateName: text('template_name').default('cod_verification'),
-    languageCode: text('language_code').default('ar'),
+    // The template and language code of the message `wa_message_id` points
+    // at, written with it on acceptance. NULL until a send is accepted.
+    templateName: text('template_name'),
+    languageCode: text('language_code'),
     attempts: integer().default(0),
     lastSentAt: timestamp('last_sent_at', {
       withTimezone: true,
@@ -722,9 +724,29 @@ export const verificationMessageDispatches = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
+    // Which template this send carried (US-08-02). NULL on rows written before
+    // it was recorded; those are never backfilled.
+    templateVariantKey: text('template_variant_key'),
+    templatePurpose: text('template_purpose').$type<
+      'initial' | 'reminder' | 'test'
+    >(),
+    metaTemplateName: text('meta_template_name'),
+    metaLanguageCode: text('meta_language_code'),
+    resolvedLanguage: text('resolved_language').$type<'ar' | 'en'>(),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
+    check(
+      'dispatch_template_purpose_check',
+      sql`template_purpose IS NULL OR template_purpose IN ('initial', 'reminder', 'test')`,
+    ),
+    check(
+      'dispatch_resolved_language_check',
+      sql`resolved_language IS NULL OR resolved_language IN ('ar', 'en')`,
+    ),
+    index('idx_verification_message_dispatches_accepted_at')
+      .on(table.acceptedAt)
+      .where(sql`${table.acceptedAt} IS NOT NULL`),
     check(
       'dispatch_accounting_mode_check',
       sql`accounting_mode IN ('periodic_plan', 'prepaid_credit')`,

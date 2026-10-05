@@ -1,4 +1,7 @@
-import type { CodTemplateSelection } from '../messaging/cod-template-catalog';
+import type {
+  SelectedCodTemplate,
+  SentTemplateIdentity,
+} from '../messaging/cod-template-selector';
 
 export const MESSAGING_PORT = Symbol('MESSAGING_PORT');
 
@@ -22,9 +25,13 @@ export interface MessagingPort {
     orderNumber: string;
     totalPrice: string;
     verificationId: string;
-    preferredLanguage?: string;
-    templateSelection?: Partial<CodTemplateSelection>;
-  }): Promise<{ messages?: Array<{ id: string }> }>;
+    /** Selected before the dispatch was claimed; the adapter sends this one. */
+    template: SelectedCodTemplate;
+  }): Promise<{
+    messages?: Array<{ id: string }>;
+    /** What the adapter sent. Absent when an adapter does not report it. */
+    template?: SentTemplateIdentity;
+  }>;
 }
 
 export class ConfirmedMessageRejection extends Error {

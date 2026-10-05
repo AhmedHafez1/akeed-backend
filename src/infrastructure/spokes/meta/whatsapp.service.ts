@@ -7,20 +7,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
+import type { CodTemplateVariableKey } from '../../../shared/messaging/cod-template-catalog';
 import {
-  getCodTemplateDefinition,
-  type CodTemplateVariableKey,
-  type CodTemplateSelection,
-} from '../../../shared/messaging/cod-template-catalog';
+  toSentTemplateIdentity,
+  type SelectedCodTemplate,
+  type SentTemplateIdentity,
+} from '../../../shared/messaging/cod-template-selector';
 import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
 import { WhatsAppResponse } from './models/whatsapp-response.interface';
-import { resolveTemplateLanguageForPhone } from '../../../shared/messaging/template-language';
-
-type VerificationTemplateLanguage = 'ar' | 'en';
-type VerificationTemplatePreference = 'auto' | VerificationTemplateLanguage;
 
 @Injectable()
 export class WhatsAppService {
@@ -75,18 +72,9 @@ export class WhatsAppService {
     orderNumber: string;
     totalPrice: string;
     verificationId: string;
-    preferredLanguage?: VerificationTemplatePreference;
-    templateSelection?: Partial<CodTemplateSelection>;
-  }): Promise<WhatsAppResponse> {
-    const preferredLanguage = params.preferredLanguage ?? 'auto';
-    const resolvedLanguage = this.resolveTemplateLanguage(
-      preferredLanguage,
-      params.to,
-    );
-    const templateDefinition = getCodTemplateDefinition({
-      language: resolvedLanguage,
-      selection: params.templateSelection,
-    });
+    template: SelectedCodTemplate;
+  }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
+    const { template } = params;
     const bodyParameterValueByKey: Record<CodTemplateVariableKey, string> = {
       customer: (params.customerName ?? '').trim() || 'Customer',
       store: (params.storeName ?? '').trim() || 'Akeed Store',
@@ -94,33 +82,31 @@ export class WhatsAppService {
       total: params.totalPrice,
     };
 
-    const bodyParameters = templateDefinition.bodyParameterOrder.map(
-      (parameterKey) => {
-        const text = bodyParameterValueByKey[parameterKey];
+    const bodyParameters = template.bodyParameterOrder.map((parameterKey) => {
+      const text = bodyParameterValueByKey[parameterKey];
 
-        if (templateDefinition.bodyVariableMode === 'named') {
-          return {
-            type: 'text' as const,
-            parameter_name: parameterKey,
-            text,
-          };
-        }
-
+      if (template.bodyVariableMode === 'named') {
         return {
           type: 'text' as const,
+          parameter_name: parameterKey,
           text,
         };
-      },
-    );
+      }
+
+      return {
+        type: 'text' as const,
+        text,
+      };
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
       to: params.to,
       type: 'template',
       template: {
-        name: templateDefinition.metaTemplateName,
+        name: template.templateName,
         language: {
-          code: templateDefinition.metaLanguageCode,
+          code: template.languageCode,
         },
         components: [
           {
@@ -162,12 +148,15 @@ export class WhatsAppService {
           },
         }),
       );
-      return response.data as WhatsAppResponse;
+      return {
+        ...(response.data as WhatsAppResponse),
+        template: toSentTemplateIdentity(template),
+      };
     } catch (error) {
       const context = this.buildSafeErrorContext(error, {
         verificationId: params.verificationId,
-        resolvedLanguage,
-        templateName: templateDefinition.metaTemplateName,
+        resolvedLanguage: template.language,
+        templateName: template.templateName,
       });
       this.logger.error(
         buildBackendLog(WhatsAppService.name, {
@@ -175,8 +164,10 @@ export class WhatsAppService {
           outcome: 'failure',
           verificationId: params.verificationId,
           to: params.to,
-          resolvedLanguage,
-          templateName: templateDefinition.metaTemplateName,
+          resolvedLanguage: template.language,
+          variantKey: template.variantKey,
+          templateName: template.templateName,
+          languageCode: template.languageCode,
           context,
           ...normalizeError(error),
         }),
@@ -192,18 +183,11 @@ export class WhatsAppService {
     }
   }
 
-  private resolveTemplateLanguage(
-    preferredLanguage: VerificationTemplatePreference,
-    phoneNumber: string,
-  ): VerificationTemplateLanguage {
-    return resolveTemplateLanguageForPhone(preferredLanguage, phoneNumber);
-  }
-
   private buildSafeErrorContext(
     error: unknown,
     params: {
       verificationId: string;
-      resolvedLanguage: VerificationTemplateLanguage;
+      resolvedLanguage: string;
       templateName: string;
     },
   ): string {

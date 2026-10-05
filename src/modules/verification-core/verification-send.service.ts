@@ -17,9 +17,12 @@ import { integrations } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
 import { CreditEligibilityService } from './credit-eligibility.service';
 import {
-  isArabicCodTemplateVariant,
-  isEnglishCodTemplateVariant,
-} from '../../shared/messaging/cod-template-catalog';
+  resolveTemplateSendPurpose,
+  selectCodTemplate,
+  toSentTemplateIdentity,
+  type SentTemplateIdentity,
+  type TemplateSendPurpose,
+} from '../../shared/messaging/cod-template-selector';
 import {
   VerificationMessageDispatchesRepository,
   type DispatchAcceptanceResult,
@@ -54,6 +57,11 @@ interface SendIdentity {
   dispatchKey: string;
   generation: number;
   waMessageId: string;
+  variantKey: string;
+  templateName: string;
+  languageCode: string;
+  resolvedLanguage: string;
+  purpose: TemplateSendPurpose;
 }
 
 const ACCEPTANCE_FAILURE_CODES: Record<
@@ -98,7 +106,8 @@ type ContextLoadResult =
  *
  * Responsibilities:
  *  - Reload the verification, order and integration with current state.
- *  - Claim one logical dispatch and reserve usage transactionally.
+ *  - Select the template, then claim one logical dispatch with that identity
+ *    and reserve usage transactionally.
  *  - Call MessagingPort.sendVerificationTemplate.
  *  - Persist provider acceptance and verification projection atomically.
  *  - Preserve ambiguous provider outcomes for audited reconciliation.
@@ -251,26 +260,31 @@ export class VerificationSendService {
     kind: SendKind,
   ): Promise<SendOutcome> {
     const { verification, order, integration } = ctx;
-    const templateSelection = {
-      ar: isArabicCodTemplateVariant(integration.codTemplateArVariant)
-        ? integration.codTemplateArVariant
-        : undefined,
-      en: isEnglishCodTemplateVariant(integration.codTemplateEnVariant)
-        ? integration.codTemplateEnVariant
-        : undefined,
-    };
-
-    const templateName =
-      kind === 'initial'
-        ? (verification.templateName ?? 'cod_verification')
-        : `${verification.templateName ?? 'cod_verification'}:follow_up`;
+    // Selected before the claim, so the ledger row and the message are built
+    // from the same values and a send whose outcome is never learned still
+    // says which template it carried.
+    const template = selectCodTemplate({
+      preferredLanguage: integration.defaultLanguage,
+      phoneNumber: order.customerPhone,
+      arVariant: integration.codTemplateArVariant,
+      enVariant: integration.codTemplateEnVariant,
+    });
+    const purpose = resolveTemplateSendPurpose({
+      kind,
+      isTestOrder: order.isTest === true,
+    });
     const dispatchClaim = await this.messageDispatches.claim({
       orgId: order.orgId,
       integrationId: integration.id,
       verificationId: verification.id,
       kind,
-      templateName,
-      languageCode: integration.defaultLanguage ?? 'auto',
+      templateName: template.templateName,
+      languageCode: template.languageCode,
+      identity: {
+        variantKey: template.variantKey,
+        purpose,
+        language: template.language,
+      },
       leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
       billingExempt: ctx.billingExempt,
     });
@@ -374,8 +388,7 @@ export class VerificationSendService {
         orderNumber: order.orderNumber?.trim() || order.externalOrderId,
         totalPrice: `${order.totalPrice} ${order.currency ?? ''}`.trim(),
         verificationId: verification.id,
-        preferredLanguage: integration.defaultLanguage,
-        templateSelection,
+        template,
       });
     } catch (error) {
       const errInfo = normalizeError(error);
@@ -385,6 +398,7 @@ export class VerificationSendService {
           outcome: 'failure',
           verificationId: verification.id,
           kind,
+          ...this.templateLogFields(template, purpose),
           ...errInfo,
         }),
       );
@@ -415,6 +429,7 @@ export class VerificationSendService {
           outcome: 'failure',
           verificationId: verification.id,
           kind,
+          ...this.templateLogFields(template, purpose),
         }),
       );
       await this.markProviderOutcomeUnknown(
@@ -426,6 +441,9 @@ export class VerificationSendService {
     }
 
     const sentAt = new Date().toISOString();
+    // What the adapter says it sent is the record; an adapter that does not
+    // report it leaves the identity the claim already wrote.
+    const reportedTemplate = response?.template;
 
     // Past this point the provider has given us a message id, so the message
     // was sent. Everything below is bookkeeping: it may fail, but it must never
@@ -447,7 +465,12 @@ export class VerificationSendService {
       dispatchKey: dispatchClaim.dispatch.dispatchKey,
       generation: dispatchClaim.dispatch.generation,
       waMessageId,
+      ...this.templateLogFields(reportedTemplate ?? template, purpose),
     };
+    // The salvage path has no ledger row to read the identity back from.
+    const salvageTemplate = toSentTemplateIdentity(
+      reportedTemplate ?? template,
+    );
 
     try {
       const accepted = await this.messageDispatches.markAccepted({
@@ -457,6 +480,7 @@ export class VerificationSendService {
         verificationId: verification.id,
         kind,
         generation: dispatchClaim.dispatch.generation,
+        sentTemplate: reportedTemplate,
       });
       if (accepted.outcome !== 'accepted') {
         this.logger.error(
@@ -474,7 +498,7 @@ export class VerificationSendService {
               : {}),
           }),
         );
-        return this.salvageAcceptance(sendIdentity, sentAt);
+        return this.salvageAcceptance(sendIdentity, sentAt, salvageTemplate);
       }
     } catch (error) {
       this.logger.error(
@@ -485,10 +509,24 @@ export class VerificationSendService {
           ...normalizeError(error),
         }),
       );
-      return this.salvageAcceptance(sendIdentity, sentAt);
+      return this.salvageAcceptance(sendIdentity, sentAt, salvageTemplate);
     }
 
     return { status: 'sent', waMessageId, sentAt };
+  }
+
+  /** Which template a send carried, for logs: identifiers only, no text. */
+  private templateLogFields(
+    template: SentTemplateIdentity,
+    purpose: TemplateSendPurpose,
+  ) {
+    return {
+      variantKey: template.variantKey,
+      templateName: template.templateName,
+      languageCode: template.languageCode,
+      resolvedLanguage: template.language,
+      purpose,
+    };
   }
 
   /**
@@ -513,6 +551,7 @@ export class VerificationSendService {
   private async salvageAcceptance(
     identity: SendIdentity,
     sentAt: string,
+    template: SentTemplateIdentity,
   ): Promise<SendOutcome> {
     let ledgerParked = 0;
     try {
@@ -540,6 +579,7 @@ export class VerificationSendService {
           kind: identity.kind,
           providerMessageId: identity.waMessageId,
           sentAt,
+          template,
         });
     } catch (error) {
       this.logger.error(

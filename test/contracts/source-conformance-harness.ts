@@ -1176,6 +1176,7 @@ export function assembleConformanceWorld(
       '0032_credit_and_payment_domain_foundation.sql',
       '0033_dispatch_accounting_mode.sql',
       '0045_provider_message_receipts.sql',
+      '0053_dispatch_template_identity.sql',
       ...options.migrations,
     ])
       await migrate(name);

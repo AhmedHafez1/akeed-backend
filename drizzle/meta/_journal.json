@@ -372,6 +372,13 @@
       "when": 1791417600000,
       "tag": "0052_woocommerce_disconnect",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791504000000,
+      "tag": "0053_dispatch_template_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -213,6 +213,7 @@ export function paymobBillingHarness(
     await migrate('0034_billing_observability_and_settlements.sql');
     await migrate('0035_standalone_auto_activation.sql');
     await migrate('0045_provider_message_receipts.sql');
+    await migrate('0053_dispatch_template_identity.sql');
   }
 
   /** An active Standalone merchant holding `quantity` granted credits. */

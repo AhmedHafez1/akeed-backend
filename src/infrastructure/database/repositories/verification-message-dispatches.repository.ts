@@ -5,6 +5,10 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
+import type {
+  SentTemplateIdentity,
+  TemplateSendPurpose,
+} from '../../../shared/messaging/cod-template-selector';
 import { TERMINAL_STATUSES } from '../../../shared/verification/verification-lifecycle';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
@@ -86,6 +90,81 @@ export function buildDispatchKey(
 }
 export type DispatchRecord = typeof verificationMessageDispatches.$inferSelect;
 export type DispatchState = DispatchRecord['state'];
+
+/** What a claim records about the template it is about to send. */
+export interface DispatchTemplateClaim {
+  variantKey: string;
+  purpose: TemplateSendPurpose;
+  language: SentTemplateIdentity['language'];
+}
+
+/**
+ * The template columns a claim writes. `templateName` and `languageCode` are
+ * the provider's name and code. The identity columns are written only when the
+ * caller says which template it selected, so a row never holds a guessed one.
+ */
+function claimTemplateColumns(params: {
+  templateName: string;
+  languageCode: string;
+  identity?: DispatchTemplateClaim;
+}) {
+  return {
+    templateName: params.templateName,
+    languageCode: params.languageCode,
+    ...(params.identity
+      ? {
+          templateVariantKey: params.identity.variantKey,
+          templatePurpose: params.identity.purpose,
+          metaTemplateName: params.templateName,
+          metaLanguageCode: params.languageCode,
+          resolvedLanguage: params.identity.language,
+        }
+      : {}),
+  };
+}
+
+/** The dispatch columns restated from what the adapter reports it sent. */
+function sentTemplateColumns(template: SentTemplateIdentity | undefined) {
+  if (!template) return {};
+  return {
+    templateName: template.templateName,
+    languageCode: template.languageCode,
+    templateVariantKey: template.variantKey,
+    metaTemplateName: template.templateName,
+    metaLanguageCode: template.languageCode,
+    resolvedLanguage: template.language,
+  };
+}
+
+/**
+ * The template a stored dispatch carried, or nothing for a row written before
+ * it was recorded. Such a row is reported as "not recorded", never inferred.
+ */
+export function recordedDispatchTemplate(
+  dispatch: Partial<
+    Pick<
+      DispatchRecord,
+      | 'templateVariantKey'
+      | 'metaTemplateName'
+      | 'metaLanguageCode'
+      | 'resolvedLanguage'
+    >
+  >,
+): SentTemplateIdentity | undefined {
+  if (
+    !dispatch.templateVariantKey ||
+    !dispatch.metaTemplateName ||
+    !dispatch.metaLanguageCode ||
+    !dispatch.resolvedLanguage
+  )
+    return undefined;
+  return {
+    variantKey: dispatch.templateVariantKey,
+    language: dispatch.resolvedLanguage,
+    templateName: dispatch.metaTemplateName,
+    languageCode: dispatch.metaLanguageCode,
+  };
+}
 
 /**
  * How many times one logical send may be re-claimed after its lease expires.
@@ -207,6 +286,12 @@ export class VerificationMessageDispatchesRepository {
     kind: DispatchKind;
     templateName: string;
     languageCode: string;
+    /**
+     * Which template the send was selected to carry. Every send path passes
+     * it; it is optional only so a caller that claims without selecting a
+     * template records none.
+     */
+    identity?: DispatchTemplateClaim;
     leaseUntil: string;
     /**
      * Onboarding test sends are free: the dispatch is still claimed and leased
@@ -254,8 +339,7 @@ export class VerificationMessageDispatchesRepository {
           dispatchKey,
           kind: params.kind,
           state: 'ready',
-          templateName: params.templateName,
-          languageCode: params.languageCode,
+          ...claimTemplateColumns(params),
         })
         .onConflictDoNothing({
           target: verificationMessageDispatches.dispatchKey,
@@ -333,8 +417,7 @@ export class VerificationMessageDispatchesRepository {
           .update(verificationMessageDispatches)
           .set({
             state: 'sending',
-            templateName: params.templateName,
-            languageCode: params.languageCode,
+            ...claimTemplateColumns(params),
             attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
             lastErrorCode: reclaimedFromExpiredLease
               ? 'dispatch_lease_expired'
@@ -391,8 +474,7 @@ export class VerificationMessageDispatchesRepository {
         .update(verificationMessageDispatches)
         .set({
           state: 'sending',
-          templateName: params.templateName,
-          languageCode: params.languageCode,
+          ...claimTemplateColumns(params),
           usagePeriodStart:
             dispatch.usagePeriodStart ?? entitlement.periodStart,
           usageReserved: true,
@@ -419,6 +501,11 @@ export class VerificationMessageDispatchesRepository {
     kind?: DispatchKind;
     generation?: number;
     staffAudit?: StaffResolutionAudit;
+    /**
+     * What the adapter reports it sent. Without it (a staff resolution, or an
+     * adapter that does not report) the identity the claim wrote stands.
+     */
+    sentTemplate?: SentTemplateIdentity;
   }): Promise<DispatchAcceptanceResult> {
     return this.withDispatchTransaction(
       params.dispatchId,
@@ -511,6 +598,7 @@ export class VerificationMessageDispatchesRepository {
               dispatch.providerMessageId ?? params.providerMessageId,
             sentAt: dispatch.acceptedAt ?? params.sentAt,
             repair: true,
+            template: recordedDispatchTemplate(dispatch),
           });
           return { outcome: 'accepted' as const, dispatch };
         }
@@ -545,11 +633,18 @@ export class VerificationMessageDispatchesRepository {
         if (restoreReleasedUsage) {
           await this.accounting.periodic.restore(tx, dispatch, params.sentAt);
         }
-        await this.projectAcceptedVerification(tx, dispatch, params);
+        // The verification gets the template in the same statement as the
+        // message id, so the two always describe the same message.
+        await this.projectAcceptedVerification(tx, dispatch, {
+          providerMessageId: params.providerMessageId,
+          sentAt: params.sentAt,
+          template: params.sentTemplate ?? recordedDispatchTemplate(dispatch),
+        });
         const [updated] = await tx
           .update(verificationMessageDispatches)
           .set({
             state: 'accepted',
+            ...sentTemplateColumns(params.sentTemplate),
             providerMessageId: params.providerMessageId,
             acceptedAt: params.sentAt,
             resolvedAt:
@@ -598,6 +693,7 @@ export class VerificationMessageDispatchesRepository {
     kind: DispatchKind;
     providerMessageId: string;
     sentAt: string;
+    template?: SentTemplateIdentity;
   }): Promise<number> {
     return this.projectAcceptedVerification(
       this.db,
@@ -605,6 +701,7 @@ export class VerificationMessageDispatchesRepository {
       {
         providerMessageId: params.providerMessageId,
         sentAt: params.sentAt,
+        template: params.template,
       },
     );
   }
@@ -1207,8 +1304,7 @@ export class VerificationMessageDispatchesRepository {
           accountingMode: 'prepaid_credit',
           kind: params.kind,
           state: 'ready',
-          templateName: params.templateName,
-          languageCode: params.languageCode,
+          ...claimTemplateColumns(params),
         })
         .returning();
     } else if (previous.accountingMode !== 'prepaid_credit') {
@@ -1229,8 +1325,7 @@ export class VerificationMessageDispatchesRepository {
       .update(verificationMessageDispatches)
       .set({
         state: 'sending',
-        templateName: params.templateName,
-        languageCode: params.languageCode,
+        ...claimTemplateColumns(params),
         usageReserved: false,
         usagePeriodStart: null,
         attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
@@ -1306,10 +1401,21 @@ export class VerificationMessageDispatchesRepository {
   private async projectAcceptedVerification(
     tx: DispatchWriter,
     dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'>,
-    params: { providerMessageId: string; sentAt: string; repair?: boolean },
+    params: {
+      providerMessageId: string;
+      sentAt: string;
+      repair?: boolean;
+      template?: SentTemplateIdentity;
+    },
   ): Promise<number> {
     const common = {
       waMessageId: params.providerMessageId,
+      ...(params.template
+        ? {
+            templateName: params.template.templateName,
+            languageCode: params.template.languageCode,
+          }
+        : {}),
       updatedAt: params.sentAt,
     };
     if (dispatch.kind === 'follow_up') {
