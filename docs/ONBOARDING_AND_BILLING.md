@@ -103,7 +103,7 @@ A new standalone source is provisioned ready to send, so onboarding does not ask
 
 ### Connected sources (US-06-05)
 
-A source whose spoke registers a setup contributor (EasyOrders today) gets a `sourceSetup` block on the state: connection state, store, order defaults, Akeed sender status and blocked reasons. It finishes through the same `POST /api/onboarding/complete` as Standalone, after the free test. The state and settings stay readable after the merchant disconnects the source, and `GET /api/settings/source-health` reports its health. Details are in [Integrations, Webhooks and Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#easyorders-setup-health-and-disconnect-us-06-05).
+A source whose spoke registers a setup contributor (EasyOrders and WooCommerce) gets a `sourceSetup` block on the state: connection state, store, order defaults, Akeed sender status and blocked reasons. It finishes through the same `POST /api/onboarding/complete` as Standalone, after the free test. The state and settings stay readable after the merchant disconnects the source, and `GET /api/settings/source-health` reports its health. A WooCommerce source has no order defaults to choose: both are reported as null and neither blocks. Details are in [Integrations, Webhooks and Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#easyorders-setup-health-and-disconnect-us-06-05) and, for WooCommerce, [its own section](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#woocommerce-setup-health-and-disconnect-us-07-05).
 
 ## Billing Plans
 

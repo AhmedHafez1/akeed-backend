@@ -600,11 +600,11 @@ No switch of its own. Behavior comes from the [US-06-01 contract record](Epics/0
 
 **Source setup seam.** A source whose connection has state of its own registers a `SourceSetupContributor` in `SOURCE_SETUP_CONTRIBUTORS` (`src/shared/commerce/source-setup.ts`, bound in `onboarding.module.ts`). `SourceSetupService` reads it by platform type; the onboarding module never names a provider. `EasyOrdersSetupContributor` answers from the connection row alone, with no provider call.
 
-- `GET /api/onboarding/state` and `GET /api/settings` carry `sourceSetup` for such a source: connection state, store, order defaults, the Akeed sender status and the blocked reasons (`order_defaults_missing`, `webhook_secrets_missing`, `credentials_rejected`, `source_disconnected`, after the common ones). The key is absent for Shopify and Standalone.
+- `GET /api/onboarding/state` and `GET /api/settings` carry `sourceSetup` for such a source: connection state, store, order defaults, the Akeed sender status and the blocked reasons (`order_defaults_missing`, `webhook_secrets_missing`, `credentials_rejected`, `source_disconnected`, and `webhook_disabled` for a source whose store can disable a webhook, after the common ones). The key is absent for Shopify and Standalone.
 - `POST /api/onboarding/complete` refuses with `409 ONBOARDING_BLOCKED` and those reasons.
 - Both reads stay available for a source its merchant disconnected. Every write still answers `404 ONBOARDING_SOURCE_INACTIVE`.
 
-**Health.** `GET /api/settings/source-health` (any member) returns separate signals and no overall status: credentials (the provider's last answer, not a live check), the last accepted event and the count in the last 7 days, processing failures, events waiting, store updates that failed or are pending, deliveries refused before processing, and each outcome action with whether the store takes it now. A null last event means "no events yet" and is never a fault.
+**Health.** `GET /api/settings/source-health` (any member) returns separate signals and no overall status: credentials (the provider's last answer, not a live check), the last accepted event and the count in the last 7 days, processing failures, events waiting, store updates that failed or are pending, deliveries refused before processing, and each outcome action with whether the store takes it now. A null last event means "no events yet" and is never a fault. A contributor that can read its webhooks from the store (optional `inspectWebhooks`; WooCommerce) adds a `webhooks` block with each one's state; the key is absent for every other source.
 
 **Disconnect.** `DELETE /api/easyorders/connection` (owner or admin; not gated by the connect switch or the pilot list). One transaction: open install contexts are retired, `integrations.is_active` becomes false, and the API key, the URL token, both webhook secrets and the verified-store claim are wiped. The store id, the settings and all history stay. Waiting store updates are then closed as `integration_inactive`. Queued events, messages and store writes are stopped by the same `is_active` checks that already guarded them. Nothing is removed at EasyOrders; the merchant deletes the key and webhooks there.
 
@@ -783,6 +783,28 @@ A successful read sets the health back to `ok`. There is no rate limiter.
 **Logs.** `woocommerce-outcome-sync` (`errorCode`, `providerStatus`), `woocommerce-outcome-note`, and the shared `commerce-outcome-dispatch`, `commerce-outcome-sync-retry` and `webhook-order-update-handle`. None carries a key or a payload.
 
 **Validate.** `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
+
+## WooCommerce Setup, Health and Disconnect (US-07-05)
+
+No switch of its own. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 3 and 7, and its US-07-05 amendment. Operations: the [runbook](Epics/07-woocommerce-integration/evidence/US-07-05-disconnect-and-support-runbook.md).
+
+**Setup (`WooCommerceSetupContributor`).** Registered in `SOURCE_SETUP_CONTRIBUTORS` next to the EasyOrders one. `describe` reads the connection row alone and never calls a store: the store, the last credential answer, refused deliveries and the last webhook states. Currency and phone country are reported as null and never block: every order carries its own. Reasons: `source_disconnected`, or `credentials_rejected` (a `401` or a `403`) and `webhook_disabled`.
+
+**Webhook state (`WooCommerceConnectionHealthService`).** There is no background poll. Both webhooks are read from the store (`GET /wp-json/wc/v3/webhooks/<id>`) when `GET /api/settings/source-health` is read (the contributor's `inspectWebhooks`), on a connection check and before a re-enable. States: `active`, `paused`, `disabled`, `missing` (a `404`), `unknown` (the store could not be asked). A definite state is stored on `woocommerce_connections` as the last one read; what the store said of the keys is stored as `health`.
+
+| Route (session auth) | Who | What |
+| --- | --- | --- |
+| `POST /api/woocommerce/connection/check` | owner, admin | `200` with the codes found: address, TLS, REST, keys, permission, `home_url` mismatch, and each webhook problem |
+| `POST /api/woocommerce/connection/webhooks/enable` | owner, admin | Sets each `disabled` webhook to `active` and reads it again. Needs `WOOCOMMERCE_INGESTION_ENABLED` |
+| `DELETE /api/woocommerce/connection` | owner, admin | Disconnect. Not gated by the connect switch or the pilot list |
+
+**Disconnect.** One transaction (`WooCommerceConnectionsRepository.disconnect`, in `withSerializableRetry`): retire open installs, lock the organization and the connection, set `integrations.is_active = false`, wipe the three ciphertexts, the token hash, the webhook ids and the verified slot, stamp `disconnected_at`. Then the two webhooks are deleted at the store with the keys that transaction read, best effort, and waiting `commerce_outcome_syncs` rows are closed as `integration_inactive`. The answer carries `webhookCleanup`: `removed`, `failed` or `not_attempted`. Queued events, messages and store updates rely on the existing `is_active` guards; the outcome adapter and the normalizer also refuse a disconnected connection themselves.
+
+**Reconnect.** Through `POST /api/woocommerce/install` and the callback. Allowed only when the organization's one source is its own disconnected WooCommerce source and the canonical store URL is the one that was connected (`409 WOOCOMMERCE_RECONNECT_STORE_MISMATCH` otherwise, before any request leaves). The integration and connection rows are updated in place; the callback deletes every webhook at the store that delivers to Akeed before it creates the two new ones; `connected_at` moves to the reconnect.
+
+**Logs.** `woocommerce-disconnect` (`webhookCleanup`, `closedPendingSyncs`), `woocommerce-disconnect-webhook-cleanup`, `woocommerce-connection-check` (`problems`), `woocommerce-webhook-read`, `woocommerce-webhook-enable`, and `woocommerce-install-callback` (`reconnected`). Each names the store by host only.
+
+**Validate.** `scripts/test-woocommerce-connection-contract.ps1`, `scripts/test-woocommerce-ingestion-contract.ps1`, `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
 ## Server API Guide (US-05-05)
 

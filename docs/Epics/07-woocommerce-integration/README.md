@@ -1,7 +1,7 @@
 # E07 — WooCommerce Integration
 
 - **Horizon:** NEXT
-- **Status:** In progress (epic refactored 2026-10-04; US-07-01 contract record written 2026-10-04 and awaiting product-owner review; US-07-02, US-07-03 and US-07-04 done 2026-10-04 and shipped disabled; US-07-05 and US-07-06 not started)
+- **Status:** In progress (epic refactored 2026-10-04; US-07-01 contract record written 2026-10-04 and awaiting product-owner review; US-07-02, US-07-03 and US-07-04 done 2026-10-04 and shipped disabled; US-07-05 done 2026-10-05; US-07-06 not started)
 - **Stories:** 6
 - **Prerequisite epics:** [E02 — Platform Boundaries and Reliability](../02-platform-boundaries-and-reliability/README.md), [E03 — Standalone Foundation and Onboarding](../03-standalone-foundation-and-onboarding/README.md), [E05 — Standalone Order Ingestion API](../05-standalone-order-ingestion-api/README.md), and the shared code that [E06 — EasyOrders Integration](../06-easyorders-integration/README.md) put on `develop` (US-06-02 to US-06-05) with its automated gate. E06 go-live is **not** a prerequisite.
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -54,7 +54,7 @@ Delivery rank is the execution order. Dependencies override priority; P1 enablem
 | 2 | [US-07-02 — Connect WooCommerce through application authentication](US-07-02-connect-woocommerce-through-application-authentication.md) | P0 | Feature | [US-07-01](US-07-01-woocommerce-integration-contract-and-implementation-plan.md) | Done (2026-10-04), shipped disabled behind `WOOCOMMERCE_CONNECT_ENABLED` — [evidence](../../US-07-02-WOOCOMMERCE-CONNECTION-EVIDENCE.md) |
 | 3 | [US-07-03 — Ingest signed WooCommerce order webhooks](US-07-03-ingest-signed-woocommerce-order-webhooks.md) | P0 | Feature | [US-07-02](US-07-02-connect-woocommerce-through-application-authentication.md) | Done (2026-10-04), shipped disabled behind `WOOCOMMERCE_INGESTION_ENABLED` — [evidence](../../US-07-03-WOOCOMMERCE-INGESTION-EVIDENCE.md) |
 | 4 | [US-07-04 — Apply approved verification outcomes in WooCommerce](US-07-04-apply-approved-verification-outcomes-in-woocommerce.md) | P0 | Feature | [US-07-03](US-07-03-ingest-signed-woocommerce-order-webhooks.md) | Done (2026-10-04), shipped disabled behind `WOOCOMMERCE_OUTCOME_SYNC_ENABLED` — [evidence](../../US-07-04-WOOCOMMERCE-OUTCOME-SYNC-EVIDENCE.md) |
-| 5 | [US-07-05 — WooCommerce setup, health, disconnect and support](US-07-05-woocommerce-setup-health-disconnect-and-support.md) | P1 | Feature | [US-07-04](US-07-04-apply-approved-verification-outcomes-in-woocommerce.md) | Backlog |
+| 5 | [US-07-05 — WooCommerce setup, health, disconnect and support](US-07-05-woocommerce-setup-health-disconnect-and-support.md) | P1 | Feature | [US-07-04](US-07-04-apply-approved-verification-outcomes-in-woocommerce.md) | Done (2026-10-05), no switch of its own — [evidence](../../US-07-05-WOOCOMMERCE-SETUP-HEALTH-EVIDENCE.md), [runbook](evidence/US-07-05-disconnect-and-support-runbook.md) |
 | 6 | [US-07-06 — WooCommerce release gate and pilot](US-07-06-woocommerce-release-gate-and-pilot.md) | P0 | Quality gate | [US-07-05](US-07-05-woocommerce-setup-health-disconnect-and-support.md) | Backlog |
 
 ## Measurable exit criteria

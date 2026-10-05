@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Done (2026-10-05). No switch of its own: connect and reconnect ride on `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list, re-enable on `WOOCOMMERCE_INGESTION_ENABLED`, and disconnect, the check, status and health on none. [Evidence](../../US-07-05-WOOCOMMERCE-SETUP-HEALTH-EVIDENCE.md), [runbook](evidence/US-07-05-disconnect-and-support-runbook.md)
 - **Dependencies:** [US-07-04](US-07-04-apply-approved-verification-outcomes-in-woocommerce.md)
 
 Retitled on 2026-10-04 (was "Provide WooCommerce diagnostics and reconnection"). The filename was aligned with the title on 2026-10-04. P1, but the US-07-06 gate depends on it.
@@ -63,7 +63,9 @@ Adds no switch: connect and reconnect need the connect switch and the pilot list
 - [akeed-frontend/src/features/onboarding](../../../../akeed-frontend/src/features/onboarding)
 - [US-06-05 evidence](../../US-06-05-EASYORDERS-ONBOARDING-HEALTH-EVIDENCE.md) and [runbook](../06-easyorders-integration/evidence/US-06-05-disconnect-and-support-runbook.md)
 
-**ASSUMPTION / REQUIRES VALIDATION:** That API keys cannot be removed through REST is core behavior to confirm at the gate; until then removal is manual. The frontend folders were not re-read when this story was rewritten on 2026-10-04; check them before designing.
+**ASSUMPTION / REQUIRES VALIDATION:** That API keys cannot be removed through REST is core behavior to confirm at the gate; until then removal is manual.
+
+**VERIFIED FROM CODE (2026-10-05):** The frontend folders were re-read before this story was built. `features/onboarding` resolved a setup skin by platform and already had a WooCommerce connect screen whose connected state was a dead end; the setup flow, the checklist card and the disconnect dialog existed only as EasyOrders files and were extracted to `skins/connect/`. `features/settings` resolved the order-source tab by platform through `sourceSkins.ts`, with no WooCommerce row, and its health card had no place for a webhook's state.
 
 **EXTERNAL PLATFORM DEPENDENCY:** WooCommerce behavior comes from the US-07-01 contract record. These are its sources.
 
