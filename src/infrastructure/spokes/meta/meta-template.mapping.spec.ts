@@ -68,7 +68,15 @@ describe('Meta template mapping', () => {
       expect(mapQuality(value)).toBe('unknown');
     }
     expect(mapWebhookEvent('toString')).toBe('unknown');
-    expect(mapQuality({ score: 'GREEN' })).toBe('unknown');
+  });
+
+  it('reads the quality score object the list response carries', () => {
+    expect(mapQuality({ score: 'GREEN', date: 1791230257 })).toBe('high');
+    expect(mapQuality({ score: 'UNKNOWN', date: 1791230257 })).toBe('pending');
+    expect(mapQuality({ score: 'PURPLE' })).toBe('unknown');
+    expect(mapQuality({ score: { score: 'GREEN' } })).toBe('unknown');
+    expect(mapQuality({ date: 1791230257 })).toBe('unknown');
+    expect(mapQuality([])).toBe('unknown');
   });
 
   it('reads - and _ in a language code as the same character', () => {

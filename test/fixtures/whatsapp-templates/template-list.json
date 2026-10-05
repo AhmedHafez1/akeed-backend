@@ -1,0 +1,480 @@
+{
+  "_fixture": {
+    "source": "GET /v24.0/<WA_BUSINESS_ACCOUNT_ID>/message_templates, observed for US-08-01, then sanitized",
+    "environment": "dev",
+    "capturedOn": "2026-10-05",
+    "graphApiVersion": "v24.0",
+    "requestedFields": [
+      "id",
+      "name",
+      "language",
+      "status",
+      "category",
+      "sub_category",
+      "previous_category",
+      "correct_category",
+      "quality_score",
+      "rejected_reason",
+      "parameter_format",
+      "components",
+      "message_send_ttl_seconds",
+      "cta_url_link_tracking_opted_out",
+      "library_template_name"
+    ],
+    "droppedFields": [],
+    "synthetic": "Template IDs and paging cursors are synthetic. Everything else is as Meta returned it.",
+    "order": "Sorted by name, then language. Meta returned them in another order, over one or more pages."
+  },
+  "payload": {
+    "data": [
+      {
+        "id": "900000000000001",
+        "name": "_akeed_cod_verification_professional",
+        "language": "en",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Confirm & Ship"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "Cancel Order"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000002",
+        "name": "akeed_cod_verification",
+        "language": "ar",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
+            "example": {
+              "body_text": [
+                [
+                  "XYZ",
+                  "200$"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "تأكيد"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "إلغاء"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000003",
+        "name": "akeed_cod_verification",
+        "language": "en",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
+            "example": {
+              "body_text": [
+                [
+                  "123",
+                  "500$"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Confirm"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "Cancel"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000004",
+        "name": "akeed_cod_verification_direct",
+        "language": "en",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599$"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Ship My Order"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "Cancel"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000005",
+        "name": "akeed_cod_verification_direct_eg",
+        "language": "ar_EG",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1788761237
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "أهلاً {{customer}}، \n\nطلبك رقم #{{order}} من {{store}} مستني تأكيدك.\n\nياريت تأكد الطلب بقيمة {{total}} دلوقتي عشان نشحنهولك فوراً",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599$"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "تأكيد وشحن"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "إلغاء الطلب"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000006",
+        "name": "akeed_cod_verification_direct_gulf",
+        "language": "ar",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1788775359
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599$"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "اشحن طلبي"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "إلغاء"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000007",
+        "name": "akeed_cod_verification_friendly",
+        "language": "ar",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1788437856
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من {{store}}.\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريباً للشحن! \n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599$"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "تأكيد الطلب"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "إلغاء الطلب"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000008",
+        "name": "akeed_cod_verification_friendly",
+        "language": "en",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "sub_category": "CUSTOM",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "NAMED",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "Hi {{customer}}! 👋\n\nThank you for shopping with {{store}}. \n\nYour order #{{order}} for the total amount of {{total}} is ready to go! \n\nPlease tap the button below to confirm your order so we can ship it immediately.",
+            "example": {
+              "body_text_named_params": [
+                {
+                  "param_name": "customer",
+                  "example": "Ahmed"
+                },
+                {
+                  "param_name": "store",
+                  "example": "Togo"
+                },
+                {
+                  "param_name": "order",
+                  "example": "1009"
+                },
+                {
+                  "param_name": "total",
+                  "example": "599$"
+                }
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Confirm Order"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "text": "Cancel Order"
+              }
+            ]
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      },
+      {
+        "id": "900000000000009",
+        "name": "hello_world",
+        "language": "en_US",
+        "status": "APPROVED",
+        "category": "UTILITY",
+        "quality_score": {
+          "score": "UNKNOWN",
+          "date": 1791230257
+        },
+        "rejected_reason": "NONE",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "HEADER",
+            "format": "TEXT",
+            "text": "Hello World"
+          },
+          {
+            "type": "BODY",
+            "text": "Welcome and congratulations!! This message demonstrates your ability to send a WhatsApp message notification from the Cloud API, hosted by Meta. Thank you for taking the time to test with us."
+          },
+          {
+            "type": "FOOTER",
+            "text": "WhatsApp Business Platform sample message"
+          }
+        ],
+        "cta_url_link_tracking_opted_out": false
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "before": "SYNTHETIC_BEFORE",
+        "after": "SYNTHETIC_AFTER"
+      }
+    },
+    "summary": {
+      "total_count": 9,
+      "message_template_count": 9,
+      "message_template_limit": 6000
+    }
+  }
+}

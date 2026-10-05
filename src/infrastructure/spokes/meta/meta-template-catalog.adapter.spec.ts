@@ -3,9 +3,12 @@ import {
   FAKE_ACCOUNT_ID,
   FAKE_TOKEN,
   FakeMetaTemplateApi,
+  type FakeMetaTemplate,
   akeedTemplates,
   codComponents,
 } from '../../../../test/contracts/meta-template-api-fake';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { TemplateCatalogError } from '../../../shared/ports/template-catalog.port';
 import { parseWhatsappTemplateConfig } from '../../../shared/config/whatsapp-template.config';
 import { MetaTemplateCatalogAdapter } from './meta-template-catalog.adapter';
@@ -27,6 +30,20 @@ function setup(
     { get: (key: string) => values[key] } as never,
   );
   return { adapter, api, values };
+}
+
+/** The list response captured from the dev app, sanitized (US-08-01). */
+function capturedTemplates(): FakeMetaTemplate[] {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(
+        __dirname,
+        '../../../../test/fixtures/whatsapp-templates/template-list.json',
+      ),
+      'utf8',
+    ),
+  ) as { payload: { data: FakeMetaTemplate[] } };
+  return fixture.payload.data;
 }
 
 async function failure(
@@ -133,7 +150,8 @@ describe('MetaTemplateCatalogAdapter', () => {
     ['YELLOW', 'medium'],
     ['RED', 'low'],
     ['UNKNOWN', 'pending'],
-    [{ score: 'GREEN', date: 1 }, 'unknown'],
+    [{ score: 'GREEN', date: 1 }, 'high'],
+    [{ score: 'PURPLE', date: 1 }, 'unknown'],
     [undefined, 'unknown'],
   ])('maps quality %p to %s', async (quality_score, neutral) => {
     const [template] = akeedTemplates();
@@ -144,6 +162,50 @@ describe('MetaTemplateCatalogAdapter', () => {
     await expect(adapter.listTemplates()).resolves.toEqual([
       expect.objectContaining({ quality: neutral }),
     ]);
+  });
+
+  it('reads the list response captured from the dev app (US-08-01)', async () => {
+    const { adapter } = setup(
+      new FakeMetaTemplateApi({
+        templates: capturedTemplates(),
+      }),
+    );
+
+    const records = await adapter.listTemplates();
+
+    expect(records).toHaveLength(9);
+    expect(
+      records.every(
+        (record) =>
+          record.status === 'approved' &&
+          record.category === 'utility' &&
+          record.pendingCategory === null &&
+          record.quality === 'pending' &&
+          !('unknown' in record.components),
+      ),
+    ).toBe(true);
+    const short = records.find(
+      (record) =>
+        record.templateName === 'akeed_cod_verification' &&
+        record.languageCode === 'en',
+    );
+    expect(short?.components).toEqual({
+      body: [
+        'Hello',
+        '',
+        'We have received your order {{1}} with Cash on Delivery.',
+        'Total Price : {{2}}',
+        '',
+        'Please confirm your order.',
+      ].join('\n'),
+      buttons: [
+        { kind: 'quick_reply', text: 'Confirm' },
+        { kind: 'quick_reply', text: 'Cancel' },
+      ],
+    });
+    expect(adapter.describeComponents(short?.components ?? null)).toMatchObject(
+      { format: 'positional' },
+    );
   });
 
   it('reads a coming category change, and ignores one equal to the current category', async () => {

@@ -1,4 +1,8 @@
-import type { ProviderTemplateRecord } from '../messaging/template-provider.types';
+import type {
+  ProviderTemplateRecord,
+  TemplateComponentsSnapshot,
+} from '../messaging/template-provider.types';
+import type { TemplateTextModel } from '../messaging/template-text.types';
 
 export const TEMPLATE_CATALOG_PORT = Symbol('TEMPLATE_CATALOG_PORT');
 
@@ -14,6 +18,14 @@ export interface TemplateCatalogPort {
    * partial list.
    */
   listTemplates(): Promise<ProviderTemplateRecord[]>;
+  /**
+   * Reads a synced snapshot's text into segments, so callers never parse the
+   * provider's placeholder syntax. NULL when there is no snapshot or it could
+   * not be read. Pure: no provider call.
+   */
+  describeComponents(
+    snapshot: TemplateComponentsSnapshot | null,
+  ): TemplateTextModel | null;
 }
 
 /**

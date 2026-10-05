@@ -3,7 +3,7 @@
 - **Story:** [US-08-01 — Meta contract and live template reconciliation](../US-08-01-meta-contract-and-live-template-reconciliation.md)
 - **Record date:** 2026-10-05
 - **Baseline:** `akeed-backend` `develop` at `19c9e29`; kit commit `6acd898`
-- **State:** DRAFT. Sections 1, 2 and 4 are written from the kit and from Meta's documentation. Sections 3, 5, 6 and 7, the supported table and the verdict wait for the first run of the script.
+- **State:** DRAFT. Sections 1, 2 and 4 are written from the kit and from Meta's documentation. Sections 3, 5 and 6 were added on 2026-10-05 from the first run of the script on the dev app. Still open: a run read from the prod app, the variant usage count (section 7), anything about webhooks beyond the documentation, the supported table and the verdict.
 - **Verdict in one line:** not given yet.
 
 This record is the only source of truth for Meta behavior in E08. Where it says UNKNOWN, do not fill the gap from memory or from Meta's public documentation: follow the worst-case rule written next to it, or stop and ask.
@@ -84,6 +84,78 @@ The kit is [`scripts/spikes/whatsapp-templates/`](../../../../scripts/spikes/wha
 **How it was confirmed (2026-10-05, kit commit `6acd898`).** `list-templates.mjs --self-test` runs the real code path against an in-process stub, with no network and no credentials. The stub returns a page whose `paging.next` carries the dummy token, a template whose text echoes the token, an error whose message echoes the token twice, and a thrown network error with the token in it. Result: `SELF-TEST PASS: 18 checks`. Standard output and standard error were captured to files, and those two files and the two files in the self-test output folder were searched for the dummy token: 0 matches in each. A search of the kit for `POST`, `PUT`, `PATCH`, `DELETE` and `method:` finds `method: 'GET'` at the one call site and the stub's own bookkeeping, and nothing else.
 
 No request was sent to Meta to confirm this. The story's dry run against Meta with a made-up token is described in the kit README as an optional step for whoever holds a network path to Meta.
+
+## 3. Runs (AC 3)
+
+| # | Finding | Label |
+| --- | --- | --- |
+| 3.1 | **Dev app.** `list-templates.mjs --env dev` ran on 2026-10-05 at 19:57 UTC against the dev app's WhatsApp Business Account, Graph v24.0, kit fingerprint `ee00b60342ab4302`, run by the product owner. One page, 9 templates, no field rejected by Graph. `reconcile.mjs` ran on the saved file. | VERIFIED (dev, 2026-10-05) |
+| 3.2 | **List response shape.** Each template has `id` (a numeric string), `name`, `language`, `status`, `category`, `sub_category`, `quality_score`, `rejected_reason`, `parameter_format`, `components` and `cta_url_link_tracking_opted_out`. `quality_score` is an object, `{ "score": "<GREEN, YELLOW, RED or UNKNOWN>", "date": <Unix seconds> }`, not a bare string. `parameter_format` is `NAMED` or `POSITIONAL`. `previous_category`, `correct_category`, `message_send_ttl_seconds` and `library_template_name` were requested and absent from every template. | VERIFIED (dev, 2026-10-05) |
+| 3.3 | **Components in the list response.** `components` is a list in the creation syntax: `{ "type": "BODY", "text", "example" }` and `{ "type": "BUTTONS", "buttons": [{ "type": "QUICK_REPLY", "text" }] }`. A named body carries `example.body_text_named_params` as `{ param_name, example }`; a positional body carries `example.body_text` as a nested list. No Akeed template has a header or a footer. | VERIFIED (dev, 2026-10-05) |
+| 3.4 | **Summary.** The edge summary reports `total_count` 9, `message_template_count` 9 and `message_template_limit` 6000. | VERIFIED (dev, 2026-10-05) |
+| 3.5 | **Prod app.** The product owner reports that the prod app holds the same templates as dev. No prod output was read for this record. | NOT OBSERVED (reported 2026-10-05) |
+| 3.6 | A sanitized copy of the dev response is [`test/fixtures/whatsapp-templates/template-list.json`](../../../../test/fixtures/whatsapp-templates/template-list.json): synthetic template IDs and cursors, no account ID, no token. | CODE |
+
+**Rule from 3.2.** The spoke reads quality from `quality_score.score` in the list response and from the bare string in webhooks (4.8.9). Any other shape or value is the neutral `unknown`.
+
+## 5. Live account facts (AC 5), dev app, 2026-10-05
+
+All VERIFIED on the dev app. Quality `UNKNOWN` is Meta's "quality pending".
+
+| Language | Variant | Meta name | Code | At Meta | Status | Category | Quality | Format | Variables | Buttons |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ar | `standard` | `akeed_cod_verification_friendly` | `ar` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | named | customer, store, order, total | 2 quick replies |
+| ar | `egyptian` | `akeed_cod_verification_direct_eg` | `ar_EG` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | named | customer, order, store, total | 2 quick replies |
+| ar | `gulf` | `akeed_cod_verification_direct_gulf` | `ar` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | named | customer, order, store, total | 2 quick replies |
+| ar | `short` | `akeed_cod_verification` | `ar` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | positional | 1, 2 | 2 quick replies |
+| en | `friendly` | `akeed_cod_verification_friendly` | `en` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | named | customer, store, order, total | 2 quick replies |
+| en | `professional` | `_akeed_cod_verification_professional` | `en` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | named | customer, store, order, total | 2 quick replies |
+| en | `direct` | `akeed_cod_verification_direct_` | `en` | **no** | — | — | — | — | — | — |
+| en | `short` | `akeed_cod_verification` | `en` | yes | `APPROVED` | `UTILITY` | `UNKNOWN` | positional | 1, 2 | 2 quick replies |
+
+| # | Finding | Label |
+| --- | --- | --- |
+| 5.1 | For the 7 variants found, the parameter format, the variables and their names, and the two quick-reply buttons in confirm-then-cancel order match what the code sends. Every button label equals the catalog's label. | VERIFIED (dev, 2026-10-05) |
+| 5.2 | **`en` / `direct` is not at Meta under the name the code sends.** The code sends `akeed_cod_verification_direct_` (trailing underscore). Meta holds `akeed_cod_verification_direct` in `en`, `APPROVED`, `UTILITY`, and no template with the trailing underscore in any language. A send of this variant names a template Meta does not have (4.2.6, error 132001). | VERIFIED (dev, 2026-10-05) |
+| 5.3 | Two templates at Meta are not in the catalog: `akeed_cod_verification_direct` [`en`] (5.2) and Meta's sample `hello_world` [`en_US`]. | VERIFIED (dev, 2026-10-05) |
+| 5.4 | Whether `akeed_cod_verification_direct` has the same text and variables the `direct` variant expects. Its body was captured but not compared. | UNKNOWN |
+
+**Worst-case rules:**
+
+- **5.2.** Until the product owner decides, the registry row keeps the name the code has always sent, so no customer-facing payload changes. A sync marks the row `missing`; with the guardrail on, a store that chose it gets the English default with the reason `not_approved`. Staff see it as missing on the template pages (US-08-05).
+- **5.4.** The registry row is not pointed at `akeed_cod_verification_direct` without a reconciliation of that template's variables and button order first.
+
+## 6. Text compared with the catalog preview (AC 6), dev app, 2026-10-05
+
+All VERIFIED on the dev app. "Preview" is the hand-kept text in [`cod-template-catalog.ts`](../../../../src/shared/messaging/cod-template-catalog.ts), which Settings and the onboarding test show. The message a customer receives is Meta's text; the code sends only the values.
+
+| # | Finding | Label |
+| --- | --- | --- |
+| 6.1 | **No preview equals Meta's text.** All 7 bodies found differ from their preview. No body and no preview holds an invisible character. | VERIFIED (dev, 2026-10-05) |
+| 6.2 | **A total line Meta does not have.** The previews of `ar` `standard`, `egyptian` and `gulf` show a separate "إجمالي الطلب: {{total}}" line. Meta's bodies have no such line and use `{{total}}` once, where the preview uses it twice. | VERIFIED (dev, 2026-10-05) |
+| 6.3 | **Arabic spelling.** Meta writes `أهلاً`, `شكراً`, `تقريباً`, `فوراً`, `لتسوقك` and `تأكد`; the previews write `أهلًا`, `شكرًا`, `تقريبًا`, `فورًا`, `لتسوّقك` and `تأكّد`. `ar` `standard` at Meta also has an exclamation mark after the customer's name. | VERIFIED (dev, 2026-10-05) |
+| 6.4 | **`short`, both languages.** Meta's body has no `#` before the order number and writes "Total Price : {{2}}" and "إجمالي السعر : {{2}}" with a space before the colon. The Arabic body ends its first sentence with a full stop the preview lacks. | VERIFIED (dev, 2026-10-05) |
+| 6.5 | **`en` `friendly`.** Meta says "for the total amount of {{total}}"; the preview says "for {{total}}". | VERIFIED (dev, 2026-10-05) |
+| 6.6 | **`en` `professional`.** Meta has a sentence the preview lacks, "To ensure a smooth delivery, please confirm your order for the total amount of {{total}}.", ends the order sentence after `#{{order}}`, and writes "Once confirmed, We will ship your order." with a capital W. | VERIFIED (dev, 2026-10-05) |
+| 6.7 | Meta's bodies separate their sentences with blank lines; the previews use single line breaks. | VERIFIED (dev, 2026-10-05) |
+
+Meta's bodies, as returned:
+
+| Variant | Body at Meta |
+| --- | --- |
+| ar `standard` | `أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من {{store}}.\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريباً للشحن! \n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.` |
+| ar `egyptian` | `أهلاً {{customer}}، \n\nطلبك رقم #{{order}} من {{store}} مستني تأكيدك.\n\nياريت تأكد الطلب بقيمة {{total}} دلوقتي عشان نشحنهولك فوراً` |
+| ar `gulf` | `أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.` |
+| ar `short` | `السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.` |
+| en `friendly` | `Hi {{customer}}! 👋\n\nThank you for shopping with {{store}}. \n\nYour order #{{order}} for the total amount of {{total}} is ready to go! \n\nPlease tap the button below to confirm your order so we can ship it immediately.` |
+| en `professional` | `Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.` |
+| en `short` | `Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.` |
+
+**Consequence.** The preview is not what customers read. US-08-05 shows staff Meta's text and each difference; US-08-07g replaces the merchant preview with Meta's text.
+
+## 7. Variant usage (AC 7)
+
+Not taken. The read-only count of integrations by variant and default language has not been run in either environment.
 
 ## 4. Meta's contract (AC 4)
 

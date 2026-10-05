@@ -4,7 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
-import type { ProviderTemplateRecord } from '../../../shared/messaging/template-provider.types';
+import type {
+  ProviderTemplateRecord,
+  TemplateComponentsSnapshot,
+} from '../../../shared/messaging/template-provider.types';
+import type { TemplateTextModel } from '../../../shared/messaging/template-text.types';
 import {
   TemplateCatalogError,
   type TemplateCatalogErrorCode,
@@ -21,6 +25,7 @@ import {
   mapQuality,
   normalizeLanguageCode,
 } from './meta-template.mapping';
+import { describeMetaComponents } from './meta-template-text';
 
 /** The Graph version Akeed already sends with (record, "Graph API version"). */
 export const META_TEMPLATE_GRAPH_BASE_URL = 'https://graph.facebook.com/v24.0';
@@ -101,6 +106,12 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       after = cursor;
     }
     throw this.failure('too_many_pages', undefined, META_TEMPLATE_MAX_PAGES);
+  }
+
+  describeComponents(
+    snapshot: TemplateComponentsSnapshot | null,
+  ): TemplateTextModel | null {
+    return describeMetaComponents(snapshot);
   }
 
   private async readPage(

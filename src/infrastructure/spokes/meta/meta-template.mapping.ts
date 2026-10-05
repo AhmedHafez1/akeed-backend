@@ -88,13 +88,14 @@ export function mapCategory(value: unknown): TemplateCategory {
 }
 
 /**
- * Reads a quality score only as one of the documented strings. The record
- * does not give the shape of `quality_score` in the list response, so any
- * other shape is `unknown` (PROVISIONAL until the US-08-01 live run). Quality
- * never decides whether a template may be sent.
+ * Reads a quality score. The list response carries it as `{ score, date }`
+ * (record 3.2, VERIFIED on the dev app); webhooks carry the bare string
+ * (record 4.8.9). Any other shape or value is `unknown`. Quality never decides
+ * whether a template may be sent.
  */
 export function mapQuality(value: unknown): TemplateQuality {
-  return lookup(QUALITY, value, 'unknown');
+  const score = asRecord(value)?.score ?? value;
+  return lookup(QUALITY, score, 'unknown');
 }
 
 /**
