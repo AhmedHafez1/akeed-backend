@@ -373,6 +373,10 @@ export class WooCommerceConnectionHealthService {
       connection.orgId,
       health,
     );
+    // One request can get more than one answer (a read that is accepted,
+    // then a write that is refused): the next one is compared with what was
+    // just written, not with the row as it was loaded.
+    connection.health = health;
   }
 
   /** Both webhooks as not read, with the reason logged. */

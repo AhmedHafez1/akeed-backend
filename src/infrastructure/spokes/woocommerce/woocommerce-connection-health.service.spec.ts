@@ -580,6 +580,23 @@ describe('WooCommerceConnectionHealthService', () => {
       },
     );
 
+    it('records a refusal that follows an accepted read in the same request', async () => {
+      const { service, api, answers, connections } = createService({
+        connection: connection({ health: 'permission_denied' }),
+      });
+      answers.set(102, [found('disabled')]);
+      api.enableWebhook.mockResolvedValue(failed('permission_denied'));
+
+      await expect(codeOf(service.enableWebhooks(ORG))).resolves.toEqual({
+        status: 422,
+        code: 'WOOCOMMERCE_PERMISSION_DENIED',
+      });
+      // The read cleared the health; the refused write must set it again.
+      expect(
+        connections.setHealth.mock.calls.map((call: unknown[]) => call[2]),
+      ).toEqual(['ok', 'permission_denied']);
+    });
+
     it('does not report success for a webhook the store still shows as disabled', async () => {
       const { service, answers } = createService();
       // The store answered 2xx to the change and did not make it.

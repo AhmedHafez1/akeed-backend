@@ -955,7 +955,7 @@ describe('WooCommerceAuthService', () => {
       return setup;
     }
 
-    it('stops the source first, then deletes both webhooks at the bound store with the keys it read, and closes waiting store updates', async () => {
+    it('stops the source first, closes waiting store updates, then deletes both webhooks at the bound store with the keys it read', async () => {
       const { service, connections, api, outcomeSyncs, calls } =
         disconnecting();
       connections.disconnect.mockImplementation(() => {
@@ -966,6 +966,10 @@ describe('WooCommerceAuthService', () => {
           previous: storedConnection(),
         });
       });
+      outcomeSyncs.failPendingForIntegration.mockImplementation(() => {
+        calls.push('close-syncs');
+        return Promise.resolve(0);
+      });
 
       const result = await service.disconnect(owner);
 
@@ -974,7 +978,8 @@ describe('WooCommerceAuthService', () => {
         state: 'disconnected',
         webhookCleanup: 'removed',
       });
-      expect(calls).toEqual(['disconnect', 'delete', 'delete']);
+      // The local half is finished before Akeed waits on the store.
+      expect(calls).toEqual(['disconnect', 'close-syncs', 'delete', 'delete']);
       expect(connections.disconnect).toHaveBeenCalledWith(ORG, USER);
       expect(
         api.deleteWebhook.mock.calls.map((call: unknown[]) => call.slice(0, 3)),
@@ -1038,7 +1043,7 @@ describe('WooCommerceAuthService', () => {
       });
     });
 
-    it('changes nothing on a second disconnect and calls no store', async () => {
+    it('calls no store on a second disconnect, and closes a store update the first one left waiting', async () => {
       const { service, connections, api, outcomeSyncs } = disconnecting();
       connections.disconnect.mockResolvedValue({
         kind: 'already_disconnected',
@@ -1050,7 +1055,12 @@ describe('WooCommerceAuthService', () => {
         webhookCleanup: 'not_attempted',
       });
       expect(api.deleteWebhook).not.toHaveBeenCalled();
-      expect(outcomeSyncs.failPendingForIntegration).not.toHaveBeenCalled();
+      // The first request may have died while it waited on the store.
+      expect(outcomeSyncs.failPendingForIntegration).toHaveBeenCalledWith(
+        ORG,
+        INTEGRATION,
+        'integration_inactive',
+      );
     });
 
     it('answers an organization with no connection as not connected', async () => {

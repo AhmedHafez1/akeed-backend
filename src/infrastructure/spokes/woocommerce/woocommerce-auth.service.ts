@@ -335,6 +335,14 @@ export class WooCommerceAuthService {
     if (result.kind === 'not_connected')
       throw wooCommerceError('WOOCOMMERCE_NOT_CONNECTED');
 
+    // Before the store is asked for anything, and on a repeated disconnect
+    // too: a request that died while it waited on the store must not leave
+    // an update waiting that nothing will ever run.
+    const closedPendingSyncs = await this.closePendingSyncs(
+      user.orgId,
+      result.integrationId,
+    );
+
     if (result.kind === 'already_disconnected') {
       this.logger.log(
         buildBackendLog(WooCommerceAuthService.name, {
@@ -343,6 +351,7 @@ export class WooCommerceAuthService {
           orgId: user.orgId,
           userId: user.userId,
           integrationId: result.integrationId,
+          closedPendingSyncs,
         }),
       );
       return {
@@ -361,10 +370,7 @@ export class WooCommerceAuthService {
         integrationId: result.integrationId,
         storeHost: wooCommerceStoreHost(result.previous.storeUrl),
         webhookCleanup,
-        closedPendingSyncs: await this.closePendingSyncs(
-          user.orgId,
-          result.integrationId,
-        ),
+        closedPendingSyncs,
       }),
     );
     return { ...(await this.getStatus(user)), webhookCleanup };
