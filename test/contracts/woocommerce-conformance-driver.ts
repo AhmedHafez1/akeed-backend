@@ -152,6 +152,7 @@ export function installWooCommerce(base: ConformanceBase) {
   const webhooks = new WooCommerceWebhookService(
     connections,
     base.events,
+    base.ordersRepo,
     base.producer,
     config,
   );

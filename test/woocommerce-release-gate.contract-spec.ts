@@ -395,6 +395,80 @@ defineSourceConformance({
         expect(woo.storeRequests(merchant)).toHaveLength(0);
       });
 
+      it('a placed order that could not be read is verified exactly once after the merchant corrects it, and its outcome still comes back as an echo', async () => {
+        const merchant = await woo.connect();
+        // A local number Akeed cannot read as a mobile number.
+        const order = woo.placeOrder(merchant);
+        merchant.store.editOrderBilling(order.remoteId, { phone: '12345' });
+        const deliverNow = (topic: 'order.created' | 'order.updated') =>
+          woo.deliverBody(
+            merchant,
+            merchant.store.orderBody(order.remoteId),
+            topic,
+          );
+
+        expect((await deliverNow('order.created')).status).toBe(200);
+        await world.drain();
+        // The store repeats the order as it is: it is tried once more and no
+        // further.
+        expect((await deliverNow('order.updated')).status).toBe(200);
+        expect((await deliverNow('order.updated')).status).toBe(200);
+        await world.drain();
+        expect(await world.eventsOf(merchant)).toMatchObject([
+          { status: 'skipped', last_error: 'invalid_phone' },
+          { status: 'skipped', last_error: 'invalid_phone' },
+        ]);
+        expect(await reconcile(merchant)).toMatchObject({
+          orders: 0,
+          verifications: 0,
+          sends: 0,
+          usage: 0,
+        });
+
+        // The merchant corrects the number in the store.
+        merchant.store.editOrderBilling(order.remoteId, {
+          phone: order.expectedPhone,
+        });
+        expect((await deliverNow('order.updated')).status).toBe(200);
+        expect((await deliverNow('order.updated')).status).toBe(200);
+        await world.drain();
+
+        expect(await reconcile(merchant)).toMatchObject({
+          completedEvents: 1,
+          orders: 1,
+          verifications: 1,
+          sends: 1,
+          usage: 1,
+        });
+        const sent = await world.sentVerification(
+          merchant.integrationId,
+          order.externalOrderId,
+        );
+        expect(sent.phone).toBe(order.expectedPhone);
+        // Nothing was asked of the store to take the order.
+        expect(woo.storeRequests(merchant)).toHaveLength(0);
+
+        // The customer confirms; the store sends the changed order back.
+        await world.reply(sent.verificationId, sent.phone, 'confirm');
+        expect(woo.markersOf(merchant, order)).toEqual([
+          `customer_confirmation:${sent.verificationId}`,
+        ]);
+        expect((await deliverNow('order.updated')).status).toBe(200);
+        await world.drain();
+
+        const events = await world.eventsOf(merchant);
+        expect(events[events.length - 1]).toMatchObject({
+          status: 'skipped',
+          last_error: 'reflected_outcome',
+        });
+        expect(await reconcile(merchant)).toMatchObject({
+          orders: 1,
+          verifications: 1,
+          sends: 1,
+          usage: 1,
+        });
+      });
+
       it('an order paid another way is recorded and never sent, and a held cash-on-delivery order is', async () => {
         const merchant = await woo.connect();
         const bank = placedNonCodFixture().payload;

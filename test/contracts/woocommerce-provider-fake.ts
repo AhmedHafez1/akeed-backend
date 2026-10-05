@@ -221,6 +221,18 @@ export class FakeWooCommerceStore {
     this.touch(order);
   }
 
+  /** The merchant corrects the customer's details on the order. */
+  editOrderBilling(id: number, billing: Record<string, unknown>): void {
+    const order = this.orders.get(id);
+    if (!order) throw new Error(`fake store has no order ${id}`);
+    const current = order.fields.billing;
+    order.fields.billing = {
+      ...(typeof current === 'object' && current !== null ? current : {}),
+      ...billing,
+    };
+    this.touch(order);
+  }
+
   /**
    * The order as the REST API returns it, which is also what an
    * `order.created` or `order.updated` delivery carries (finding 3.3).

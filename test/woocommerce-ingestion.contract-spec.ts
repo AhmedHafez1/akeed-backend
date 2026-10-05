@@ -236,6 +236,7 @@ const producer = new WebhookQueueProducer(events, integrations, dispatcher);
 const webhooks = new WooCommerceWebhookService(
   connections,
   events,
+  ordersRepo,
   producer,
   wooCommerceConfig,
 );
@@ -815,7 +816,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
       [
         'a missing currency',
         () => placed({ currency: '' }),
-        'missing_currency',
+        'order_currency_unsupported',
       ],
       [
         'a phone that does not parse',
@@ -825,7 +826,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
       [
         'a local phone without a billing country',
         () => placed({}, { country: '' }),
-        'missing_phone_country',
+        'order_phone_country_missing',
       ],
       ['no phone', () => placed({}, { phone: '' }), 'incomplete_payload'],
       ['a zero total', () => placed({ total: '0.00' }), 'invalid_amount'],
@@ -1076,6 +1077,281 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
         { total_price: '450.00', customer_phone: '+201000000000' },
       ]);
       expect(sends).toHaveLength(1);
+    });
+  });
+
+  describe('an order corrected in the store (US-07-06)', () => {
+    /** The same order as the store sends it after an edit. */
+    const edited = (
+      minute: number,
+      overrides: Record<string, unknown> = {},
+      billing: Record<string, unknown> = {},
+    ) =>
+      placed(
+        {
+          date_modified_gmt: `2026-01-01T10:${String(minute).padStart(2, '0')}:00`,
+          ...overrides,
+        },
+        billing,
+      );
+
+    it('is confirmed once, on the delivery that follows the correction', async () => {
+      const merchant = await connectMerchant();
+      const requestsBefore = fake.requestsTo(merchant.store).length;
+      await deliver(merchant, placed({}, { phone: '12345' }));
+      await drain();
+      expect(await ordersOf(merchant)).toHaveLength(0);
+
+      const ack = await deliver(merchant, edited(20), {
+        topic: 'order.updated',
+      });
+      const ends = await drain();
+
+      expect(ack).toEqual({ status: 200 });
+      expect(ends).toEqual(['done']);
+      const [order, ...otherOrders] = await ordersOf(merchant);
+      expect(otherOrders).toHaveLength(0);
+      expect(order).toMatchObject({
+        external_order_id: '1001',
+        customer_phone: '+201000000000',
+      });
+      expect(await eventsOf(merchant)).toMatchObject([
+        {
+          job_type: 'order.create',
+          status: 'skipped',
+          last_error: 'invalid_phone',
+          idempotency_key: `order.create:${merchant.integrationId}:1001`,
+          order_id: null,
+        },
+        {
+          job_type: 'order.create',
+          status: 'completed',
+          idempotency_key: `order.retry:${merchant.integrationId}:1001:processing:2026-01-01T10:20:00`,
+          order_id: order.id,
+        },
+      ]);
+      const verifications = await verificationsOf(merchant);
+      expect(verifications).toHaveLength(1);
+      expect(verifications[0].order_id).toBe(order.id);
+      expect(sends).toHaveLength(1);
+      expect(sends[0]).toMatchObject({ to: '+201000000000' });
+      // Still no order lookup at the store.
+      expect(fake.requestsTo(merchant.store)).toHaveLength(requestsBefore);
+    });
+
+    it.each([
+      [
+        'a currency Akeed does not serve',
+        () => placed({ currency: 'XXX' }),
+        'order_currency_unsupported',
+      ],
+      [
+        'a local phone without a billing country',
+        () => placed({}, { country: '' }),
+        'order_phone_country_missing',
+      ],
+      ['no phone', () => placed({}, { phone: '' }), 'incomplete_payload'],
+      ['a zero total', () => placed({ total: '0.00' }), 'invalid_amount'],
+    ])('tries again after %s', async (_label, wrong, reason) => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, wrong());
+      await drain();
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: reason },
+      ]);
+
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await drain();
+
+      expect(await ordersOf(merchant)).toHaveLength(1);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+      expect(sends).toHaveLength(1);
+    });
+
+    it('records every later delivery as an update once the order exists', async () => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, placed({}, { phone: '12345' }));
+      await drain();
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await drain();
+
+      // The corrected state again, then the order as the merchant completes it.
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await deliver(merchant, orderUpdatedFixture().payload, {
+        topic: 'order.updated',
+      });
+      await drain();
+
+      const events = await eventsOf(merchant);
+      expect(events.map((event) => event.job_type)).toEqual([
+        'order.create',
+        'order.create',
+        'order.update',
+        'order.update',
+      ]);
+      expect(events.slice(2).map((event) => event.idempotency_key)).toEqual([
+        `order.update:${merchant.integrationId}:1001:processing:2026-01-01T10:20:00`,
+        `order.update:${merchant.integrationId}:1001:completed:2026-01-02T07:30:00`,
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(1);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+      expect(sends).toHaveLength(1);
+    });
+
+    it('tries one state of the order once, and the next state again', async () => {
+      const merchant = await connectMerchant();
+      const wrong = placed({}, { phone: '12345' });
+      await deliver(merchant, wrong);
+      await drain();
+
+      // The store sends the uncorrected order three more times.
+      for (let repeat = 0; repeat < 3; repeat += 1) {
+        await deliver(merchant, wrong, { topic: 'order.updated' });
+        await drain();
+      }
+      // An edit that is still wrong, then the correction.
+      await deliver(merchant, edited(20, {}, { phone: '67890' }), {
+        topic: 'order.updated',
+      });
+      await drain();
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+      await deliver(merchant, edited(25), { topic: 'order.updated' });
+      await drain();
+
+      expect(await eventsOf(merchant)).toMatchObject([
+        { idempotency_key: `order.create:${merchant.integrationId}:1001` },
+        {
+          status: 'skipped',
+          last_error: 'invalid_phone',
+          idempotency_key: `order.retry:${merchant.integrationId}:1001:processing:2026-01-01T10:01:00`,
+        },
+        {
+          status: 'skipped',
+          last_error: 'invalid_phone',
+          idempotency_key: `order.retry:${merchant.integrationId}:1001:processing:2026-01-01T10:20:00`,
+        },
+        {
+          status: 'completed',
+          idempotency_key: `order.retry:${merchant.integrationId}:1001:processing:2026-01-01T10:25:00`,
+        },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(1);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+      expect(sends).toHaveLength(1);
+    });
+
+    it('gives one order and one verification when two corrected deliveries arrive together', async () => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, placed({}, { phone: '12345' }));
+      await drain();
+
+      // Both are accepted before either is processed, so both are retries.
+      await Promise.all([
+        deliver(merchant, edited(20), { topic: 'order.updated' }),
+        deliver(merchant, edited(21), { topic: 'order.updated' }),
+      ]);
+      await drain();
+
+      expect(
+        (await eventsOf(merchant)).filter((event) =>
+          event.idempotency_key.startsWith('order.retry:'),
+        ),
+      ).toHaveLength(2);
+      expect(await ordersOf(merchant)).toHaveLength(1);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+      expect(sends).toHaveLength(1);
+    });
+
+    it.each([
+      ['cancelled', { status: 'cancelled' }, 'order_not_placed'],
+      [
+        'paid another way',
+        { payment_method: 'bacs' },
+        'non_cod_payment_method',
+      ],
+    ])(
+      'starts nothing for an order that was %s before it was corrected',
+      async (_label, change, reason) => {
+        const merchant = await connectMerchant();
+        await deliver(merchant, placed({}, { phone: '12345' }));
+        await drain();
+
+        await deliver(merchant, edited(20, change), { topic: 'order.updated' });
+        await drain();
+
+        expect(await eventsOf(merchant)).toMatchObject([
+          { status: 'skipped', last_error: 'invalid_phone' },
+          {
+            job_type: 'order.create',
+            status: 'skipped',
+            last_error: reason,
+            order_id: null,
+          },
+        ]);
+        expect(await ordersOf(merchant)).toHaveLength(0);
+        expect(sends).toHaveLength(0);
+      },
+    );
+
+    it('does not try again an order that was skipped for the source, not for the order', async () => {
+      const merchant = await connectMerchant({ onboarding: 'pending' });
+      await deliver(merchant, placedCodFixture().payload);
+      await drain();
+
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await drain();
+
+      expect(await eventsOf(merchant)).toMatchObject([
+        { job_type: 'order.create', last_error: 'onboarding_incomplete' },
+        { job_type: 'order.update' },
+      ]);
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('does not start an order placed before a reconnect, however it is corrected', async () => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, placed({}, { phone: '12345' }));
+      await drain();
+      // The connection moment moves past the order, as a reconnect moves it.
+      await client`
+        UPDATE woocommerce_connections SET connected_at = '2026-06-01T00:00:00Z'
+        WHERE integration_id = ${merchant.integrationId}`;
+
+      await deliver(merchant, edited(20), { topic: 'order.updated' });
+      await drain();
+
+      expect((await eventsOf(merchant))[1]).toMatchObject({
+        status: 'skipped',
+        last_error: 'order_predates_connection',
+      });
+      expect(await ordersOf(merchant)).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+    it('looks for the order under its own tenant only', async () => {
+      const a = await connectMerchant();
+      const b = await connectMerchant();
+      // B has order 1001. A's order 1001 could not be read.
+      await deliver(b, placedCodFixture().payload);
+      await deliver(a, placed({}, { phone: '12345' }));
+      await drain();
+      const eventsOfB = await eventsOf(b);
+
+      await deliver(a, edited(20), { topic: 'order.updated' });
+      await drain();
+
+      // B's order did not make A's a known one, and nothing of B's changed.
+      expect(await ordersOf(a)).toMatchObject([
+        { org_id: a.orgId, external_order_id: '1001' },
+      ]);
+      expect(await verificationsOf(a)).toHaveLength(1);
+      expect(await ordersOf(b)).toHaveLength(1);
+      expect(await verificationsOf(b)).toHaveLength(1);
+      expect(await eventsOf(b)).toEqual(eventsOfB);
+      expect(sends).toHaveLength(2);
     });
   });
 

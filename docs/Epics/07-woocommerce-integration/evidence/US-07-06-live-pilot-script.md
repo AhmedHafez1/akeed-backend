@@ -61,6 +61,7 @@ It only sends `GET`, prints the answer without customer data, masks the delivery
 | 6 | Whether the confirmation write and the cancellation write come back as `order.updated`, and what the echo carries | C3, D1 | 5.12 |
 | 7 | API-key removal is manual; the status and `code` a call gets after the key is revoked | G1, G4 | 2.6, 7.4, 7.5 |
 | 8 | The exact `X-WC-Webhook-Source` against the address you typed and `environment.home_url` | B4, C1 | 2.9, 2.15, 2.16 |
+| 9 | An order whose billing phone is edited in the store's admin: whether `order.updated` follows, and its status | C5 | The 2026-10-05 gate amendment, rule 1 |
 
 One part of observation 6 cannot be made by this run: **whether the marker is duplicated when the same key is written twice (finding 5.3)**. Akeed never sends the marker when a read already shows it, so a healthy run never repeats the write, and the probe does not write. It stays UNKNOWN with its worst-case rule (any `akeed_outcome` entry with the wanted value counts), which the automated gate exercises against a fake that adds a second entry. Say so if you want a focused write test instead.
 
@@ -149,6 +150,16 @@ If the store reports a different address from the one you typed, the connect is 
 
 1. Place an order with the non-COD method.
 2. Expected: no message. Reconcile → `reconcile-5-non-cod.txt`: section 5 has an `order.skip` row with that `payment_method` and `non_cod_payment_method`; `usage_consumed` unchanged; no new line in section 7.
+
+### C5. An order you correct in the store (observation 9)
+
+1. Place a COD order on classic checkout with a phone number that is not a mobile number, for example `12345`.
+2. Expected: no message. Reconcile → `reconcile-5b-unreadable.txt`: section 5 has an `order.create` row for it, `skipped` with `invalid_phone`; no new line in section 7; `usage_consumed` unchanged.
+3. In WooCommerce admin, open the order, set the billing phone to your own number, and click **Update**. Change nothing else.
+4. In the request view: **did an `order.updated` delivery arrive?** Record its `status`. This is observation 9.
+5. Expected if it arrived with the order still Processing or On hold: one WhatsApp message to the corrected number within a minute. Reconcile → `reconcile-5c-corrected.txt`: section 5 has an `order.retry` row, `completed`; section 7 has one line for the order with `sends = 1`; `usage_consumed` is up by one; sections 8 and 9 are empty.
+6. If none arrived, write that down: on this store a corrected order is not sent again, and it stays unverified.
+7. Answer or ignore the message as you like; it is not part of a later step.
 
 ## Part D — cancellation and an order nobody answers
 

@@ -6,6 +6,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { WooCommerceConnectionsRepository } from '../../database/repositories/woocommerce-connections.repository';
+import { OrdersRepository } from '../../database/repositories/orders.repository';
 import { WebhookEventsRepository } from '../../database/repositories/webhook-events.repository';
 import { WebhookQueueProducer } from '../../../modules/webhook-queue/webhook-queue.producer';
 import {
@@ -45,6 +46,7 @@ describe('WooCommerce delivery HTTP raw-body boundary', () => {
     recordRejectedDelivery: jest.fn(),
   };
   const events = { findBySourceAndIdempotency: jest.fn() };
+  const orders = { findBySourceExternalId: jest.fn() };
   const producer = { ingest: jest.fn() };
 
   const sign = (body: string) =>
@@ -74,6 +76,7 @@ describe('WooCommerce delivery HTTP raw-body boundary', () => {
         WooCommerceWebhookService,
         { provide: WooCommerceConnectionsRepository, useValue: connections },
         { provide: WebhookEventsRepository, useValue: events },
+        { provide: OrdersRepository, useValue: orders },
         { provide: WebhookQueueProducer, useValue: producer },
         {
           provide: ConfigService,

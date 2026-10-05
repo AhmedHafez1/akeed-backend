@@ -291,6 +291,7 @@ const dispatcher = new WebhookDispatchService(
 const webhooks = new WooCommerceWebhookService(
   connections,
   events,
+  ordersRepo,
   new WebhookQueueProducer(events, integrations, dispatcher),
   wooCommerceConfig,
 );

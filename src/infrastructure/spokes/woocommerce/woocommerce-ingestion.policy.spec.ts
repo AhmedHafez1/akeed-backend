@@ -8,9 +8,12 @@ import {
   buildWooCommerceOrderCreateKey,
   evaluateWooCommerceStart,
   isWooCommerceCashOnDelivery,
+  isWooCommerceCorrectableSkip,
   parseWooCommerceGmtDate,
   readWooCommerceOrderId,
   routeWooCommerceDelivery,
+  WOOCOMMERCE_ORDER_DATA_SKIP_REASONS,
+  type WooCommerceOrderHold,
 } from './woocommerce-ingestion.policy';
 
 const INTEGRATION_ID = '22222222-2222-4222-8222-222222222222';
@@ -161,10 +164,61 @@ describe('evaluateWooCommerceStart', () => {
   });
 });
 
+describe('isWooCommerceCorrectableSkip', () => {
+  it.each(WOOCOMMERCE_ORDER_DATA_SKIP_REASONS)(
+    'is true for a create event skipped as %s',
+    (reason) => {
+      expect(
+        isWooCommerceCorrectableSkip({ status: 'skipped', lastError: reason }),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    ['waiting', { status: 'pending', lastError: null }],
+    ['running', { status: 'processing', lastError: null }],
+    ['done', { status: 'completed', lastError: null }],
+    [
+      'failed with the same text',
+      { status: 'failed', lastError: 'invalid_phone' },
+    ],
+    [
+      'skipped by the start rule',
+      { status: 'skipped', lastError: 'order_not_placed' },
+    ],
+    [
+      'skipped for the source',
+      { status: 'skipped', lastError: 'integration_inactive' },
+    ],
+    [
+      'skipped for the account',
+      { status: 'skipped', lastError: 'billing_not_active' },
+    ],
+    ['skipped with no reason', { status: 'skipped', lastError: null }],
+    [
+      'skipped with a reason that is not text',
+      { status: 'skipped', lastError: { a: 1 } },
+    ],
+    ['empty', {}],
+  ])('is false for an event that is %s', (_label, event) => {
+    expect(isWooCommerceCorrectableSkip(event)).toBe(false);
+  });
+
+  it('names only what the merchant can correct on the order', () => {
+    expect([...WOOCOMMERCE_ORDER_DATA_SKIP_REASONS].sort()).toEqual([
+      'incomplete_payload',
+      'invalid_amount',
+      'invalid_phone',
+      'order_currency_unsupported',
+      'order_phone_country_missing',
+    ]);
+  });
+});
+
 describe('routeWooCommerceDelivery', () => {
   const route = (
     order: Record<string, unknown>,
-    hasCreateEvent = false,
+    held: WooCommerceOrderHold = 'none',
     connectedAt = CONNECTED_AT,
   ) =>
     routeWooCommerceDelivery({
@@ -172,7 +226,7 @@ describe('routeWooCommerceDelivery', () => {
       orderId: '1001',
       order,
       connectedAt,
-      hasCreateEvent,
+      held,
     });
 
   it('sends a placed cash-on-delivery order to the create path under the semantic key', () => {
@@ -208,17 +262,66 @@ describe('routeWooCommerceDelivery', () => {
   });
 
   it('sends every delivery of an order Akeed already has to the update path', () => {
-    expect(route(orderUpdatedFixture().payload, true)).toEqual({
+    expect(route(orderUpdatedFixture().payload, 'taken')).toEqual({
       route: 'update',
       jobType: 'order.update',
       idempotencyKey: `order.update:${INTEGRATION_ID}:1001:completed:2026-01-02T07:30:00`,
     });
     // Even one that would start a verification on its own.
-    expect(route(placed, true).route).toBe('update');
+    expect(route(placed, 'taken').route).toBe('update');
+  });
+
+  describe('an order whose create event ended on its own data', () => {
+    it('is tried again as a create, under a key of its own state', () => {
+      const retry = route(placed, 'awaiting_correction');
+
+      expect(retry).toEqual({
+        route: 'retry',
+        jobType: 'order.create',
+        idempotencyKey: `order.retry:${INTEGRATION_ID}:1001:processing:${String(placed.date_modified_gmt)}`,
+      });
+      // The create key is taken by the event that was skipped.
+      expect(retry.idempotencyKey).not.toBe(route(placed).idempotencyKey);
+    });
+
+    it('tries one state of the order once, and a changed order again', () => {
+      const first = route(placed, 'awaiting_correction');
+      const repeated = route({ ...placed }, 'awaiting_correction');
+      const changed = route(
+        { ...placed, date_modified_gmt: '2026-01-01T10:05:00' },
+        'awaiting_correction',
+      );
+
+      expect(repeated.idempotencyKey).toBe(first.idempotencyKey);
+      expect(changed.idempotencyKey).not.toBe(first.idempotencyKey);
+    });
+
+    it.each([
+      ['a draft', { status: 'checkout-draft' }, 'order_not_placed'],
+      ['a cancelled order', { status: 'cancelled' }, 'order_not_placed'],
+      [
+        'another payment method',
+        { payment_method: 'bacs' },
+        'non_cod_payment_method',
+      ],
+    ])('still starts nothing for %s', (_label, overrides, reason) => {
+      expect(
+        route({ ...placed, ...overrides }, 'awaiting_correction'),
+      ).toMatchObject({ route: 'skipped', reason });
+    });
+
+    it('still starts nothing for an order older than the connection', () => {
+      expect(
+        route(placed, 'awaiting_correction', '2026-06-01T00:00:00.000Z'),
+      ).toMatchObject({
+        route: 'skipped',
+        reason: 'order_predates_connection',
+      });
+    });
   });
 
   it('never starts an order older than the connection, on either path', () => {
-    expect(route(placed, false, '2026-06-01T00:00:00.000Z')).toMatchObject({
+    expect(route(placed, 'none', '2026-06-01T00:00:00.000Z')).toMatchObject({
       route: 'skipped',
       reason: 'order_predates_connection',
     });
@@ -231,7 +334,7 @@ describe('routeWooCommerceDelivery', () => {
     ['a control character', { status: `a${String.fromCharCode(10)}b` }],
     ['a missing modification date', { date_modified_gmt: undefined }],
   ])('keeps %s out of the key', (_label, overrides) => {
-    const key = route({ ...placed, ...overrides }, true).idempotencyKey;
+    const key = route({ ...placed, ...overrides }, 'taken').idempotencyKey;
 
     expect(key).toContain(':invalid');
     expect(key).toMatch(/^[\x21-\x7E]+$/);

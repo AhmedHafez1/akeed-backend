@@ -22,6 +22,33 @@ export type WooCommerceStartSkipReason =
   | 'non_cod_payment_method'
   | 'missing_payment_signal';
 
+/**
+ * What is wrong with a placed cash-on-delivery order itself, so that it could
+ * not be taken. The merchant can correct each of them on the order in the
+ * store, so an order whose create event ended on one is tried again on its
+ * next delivery. Stable codes, recorded on the event by the normalizer.
+ */
+export const WOOCOMMERCE_ORDER_DATA_SKIP_REASONS = [
+  'incomplete_payload',
+  'order_currency_unsupported',
+  'order_phone_country_missing',
+  'invalid_phone',
+  'invalid_amount',
+] as const;
+
+export type WooCommerceOrderDataSkipReason =
+  (typeof WOOCOMMERCE_ORDER_DATA_SKIP_REASONS)[number];
+
+/**
+ * What Akeed already holds for an order under this source:
+ * - `none`: no create event;
+ * - `taken`: a create event that is waiting, running or finished, or an
+ *   order;
+ * - `awaiting_correction`: a create event that ended on the order's own
+ *   data, and no order.
+ */
+export type WooCommerceOrderHold = 'none' | 'taken' | 'awaiting_correction';
+
 export type WooCommerceStartDecision =
   | { start: true }
   | { start: false; reason: WooCommerceStartSkipReason };
@@ -36,6 +63,7 @@ export interface WooCommerceOrderFacts {
 
 export type WooCommerceDeliveryRoute =
   | { route: 'create'; jobType: WebhookJobType; idempotencyKey: string }
+  | { route: 'retry'; jobType: WebhookJobType; idempotencyKey: string }
   | { route: 'update'; jobType: WebhookJobType; idempotencyKey: string }
   | {
       route: 'skipped';
@@ -119,8 +147,24 @@ export function buildWooCommerceOrderCreateKey(
   return `order.create:${integrationId}:${orderId}`;
 }
 
+/**
+ * Whether a create event ended on something wrong with the order itself.
+ * `lastError` holds the reason a skipped event was recorded with.
+ */
+export function isWooCommerceCorrectableSkip(event: {
+  status?: unknown;
+  lastError?: unknown;
+}): boolean {
+  return (
+    event.status === 'skipped' &&
+    (WOOCOMMERCE_ORDER_DATA_SKIP_REASONS as readonly unknown[]).includes(
+      event.lastError,
+    )
+  );
+}
+
 function buildStateKey(
-  prefix: 'order.update' | 'order.skip',
+  prefix: 'order.update' | 'order.skip' | 'order.retry',
   integrationId: string,
   orderId: string,
   order: WooCommerceOrderFacts,
@@ -135,17 +179,21 @@ function buildStateKey(
  * delivery never uses the create key: a checkout draft stored under it would
  * turn the later placed delivery into a duplicate, and the order would never
  * be verified.
+ *
+ * An order awaiting correction is tried again as a create, under a key of its
+ * own state: the create key is taken by the event that was skipped, and one
+ * state of the order is tried once however often it is delivered. An update
+ * still never starts a verification; a retry is a create.
  */
 export function routeWooCommerceDelivery(input: {
   integrationId: string;
   orderId: string;
   order: WooCommerceOrderFacts;
   connectedAt: string | Date;
-  /** Akeed already holds a create event for this order under this source. */
-  hasCreateEvent: boolean;
+  held: WooCommerceOrderHold;
 }): WooCommerceDeliveryRoute {
   const { integrationId, orderId, order } = input;
-  if (input.hasCreateEvent)
+  if (input.held === 'taken')
     return {
       route: 'update',
       jobType: WebhookJobType.ORDER_UPDATE,
@@ -158,6 +206,17 @@ export function routeWooCommerceDelivery(input: {
     };
 
   const decision = evaluateWooCommerceStart(order, input.connectedAt);
+  if (decision.start && input.held === 'awaiting_correction')
+    return {
+      route: 'retry',
+      jobType: WebhookJobType.ORDER_CREATE,
+      idempotencyKey: buildStateKey(
+        'order.retry',
+        integrationId,
+        orderId,
+        order,
+      ),
+    };
   if (decision.start)
     return {
       route: 'create',

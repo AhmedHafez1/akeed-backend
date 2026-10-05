@@ -116,6 +116,7 @@ const webhooks = new WooCommerceWebhookService(
   repository,
   {} as never,
   {} as never,
+  {} as never,
   config,
 );
 

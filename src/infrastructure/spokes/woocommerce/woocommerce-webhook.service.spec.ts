@@ -5,6 +5,7 @@ import type {
   WooCommerceConnection,
   WooCommerceConnectionsRepository,
 } from '../../database/repositories/woocommerce-connections.repository';
+import type { OrdersRepository } from '../../database/repositories/orders.repository';
 import type { WebhookEventsRepository } from '../../database/repositories/webhook-events.repository';
 import type { WebhookQueueProducer } from '../../../modules/webhook-queue/webhook-queue.producer';
 import { WOOCOMMERCE_CONFIG } from '../../../shared/config/woocommerce.config';
@@ -72,6 +73,10 @@ interface Setup {
   /** Whether the token is one Akeed issued (a connection or an open install). */
   known?: boolean;
   hasCreateEvent?: boolean;
+  /** The create event Akeed holds for the order, as its row reads. */
+  createEvent?: { status: string; lastError: string | null };
+  /** Whether Akeed holds an order for it. */
+  hasOrder?: boolean;
 }
 
 function createService(setup: Setup = {}) {
@@ -87,7 +92,18 @@ function createService(setup: Setup = {}) {
   const events = {
     findBySourceAndIdempotency: jest
       .fn()
-      .mockResolvedValue(setup.hasCreateEvent ? { id: 'event-1' } : undefined),
+      .mockResolvedValue(
+        setup.createEvent
+          ? { id: 'event-1', ...setup.createEvent }
+          : setup.hasCreateEvent
+            ? { id: 'event-1', status: 'completed', lastError: null }
+            : undefined,
+      ),
+  };
+  const orders = {
+    findBySourceExternalId: jest
+      .fn()
+      .mockResolvedValue(setup.hasOrder ? { id: 'order-1' } : undefined),
   };
   const producer = {
     ingest: jest
@@ -107,10 +123,11 @@ function createService(setup: Setup = {}) {
   const service = new WooCommerceWebhookService(
     connections as unknown as WooCommerceConnectionsRepository,
     events as unknown as WebhookEventsRepository,
+    orders as unknown as OrdersRepository,
     producer as unknown as WebhookQueueProducer,
     config as unknown as ConfigService,
   );
-  return { service, connections, events, producer };
+  return { service, connections, events, orders, producer };
 }
 
 function sign(body: Buffer, secret = SECRET): string {
@@ -584,6 +601,126 @@ describe('WooCommerceWebhookService', () => {
           idempotencyKey: `order.update:${INTEGRATION_ID}:1001:completed:2026-01-02T07:30:00`,
         }),
       );
+    });
+
+    it.each([
+      ['no create event', {}],
+      ['a create event that is waiting', { hasCreateEvent: true }],
+    ])('does not look for an order with %s', async (_label, setup) => {
+      const { service, orders } = createService(setup);
+      const { headers, body } = delivery();
+
+      await service.handleDelivery(TOKEN, headers, body);
+
+      expect(orders.findBySourceExternalId).not.toHaveBeenCalled();
+    });
+
+    describe('after a create event that ended on the order itself', () => {
+      const skipped = { status: 'skipped', lastError: 'invalid_phone' };
+      const corrected = {
+        ...placedCodFixture().payload,
+        date_modified_gmt: '2026-01-01T10:20:00',
+      };
+
+      it('tries the next delivery of the order again as a create', async () => {
+        const { service, orders, producer } = createService({
+          createEvent: skipped,
+        });
+        const { headers, body } = delivery(corrected, {
+          topic: 'order.updated',
+        });
+
+        await expect(
+          answerOf(service.handleDelivery(TOKEN, headers, body)),
+        ).resolves.toBe(200);
+        // Under the integration the token resolved to, never the payload.
+        expect(orders.findBySourceExternalId).toHaveBeenCalledWith({
+          orgId: ORG_ID,
+          integrationId: INTEGRATION_ID,
+          externalOrderId: '1001',
+        });
+        expect(producer.ingest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            jobType: 'order.create',
+            idempotencyKey: `order.retry:${INTEGRATION_ID}:1001:processing:2026-01-01T10:20:00`,
+          }),
+        );
+      });
+
+      it('records later deliveries as updates once a retry has made the order', async () => {
+        const { service, producer } = createService({
+          createEvent: skipped,
+          hasOrder: true,
+        });
+        const { headers, body } = delivery(corrected, {
+          topic: 'order.updated',
+        });
+
+        await service.handleDelivery(TOKEN, headers, body);
+
+        expect(producer.ingest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            jobType: 'order.update',
+            idempotencyKey: `order.update:${INTEGRATION_ID}:1001:processing:2026-01-01T10:20:00`,
+          }),
+        );
+      });
+
+      it('starts nothing when the order is no longer one to confirm', async () => {
+        const { service, producer } = createService({ createEvent: skipped });
+        const { headers, body } = delivery(
+          { ...corrected, status: 'cancelled' },
+          { topic: 'order.updated' },
+        );
+
+        await service.handleDelivery(TOKEN, headers, body);
+
+        expect(producer.ingest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            jobType: 'order.create',
+            idempotencyKey: `order.skip:${INTEGRATION_ID}:1001:cancelled:2026-01-01T10:20:00`,
+          }),
+        );
+      });
+
+      it.each([
+        ['skipped by the start rule', 'skipped', 'order_not_placed'],
+        ['skipped for the source', 'skipped', 'integration_inactive'],
+        ['skipped for the account', 'skipped', 'billing_not_active'],
+        ['failed', 'failed', 'invalid_phone'],
+      ])(
+        'keeps the update path for a create event that was %s',
+        async (_label, status, lastError) => {
+          const { service, orders, producer } = createService({
+            createEvent: { status, lastError },
+          });
+          const { headers, body } = delivery(corrected, {
+            topic: 'order.updated',
+          });
+
+          await service.handleDelivery(TOKEN, headers, body);
+
+          expect(orders.findBySourceExternalId).not.toHaveBeenCalled();
+          expect(producer.ingest).toHaveBeenCalledWith(
+            expect.objectContaining({ jobType: 'order.update' }),
+          );
+        },
+      );
+
+      it('does not acknowledge a delivery when the order could not be looked up', async () => {
+        const { service, orders, producer } = createService({
+          createEvent: skipped,
+        });
+        orders.findBySourceExternalId.mockRejectedValue(
+          new Error('database unavailable'),
+        );
+        const { headers, body } = delivery(corrected);
+
+        await expect(
+          service.handleDelivery(TOKEN, headers, body),
+        ).rejects.toThrow('database unavailable');
+        expect(producer.ingest).not.toHaveBeenCalled();
+      });
     });
 
     it('records a checkout draft as skipped, away from the create key', async () => {

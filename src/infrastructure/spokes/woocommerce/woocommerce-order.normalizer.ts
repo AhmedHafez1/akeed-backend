@@ -18,6 +18,7 @@ import { isRecord, readStoredWooCommerceOrder } from './woocommerce-delivery';
 import {
   evaluateWooCommerceStart,
   readWooCommerceOrderId,
+  type WooCommerceOrderDataSkipReason,
   type WooCommerceStartSkipReason,
 } from './woocommerce-ingestion.policy';
 
@@ -27,12 +28,8 @@ import {
  */
 export type WooCommerceSkipReason =
   | WooCommerceStartSkipReason
-  | 'source_connection_missing'
-  | 'incomplete_payload'
-  | 'missing_currency'
-  | 'missing_phone_country'
-  | 'invalid_phone'
-  | 'invalid_amount';
+  | WooCommerceOrderDataSkipReason
+  | 'source_connection_missing';
 
 const PHONE_PUNCTUATION = /[\s\-.()/]+/g;
 /** `+` or `00`: the number names its own country. */
@@ -51,6 +48,10 @@ function text(value: unknown): string {
  * country that a local phone number is read in. Nothing is looked up at the
  * store and nothing is guessed; a value that is missing or does not parse is
  * a recorded reason.
+ *
+ * The currency and the phone country are the order's own, so their reasons
+ * are not the ones a source with those two settings records: nothing here is
+ * chosen in Akeed.
  */
 @Injectable()
 export class WooCommerceOrderNormalizer implements WebhookOrderNormalizer {
@@ -93,7 +94,7 @@ export class WooCommerceOrderNormalizer implements WebhookOrderNormalizer {
       return this.skip(orgId, integrationId, 'incomplete_payload');
     const currency = text(order.currency).toUpperCase();
     if (!isCanonicalCurrency(currency))
-      return this.skip(orgId, integrationId, 'missing_currency');
+      return this.skip(orgId, integrationId, 'order_currency_unsupported');
 
     const country = text(billing.country).toUpperCase();
     const hasCountry = COUNTRY_CODE_PATTERN.test(country);
@@ -101,7 +102,7 @@ export class WooCommerceOrderNormalizer implements WebhookOrderNormalizer {
       phoneText.replace(PHONE_PUNCTUATION, ''),
     );
     if (!international && !hasCountry)
-      return this.skip(orgId, integrationId, 'missing_phone_country');
+      return this.skip(orgId, integrationId, 'order_phone_country_missing');
     const phone = this.phones.standardizeMobile(
       phoneText,
       hasCountry ? country : '',

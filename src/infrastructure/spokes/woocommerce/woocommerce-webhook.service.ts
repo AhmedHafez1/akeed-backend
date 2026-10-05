@@ -6,7 +6,11 @@ import {
   WooCommerceConnectionsRepository,
   type WooCommerceConnection,
 } from '../../database/repositories/woocommerce-connections.repository';
-import { WebhookEventsRepository } from '../../database/repositories/webhook-events.repository';
+import { OrdersRepository } from '../../database/repositories/orders.repository';
+import {
+  WebhookEventsRepository,
+  type WebhookEvent,
+} from '../../database/repositories/webhook-events.repository';
 import { WebhookQueueProducer } from '../../../modules/webhook-queue/webhook-queue.producer';
 import { readWooCommerceConfig } from '../../../shared/config/woocommerce.config';
 import {
@@ -17,8 +21,10 @@ import { decryptToken } from '../../../shared/utils/token-encryption.util';
 import { isRecord, toStoredWooCommerceDelivery } from './woocommerce-delivery';
 import {
   buildWooCommerceOrderCreateKey,
+  isWooCommerceCorrectableSkip,
   readWooCommerceOrderId,
   routeWooCommerceDelivery,
+  type WooCommerceOrderHold,
 } from './woocommerce-ingestion.policy';
 import {
   hashInstallToken,
@@ -105,6 +111,7 @@ export class WooCommerceWebhookService {
   constructor(
     private readonly connections: WooCommerceConnectionsRepository,
     private readonly events: WebhookEventsRepository,
+    private readonly orders: OrdersRepository,
     private readonly producer: WebhookQueueProducer,
     private readonly config: ConfigService,
   ) {}
@@ -232,7 +239,7 @@ export class WooCommerceWebhookService {
         orderId,
         order: stored.order,
         connectedAt: connection.connectedAt,
-        hasCreateEvent: Boolean(createEvent),
+        held: await this.holdOf(connection, orderId, createEvent),
       });
       result = await this.producer.ingest({
         platform: PLATFORM,
@@ -273,6 +280,28 @@ export class WooCommerceWebhookService {
             : {}),
       }),
     );
+  }
+
+  /**
+   * A create event that ended on the order's own data did not take the order:
+   * its next delivery is tried again. Once a retry has made the order, every
+   * later delivery is an update, as for any order Akeed has. The order is
+   * looked up under the integration the URL token resolved to, and only in
+   * this case.
+   */
+  private async holdOf(
+    connection: WooCommerceConnection,
+    orderId: string,
+    createEvent: WebhookEvent | undefined,
+  ): Promise<WooCommerceOrderHold> {
+    if (!createEvent) return 'none';
+    if (!isWooCommerceCorrectableSkip(createEvent)) return 'taken';
+    const order = await this.orders.findBySourceExternalId({
+      orgId: connection.orgId,
+      integrationId: connection.integrationId,
+      externalOrderId: orderId,
+    });
+    return order ? 'taken' : 'awaiting_correction';
   }
 
   /** Answered 200 with nothing stored (contract record section 3). */

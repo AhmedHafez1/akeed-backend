@@ -85,6 +85,7 @@ ORDER BY job_type, status, last_error;
 \echo '== 5. Every accepted delivery in the order it arrived: topic, route, order status and payment method =='
 
 -- The route is the first part of the idempotency key: order.create,
+-- order.retry (an order tried again after it was corrected in the store),
 -- order.update or order.skip. The key holds no customer data.
 SELECT
   e.received_at,
