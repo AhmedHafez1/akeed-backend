@@ -2964,7 +2964,10 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
         } finally {
           settings.enabled = true;
         }
+        // A list that names another organization and not this one: an empty
+        // list would allow every organization.
         const listed = settings.pilotOrgIds.splice(0);
+        settings.pilotOrgIds.push(randomUUID());
         try {
           await expect(
             outcome(service.startInstall(member(tenant), input)),
@@ -2973,6 +2976,7 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
             code: 'WOOCOMMERCE_PILOT_REQUIRED',
           });
         } finally {
+          settings.pilotOrgIds.splice(0);
           settings.pilotOrgIds.push(...listed);
         }
         await expect(status(tenant)).resolves.toMatchObject({
