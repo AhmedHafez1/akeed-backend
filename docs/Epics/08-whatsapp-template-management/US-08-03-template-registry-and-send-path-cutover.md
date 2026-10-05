@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Technical enabler
-- **Status:** Backlog
+- **Status:** Done (2026-10-05). No switch: no customer-facing message changes — [evidence](../../US-08-03-TEMPLATE-REGISTRY-EVIDENCE.md)
 - **Dependencies:** [US-08-02](US-08-02-record-template-identity-per-send.md)
 
 ## User story and value
@@ -69,6 +69,13 @@ As Akeed staff, I want templates defined in a database registry instead of in co
 
 ## Open decisions (product owner)
 
+All four were decided by the product owner on 2026-10-05, each as proposed: keys are `cod_confirm.<language>.<style>`; one global table with Meta-side fields filled per environment; the old columns are dropped by a separate migration after US-08-08; the 8 seeded rows have the single purpose `cod_confirmation`.
+
+Also decided on 2026-10-05:
+- The seed holds no Meta review status. The contract record has no reconciliation table yet, and criterion 2 stands.
+- The frontend stops listing styles in its types: the two style unions become `string`, and labels keep coming from next-intl. The `GET /api/settings` response is byte-identical, provider fields included; removing them (criterion 7) is left to a later story.
+- `cod-template-catalog.ts` stays until the US-08-08 gate as seed source and baseline, with no runtime import.
+
 1. **Stable key scheme.** The proposal is `cod_confirm.<language>.<style>`, for example `cod_confirm.ar.egyptian`. The other choice is to keep today's variant ids (`standard`, `friendly`) with the language as a separate column.
 2. **Registry scope.** The proposal is global keys, purposes and mappings in one table, with Meta-side fields (template ID, status, quality, snapshot) filled per environment by sync. Each deployment has its own database, so a separate per-environment table is not needed. Please confirm.
 3. **Dropping the old columns.** The proposal is a separate migration after US-08-08, not in this story.
@@ -80,7 +87,7 @@ As Akeed staff, I want templates defined in a database registry instead of in co
   - Replace the catalog lookups in [`whatsapp.service.ts`](../../../src/infrastructure/spokes/meta/whatsapp.service.ts), [`onboarding-test.service.ts`](../../../src/modules/verifications/onboarding-test.service.ts), [`onboarding-state.service.ts`](../../../src/modules/onboarding/onboarding-state.service.ts) and [`onboarding.service.ts`](../../../src/modules/onboarding/onboarding.service.ts) with the registry selector introduced in US-08-02.
   - Cache the registry in memory with a short TTL. The cache is invalidated by later admin writes.
   - Keep the catalog file only as the seed source and characterization baseline until the gate.
-- **Frontend:** No change: the settings response is unchanged.
+- **Frontend:** No change to the settings response. **Changed 2026-10-05:** the two style unions became `string` and the Message tab labels a style it has no translation for with its id, so a style staff add later needs no frontend release.
 - **Data:**
   - Migrations follow the next free numbers after US-08-02:
     - create and seed the registry (with an RLS policy limited to the service role, like the other staff tables);

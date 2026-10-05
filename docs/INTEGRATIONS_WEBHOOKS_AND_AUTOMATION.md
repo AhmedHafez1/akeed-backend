@@ -356,7 +356,7 @@ Handles the actual WhatsApp send for both initial and follow-up messages.
 
 1. Load verification + order + its linked integration. Missing linkage returns `missing_linked_integration`; inconsistent order/integration ownership returns `source_identity_mismatch` before quota or messaging. No Shopify fallback lookup.
 2. Reserve billing slot → if limit reached, return `plan_limit_reached`.
-3. Resolve template selection from integration settings (`codTemplateArVariant`, `codTemplateEnVariant`).
+3. Resolve the template from the registry (`TEMPLATE_REGISTRY_PORT`) with the integration's stored keys (`codTemplateArKey`, `codTemplateEnKey`). An unusable key falls back to the language default; with no default the send is skipped as `template_unavailable`.
 4. Call `MessagingPort.sendVerificationTemplate()`.
 5. Extract `waMessageId` from response.
 6. If missing or error → release billing reservation, mark verification as `failed`.

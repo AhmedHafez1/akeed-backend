@@ -134,11 +134,27 @@ styles and tell what a customer actually received.
 | `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
 | `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
 
-- **Selected before the claim.** `selectCodTemplate`
-  (`src/shared/messaging/cod-template-selector.ts`) picks the template from the
-  store's settings and the customer's number, and the claim writes it. A send
-  whose outcome is never learned, or that the provider rejects, still says which
-  template it carried.
+- **Selected before the claim.** `selectTemplateForSend`
+  (`src/shared/messaging/template-selector.ts`) picks the template from the
+  template registry, the store's settings and the customer's number, and the
+  claim writes it. A send whose outcome is never learned, or that the provider
+  rejects, still says which template it carried.
+- **From the registry (US-08-03).** Templates are rows of `whatsapp_templates`,
+  read through `TEMPLATE_REGISTRY_PORT` (a 60-second in-memory copy). A store
+  holds the registry key of its Arabic and its English style in
+  `integrations.cod_template_ar_key` and `cod_template_en_key`, for example
+  `cod_confirm.ar.egyptian`. Only an active template is sent.
+  - A stored key that is unknown, inactive or written for the other language
+    falls back to the language default. The fallback is logged as
+    `sendOnce.templateFallback` with the stored key and the reason
+    (`key_unknown`, `key_inactive`, `wrong_language`).
+  - With no active default for the language, nothing is sent: the send returns
+    `skipped` with `template_unavailable` before the dispatch is claimed, so no
+    usage is reserved, and `sendOnce.templateSelection` is logged as an error.
+  - Until the old columns are dropped (after the US-08-08 gate), a store with
+    no key is read from `cod_template_ar_variant` / `cod_template_en_variant`,
+    and a settings write sets both the key and the old column.
+  - Meta's review status is not checked yet. That guardrail is US-08-04.
 - **Confirmed at acceptance.** The messaging adapter is handed that selection and
   answers with what it sent. The acceptance transaction stamps the answer on the
   dispatch and, in the same statement that stores `wa_message_id`, writes the
@@ -182,8 +198,8 @@ Controls are edited from the Settings page and persisted on the `integrations` t
 | `quietHoursEnd`          | UI default `09:00` | `HH:mm`, required when quiet hours enabled    | End of quiet-hours window in the configured timezone.                                                                 |
 | `timezone`               |      `Asia/Riyadh` | Allowlist in `AUTOMATION_TIMEZONES`           | Timezone used for quiet-hours calculations.                                                                           |
 | `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`                            | WhatsApp template language. `auto` resolves Arabic for Arabic-region phone prefixes and English otherwise.            |
-| `codTemplateArVariant`   |         `standard` | `standard`, `egyptian`, `gulf`, `short`       | Selected Arabic branded template variant for send and preview.                                                        |
-| `codTemplateEnVariant`   |         `friendly` | `friendly`, `professional`, `direct`, `short` | Selected English branded template variant for send and preview.                                                       |
+| `codTemplateArVariant`   |         `standard` | Style of an active Arabic registry template   | Selected Arabic template style for send and preview. Seeded: `standard`, `egyptian`, `gulf`, `short`. Any other value answers `400 SETTINGS_TEMPLATE_STYLE_UNAVAILABLE`. |
+| `codTemplateEnVariant`   |         `friendly` | Style of an active English registry template  | Selected English template style for send and preview. Seeded: `friendly`, `professional`, `direct`, `short`. Same rejection. |
 | `shippingCurrency`       |              `USD` | Allowlist                                     | Used for dashboard savings display, not verification routing.                                                         |
 | `avgShippingCost`        |                `3` | Number `>= 0`, max 2 decimals                 | Used for dashboard money-saved KPI.                                                                                   |
 
@@ -261,7 +277,7 @@ Primary tables:
 
 | Table            | Important fields                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive` (installation state), `storeName`, `defaultLanguage`, `codTemplateArVariant`, `codTemplateEnVariant`, `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus` (entitlement state), `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
+| `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive` (installation state), `storeName`, `defaultLanguage`, `codTemplateArKey`, `codTemplateEnKey` (with the old `codTemplateArVariant`, `codTemplateEnVariant` kept in step), `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus` (entitlement state), `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
 | `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`; source identity/deduplication is `(orgId, integrationId, externalOrderId)` and the database verifies integration ownership                                                                                                                                                                                               |
 | `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                                                                                                                    |
 | `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                                                                                                          |
