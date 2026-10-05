@@ -16,7 +16,7 @@ import {
   pingFixture,
 } from '../../../../test/fixtures/woocommerce/load';
 import { projectWooCommerceOrder } from './woocommerce-delivery';
-import { hashInstallToken } from './woocommerce-install-token';
+import { hashInstallToken } from '../../../shared/commerce/install-token';
 import {
   isOrderDeliveryTopic,
   isValidWooCommerceSignature,

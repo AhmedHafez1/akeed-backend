@@ -50,7 +50,7 @@ Start with captured synthetic fixtures and qualified pilot stores; keep unsuppor
 **VERIFIED FROM CODE:** The existing queue accepts registered normalizers but currently registers only Shopify; NormalizedOrder already carries the target fields.
 
 - [akeed-backend/src/modules/webhook-queue](../../../src/modules/webhook-queue)
-- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../../src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order.normalizer.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order.normalizer.ts)
 - [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
 - [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
 - [akeed-backend/src/modules/webhook-queue/webhook-queue.producer.ts](../../../src/modules/webhook-queue/webhook-queue.producer.ts)

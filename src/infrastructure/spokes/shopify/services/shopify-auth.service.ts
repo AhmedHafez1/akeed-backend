@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  Optional,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -21,6 +14,7 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../../shared/logging/backend-log.util';
+import { shopifyError } from '../shopify.errors';
 import {
   generateNonce,
   validateShop,
@@ -124,7 +118,10 @@ export class ShopifyAuthService {
     const { shop, code, state, hmac, host } = rawQuery;
 
     if (!shop || !code || !state || !hmac) {
-      throw new BadRequestException('Missing required parameters');
+      throw shopifyError(
+        'SHOPIFY_AUTH_PARAMETERS_MISSING',
+        'Missing required parameters',
+      );
     }
 
     this.assertValidShop(shop);
@@ -328,7 +325,7 @@ export class ShopifyAuthService {
   private verifyHmac(query: Record<string, string | undefined>): void {
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
     if (!verifyShopifyHmac(query, secret)) {
-      throw new UnauthorizedException('HMAC validation failed');
+      throw shopifyError('SHOPIFY_HMAC_INVALID', 'HMAC validation failed');
     }
   }
 
@@ -363,7 +360,7 @@ export class ShopifyAuthService {
   ): ShopifyOAuthStatePayload {
     const [payloadBase64, signature, extra] = state.split('.');
     if (!payloadBase64 || !signature || extra) {
-      throw new UnauthorizedException('Invalid OAuth state');
+      throw shopifyError('SHOPIFY_OAUTH_STATE_INVALID', 'Invalid OAuth state');
     }
 
     const expectedSignature = this.signStatePayload(payloadBase64);
@@ -371,7 +368,7 @@ export class ShopifyAuthService {
       expectedSignature.length !== signature.length ||
       !timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(signature))
     ) {
-      throw new UnauthorizedException('Invalid OAuth state');
+      throw shopifyError('SHOPIFY_OAUTH_STATE_INVALID', 'Invalid OAuth state');
     }
 
     let payload: ShopifyOAuthStatePayload;
@@ -380,26 +377,32 @@ export class ShopifyAuthService {
         Buffer.from(payloadBase64, 'base64url').toString('utf8'),
       ) as ShopifyOAuthStatePayload;
     } catch {
-      throw new UnauthorizedException('Invalid OAuth state');
+      throw shopifyError('SHOPIFY_OAUTH_STATE_INVALID', 'Invalid OAuth state');
     }
 
     if (payload.shop !== expectedShop) {
-      throw new UnauthorizedException('State does not match shop');
+      throw shopifyError(
+        'SHOPIFY_OAUTH_STATE_INVALID',
+        'State does not match shop',
+      );
     }
 
     if (
       typeof payload.issuedAt !== 'number' ||
       Number.isNaN(payload.issuedAt)
     ) {
-      throw new UnauthorizedException('Invalid OAuth state');
+      throw shopifyError('SHOPIFY_OAUTH_STATE_INVALID', 'Invalid OAuth state');
     }
 
     if (payload.host && expectedHost && payload.host !== expectedHost) {
-      throw new UnauthorizedException('State does not match host');
+      throw shopifyError(
+        'SHOPIFY_OAUTH_STATE_INVALID',
+        'State does not match host',
+      );
     }
 
     if (Date.now() - payload.issuedAt > this.stateTtlMs) {
-      throw new UnauthorizedException('State expired');
+      throw shopifyError('SHOPIFY_OAUTH_STATE_INVALID', 'State expired');
     }
 
     return payload;
@@ -414,7 +417,7 @@ export class ShopifyAuthService {
 
   private assertValidShop(shop: string): void {
     if (!validateShop(shop)) {
-      throw new BadRequestException('Invalid shop parameter');
+      throw shopifyError('SHOPIFY_SHOP_INVALID', 'Invalid shop parameter');
     }
   }
 
@@ -429,7 +432,10 @@ export class ShopifyAuthService {
   ): ShopifySessionTokenPayload {
     const parts = token.split('.');
     if (parts.length !== 3) {
-      throw new UnauthorizedException('Invalid session token format');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Invalid session token format',
+      );
     }
 
     const [headerB64, payloadB64, signatureB64] = parts;
@@ -448,7 +454,10 @@ export class ShopifyAuthService {
         Buffer.from(signatureB64),
       )
     ) {
-      throw new UnauthorizedException('Invalid session token signature');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Invalid session token signature',
+      );
     }
 
     // Decode payload
@@ -458,24 +467,36 @@ export class ShopifyAuthService {
         Buffer.from(payloadB64, 'base64url').toString('utf8'),
       ) as ShopifySessionTokenPayload;
     } catch {
-      throw new UnauthorizedException('Invalid session token payload');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Invalid session token payload',
+      );
     }
 
     // Verify expiration
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      throw new UnauthorizedException('Session token expired');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Session token expired',
+      );
     }
 
     // Verify not-before
     if (payload.nbf > now) {
-      throw new UnauthorizedException('Session token not yet valid');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Session token not yet valid',
+      );
     }
 
     // Verify audience matches our API key
     const apiKey = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
     if (payload.aud !== apiKey) {
-      throw new UnauthorizedException('Session token audience mismatch');
+      throw shopifyError(
+        'SHOPIFY_SESSION_TOKEN_INVALID',
+        'Session token audience mismatch',
+      );
     }
 
     return payload;
@@ -540,7 +561,8 @@ export class ShopifyAuthService {
         }),
       );
 
-      throw new InternalServerErrorException(
+      throw shopifyError(
+        'SHOPIFY_TOKEN_EXCHANGE_FAILED',
         'Failed to exchange session token for access token',
       );
     }
@@ -573,7 +595,8 @@ export class ShopifyAuthService {
           ...normalizeError(error),
         }),
       );
-      throw new InternalServerErrorException(
+      throw shopifyError(
+        'SHOPIFY_TOKEN_EXCHANGE_FAILED',
         'Failed to exchange authorization code',
       );
     }
@@ -675,7 +698,8 @@ export class ShopifyAuthService {
               errorMessage: error.message,
             }),
           );
-          throw new InternalServerErrorException(
+          throw shopifyError(
+            'SHOPIFY_ACCOUNT_PROVISIONING_FAILED',
             'Failed to lookup existing user',
           );
         }
@@ -731,7 +755,8 @@ export class ShopifyAuthService {
           ...normalizeError(error),
         }),
       );
-      throw new InternalServerErrorException(
+      throw shopifyError(
+        'SHOPIFY_ACCOUNT_PROVISIONING_FAILED',
         `Failed to create user account: ${error?.message || 'Unknown error'}`,
       );
     }
@@ -799,7 +824,8 @@ export class ShopifyAuthService {
     }
 
     if (failedCriticalTopics.length > 0) {
-      throw new InternalServerErrorException(
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_REGISTRATION_FAILED',
         `Critical webhook registration failed: ${failedCriticalTopics.join(', ')}`,
       );
     }

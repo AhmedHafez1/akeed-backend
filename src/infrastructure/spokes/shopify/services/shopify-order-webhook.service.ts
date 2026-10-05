@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
+import { shopifyError } from '../shopify.errors';
 import { WebhookQueueProducer } from '../../../../modules/webhook-queue/webhook-queue.producer';
 import { WebhookJobType } from '../../../../modules/webhook-queue/webhook-queue.constants';
 import { ShopifyOrderWebhookDto } from '../dto/shopify-webhooks.dto';
@@ -42,7 +43,8 @@ export class ShopifyOrderWebhookService {
       !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(normalizedShopDomain) ||
       !externalOrderId
     ) {
-      throw new BadRequestException(
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_IDENTITY_INVALID',
         'A shop domain and provider order ID are required for webhook identity',
       );
     }

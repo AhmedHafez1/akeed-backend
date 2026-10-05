@@ -26,7 +26,7 @@ import {
   WooCommerceAuthService,
 } from './woocommerce-auth.service';
 import type { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
-import { hashInstallToken } from './woocommerce-install-token';
+import { hashInstallToken } from '../../../shared/commerce/install-token';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const USER = '22222222-2222-4222-8222-222222222222';

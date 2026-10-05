@@ -1,31 +1,12 @@
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 
 /**
- * Tokens of the WooCommerce install (US-07-01 contract record, sections 1, 6
- * and 7).
- *
- * Two different 256-bit values per install: the one-time callback token, and
- * the webhook URL token that later decides the tenant of every delivery.
- * Both travel only in URL paths and only their SHA-256 is stored, so a lookup
- * is by hash and one token resolves to exactly one row or to nothing.
+ * What only the WooCommerce install adds to the shared install tokens
+ * (`shared/commerce/install-token.ts`; US-07-01 contract record, sections 1,
+ * 6 and 7): the install reference and the webhook secret.
  */
-const TOKEN_BYTES = 32;
-const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const REFERENCE_PATTERN = /^[1-9][0-9]{14}$/;
 const WEBHOOK_SECRET_BYTES = 32;
-
-export function generateInstallToken(): string {
-  return randomBytes(TOKEN_BYTES).toString('base64url');
-}
-
-export function hashInstallToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/** Strict shape check, so a malformed path segment never reaches the database. */
-export function isWellFormedInstallToken(value: unknown): value is string {
-  return typeof value === 'string' && TOKEN_PATTERN.test(value);
-}
 
 /**
  * The value sent as `user_id`: 15 decimal digits, not a secret. Digits only

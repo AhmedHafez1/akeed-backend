@@ -9,7 +9,7 @@ import {
 import type { Request } from 'express';
 import { OnboardingService } from './onboarding.service';
 import { BillingCallbackRateLimitGuard } from '../../shared/guards/billing-callback-rate-limit.guard';
-import { ShopifyBillingCallbackValidationGuard } from '../../shared/guards/shopify-billing-callback-validation.guard';
+import { ShopifyBillingCallbackValidationGuard } from '../../infrastructure/spokes/shopify/guards/shopify-billing-callback-validation.guard';
 
 interface BillingCallbackQuery {
   shop?: string | string[];

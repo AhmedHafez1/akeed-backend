@@ -1,6 +1,6 @@
 import { WebhookQueueProducer } from './webhook-queue.producer';
 import { WebhookJobType } from './webhook-queue.constants';
-import { shopifyOrderFixture } from './normalizers/fixtures/shopify-order.fixture';
+import { shopifyOrderFixture } from '../../infrastructure/spokes/shopify/services/fixtures/shopify-order.fixture';
 
 function setup() {
   const events = {

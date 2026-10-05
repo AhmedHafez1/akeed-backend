@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { EasyOrdersConnectionsRepository } from '../../src/infrastructure/database/repositories/easyorders-connections.repository';
 import { EasyOrdersApiClient } from '../../src/infrastructure/spokes/easyorders/easyorders-api.client';
 import { EasyOrdersAuthService } from '../../src/infrastructure/spokes/easyorders/easyorders-auth.service';
-import { hashInstallToken } from '../../src/infrastructure/spokes/easyorders/easyorders-install-token';
+import { hashInstallToken } from '../../src/shared/commerce/install-token';
 import { EasyOrdersOrderEligibilityStrategy } from '../../src/infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
 import { EasyOrdersOrderNormalizer } from '../../src/infrastructure/spokes/easyorders/easyorders-order.normalizer';
 import { EasyOrdersOutcomeAdapter } from '../../src/infrastructure/spokes/easyorders/easyorders-outcome.adapter';

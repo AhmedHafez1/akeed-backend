@@ -51,7 +51,7 @@ Characterization only; unexpected mappings require a separate product decision.
 **VERIFIED FROM CODE:** NormalizedOrder is shared, while the registered eligibility strategy and normalizer are Shopify-specific.
 
 - [akeed-backend/src/shared/interfaces/order.interface.ts](../../../src/shared/interfaces/order.interface.ts)
-- [akeed-backend/src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts](../../../src/modules/webhook-queue/normalizers/shopify-order.normalizer.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order.normalizer.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order.normalizer.ts)
 - [akeed-backend/src/modules/verification-core/order-eligibility.service.ts](../../../src/modules/verification-core/order-eligibility.service.ts)
 - [akeed-backend/src/infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy.ts](../../../src/infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy.ts)
 

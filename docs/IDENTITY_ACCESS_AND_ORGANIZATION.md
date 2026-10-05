@@ -455,8 +455,8 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 | Shopify auth service     | `infrastructure/spokes/shopify/services/shopify-auth.service.ts`   | OAuth flow, token exchange, persistence, webhook registration.                    |
 | Shopify auth DTOs        | `infrastructure/spokes/shopify/dto/shopify-auth.dto.ts`            | `ShopifyLoginQueryDto`, `ShopifyCallbackQueryDto`, `ShopifyTokenExchangeDto`.     |
 | Shopify utils            | `infrastructure/spokes/shopify/shopify.utils.ts`                   | `validateShop()`, `generateNonce()`, `verifyShopifyHmac()`.                       |
-| Shopify HMAC guard       | `shared/guards/shopify-hmac.guard.ts`                              | Webhook body HMAC verification.                                                   |
-| Billing callback guard   | `shared/guards/shopify-billing-callback-validation.guard.ts`       | Billing callback query string HMAC verification.                                  |
+| Shopify HMAC guard       | `infrastructure/spokes/shopify/guards/shopify-hmac.guard.ts`       | Webhook body HMAC verification.                                                   |
+| Billing callback guard   | `infrastructure/spokes/shopify/guards/shopify-billing-callback-validation.guard.ts` | Billing callback query string HMAC verification.                                  |
 | Rate limit guard         | `shared/guards/billing-callback-rate-limit.guard.ts`               | In-memory rate limiter for billing callbacks (30 req/60s).                        |
 | Security middleware      | `shared/middleware/security.middleware.ts`                         | CSP, CORS, security headers for all routes.                                       |
 | Token encryption         | `shared/utils/token-encryption.util.ts`                            | AES-256-GCM encrypt/decrypt for access tokens at rest.                            |

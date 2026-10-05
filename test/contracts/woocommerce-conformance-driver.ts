@@ -5,7 +5,7 @@ import { WooCommerceConnectionsRepository } from '../../src/infrastructure/datab
 import { WooCommerceApiClient } from '../../src/infrastructure/spokes/woocommerce/woocommerce-api.client';
 import { WooCommerceAuthService } from '../../src/infrastructure/spokes/woocommerce/woocommerce-auth.service';
 import { WooCommerceConnectionHealthService } from '../../src/infrastructure/spokes/woocommerce/woocommerce-connection-health.service';
-import { hashInstallToken } from '../../src/infrastructure/spokes/woocommerce/woocommerce-install-token';
+import { hashInstallToken } from '../../src/shared/commerce/install-token';
 import { WooCommerceOrderEligibilityStrategy } from '../../src/infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { WooCommerceOrderNormalizer } from '../../src/infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
 import { WooCommerceOrderUpdateHandler } from '../../src/infrastructure/spokes/woocommerce/woocommerce-order-update.handler';

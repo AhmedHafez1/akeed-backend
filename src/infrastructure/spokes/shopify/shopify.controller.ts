@@ -9,7 +9,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
+import { ShopifyHmacGuard } from './guards/shopify-hmac.guard';
 import { ShopifyBillingWebhookService } from './services/shopify-billing-webhook.service';
 import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.service';
 import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';

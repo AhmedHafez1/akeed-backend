@@ -34,7 +34,7 @@ Builds, lint, isolated database races and browser smoke checks were **not run** 
 
 Existing coverage to reuse:
 
-- [HMAC guard tests](../../../src/shared/guards/shopify-hmac.guard.spec.ts) already cover valid, invalid and missing signatures and missing raw body. They do not exercise the HTTP parser/controller path.
+- [HMAC guard tests](../../../src/infrastructure/spokes/shopify/guards/shopify-hmac.guard.spec.ts) already cover valid, invalid and missing signatures and missing raw body. They do not exercise the HTTP parser/controller path.
 - [Queue processor tests](../../../src/modules/webhook-queue/webhook-queue.processor.spec.ts) cover completed/skipped/failed processing with a mocked normalizer. No dedicated order-webhook, queue-producer or Shopify-normalizer spec exists in this checkout.
 - [Eligibility tests](../../../src/modules/verification-core/order-eligibility.service.spec.ts) contain four cases; direct paymentMethod, transaction gateways, Arabic matchers and real normalization need more coverage.
 - [Hub tests](../../../src/modules/verification-core/verification-hub.service.spec.ts), [merchant cancellation tests](../../../src/modules/verifications/verifications.service.spec.ts) and [Meta callback tests](../../../src/infrastructure/spokes/meta/whatsapp.webhook.service.spec.ts) already cover most outcome transitions, late replies, ownership checks, test orders, provider rejection and returned `shopifyJobId`.

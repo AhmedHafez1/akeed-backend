@@ -9,7 +9,7 @@ import { WebhookEventsRepository } from '../src/infrastructure/database/reposito
 import { WebhookQueueProducer } from '../src/modules/webhook-queue/webhook-queue.producer';
 import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookJobType } from '../src/modules/webhook-queue/webhook-queue.constants';
-import { shopifyOrderFixture } from '../src/modules/webhook-queue/normalizers/fixtures/shopify-order.fixture';
+import { shopifyOrderFixture } from '../src/infrastructure/spokes/shopify/services/fixtures/shopify-order.fixture';
 import { ConfigService } from '@nestjs/config';
 
 function testDatabaseUrl(): string {

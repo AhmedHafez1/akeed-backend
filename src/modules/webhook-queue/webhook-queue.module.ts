@@ -5,7 +5,8 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { WEBHOOK_QUEUE_NAME } from './webhook-queue.constants';
 import { WebhookQueueProducer } from './webhook-queue.producer';
 import { WebhookQueueProcessor } from './webhook-queue.processor';
-import { ShopifyOrderNormalizer } from './normalizers/shopify-order.normalizer';
+import { ShopifyCommerceModule } from '../../infrastructure/spokes/shopify/shopify-commerce.module';
+import { ShopifyOrderNormalizer } from '../../infrastructure/spokes/shopify/services/shopify-order.normalizer';
 import { WEBHOOK_ORDER_NORMALIZERS } from './interfaces/webhook-normalizer.interface';
 import { WEBHOOK_ORDER_UPDATE_HANDLERS } from './interfaces/webhook-order-update-handler.interface';
 import { PhoneService } from '../../shared/services/phone.service';
@@ -23,6 +24,7 @@ import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/wooco
   imports: [
     ConfigModule,
     DatabaseModule,
+    ShopifyCommerceModule,
     EasyOrdersIngestionModule,
     WooCommerceIngestionModule,
 
@@ -35,8 +37,8 @@ import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/wooco
     WebhookDispatchReconciler,
     PhoneService,
 
-    // --- Normalizers (add new platforms here) ---
-    ShopifyOrderNormalizer,
+    // --- Normalizers (a store spoke's module provides its own; add new
+    // platforms to the list below) ---
     StandaloneManualOrderNormalizer,
     {
       provide: WEBHOOK_ORDER_NORMALIZERS,

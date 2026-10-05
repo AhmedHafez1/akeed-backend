@@ -9,7 +9,7 @@ import { ShopifyBillingWebhookService } from './services/shopify-billing-webhook
 import { ShopifyGdprWebhookService } from './services/shopify-gdpr-webhook.service';
 import { ShopifyAuthController } from './shopify-auth.controller.js';
 import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';
-import { ShopifyHmacGuard } from '../../../shared/guards/shopify-hmac.guard';
+import { ShopifyHmacGuard } from './guards/shopify-hmac.guard';
 import { PhoneService } from '../../../shared/services/phone.service';
 
 @Module({

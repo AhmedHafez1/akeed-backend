@@ -15,8 +15,8 @@ import {
   type EasyOrdersConfig,
 } from '../../../shared/config/easyorders.config';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
-import { decryptToken } from '../../../shared/utils/token-encryption.util';
 import { EasyOrdersApiClient } from './easyorders-api.client';
+import { readEasyOrdersApiKey } from './easyorders-credentials';
 import {
   EASYORDERS_OUTCOME_ACTIONS,
   EASYORDERS_WRITABLE_FROM_STATUS,
@@ -176,19 +176,13 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
     }
   }
 
-  /**
-   * `decryptToken` hands back what it cannot parse as an envelope, so a
-   * value that comes back unchanged is stored text, not a key, and is never
-   * sent anywhere.
-   */
+  /** Null for a stored value that is not a key Akeed can use. */
   private readApiKey(connection: EasyOrdersConnection): string | null {
-    if (!connection.apiKeyEncrypted) return null;
     try {
-      const apiKey = decryptToken(
-        connection.apiKeyEncrypted,
+      return readEasyOrdersApiKey(
+        connection,
         this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY'),
       );
-      return apiKey && apiKey !== connection.apiKeyEncrypted ? apiKey : null;
     } catch {
       return null;
     }

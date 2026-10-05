@@ -31,7 +31,9 @@ import { AdminModule } from './modules/admin/admin.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { PaymobModule } from './infrastructure/spokes/paymob/paymob.module';
 import { EasyOrdersModule } from './infrastructure/spokes/easyorders/easyorders.module';
+import { EasyOrdersIngestionModule } from './infrastructure/spokes/easyorders/easyorders-ingestion.module';
 import { WooCommerceModule } from './infrastructure/spokes/woocommerce/woocommerce.module';
+import { WooCommerceIngestionModule } from './infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
 import { PaymobPaymentsAdapter } from './infrastructure/spokes/paymob/paymob-payments.adapter';
 import { PAYMENTS_PORT } from './shared/ports/payments.port';
 import { CommerceOutcomeModule } from './modules/commerce-outcomes/commerce-outcome.module';
@@ -76,11 +78,16 @@ const billingModule = BillingModule.register({
       }),
     }),
     VerificationCoreModule.register({
-      imports: [MetaModule, ShopifyModule],
+      // Each store spoke's module provides its own eligibility strategy.
+      // Standalone has no module, so its strategy is provided here.
+      imports: [
+        MetaModule,
+        ShopifyModule,
+        EasyOrdersIngestionModule,
+        WooCommerceIngestionModule,
+      ],
       ports: [
         StandaloneOrderEligibilityStrategy,
-        EasyOrdersOrderEligibilityStrategy,
-        WooCommerceOrderEligibilityStrategy,
         {
           provide: ORDER_ELIGIBILITY_STRATEGIES,
           inject: [

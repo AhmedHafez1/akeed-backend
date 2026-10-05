@@ -2,7 +2,7 @@ import { OrderEligibilityService } from './order-eligibility.service';
 import { NormalizedOrder } from '../../shared/interfaces/order.interface';
 import { ShopifyOrderEligibilityStrategy } from '../../infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
 import { StandaloneOrderEligibilityStrategy } from '../../infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
-import { shopifyPaymentFixtures } from '../webhook-queue/normalizers/fixtures/shopify-order.fixture';
+import { shopifyPaymentFixtures } from '../../infrastructure/spokes/shopify/services/fixtures/shopify-order.fixture';
 
 describe('OrderEligibilityService', () => {
   let service: OrderEligibilityService;

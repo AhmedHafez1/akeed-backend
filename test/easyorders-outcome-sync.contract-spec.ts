@@ -25,8 +25,8 @@ import {
 import {
   generateInstallToken,
   hashInstallToken,
-  installTokenHint,
-} from '../src/infrastructure/spokes/easyorders/easyorders-install-token';
+} from '../src/shared/commerce/install-token';
+import { installTokenHint } from '../src/infrastructure/spokes/easyorders/easyorders-install-token';
 import { EasyOrdersOutcomeAdapter } from '../src/infrastructure/spokes/easyorders/easyorders-outcome.adapter';
 import { EasyOrdersRateLimiter } from '../src/infrastructure/spokes/easyorders/easyorders-rate-limiter';
 import { EasyOrdersStatusUpdateHandler } from '../src/infrastructure/spokes/easyorders/easyorders-status-update.handler';

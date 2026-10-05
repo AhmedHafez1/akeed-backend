@@ -58,7 +58,7 @@ Ships with `WOOCOMMERCE_INGESTION_ENABLED=false`; while off the delivery URL ans
 - [akeed-backend/src/modules/verification-core/strategies/order-eligibility.strategy.ts](../../../src/modules/verification-core/strategies/order-eligibility.strategy.ts)
 - [akeed-backend/src/app.module.ts](../../../src/app.module.ts) (eligibility strategies are bound here)
 - [akeed-backend/src/infrastructure/spokes/easyorders/easyorders-webhook.service.ts](../../../src/infrastructure/spokes/easyorders/easyorders-webhook.service.ts)
-- [akeed-backend/src/shared/guards/shopify-hmac.guard.ts](../../../src/shared/guards/shopify-hmac.guard.ts)
+- [akeed-backend/src/infrastructure/spokes/shopify/guards/shopify-hmac.guard.ts](../../../src/infrastructure/spokes/shopify/guards/shopify-hmac.guard.ts)
 - [US-06-03 evidence](../../US-06-03-EASYORDERS-INGESTION-EVIDENCE.md)
 
 **ASSUMPTION / REQUIRES VALIDATION:** The status a placed COD order carries, and the ping body, come from the contract record's rules and are confirmed at the gate on classic checkout and on the Checkout block.

@@ -48,11 +48,13 @@ import {
   buildWooCommerceWebhookDeliveryUrl,
 } from './woocommerce-install-link';
 import {
-  generateInstallReference,
   generateInstallToken,
-  generateWebhookSecret,
   hashInstallToken,
   isWellFormedInstallToken,
+} from '../../../shared/commerce/install-token';
+import {
+  generateInstallReference,
+  generateWebhookSecret,
   matchesInstallReference,
 } from './woocommerce-install-token';
 import {

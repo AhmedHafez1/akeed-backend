@@ -1,18 +1,14 @@
 import {
-  BadRequestException,
   CanActivate,
   ExecutionContext,
   Injectable,
   Logger,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { buildBackendLog } from '../logging/backend-log.util';
-import {
-  validateShop,
-  verifyShopifyHmac,
-} from '../../infrastructure/spokes/shopify/shopify.utils';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
+import { shopifyError } from '../shopify.errors';
+import { validateShop, verifyShopifyHmac } from '../shopify.utils';
 
 interface BillingCallbackQuery {
   shop?: string | string[];
@@ -40,13 +36,14 @@ export class ShopifyBillingCallbackValidationGuard implements CanActivate {
     const hmac = this.getSingleQueryParam(query.hmac);
 
     if (!shop || !chargeId) {
-      throw new BadRequestException(
+      throw shopifyError(
+        'SHOPIFY_BILLING_CALLBACK_INVALID',
         'Missing required Shopify billing callback parameters',
       );
     }
 
     if (!validateShop(shop)) {
-      throw new BadRequestException('Invalid shop parameter');
+      throw shopifyError('SHOPIFY_SHOP_INVALID', 'Invalid shop parameter');
     }
 
     // Shopify billing return URLs may omit hmac in some approval flows.
@@ -56,7 +53,8 @@ export class ShopifyBillingCallbackValidationGuard implements CanActivate {
       const secret =
         this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
       if (!verifyShopifyHmac(normalizedQuery, secret)) {
-        throw new UnauthorizedException(
+        throw shopifyError(
+          'SHOPIFY_BILLING_CALLBACK_UNAUTHORIZED',
           'Invalid Shopify billing callback signature',
         );
       }

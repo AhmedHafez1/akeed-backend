@@ -20,7 +20,7 @@ import {
   EASYORDERS_CONFIG,
   type EasyOrdersConfig,
 } from '../src/shared/config/easyorders.config';
-import { hashInstallToken } from '../src/infrastructure/spokes/easyorders/easyorders-install-token';
+import { hashInstallToken } from '../src/shared/commerce/install-token';
 import { PhoneService } from '../src/shared/services/phone.service';
 import { decryptToken } from '../src/shared/utils/token-encryption.util';
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';

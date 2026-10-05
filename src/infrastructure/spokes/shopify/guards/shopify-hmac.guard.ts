@@ -2,13 +2,13 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
-  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { RequestWithRawBody } from '../models/request-with-raw-body.interface';
-import { buildBackendLog } from '../logging/backend-log.util';
+import { RequestWithRawBody } from '../../../../shared/models/request-with-raw-body.interface';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
+import { shopifyError } from '../shopify.errors';
 
 @Injectable()
 export class ShopifyHmacGuard implements CanActivate {
@@ -30,7 +30,10 @@ export class ShopifyHmacGuard implements CanActivate {
           errorCode: 'missing_shopify_hmac_header',
         }),
       );
-      throw new UnauthorizedException('Missing X-Shopify-Hmac-Sha256 header');
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_UNAUTHORIZED',
+        'Missing X-Shopify-Hmac-Sha256 header',
+      );
     }
 
     const { rawBody } = req;
@@ -43,7 +46,10 @@ export class ShopifyHmacGuard implements CanActivate {
           errorCode: 'missing_raw_body',
         }),
       );
-      throw new UnauthorizedException('Internal Server Error: rawBody missing');
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_UNAUTHORIZED',
+        'Internal Server Error: rawBody missing',
+      );
     }
 
     const secret = this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
@@ -65,7 +71,10 @@ export class ShopifyHmacGuard implements CanActivate {
           errorCode: 'hmac_length_mismatch',
         }),
       );
-      throw new UnauthorizedException('Invalid HMAC signature');
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_UNAUTHORIZED',
+        'Invalid HMAC signature',
+      );
     }
 
     if (!crypto.timingSafeEqual(hmacBuffer, generatedHashBuffer)) {
@@ -77,7 +86,10 @@ export class ShopifyHmacGuard implements CanActivate {
           errorCode: 'invalid_hmac_signature',
         }),
       );
-      throw new UnauthorizedException('Invalid HMAC signature');
+      throw shopifyError(
+        'SHOPIFY_WEBHOOK_UNAUTHORIZED',
+        'Invalid HMAC signature',
+      );
     }
 
     this.logger.log(

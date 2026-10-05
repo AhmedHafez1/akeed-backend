@@ -2,49 +2,10 @@ import {
   buildEasyOrdersInstallLink,
   EASYORDERS_INSTALL_PERMISSIONS,
 } from './easyorders-install-link';
-import {
-  generateInstallToken,
-  hashInstallToken,
-  installTokenHint,
-  isWellFormedInstallToken,
-} from './easyorders-install-token';
+import { generateInstallToken } from '../../../shared/commerce/install-token';
+import { installTokenHint } from './easyorders-install-token';
 
 describe('EasyOrders install tokens', () => {
-  it('generates 256-bit base64url tokens that never repeat', () => {
-    const tokens = new Set(
-      Array.from({ length: 200 }, () => generateInstallToken()),
-    );
-
-    expect(tokens.size).toBe(200);
-    for (const token of tokens) {
-      expect(Buffer.from(token, 'base64url')).toHaveLength(32);
-      expect(isWellFormedInstallToken(token)).toBe(true);
-    }
-  });
-
-  it('hashes to SHA-256 hex, deterministically', () => {
-    const token = generateInstallToken();
-
-    expect(hashInstallToken(token)).toMatch(/^[0-9a-f]{64}$/);
-    expect(hashInstallToken(token)).toBe(hashInstallToken(token));
-    expect(hashInstallToken(token)).not.toBe(
-      hashInstallToken(generateInstallToken()),
-    );
-  });
-
-  it.each([
-    undefined,
-    null,
-    42,
-    '',
-    'short',
-    'a'.repeat(44),
-    `${'a'.repeat(42)}/`,
-    `${'a'.repeat(42)}=`,
-  ])('rejects %p as a token', (value) => {
-    expect(isWellFormedInstallToken(value)).toBe(false);
-  });
-
   it('keeps only the last six characters as the hint', () => {
     const token = generateInstallToken();
 

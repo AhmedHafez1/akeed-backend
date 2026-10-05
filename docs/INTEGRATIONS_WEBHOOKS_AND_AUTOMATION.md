@@ -505,7 +505,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Billing webhook service        | `infrastructure/spokes/shopify/services/shopify-billing-webhook.service.ts`  | Billing status updates, uninstall handling.                                 |
 | GDPR webhook service           | `infrastructure/spokes/shopify/services/shopify-gdpr-webhook.service.ts`     | Data export, customer redact, shop redact.                                  |
 | Shopify API service            | `infrastructure/spokes/shopify/services/shopify-api.service.ts`              | GraphQL operations: tags, cancel, billing, shop metadata.                   |
-| Shopify order normalizer       | `modules/webhook-queue/normalizers/shopify-order.normalizer.ts`               | Converts Shopify order JSON to `NormalizedOrder`.                           |
+| Shopify order normalizer       | `infrastructure/spokes/shopify/services/shopify-order.normalizer.ts`          | Converts Shopify order JSON to `NormalizedOrder`.                           |
 | WhatsApp service               | `infrastructure/spokes/meta/whatsapp.service.ts`                             | Template sends via Meta Cloud API.                                          |
 | WhatsApp webhook controller    | `infrastructure/spokes/meta/whatsapp.webhook.controller.ts`                  | Subscription verification + incoming message handler.                       |
 | WhatsApp webhook service       | `infrastructure/spokes/meta/whatsapp.webhook.service.ts`                     | Customer reply parsing, status update processing.                           |

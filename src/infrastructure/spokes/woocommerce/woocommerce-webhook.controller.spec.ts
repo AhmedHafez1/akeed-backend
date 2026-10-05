@@ -18,7 +18,7 @@ import {
   pingFixture,
   placedCodFixture,
 } from '../../../../test/fixtures/woocommerce/load';
-import { hashInstallToken } from './woocommerce-install-token';
+import { hashInstallToken } from '../../../shared/commerce/install-token';
 import { WooCommerceWebhookController } from './woocommerce-webhook.controller';
 import {
   applyWooCommerceWebhookEdge,

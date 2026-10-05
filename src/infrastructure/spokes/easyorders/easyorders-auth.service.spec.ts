@@ -21,7 +21,7 @@ import {
 import {
   generateInstallToken,
   hashInstallToken,
-} from './easyorders-install-token';
+} from '../../../shared/commerce/install-token';
 
 const ORG_ID = '11111111-1111-4111-8111-111111111111';
 const NOW = new Date('2026-10-03T10:00:00.000Z');

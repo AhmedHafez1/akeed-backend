@@ -41,9 +41,9 @@ import { buildEasyOrdersInstallLink } from './easyorders-install-link';
 import {
   generateInstallToken,
   hashInstallToken,
-  installTokenHint,
   isWellFormedInstallToken,
-} from './easyorders-install-token';
+} from '../../../shared/commerce/install-token';
+import { installTokenHint } from './easyorders-install-token';
 import {
   EASYORDERS_ROLE_REQUIRED,
   easyOrdersError,

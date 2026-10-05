@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { shopifyError } from '../shopify.errors';
 import { ShopifyApiService } from './shopify-api.service';
 import type {
   BillingConnection,
@@ -13,7 +14,8 @@ export class ShopifyBillingAdapter implements SubscriptionBillingPort {
 
   private assertShopify(integration: BillingConnection): void {
     if (integration.platformType !== 'shopify')
-      throw new ForbiddenException(
+      throw shopifyError(
+        'SHOPIFY_BILLING_UNAVAILABLE',
         'Subscription billing is unavailable for this source',
       );
   }

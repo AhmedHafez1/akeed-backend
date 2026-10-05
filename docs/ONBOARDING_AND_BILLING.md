@@ -262,7 +262,7 @@ Shopify sends `app_subscriptions/update` webhooks when subscription status chang
 | Billing entitlement         | `modules/verification-core/billing-entitlement.service.ts`                  | Usage reservation and release for verification sends.                                         |
 | Billing webhook handler     | `infrastructure/spokes/shopify/services/shopify-billing-webhook.service.ts` | Processes Shopify subscription status webhooks.                                               |
 | Billing utility             | `shared/utils/billing.util.ts`                                              | `isBillingStatusActive()` — central check for active billing.                                 |
-| Callback validation guard   | `shared/guards/shopify-billing-callback-validation.guard.ts`                | HMAC verification and parameter validation for billing callbacks.                             |
+| Callback validation guard   | `infrastructure/spokes/shopify/guards/shopify-billing-callback-validation.guard.ts` | HMAC verification and parameter validation for billing callbacks.                             |
 | Callback rate limit guard   | `shared/guards/billing-callback-rate-limit.guard.ts`                        | Per-shop rate limiting for billing callback requests.                                         |
 
 ## Frontend Code Map

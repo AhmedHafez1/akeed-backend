@@ -29,7 +29,7 @@ import { WooCommerceApiClient } from '../src/infrastructure/spokes/woocommerce/w
 import { WooCommerceAuthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-auth.service';
 import { WooCommerceConnectionHealthService } from '../src/infrastructure/spokes/woocommerce/woocommerce-connection-health.service';
 import { WooCommerceSetupContributor } from '../src/infrastructure/spokes/woocommerce/woocommerce-setup.contributor';
-import { hashInstallToken } from '../src/infrastructure/spokes/woocommerce/woocommerce-install-token';
+import { hashInstallToken } from '../src/shared/commerce/install-token';
 import { WooCommerceOrderEligibilityStrategy } from '../src/infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { WooCommerceOrderNormalizer } from '../src/infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
 import {
@@ -44,7 +44,7 @@ import { OrderEligibilityService } from '../src/modules/verification-core/order-
 import { VerificationHubService } from '../src/modules/verification-core/verification-hub.service';
 import { VerificationSendService } from '../src/modules/verification-core/verification-send.service';
 import type { WebhookJobPayload } from '../src/modules/webhook-queue/interfaces/webhook-job.interface';
-import { ShopifyOrderNormalizer } from '../src/modules/webhook-queue/normalizers/shopify-order.normalizer';
+import { ShopifyOrderNormalizer } from '../src/infrastructure/spokes/shopify/services/shopify-order.normalizer';
 import { StandaloneManualOrderNormalizer } from '../src/modules/webhook-queue/normalizers/standalone-manual-order.normalizer';
 import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookQueueProcessor } from '../src/modules/webhook-queue/webhook-queue.processor';

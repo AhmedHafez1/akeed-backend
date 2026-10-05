@@ -27,7 +27,7 @@ import {
   type EasyOrdersHttp,
 } from '../src/infrastructure/spokes/easyorders/easyorders-api.client';
 import { EasyOrdersAuthService } from '../src/infrastructure/spokes/easyorders/easyorders-auth.service';
-import { hashInstallToken } from '../src/infrastructure/spokes/easyorders/easyorders-install-token';
+import { hashInstallToken } from '../src/shared/commerce/install-token';
 import { EasyOrdersOrderEligibilityStrategy } from '../src/infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
 import { EasyOrdersOrderNormalizer } from '../src/infrastructure/spokes/easyorders/easyorders-order.normalizer';
 import { EasyOrdersRateLimiter } from '../src/infrastructure/spokes/easyorders/easyorders-rate-limiter';
@@ -43,7 +43,7 @@ import { OrderEligibilityService } from '../src/modules/verification-core/order-
 import { VerificationHubService } from '../src/modules/verification-core/verification-hub.service';
 import { VerificationSendService } from '../src/modules/verification-core/verification-send.service';
 import type { WebhookJobPayload } from '../src/modules/webhook-queue/interfaces/webhook-job.interface';
-import { ShopifyOrderNormalizer } from '../src/modules/webhook-queue/normalizers/shopify-order.normalizer';
+import { ShopifyOrderNormalizer } from '../src/infrastructure/spokes/shopify/services/shopify-order.normalizer';
 import { StandaloneManualOrderNormalizer } from '../src/modules/webhook-queue/normalizers/standalone-manual-order.normalizer';
 import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookQueueProcessor } from '../src/modules/webhook-queue/webhook-queue.processor';

@@ -15,7 +15,7 @@ import {
 import {
   generateInstallToken,
   hashInstallToken,
-} from './easyorders-install-token';
+} from '../../../shared/commerce/install-token';
 import { EasyOrdersWebhookService } from './easyorders-webhook.service';
 
 const orderCreated = orderCreatedFixture();

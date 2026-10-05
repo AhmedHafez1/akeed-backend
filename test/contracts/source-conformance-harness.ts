@@ -47,8 +47,8 @@ import { VerificationsService } from '../../src/modules/verifications/verificati
 import type { WebhookJobPayload } from '../../src/modules/webhook-queue/interfaces/webhook-job.interface';
 import type { WebhookOrderNormalizer } from '../../src/modules/webhook-queue/interfaces/webhook-normalizer.interface';
 import type { WebhookOrderUpdateHandler } from '../../src/modules/webhook-queue/interfaces/webhook-order-update-handler.interface';
-import { shopifyOrderFixture } from '../../src/modules/webhook-queue/normalizers/fixtures/shopify-order.fixture';
-import { ShopifyOrderNormalizer } from '../../src/modules/webhook-queue/normalizers/shopify-order.normalizer';
+import { shopifyOrderFixture } from '../../src/infrastructure/spokes/shopify/services/fixtures/shopify-order.fixture';
+import { ShopifyOrderNormalizer } from '../../src/infrastructure/spokes/shopify/services/shopify-order.normalizer';
 import { StandaloneManualOrderNormalizer } from '../../src/modules/webhook-queue/normalizers/standalone-manual-order.normalizer';
 import { WebhookDispatchReconciler } from '../../src/modules/webhook-queue/webhook-dispatch-reconciler.service';
 import { WebhookDispatchService } from '../../src/modules/webhook-queue/webhook-dispatch.service';

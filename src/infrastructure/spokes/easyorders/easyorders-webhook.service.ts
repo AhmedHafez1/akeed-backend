@@ -17,7 +17,15 @@ import { decryptToken } from '../../../shared/utils/token-encryption.util';
 import {
   hashInstallToken,
   isWellFormedInstallToken,
-} from './easyorders-install-token';
+} from '../../../shared/commerce/install-token';
+import {
+  buildOrderCreatedKey,
+  buildOrderStatusKey,
+  EASYORDERS_STATUS_EVENT_TYPE,
+  isEasyOrdersOpaqueId,
+  isEasyOrdersOpaqueStatus,
+  isRecord,
+} from './easyorders-ingestion.policy';
 import { easyOrdersError } from './easyorders.errors';
 
 export type EasyOrdersWebhookKind = 'orders' | 'status';
@@ -25,27 +33,6 @@ export type EasyOrdersWebhookKind = 'orders' | 'status';
 export interface EasyOrdersWebhookAck {
   received: true;
   duplicate?: true;
-}
-
-/** The one event type the status webhook is documented to send. */
-export const EASYORDERS_STATUS_EVENT_TYPE = 'order-status-update';
-
-const ID_MAX_LENGTH = 128;
-const STATUS_MAX_LENGTH = 64;
-/** Printable ASCII without spaces: an id or a status, never free text. */
-const OPAQUE_VALUE_PATTERN = /^[\x21-\x7E]+$/;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isOpaque(value: unknown, maxLength: number): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= maxLength &&
-    OPAQUE_VALUE_PATTERN.test(value)
-  );
 }
 
 /**
@@ -58,21 +45,6 @@ function secretsMatch(given: unknown, expected: string): boolean {
   const left = Buffer.from(given, 'utf8');
   const right = Buffer.from(expected, 'utf8');
   return left.length === right.length && timingSafeEqual(left, right);
-}
-
-/** Source-scoped keys for a provider that sends no delivery id (section 3). */
-export function buildOrderCreatedKey(
-  integrationId: string,
-  orderId: string,
-): string {
-  return `order.create:${integrationId}:${orderId}`;
-}
-
-export function buildOrderStatusKey(
-  integrationId: string,
-  event: { orderId: string; oldStatus: string; newStatus: string },
-): string {
-  return `order.status:${integrationId}:${event.orderId}:${event.oldStatus}:${event.newStatus}`;
 }
 
 /**
@@ -110,7 +82,7 @@ export class EasyOrdersWebhookService {
       );
     // The order payload has no event type. One that has is another event, and
     // only an order may reach the create path.
-    if ('event_type' in payload || !isOpaque(payload.id, ID_MAX_LENGTH))
+    if ('event_type' in payload || !isEasyOrdersOpaqueId(payload.id))
       throw this.refuse('orders', connection, 'EASYORDERS_WEBHOOK_MALFORMED');
 
     return this.accept('orders', connection, {
@@ -143,9 +115,9 @@ export class EasyOrdersWebhookService {
 
     if (
       payload.event_type !== EASYORDERS_STATUS_EVENT_TYPE ||
-      !isOpaque(orderId, ID_MAX_LENGTH) ||
-      !isOpaque(oldStatus, STATUS_MAX_LENGTH) ||
-      !isOpaque(newStatus, STATUS_MAX_LENGTH)
+      !isEasyOrdersOpaqueId(orderId) ||
+      !isEasyOrdersOpaqueStatus(oldStatus) ||
+      !isEasyOrdersOpaqueStatus(newStatus)
     )
       throw this.refuse('status', connection, 'EASYORDERS_WEBHOOK_MALFORMED');
 

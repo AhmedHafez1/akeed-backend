@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { buildBackendLog } from '../../../shared/logging/backend-log.util';
-import { NormalizedOrder } from '../../../shared/interfaces/order.interface';
-import { WebhookOrderNormalizer } from '../interfaces/webhook-normalizer.interface';
-import { PhoneService } from '../../../shared/services/phone.service';
-import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
+import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
+import { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
+import { WebhookOrderNormalizer } from '../../../../modules/webhook-queue/interfaces/webhook-normalizer.interface';
+import { PhoneService } from '../../../../shared/services/phone.service';
+import type { PlatformType } from '../../../../shared/interfaces/commerce-source.interface';
 import {
   appendPaymentSignal,
   classifyCodStatus,
-} from '../../../shared/commerce/payment-signals';
-import { collectShopifyGatewaySignals } from '../../../infrastructure/spokes/shopify/services/shopify-payment-signals';
+} from '../../../../shared/commerce/payment-signals';
+import { collectShopifyGatewaySignals } from './shopify-payment-signals';
 
 /**
  * Converts a raw Shopify order webhook payload into a NormalizedOrder.
