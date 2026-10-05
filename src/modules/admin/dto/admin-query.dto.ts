@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
 } from 'class-validator';
@@ -145,6 +146,26 @@ export class AdminStoreVerificationsQueryDto {
   @IsOptional()
   @IsString()
   cursor?: string;
+}
+
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export class AdminTemplateMetricsQueryDto {
+  /** First UTC day of sends to include, as YYYY-MM-DD. */
+  @Matches(CALENDAR_DATE)
+  from!: string;
+
+  /** Last UTC day of sends to include, as YYYY-MM-DD. */
+  @Matches(CALENDAR_DATE)
+  to!: string;
+
+  /** Anything other than `true` or `false` is refused, not read as false. */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  include_test?: boolean;
 }
 
 export class AdminFunnelQueryDto {

@@ -14,11 +14,13 @@ import { Throttle } from '@nestjs/throttler';
 import { AdminAccessGuard } from './admin-access.guard';
 import { AdminFunnelService } from './admin-funnel.service';
 import { AdminStoresService } from './admin-stores.service';
+import { AdminTemplateMetricsService } from './admin-template-metrics.service';
 import type { RequestWithAdmin } from './admin.types';
 import {
   AdminFunnelQueryDto,
   AdminStoreVerificationsQueryDto,
   AdminStoresQueryDto,
+  AdminTemplateMetricsQueryDto,
 } from './dto/admin-query.dto';
 import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
@@ -31,6 +33,7 @@ export class AdminController {
     private readonly storesService: AdminStoresService,
     private readonly funnelService: AdminFunnelService,
     private readonly dispatchResolution: MessageDispatchResolutionService,
+    private readonly templateMetrics: AdminTemplateMetricsService,
   ) {}
 
   @Get('session')
@@ -69,6 +72,12 @@ export class AdminController {
   @Header('Cache-Control', 'private, no-store')
   getFunnel(@Query() query: AdminFunnelQueryDto) {
     return this.funnelService.getFunnel(query);
+  }
+
+  @Get('templates/metrics')
+  @Header('Cache-Control', 'private, no-store')
+  getTemplateMetrics(@Query() query: AdminTemplateMetricsQueryDto) {
+    return this.templateMetrics.getMetrics(query);
   }
 
   @Post('message-dispatches/:dispatchId/resolve')

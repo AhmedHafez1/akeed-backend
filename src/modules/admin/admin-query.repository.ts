@@ -124,6 +124,32 @@ export interface AdminStoreVerificationsFilter {
   limit: number;
 }
 
+export interface AdminTemplateMetricsFilter {
+  /** Inclusive lower bound on the acceptance time. */
+  from: string;
+  /** Exclusive upper bound on the acceptance time. */
+  toExclusive: string;
+  includeTest: boolean;
+}
+
+/** One template and language, or the sends whose template was not recorded. */
+export interface AdminTemplateMetricsRow {
+  [key: string]: unknown;
+  variant_key: string | null;
+  template_name: string | null;
+  language_code: string | null;
+  language: string | null;
+  sends: number | string;
+  sends_initial: number | string;
+  sends_reminder: number | string;
+  sends_test: number | string;
+  delivered: number | string;
+  read: number | string;
+  confirmed: number | string;
+  canceled: number | string;
+  no_reply: number | string;
+}
+
 /**
  * Business inputs the derived store columns need. They come from config and
  * plan definitions, so the service supplies them.
@@ -419,6 +445,93 @@ export class AdminQueryRepository {
       rows: Array.from(rows),
       totalCount: Number(Array.from(counts)[0]?.total ?? 0),
     };
+  }
+
+  /**
+   * What became of the sends accepted in a range, by template and language,
+   * across every store and source.
+   *
+   * A verification has one outcome: the customer confirmed, the customer
+   * canceled, or it ran out to no-reply. A merchant's own confirmation or
+   * cancellation is not a reply to a template and counts for none. The outcome
+   * is credited to one dispatch only: the latest one accepted at or before it,
+   * so a reply after a reminder counts for the reminder and not for the first
+   * message as well.
+   *
+   * Rows are grouped on the recorded identity. Sends accepted before identity
+   * was recorded share the group whose `variant_key` is NULL.
+   */
+  async findTemplateMetrics(
+    filter: AdminTemplateMetricsFilter,
+  ): Promise<AdminTemplateMetricsRow[]> {
+    const customerConfirmed = sql`v.confirmed_at IS NOT NULL AND v.confirmation_source IS DISTINCT FROM 'merchant_manual'`;
+    const customerCanceled = sql`v.canceled_at IS NOT NULL AND (v.cancellation_source IS NULL OR v.cancellation_source = 'customer')`;
+    const testFilter = filter.includeTest ? sql`` : sql`AND NOT ord.is_test`;
+
+    const result = await this.db.execute<AdminTemplateMetricsRow>(sql`
+      WITH sent AS (
+        SELECT
+          d.id,
+          d.verification_id,
+          d.accepted_at,
+          d.delivered_at,
+          d.read_at,
+          d.template_variant_key,
+          d.meta_template_name,
+          d.meta_language_code,
+          d.resolved_language,
+          d.template_purpose,
+          (CASE
+            WHEN ${customerConfirmed} THEN 'confirmed'
+            WHEN ${customerCanceled} THEN 'canceled'
+            WHEN v.no_reply_at IS NOT NULL THEN 'no_reply'
+          END) AS outcome,
+          (CASE
+            WHEN ${customerConfirmed} THEN v.confirmed_at
+            WHEN ${customerCanceled} THEN v.canceled_at
+            WHEN v.no_reply_at IS NOT NULL THEN v.no_reply_at
+          END) AS outcome_at
+        FROM verification_message_dispatches d
+        INNER JOIN verifications v ON v.id = d.verification_id
+        INNER JOIN orders ord ON ord.id = v.order_id
+        WHERE d.accepted_at >= ${filter.from}::timestamptz
+          AND d.accepted_at < ${filter.toExclusive}::timestamptz
+          ${testFilter}
+      ),
+      credited AS (
+        SELECT
+          sent.*,
+          (sent.outcome IS NOT NULL
+            AND sent.accepted_at <= sent.outcome_at
+            AND NOT EXISTS (
+              SELECT 1
+              FROM verification_message_dispatches later
+              WHERE later.verification_id = sent.verification_id
+                AND (later.accepted_at, later.id) > (sent.accepted_at, sent.id)
+                AND later.accepted_at <= sent.outcome_at
+            )) AS has_outcome
+        FROM sent
+      )
+      SELECT
+        template_variant_key AS variant_key,
+        meta_template_name AS template_name,
+        meta_language_code AS language_code,
+        resolved_language AS language,
+        COUNT(*)::int AS sends,
+        COUNT(*) FILTER (WHERE template_purpose = 'initial')::int AS sends_initial,
+        COUNT(*) FILTER (WHERE template_purpose = 'reminder')::int AS sends_reminder,
+        COUNT(*) FILTER (WHERE template_purpose = 'test')::int AS sends_test,
+        COUNT(delivered_at)::int AS delivered,
+        COUNT(read_at)::int AS read,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'confirmed')::int AS confirmed,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'canceled')::int AS canceled,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'no_reply')::int AS no_reply
+      FROM credited
+      GROUP BY template_variant_key, meta_template_name, meta_language_code, resolved_language
+      ORDER BY template_variant_key NULLS LAST, meta_language_code, meta_template_name
+    `);
+
+    return Array.from(result);
   }
 
   private listConditions(filter: AdminStoreListFilter): SQL {
