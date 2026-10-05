@@ -1,5 +1,8 @@
 import { toSentTemplateIdentity } from './cod-template-selector';
-import { seededRegistryTemplates } from './testing/seeded-template-registry';
+import {
+  seededRegistryTemplates,
+  syncedApprovedTemplates,
+} from './testing/seeded-template-registry';
 import {
   findDefaultTemplate,
   findSelectableByStyle,
@@ -400,6 +403,191 @@ describe('resolveTemplate', () => {
       }),
     ).toEqual({
       template: expect.objectContaining({ key: 'cod_confirm.en.professional' }),
+    });
+  });
+});
+
+describe('send guardrail (US-08-04)', () => {
+  const synced = syncedApprovedTemplates();
+  const GUARDRAIL_ON = { enabled: true };
+
+  function syncedWith(
+    changes: Record<string, Partial<RegistryTemplate>>,
+  ): RegistryTemplate[] {
+    return synced.map((template) =>
+      changes[template.key]
+        ? { ...template, ...changes[template.key] }
+        : template,
+    );
+  }
+
+  function arabicSend(
+    templates: readonly RegistryTemplate[],
+    guardrail?: { enabled: boolean },
+    arKey = 'cod_confirm.ar.egyptian',
+  ) {
+    return selectTemplateForSend(templates, {
+      preferredLanguage: 'ar',
+      phoneNumber: ARABIC_PHONE,
+      arKey,
+      enKey: 'cod_confirm.en.professional',
+      guardrail,
+    });
+  }
+
+  it('sends the selected template when it is approved', () => {
+    const selection = arabicSend(synced, GUARDRAIL_ON);
+
+    expect(selection.template?.variantKey).toBe('ar.egyptian');
+    expect(selection).not.toHaveProperty('fallbackReason', expect.anything());
+  });
+
+  it('falls back to the language default with a reason when the selected one is paused', () => {
+    const selection = arabicSend(
+      syncedWith({ 'cod_confirm.ar.egyptian': { reviewStatus: 'paused' } }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection.template?.variantKey).toBe('ar.standard');
+    expect(selection).toMatchObject({
+      storedKey: 'cod_confirm.ar.egyptian',
+      fallbackReason: 'not_approved',
+    });
+  });
+
+  it.each([
+    'pending',
+    'rejected',
+    'paused',
+    'disabled',
+    'in_appeal',
+    'limit_exceeded',
+    'pending_deletion',
+    'deleted',
+    'archived',
+    'flagged',
+    'locked',
+    'reinstated',
+    'unarchived',
+    'missing',
+    'unknown',
+  ] as const)('treats %s as not sendable', (reviewStatus) => {
+    const selection = arabicSend(
+      syncedWith({ 'cod_confirm.ar.egyptian': { reviewStatus } }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection).toMatchObject({ fallbackReason: 'not_approved' });
+  });
+
+  it('treats a row the sync never read as not sendable once the environment has synced', () => {
+    const selection = arabicSend(
+      syncedWith({
+        'cod_confirm.ar.egyptian': { reviewStatus: null, lastSyncedAt: null },
+      }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection).toMatchObject({ fallbackReason: 'not_approved' });
+  });
+
+  it('skips when the default is unavailable too, and never crosses language', () => {
+    const selection = arabicSend(
+      syncedWith({
+        'cod_confirm.ar.egyptian': { reviewStatus: 'paused' },
+        'cod_confirm.ar.standard': { reviewStatus: 'disabled' },
+      }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection).toEqual({
+      template: null,
+      language: 'ar',
+      storedKey: 'cod_confirm.ar.egyptian',
+      reason: 'default_unavailable',
+    });
+  });
+
+  it('skips a store with no stored choice when its default is not approved', () => {
+    const selection = arabicSend(
+      syncedWith({ 'cod_confirm.ar.standard': { reviewStatus: 'rejected' } }),
+      GUARDRAIL_ON,
+      '',
+    );
+
+    expect(selection).toMatchObject({
+      template: null,
+      reason: 'default_unavailable',
+    });
+  });
+
+  it('never uses another approved style of the same language in place of the default', () => {
+    const selection = arabicSend(
+      syncedWith({
+        'cod_confirm.ar.egyptian': { reviewStatus: 'paused' },
+        'cod_confirm.ar.standard': { reviewStatus: 'paused' },
+      }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection.template).toBeNull();
+  });
+
+  it('keeps sending a template whose category the provider changed', () => {
+    const selection = arabicSend(
+      syncedWith({ 'cod_confirm.ar.egyptian': { category: 'marketing' } }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection.template?.variantKey).toBe('ar.egyptian');
+  });
+
+  it('behaves as before when the switch is off', () => {
+    const paused = syncedWith({
+      'cod_confirm.ar.egyptian': { reviewStatus: 'paused' },
+      'cod_confirm.ar.standard': { reviewStatus: 'paused' },
+    });
+
+    expect(arabicSend(paused, { enabled: false }).template?.variantKey).toBe(
+      'ar.egyptian',
+    );
+    expect(arabicSend(paused).template?.variantKey).toBe('ar.egyptian');
+  });
+
+  it('behaves as before while the environment has never synced', () => {
+    const neverSynced = registry.map((template) => ({
+      ...template,
+      reviewStatus: null,
+      lastSyncedAt: null,
+    }));
+
+    expect(arabicSend(neverSynced, GUARDRAIL_ON).template?.variantKey).toBe(
+      'ar.egyptian',
+    );
+  });
+
+  it('still refuses an inactive row before the provider status is read', () => {
+    const selection = arabicSend(
+      syncedWith({ 'cod_confirm.ar.egyptian': { isActive: false } }),
+      GUARDRAIL_ON,
+    );
+
+    expect(selection).toMatchObject({ fallbackReason: 'key_inactive' });
+  });
+
+  it('applies the same rule to resolveTemplate', () => {
+    const resolution = resolveTemplate(
+      syncedWith({ 'cod_confirm.en.direct': { reviewStatus: 'paused' } }),
+      {
+        language: 'en',
+        storedKey: 'cod_confirm.en.direct',
+        guardrail: GUARDRAIL_ON,
+      },
+    );
+
+    expect(resolution).toMatchObject({
+      template: { key: 'cod_confirm.en.friendly' },
+      fallbackReason: 'not_approved',
     });
   });
 });

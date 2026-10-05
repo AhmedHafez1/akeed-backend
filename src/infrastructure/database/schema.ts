@@ -229,6 +229,23 @@ export const whatsappTemplates = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    pendingCategory: text('pending_category'),
+    statusEventAt: timestamp('status_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    qualityEventAt: timestamp('quality_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    categoryEventAt: timestamp('category_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    componentsDriftAt: timestamp('components_drift_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
   },
   (table) => [
     unique('whatsapp_templates_key_key').on(table.key),
@@ -257,6 +274,118 @@ export const whatsappTemplates = pgTable(
       sql`NOT ${table.isDefault} OR ${table.isActive}`,
     ),
     pgPolicy('Service role manages whatsapp templates', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Every template notification received from the provider (US-08-04), applied
+ * or not. `identity_key` makes a redelivery a no-op. `outcome` says what
+ * happened to it: `applied`, `stale` (older than the state already applied),
+ * `conflict` (same second, different value), `unregistered` (no registry row).
+ */
+export const whatsappTemplateEvents = pgTable(
+  'whatsapp_template_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    templateId: uuid('template_id').references(() => whatsappTemplates.id, {
+      onDelete: 'set null',
+    }),
+    field: text('field').$type<'status' | 'quality' | 'category'>().notNull(),
+    identityKey: text('identity_key').notNull(),
+    providerTemplateName: text('provider_template_name').notNull(),
+    providerLanguageCode: text('provider_language_code').notNull(),
+    providerTemplateId: text('provider_template_id'),
+    occurredAt: timestamp('occurred_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    neutralValue: jsonb('neutral_value')
+      .$type<Record<string, string | null>>()
+      .notNull(),
+    outcome: text('outcome')
+      .$type<'applied' | 'stale' | 'conflict' | 'unregistered'>()
+      .notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('whatsapp_template_events_identity_key_key').on(table.identityKey),
+    index('idx_whatsapp_template_events_template_occurred').on(
+      table.templateId,
+      table.occurredAt,
+    ),
+    check(
+      'whatsapp_template_events_field_check',
+      sql`${table.field} IN ('status', 'quality', 'category')`,
+    ),
+    check(
+      'whatsapp_template_events_outcome_check',
+      sql`${table.outcome} IN ('applied', 'stale', 'conflict', 'unregistered')`,
+    ),
+    pgPolicy('Service role manages whatsapp template events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * One run of the template sync (US-08-04). At most one run is `running` at a
+ * time across every instance. A failed run changed no registry row; its
+ * `error_code` is neutral and never carries the provider's text.
+ */
+export const whatsappTemplateSyncRuns = pgTable(
+  'whatsapp_template_sync_runs',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    trigger: text('trigger')
+      .$type<'scheduled' | 'manual' | 'webhook'>()
+      .notNull(),
+    requestedBy: uuid('requested_by'),
+    status: text('status')
+      .$type<'running' | 'succeeded' | 'failed'>()
+      .default('running')
+      .notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    finishedAt: timestamp('finished_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerTemplateCount: integer('provider_template_count'),
+    updatedCount: integer('updated_count'),
+    unchangedCount: integer('unchanged_count'),
+    missingKeys: jsonb('missing_keys').$type<string[]>(),
+    unknownAtProvider: jsonb('unknown_at_provider').$type<
+      { templateName: string; languageCode: string }[]
+    >(),
+    errorCode: text('error_code'),
+  },
+  (table) => [
+    uniqueIndex('whatsapp_template_sync_runs_one_running_idx')
+      .on(table.status)
+      .where(sql`${table.status} = 'running'`),
+    index('idx_whatsapp_template_sync_runs_started_at').on(table.startedAt),
+    check(
+      'whatsapp_template_sync_runs_trigger_check',
+      sql`${table.trigger} IN ('scheduled', 'manual', 'webhook')`,
+    ),
+    check(
+      'whatsapp_template_sync_runs_status_check',
+      sql`${table.status} IN ('running', 'succeeded', 'failed')`,
+    ),
+    pgPolicy('Service role manages whatsapp template sync runs', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],
@@ -834,6 +963,8 @@ export const verificationMessageDispatches = pgTable(
     metaTemplateName: text('meta_template_name'),
     metaLanguageCode: text('meta_language_code'),
     resolvedLanguage: text('resolved_language').$type<'ar' | 'en'>(),
+    templateFallbackReason: text('template_fallback_reason'),
+    templateSkippedKey: text('template_skipped_key'),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),

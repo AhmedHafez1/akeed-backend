@@ -813,7 +813,11 @@ describe('VerificationHubService', () => {
       expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
     });
 
-    it.each(['integration_inactive', 'billing_not_active'])(
+    it.each([
+      'integration_inactive',
+      'billing_not_active',
+      'template_unavailable',
+    ])(
       'marks an immediate initial send failed when execution is skipped for %s',
       async (reason) => {
         const {

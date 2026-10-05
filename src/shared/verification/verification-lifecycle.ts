@@ -57,6 +57,10 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   'CREDIT_DEBT_OUTSTANDING',
   'INSUFFICIENT_CREDITS',
   'PAYMENT_PENDING_RECONCILIATION',
+  // No template could be sent for the customer's language (US-08-04): the
+  // selected one and the language default were both unavailable. Nothing was
+  // sent and no usage was taken, so a retry once a template is back is safe.
+  'template_unavailable',
 ] as const;
 
 /**
@@ -94,6 +98,9 @@ export const SEND_FAILURE_REASONS = [
   'CREDIT_DEBT_OUTSTANDING',
   'INSUFFICIENT_CREDITS',
   'PAYMENT_PENDING_RECONCILIATION',
+  // Recorded so the merchant sees why nothing was sent, rather than a row
+  // left `pending` with no reason (US-08-04).
+  'template_unavailable',
 ] as const;
 
 /** Statuses at which the automation pipeline stops scheduling further work. */

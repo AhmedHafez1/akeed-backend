@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { readWhatsappTemplateConfig } from '../../shared/config/whatsapp-template.config';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import {
   buildBackendLog,
@@ -28,7 +30,17 @@ export class TemplateRegistryService implements TemplateRegistryPort {
   } | null = null;
   private loading: Promise<readonly RegistryTemplate[]> | null = null;
 
-  constructor(private readonly templatesRepo: WhatsappTemplatesRepository) {}
+  constructor(
+    private readonly templatesRepo: WhatsappTemplatesRepository,
+    @Optional() private readonly config?: ConfigService,
+  ) {}
+
+  /** `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED`, off without a configuration. */
+  sendGuardrailEnabled(): boolean {
+    return this.config
+      ? readWhatsappTemplateConfig(this.config).guardrailEnabled
+      : false;
+  }
 
   async listTemplates(): Promise<readonly RegistryTemplate[]> {
     const cached = this.cached;

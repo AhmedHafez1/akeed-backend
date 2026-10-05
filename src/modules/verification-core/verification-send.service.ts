@@ -278,6 +278,9 @@ export class VerificationSendService {
         enKey: integration.codTemplateEnKey,
         arLegacyVariant: integration.codTemplateArVariant,
         enLegacyVariant: integration.codTemplateEnVariant,
+        guardrail: {
+          enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+        },
       },
     );
     if (!selection.template) {
@@ -299,6 +302,15 @@ export class VerificationSendService {
       return { status: 'skipped', reason: 'template_unavailable' };
     }
     const template = selection.template;
+    // A store with no stored choice is the normal state of a new source, so
+    // that is the one fallback neither logged nor recorded on the dispatch.
+    const recordedFallback =
+      selection.fallbackReason && selection.fallbackReason !== 'key_missing'
+        ? {
+            fallbackReason: selection.fallbackReason,
+            skippedKey: selection.storedKey,
+          }
+        : {};
     if (
       selection.fallbackReason &&
       selection.fallbackReason !== 'key_missing'
@@ -333,6 +345,7 @@ export class VerificationSendService {
         variantKey: template.variantKey,
         purpose,
         language: template.language,
+        ...recordedFallback,
       },
       leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
       billingExempt: ctx.billingExempt,

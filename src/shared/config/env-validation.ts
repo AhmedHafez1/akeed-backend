@@ -20,6 +20,10 @@ import {
   parseWooCommerceConfig,
   WOOCOMMERCE_CONFIG,
 } from './woocommerce.config';
+import {
+  parseWhatsappTemplateConfig,
+  WHATSAPP_TEMPLATE_CONFIG,
+} from './whatsapp-template.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -116,5 +120,6 @@ export function validateEnv(
     [ORDER_API_CONFIG]: parseOrderApiConfig(config),
     [EASYORDERS_CONFIG]: parseEasyOrdersConfig(config),
     [WOOCOMMERCE_CONFIG]: parseWooCommerceConfig(config),
+    [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig(config),
   };
 }

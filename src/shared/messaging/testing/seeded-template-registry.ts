@@ -35,6 +35,9 @@ export function seededRegistryTemplates(): RegistryTemplate[] {
         preview: { ...definition.preview },
         isActive: true,
         isDefault: COD_TEMPLATE_DEFAULTS[language] === definition.variant,
+        reviewStatus: null,
+        category: null,
+        lastSyncedAt: null,
       }),
     ),
   );
@@ -43,9 +46,24 @@ export function seededRegistryTemplates(): RegistryTemplate[] {
 /** An in-memory registry port over the given rows (the seed by default). */
 export function seededTemplateRegistry(
   templates: readonly RegistryTemplate[] = seededRegistryTemplates(),
+  options: { guardrail?: boolean } = {},
 ): TemplateRegistryPort {
   return {
     listTemplates: () => Promise.resolve(templates),
     invalidate: () => undefined,
+    sendGuardrailEnabled: () => options.guardrail === true,
   };
+}
+
+/** The seed as an environment that has synced and found every row approved. */
+export function syncedApprovedTemplates(
+  templates: readonly RegistryTemplate[] = seededRegistryTemplates(),
+  syncedAt = '2026-10-05T00:00:00.000Z',
+): RegistryTemplate[] {
+  return templates.map((template) => ({
+    ...template,
+    reviewStatus: 'approved',
+    category: 'utility',
+    lastSyncedAt: syncedAt,
+  }));
 }

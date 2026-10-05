@@ -1,3 +1,8 @@
+import type {
+  TemplateCategory,
+  TemplateReviewStatus,
+} from './template-provider.types';
+
 /** The languages a template is written in. */
 export type TemplateLanguage = 'ar' | 'en';
 
@@ -57,6 +62,14 @@ export interface RegistryTemplate {
   preview: TemplatePreview;
   isActive: boolean;
   isDefault: boolean;
+  /**
+   * What the last sync or webhook said about the template at the provider.
+   * NULL until this environment has synced it.
+   */
+  reviewStatus: TemplateReviewStatus | null;
+  category: TemplateCategory | null;
+  /** When a sync last read this template; NULL if it never has. */
+  lastSyncedAt: string | null;
 }
 
 export function buildCodConfirmationKey(

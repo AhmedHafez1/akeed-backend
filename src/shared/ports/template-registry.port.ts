@@ -14,4 +14,9 @@ export interface TemplateRegistryPort {
   listTemplates(): Promise<readonly RegistryTemplate[]>;
   /** Drops any cached copy, so the next read sees a write just made. */
   invalidate(): void;
+  /**
+   * Whether a send may use only templates the provider has approved. Absent
+   * means off, which is how every send behaved before US-08-04.
+   */
+  sendGuardrailEnabled?(): boolean;
 }

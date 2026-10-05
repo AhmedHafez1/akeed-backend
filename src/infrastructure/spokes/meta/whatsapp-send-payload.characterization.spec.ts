@@ -7,7 +7,11 @@ import {
 } from '../../../shared/billing/entitlement';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 import { WhatsAppService } from './whatsapp.service';
-import { seededTemplateRegistry } from '../../../shared/messaging/testing/seeded-template-registry';
+import {
+  seededTemplateRegistry,
+  syncedApprovedTemplates,
+} from '../../../shared/messaging/testing/seeded-template-registry';
+import type { TemplateRegistryPort } from '../../../shared/ports/template-registry.port';
 
 /**
  * US-08-02 payload characterization, and the baseline US-08-03 cuts over
@@ -218,7 +222,10 @@ const baseline = JSON.parse(
   ),
 ) as Baseline;
 
-async function sendThrough(definition: PayloadCase) {
+async function sendThrough(
+  definition: PayloadCase,
+  registry: TemplateRegistryPort = seededTemplateRegistry(),
+) {
   const httpService = {
     post: jest
       .fn()
@@ -283,7 +290,7 @@ async function sendThrough(definition: PayloadCase) {
       }),
     } as never,
     messaging,
-    seededTemplateRegistry(),
+    registry,
   );
 
   const outcome =
@@ -302,6 +309,27 @@ describe('WhatsApp send payload characterization', () => {
 
   it.each(CASES)('sends the recorded payload for $name', async (definition) => {
     const { outcome, calls } = await sendThrough(definition);
+
+    expect(outcome.status).toBe('sent');
+    expect(calls).toHaveLength(1);
+    const [url, payload] = calls[0];
+    expect(url).toBe(baseline.url);
+    expect(JSON.stringify(payload)).toBe(
+      JSON.stringify(baseline.cases[definition.name]),
+    );
+  });
+});
+
+/**
+ * US-08-04 criterion 8: with the guardrail on and every template approved at
+ * the provider, nothing a customer receives changes.
+ */
+describe('WhatsApp send payload characterization, guardrail on and all approved', () => {
+  it.each(CASES)('sends the recorded payload for $name', async (definition) => {
+    const { outcome, calls } = await sendThrough(
+      definition,
+      seededTemplateRegistry(syncedApprovedTemplates(), { guardrail: true }),
+    );
 
     expect(outcome.status).toBe('sent');
     expect(calls).toHaveLength(1);

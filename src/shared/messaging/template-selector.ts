@@ -1,5 +1,6 @@
 import type { SelectedCodTemplate } from './cod-template-selector';
 import { resolveTemplateLanguageForPhone } from './template-language';
+import { isSendableReviewStatus } from './template-provider.types';
 import {
   COD_CONFIRMATION_PURPOSE,
   buildCodConfirmationKey,
@@ -13,7 +14,46 @@ export type TemplateFallbackReason =
   | 'key_missing'
   | 'key_unknown'
   | 'key_inactive'
-  | 'wrong_language';
+  | 'wrong_language'
+  /** The guardrail is on and the provider has not approved the template. */
+  | 'not_approved';
+
+/**
+ * Whether a send may use only templates the provider has approved. It applies
+ * once this environment has synced at least once: before that no row says
+ * anything about the provider, and sends behave as they did before the
+ * guardrail existed (US-08-04 open decision 3).
+ */
+export interface TemplateSendGuardrail {
+  enabled: boolean;
+}
+
+/** True once a sync has read the provider's templates in this environment. */
+export function hasSyncedRegistry(
+  templates: readonly RegistryTemplate[],
+): boolean {
+  return templates.some((template) => template.lastSyncedAt !== null);
+}
+
+function guardrailApplies(
+  templates: readonly RegistryTemplate[],
+  guardrail: TemplateSendGuardrail | undefined,
+): boolean {
+  return guardrail?.enabled === true && hasSyncedRegistry(templates);
+}
+
+/**
+ * Whether a template may be sent: active in Akeed and, when the guardrail
+ * applies, approved by the provider. A category the provider changed does not
+ * make it unsendable; that is a staff alert only (US-08-04 open decision 5).
+ */
+export function isSendableTemplate(
+  template: RegistryTemplate,
+  guardrailOn: boolean,
+): boolean {
+  if (!template.isActive) return false;
+  return !guardrailOn || isSendableReviewStatus(template.reviewStatus);
+}
 
 export type TemplateResolution =
   | {
@@ -76,11 +116,25 @@ export function findDefaultTemplate(
   );
 }
 
+function findSendableDefault(
+  templates: readonly RegistryTemplate[],
+  language: TemplateLanguage,
+  purpose: TemplatePurpose,
+  guardrailOn: boolean,
+): RegistryTemplate | undefined {
+  const fallback = findDefaultTemplate(templates, language, purpose);
+  return fallback && isSendableTemplate(fallback, guardrailOn)
+    ? fallback
+    : undefined;
+}
+
 /**
  * Resolves a stored choice to a template that may be sent. A choice that is
- * missing, unknown, inactive or written for another language falls back to
- * the language default and says why. With no default there is nothing to
- * send: the caller skips, it never picks another template.
+ * missing, unknown, inactive, written for another language or, under the
+ * guardrail, not approved by the provider falls back to the language default
+ * and says why. The default must pass the same test. With no sendable default
+ * there is nothing to send: the caller skips, it never picks another template
+ * and never crosses to the other language.
  */
 export function resolveTemplate(
   templates: readonly RegistryTemplate[],
@@ -88,9 +142,11 @@ export function resolveTemplate(
     language: TemplateLanguage;
     storedKey: string | null;
     purpose?: TemplatePurpose;
+    guardrail?: TemplateSendGuardrail;
   },
 ): TemplateResolution {
   const purpose = params.purpose ?? COD_CONFIRMATION_PURPOSE;
+  const guardrailOn = guardrailApplies(templates, params.guardrail);
   const stored = params.storedKey
     ? templates.find((template) => template.key === params.storedKey)
     : undefined;
@@ -107,11 +163,18 @@ export function resolveTemplate(
     fallbackReason = 'wrong_language';
   } else if (!stored.isActive) {
     fallbackReason = 'key_inactive';
+  } else if (!isSendableTemplate(stored, guardrailOn)) {
+    fallbackReason = 'not_approved';
   } else {
     return { template: stored };
   }
 
-  const fallback = findDefaultTemplate(templates, params.language, purpose);
+  const fallback = findSendableDefault(
+    templates,
+    params.language,
+    purpose,
+    guardrailOn,
+  );
   return fallback
     ? { template: fallback, fallbackReason }
     : { template: null, reason: 'default_unavailable' };
@@ -162,6 +225,7 @@ export function selectTemplateForSend(
     enKey?: string | null;
     arLegacyVariant?: string | null;
     enLegacyVariant?: string | null;
+    guardrail?: TemplateSendGuardrail;
   },
 ): TemplateSelection {
   const language = resolveTemplateLanguageForPhone(
@@ -173,7 +237,11 @@ export function selectTemplateForSend(
       ? { language, key: params.arKey, legacyVariant: params.arLegacyVariant }
       : { language, key: params.enKey, legacyVariant: params.enLegacyVariant },
   );
-  const resolution = resolveTemplate(templates, { language, storedKey });
+  const resolution = resolveTemplate(templates, {
+    language,
+    storedKey,
+    guardrail: params.guardrail,
+  });
   if (!resolution.template) {
     return { template: null, language, storedKey, reason: resolution.reason };
   }

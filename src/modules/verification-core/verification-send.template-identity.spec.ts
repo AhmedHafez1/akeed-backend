@@ -247,6 +247,8 @@ describe('VerificationSendService template identity', () => {
           variantKey: 'ar.standard',
           purpose: 'initial',
           language: 'ar',
+          fallbackReason: 'key_unknown',
+          skippedKey: 'cod_confirm.ar.retired_variant',
         },
       }),
     );

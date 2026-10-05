@@ -6,8 +6,36 @@ import type {
   RegistryTemplate,
   TemplateVariable,
 } from '../../../shared/messaging/template-registry.types';
+import type {
+  TemplateCategory,
+  TemplateReviewStatus,
+} from '../../../shared/messaging/template-provider.types';
 
-type WhatsappTemplateRow = typeof whatsappTemplates.$inferSelect;
+/**
+ * The columns a registry read needs. They all exist since migration 0054, so
+ * the reader does not depend on a later migration having run.
+ */
+const REGISTRY_COLUMNS = {
+  key: whatsappTemplates.key,
+  purpose: whatsappTemplates.purpose,
+  language: whatsappTemplates.language,
+  style: whatsappTemplates.style,
+  metaTemplateName: whatsappTemplates.metaTemplateName,
+  metaLanguageCode: whatsappTemplates.metaLanguageCode,
+  parameterFormat: whatsappTemplates.parameterFormat,
+  variableMapping: whatsappTemplates.variableMapping,
+  preview: whatsappTemplates.preview,
+  isActive: whatsappTemplates.isActive,
+  isDefault: whatsappTemplates.isDefault,
+  reviewStatus: whatsappTemplates.reviewStatus,
+  category: whatsappTemplates.category,
+  lastSyncedAt: whatsappTemplates.lastSyncedAt,
+};
+
+type WhatsappTemplateRow = Pick<
+  typeof whatsappTemplates.$inferSelect,
+  keyof typeof REGISTRY_COLUMNS
+>;
 
 /**
  * Turns the stored mapping into the variables in send order. A positional
@@ -47,6 +75,10 @@ export function toRegistryTemplate(row: WhatsappTemplateRow): RegistryTemplate {
     },
     isActive: row.isActive,
     isDefault: row.isDefault,
+    // Only sync and template webhooks write these, and only neutral values.
+    reviewStatus: row.reviewStatus as TemplateReviewStatus | null,
+    category: row.category as TemplateCategory | null,
+    lastSyncedAt: row.lastSyncedAt,
   };
 }
 
@@ -64,7 +96,7 @@ export class WhatsappTemplatesRepository {
   /** Every template, inactive ones included, in display order. */
   async findAll(): Promise<RegistryTemplate[]> {
     const rows = await this.db
-      .select()
+      .select(REGISTRY_COLUMNS)
       .from(whatsappTemplates)
       .orderBy(
         asc(whatsappTemplates.purpose),

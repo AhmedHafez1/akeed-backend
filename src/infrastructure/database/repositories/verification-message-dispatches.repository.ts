@@ -96,6 +96,10 @@ export interface DispatchTemplateClaim {
   variantKey: string;
   purpose: TemplateSendPurpose;
   language: SentTemplateIdentity['language'];
+  /** Why the store's stored choice was not the template sent. */
+  fallbackReason?: string;
+  /** The stored choice that was passed over, when there was one. */
+  skippedKey?: string | null;
 }
 
 /**
@@ -118,6 +122,10 @@ function claimTemplateColumns(params: {
           metaTemplateName: params.templateName,
           metaLanguageCode: params.languageCode,
           resolvedLanguage: params.identity.language,
+          templateFallbackReason: params.identity.fallbackReason ?? null,
+          templateSkippedKey: params.identity.fallbackReason
+            ? (params.identity.skippedKey ?? null)
+            : null,
         }
       : {}),
   };

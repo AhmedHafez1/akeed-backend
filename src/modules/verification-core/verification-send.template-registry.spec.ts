@@ -209,6 +209,8 @@ describe('VerificationSendService and the template registry', () => {
             variantKey: 'ar.standard',
             purpose: 'reminder',
             language: 'ar',
+            fallbackReason: reason,
+            skippedKey: storedKey,
           },
         }),
       );
