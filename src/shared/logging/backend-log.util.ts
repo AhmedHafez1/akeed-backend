@@ -137,12 +137,55 @@ function redact(value: unknown): unknown {
   return value;
 }
 
+interface FailedQueryError extends Error {
+  query: string;
+  params: unknown[];
+}
+
+function isFailedQuery(error: Error): error is FailedQueryError {
+  const candidate = error as Partial<FailedQueryError>;
+  return typeof candidate.query === 'string' && Array.isArray(candidate.params);
+}
+
+/**
+ * Drizzle reports a failed statement as "Failed query: <sql>" followed by
+ * "params: <values>", and the values are row data: phones, names, token
+ * hashes, ciphertexts. This is the same failure without them: the SQL text,
+ * which holds placeholders only, and the driver's own code and message.
+ * `detail` and `where` are left out because they can carry row values.
+ *
+ * Any other error is returned as it is.
+ */
+export function withoutQueryParameters(error: Error): Error {
+  if (!isFailedQuery(error)) return error;
+  const cause = error.cause as
+    | { code?: unknown; message?: unknown }
+    | null
+    | undefined;
+  const code = typeof cause?.code === 'string' ? `${cause.code} ` : '';
+  const reason =
+    typeof cause?.message === 'string'
+      ? `\n  cause: ${code}${cause.message}`
+      : '';
+  const safe = new Error(`Failed query: ${error.query}${reason}`);
+  safe.name = error.name;
+  // The original stack begins with its message, parameters included: only
+  // the frames after it are kept.
+  const stack = error.stack ?? '';
+  const messageAt = stack.indexOf(error.message);
+  const frames =
+    messageAt < 0 ? '' : stack.slice(messageAt + error.message.length);
+  safe.stack = `${safe.name}: ${safe.message}${frames}`;
+  return safe;
+}
+
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
+    const safe = withoutQueryParameters(error);
     return {
-      errorName: error.name,
-      errorMessage: error.message,
-      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack,
+      errorName: safe.name,
+      errorMessage: safe.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : safe.stack,
     };
   }
 

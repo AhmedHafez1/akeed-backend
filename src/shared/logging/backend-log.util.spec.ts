@@ -1,4 +1,9 @@
-import { buildBackendLog } from './backend-log.util';
+import { DrizzleQueryError } from 'drizzle-orm';
+import {
+  buildBackendLog,
+  normalizeError,
+  withoutQueryParameters,
+} from './backend-log.util';
 
 describe('buildBackendLog', () => {
   it('recursively redacts billing credentials, evidence, and customer data', () => {
@@ -76,5 +81,55 @@ describe('buildBackendLog', () => {
       reference: 'akd_reference',
       settlement: { netMinor: 19430 },
     });
+  });
+});
+
+describe('normalizeError', () => {
+  const PHONE = '+201000000000';
+  const TOKEN_HASH = 'a'.repeat(64);
+  const STATEMENT =
+    'insert into "orders" ("customer_phone", "token_hash") values ($1, $2)';
+
+  function failedQuery(cause?: Error): DrizzleQueryError {
+    return new DrizzleQueryError(STATEMENT, [PHONE, TOKEN_HASH], cause);
+  }
+
+  it('keeps the statement and the driver code and message of a failed query, and none of its parameters', () => {
+    const normalized = normalizeError(
+      failedQuery(
+        Object.assign(new Error('duplicate key value violates "orders_key"'), {
+          code: '23505',
+          detail: `Key (customer_phone)=(${PHONE}) already exists.`,
+        }),
+      ),
+    );
+
+    expect(normalized.errorMessage).toBe(
+      `Failed query: ${STATEMENT}\n  cause: 23505 duplicate key value violates "orders_key"`,
+    );
+    const text = JSON.stringify(normalized);
+    expect(text).not.toContain(PHONE);
+    expect(text).not.toContain(TOKEN_HASH);
+    expect(text).not.toContain('params:');
+    // The frames are kept, so the failure can still be traced.
+    expect(normalized.stack).toContain('backend-log.util.spec');
+  });
+
+  it('handles a failed query that carries no driver error', () => {
+    const normalized = normalizeError(failedQuery());
+
+    expect(normalized.errorMessage).toBe(`Failed query: ${STATEMENT}`);
+    expect(JSON.stringify(normalized)).not.toContain(PHONE);
+  });
+
+  it('leaves every other error as it is', () => {
+    const error = new TypeError('not a query');
+
+    expect(normalizeError(error)).toEqual({
+      errorName: 'TypeError',
+      errorMessage: 'not a query',
+      stack: error.stack,
+    });
+    expect(withoutQueryParameters(error)).toBe(error);
   });
 });
