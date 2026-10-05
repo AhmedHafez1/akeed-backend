@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** Backlog
+- **Status:** In progress. The automated gate passed as a script on 2026-10-05 (`npm run test:gate:e07`, with the E06, E05, E04, E03 and E02 gates inside it). **The live pilot has not been run**, so acceptance criteria 4, 5 and 7 are open and the contract record's observations are still unverified. [Evidence](../../US-07-06-WOOCOMMERCE-RELEASE-GATE-EVIDENCE.md), [pilot script](evidence/US-07-06-live-pilot-script.md)
 - **Dependencies:** [US-07-05](US-07-05-woocommerce-setup-health-disconnect-and-support.md); the E06 automated gate (`test:gate:e06`) passing. Not the E06 live pilot.
 
 ## User story and value
