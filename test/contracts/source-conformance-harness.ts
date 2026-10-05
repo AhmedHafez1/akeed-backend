@@ -1179,6 +1179,7 @@ export function assembleConformanceWorld(
       '0033_dispatch_accounting_mode.sql',
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
+      '0056_dispatch_template_fallback.sql',
       ...options.migrations,
     ])
       await migrate(name);

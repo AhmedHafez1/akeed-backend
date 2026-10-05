@@ -681,6 +681,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', (
       '0033_dispatch_accounting_mode.sql',
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
+      '0056_dispatch_template_fallback.sql',
       // The sync table E06 added. This story reuses it unchanged.
       '0049_commerce_outcome_syncs.sql',
     ])

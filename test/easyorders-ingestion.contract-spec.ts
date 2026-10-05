@@ -641,6 +641,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
       '0033_dispatch_accounting_mode.sql',
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
+      '0056_dispatch_template_fallback.sql',
     ])
       await migrate(name);
     // The story's own migrations, twice: both must be re-runnable.

@@ -464,6 +464,7 @@ export function releaseGateHarness(
     await migrate('0035_standalone_auto_activation.sql');
     await migrate('0045_provider_message_receipts.sql');
     await migrate('0053_dispatch_template_identity.sql');
+    await migrate('0056_dispatch_template_fallback.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',
