@@ -1,7 +1,7 @@
 # E08 — WhatsApp Template Management
 
 - **Horizon:** NEXT
-- **Status:** Backlog (authored 2026-10-05; awaiting product-owner review)
+- **Status:** In progress (authored 2026-10-05; US-08-02 done 2026-10-05; the US-08-01 contract record is still a draft, and the other stories are Backlog)
 - **Stories:** 8
 - **Prerequisite epics:** [E02 — Platform Boundaries and Reliability](../02-platform-boundaries-and-reliability/README.md) (messaging port and per-send dispatch ledger). Regression gates from [E01](../01-shopify-baseline-stabilization/README.md), [E04](../04-standalone-manual-order-mvp/README.md), [E05](../05-standalone-order-ingestion-api/README.md), [E06](../06-easyorders-integration/README.md) and [E07](../07-woocommerce-integration/README.md) must stay green. E08 does not wait for any commerce epic to go live.
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -46,6 +46,7 @@ All paths are in `akeed-backend` unless they say otherwise.
 - Each dispatch writes `verification_message_dispatches.template_name` as `cod_verification` or `cod_verification:follow_up`, and `language_code` as the store preference, usually `auto`.
 - The ledger `kind` is `initial`, `follow_up` or `legacy_unknown`. An onboarding test is an `initial` dispatch; only its order's `orders.is_test` tells it apart.
 - The variant, Meta template name and resolved language are not stored anywhere. They appear only in the failure log.
+- **Since US-08-02 (2026-10-05):** every new dispatch records them, with the purpose, and the accepted send's name and language code are written to the verification. Nothing new is written as `cod_verification` or `auto`. See [Which template a send carried](../../ORDER_CONFIRMATION_WORKFLOW.md#which-template-a-send-carried).
 - **Correction to the brief:** `verifications` also has `template_name` (default `cod_verification`) and `language_code` (default `ar`). Nothing writes them, so an English send reads `ar`. The admin store-detail query returns that value ([`admin-query.repository.ts`](../../../src/modules/admin/admin-query.repository.ts)).
 
 **Preview text.**
@@ -147,7 +148,7 @@ Rules for the whole epic:
 - **Only approved and active templates are sent.** A template must be approved at Meta and active in Akeed. Anything else falls back to the language default. If the default is unavailable, the send is skipped with a recorded reason and never guessed.
 - **No customer-facing change before US-08-07.** US-08-02 to US-08-06 change no customer-facing message. A characterization test proves the Meta payload for every existing variant and language is byte-identical before and after.
 - **Secrets and safe logging.** Access tokens and app secrets are never logged, returned or put in fixtures. Template text and customer data in logs go through `buildBackendLog`.
-- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. The next number on 2026-10-05 is `0053`. Migrations are additive first, each with a written rollback.
+- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. `0053` was used by US-08-02; the next number is `0054`. Migrations are additive first, each with a written rollback.
 - **No regressions.** Shopify, Standalone (manual, import, API), EasyOrders and WooCommerce sends keep working, and their tests pass untouched.
 
 **Out of scope:**
@@ -178,7 +179,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | Rank | Story | Priority | Type | Direct dependencies | Status |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [US-08-01 — Meta contract and live template reconciliation](US-08-01-meta-contract-and-live-template-reconciliation.md) | P0 | Contract and plan | [US-02-07](../02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md) | Backlog |
-| 2 | [US-08-02 — Record template identity per send](US-08-02-record-template-identity-per-send.md) | P0 | Technical enabler | [US-08-01](US-08-01-meta-contract-and-live-template-reconciliation.md) | Backlog |
+| 2 | [US-08-02 — Record template identity per send](US-08-02-record-template-identity-per-send.md) | P0 | Technical enabler | [US-08-01](US-08-01-meta-contract-and-live-template-reconciliation.md) | Done (2026-10-05) |
 | 3 | [US-08-03 — Template registry and send-path cutover](US-08-03-template-registry-and-send-path-cutover.md) | P0 | Technical enabler | [US-08-02](US-08-02-record-template-identity-per-send.md) | Backlog |
 | 4 | [US-08-04 — Meta sync, status webhooks and send guardrail](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | P0 | Feature | [US-08-03](US-08-03-template-registry-and-send-path-cutover.md) | Backlog |
 | 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Backlog |
@@ -209,7 +210,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 Each story lists its own open decisions after its acceptance criteria. The ones that change the design:
 
 1. **US-08-01:** run the reconciliation script on prod in this story, or on dev first and prod at the gate; and who runs it with the prod token.
-2. **US-08-02:** fill the dead `verifications.template_name` and `language_code` columns with real values, or deprecate them.
+2. **US-08-02:** fill the dead `verifications.template_name` and `language_code` columns with real values, or deprecate them. **Decided 2026-10-05:** filled with real values on each accepted send, and their defaults dropped.
 3. **US-08-03:** the stable key scheme. Also confirm that keys are global while the Meta snapshot is per environment.
 4. **US-08-04:** the alert channel, and what happens when a language default itself becomes unavailable.
 5. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow.

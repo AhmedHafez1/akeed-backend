@@ -122,6 +122,50 @@ Terminal protection is enforced at every writer, not only in
 Shared vocabulary for these rules lives in
 `src/shared/verification/verification-lifecycle.ts`.
 
+### Which template a send carried
+
+Each dispatch records the template it carried (US-08-02), so staff can compare
+styles and tell what a customer actually received.
+
+| Column on `verification_message_dispatches` | Holds |
+| --- | --- |
+| `template_variant_key` | The store's style and the resolved language, for example `ar.egyptian` |
+| `template_purpose` | `initial`, `reminder`, or `test` when the order is a test order |
+| `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
+| `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
+
+- **Selected before the claim.** `selectCodTemplate`
+  (`src/shared/messaging/cod-template-selector.ts`) picks the template from the
+  store's settings and the customer's number, and the claim writes it. A send
+  whose outcome is never learned, or that the provider rejects, still says which
+  template it carried.
+- **Confirmed at acceptance.** The messaging adapter is handed that selection and
+  answers with what it sent. The acceptance transaction stamps the answer on the
+  dispatch and, in the same statement that stores `wa_message_id`, writes the
+  name and language code to `verifications.template_name` and `language_code`.
+  Those two columns always describe the message `wa_message_id` points at, and
+  are NULL until a send is accepted.
+- **No placeholders.** `template_name` and `language_code` on a new dispatch hold
+  the same provider name and code. Nothing writes `cod_verification` or `auto`
+  any more.
+- **Old rows.** Rows from before migration `0053_dispatch_template_identity.sql`
+  keep the five columns NULL and are reported as "not recorded". They are never
+  backfilled.
+
+Staff read the result at
+`GET /api/admin/templates/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD`, across every
+store and source. Add `include_test=true` to count test sends.
+
+- For each template and language it returns the sends accepted in the range (in
+  total and by purpose), how many were delivered and read, and the customer
+  confirmations, customer cancellations and no-replies.
+- An outcome is counted once, for the latest send accepted at or before it, so a
+  reply after a reminder counts for the reminder. A merchant's own confirmation
+  or cancellation is not a reply and is not counted.
+- Both dates are UTC days, both included, and at most 92 days apart. A bad range
+  answers `400 ADMIN_TEMPLATE_METRICS_RANGE_INVALID`.
+- Sends without a recorded template are returned apart, under `not_recorded`.
+
 ## Merchant Controls
 
 Controls are edited from the Settings page and persisted on the `integrations` table through `PATCH /api/onboarding/settings`.

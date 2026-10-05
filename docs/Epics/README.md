@@ -1,7 +1,7 @@
 # Akeed Expansion — Epics and Prioritized User Stories
 
 **Authored:** 2026-08-31  
-**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 implemented, pilot complete (product owner, 2026-10-01); E05 done, shipped to production 2026-10-02 and validated 2026-10-03 (product owner-reported); E06 and E07 remain backlog; E08 authored 2026-10-05 (backlog)  
+**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 implemented, pilot complete (product owner, 2026-10-01); E05 done, shipped to production 2026-10-02 and validated 2026-10-03 (product owner-reported); E06 and E07 remain backlog; E08 authored 2026-10-05, in progress (US-08-02 done 2026-10-05)  
 **Inventory:** 10 epics, 68 user stories (63 P0 / 5 P1), 11 README files
 **Location:** `akeed-backend/docs/Epics`  
 **Scope change (2026-10-03):** the Tenant-Aware WhatsApp Foundation and Assisted Merchant-Owned WhatsApp Pilot epics (formerly E06 and E07) were removed from scope. Merchant-owned WhatsApp is not planned; all merchants use the Akeed sender.  
