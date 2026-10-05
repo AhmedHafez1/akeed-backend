@@ -1,0 +1,33 @@
+{
+  "_fixture": {
+    "source": "Documented shape, not captured",
+    "field": "message_template_status_update",
+    "event": "APPROVED",
+    "documentation": "https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_status_update",
+    "readOn": "2026-10-05",
+    "shape": "Follows a full example on the documentation page.",
+    "synthetic": "The account ID, template ID and timestamps are synthetic. The template name and language are one of Akeed's."
+  },
+  "payload": {
+    "entry": [
+      {
+        "id": "100000000000001",
+        "time": 1767268800,
+        "changes": [
+          {
+            "value": {
+              "event": "APPROVED",
+              "message_template_id": 900000000000001,
+              "message_template_name": "akeed_cod_verification_friendly",
+              "message_template_language": "ar",
+              "reason": "NONE",
+              "message_template_category": "UTILITY"
+            },
+            "field": "message_template_status_update"
+          }
+        ]
+      }
+    ],
+    "object": "whatsapp_business_account"
+  }
+}

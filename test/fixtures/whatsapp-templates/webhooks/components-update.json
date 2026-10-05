@@ -1,0 +1,41 @@
+{
+  "_fixture": {
+    "source": "Documented shape, not captured",
+    "field": "message_template_components_update",
+    "event": "Template edited",
+    "documentation": "https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_components_update",
+    "readOn": "2026-10-05",
+    "shape": "Follows the example on the documentation page, without the header, footer, URL and phone members an Akeed COD template does not have. Whether Meta omits absent members or sends them empty is unknown.",
+    "synthetic": "The account ID, template ID and timestamps are synthetic. The template name and language are one of Akeed's. The body and button labels are synthetic."
+  },
+  "payload": {
+    "entry": [
+      {
+        "id": "100000000000001",
+        "time": 1767279600,
+        "changes": [
+          {
+            "value": {
+              "message_template_id": 900000000000001,
+              "message_template_name": "akeed_cod_verification_friendly",
+              "message_template_language": "ar",
+              "message_template_element": "Synthetic body text for {{customer}}, order {{order}} from {{store}}, total {{total}}.",
+              "message_template_buttons": [
+                {
+                  "message_template_button_type": "QUICK_REPLY",
+                  "message_template_button_text": "Synthetic confirm"
+                },
+                {
+                  "message_template_button_type": "QUICK_REPLY",
+                  "message_template_button_text": "Synthetic cancel"
+                }
+              ]
+            },
+            "field": "message_template_components_update"
+          }
+        ]
+      }
+    ],
+    "object": "whatsapp_business_account"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "_fixture": {
+    "source": "Documented shape, not captured",
+    "field": "message_template_quality_update",
+    "event": "GREEN to YELLOW",
+    "documentation": "https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_quality_update",
+    "readOn": "2026-10-05",
+    "shape": "Follows the one example on the documentation page (GREEN to YELLOW), with the documented score values. Which transitions Meta really sends is unknown.",
+    "synthetic": "The account ID, template ID and timestamps are synthetic. The template name and language are one of Akeed's."
+  },
+  "payload": {
+    "entry": [
+      {
+        "id": "100000000000001",
+        "time": 1767272460,
+        "changes": [
+          {
+            "value": {
+              "previous_quality_score": "GREEN",
+              "new_quality_score": "YELLOW",
+              "message_template_id": 900000000000001,
+              "message_template_name": "akeed_cod_verification_friendly",
+              "message_template_language": "ar"
+            },
+            "field": "message_template_quality_update"
+          }
+        ]
+      }
+    ],
+    "object": "whatsapp_business_account"
+  }
+}

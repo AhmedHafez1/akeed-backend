@@ -1,0 +1,32 @@
+{
+  "_fixture": {
+    "source": "Documented shape, not captured",
+    "field": "template_category_update",
+    "event": "Completed change, UTILITY to MARKETING",
+    "documentation": "https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/template_category_update",
+    "readOn": "2026-10-05",
+    "shape": "Follows the \"completed category change\" example on the documentation page.",
+    "synthetic": "The account ID, template ID and timestamps are synthetic. The template name and language are one of Akeed's."
+  },
+  "payload": {
+    "entry": [
+      {
+        "id": "100000000000001",
+        "time": 1767362400,
+        "changes": [
+          {
+            "field": "template_category_update",
+            "value": {
+              "message_template_id": 900000000000001,
+              "message_template_name": "akeed_cod_verification_friendly",
+              "message_template_language": "ar",
+              "previous_category": "UTILITY",
+              "new_category": "MARKETING"
+            }
+          }
+        ]
+      }
+    ],
+    "object": "whatsapp_business_account"
+  }
+}
