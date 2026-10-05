@@ -1,4 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   EASYORDERS_MIGRATIONS,
   easyOrdersConformanceDriver,
@@ -824,6 +826,152 @@ defineSourceConformance({
             ).toHaveLength(0);
           },
         );
+      });
+    });
+
+    describe('WooCommerce only: the pilot reconciliation script', () => {
+      const script = readFileSync(
+        resolve(__dirname, '../scripts/woocommerce-pilot-reconcile.sql'),
+        'utf8',
+      );
+
+      /** The script's sections: each title, and the one query under it. */
+      function sections(orgId: string): { title: string; query: string }[] {
+        return script
+          .split(/^\\echo '== /m)
+          .slice(1)
+          .map((part) => {
+            const [heading, ...rest] = part.split('\n');
+            const query = rest
+              .filter((line) => !line.trimStart().startsWith('--'))
+              .join('\n')
+              .split(';')[0]
+              .replaceAll(':org_id', `'${orgId}'`);
+            return { title: heading.replace(/ =='\s*$/, ''), query };
+          });
+      }
+
+      it('reads only, and names no credential, stored payload or customer field', () => {
+        expect(script).toContain('BEGIN TRANSACTION READ ONLY;');
+        expect(script.trimEnd().endsWith('ROLLBACK;')).toBe(true);
+        // Without the comments and the psql commands: the SQL alone.
+        const statements = script
+          .split('\n')
+          .filter((line) => !/^\s*(--|\\)/.test(line))
+          .join('\n');
+        expect(statements).not.toMatch(
+          /\b(insert|update|delete|alter|drop|truncate|create|grant|copy)\b/i,
+        );
+        // A credential or a token hash is only ever asked "is it set".
+        for (const match of statements.matchAll(
+          /\w+_(encrypted|hash)\b[^\n]*/g,
+        ))
+          expect(match[0]).toMatch(/^\w+_(encrypted|hash) IS NOT NULL/);
+        // A stored delivery is only ever read by a named key.
+        for (const match of statements.matchAll(/raw_payload[^\n]*/g))
+          expect(match[0]).toMatch(
+            /^raw_payload -> 'order' ->> '(status|payment_method)'|^raw_payload ->> 'topic'|^raw_payload -> 'order' -> 'meta_data'/,
+          );
+        expect(statements).not.toMatch(
+          /customer_(phone|name|email)|'(billing|shipping|phone|email|first_name|last_name)'|access_token/i,
+        );
+      });
+
+      it('runs against the schema, and every invariant holds after a confirmed and a cancelled order', async () => {
+        const merchant = await woo.connect();
+        const confirmed = await sentOrder(merchant);
+        await world.reply(confirmed.verificationId, confirmed.phone, 'confirm');
+        await driver.deliverOutcomeEcho(
+          merchant,
+          confirmed.order,
+          'customer_confirmation',
+        );
+        const cancelled = await sentOrder(merchant);
+        await world.reply(cancelled.verificationId, cancelled.phone, 'cancel');
+        await world.drain();
+
+        const results = new Map<string, Record<string, unknown>[]>();
+        await world.client.begin('read only', async (transaction) => {
+          for (const { title, query } of sections(merchant.orgId))
+            results.set(title, await transaction.unsafe(query));
+        });
+        const titles = [...results.keys()];
+
+        expect(titles).toHaveLength(14);
+        for (const title of titles.filter((name) => name.includes('expect 0')))
+          expect([title, results.get(title)]).toEqual([title, []]);
+        expect(results.get(titles[0])).toMatchObject([
+          {
+            integration_id: merchant.integrationId,
+            platform_type: 'woocommerce',
+            is_active: true,
+            store_url: merchant.store.url,
+            store_verified: true,
+            health: 'ok',
+            consumer_key_set: true,
+            consumer_secret_set: true,
+            webhook_secret_set: true,
+            webhook_address_set: true,
+            rejected_deliveries: 0,
+            disconnected_at: null,
+          },
+        ]);
+        expect(results.get(titles[1])).toHaveLength(1);
+        expect(results.get(titles[2])).toMatchObject([
+          { consumed: true, attempts: 0, last_error_code: null },
+        ]);
+        // Section 5 is what the live run reads its observations from.
+        expect(results.get(titles[4])).toMatchObject([
+          {
+            topic: 'order.created',
+            route: 'order.create',
+            store_order_id: confirmed.order.externalOrderId,
+            order_status: 'processing',
+            payment_method: 'cod',
+            akeed_markers: 0,
+            event_status: 'completed',
+          },
+          {
+            topic: 'order.updated',
+            route: 'order.update',
+            store_order_id: confirmed.order.externalOrderId,
+            order_status: 'processing',
+            akeed_markers: 1,
+            event_status: 'skipped',
+            last_error: 'reflected_outcome',
+          },
+          {
+            topic: 'order.created',
+            route: 'order.create',
+            store_order_id: cancelled.order.externalOrderId,
+            event_status: 'completed',
+          },
+        ]);
+        expect(results.get(titles[6])).toMatchObject([
+          {
+            external_order_id: confirmed.order.externalOrderId,
+            verification_status: 'confirmed',
+            sends: '1',
+            store_updates: 'customer_confirmation:succeeded:processing:-',
+          },
+          {
+            external_order_id: cancelled.order.externalOrderId,
+            verification_status: 'canceled',
+            sends: '1',
+            store_updates: 'customer_cancellation:succeeded:cancelled:-',
+          },
+        ]);
+
+        // Nothing it prints is a secret, a ciphertext or a customer's data.
+        const printed = JSON.stringify([...results.values()]);
+        for (const value of world.secrets) {
+          expect(printed).not.toContain(value);
+          expect(printed).not.toContain(driver.hashToken(value));
+        }
+        expect(printed).not.toContain('v1:');
+        expect(printed).not.toContain(confirmed.phone);
+        expect(printed).not.toContain(confirmed.phone.slice(-9));
+        expect(printed).not.toContain('Test Customer');
       });
     });
   },
