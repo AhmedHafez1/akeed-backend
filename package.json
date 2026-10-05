@@ -59,6 +59,7 @@
     "test:gate:e046": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e046-release-gate.ps1",
     "test:gate:e05": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e05-release-gate.ps1",
     "test:gate:e06": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e06-release-gate.ps1",
+    "test:gate:e07": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e07-release-gate.ps1",
     "shopify:test-cod": "tsx scripts/shopify/create-cod-test-order.ts",
     "test:contract:credit-foundation": "jest --config ./test/jest-credit-foundation-contract.json --runInBand",
     "test:contract:e045": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e045-contracts.ps1",
