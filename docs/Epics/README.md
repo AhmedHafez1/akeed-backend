@@ -1,11 +1,11 @@
 # Akeed Expansion — Epics and Prioritized User Stories
 
 **Authored:** 2026-08-31  
-**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 implemented, pilot complete (product owner, 2026-10-01); E05 done, shipped to production 2026-10-02 and validated 2026-10-03 (product owner-reported); E06 and E07 remain backlog  
-**Inventory:** 9 epics, 60 user stories (56 P0 / 4 P1), 10 README files
+**Status:** E01 complete; E02 and E03 implemented locally with external release validation pending; E04 in progress locally (5 of 5 implemented, release blocked); E04.5 done; E04.6 implemented, pilot complete (product owner, 2026-10-01); E05 done, shipped to production 2026-10-02 and validated 2026-10-03 (product owner-reported); E06 and E07 remain backlog; E08 authored 2026-10-05 (backlog)  
+**Inventory:** 10 epics, 68 user stories (63 P0 / 5 P1), 11 README files
 **Location:** `akeed-backend/docs/Epics`  
 **Scope change (2026-10-03):** the Tenant-Aware WhatsApp Foundation and Assisted Merchant-Owned WhatsApp Pilot epics (formerly E06 and E07) were removed from scope. Merchant-owned WhatsApp is not planned; all merchants use the Akeed sender.  
-**Renumbering (2026-10-03):** old E08 EasyOrders is now E06 (US-08-0x became US-06-0x) and old E09 WooCommerce is now E07 (US-09-0x became US-07-0x).
+**Renumbering (2026-10-03):** the pre-2026-10-03 E08 (EasyOrders) is now E06 (its US-08-0x stories became US-06-0x) and the pre-2026-10-03 E09 (WooCommerce) is now E07 (US-09-0x became US-07-0x). Since 2026-10-05, E08 and US-08-0x mean [WhatsApp Template Management](08-whatsapp-template-management/README.md).
 
 ## Purpose
 
@@ -26,8 +26,9 @@ Creating this backlog did not implement code, run migrations, activate connectio
 | 5     | [E05 — Standalone Order Ingestion API](05-standalone-order-ingestion-api/README.md)             | NEXT    | 6       | [E04.5](04.5-standalone-paymob-usage-billing/README.md), [E04.6](04.6-standalone-bulk-order-import/README.md)                                                     | [US-05-06](05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md)            |
 | 6     | [E06 — EasyOrders Integration](06-easyorders-integration/README.md) | NEXT | 6 | [E02](02-platform-boundaries-and-reliability/README.md), [E03](03-standalone-foundation-and-onboarding/README.md), [E05](05-standalone-order-ingestion-api/README.md) | [US-06-06](06-easyorders-integration/US-06-06-easyorders-contract-and-pilot-release-gate.md) |
 | 7     | [E07 — WooCommerce Integration](07-woocommerce-integration/README.md) | NEXT | 6 | [E02](02-platform-boundaries-and-reliability/README.md), [E03](03-standalone-foundation-and-onboarding/README.md), [E05](05-standalone-order-ingestion-api/README.md), [E06](06-easyorders-integration/README.md) shared code and automated gate only | [US-07-06](07-woocommerce-integration/US-07-06-woocommerce-release-gate-and-pilot.md) |
+| 8     | [E08 — WhatsApp Template Management](08-whatsapp-template-management/README.md) | NEXT | 8 | [E02](02-platform-boundaries-and-reliability/README.md); E01, E04, E05, E06 and E07 regression gates stay green | [US-08-08](08-whatsapp-template-management/US-08-08-release-gate.md) |
 
-E01 → E02 → E03 → E04 → E04.5 → E04.6 → E05 → E06 → E07 is the commerce delivery sequence. E07 follows E06 in build order because it reuses the shared code E06 added, but since 2026-10-04 it does not wait for E06 go-live: US-06-06 may stay release-blocked on EasyOrders provider questions while E07 proceeds. E04.5 and E04.6 are decimal insertions; apart from the 2026-10-03 renumbering above, epic and story IDs are not renumbered.
+E01 → E02 → E03 → E04 → E04.5 → E04.6 → E05 → E06 → E07 is the commerce delivery sequence. E07 follows E06 in build order because it reuses the shared code E06 added, but since 2026-10-04 it does not wait for E06 go-live: US-06-06 may stay release-blocked on EasyOrders provider questions while E07 proceeds. E08 is outside the commerce sequence: it manages the WhatsApp templates every source shares, needs only E02 on `develop`, and must keep every earlier epic's regression gate green. E04.5 and E04.6 are decimal insertions; apart from the 2026-10-03 renumbering above, epic and story IDs are not renumbered.
 
 Every epic has a prioritized story table. Each story's direct dependency links form the minimum execution chain; dependencies are transitive. The last story in each epic is its release/acceptance gate. A gate cannot be marked complete while an acceptance criterion or a required predecessor remains unresolved.
 
@@ -74,6 +75,7 @@ Use the [backend working guide](../../AGENTS.md) and [frontend working guide](..
 - Manual creation uses session-authenticated `POST /api/orders`. Server integration uses API-key-authenticated `POST /api/v1/orders` with required `Idempotency-Key`.
 - The canonical order covers trusted source identity, external ID/reference, phone/name, decimal amount, currency and payment/COD signals.
 - All merchants, Shopify and Standalone, send from the Akeed sender. Merchant-owned WhatsApp is not planned.
+- WhatsApp templates are staff-managed (E08). Merchants choose among active templates and never write template text; only templates approved at Meta and active in Akeed are sent.
 - EasyOrders is the first native adapter after the common boundaries/API. WooCommerce follows using core REST/application auth and signed webhooks, without a WordPress plugin.
 - Shopify customer cancellation retains its current local-state/tag behavior; merchant no-reply cancellation retains its distinct remote cancellation semantics.
 
@@ -152,7 +154,7 @@ Meta, Paymob and EasyOrders validation stories, and the WooCommerce contract sto
 
 ## Backlog integrity checks
 
-The authored package must contain exactly nine epic directories, 60 uniquely identified story files and ten README files. All priorities/types/statuses must be valid, each story must be indexed once, local links must resolve, and dependencies must be acyclic. Application source must remain unchanged by backlog creation.
+The authored package must contain exactly ten epic directories, 68 uniquely identified story files and eleven README files. All priorities/types/statuses must be valid, each story must be indexed once, local links must resolve, and dependencies must be acyclic. Application source must remain unchanged by backlog creation.
 
 The following are separate checks: documentation integrity now; software tests and live platform validation during implementation of the stories.
 
@@ -184,3 +186,17 @@ The following are separate checks: documentation integrity now; software tests a
 - E07 no longer depends on E06 go-live (US-06-06). It depends on E02, E03, E05 and the E06 shared code and automated gate. Its horizon moved from LATER to NEXT. Seven product decisions (product owner, 2026-10-04) are recorded in the E07 README.
 - Added `07-woocommerce-integration/IMPLEMENTATION-PROMPTS.md`. The inventory is unchanged: 9 epic folders, 60 story files, 10 README files (56 P0, 4 P1).
 - WooCommerce documentation pages for authentication and webhooks were reopened on 2026-10-04. Application source remained unchanged. No application test, migration, provider call or WhatsApp send was executed.
+
+### Authoring validation — 2026-10-05
+
+- **New epic.** Added E08 — WhatsApp Template Management: 8 stories, 7 P0 and 1 P1. Its stories are US-08-01 Contract and plan; US-08-02 and US-08-03 Technical enabler; US-08-04 to US-08-07 Feature; US-08-08 Quality gate. All are Backlog.
+- **Reused number.** Before authoring, both repositories were searched for leftover E08 and US-08 references. The only ones were the 2026-10-03 renumbering notes in this file and one commit message. The header note was reworded so it cannot be read as referring to the new epic; the 2026-10-03 entry above is left as written.
+- **Current state checked.** The epic's "Current state" was checked against `develop` at `639c7bf` and corrected where the brief was wrong or incomplete:
+  - the never-written `verifications.template_name` and `language_code` columns;
+  - the onboarding test, which has no reminder or no-reply step;
+  - the preview copy, which lives in the backend only;
+  - `WA_BUSINESS_ACCOUNT_ID`, still listed in the docs although no code reads it;
+  - two unreachable reply entries;
+  - the absence of any Meta payload test.
+- **Inventory confirmed.** 10 epic folders, 68 story files and 11 README files (63 P0, 5 P1). Every relative Markdown link under `docs/Epics` resolves, story IDs are unique and match their folders, and dependencies are acyclic.
+- **No code change.** Application source remained unchanged. No application test, migration, Meta API call or WhatsApp send was executed.
