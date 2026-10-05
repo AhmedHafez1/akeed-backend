@@ -89,7 +89,7 @@ The balance stays **130**.
 
 ## Session 6 — Meta WhatsApp connectivity
 
-1. Set these in `.env`: `WA_PHONE_NUMBER_ID`, `WA_BUSINESS_ACCOUNT_ID`, `WA_ACCESS_TOKEN`, `META_APP_SECRET`, and `WA_VERIFY_TOKEN` (any string you choose).
+1. Set these in `.env`: `WA_PHONE_NUMBER_ID`, `WA_ACCESS_TOKEN`, `META_APP_SECRET`, and `WA_VERIFY_TOKEN` (any string you choose). `WA_BUSINESS_ACCOUNT_ID` is needed only to try template sync (`WHATSAPP_TEMPLATE_SYNC_ENABLED=true`).
    - The `akeed_cod_verification…` templates must be approved in that WhatsApp account.
    - Add your phone as a test recipient.
 2. In Meta, set the webhook to `https://<tunnel>/webhooks/whatsapp` with your `WA_VERIFY_TOKEN`, and subscribe to `messages`.

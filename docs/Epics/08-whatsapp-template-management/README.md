@@ -1,7 +1,7 @@
 # E08 — WhatsApp Template Management
 
 - **Horizon:** NEXT
-- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; the US-08-01 contract record is still a draft, and the other stories are Backlog)
+- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; US-08-04 implemented 2026-10-05 and waiting for the Meta webhook subscription to be confirmed; the US-08-01 contract record is still a draft, and the other stories are Backlog)
 - **Stories:** 8
 - **Prerequisite epics:** [E02 — Platform Boundaries and Reliability](../02-platform-boundaries-and-reliability/README.md) (messaging port and per-send dispatch ledger). Regression gates from [E01](../01-shopify-baseline-stabilization/README.md), [E04](../04-standalone-manual-order-mvp/README.md), [E05](../05-standalone-order-ingestion-api/README.md), [E06](../06-easyorders-integration/README.md) and [E07](../07-woocommerce-integration/README.md) must stay green. E08 does not wait for any commerce epic to go live.
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -76,6 +76,7 @@ All paths are in `akeed-backend` unless they say otherwise.
 - **Addition:** the entries `نعم.` and `لا.` can never match, because trailing punctuation is stripped before lookup. Alef and hamza forms are listed one by one, not folded.
 
 **Webhook.** The WhatsApp webhook processes only `value.messages` and `value.statuses`. The DTO has no `field`. Template status, quality and category updates are neither subscribed nor handled.
+- **Since US-08-04 (2026-10-05):** template status, quality and category updates are read from the signed raw body after the unchanged message handling, behind `WHATSAPP_TEMPLATE_SYNC_ENABLED`. A sync from Meta fills the registry, and `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` limits sends to templates Meta has approved. Both are off. See [Template sync, status webhooks and the send guardrail](../../INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#template-sync-status-webhooks-and-the-send-guardrail-us-08-04).
 
 **Tests.**
 - No Meta template fake, no Meta contract config and no payload snapshot exist.
@@ -149,7 +150,7 @@ Rules for the whole epic:
 - **Only approved and active templates are sent.** A template must be approved at Meta and active in Akeed. Anything else falls back to the language default. If the default is unavailable, the send is skipped with a recorded reason and never guessed.
 - **No customer-facing change before US-08-07.** US-08-02 to US-08-06 change no customer-facing message. A characterization test proves the Meta payload for every existing variant and language is byte-identical before and after.
 - **Secrets and safe logging.** Access tokens and app secrets are never logged, returned or put in fixtures. Template text and customer data in logs go through `buildBackendLog`.
-- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. `0053` was used by US-08-02, and `0054` and `0055` by US-08-03; the next number is `0056`. Migrations are additive first, each with a written rollback.
+- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. `0053` was used by US-08-02, `0054` and `0055` by US-08-03, and `0056` and `0057` by US-08-04; the next number is `0058`. Migrations are additive first, each with a written rollback.
 - **No regressions.** Shopify, Standalone (manual, import, API), EasyOrders and WooCommerce sends keep working, and their tests pass untouched.
 
 **Out of scope:**
@@ -182,7 +183,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | 1 | [US-08-01 — Meta contract and live template reconciliation](US-08-01-meta-contract-and-live-template-reconciliation.md) | P0 | Contract and plan | [US-02-07](../02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md) | Backlog |
 | 2 | [US-08-02 — Record template identity per send](US-08-02-record-template-identity-per-send.md) | P0 | Technical enabler | [US-08-01](US-08-01-meta-contract-and-live-template-reconciliation.md) | Done (2026-10-05) |
 | 3 | [US-08-03 — Template registry and send-path cutover](US-08-03-template-registry-and-send-path-cutover.md) | P0 | Technical enabler | [US-08-02](US-08-02-record-template-identity-per-send.md) | Done (2026-10-05) |
-| 4 | [US-08-04 — Meta sync, status webhooks and send guardrail](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | P0 | Feature | [US-08-03](US-08-03-template-registry-and-send-path-cutover.md) | Backlog |
+| 4 | [US-08-04 — Meta sync, status webhooks and send guardrail](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | P0 | Feature | [US-08-03](US-08-03-template-registry-and-send-path-cutover.md) | Implemented (2026-10-05), switches off; awaiting webhook subscription confirmation |
 | 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Backlog |
 | 6 | [US-08-06 — Admin: create, edit, submit, activate, retire](US-08-06-admin-create-edit-submit-activate-retire.md) | P0 | Feature | [US-08-05](US-08-05-admin-inspect-templates.md) | Backlog |
 | 7 | [US-08-07 — Message improvements](US-08-07-message-improvements.md) | P1 | Feature | [US-08-06](US-08-06-admin-create-edit-submit-activate-retire.md) | Backlog |
@@ -213,7 +214,7 @@ Each story lists its own open decisions after its acceptance criteria. The ones 
 1. **US-08-01:** run the reconciliation script on prod in this story, or on dev first and prod at the gate; and who runs it with the prod token.
 2. **US-08-02:** fill the dead `verifications.template_name` and `language_code` columns with real values, or deprecate them. **Decided 2026-10-05:** filled with real values on each accepted send, and their defaults dropped.
 3. **US-08-03:** the stable key scheme. Also confirm that keys are global while the Meta snapshot is per environment. **Decided 2026-10-05:** `cod_confirm.<language>.<style>`, global keys in one table, Meta-side fields filled per environment by sync, and no Meta status in the seed.
-4. **US-08-04:** the alert channel, and what happens when a language default itself becomes unavailable.
+4. **US-08-04:** the alert channel, and what happens when a language default itself becomes unavailable. **Decided 2026-10-05:** health signal plus a log alert, no email; skip and record, without pausing automation.
 5. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow.
 6. **US-08-07:**
    - Approval of every copy draft.

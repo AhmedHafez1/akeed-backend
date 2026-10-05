@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented (2026-10-05), every switch off; waiting for the product owner to confirm the Meta webhook subscription before it is marked Done — [evidence](../../US-08-04-META-TEMPLATE-SYNC-EVIDENCE.md)
 - **Dependencies:** [US-08-03](US-08-03-template-registry-and-send-path-cutover.md)
 
 ## User story and value
@@ -58,6 +58,13 @@ As Akeed staff, I want the registry to know what Meta currently says about each 
 8. **No customer-facing change while templates are approved.** With all templates approved, payloads stay byte-identical to the US-08-03 characterization suite.
 
 ## Open decisions (product owner)
+
+All five were decided by the product owner on 2026-10-05, each as proposed: every 6 hours plus on demand; health signal plus a log alert, no email; before the first sync, send as today; when the default is also unavailable, skip and record without pausing automation; a re-categorization alerts and keeps sending.
+
+Also decided on 2026-10-05:
+- The contract record does not give the shape of `components` and `quality_score` in the list response. The adapter reads only the documented creation syntax and documented strings, and anything else is `unknown`. This is provisional until the US-08-01 live run.
+- The dispatch columns stay columns. The suites that apply `0053` also apply `0056`, setup only, as US-08-02 did.
+
 
 1. **Sync cadence.** The proposal is every 6 hours plus on demand, with webhooks as the primary signal.
 2. **Alert channel.** Either per-store health signals plus a log alert only (proposal), or also an email to a staff address.

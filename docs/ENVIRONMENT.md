@@ -276,10 +276,13 @@ WooCommerce disables a webhook after five consecutive answers that are not `2xx`
 
 - Use global Meta Cloud API credentials for sending and webhook verification:
   - `WA_PHONE_NUMBER_ID`
-  - `WA_BUSINESS_ACCOUNT_ID`
   - `WA_ACCESS_TOKEN`
   - `WA_VERIFY_TOKEN`
   - `META_APP_SECRET`
+- `WA_BUSINESS_ACCOUNT_ID` (the WhatsApp Business Account ID, numeric) is
+  required only when `WHATSAPP_TEMPLATE_SYNC_ENABLED=true`; startup fails
+  without it then. Sending and message webhooks never read it. See
+  [WhatsApp templates](#whatsapp-templates-e08) below.
 
 `META_APP_SECRET` is the App Secret from the Meta app dashboard (App settings >
 Basic). It signs every inbound webhook. **If it does not match, the signature
@@ -298,6 +301,74 @@ field. To tell the failure modes apart, grep the backend log for:
   (wrong `META_APP_SECRET`).
 - `whatsapp-webhook-receive` with `messageCount` / `statusCount` — accepted, and
   how much of each kind arrived.
+
+### WhatsApp templates (E08)
+
+Template sync, template webhooks and the send guardrail (US-08-04). Every
+switch is off by default. With all of them off, sending is exactly what
+US-08-03 shipped: any template active in Akeed is sent.
+
+| Variable | Notes |
+| --- | --- |
+| `WHATSAPP_TEMPLATE_SYNC_ENABLED` | `true` or `false` (default). Turns on the 6-hourly sync from Meta (BullMQ queue `whatsapp-template-sync`), the on-demand sync and the template webhooks. Needs `WA_BUSINESS_ACCOUNT_ID`, and a `WA_ACCESS_TOKEN` with the `whatsapp_business_management` permission. While `false`, template webhooks are acknowledged and ignored, and the schedule is removed. Turning it off keeps the last snapshot. |
+| `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off (US-08-04 open decision 3). Rollback is turning it off. |
+| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. |
+| `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Required, each a UUID, whenever operations are on; startup fails otherwise. Staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. |
+
+Rollout, per environment, dev first:
+
+1. Subscribe the Meta app's webhook to `message_template_status_update`,
+   `message_template_quality_update` and `template_category_update`, next to
+   `messages` (see below).
+2. Set `WA_BUSINESS_ACCOUNT_ID`, turn on `WHATSAPP_TEMPLATE_SYNC_ENABLED`, and
+   run one sync (`POST /api/admin/templates/sync` as an operator). Compare the
+   result with the US-08-01 contract record: every registry template should be
+   `approved`, with nothing `missing`.
+3. Turn on `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` last.
+
+Rollback: turn off the guardrail to restore today's sending; turn off sync to
+stop reading Meta (the last snapshot stays). Nothing is deleted.
+
+Logs to grep:
+
+- `whatsapp-template-sync` — each run, with counts or a neutral `errorCode`
+  (`rate_limited`, `auth_failed`, `permission_denied`, `provider_error`,
+  `network`, `not_configured`, `too_many_pages`, `persistence_failed`).
+  `GET /api/admin/templates/sync/runs` lists the last 20 runs.
+- `whatsapp-template-alert` — staff alerts, with `alertCode`
+  `template_unavailable` (critical: a template in use can no longer be sent),
+  `template_recategorized` (critical: Meta moved, or will move, a template in
+  use out of `utility`; it keeps being sent), `template_text_changed`
+  (attention: the text at Meta differs from the last snapshot) or
+  `template_sync_failed` (attention). A line names the template key, its
+  state and how many active stores send it; never template text or customer
+  data.
+- `meta-template-webhook` — a template delivery that was skipped, with
+  `reason` `wrong_account`, `malformed` or `template_sync_disabled`.
+
+The admin store list shows `template_unavailable` per store: critical when no
+template can be sent for a language the store sends in, attention when a
+template it sends is not approved or was re-categorized and the default stands
+in.
+
+### Meta app webhook fields
+
+Subscribe these fields in **App Dashboard > WhatsApp > Configuration**, in both
+the dev and the prod app:
+
+| Field | Needed for |
+| --- | --- |
+| `messages` | Delivery and read statuses, button taps and replies (since before E08). |
+| `message_template_status_update` | Template review status: approved, paused, disabled, rejected and the rest (US-08-04). |
+| `message_template_quality_update` | Template quality score (US-08-04). |
+| `template_category_update` | Scheduled and completed re-categorizations (US-08-04). |
+
+The three template fields need the `whatsapp_business_management` permission,
+and the app must be subscribed to the WhatsApp Business Account
+(`POST /{WABA_ID}/subscribed_apps`). They arrive on the same callback URL and
+are signed with the same `META_APP_SECRET`. `message_template_components_update`
+is not read: a sync detects changed text. If it is subscribed, it is
+acknowledged and ignored.
 
 ## Redis (Job Queue)
 

@@ -270,6 +270,38 @@ Meta can report delivery before the transaction that stores the wamid has commit
 
 Both sides take a transaction-scoped advisory lock on the wamid, so whichever side runs second always sees the other's committed write. Receipts for wamids Akeed never sent stay parked with `applied_at IS NULL`.
 
+### Template Sync, Status Webhooks and the Send Guardrail (US-08-04)
+
+Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) keeps a synced copy. Everything here is off until `WHATSAPP_TEMPLATE_SYNC_ENABLED` and, last, `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` are turned on ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates-e08)). Meta behavior comes only from the [US-08-01 contract record](Epics/08-whatsapp-template-management/evidence/US-08-01-contract-record.md).
+
+**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records. `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
+
+**Sync.** A BullMQ repeatable job on the `whatsapp-template-sync` queue runs every 6 hours (`concurrency: 1`, one attempt), plus `POST /api/admin/templates/sync` for a named operator and a delayed follow-up after template webhooks. A run:
+
+1. Opens a row in `whatsapp_template_sync_runs`. Only one may be `running`; one left running for 15 minutes is closed as `abandoned`. A manual run within 5 minutes of the last finished one is refused (`409 WHATSAPP_TEMPLATE_SYNC_COOLDOWN`).
+2. Reads every page before writing anything. Any failure, a rate limit included, closes the run as `failed` with a neutral `error_code`, logs a `template_sync_failed` alert and changes no registry row. It is not retried; the next scheduled run is the retry.
+3. In one transaction, matches rows by Meta name and language code (`-` and `_` alike) and writes `meta_template_id`, `review_status`, `category`, `pending_category`, `quality`, `components_snapshot` and `last_synced_at`. A row Meta does not have becomes `missing`. A Meta template with no row is listed on the run (`unknown_at_provider`), never created. Text that differs from the previous readable snapshot sets `components_drift_at`.
+4. Raises each row's `status_event_at`, `quality_event_at` and `category_event_at` to the run's start, so an older webhook cannot overwrite what the sync read.
+
+Re-running with the same Meta data changes nothing. `GET /api/admin/templates/sync/runs` shows the last 20 runs to any staff member.
+
+The adapter reads `components` only in the creation syntax and `quality_score` only as a documented string. The record does not give their shape in the list response, so anything else is `unknown`, which never blocks a send and is never called drift. This part is provisional until the US-08-01 live run captures a list response.
+
+**Template webhooks.** `POST /webhooks/whatsapp` keeps its message handling unchanged. After it, `MetaTemplateWebhookHandler` reads the signed raw body, because the request DTO and the global validation pipe strip `field`, `entry.id`, `entry.time` and every template member. It reads `message_template_status_update`, `message_template_quality_update` and `template_category_update`:
+
+- `entry[].id` must be `WA_BUSINESS_ACCOUNT_ID`; anything else is logged (`wrong_account`) and dropped.
+- Meta sends no event ID, so an event's identity is the field, the account, `entry[].time` and a hash of `value`. It is stored in `whatsapp_template_events`, unique on that identity: a redelivery is a no-op.
+- An event applies only if its `entry[].time` is later than the newest one applied for that template and field. An older one is stored as `stale`. The same second with a different value is stored as `conflict` and not applied.
+- An event for a template with no registry row is stored as `unregistered` and reported, never turned into a row.
+- Every accepted event asks for a sync a minute later (one shared delayed job), because the list endpoint is the truth.
+- The webhook is answered `200` at once; nothing waits on a sync. A failure while applying is logged and still answered `200`.
+
+`message_template_components_update` is not read.
+
+**Guardrail.** `selectTemplateForSend` (`src/shared/messaging/template-selector.ts`) applies it on every send, reminders and the onboarding test included. With the switch on and the environment synced at least once, a template is sendable only when it is active and `review_status = 'approved'`. Otherwise the language default is sent and the dispatch records `template_fallback_reason = 'not_approved'` and `template_skipped_key`. With no sendable default the send is skipped as `template_unavailable` before the dispatch is claimed: no usage is reserved, nothing crosses to the other language, a first send marks the verification `failed` with that reason (retryable), and a reminder records `follow_up_skipped: template_unavailable`. A re-categorized template stays sendable and only alerts. The registry is cached for 60 seconds per process; the instance that applies a change drops its copy at once.
+
+**Alerts.** `TemplateAlertService` logs `whatsapp-template-alert` lines on a change, for a template in use (a language default, or sent by at least one active store): `template_unavailable` and `template_recategorized` (critical), `template_text_changed` and `template_sync_failed` (attention). The admin store list adds the per-store `template_unavailable` health signal (`src/modules/admin/admin-template-health.sql.ts`).
+
 ## Verification Core Pipeline
 
 ### Order Eligibility
@@ -842,13 +874,14 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 | Method | Endpoint             | Auth                    | Purpose                                       |
 | ------ | -------------------- | ----------------------- | --------------------------------------------- |
 | `GET`  | `/webhooks/whatsapp` | `WA_VERIFY_TOKEN` check | Meta subscription verification challenge.     |
-| `POST` | `/webhooks/whatsapp` | `MetaWebhookSignatureGuard` (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body, timing-safe) | Customer replies and delivery status updates. |
+| `POST` | `/webhooks/whatsapp` | `MetaWebhookSignatureGuard` (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body, timing-safe) | Customer replies and delivery status updates; template status, quality and category updates (US-08-04). |
 
 ### Outbound API Calls
 
 | Target                | Endpoint                                           | Purpose                           |
 | --------------------- | -------------------------------------------------- | --------------------------------- |
 | Meta Cloud API        | `POST graph.facebook.com/v24.0/{phoneId}/messages` | Send WhatsApp template messages.  |
+| Meta Graph API        | `GET graph.facebook.com/v24.0/{wabaId}/message_templates` | Template sync (read-only, US-08-04). |
 | Shopify Admin GraphQL | `POST {shop}/admin/api/2026-01/graphql.json`       | Tags, cancel, billing, shop name. |
 
 ## Environment Variables
@@ -859,6 +892,9 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 | `WA_PHONE_NUMBER_ID`           | WhatsApp Cloud API phone number ID.                       |
 | `WA_ACCESS_TOKEN`              | WhatsApp Cloud API bearer token.                          |
 | `WA_VERIFY_TOKEN`              | Meta webhook subscription verification token.             |
+| `WA_BUSINESS_ACCOUNT_ID`       | WhatsApp Business Account ID; required when template sync is on. |
+| `WHATSAPP_TEMPLATE_SYNC_ENABLED` / `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | Template sync and webhooks / the send guardrail (default off). |
+| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` / `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Staff template writes and their operator allowlist. |
 | `SHOPIFY_API_KEY`              | Shopify app API key.                                      |
 | `SHOPIFY_API_SECRET`           | Shopify HMAC signing secret.                              |
 | `SHOPIFY_TOKEN_ENCRYPTION_KEY` | AES-256-GCM key for access token encryption at rest.      |

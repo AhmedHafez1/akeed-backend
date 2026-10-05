@@ -133,6 +133,7 @@ styles and tell what a customer actually received.
 | `template_purpose` | `initial`, `reminder`, or `test` when the order is a test order |
 | `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
 | `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
+| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
 
 - **Selected before the claim.** `selectTemplateForSend`
   (`src/shared/messaging/template-selector.ts`) picks the template from the
@@ -147,14 +148,28 @@ styles and tell what a customer actually received.
   - A stored key that is unknown, inactive or written for the other language
     falls back to the language default. The fallback is logged as
     `sendOnce.templateFallback` with the stored key and the reason
-    (`key_unknown`, `key_inactive`, `wrong_language`).
-  - With no active default for the language, nothing is sent: the send returns
+    (`key_unknown`, `key_inactive`, `wrong_language`), and recorded on the
+    dispatch (US-08-04).
+  - With no sendable default for the language, nothing is sent: the send returns
     `skipped` with `template_unavailable` before the dispatch is claimed, so no
     usage is reserved, and `sendOnce.templateSelection` is logged as an error.
+    It never falls back to the other language. Since US-08-04 a skipped first
+    send marks the verification `failed` with reason `template_unavailable`
+    (retryable once a template is back), and a skipped reminder records
+    `follow_up_skipped: template_unavailable`.
   - Until the old columns are dropped (after the US-08-08 gate), a store with
     no key is read from `cod_template_ar_variant` / `cod_template_en_variant`,
     and a settings write sets both the key and the old column.
-  - Meta's review status is not checked yet. That guardrail is US-08-04.
+  - **Guardrail (US-08-04).** With `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=true`
+    and the environment synced from Meta at least once, a template is sent
+    only when it is active **and** approved at Meta. A selection Meta has not
+    approved (paused, rejected, disabled, missing, unknown, and so on) falls
+    back to the language default with reason `not_approved`; the default must
+    pass the same test. The reminder resolves its template again at send time,
+    so a template paused after the first send falls back or skips. Before the
+    first sync, and with the switch off, only `is_active` counts. A template
+    Meta re-categorized stays sendable and raises a staff alert. See
+    [Template sync, status webhooks and the send guardrail](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#template-sync-status-webhooks-and-the-send-guardrail-us-08-04).
 - **Confirmed at acceptance.** The messaging adapter is handed that selection and
   answers with what it sent. The acceptance transaction stamps the answer on the
   dispatch and, in the same statement that stores `wa_message_id`, writes the
