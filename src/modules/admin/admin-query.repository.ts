@@ -151,6 +151,33 @@ export interface AdminTemplateMetricsRow {
   no_reply: number | string;
 }
 
+/** One template's sends for one purpose: first message, reminder or test. */
+export interface AdminTemplatePurposeMetricsRow {
+  [key: string]: unknown;
+  purpose: string;
+  sends: number | string;
+  sends_initial: number | string;
+  sends_reminder: number | string;
+  sends_test: number | string;
+  delivered: number | string;
+  read: number | string;
+  confirmed: number | string;
+  canceled: number | string;
+  no_reply: number | string;
+}
+
+/** The count columns every template metrics query selects from `credited`. */
+const TEMPLATE_METRIC_COUNTS = sql`
+        COUNT(*)::int AS sends,
+        COUNT(*) FILTER (WHERE template_purpose = 'initial')::int AS sends_initial,
+        COUNT(*) FILTER (WHERE template_purpose = 'reminder')::int AS sends_reminder,
+        COUNT(*) FILTER (WHERE template_purpose = 'test')::int AS sends_test,
+        COUNT(delivered_at)::int AS delivered,
+        COUNT(read_at)::int AS read,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'confirmed')::int AS confirmed,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'canceled')::int AS canceled,
+        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'no_reply')::int AS no_reply`;
+
 /**
  * Business inputs the derived store columns need. They come from config and
  * plan definitions, so the service supplies them.
@@ -465,11 +492,56 @@ export class AdminQueryRepository {
   async findTemplateMetrics(
     filter: AdminTemplateMetricsFilter,
   ): Promise<AdminTemplateMetricsRow[]> {
+    const result = await this.db.execute<AdminTemplateMetricsRow>(sql`
+      ${this.creditedSends(filter)}
+      SELECT
+        template_variant_key AS variant_key,
+        meta_template_name AS template_name,
+        meta_language_code AS language_code,
+        resolved_language AS language,
+        ${TEMPLATE_METRIC_COUNTS}
+      FROM credited
+      GROUP BY template_variant_key, meta_template_name, meta_language_code, resolved_language
+      ORDER BY template_variant_key NULLS LAST, meta_language_code, meta_template_name
+    `);
+
+    return Array.from(result);
+  }
+
+  /**
+   * The same counts for one template, split by what each send was for: the
+   * first message, the reminder or a test. Every purpose is returned, so a
+   * purpose with no sends reads as zeros rather than being absent.
+   */
+  async findTemplateMetricsByPurpose(
+    filter: AdminTemplateMetricsFilter,
+    variantKey: string,
+  ): Promise<AdminTemplatePurposeMetricsRow[]> {
+    const result = await this.db.execute<AdminTemplatePurposeMetricsRow>(sql`
+      ${this.creditedSends(filter)}
+      SELECT
+        template_purpose AS purpose,
+        ${TEMPLATE_METRIC_COUNTS}
+      FROM credited
+      WHERE template_variant_key = ${variantKey}
+        AND template_purpose IS NOT NULL
+      GROUP BY template_purpose
+      ORDER BY template_purpose
+    `);
+
+    return Array.from(result);
+  }
+
+  /**
+   * The sends accepted in a range as the `credited` CTE: each with its
+   * verification's outcome and whether that outcome is credited to it.
+   */
+  private creditedSends(filter: AdminTemplateMetricsFilter): SQL {
     const customerConfirmed = sql`v.confirmed_at IS NOT NULL AND v.confirmation_source IS DISTINCT FROM 'merchant_manual'`;
     const customerCanceled = sql`v.canceled_at IS NOT NULL AND (v.cancellation_source IS NULL OR v.cancellation_source = 'customer')`;
     const testFilter = filter.includeTest ? sql`` : sql`AND NOT ord.is_test`;
 
-    const result = await this.db.execute<AdminTemplateMetricsRow>(sql`
+    return sql`
       WITH sent AS (
         SELECT
           d.id,
@@ -513,26 +585,7 @@ export class AdminQueryRepository {
             )) AS has_outcome
         FROM sent
       )
-      SELECT
-        template_variant_key AS variant_key,
-        meta_template_name AS template_name,
-        meta_language_code AS language_code,
-        resolved_language AS language,
-        COUNT(*)::int AS sends,
-        COUNT(*) FILTER (WHERE template_purpose = 'initial')::int AS sends_initial,
-        COUNT(*) FILTER (WHERE template_purpose = 'reminder')::int AS sends_reminder,
-        COUNT(*) FILTER (WHERE template_purpose = 'test')::int AS sends_test,
-        COUNT(delivered_at)::int AS delivered,
-        COUNT(read_at)::int AS read,
-        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'confirmed')::int AS confirmed,
-        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'canceled')::int AS canceled,
-        COUNT(*) FILTER (WHERE has_outcome AND outcome = 'no_reply')::int AS no_reply
-      FROM credited
-      GROUP BY template_variant_key, meta_template_name, meta_language_code, resolved_language
-      ORDER BY template_variant_key NULLS LAST, meta_language_code, meta_template_name
-    `);
-
-    return Array.from(result);
+    `;
   }
 
   private listConditions(filter: AdminStoreListFilter): SQL {

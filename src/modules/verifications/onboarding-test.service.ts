@@ -29,6 +29,12 @@ import {
 } from '../../shared/analytics/product-events';
 import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
 import {
+  TEMPLATE_SAMPLE_CURRENCY,
+  TEMPLATE_SAMPLE_CUSTOMER_NAMES,
+  TEMPLATE_SAMPLE_ORDER_NUMBER,
+  TEMPLATE_SAMPLE_TOTAL,
+} from '../../shared/messaging/template-rendering';
+import {
   resolveTemplate,
   storedTemplateKey,
 } from '../../shared/messaging/template-selector';
@@ -45,10 +51,11 @@ import type {
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
-const ONBOARDING_TEST_ORDER_NUMBER = 'TEST-1';
-const ONBOARDING_TEST_TOTAL = '250.00';
-const DEFAULT_SHIPPING_CURRENCY = 'USD';
-const SAMPLE_CUSTOMER_NAMES = { ar: 'أحمد', en: 'Ahmed' } as const;
+// Shared with the staff template test, which sends the same sample.
+const ONBOARDING_TEST_ORDER_NUMBER = TEMPLATE_SAMPLE_ORDER_NUMBER;
+const ONBOARDING_TEST_TOTAL = TEMPLATE_SAMPLE_TOTAL;
+const DEFAULT_SHIPPING_CURRENCY = TEMPLATE_SAMPLE_CURRENCY;
+const SAMPLE_CUSTOMER_NAMES = TEMPLATE_SAMPLE_CUSTOMER_NAMES;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

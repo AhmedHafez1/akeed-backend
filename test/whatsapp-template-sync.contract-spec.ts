@@ -510,6 +510,136 @@ describe('WhatsApp template sync against PostgreSQL', () => {
     });
   });
 
+  describe('staff inspection reads (US-08-05)', () => {
+    const KEY = 'cod_confirm.en.professional';
+    let named: string;
+    let viaVariant: string;
+
+    beforeAll(async () => {
+      // The store columns the staff pages read; the suite's table has none.
+      await client.unsafe(`
+        CREATE TABLE organizations (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          name text NOT NULL
+        );
+        ALTER TABLE integrations
+          ADD COLUMN org_id uuid,
+          ADD COLUMN store_name varchar(255),
+          ADD COLUMN platform_type text DEFAULT 'standalone' NOT NULL,
+          ADD COLUMN platform_store_url text DEFAULT '' NOT NULL;
+      `);
+      const [organization] = await client<{ id: string }[]>`
+        INSERT INTO organizations (name) VALUES ('Zed Org') RETURNING id`;
+      [{ id: named }] = await client<{ id: string }[]>`
+        INSERT INTO integrations (cod_template_en_key, store_name, platform_type, platform_store_url, default_language)
+        VALUES (${KEY}, 'Akeed Fashion', 'shopify', 'akeed-fashion.myshopify.com', 'en')
+        RETURNING id`;
+      // No stored key and no store name: read from the old variant column and
+      // named after its organization.
+      [{ id: viaVariant }] = await client<{ id: string }[]>`
+        INSERT INTO integrations (cod_template_en_variant, org_id)
+        VALUES ('professional', ${organization.id})
+        RETURNING id`;
+      await client`
+        INSERT INTO integrations (cod_template_en_key, store_name, is_active)
+        VALUES (${KEY}, 'Closed Store', false)`;
+    });
+
+    it('lists the active stores that send a key, by name, with their total', async () => {
+      const all = await syncRepository.activeStoresUsingKey(KEY, 100);
+      const counts = await syncRepository.activeStoreCountsByKey([KEY]);
+
+      expect(all).toEqual({
+        total: 2,
+        stores: [
+          {
+            integrationId: named,
+            storeName: 'Akeed Fashion',
+            platformType: 'shopify',
+            storeUrl: 'akeed-fashion.myshopify.com',
+            defaultLanguage: 'en',
+          },
+          {
+            integrationId: viaVariant,
+            storeName: 'Zed Org',
+            platformType: 'standalone',
+            storeUrl: '',
+            defaultLanguage: 'auto',
+          },
+        ],
+      });
+      expect(counts.get(KEY)).toBe(all.total);
+    });
+
+    it('keeps the total when the list is cut short', async () => {
+      const first = await syncRepository.activeStoresUsingKey(KEY, 1);
+
+      expect(first.total).toBe(2);
+      expect(first.stores.map((store) => store.storeName)).toEqual([
+        'Akeed Fashion',
+      ]);
+      await expect(
+        syncRepository.activeStoresUsingKey('cod_confirm.ar.short', 100),
+      ).resolves.toEqual({ total: 0, stores: [] });
+    });
+
+    it('returns the events of one template only, newest first', async () => {
+      const [{ id }] = await client<{ id: string }[]>`
+        SELECT id FROM whatsapp_templates WHERE "key" = ${KEY}`;
+      const base = Math.floor(Date.now() / 1000) + 7200;
+      const professional = {
+        message_template_name: '_akeed_cod_verification_professional',
+        message_template_language: 'en',
+      };
+      await webhook.handle(
+        delivery('message_template_status_update', base, {
+          ...professional,
+          event: 'PAUSED',
+        }),
+      );
+      await webhook.handle(
+        delivery('message_template_quality_update', base + 60, {
+          ...professional,
+          new_quality_score: 'RED',
+        }),
+      );
+
+      const events = await syncRepository.eventsForTemplate(id, 10);
+
+      expect(
+        events.map((event) => [event.field, event.neutralValue, event.outcome]),
+      ).toEqual([
+        ['quality', { quality: 'low' }, 'applied'],
+        ['status', { status: 'paused' }, 'applied'],
+      ]);
+      expect(Date.parse(events[0].occurredAt)).toBeGreaterThan(
+        Date.parse(events[1].occurredAt),
+      );
+      await expect(
+        syncRepository.eventsForTemplate(id, 1),
+      ).resolves.toHaveLength(1);
+    });
+
+    it('reads every template with its provider values for the staff pages', async () => {
+      const rows = await registryRepository.findAllForInspection();
+      const one = await registryRepository.findForInspection(KEY);
+
+      expect(rows).toHaveLength(8);
+      expect(one).toMatchObject({
+        template: {
+          key: KEY,
+          templateName: '_akeed_cod_verification_professional',
+          reviewStatus: 'paused',
+        },
+        quality: 'low',
+      });
+      expect(rows.find((entry) => entry.template.key === KEY)).toEqual(one);
+      await expect(
+        registryRepository.findForInspection('cod_confirm.en.retired'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('rollback', () => {
     it('runs the statements in the 0057 header and reapplies cleanly', async () => {
       await client.unsafe(rollbackStatements());

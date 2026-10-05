@@ -18,6 +18,13 @@ import {
 import { TokenValidatorService } from '../auth/services/token-validator.service';
 import { WhatsappTemplateSyncService } from '../template-registry/whatsapp-template-sync.service';
 import { AdminAccessGuard } from './admin-access.guard';
+import { AdminController } from './admin.controller';
+import { AdminFunnelService } from './admin-funnel.service';
+import { AdminStoresService } from './admin-stores.service';
+import { AdminTemplateInspectionService } from './admin-template-inspection.service';
+import { AdminTemplateMetricsService } from './admin-template-metrics.service';
+import { AdminTemplateTestSendService } from './admin-template-test-send.service';
+import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import { AdminTemplatesController } from './admin-templates.controller';
 import {
   AdminTemplatesService,
@@ -45,7 +52,10 @@ function run(overrides: Partial<TemplateSyncRun> = {}): TemplateSyncRun {
   };
 }
 
-describe('Admin template routes (US-08-04)', () => {
+const RANGE = 'from=2026-09-06&to=2026-10-05';
+const KEY = 'cod_confirm.ar.standard';
+
+describe('Admin template routes (US-08-04, US-08-05)', () => {
   let app: INestApplication;
   const operatorId = randomUUID();
   const staffId = randomUUID();
@@ -56,6 +66,9 @@ describe('Admin template routes (US-08-04)', () => {
     isEnabled: jest.fn().mockReturnValue(true),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const inspection = { list: jest.fn(), detail: jest.fn() };
+  const testSend = { send: jest.fn() };
+  const metrics = { getMetrics: jest.fn() };
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
 
@@ -72,11 +85,18 @@ describe('Admin template routes (US-08-04)', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [AdminTemplatesController],
+      // The same order as `AdminModule`, which the `metrics` route relies on.
+      controllers: [AdminController, AdminTemplatesController],
       providers: [
         AdminAccessGuard,
         WhatsappTemplateOperatorGuard,
         AdminTemplatesService,
+        { provide: AdminTemplateInspectionService, useValue: inspection },
+        { provide: AdminTemplateTestSendService, useValue: testSend },
+        { provide: AdminTemplateMetricsService, useValue: metrics },
+        { provide: AdminStoresService, useValue: {} },
+        { provide: AdminFunnelService, useValue: {} },
+        { provide: MessageDispatchResolutionService, useValue: {} },
         { provide: WhatsappTemplateSyncService, useValue: sync },
         { provide: AdminAccessAuditRepository, useValue: audit },
         {
@@ -126,13 +146,37 @@ describe('Admin template routes (US-08-04)', () => {
         .get('/api/admin/templates/sync/runs')
         .set('Authorization', `Bearer ${token}`)
         .expect(403);
+      await http()
+        .get(`/api/admin/templates?${RANGE}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await http()
+        .get(`/api/admin/templates/${KEY}?${RANGE}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await http()
+        .post(`/api/admin/templates/${KEY}/test-send`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: '+201001234567' })
+        .expect(403);
       expect(sync.runSync).not.toHaveBeenCalled();
       expect(sync.recentRuns).not.toHaveBeenCalled();
+      expect(inspection.list).not.toHaveBeenCalled();
+      expect(inspection.detail).not.toHaveBeenCalled();
+      expect(testSend.send).not.toHaveBeenCalled();
     },
   );
 
   it('requires authentication', async () => {
     await http().post('/api/admin/templates/sync').expect(401);
+    await http().get(`/api/admin/templates?${RANGE}`).expect(401);
+    await http().get(`/api/admin/templates/${KEY}?${RANGE}`).expect(401);
+    await http()
+      .post(`/api/admin/templates/${KEY}/test-send`)
+      .send({ phone: '+201001234567' })
+      .expect(401);
+    expect(inspection.list).not.toHaveBeenCalled();
+    expect(testSend.send).not.toHaveBeenCalled();
   });
 
   it('is not found while the control tower is off', async () => {
@@ -141,6 +185,19 @@ describe('Admin template routes (US-08-04)', () => {
     await http()
       .post('/api/admin/templates/sync')
       .set('Authorization', 'Bearer operator')
+      .expect(404);
+    await http()
+      .get(`/api/admin/templates?${RANGE}`)
+      .set('Authorization', 'Bearer operator')
+      .expect(404);
+    await http()
+      .get(`/api/admin/templates/${KEY}?${RANGE}`)
+      .set('Authorization', 'Bearer operator')
+      .expect(404);
+    await http()
+      .post(`/api/admin/templates/${KEY}/test-send`)
+      .set('Authorization', 'Bearer operator')
+      .send({ phone: '+201001234567' })
       .expect(404);
   });
 
@@ -273,6 +330,124 @@ describe('Admin template routes (US-08-04)', () => {
     });
   });
 
+  it('lists templates for any staff member, with the range it was asked for', async () => {
+    inspection.list.mockResolvedValue({ templates: [{ key: KEY }] });
+
+    const response = await http()
+      .get(`/api/admin/templates?${RANGE}`)
+      .set('Authorization', 'Bearer staff')
+      .expect(200);
+
+    expect(inspection.list).toHaveBeenCalledWith(staffId, {
+      from: '2026-09-06',
+      to: '2026-10-05',
+    });
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.body).toEqual({ templates: [{ key: KEY }] });
+  });
+
+  it('refuses a list or a detail without a well-formed range', async () => {
+    await http()
+      .get('/api/admin/templates')
+      .set('Authorization', 'Bearer staff')
+      .expect(400);
+    await http()
+      .get(`/api/admin/templates/${KEY}?from=yesterday&to=2026-10-05`)
+      .set('Authorization', 'Bearer staff')
+      .expect(400);
+    expect(inspection.list).not.toHaveBeenCalled();
+    expect(inspection.detail).not.toHaveBeenCalled();
+  });
+
+  it('shows one template to any staff member', async () => {
+    inspection.detail.mockResolvedValue({ template: { key: KEY } });
+
+    const response = await http()
+      .get(`/api/admin/templates/${KEY}?${RANGE}`)
+      .set('Authorization', 'Bearer staff')
+      .expect(200);
+
+    expect(inspection.detail).toHaveBeenCalledWith(staffId, KEY, {
+      from: '2026-09-06',
+      to: '2026-10-05',
+    });
+    expect(response.body).toEqual({ template: { key: KEY } });
+  });
+
+  it('keeps templates/metrics on the metrics route, not on a template key', async () => {
+    metrics.getMetrics.mockResolvedValue({ templates: [] });
+
+    await http()
+      .get(`/api/admin/templates/metrics?${RANGE}`)
+      .set('Authorization', 'Bearer staff')
+      .expect(200);
+
+    expect(metrics.getMetrics).toHaveBeenCalledTimes(1);
+    expect(inspection.detail).not.toHaveBeenCalled();
+  });
+
+  it('sends a test for an operator', async () => {
+    testSend.send.mockResolvedValue({ accepted: true });
+
+    const response = await http()
+      .post(`/api/admin/templates/${KEY}/test-send`)
+      .set('Authorization', 'Bearer operator')
+      .set('x-request-id', 'req-9')
+      .send({ phone: ' +201001234567 ', template: 'ignored' })
+      .expect(200);
+
+    expect(testSend.send).toHaveBeenCalledWith({
+      userId: operatorId,
+      key: KEY,
+      phone: '+201001234567',
+      requestId: 'req-9',
+    });
+    expect(response.body).toEqual({ accepted: true });
+  });
+
+  it('refuses a test send from staff who are not a named operator', async () => {
+    const response = await http()
+      .post(`/api/admin/templates/${KEY}/test-send`)
+      .set('Authorization', 'Bearer staff')
+      .send({ phone: '+201001234567' })
+      .expect(403);
+
+    expect(response.body).toMatchObject({
+      code: 'WHATSAPP_TEMPLATE_OPERATOR_REQUIRED',
+    });
+    expect(testSend.send).not.toHaveBeenCalled();
+  });
+
+  it('refuses every test send while template operations are off', async () => {
+    configure({
+      WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'false',
+      WHATSAPP_TEMPLATE_OPERATOR_IDS: operatorId,
+    });
+
+    const response = await http()
+      .post(`/api/admin/templates/${KEY}/test-send`)
+      .set('Authorization', 'Bearer operator')
+      .send({ phone: '+201001234567' })
+      .expect(403);
+
+    expect(response.body).toMatchObject({
+      code: 'WHATSAPP_TEMPLATE_OPERATIONS_DISABLED',
+    });
+    expect(testSend.send).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { phone: 20100 }, { phone: '123' }])(
+    'refuses a test send without a usable phone (%o)',
+    async (body) => {
+      await http()
+        .post(`/api/admin/templates/${KEY}/test-send`)
+        .set('Authorization', 'Bearer operator')
+        .send(body)
+        .expect(400);
+      expect(testSend.send).not.toHaveBeenCalled();
+    },
+  );
+
   it('serves exactly these routes', () => {
     const prototype = AdminTemplatesController.prototype as unknown as Record<
       string,
@@ -286,6 +461,12 @@ describe('Admin template routes (US-08-04)', () => {
         return `${RequestMethod[method]} ${String(Reflect.getMetadata(PATH_METADATA, handler))}`;
       });
 
-    expect(routes.sort()).toEqual(['GET sync/runs', 'POST sync']);
+    expect(routes.sort()).toEqual([
+      'GET /',
+      'GET :key',
+      'GET sync/runs',
+      'POST :key/test-send',
+      'POST sync',
+    ]);
   });
 });

@@ -1221,6 +1221,46 @@ describe('US-08-02 template identity PostgreSQL contract', () => {
       });
     });
 
+    it('splits one template by purpose, adding up to its row (US-08-05)', async () => {
+      const filter = { ...MARCH, includeTest: true };
+      const [whole] = (await metrics.findTemplateMetrics(filter)).filter(
+        (row) => row.variant_key === 'ar.egyptian',
+      );
+      const byPurpose = await metrics.findTemplateMetricsByPurpose(
+        filter,
+        'ar.egyptian',
+      );
+
+      expect(byPurpose.map((row) => [row.purpose, Number(row.sends)])).toEqual([
+        ['initial', 3],
+        ['reminder', 1],
+        ['test', 1],
+      ]);
+      for (const column of [
+        'sends',
+        'delivered',
+        'read',
+        'confirmed',
+        'canceled',
+        'no_reply',
+      ] as const) {
+        expect(
+          byPurpose.reduce((sum, row) => sum + Number(row[column]), 0),
+        ).toBe(Number(whole[column]));
+      }
+      const withoutTests = await metrics.findTemplateMetricsByPurpose(
+        { ...MARCH, includeTest: false },
+        'ar.egyptian',
+      );
+      expect(withoutTests.map((row) => row.purpose)).toEqual([
+        'initial',
+        'reminder',
+      ]);
+      await expect(
+        metrics.findTemplateMetricsByPurpose(filter, 'ar.retired'),
+      ).resolves.toEqual([]);
+    });
+
     it('answers a range with no sends with no rows', async () => {
       await expect(
         metrics.findTemplateMetrics({

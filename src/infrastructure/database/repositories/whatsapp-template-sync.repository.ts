@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   integrations,
+  organizations,
   whatsappTemplateEvents,
   whatsappTemplateSyncRuns,
   whatsappTemplates,
@@ -26,6 +27,20 @@ export type TemplateEventOutcome =
   | 'stale'
   | 'conflict'
   | 'unregistered';
+
+export type TemplateEventRecord = Pick<
+  typeof whatsappTemplateEvents.$inferSelect,
+  'id' | 'field' | 'neutralValue' | 'outcome' | 'occurredAt' | 'receivedAt'
+>;
+
+/** An active store that sends a template, as staff see it. */
+export interface TemplateStoreUse {
+  integrationId: string;
+  storeName: string | null;
+  platformType: string;
+  storeUrl: string;
+  defaultLanguage: string;
+}
 
 type DrizzleWriter = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
@@ -74,6 +89,14 @@ function stateColumns(state: ProviderState) {
     componentsSnapshot: state.components,
   };
 }
+
+/**
+ * The registry key a store sends for each language. A store with no stored
+ * key is read from its old variant column, which is what its sends use while
+ * that column exists (US-08-03).
+ */
+const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
+const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
 
 const EVENT_AT_FIELD = {
   status: 'statusEventAt',
@@ -312,10 +335,8 @@ export class WhatsappTemplateSyncRepository {
     keys: readonly string[],
   ): Promise<Map<string, number>> {
     if (keys.length === 0) return new Map();
-    const arKey = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
-    const enKey = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
     const counts = new Map<string, number>();
-    for (const expression of [arKey, enKey]) {
+    for (const expression of [STORE_AR_KEY, STORE_EN_KEY]) {
       const rows = await this.db
         .select({ key: expression, stores: sql<number>`count(*)::int` })
         .from(integrations)
@@ -328,6 +349,66 @@ export class WhatsappTemplateSyncRepository {
       }
     }
     return counts;
+  }
+
+  /**
+   * The active stores that send a registry key, by name, and how many there
+   * are in all. A store is matched the way `activeStoreCountsByKey` counts it.
+   */
+  async activeStoresUsingKey(
+    key: string,
+    limit: number,
+  ): Promise<{ total: number; stores: TemplateStoreUse[] }> {
+    const uses = and(
+      eq(integrations.isActive, true),
+      or(eq(STORE_AR_KEY, key), eq(STORE_EN_KEY, key)),
+    );
+    const storeName = sql<
+      string | null
+    >`COALESCE(${integrations.storeName}, ${organizations.name})`;
+    const [stores, [count]] = await Promise.all([
+      this.db
+        .select({
+          integrationId: integrations.id,
+          storeName,
+          platformType: integrations.platformType,
+          storeUrl: integrations.platformStoreUrl,
+          defaultLanguage: integrations.defaultLanguage,
+        })
+        .from(integrations)
+        .leftJoin(organizations, eq(organizations.id, integrations.orgId))
+        .where(uses)
+        .orderBy(asc(sql`lower(${storeName})`), asc(integrations.id))
+        .limit(limit),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(integrations)
+        .where(uses),
+    ]);
+    return { total: Number(count?.total ?? 0), stores };
+  }
+
+  /** The newest provider events recorded for one registry template. */
+  async eventsForTemplate(
+    templateId: string,
+    limit: number,
+  ): Promise<TemplateEventRecord[]> {
+    return this.db
+      .select({
+        id: whatsappTemplateEvents.id,
+        field: whatsappTemplateEvents.field,
+        neutralValue: whatsappTemplateEvents.neutralValue,
+        outcome: whatsappTemplateEvents.outcome,
+        occurredAt: whatsappTemplateEvents.occurredAt,
+        receivedAt: whatsappTemplateEvents.receivedAt,
+      })
+      .from(whatsappTemplateEvents)
+      .where(eq(whatsappTemplateEvents.templateId, templateId))
+      .orderBy(
+        desc(whatsappTemplateEvents.occurredAt),
+        desc(whatsappTemplateEvents.receivedAt),
+      )
+      .limit(limit);
   }
 }
 

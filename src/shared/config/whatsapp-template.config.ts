@@ -13,6 +13,8 @@ const UUID_PATTERN =
  *   approved. It acts only once the environment has synced.
  * - `operationsEnabled` and `operatorIds` name the staff who may trigger
  *   template writes, the sync among them.
+ * - `testPhones` are the staff numbers a template test may be sent to
+ *   (US-08-05). With none listed, test sends are off.
  */
 export interface WhatsappTemplateConfig {
   syncEnabled: boolean;
@@ -20,6 +22,19 @@ export interface WhatsappTemplateConfig {
   operationsEnabled: boolean;
   operatorIds: ReadonlySet<string>;
   businessAccountId: string | null;
+  /** In international format with a leading `+`. */
+  testPhones: ReadonlySet<string>;
+}
+
+/**
+ * A phone number as the test allowlist keeps it: `+` and digits. Spaces,
+ * dashes and brackets are dropped and a leading `00` reads as `+`. NULL when
+ * what is left is not an international number.
+ */
+export function normalizeTemplateTestPhone(value: string): string | null {
+  const compact = value.replace(/[\s().-]/g, '').replace(/^00/, '+');
+  const digits = compact.startsWith('+') ? compact.slice(1) : compact;
+  return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : null;
 }
 
 export function parseWhatsappTemplateConfig(
@@ -42,6 +57,11 @@ export function parseWhatsappTemplateConfig(
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
   const businessAccountId = read('WA_BUSINESS_ACCOUNT_ID');
+  const testPhones = read('WHATSAPP_TEMPLATE_TEST_PHONES')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(normalizeTemplateTestPhone);
 
   if (operatorIds.some((value) => !UUID_PATTERN.test(value)))
     errors.push(
@@ -50,6 +70,10 @@ export function parseWhatsappTemplateConfig(
   if (operationsEnabled && operatorIds.length === 0)
     errors.push(
       'WHATSAPP_TEMPLATE_OPERATOR_IDS must name at least one staff user when WHATSAPP_TEMPLATE_OPERATIONS_ENABLED=true.',
+    );
+  if (testPhones.includes(null))
+    errors.push(
+      'WHATSAPP_TEMPLATE_TEST_PHONES must be a comma-separated list of phone numbers in international format.',
     );
   if (syncEnabled && !businessAccountId)
     errors.push(
@@ -67,6 +91,9 @@ export function parseWhatsappTemplateConfig(
     operationsEnabled,
     operatorIds: new Set(operatorIds),
     businessAccountId: businessAccountId || null,
+    testPhones: new Set(
+      testPhones.filter((phone): phone is string => phone !== null),
+    ),
   };
 }
 

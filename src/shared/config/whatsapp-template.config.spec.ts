@@ -2,6 +2,7 @@ import { validateEnv } from './env-validation';
 import {
   WHATSAPP_TEMPLATE_CONFIG,
   isWhatsappTemplateOperator,
+  normalizeTemplateTestPhone,
   parseWhatsappTemplateConfig,
   readWhatsappTemplateConfig,
   type WhatsappTemplateConfig,
@@ -19,6 +20,37 @@ describe('parseWhatsappTemplateConfig', () => {
       businessAccountId: null,
     });
     expect(isWhatsappTemplateOperator(config, OPERATOR)).toBe(false);
+  });
+
+  it('has no test phone until one is listed, and keeps each as + and digits', () => {
+    expect(parseWhatsappTemplateConfig({}).testPhones.size).toBe(0);
+    expect([
+      ...parseWhatsappTemplateConfig({
+        WHATSAPP_TEMPLATE_TEST_PHONES:
+          ' +20 100 123 4567 , 966501234567,00971-50-123-4567 ,',
+      }).testPhones,
+    ]).toEqual(['+201001234567', '+966501234567', '+971501234567']);
+  });
+
+  it('rejects a test phone that is not an international number, without echoing it', () => {
+    for (const value of [
+      '01001234567',
+      '+20abc',
+      '12345',
+      '+2010012345678901',
+    ]) {
+      let message = '';
+      try {
+        parseWhatsappTemplateConfig({ WHATSAPP_TEMPLATE_TEST_PHONES: value });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/WHATSAPP_TEMPLATE_TEST_PHONES must be/);
+      expect(message).not.toContain(value);
+    }
+    expect(normalizeTemplateTestPhone('(+20) 100-123.4567')).toBe(
+      '+201001234567',
+    );
   });
 
   it('requires the WhatsApp Business Account ID only when sync is on', () => {

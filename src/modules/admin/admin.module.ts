@@ -28,6 +28,8 @@ import { BillingReconciliationProducer } from './billing-reconciliation.producer
 import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
 import { AdminTemplatesController } from './admin-templates.controller';
 import { AdminTemplatesService } from './admin-templates.service';
+import { AdminTemplateInspectionService } from './admin-template-inspection.service';
+import { AdminTemplateTestSendService } from './admin-template-test-send.service';
 import { WhatsappTemplateOperatorGuard } from './whatsapp-template-operator.guard';
 import { WhatsappTemplateSyncModule } from '../template-registry/whatsapp-template-sync.module';
 
@@ -77,6 +79,8 @@ export class AdminModule {
         BillingReconciliationProducer,
         BillingReconciliationProcessor,
         AdminTemplatesService,
+        AdminTemplateInspectionService,
+        AdminTemplateTestSendService,
         WhatsappTemplateOperatorGuard,
       ],
     };
