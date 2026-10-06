@@ -20,7 +20,7 @@ As a merchant, I want the Settings preview to show exactly what my customers rec
 
 Seven improvements. Each has its own switch, and every switch defaults to off:
 
-| Item | Improvement | Switch (name proposed) |
+| Item | Improvement | Switch |
 | --- | --- | --- |
 | a | Reminder purpose | `WHATSAPP_REMINDER_TEMPLATE_ENABLED` |
 | b | Acknowledgment after confirm or cancel | `WHATSAPP_ACKNOWLEDGMENT_ENABLED` |
@@ -28,7 +28,7 @@ Seven improvements. Each has its own switch, and every switch defaults to off:
 | d | Arabic style by customer country | `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` |
 | e | Localized name fallbacks | `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` |
 | f | Amount formatting | `WHATSAPP_AMOUNT_FORMATTING_ENABLED` |
-| g | Preview from the Meta snapshot | `NEXT_PUBLIC_SNAPSHOT_PREVIEW_ENABLED` plus a backend flag |
+| g | Preview from the Meta snapshot | `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` (backend only, decision 3) |
 
 All new copy is drafted below for product-owner approval. Templates are created through the US-08-06 flow, never by hand in WhatsApp Manager.
 
@@ -49,7 +49,7 @@ General:
 
 **a. Reminder purpose**
 
-4. A `cod_reminder` purpose exists. With the switch on, a store's reminder uses its selected reminder template for the resolved language, or the language's reminder default.
+4. A `cod_reminder` purpose exists. With the switch on, a store's reminder uses its selected reminder template for the resolved language. A store that chose none sends its first-send template, as today (decision 5). A chosen reminder that cannot be sent falls back to the language's reminder default.
 5. With no sendable reminder template, the reminder falls back to the store's first-send template. That is today's behavior, and the reason is recorded. It never skips the reminder only because no reminder template exists.
 6. Settings lets the merchant pick a reminder style per language among active `cod_reminder` templates. The settings response gains this field additively.
 
@@ -93,31 +93,46 @@ General:
 
 ## Copy drafts (draft, awaiting product-owner approval)
 
-Variables use neutral keys. `{{customer}}`, `{{store}}`, `{{order}}` and `{{total}}` are filled at send time. Button payloads stay `confirm_<id>` and `cancel_<id>`.
+Variables use neutral keys. `{{customer}}`, `{{store}}`, `{{order}}` and `{{total}}` are filled at send time. Button payloads stay `confirm_<id>` and `cancel_<id>`. No code path holds any of this text. Staff create the reminder templates through the US-08-06 flow and the free-form texts in the admin message texts section (decision 2). No migration seeds them.
 
-### a. Reminder templates (`cod_reminder`)
+### a. Reminder templates (`cod_reminder`), all 8 styles (decision 4)
+
+Template names follow US-08-06: `akeed_cod_reminder_<style>_v<n>`, keys `cod_reminder.<language>.<style>_v<n>`. Each reminder carries the same variables as its first-send style, so the `short` reminders carry only `{{order}}` and `{{total}}`, as their first-send templates do.
 
 | Language and style | Body | Buttons |
 | --- | --- | --- |
-| ar standard | مرحبًا {{customer}}، تذكير بطلبك 🔔<br>طلبك رقم #{{order}} من {{store}} بقيمة {{total}} ما زال بانتظار تأكيدك.<br>يرجى تأكيد الطلب لنبدأ تجهيزه للشحن، أو إلغاؤه إذا لم تعد ترغب فيه. | تأكيد الطلب / إلغاء الطلب |
+| ar standard (default) | مرحبًا {{customer}}، تذكير بطلبك 🔔<br>طلبك رقم #{{order}} من {{store}} بقيمة {{total}} ما زال بانتظار تأكيدك.<br>يرجى تأكيد الطلب لنبدأ تجهيزه للشحن، أو إلغاؤه إذا لم تعد ترغب فيه. | تأكيد الطلب / إلغاء الطلب |
 | ar egyptian | أهلًا {{customer}}، بنفكّرك بطلبك 🔔<br>طلبك رقم #{{order}} من {{store}} بقيمة {{total}} لسه مستني تأكيدك.<br>أكّد دلوقتي عشان نجهّزه للشحن، أو ألغيه لو مش محتاجه. | تأكيد الطلب / إلغاء الطلب |
 | ar gulf | هلا {{customer}}، نذكّرك بطلبك 🔔<br>طلبك رقم #{{order}} من {{store}} بقيمة {{total}} للحين بانتظار تأكيدك.<br>أكّده الحين عشان نجهّزه للشحن، أو ألغه إذا ما تبيه. | تأكيد الطلب / إلغاء الطلب |
-| en friendly | Hi {{customer}}, a quick reminder 🔔<br>Your order #{{order}} from {{store}} for {{total}} is still waiting for your confirmation.<br>Please confirm so we can prepare it for shipping, or cancel if you no longer want it. | Confirm Order / Cancel Order |
-
-Whether `professional`, `direct` and `short` get reminder versions, or use the language default reminder, is open decision 4.
+| ar short | تذكير: طلبك رقم #{{order}} بقيمة {{total}} ما زال بانتظار تأكيدك.<br>من فضلك أكد الطلب. | تأكيد / إلغاء |
+| en friendly (default) | Hi {{customer}}, a quick reminder 🔔<br>Your order #{{order}} from {{store}} for {{total}} is still waiting for your confirmation.<br>Please confirm so we can prepare it for shipping, or cancel if you no longer want it. | Confirm Order / Cancel Order |
+| en professional | Hello {{customer}}, this is a reminder from {{store}}.<br>Your Cash on Delivery order #{{order}} for {{total}} is awaiting your confirmation.<br>Once confirmed, we will ship your order. | Confirm & Ship / Cancel Order |
+| en direct | Hi {{customer}}, your order #{{order}} at {{store}} is still on hold.<br>Please confirm your COD total of {{total}} now so we can ship it. | Ship My Order / Cancel |
+| en short | Reminder: your order #{{order}} for {{total}} is awaiting confirmation.<br>Please confirm your order. | Confirm / Cancel |
 
 ### b. Acknowledgment (free-form)
 
-| Event | Arabic | English |
-| --- | --- | --- |
-| Confirmed | شكرًا لك! تم تأكيد طلبك رقم #{{order}} من {{store}}، وسيتم تجهيزه للشحن. | Thank you! Your order #{{order}} from {{store}} is confirmed and will be prepared for shipping. |
-| Canceled | تم إلغاء طلبك رقم #{{order}} من {{store}}. إذا كان ذلك عن طريق الخطأ، يرجى التواصل مع المتجر. | Your order #{{order}} from {{store}} has been cancelled. If this was a mistake, please contact the store. |
+Free-form texts are keyed by purpose, language and style. The `default` style is the language's text, and a dialect row overrides it for the verification whose latest accepted send used that style. English has the `default` row only.
+
+| Purpose, language, style | Text |
+| --- | --- |
+| `ack_confirmed` ar default | شكرًا لك! تم تأكيد طلبك رقم #{{order}} من {{store}}، وسيتم تجهيزه للشحن. |
+| `ack_confirmed` ar egyptian | تمام، شكرًا ليك! طلبك رقم #{{order}} من {{store}} اتأكد وهيتجهز للشحن. |
+| `ack_confirmed` ar gulf | أبشر، شكرًا لك! تم تأكيد طلبك رقم #{{order}} من {{store}} وبنجهّزه للشحن. |
+| `ack_confirmed` en default | Thank you! Your order #{{order}} from {{store}} is confirmed and will be prepared for shipping. |
+| `ack_canceled` ar default | تم إلغاء طلبك رقم #{{order}} من {{store}}. إذا كان ذلك عن طريق الخطأ، يرجى التواصل مع المتجر. |
+| `ack_canceled` ar egyptian | تم إلغاء طلبك رقم #{{order}} من {{store}}. لو ده حصل بالغلط، كلّم المتجر. |
+| `ack_canceled` ar gulf | تم إلغاء طلبك رقم #{{order}} من {{store}}. إذا صار بالغلط، تواصل مع المتجر. |
+| `ack_canceled` en default | Your order #{{order}} from {{store}} has been cancelled. If this was a mistake, please contact the store. |
 
 ### c. Nudge (free-form)
 
-| Arabic | English |
+| Purpose, language, style | Text |
 | --- | --- |
-| عذرًا، لم نتمكن من فهم ردك. يرجى الضغط على أحد الزرين في الرسالة السابقة لتأكيد طلبك أو إلغائه. | Sorry, we couldn't understand your reply. Please tap one of the buttons in the message above to confirm or cancel your order. |
+| `unresolved_reply_nudge` ar default | عذرًا، لم نتمكن من فهم ردك. يرجى الضغط على أحد الزرين في الرسالة السابقة لتأكيد طلبك أو إلغائه. |
+| `unresolved_reply_nudge` ar egyptian | معلش، مافهمناش ردك. من فضلك دوس على أحد الزرين في الرسالة اللي فوق عشان تأكد طلبك أو تلغيه. |
+| `unresolved_reply_nudge` ar gulf | المعذرة، ما فهمنا ردك. فضلًا اضغط أحد الزرين في الرسالة اللي فوق عشان تأكد طلبك أو تلغيه. |
+| `unresolved_reply_nudge` en default | Sorry, we couldn't understand your reply. Please tap one of the buttons in the message above to confirm or cancel your order. |
 
 ### d. Arabic style mapping for `auto`
 
@@ -127,7 +142,11 @@ Whether `professional`, `direct` and `short` get reminder versions, or use the l
 | 966, 971, 973, 974, 965, 968 (Saudi Arabia, UAE, Bahrain, Qatar, Kuwait, Oman) | gulf |
 | Every other Arabic code in [`template-language.ts`](../../../src/shared/messaging/template-language.ts) | standard |
 
+The mapping lives in one place, [`arabic-style.ts`](../../../src/shared/messaging/arabic-style.ts), and reads the calling code with the same matcher the language choice uses.
+
 ### e. Name fallbacks
+
+Stored as free-form texts (`fallback_customer_name`, `fallback_store_name`, style `default`). A missing row keeps today's word for that value and logs the reason, so switch e is turned on only after all four rows are active.
 
 | Missing | Arabic | English |
 | --- | --- | --- |
@@ -138,30 +157,34 @@ For example, "أهلًا بك عميلنا العزيز 👋" and "Thank you for
 
 ### f. Amount format
 
-| Currency | Arabic | English |
-| --- | --- | --- |
-| EGP | 1,250.00 ج.م | EGP 1,250.00 |
-| SAR | 1,250.00 ر.س | SAR 1,250.00 |
-| AED | 1,250.00 د.إ | AED 1,250.00 |
-| KWD (3 decimals) | 1,250.000 د.ك | KWD 1,250.000 |
-| QAR / BHD / OMR | ر.ق / د.ب / ر.ع after the number | ISO code before the number |
-| USD | 1,250.00 $ | USD 1,250.00 |
-| Unknown | ISO code after the number | ISO code before the number |
+Stored total `1250.00`. Today's output is the raw number, a space, then the ISO code, in both languages. Digits are Western in both languages, and the amount always keeps the currency's minor units (decision 6).
 
-Western digits are proposed in both languages (open decision 6).
+| Currency | Before (both languages) | After, Arabic | After, English |
+| --- | --- | --- | --- |
+| EGP | `1250.00 EGP` | `1,250.00 ج.م` | `EGP 1,250.00` |
+| SAR | `1250.00 SAR` | `1,250.00 ر.س` | `SAR 1,250.00` |
+| AED | `1250.00 AED` | `1,250.00 د.إ` | `AED 1,250.00` |
+| USD | `1250.00 USD` | `1,250.00 $` | `USD 1,250.00` |
+| KWD (3 decimals) | `1250.000 KWD` | `1,250.000 د.ك` | `KWD 1,250.000` |
+| QAR | `1250.00 QAR` | `1,250.00 ر.ق` | `QAR 1,250.00` |
+| BHD, OMR (3 decimals) | `1250.000 BHD` | `1,250.000 د.ب`, `1,250.000 ر.ع` | `BHD 1,250.000`, `OMR 1,250.000` |
+| Unknown, for example XYZ | `1250.00 XYZ` | `1,250.00 XYZ` (ISO code after the number) | `XYZ 1,250.00` (ISO code before the number) |
+| Missing | `1250.00` | `1,250.00` | `1,250.00` |
 
-## Open decisions (product owner)
+Formatting works on the stored decimal string: it groups the whole part in threes and pads the fraction to the currency's minor unit, and it never rounds. A stored fraction longer than the minor unit is kept as stored, so the amount can never change. A value that is not a plain decimal is sent as stored.
 
-1. Approve, change or reject each copy draft above, individually.
-2. **Free-form text and the registry (story and request differ).** The request says new copy is created through the US-08-06 flow, but acknowledgment and nudge are free-form messages, not Meta templates, so they cannot be submitted for review. Smallest fix, proposed: the registry gains a `free_form` kind that uses the same draft, activate, default and audit flow with no Meta submit step. Please confirm.
-3. **Switch scope.** The proposal:
-   - global environment switches for b, c, e, f and g;
-   - a, and the `auto` option in d, are features a global switch makes available, after which each merchant opts in through Settings.
-4. **Reminder versions.** Do only the defaults (ar standard, ar egyptian, ar gulf, en friendly) get reminder versions, or every style?
-5. **Billing.** Do acknowledgment and nudge messages consume merchant usage or credits? The proposal is no. Are they recorded in the dispatch ledger, which is tied to billing, or in a separate message log? The proposal is a separate log.
-6. **Number format.** Western digits (proposal) or Arabic-Indic digits in Arabic. Also: whole amounts with or without `.00`.
-7. **Nudge without `context.id`.** The proposal is no nudge. Resolving by phone could pick another store's order.
-8. **When the four-block model is removed (g).** The proposal is after US-08-08 go, in a follow-up commit within this story's scope.
+## Decisions (product owner, 2026-10-06)
+
+1. **Copy (open decision 1):** the drafts above await approval, row by row. Code holds none of it, so implementation does not wait for the approval.
+2. **Free-form copy (open decision 2, story and request differ):** a separate `whatsapp_message_texts` table, not a `free_form` kind on the template tables. It has the same operator gate (`WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and the operator allowlist), and every change is written to `whatsapp_message_text_events`. Texts are managed under `/api/admin/message-texts`; there is no Meta submit step.
+3. **Switch scope (open decision 3):** as proposed. Global switches for b, c, e, f and g. For a and d, the global switch makes the option available and each merchant opts in through Settings. The preview switch is backend only, `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED`. The frontend renders one neutral type whatever its source, so `NEXT_PUBLIC_SNAPSHOT_PREVIEW_ENABLED` is not needed (story and request differ).
+4. **Reminder versions (open decision 4):** every style gets a reminder draft (all 8 above).
+5. **Reminder unset (story and request differ):** criterion 4 reads "or the language's reminder default". The request decides: a store with no reminder chosen sends its first-send template, exactly as today. A chosen reminder that cannot be sent falls back to the language's reminder default, and then to the first-send template, with reason `reminder_unavailable`.
+6. **Billing (open decision 5):** free. Record 4.10.5 says non-template messages are free at Meta. Acknowledgment and nudge reserve no usage, write no credit or dispatch ledger row, and are recorded in their own table, `verification_service_messages`.
+7. **Number format (open decision 6):** Western digits in both languages, and the currency's minor units always shown (`1,250.00`, never `1,250`).
+8. **Nudge without `context.id` (open decision 7):** no nudge and no stored event.
+9. **Four-block removal (open decision 8):** the frontend four-block types and token patterns are deleted in this story; the frontend reads only the neutral message. The registry `preview` column and the old `preview`/`previews` API fields are removed after the US-08-08 gate.
+10. **Meta gaps for b and c:** built under the US-08-01 worst-case rule (record 4.10.8). Each message is best effort, sent once, never retried, and 131047 is a recorded skip. Switches b and c stay off until US-08-08 verifies 4.10.8.
 
 ## Implementation notes
 
