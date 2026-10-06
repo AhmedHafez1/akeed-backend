@@ -314,6 +314,7 @@ US-08-03 shipped: any template active in Akeed is sent.
 | `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off (US-08-04 open decision 3). Rollback is turning it off. |
 | `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. |
 | `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Required, each a UUID, whenever operations are on; startup fails otherwise. Staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. |
+| `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page (US-08-05), in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
 
 Rollout, per environment, dev first:
 
@@ -343,6 +344,9 @@ Logs to grep:
   `template_sync_failed` (attention). A line names the template key, its
   state and how many active stores send it; never template text or customer
   data.
+- `whatsapp-template-test-send` — each staff test send, with the staff user
+  and the template key; never the phone number or the text. An accepted test
+  also writes one `admin_access_audit` row, `whatsapp-templates.test-send`.
 - `meta-template-webhook` — a template delivery that was skipped, with
   `reason` `wrong_account`, `malformed` or `template_sync_disabled`.
 

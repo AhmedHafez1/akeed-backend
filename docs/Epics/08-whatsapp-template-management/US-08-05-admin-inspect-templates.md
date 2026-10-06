@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented (2026-10-05); the staff test send is off until `WHATSAPP_TEMPLATE_TEST_PHONES` is set. Not marked Done: the pages have not been opened against a real environment, and US-08-04 still waits for the webhook subscription to be confirmed — [evidence](../../US-08-05-ADMIN-INSPECT-TEMPLATES-EVIDENCE.md)
 - **Dependencies:** [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md)
 
 ## User story and value
@@ -68,6 +68,12 @@ The pages are read-only apart from sync and test send.
 1. **Test phone allowlist.** Either an environment variable such as `WHATSAPP_TEMPLATE_TEST_PHONES` (proposal; separate per environment), or a per-staff phone stored in the database.
 2. **Stores using a template.** Should the list show store names and domains, or only counts and masked identifiers? The existing admin store pages show store names to staff.
 3. **Default date range.** The proposal is the last 30 days.
+
+**Decided 2026-10-05 (product owner):**
+1. The environment variable `WHATSAPP_TEMPLATE_TEST_PHONES`, per environment. Empty keeps test sends off.
+2. Store names, platform and a link to the admin store page.
+3. The last 30 days.
+4. The test send follows criterion 5 as written: no order, verification or dispatch. It is recorded as one audit row with purpose `test`, and is not counted in template metrics.
 
 ## Implementation notes
 

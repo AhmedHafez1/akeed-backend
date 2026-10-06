@@ -1,7 +1,7 @@
 # E08 — WhatsApp Template Management
 
 - **Horizon:** NEXT
-- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; US-08-04 implemented 2026-10-05 and waiting for the Meta webhook subscription to be confirmed; the US-08-01 contract record is still a draft, and the other stories are Backlog)
+- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; US-08-04 implemented 2026-10-05 and waiting for the Meta webhook subscription to be confirmed; US-08-05 implemented 2026-10-05; the US-08-01 contract record is still a draft, with the first dev run recorded on 2026-10-05, and the other stories are Backlog)
 - **Stories:** 8
 - **Prerequisite epics:** [E02 — Platform Boundaries and Reliability](../02-platform-boundaries-and-reliability/README.md) (messaging port and per-send dispatch ledger). Regression gates from [E01](../01-shopify-baseline-stabilization/README.md), [E04](../04-standalone-manual-order-mvp/README.md), [E05](../05-standalone-order-ingestion-api/README.md), [E06](../06-easyorders-integration/README.md) and [E07](../07-woocommerce-integration/README.md) must stay green. E08 does not wait for any commerce epic to go live.
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -184,7 +184,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | 2 | [US-08-02 — Record template identity per send](US-08-02-record-template-identity-per-send.md) | P0 | Technical enabler | [US-08-01](US-08-01-meta-contract-and-live-template-reconciliation.md) | Done (2026-10-05) |
 | 3 | [US-08-03 — Template registry and send-path cutover](US-08-03-template-registry-and-send-path-cutover.md) | P0 | Technical enabler | [US-08-02](US-08-02-record-template-identity-per-send.md) | Done (2026-10-05) |
 | 4 | [US-08-04 — Meta sync, status webhooks and send guardrail](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | P0 | Feature | [US-08-03](US-08-03-template-registry-and-send-path-cutover.md) | Implemented (2026-10-05), switches off; awaiting webhook subscription confirmation |
-| 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Backlog |
+| 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Implemented (2026-10-05); test send off until its phone list is set |
 | 6 | [US-08-06 — Admin: create, edit, submit, activate, retire](US-08-06-admin-create-edit-submit-activate-retire.md) | P0 | Feature | [US-08-05](US-08-05-admin-inspect-templates.md) | Backlog |
 | 7 | [US-08-07 — Message improvements](US-08-07-message-improvements.md) | P1 | Feature | [US-08-06](US-08-06-admin-create-edit-submit-activate-retire.md) | Backlog |
 | 8 | [US-08-08 — Release gate](US-08-08-release-gate.md) | P0 | Quality gate | [US-08-07](US-08-07-message-improvements.md) | Backlog |
@@ -215,8 +215,10 @@ Each story lists its own open decisions after its acceptance criteria. The ones 
 2. **US-08-02:** fill the dead `verifications.template_name` and `language_code` columns with real values, or deprecate them. **Decided 2026-10-05:** filled with real values on each accepted send, and their defaults dropped.
 3. **US-08-03:** the stable key scheme. Also confirm that keys are global while the Meta snapshot is per environment. **Decided 2026-10-05:** `cod_confirm.<language>.<style>`, global keys in one table, Meta-side fields filled per environment by sync, and no Meta status in the seed.
 4. **US-08-04:** the alert channel, and what happens when a language default itself becomes unavailable. **Decided 2026-10-05:** health signal plus a log alert, no email; skip and record, without pausing automation.
-5. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow.
-6. **US-08-07:**
+5. **US-08-05:** the test phone allowlist and how stores are shown. **Decided 2026-10-05:** `WHATSAPP_TEMPLATE_TEST_PHONES` per environment; store names with a link.
+6. **Found by the US-08-01 dev run (2026-10-05), not decided:** `en` / `direct` is sent as `akeed_cod_verification_direct_`, a name Meta does not hold; Meta holds `akeed_cod_verification_direct`. Either the registry row is renamed (which changes that variant's payload on purpose) or a template with the old name is created at Meta. See contract record 5.2.
+7. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow.
+8. **US-08-07:**
    - Approval of every copy draft.
    - Whether free-form messages (acknowledgment and nudge) live in the registry.
    - Switch scope: global or per store.

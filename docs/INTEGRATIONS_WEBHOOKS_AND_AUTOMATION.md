@@ -285,7 +285,7 @@ Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) k
 
 Re-running with the same Meta data changes nothing. `GET /api/admin/templates/sync/runs` shows the last 20 runs to any staff member.
 
-The adapter reads `components` only in the creation syntax and `quality_score` only as a documented string. The record does not give their shape in the list response, so anything else is `unknown`, which never blocks a send and is never called drift. This part is provisional until the US-08-01 live run captures a list response.
+The adapter reads `components` in the creation syntax and `quality_score` as the `{ score, date }` object the list response carries; both shapes were observed on the dev app on 2026-10-05 (contract record section 3). Anything else is `unknown`, which never blocks a send and is never called drift.
 
 **Template webhooks.** `POST /webhooks/whatsapp` keeps its message handling unchanged. After it, `MetaTemplateWebhookHandler` reads the signed raw body, because the request DTO and the global validation pipe strip `field`, `entry.id`, `entry.time` and every template member. It reads `message_template_status_update`, `message_template_quality_update` and `template_category_update`:
 
@@ -301,6 +301,40 @@ The adapter reads `components` only in the creation syntax and `quality_score` o
 **Guardrail.** `selectTemplateForSend` (`src/shared/messaging/template-selector.ts`) applies it on every send, reminders and the onboarding test included. With the switch on and the environment synced at least once, a template is sendable only when it is active and `review_status = 'approved'`. Otherwise the language default is sent and the dispatch records `template_fallback_reason = 'not_approved'` and `template_skipped_key`. With no sendable default the send is skipped as `template_unavailable` before the dispatch is claimed: no usage is reserved, nothing crosses to the other language, a first send marks the verification `failed` with that reason (retryable), and a reminder records `follow_up_skipped: template_unavailable`. A re-categorized template stays sendable and only alerts. The registry is cached for 60 seconds per process; the instance that applies a change drops its copy at once.
 
 **Alerts.** `TemplateAlertService` logs `whatsapp-template-alert` lines on a change, for a template in use (a language default, or sent by at least one active store): `template_unavailable` and `template_recategorized` (critical), `template_text_changed` and `template_sync_failed` (attention). The admin store list adds the per-store `template_unavailable` health signal (`src/modules/admin/admin-template-health.sql.ts`).
+
+### Staff Template Pages: Reading Status and Drift (US-08-05)
+
+Staff inspect the registry at `/[locale]/admin/templates` (list) and `/[locale]/admin/templates/[key]` (detail). The pages are read-only apart from "Sync now" and a test send, which need a named template operator. They are served by `GET /api/admin/templates`, `GET /api/admin/templates/:key` and `POST /api/admin/templates/:key/test-send`, all behind `AdminAccessGuard`; `from` and `to` (UTC calendar dates, at most 92 days) choose the range for metrics.
+
+**Meta status.** What the last sync or webhook said, in neutral words. Only **Approved** is sent once the guardrail is on.
+
+| Shown | Meaning | What to do |
+| --- | --- | --- |
+| Not synced yet | This environment has never read its templates from Meta. | Turn sync on and run one sync. |
+| Approved | Meta allows it. | Nothing. |
+| In review, Appeal requested, Reinstated, Unarchived | Meta has not said it may be sent. | Wait; the next sync reads the real status. |
+| Paused, Disabled, Rejected, Flagged, Locked, Limit exceeded | Meta will refuse it. With the guardrail on, stores that chose it get the language default. | Check WhatsApp Manager. A pause ends by itself; a disabled or rejected template needs a new one. |
+| Archived, Being deleted, Deleted | Meta is removing it. An archived template is deleted 28 days later. | Unarchive in WhatsApp Manager if it is still needed. |
+| Missing at Meta | Meta holds no template under this name and language code. | Compare with "At Meta, not in Akeed" on the sync result: a near-identical name there is usually the cause. |
+
+"Cannot be sent" next to a template means it is active in Akeed but not approved. A category Meta is about to change is shown under the category; the template keeps sending.
+
+**Text check (drift).** After each sync the backend compares what Akeed sends and previews with Meta's copy (`src/shared/messaging/template-drift.ts`). The Meta spoke reads Meta's placeholders; nothing else parses them.
+
+| Shown | Meaning |
+| --- | --- |
+| Matches Meta | No difference. |
+| Differs from Meta, red | A **send** difference: the parameter format, the variables Akeed fills, or the buttons (Akeed fills exactly two quick replies, confirm then cancel). Meta may refuse the message or fill it wrongly. Fix before stores keep sending it. |
+| Differs from Meta, amber | A **preview** difference: the message text or a button label differs from the hand-kept preview merchants see. Customers receive Meta's text and the message is still delivered. |
+| Missing at Meta | See above. |
+| Could not read | Meta returned the template in a form Akeed does not read (a media header, for example). Nothing was compared. |
+| Not checked | Never synced. |
+
+The detail page lists each difference with Akeed's side and Meta's side, and shows Meta's text in a phone with sample values, in the template's own direction. Until US-08-07g replaces the merchant preview, every existing template shows a preview difference: the dev run of 2026-10-05 found none of the hand-kept previews equal to Meta's text.
+
+**Test send.** An operator sends the template with sample values to a number on `WHATSAPP_TEMPLATE_TEST_PHONES`. It goes through the messaging port like a store's send, so the payload is the real one, but it creates no order, verification, dispatch or usage, and its buttons carry an ID no verification has, so a tap changes nothing. The template must be active and, once the environment has synced, approved. Limits are the onboarding test's (30 seconds apart, 5 per 24 hours), per staff member. One audit row records the template key, never the phone or the text. A staff test is not counted in template metrics.
+
+**Metrics.** Sends WhatsApp accepted in the range, merchant tests excluded, from the per-send identity of US-08-02. Rates are shares of those sends, and a reply after a reminder counts for the reminder.
 
 ## Verification Core Pipeline
 
