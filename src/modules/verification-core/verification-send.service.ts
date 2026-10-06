@@ -24,6 +24,12 @@ import {
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { MessageTextsService } from '../message-texts/message-texts.service';
+import {
+  formatOrderTotal,
+  legacyOrderTotal,
+} from '../../shared/messaging/message-values';
+import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
@@ -138,6 +144,8 @@ export class VerificationSendService {
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
     private readonly improvementSwitches?: MessageImprovementSwitches,
+    @Optional()
+    private readonly messageTexts?: MessageTextsService,
   ) {}
 
   private switches() {
@@ -464,9 +472,23 @@ export class VerificationSendService {
         // showed customers an opaque string instead of the order they placed.
         // It stays as the fallback for rows whose number was never captured.
         orderNumber: order.orderNumber?.trim() || order.externalOrderId,
-        totalPrice: `${order.totalPrice} ${order.currency ?? ''}`.trim(),
+        totalPrice: switches.amountFormatting
+          ? formatOrderTotal(
+              order.totalPrice,
+              order.currency,
+              template.language,
+            )
+          : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
         template,
+        ...(switches.localizedFallbacks
+          ? await this.localizedFallbacks({
+              language: template.language,
+              customerName: order.customerName,
+              storeName: integration.storeName,
+              verificationId: verification.id,
+            })
+          : {}),
       });
     } catch (error) {
       const errInfo = normalizeError(error);
@@ -591,6 +613,66 @@ export class VerificationSendService {
     }
 
     return { status: 'sent', waMessageId, sentAt };
+  }
+
+  /**
+   * The staff-managed words for a missing customer or store name, read only
+   * for the name that is missing (US-08-07e). A missing text leaves that word
+   * to the adapter, as before, and says so in the log; it never stops the
+   * send.
+   */
+  private async localizedFallbacks(params: {
+    language: TemplateLanguage;
+    customerName: string | null | undefined;
+    storeName: string | null | undefined;
+    verificationId: string;
+  }): Promise<{ fallbacks?: { customer?: string; store?: string } }> {
+    const missing = {
+      customer: !(params.customerName ?? '').trim(),
+      store: !(params.storeName ?? '').trim(),
+    };
+    if (!missing.customer && !missing.store) return {};
+    const read = async (
+      purpose: 'fallback_customer_name' | 'fallback_store_name',
+    ): Promise<string | undefined> => {
+      try {
+        const text = await this.messageTexts?.resolve(purpose, params.language);
+        if (text) return text.body.trim();
+      } catch (error) {
+        this.logger.warn(
+          buildBackendLog('VerificationSendService', {
+            action: 'sendOnce.localizedFallback',
+            outcome: 'failure',
+            verificationId: params.verificationId,
+            purpose,
+            resolvedLanguage: params.language,
+            ...normalizeError(error),
+          }),
+        );
+        return undefined;
+      }
+      this.logger.warn(
+        buildBackendLog('VerificationSendService', {
+          action: 'sendOnce.localizedFallback',
+          outcome: 'skipped',
+          verificationId: params.verificationId,
+          purpose,
+          resolvedLanguage: params.language,
+          reason: 'message_text_unavailable',
+        }),
+      );
+      return undefined;
+    };
+    const fallbacks = {
+      ...(missing.customer
+        ? { customer: await read('fallback_customer_name') }
+        : {}),
+      ...(missing.store ? { store: await read('fallback_store_name') } : {}),
+    };
+    const found = Object.fromEntries(
+      Object.entries(fallbacks).filter(([, value]) => value),
+    );
+    return Object.keys(found).length ? { fallbacks: found } : {};
   }
 
   /** Which template a send carried, for logs: identifiers only, no text. */

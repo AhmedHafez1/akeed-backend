@@ -73,11 +73,18 @@ export class WhatsAppService {
     totalPrice: string;
     verificationId: string;
     template: SelectedCodTemplate;
+    fallbacks?: { customer?: string; store?: string };
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     const bodyParameterValueByKey: Record<TemplateVariableKey, string> = {
-      customer: (params.customerName ?? '').trim() || 'Customer',
-      store: (params.storeName ?? '').trim() || 'Akeed Store',
+      customer:
+        (params.customerName ?? '').trim() ||
+        params.fallbacks?.customer ||
+        'Customer',
+      store:
+        (params.storeName ?? '').trim() ||
+        params.fallbacks?.store ||
+        'Akeed Store',
       order: params.orderNumber,
       total: params.totalPrice,
     };

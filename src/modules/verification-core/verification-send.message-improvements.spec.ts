@@ -27,6 +27,7 @@ function setup(
     integration?: Record<string, unknown>;
     order?: Record<string, unknown>;
     switches?: Partial<MessageImprovementSwitchState>;
+    texts?: Partial<Record<string, string>>;
   } = {},
 ) {
   const integration = {
@@ -99,6 +100,15 @@ function setup(
     seededTemplateRegistry(options.templates ?? seededRegistryTemplates()),
     undefined,
     { current: () => switches } as never,
+    {
+      resolve: jest.fn((purpose: string, language: string) =>
+        Promise.resolve(
+          options.texts?.[`${purpose}.${language}`] === undefined
+            ? null
+            : { body: options.texts[`${purpose}.${language}`] },
+        ),
+      ),
+    } as never,
   );
   return { service, messageDispatches, messagingPort };
 }
@@ -247,6 +257,118 @@ describe('VerificationSendService and US-08-07', () => {
       await service.sendInitial('ver-1');
       expect(claimed(messageDispatches).templateName).toBe(
         'akeed_cod_verification',
+      );
+    });
+  });
+
+  describe('e. localized name fallbacks', () => {
+    const TEXTS = {
+      'fallback_customer_name.ar': 'عميلنا العزيز',
+      'fallback_store_name.ar': 'متجرنا',
+      'fallback_customer_name.en': 'there',
+      'fallback_store_name.en': 'our store',
+    };
+
+    function sentParams(messagingPort: {
+      sendVerificationTemplate: jest.Mock;
+    }) {
+      const [params] = messagingPort.sendVerificationTemplate.mock.calls[0] as [
+        { fallbacks?: Record<string, string>; totalPrice: string },
+      ];
+      return params;
+    }
+
+    it.each([
+      ['+966501234567', 'عميلنا العزيز', 'متجرنا'],
+      ['+14155550101', 'there', 'our store'],
+    ])(
+      'hands the adapter the words of the send language for %s',
+      async (phone, customer, store) => {
+        const { service, messagingPort } = setup({
+          order: { customerName: '  ', customerPhone: phone },
+          integration: { storeName: null },
+          switches: { localizedFallbacks: true },
+          texts: TEXTS,
+        });
+        await service.sendInitial('ver-1');
+        expect(sentParams(messagingPort).fallbacks).toEqual({
+          customer,
+          store,
+        });
+      },
+    );
+
+    it('reads no word for a name that is present', async () => {
+      const { service, messagingPort } = setup({
+        switches: { localizedFallbacks: true },
+        texts: TEXTS,
+      });
+      await service.sendInitial('ver-1');
+      expect(sentParams(messagingPort)).not.toHaveProperty('fallbacks');
+    });
+
+    it('with the switch off, passes no fallbacks', async () => {
+      const { service, messagingPort } = setup({
+        order: { customerName: null },
+        integration: { storeName: null },
+        texts: TEXTS,
+      });
+      await service.sendInitial('ver-1');
+      expect(sentParams(messagingPort)).not.toHaveProperty('fallbacks');
+    });
+
+    it('a missing text leaves that word to the adapter, logs why, and still sends', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { service, messagingPort } = setup({
+        order: { customerName: null },
+        integration: { storeName: null },
+        switches: { localizedFallbacks: true },
+        texts: { 'fallback_customer_name.ar': 'عميلنا العزيز' },
+      });
+      await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+        status: 'sent',
+      });
+      expect(sentParams(messagingPort).fallbacks).toEqual({
+        customer: 'عميلنا العزيز',
+      });
+      expect(
+        warn.mock.calls.map(([line]) => JSON.parse(String(line)) as object),
+      ).toContainEqual(
+        expect.objectContaining({
+          action: 'sendOnce.localizedFallback',
+          purpose: 'fallback_store_name',
+          reason: 'message_text_unavailable',
+        }),
+      );
+    });
+  });
+
+  describe('f. amount formatting', () => {
+    it.each([
+      ['+966501234567', 'SAR', '1,250.00 ر.س'],
+      ['+14155550101', 'SAR', 'SAR 1,250.00'],
+      ['+201001112223', 'EGP', '1,250.00 ج.م'],
+      ['+14155550101', 'KWD', 'KWD 1,250.000'],
+      ['+14155550101', null, '1,250.00'],
+    ])(
+      'writes the total for %s in %s as %s',
+      async (phone, currency, total) => {
+        const { service, messagingPort } = setup({
+          order: { customerPhone: phone, currency },
+          switches: { amountFormatting: true },
+        });
+        await service.sendInitial('ver-1');
+        expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith(
+          expect.objectContaining({ totalPrice: total }),
+        );
+      },
+    );
+
+    it('with the switch off, sends the total as before', async () => {
+      const { service, messagingPort } = setup();
+      await service.sendInitial('ver-1');
+      expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({ totalPrice: '1250.00 SAR' }),
       );
     });
   });

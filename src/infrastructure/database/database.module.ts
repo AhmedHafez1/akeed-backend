@@ -28,6 +28,7 @@ import { EasyOrdersConnectionsRepository } from './repositories/easyorders-conne
 import { WooCommerceConnectionsRepository } from './repositories/woocommerce-connections.repository';
 import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
 import { WhatsappTemplatesRepository } from './repositories/whatsapp-templates.repository';
+import { WhatsappMessageTextsRepository } from './repositories/whatsapp-message-texts.repository';
 import { WhatsappTemplateSyncRepository } from './repositories/whatsapp-template-sync.repository';
 import { WhatsappTemplateDraftsRepository } from './repositories/whatsapp-template-drafts.repository';
 import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-template-lifecycle.repository';
@@ -62,6 +63,7 @@ import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-tem
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
     WhatsappTemplatesRepository,
+    WhatsappMessageTextsRepository,
     WhatsappTemplateSyncRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
@@ -94,6 +96,7 @@ import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-tem
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
     WhatsappTemplatesRepository,
+    WhatsappMessageTextsRepository,
     WhatsappTemplateSyncRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,

@@ -27,6 +27,11 @@ export interface MessagingPort {
     verificationId: string;
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
+    /**
+     * Words for a missing customer or store name, in the template's language
+     * (US-08-07e). Absent: the adapter keeps its own words, as before.
+     */
+    fallbacks?: { customer?: string; store?: string };
   }): Promise<{
     messages?: Array<{ id: string }>;
     /** What the adapter sent. Absent when an adapter does not report it. */
