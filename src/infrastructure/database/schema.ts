@@ -29,6 +29,12 @@ import type {
   TemplatePurpose,
   TemplateVariableKey,
 } from '../../shared/messaging/template-registry.types';
+import type {
+  MessageTextPurpose,
+  ServiceMessageKind,
+  ServiceMessageSkipReason,
+  ServiceMessageState,
+} from '../../shared/messaging/message-texts.types';
 
 export const verificationStatus = pgEnum('verification_status', [
   'pending',
@@ -261,7 +267,7 @@ export const whatsappTemplates = pgTable(
       .where(sql`${table.isDefault}`),
     check(
       'whatsapp_templates_purpose_check',
-      sql`${table.purpose} IN ('cod_confirmation')`,
+      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder')`,
     ),
     check(
       'whatsapp_templates_language_check',
@@ -347,7 +353,7 @@ export const whatsappTemplateDrafts = pgTable(
     index('idx_whatsapp_template_drafts_template').on(table.templateId),
     check(
       'whatsapp_template_drafts_purpose_check',
-      sql`${table.purpose} IN ('cod_confirmation')`,
+      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder')`,
     ),
     check(
       'whatsapp_template_drafts_language_check',
@@ -568,6 +574,12 @@ export const integrations = pgTable(
     // above are still written with them until a later migration drops them.
     codTemplateArKey: text('cod_template_ar_key'),
     codTemplateEnKey: text('cod_template_en_key'),
+    // The reminder each language sends (US-08-07a). NULL sends the first-send
+    // template, as before. Read only with WHATSAPP_REMINDER_TEMPLATE_ENABLED.
+    codReminderArKey: text('cod_reminder_ar_key'),
+    codReminderEnKey: text('cod_reminder_en_key'),
+    // The store chose `auto` as its Arabic style (US-08-07d).
+    codTemplateArAuto: boolean('cod_template_ar_auto').default(false).notNull(),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
     avgShippingCost: numeric('avg_shipping_cost', { precision: 10, scale: 2 })
       .default('3')
@@ -667,6 +679,16 @@ export const integrations = pgTable(
       columns: [table.codTemplateEnKey],
       foreignColumns: [whatsappTemplates.key],
       name: 'integrations_cod_template_en_key_fkey',
+    }).onUpdate('cascade'),
+    foreignKey({
+      columns: [table.codReminderArKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_reminder_ar_key_fkey',
+    }).onUpdate('cascade'),
+    foreignKey({
+      columns: [table.codReminderEnKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_reminder_en_key_fkey',
     }).onUpdate('cascade'),
     pgPolicy('Multi-tenant integrations', {
       as: 'permissive',
@@ -3199,5 +3221,222 @@ export const commerceOutcomeSyncs = pgTable(
       'btree',
       table.orderId.asc().nullsLast().op('uuid_ops'),
     ),
+  ],
+).enableRLS();
+
+/**
+ * Free-form copy staff manage (US-08-07): acknowledgments, the nudge and the
+ * name fallbacks. One row per purpose, language and style; `default` is the
+ * language's text and a dialect style overrides it.
+ */
+export const whatsappMessageTexts = pgTable(
+  'whatsapp_message_texts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    purpose: text('purpose').$type<MessageTextPurpose>().notNull(),
+    language: text('language').$type<TemplateLanguage>().notNull(),
+    style: text('style').default('default').notNull(),
+    body: text('body').notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    updatedBy: uuid('updated_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('whatsapp_message_texts_purpose_language_style_key').on(
+      table.purpose,
+      table.language,
+      table.style,
+    ),
+    check(
+      'whatsapp_message_texts_purpose_check',
+      sql`${table.purpose} IN ('ack_confirmed', 'ack_canceled', 'unresolved_reply_nudge', 'fallback_customer_name', 'fallback_store_name')`,
+    ),
+    check(
+      'whatsapp_message_texts_language_check',
+      sql`${table.language} IN ('ar', 'en')`,
+    ),
+    check(
+      'whatsapp_message_texts_style_check',
+      sql`${table.style} ~ '^[a-z][a-z0-9_]{0,39}$'`,
+    ),
+    check(
+      'whatsapp_message_texts_body_check',
+      sql`char_length(${table.body}) BETWEEN 1 AND 4096`,
+    ),
+    pgPolicy('Service role manages whatsapp message texts', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/** Every staff change to a free-form text, with the body before and after. */
+export const whatsappMessageTextEvents = pgTable(
+  'whatsapp_message_text_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => whatsappMessageTexts.id, { onDelete: 'cascade' }),
+    action: text('action').$type<'create' | 'update'>().notNull(),
+    previousBody: text('previous_body'),
+    body: text('body').notNull(),
+    previousIsActive: boolean('previous_is_active'),
+    isActive: boolean('is_active').notNull(),
+    changedBy: uuid('changed_by').notNull(),
+    requestId: text('request_id'),
+    changedAt: timestamp('changed_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_whatsapp_message_text_events_text_changed').on(
+      table.textId,
+      table.changedAt,
+    ),
+    check(
+      'whatsapp_message_text_events_action_check',
+      sql`${table.action} IN ('create', 'update')`,
+    ),
+    pgPolicy('Service role manages whatsapp message text events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Each acknowledgment and nudge (US-08-07). The unique (verification, kind)
+ * is the once-per-verification rule; the row is claimed before the send.
+ * Free at the provider: no usage, dispatch or credit row is written.
+ */
+export const verificationServiceMessages = pgTable(
+  'verification_service_messages',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    kind: text('kind').$type<ServiceMessageKind>().notNull(),
+    state: text('state')
+      .$type<ServiceMessageState>()
+      .default('claimed')
+      .notNull(),
+    skipReason: text('skip_reason').$type<ServiceMessageSkipReason>(),
+    textPurpose: text('text_purpose').$type<MessageTextPurpose>(),
+    textStyle: text('text_style'),
+    language: text('language').$type<TemplateLanguage>(),
+    providerMessageId: text('provider_message_id'),
+    repliedAt: timestamp('replied_at', { withTimezone: true, mode: 'string' }),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_service_messages_verification_fkey',
+    }).onDelete('cascade'),
+    unique('verification_service_messages_once_key').on(
+      table.verificationId,
+      table.kind,
+    ),
+    uniqueIndex('verification_service_messages_provider_message_idx')
+      .on(table.providerMessageId)
+      .where(sql`${table.providerMessageId} IS NOT NULL`),
+    index('idx_verification_service_messages_org_created').on(
+      table.orgId,
+      table.createdAt,
+    ),
+    check(
+      'verification_service_messages_kind_check',
+      sql`${table.kind} IN ('acknowledgment', 'nudge')`,
+    ),
+    check(
+      'verification_service_messages_state_check',
+      sql`${table.state} IN ('claimed', 'sent', 'skipped', 'failed')`,
+    ),
+    check(
+      'verification_service_messages_language_check',
+      sql`${table.language} IS NULL OR ${table.language} IN ('ar', 'en')`,
+    ),
+    check(
+      'verification_service_messages_sent_has_id_check',
+      sql`${table.state} <> 'sent' OR ${table.providerMessageId} IS NOT NULL`,
+    ),
+    pgPolicy('Service role manages verification service messages', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * A typed reply that resolved to an open verification but was not read as an
+ * answer (US-08-07c). No text is stored. Unique per provider message, so a
+ * redelivery is stored once.
+ */
+export const verificationReplyEvents = pgTable(
+  'verification_reply_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    kind: text('kind').$type<'unresolved_reply'>().notNull(),
+    providerMessageId: text('provider_message_id').notNull(),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_reply_events_verification_fkey',
+    }).onDelete('cascade'),
+    unique('verification_reply_events_provider_message_key').on(
+      table.providerMessageId,
+    ),
+    index('idx_verification_reply_events_verification').on(
+      table.verificationId,
+      table.receivedAt,
+    ),
+    index('idx_verification_reply_events_org_received').on(
+      table.orgId,
+      table.receivedAt,
+    ),
+    check(
+      'verification_reply_events_kind_check',
+      sql`${table.kind} IN ('unresolved_reply')`,
+    ),
+    pgPolicy('Service role manages verification reply events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 ).enableRLS();

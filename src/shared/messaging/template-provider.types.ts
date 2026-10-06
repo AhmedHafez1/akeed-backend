@@ -103,6 +103,7 @@ export const EXPECTED_CATEGORY_BY_PURPOSE: Record<
   TemplateCategory
 > = {
   cod_confirmation: 'utility',
+  cod_reminder: 'utility',
 };
 
 export function isSendableReviewStatus(

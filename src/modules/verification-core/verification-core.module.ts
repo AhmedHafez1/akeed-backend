@@ -13,6 +13,7 @@ import { OrderEligibilityService } from './order-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { CreditEligibilityService } from './credit-eligibility.service';
 import { VerificationAutomationQueueModule } from '../verification-automation/verification-automation-queue.module';
+import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
 
 function extractProviderToken(provider: Provider): InjectionToken {
   if (typeof provider === 'function') {
@@ -41,6 +42,7 @@ export class VerificationCoreModule {
         OrderEligibilityService,
         VerificationSendService,
         CreditEligibilityService,
+        MessageImprovementSwitches,
         ...config.ports,
       ],
       exports: [
@@ -49,6 +51,7 @@ export class VerificationCoreModule {
         OrderEligibilityService,
         VerificationSendService,
         CreditEligibilityService,
+        MessageImprovementSwitches,
         ...config.ports.map(extractProviderToken),
       ],
     };

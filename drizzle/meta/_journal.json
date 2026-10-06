@@ -414,6 +414,20 @@
       "when": 1791936000000,
       "tag": "0058_whatsapp_template_authoring",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0059_whatsapp_reminder_and_auto_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0060_whatsapp_service_messages",
+      "breakpoints": true
     }
   ]
 }

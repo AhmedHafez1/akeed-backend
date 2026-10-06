@@ -396,6 +396,33 @@ are signed with the same `META_APP_SECRET`. `message_template_components_update`
 is not read: a sync detects changed text. If it is subscribed, it is
 acknowledged and ignored.
 
+### Customer-message improvements (US-08-07)
+
+One switch per improvement, each `true` or `false` (default), each read on
+its own. With every switch off the Meta payload is byte-identical to the
+US-08-03 characterization suite on every path. Rollback for any item is
+turning its switch off. Enable one at a time, dev first, and compare its
+US-08-02 metrics before enabling the next.
+
+| Variable | Item | What `true` does |
+| --- | --- | --- |
+| `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | a | The Message tab offers a reminder style per language, among active `cod_reminder` templates. A store that chose one sends it as the reminder; a store that chose none sends its first-send template, as before. A chosen reminder that cannot be sent falls back to the language's reminder default, then to the first-send template, recorded on the dispatch as `template_fallback_reason = reminder_unavailable`. |
+| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | After a customer confirms or cancels (a button or a recognized typed answer), one free-form text is sent, in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. Keep off until US-08-08 verifies contract record 4.10.8. |
+| `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | c | A typed reply to an open verification's message that Akeed could not read gets one free-form nudge, at most once per verification. The reply is stored in `verification_reply_events` without its text; this is stored only while the switch is on. A reply without `context.id` gets nothing. Needs the `unresolved_reply_nudge` texts. Keep off until US-08-08 verifies record 4.10.8. |
+| `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` | d | The Message tab offers `auto` as the Arabic style. A store on `auto` sends the Egyptian style to `+20`, the Gulf style to `+966`, `+971`, `+973`, `+974`, `+965` and `+968`, and the standard style to every other Arabic code. A mapped style that cannot be sent falls back to the Arabic default with `auto_style_unavailable`. Turning it off sends the store's stored Arabic style again. |
+| `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` | e | A missing customer or store name is filled from the `fallback_customer_name` and `fallback_store_name` texts of the send's language, not `Customer` and `Akeed Store`. A missing text keeps the old word for that value and logs `message_text_unavailable`, so add all four texts first. |
+| `WHATSAPP_AMOUNT_FORMATTING_ENABLED` | f | The `total` value is written per language and currency (`1,250.00 ج.م`, `EGP 1,250.00`), with the currency's minor units and Western digits. The amount itself never changes. |
+| `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` | g | The Settings preview and the onboarding test phone are built from the template text Meta returned at the last sync. A template without a snapshot keeps the stored preview. |
+
+The acknowledgment and the nudge are free at Meta (record 4.10.5): they take
+no usage or credit and write no dispatch row. They are recorded in
+`verification_service_messages`, once per verification and kind, claimed
+before the send. Each is sent once and never retried. Outside the 24-hour
+customer service window, or when Meta answers `131047`, it is a recorded skip
+(`outside_window`, `window_closed`), not a failure. The texts are managed by
+the template operators under `/api/admin/message-texts` (same
+`WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
+
 ## Redis (Job Queue)
 
 The webhook processing job queue uses BullMQ backed by Redis.

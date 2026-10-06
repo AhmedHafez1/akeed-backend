@@ -53,6 +53,7 @@
     "test:contract:whatsapp-template-registry": "jest --config ./test/jest-whatsapp-template-registry-contract.json --runInBand",
     "test:contract:whatsapp-template-sync": "jest --config ./test/jest-whatsapp-template-sync-contract.json --runInBand",
     "test:contract:whatsapp-template-authoring": "jest --config ./test/jest-whatsapp-template-authoring-contract.json --runInBand",
+    "test:contract:whatsapp-message-improvements": "jest --config ./test/jest-whatsapp-message-improvements-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
     "test:core:platform-neutral": "jest --runInBand src/modules/verification-core src/modules/commerce-outcomes",
     "test:gate:e02": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e02-release-gate.ps1",

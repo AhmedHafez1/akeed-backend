@@ -15,6 +15,7 @@ const UUID_PATTERN =
  *   template writes, the sync among them.
  * - `testPhones` are the staff numbers a template test may be sent to
  *   (US-08-05). With none listed, test sends are off.
+ * - `messageImprovements` are the US-08-07 switches, one per item.
  */
 export interface WhatsappTemplateConfig {
   syncEnabled: boolean;
@@ -24,7 +25,56 @@ export interface WhatsappTemplateConfig {
   businessAccountId: string | null;
   /** In international format with a leading `+`. */
   testPhones: ReadonlySet<string>;
+  messageImprovements: MessageImprovementSwitchState;
 }
+
+/**
+ * The US-08-07 customer-message improvements. Each is off by default, and
+ * with every one off the provider payload is byte-identical to before.
+ *
+ * - `reminderTemplate` (a): a store may choose a `cod_reminder` template.
+ * - `acknowledgment` (b): a free-form reply after a customer confirms or
+ *   cancels.
+ * - `unresolvedReplyNudge` (c): a free-form nudge after an unreadable typed
+ *   reply.
+ * - `arabicStyleAuto` (d): a store may choose `auto` as its Arabic style.
+ * - `localizedFallbacks` (e): staff-managed words for a missing name.
+ * - `amountFormatting` (f): the total written per language and currency.
+ * - `snapshotPreview` (g): previews read the provider's synced text.
+ */
+export interface MessageImprovementSwitchState {
+  reminderTemplate: boolean;
+  acknowledgment: boolean;
+  unresolvedReplyNudge: boolean;
+  arabicStyleAuto: boolean;
+  localizedFallbacks: boolean;
+  amountFormatting: boolean;
+  snapshotPreview: boolean;
+}
+
+export const MESSAGE_IMPROVEMENT_SWITCHES_OFF: MessageImprovementSwitchState =
+  Object.freeze({
+    reminderTemplate: false,
+    acknowledgment: false,
+    unresolvedReplyNudge: false,
+    arabicStyleAuto: false,
+    localizedFallbacks: false,
+    amountFormatting: false,
+    snapshotPreview: false,
+  });
+
+const MESSAGE_IMPROVEMENT_ENV: Record<
+  keyof MessageImprovementSwitchState,
+  string
+> = {
+  reminderTemplate: 'WHATSAPP_REMINDER_TEMPLATE_ENABLED',
+  acknowledgment: 'WHATSAPP_ACKNOWLEDGMENT_ENABLED',
+  unresolvedReplyNudge: 'WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED',
+  arabicStyleAuto: 'WHATSAPP_ARABIC_STYLE_AUTO_ENABLED',
+  localizedFallbacks: 'WHATSAPP_LOCALIZED_FALLBACKS_ENABLED',
+  amountFormatting: 'WHATSAPP_AMOUNT_FORMATTING_ENABLED',
+  snapshotPreview: 'WHATSAPP_SNAPSHOT_PREVIEW_ENABLED',
+};
 
 /**
  * A phone number as the test allowlist keeps it: `+` and digits. Spaces,
@@ -57,6 +107,12 @@ export function parseWhatsappTemplateConfig(
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
   const businessAccountId = read('WA_BUSINESS_ACCOUNT_ID');
+  const messageImprovements = Object.fromEntries(
+    Object.entries(MESSAGE_IMPROVEMENT_ENV).map(([name, key]) => [
+      name,
+      flag(key),
+    ]),
+  ) as unknown as MessageImprovementSwitchState;
   const testPhones = read('WHATSAPP_TEMPLATE_TEST_PHONES')
     .split(',')
     .map((value) => value.trim())
@@ -94,6 +150,7 @@ export function parseWhatsappTemplateConfig(
     testPhones: new Set(
       testPhones.filter((phone): phone is string => phone !== null),
     ),
+    messageImprovements: Object.freeze(messageImprovements),
   };
 }
 

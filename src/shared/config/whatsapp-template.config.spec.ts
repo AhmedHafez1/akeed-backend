@@ -22,6 +22,41 @@ describe('parseWhatsappTemplateConfig', () => {
     expect(isWhatsappTemplateOperator(config, OPERATOR)).toBe(false);
   });
 
+  it('ships with every US-08-07 switch off, and reads each on its own', () => {
+    expect(parseWhatsappTemplateConfig({}).messageImprovements).toEqual({
+      reminderTemplate: false,
+      acknowledgment: false,
+      unresolvedReplyNudge: false,
+      arabicStyleAuto: false,
+      localizedFallbacks: false,
+      amountFormatting: false,
+      snapshotPreview: false,
+    });
+    const names = {
+      WHATSAPP_REMINDER_TEMPLATE_ENABLED: 'reminderTemplate',
+      WHATSAPP_ACKNOWLEDGMENT_ENABLED: 'acknowledgment',
+      WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED: 'unresolvedReplyNudge',
+      WHATSAPP_ARABIC_STYLE_AUTO_ENABLED: 'arabicStyleAuto',
+      WHATSAPP_LOCALIZED_FALLBACKS_ENABLED: 'localizedFallbacks',
+      WHATSAPP_AMOUNT_FORMATTING_ENABLED: 'amountFormatting',
+      WHATSAPP_SNAPSHOT_PREVIEW_ENABLED: 'snapshotPreview',
+    } as const;
+    for (const [key, name] of Object.entries(names)) {
+      const switches = parseWhatsappTemplateConfig({
+        [key]: 'true',
+      }).messageImprovements;
+      expect(Object.entries(switches).filter(([, on]) => on)).toEqual([
+        [name, true],
+      ]);
+    }
+  });
+
+  it('rejects a US-08-07 switch that is not true or false', () => {
+    expect(() =>
+      parseWhatsappTemplateConfig({ WHATSAPP_ACKNOWLEDGMENT_ENABLED: 'yes' }),
+    ).toThrow(/WHATSAPP_ACKNOWLEDGMENT_ENABLED must be true or false/);
+  });
+
   it('has no test phone until one is listed, and keeps each as + and digits', () => {
     expect(parseWhatsappTemplateConfig({}).testPhones.size).toBe(0);
     expect([

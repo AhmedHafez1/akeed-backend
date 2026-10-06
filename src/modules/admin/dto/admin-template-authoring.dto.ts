@@ -8,7 +8,10 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { TEMPLATE_LANGUAGES } from '../../../shared/messaging/template-registry.types';
+import {
+  TEMPLATE_LANGUAGES,
+  TEMPLATE_PURPOSES,
+} from '../../../shared/messaging/template-registry.types';
 import type {
   TemplateLanguage,
   TemplateParameterFormat,
@@ -78,7 +81,7 @@ export class AdminTemplateTextDto {
 }
 
 export class AdminTemplateDraftDto extends AdminTemplateTextDto {
-  @IsIn(['cod_confirmation'])
+  @IsIn([...TEMPLATE_PURPOSES])
   purpose!: TemplatePurpose;
 
   @IsIn([...TEMPLATE_LANGUAGES])

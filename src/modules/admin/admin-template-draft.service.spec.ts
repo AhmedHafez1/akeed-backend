@@ -675,7 +675,7 @@ describe('AdminTemplateDraftService (US-08-06 criteria 2 to 4)', () => {
       operations: { enabled: true, operator: true },
       environment: { production: false, account_suffix: '0001' },
       options: {
-        purposes: ['cod_confirmation'],
+        purposes: ['cod_confirmation', 'cod_reminder'],
         variables: ['customer', 'store', 'order', 'total'],
         limits: { body: 1024, button_label: 25, style: 24 },
         review_max_hours: 24,

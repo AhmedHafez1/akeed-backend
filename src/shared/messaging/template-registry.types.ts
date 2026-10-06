@@ -12,12 +12,20 @@ export const TEMPLATE_LANGUAGES = [
 ] as const satisfies readonly TemplateLanguage[];
 
 /**
- * What a registry template is for. The COD confirmation also serves the
- * reminder and the merchant's test, as it always has.
+ * What a registry template is for. The COD confirmation is the first send and
+ * the merchant's test, and the reminder too unless the store chose a
+ * `cod_reminder` template and WHATSAPP_REMINDER_TEMPLATE_ENABLED is on
+ * (US-08-07a).
  */
-export type TemplatePurpose = 'cod_confirmation';
+export type TemplatePurpose = 'cod_confirmation' | 'cod_reminder';
+
+export const TEMPLATE_PURPOSES = [
+  'cod_confirmation',
+  'cod_reminder',
+] as const satisfies readonly TemplatePurpose[];
 
 export const COD_CONFIRMATION_PURPOSE: TemplatePurpose = 'cod_confirmation';
+export const COD_REMINDER_PURPOSE: TemplatePurpose = 'cod_reminder';
 
 /** The values a send can put in a template. */
 export type TemplateVariableKey = 'customer' | 'store' | 'order' | 'total';
@@ -77,4 +85,12 @@ export function buildCodConfirmationKey(
   style: string,
 ): string {
   return `cod_confirm.${language}.${style}`;
+}
+
+/** `cod_reminder.<language>.<style>`, as the US-08-06 flow builds it. */
+export function buildCodReminderKey(
+  language: TemplateLanguage,
+  style: string,
+): string {
+  return `cod_reminder.${language}.${style}`;
 }

@@ -43,6 +43,7 @@ export const TEMPLATE_LANGUAGE_CODES: Record<
 /** How a purpose is written in a template name and in a registry key. */
 export const TEMPLATE_PURPOSE_SLUG: Record<TemplatePurpose, string> = {
   cod_confirmation: 'cod_confirm',
+  cod_reminder: 'cod_reminder',
 };
 
 /**
@@ -56,6 +57,7 @@ export const TEMPLATE_PURPOSE_BUTTONS: Record<
   readonly ('confirm' | 'cancel')[]
 > = {
   cod_confirmation: ['confirm', 'cancel'],
+  cod_reminder: ['confirm', 'cancel'],
 };
 
 const STYLE_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
