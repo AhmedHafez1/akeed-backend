@@ -9,10 +9,17 @@ import type {
   TemplateComponentsSnapshot,
 } from '../../../shared/messaging/template-provider.types';
 import type { TemplateTextModel } from '../../../shared/messaging/template-text.types';
+import type {
+  TemplateEditSubmission,
+  TemplateSubmission,
+  TemplateSubmissionResult,
+} from '../../../shared/messaging/template-draft.types';
 import {
   TemplateCatalogError,
+  TemplateSubmissionError,
   type TemplateCatalogErrorCode,
   type TemplateCatalogPort,
+  type TemplateSubmissionErrorCode,
 } from '../../../shared/ports/template-catalog.port';
 import { readWhatsappTemplateConfig } from '../../../shared/config/whatsapp-template.config';
 import {
@@ -23,8 +30,14 @@ import {
   mapCategory,
   mapComponents,
   mapQuality,
+  mapRejectionReason,
+  mapSubmissionErrorCode,
   normalizeLanguageCode,
 } from './meta-template.mapping';
+import {
+  buildMetaCreateBody,
+  buildMetaEditBody,
+} from './meta-template-components.builder';
 import { describeMetaComponents } from './meta-template-text';
 
 /** The Graph version Akeed already sends with (record, "Graph API version"). */
@@ -39,8 +52,20 @@ export const META_TEMPLATE_FIELDS = [
   'category',
   'correct_category',
   'quality_score',
+  'rejected_reason',
   'components',
 ].join(',');
+
+/** One attempt, this long at most. A create or an edit is never retried. */
+export const META_TEMPLATE_WRITE_TIMEOUT_MS = 15_000;
+
+/** A provider trace reference is kept only when it looks like one. */
+const TRACE_REFERENCE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** A template node ID is digits (record 4.1.2); it goes into a URL path. */
+const TEMPLATE_NODE_ID = /^\d{1,32}$/;
+
+type MetaWriteAction = 'meta-template-create' | 'meta-template-edit';
 
 /** Page size and page cap: 60 pages of 100 covers 6,000 templates (4.9.2). */
 export const META_TEMPLATE_PAGE_SIZE = 100;
@@ -54,6 +79,7 @@ interface MetaTemplateNode {
   category?: unknown;
   correct_category?: unknown;
   quality_score?: unknown;
+  rejected_reason?: unknown;
   components?: unknown;
 }
 
@@ -64,8 +90,11 @@ interface MetaTemplatePage {
 
 /**
  * Reads the WhatsApp Business Account's templates from Meta (record 4.1.1),
- * read-only.
+ * and creates and edits them (4.1.3, 4.1.4). It never deletes one.
  *
+ * - A create or an edit is sent once. Whatever the answer, it is not sent
+ *   again here (record 4.1 rule): no answer, a 5xx or a body without a Graph
+ *   code is `unresolved`, because Meta may have applied it.
  * - The token travels in the `Authorization` header only, never in a URL.
  * - Pages are followed with `paging.cursors.after`. `paging.next` is read only
  *   as "is there more"; it is never followed, because it is a full URL that
@@ -112,6 +141,182 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     snapshot: TemplateComponentsSnapshot | null,
   ): TemplateTextModel | null {
     return describeMetaComponents(snapshot);
+  }
+
+  async createTemplate(
+    submission: TemplateSubmission,
+  ): Promise<TemplateSubmissionResult> {
+    const { accountId, token } = this.writeCredentials('meta-template-create');
+    const body = buildMetaCreateBody(submission);
+    if (!body) {
+      throw this.writeFailure(
+        'meta-template-create',
+        'invalid_parameter',
+        false,
+      );
+    }
+    const data = await this.post<{
+      id?: unknown;
+      status?: unknown;
+      category?: unknown;
+    }>(
+      'meta-template-create',
+      `${META_TEMPLATE_GRAPH_BASE_URL}/${accountId}/message_templates`,
+      token,
+      body,
+    );
+    const id =
+      typeof data?.id === 'string'
+        ? data.id
+        : typeof data?.id === 'number'
+          ? String(data.id)
+          : null;
+    if (!id) {
+      // Accepted, but without the ID the template cannot be told apart from
+      // one that was never created: the caller reads the list to find out.
+      throw this.writeFailure('meta-template-create', 'unresolved', true);
+    }
+    this.logger.log(
+      buildBackendLog(MetaTemplateCatalogAdapter.name, {
+        action: 'meta-template-create',
+        outcome: 'success',
+        providerTemplateId: id,
+      }),
+    );
+    return {
+      providerTemplateId: id,
+      status: mapApiStatus(data?.status),
+      category: mapCategory(data?.category),
+    };
+  }
+
+  async editTemplate(
+    providerTemplateId: string,
+    submission: TemplateEditSubmission,
+  ): Promise<void> {
+    const { token } = this.writeCredentials('meta-template-edit');
+    if (!TEMPLATE_NODE_ID.test(providerTemplateId)) {
+      throw this.writeFailure('meta-template-edit', 'invalid_parameter', false);
+    }
+    const data = await this.post<{ success?: unknown }>(
+      'meta-template-edit',
+      `${META_TEMPLATE_GRAPH_BASE_URL}/${providerTemplateId}`,
+      token,
+      buildMetaEditBody(submission),
+    );
+    // Akeed reads `success` only (record 4.1.4).
+    if (data?.success !== true) {
+      throw this.writeFailure('meta-template-edit', 'unresolved', true);
+    }
+    this.logger.log(
+      buildBackendLog(MetaTemplateCatalogAdapter.name, {
+        action: 'meta-template-edit',
+        outcome: 'success',
+        providerTemplateId,
+      }),
+    );
+  }
+
+  private writeCredentials(action: MetaWriteAction): {
+    accountId: string;
+    token: string;
+  } {
+    const accountId = readWhatsappTemplateConfig(this.config).businessAccountId;
+    const token = this.config.get<string>('WA_ACCESS_TOKEN');
+    if (!accountId || !token) {
+      throw this.writeFailure(action, 'not_configured', false);
+    }
+    return { accountId, token };
+  }
+
+  /** One POST, with the token in the header only and no retry. */
+  private async post<T>(
+    action: MetaWriteAction,
+    url: string,
+    token: string,
+    body: Record<string, unknown>,
+  ): Promise<T | undefined> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<T>(url, body, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: META_TEMPLATE_WRITE_TIMEOUT_MS,
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      throw this.classifyWrite(action, error);
+    }
+  }
+
+  private classifyWrite(
+    action: MetaWriteAction,
+    error: unknown,
+  ): TemplateSubmissionError {
+    if (
+      !isAxiosError<{ error?: { code?: unknown; fbtrace_id?: unknown } }>(
+        error,
+      ) ||
+      !error.response
+    ) {
+      return this.writeFailure(action, 'unresolved', true);
+    }
+    const { status, data } = error.response;
+    const metaCode = data?.error?.code;
+    const trace = data?.error?.fbtrace_id;
+    const reference =
+      typeof trace === 'string' && TRACE_REFERENCE.test(trace)
+        ? trace
+        : undefined;
+    if (
+      status >= 500 ||
+      typeof metaCode !== 'number' ||
+      !Number.isInteger(metaCode)
+    ) {
+      return this.writeFailure(
+        action,
+        'unresolved',
+        true,
+        status,
+        status,
+        reference,
+      );
+    }
+    return this.writeFailure(
+      action,
+      mapSubmissionErrorCode(metaCode),
+      false,
+      metaCode,
+      status,
+      reference,
+    );
+  }
+
+  private writeFailure(
+    action: MetaWriteAction,
+    code: TemplateSubmissionErrorCode,
+    ambiguous: boolean,
+    providerCode?: number,
+    httpStatus?: number,
+    providerReference?: string,
+  ): TemplateSubmissionError {
+    this.logger.warn(
+      buildBackendLog(MetaTemplateCatalogAdapter.name, {
+        action,
+        outcome: 'failure',
+        errorCode: code,
+        ambiguous,
+        ...(providerCode !== undefined ? { providerCode } : {}),
+        ...(httpStatus !== undefined ? { httpStatus } : {}),
+        ...(providerReference ? { providerReference } : {}),
+      }),
+    );
+    return new TemplateSubmissionError(
+      code,
+      ambiguous,
+      providerCode,
+      providerReference,
+    );
   }
 
   private async readPage(
@@ -211,6 +416,7 @@ function toRecord(node: MetaTemplateNode): ProviderTemplateRecord | null {
     return null;
   }
   const category = mapCategory(node.category);
+  const rejectionReason = mapRejectionReason(node.rejected_reason);
   // `correct_category` names a coming change (record 4.5.7); equal to the
   // current category, it announces nothing.
   const correct =
@@ -226,5 +432,6 @@ function toRecord(node: MetaTemplateNode): ProviderTemplateRecord | null {
     pendingCategory: correct && correct !== category ? correct : null,
     quality: mapQuality(node.quality_score),
     components: mapComponents(node.components),
+    ...(rejectionReason !== undefined ? { rejectionReason } : {}),
   };
 }

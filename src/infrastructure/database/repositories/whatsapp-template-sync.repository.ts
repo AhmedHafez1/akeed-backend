@@ -95,8 +95,8 @@ function stateColumns(state: ProviderState) {
  * key is read from its old variant column, which is what its sends use while
  * that column exists (US-08-03).
  */
-const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
-const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
+export const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
+export const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
 
 const EVENT_AT_FIELD = {
   status: 'statusEventAt',
@@ -203,6 +203,8 @@ export class WhatsappTemplateSyncRepository {
       id: string;
       next: ProviderState;
       drift: boolean;
+      /** Why review rejected it; undefined leaves the stored reason. */
+      rejectionReason?: string | null;
     }[];
     providerTemplateCount: number;
     updatedCount: number;
@@ -223,6 +225,9 @@ export class WhatsappTemplateSyncRepository {
             qualityEventAt: sql`GREATEST(${whatsappTemplates.qualityEventAt}, ${startedAt}::timestamptz)`,
             categoryEventAt: sql`GREATEST(${whatsappTemplates.categoryEventAt}, ${startedAt}::timestamptz)`,
             ...(row.drift ? { componentsDriftAt: syncedAt } : {}),
+            ...(row.rejectionReason !== undefined
+              ? { rejectionReason: row.rejectionReason }
+              : {}),
           })
           .where(eq(whatsappTemplates.id, row.id));
       }
@@ -291,6 +296,9 @@ export class WhatsappTemplateSyncRepository {
           .update(whatsappTemplates)
           .set({
             ...stateColumns(update.next),
+            ...(event.field === 'status' && event.rejectionReason !== undefined
+              ? { rejectionReason: event.rejectionReason }
+              : {}),
             [EVENT_AT_FIELD[event.field]]: event.occurredAt,
             updatedAt: new Date().toISOString(),
           })

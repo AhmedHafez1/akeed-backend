@@ -1,3 +1,4 @@
+import type { TemplateRejectionReason } from './template-draft.types';
 import type { TemplatePurpose } from './template-registry.types';
 
 /**
@@ -67,6 +68,8 @@ export interface ProviderTemplateRecord {
   pendingCategory: TemplateCategory | null;
   quality: TemplateQuality;
   components: TemplateComponentsSnapshot;
+  /** Why review rejected it; absent when the provider did not say. */
+  rejectionReason?: TemplateRejectionReason | null;
 }
 
 export type TemplateEventField = 'status' | 'quality' | 'category';
@@ -87,6 +90,8 @@ export interface TemplateProviderEvent {
   quality?: TemplateQuality;
   category?: TemplateCategory;
   pendingCategory?: TemplateCategory | null;
+  /** On a status event: why review rejected the template, if it did. */
+  rejectionReason?: TemplateRejectionReason | null;
 }
 
 /**

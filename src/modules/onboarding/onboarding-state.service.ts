@@ -26,6 +26,7 @@ import {
   isValidIanaTimezone,
 } from './automation-timezone';
 import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
+import { isLegacyVariant } from '../../shared/messaging/template-legacy-variants';
 import { resolveShippingCurrency } from './shipping-currency';
 import {
   STORE_PLATFORM_PORT,
@@ -61,25 +62,6 @@ const DEFAULT_ESCALATION_DELAY_MINUTES = 360;
 const DEFAULT_QUIET_HOURS_ENABLED = false;
 const DEFAULT_TIMEZONE: AutomationTimezone = 'Asia/Riyadh';
 const DEFAULT_SEND_DELAY_MINUTES = 0;
-
-/**
- * The values the CHECK constraints on the old variant columns allow
- * (migration 0021). Until those columns are dropped after the US-08-08 gate,
- * a settings write sets them together with the registry key, so the previous
- * release can be redeployed and still read the merchant's choice. A style
- * added later is not in these lists and leaves the old column as it was.
- */
-const LEGACY_VARIANT_COLUMN_VALUES: Record<
-  TemplateLanguage,
-  readonly string[]
-> = {
-  ar: ['standard', 'egyptian', 'gulf', 'short'],
-  en: ['friendly', 'professional', 'direct', 'short'],
-};
-
-function isLegacyVariant(language: TemplateLanguage, style: string): boolean {
-  return LEGACY_VARIANT_COLUMN_VALUES[language].includes(style);
-}
 
 @Injectable()
 export class OnboardingStateService {

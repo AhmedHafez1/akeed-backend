@@ -407,6 +407,13 @@
       "when": 1791849600000,
       "tag": "0057_whatsapp_template_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0058_whatsapp_template_authoring",
+      "breakpoints": true
     }
   ]
 }

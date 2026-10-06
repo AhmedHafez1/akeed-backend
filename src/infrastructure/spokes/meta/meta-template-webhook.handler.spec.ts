@@ -76,6 +76,14 @@ describe('MetaTemplateWebhookHandler', () => {
       languageCode: 'ar',
       providerTemplateId: '900000000000001',
       status: status as TemplateProviderEvent['status'],
+      // The reason travels with every status event (record 4.8.8); a
+      // scheduled deletion carries none.
+      rejectionReason:
+        name === 'status-rejected'
+          ? 'invalid_format'
+          : name === 'status-pending-deletion'
+            ? null
+            : 'none',
     });
   });
 

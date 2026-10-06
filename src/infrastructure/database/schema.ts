@@ -246,6 +246,8 @@ export const whatsappTemplates = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    retiredAt: timestamp('retired_at', { withTimezone: true, mode: 'string' }),
+    rejectionReason: text('rejection_reason'),
   },
   (table) => [
     unique('whatsapp_templates_key_key').on(table.key),
@@ -274,6 +276,141 @@ export const whatsappTemplates = pgTable(
       sql`NOT ${table.isDefault} OR ${table.isActive}`,
     ),
     pgPolicy('Service role manages whatsapp templates', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * What an operator writes before and after a template exists at the provider
+ * (US-08-06). `body` uses Akeed's own placeholders (`{{customer}}`); the
+ * provider's syntax is built in its adapter. `templateId` is set only once the
+ * provider has confirmed the template, which is when its registry row is
+ * inserted.
+ */
+export const whatsappTemplateDrafts = pgTable(
+  'whatsapp_template_drafts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    key: text('key').notNull(),
+    purpose: text('purpose').$type<TemplatePurpose>().notNull(),
+    language: text('language').$type<TemplateLanguage>().notNull(),
+    style: text('style').notNull(),
+    version: integer('version').notNull(),
+    metaTemplateName: text('meta_template_name').notNull(),
+    metaLanguageCode: text('meta_language_code').notNull(),
+    parameterFormat: text('parameter_format')
+      .$type<TemplateParameterFormat>()
+      .notNull(),
+    category: text('category').notNull(),
+    body: text('body').notNull(),
+    confirmLabel: text('confirm_label').notNull(),
+    cancelLabel: text('cancel_label').notNull(),
+    samples: jsonb('samples')
+      .$type<Partial<Record<TemplateVariableKey, string>>>()
+      .default({})
+      .notNull(),
+    state: text('state')
+      .$type<'draft' | 'submitting' | 'submit_unknown' | 'submitted'>()
+      .default('draft')
+      .notNull(),
+    stateChangedAt: timestamp('state_changed_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    lastErrorCode: text('last_error_code'),
+    lastProviderReference: text('last_provider_reference'),
+    templateId: uuid('template_id').references(() => whatsappTemplates.id, {
+      onDelete: 'set null',
+    }),
+    createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('whatsapp_template_drafts_key_key').on(table.key),
+    unique('whatsapp_template_drafts_provider_identity_key').on(
+      table.metaTemplateName,
+      table.metaLanguageCode,
+    ),
+    index('idx_whatsapp_template_drafts_template').on(table.templateId),
+    check(
+      'whatsapp_template_drafts_purpose_check',
+      sql`${table.purpose} IN ('cod_confirmation')`,
+    ),
+    check(
+      'whatsapp_template_drafts_language_check',
+      sql`${table.language} IN ('ar', 'en')`,
+    ),
+    check('whatsapp_template_drafts_version_check', sql`${table.version} >= 1`),
+    check(
+      'whatsapp_template_drafts_parameter_format_check',
+      sql`${table.parameterFormat} IN ('named', 'positional')`,
+    ),
+    check(
+      'whatsapp_template_drafts_state_check',
+      sql`${table.state} IN ('draft', 'submitting', 'submit_unknown', 'submitted')`,
+    ),
+    check(
+      'whatsapp_template_drafts_submitted_has_template_check',
+      sql`${table.state} <> 'submitted' OR ${table.templateId} IS NOT NULL`,
+    ),
+    pgPolicy('Service role manages whatsapp template drafts', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Every edit sent to the provider for a template (US-08-06). Akeed counts an
+ * approved template's edits from these rows; `unknown` counts, `refused` does
+ * not.
+ */
+export const whatsappTemplateEdits = pgTable(
+  'whatsapp_template_edits',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    templateId: uuid('template_id')
+      .notNull()
+      .references(() => whatsappTemplates.id, { onDelete: 'cascade' }),
+    requestedBy: uuid('requested_by').notNull(),
+    requestedAt: timestamp('requested_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    outcome: text('outcome')
+      .$type<'applied' | 'refused' | 'unknown'>()
+      .default('unknown')
+      .notNull(),
+    providerReference: text('provider_reference'),
+  },
+  (table) => [
+    index('idx_whatsapp_template_edits_template_requested').on(
+      table.templateId,
+      table.requestedAt,
+    ),
+    check(
+      'whatsapp_template_edits_outcome_check',
+      sql`${table.outcome} IN ('applied', 'refused', 'unknown')`,
+    ),
+    pgPolicy('Service role manages whatsapp template edits', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

@@ -27,6 +27,9 @@ import { BillingObservabilityService } from './billing-observability.service';
 import { BillingReconciliationProducer } from './billing-reconciliation.producer';
 import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
 import { AdminTemplatesController } from './admin-templates.controller';
+import { AdminTemplateAuthoringController } from './admin-template-authoring.controller';
+import { AdminTemplateDraftService } from './admin-template-draft.service';
+import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
 import { AdminTemplatesService } from './admin-templates.service';
 import { AdminTemplateInspectionService } from './admin-template-inspection.service';
 import { AdminTemplateTestSendService } from './admin-template-test-send.service';
@@ -58,6 +61,9 @@ export class AdminModule {
       controllers: [
         AdminController,
         StandaloneBillingController,
+        // Before AdminTemplatesController: its literal `drafts` routes must
+        // be matched before that controller's `:key` routes.
+        AdminTemplateAuthoringController,
         AdminTemplatesController,
       ],
       providers: [
@@ -81,6 +87,8 @@ export class AdminModule {
         AdminTemplatesService,
         AdminTemplateInspectionService,
         AdminTemplateTestSendService,
+        AdminTemplateDraftService,
+        AdminTemplateLifecycleService,
         WhatsappTemplateOperatorGuard,
       ],
     };

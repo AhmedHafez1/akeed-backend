@@ -29,6 +29,8 @@ import { WooCommerceConnectionsRepository } from './repositories/woocommerce-con
 import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
 import { WhatsappTemplatesRepository } from './repositories/whatsapp-templates.repository';
 import { WhatsappTemplateSyncRepository } from './repositories/whatsapp-template-sync.repository';
+import { WhatsappTemplateDraftsRepository } from './repositories/whatsapp-template-drafts.repository';
+import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-template-lifecycle.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -61,6 +63,8 @@ import { WhatsappTemplateSyncRepository } from './repositories/whatsapp-template
     CommerceOutcomeSyncsRepository,
     WhatsappTemplatesRepository,
     WhatsappTemplateSyncRepository,
+    WhatsappTemplateDraftsRepository,
+    WhatsappTemplateLifecycleRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -91,6 +95,8 @@ import { WhatsappTemplateSyncRepository } from './repositories/whatsapp-template
     CommerceOutcomeSyncsRepository,
     WhatsappTemplatesRepository,
     WhatsappTemplateSyncRepository,
+    WhatsappTemplateDraftsRepository,
+    WhatsappTemplateLifecycleRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

@@ -69,6 +69,8 @@ const MIGRATIONS = [
   '0055_integration_template_keys.sql',
   '0056_dispatch_template_fallback.sql',
   '0057_whatsapp_template_sync.sql',
+  // A status event also records the rejection reason, a 0058 column.
+  '0058_whatsapp_template_authoring.sql',
 ];
 const SYNC_MIGRATION = '0057_whatsapp_template_sync.sql';
 

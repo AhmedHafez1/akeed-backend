@@ -21,7 +21,11 @@ import {
 } from '../../shared/ports/template-registry.port';
 import type { ProviderTemplateRecord } from '../../shared/messaging/template-provider.types';
 import { TemplateAlertService } from './template-alert.service';
-import { planSync, providerState } from './template-sync.rules';
+import {
+  planSync,
+  providerState,
+  templateIdentity,
+} from './template-sync.rules';
 
 /** A manual sync is refused this soon after the last one finished (4.9.5). */
 export const MANUAL_SYNC_COOLDOWN_MS = 5 * 60_000;
@@ -97,12 +101,21 @@ export class WhatsappTemplateSyncService {
       const rows = await this.repository.listRows();
       const plan = planSync(rows, records);
       const updated = plan.rows.filter((entry) => entry.changed);
+      const rejectionReasons = new Map(
+        records.map((record) => [
+          templateIdentity(record.templateName, record.languageCode),
+          record.rejectionReason,
+        ]),
+      );
       const finished = await this.repository.completeSync({
         run,
         rows: plan.rows.map(({ row, next, drift }) => ({
           id: row.id,
           next,
           drift,
+          rejectionReason: rejectionReasons.get(
+            templateIdentity(row.templateName, row.languageCode),
+          ),
         })),
         providerTemplateCount: records.length,
         updatedCount: updated.length,

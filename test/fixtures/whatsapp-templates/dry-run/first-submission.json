@@ -1,0 +1,76 @@
+{
+  "_fixture": {
+    "purpose": "The exact request Akeed would send for the first real template submission (US-08-06). It has never been sent: a spec builds it against the in-process fake and compares it with this file.",
+    "draft": {
+      "purpose": "cod_confirmation",
+      "language": "en",
+      "style": "throwaway",
+      "version": 1,
+      "parameterFormat": "named",
+      "body": "Hello {{customer}},\n\nThis is a test of the order confirmation from {{store}}. Your cash on delivery order {{order}} comes to {{total}}.\n\nPlease confirm the order so we can ship it.",
+      "confirmLabel": "Confirm order",
+      "cancelLabel": "Cancel order",
+      "samples": {
+        "customer": "Ahmed",
+        "store": "Akeed Store",
+        "order": "TEST-1",
+        "total": "250.00 USD"
+      }
+    },
+    "redacted": "The account ID and the access token are placeholders. Nothing else is changed."
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://graph.facebook.com/v24.0/<WA_BUSINESS_ACCOUNT_ID>/message_templates",
+    "headers": {
+      "Authorization": "Bearer <WA_ACCESS_TOKEN>"
+    },
+    "timeoutMs": 15000,
+    "retries": 0,
+    "body": {
+      "name": "akeed_cod_confirm_throwaway_v1",
+      "language": "en",
+      "category": "UTILITY",
+      "parameter_format": "NAMED",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Hello {{customer}},\n\nThis is a test of the order confirmation from {{store}}. Your cash on delivery order {{order}} comes to {{total}}.\n\nPlease confirm the order so we can ship it.",
+          "example": {
+            "body_text_named_params": [
+              {
+                "param_name": "customer",
+                "example": "Ahmed"
+              },
+              {
+                "param_name": "store",
+                "example": "Akeed Store"
+              },
+              {
+                "param_name": "order",
+                "example": "TEST-1"
+              },
+              {
+                "param_name": "total",
+                "example": "250.00 USD"
+              }
+            ]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "Confirm order"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "Cancel order"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

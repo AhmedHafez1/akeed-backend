@@ -10,7 +10,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
+import {
+  isWhatsappTemplateOperator,
+  readWhatsappTemplateConfig,
+} from '../../shared/config/whatsapp-template.config';
 import { AdminAccessGuard } from './admin-access.guard';
 import { AdminFunnelService } from './admin-funnel.service';
 import { AdminStoresService } from './admin-stores.service';
@@ -34,16 +39,24 @@ export class AdminController {
     private readonly funnelService: AdminFunnelService,
     private readonly dispatchResolution: MessageDispatchResolutionService,
     private readonly templateMetrics: AdminTemplateMetricsService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('session')
   @Header('Cache-Control', 'private, no-store')
   getSession(@Req() request: RequestWithAdmin) {
+    const templates = readWhatsappTemplateConfig(this.config);
     return {
       authenticated: true,
       role: 'admin',
       user_id: request.admin.userId,
       feature_enabled: true,
+      // So the UI can hide template write controls; the backend refuses
+      // them for anyone else whatever the UI shows (US-08-06 criterion 1).
+      template_operations: {
+        enabled: templates.operationsEnabled,
+        operator: isWhatsappTemplateOperator(templates, request.admin.userId),
+      },
     };
   }
 

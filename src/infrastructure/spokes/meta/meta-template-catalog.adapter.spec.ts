@@ -99,7 +99,7 @@ describe('MetaTemplateCatalogAdapter', () => {
       authorization: `Bearer ${FAKE_TOKEN}`,
       params: {
         fields:
-          'id,name,language,status,category,correct_category,quality_score,components',
+          'id,name,language,status,category,correct_category,quality_score,rejected_reason,components',
         limit: 100,
       },
     });

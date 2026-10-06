@@ -14,6 +14,7 @@ import { TemplateStatusService } from '../../../modules/template-registry/templa
 import {
   mapCategory,
   mapQuality,
+  mapRejectionReason,
   mapWebhookEvent,
   normalizeLanguageCode,
 } from './meta-template.mapping';
@@ -195,7 +196,11 @@ export class MetaTemplateWebhookHandler {
     };
     switch (field) {
       case 'status':
-        return { ...base, status: mapWebhookEvent(value.event) };
+        return {
+          ...base,
+          status: mapWebhookEvent(value.event),
+          rejectionReason: mapRejectionReason(value.reason) ?? null,
+        };
       case 'quality':
         return { ...base, quality: mapQuality(value.new_quality_score) };
       case 'category': {

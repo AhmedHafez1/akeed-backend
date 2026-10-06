@@ -1,3 +1,5 @@
+import type { TemplateRejectionReason } from '../../../shared/messaging/template-draft.types';
+import type { TemplateSubmissionErrorCode } from '../../../shared/ports/template-catalog.port';
 import type {
   TemplateButtonKind,
   TemplateCategory,
@@ -169,4 +171,56 @@ export const TOKEN_ERROR_CODE = 190;
 /** Record 4.1 rule: 10 and 200 to 299 mean the token cannot manage templates. */
 export function isPermissionErrorCode(code: number): boolean {
   return code === 10 || (code >= 200 && code <= 299);
+}
+
+/** The codes Meta names for refusing a template's text (record 4.1.11). */
+const SUBMISSION_ERROR: Record<number, TemplateSubmissionErrorCode> = {
+  100: 'invalid_parameter',
+  131009: 'invalid_parameter',
+  139000: 'integrity_blocked',
+  2388039: 'status_locked',
+  2388040: 'character_limit',
+  2388047: 'format_rejected',
+  2388072: 'format_rejected',
+  2388073: 'format_rejected',
+  2388293: 'parameter_ratio',
+  2388299: 'parameter_at_edge',
+};
+
+/**
+ * What a Graph error code means for a create or an edit. A code the record
+ * does not list is `provider_error`: a failure, never retried (4.1 rule).
+ */
+export function mapSubmissionErrorCode(
+  code: number,
+): TemplateSubmissionErrorCode {
+  if (RATE_LIMIT_ERROR_CODES.has(code)) return 'rate_limited';
+  if (code === TOKEN_ERROR_CODE) return 'auth_failed';
+  if (isPermissionErrorCode(code)) return 'permission_denied';
+  return Object.hasOwn(SUBMISSION_ERROR, code)
+    ? SUBMISSION_ERROR[code]
+    : 'provider_error';
+}
+
+/** Record 4.8.8. `CATEGORY_NOT_AVAILABLE` is deprecated and reads `unknown`. */
+const REJECTION_REASON: Record<string, TemplateRejectionReason> = {
+  ABUSIVE_CONTENT: 'abusive_content',
+  INCORRECT_CATEGORY: 'incorrect_category',
+  INVALID_FORMAT: 'invalid_format',
+  NONE: 'none',
+  PROMOTIONAL: 'promotional',
+  SCAM: 'scam',
+  TAG_CONTENT_MISMATCH: 'tag_content_mismatch',
+};
+
+/**
+ * Why review rejected a template: `rejected_reason` on a listed template
+ * (record 3.2) or `reason` on a status webhook (4.8.6). Undefined when the
+ * provider sent nothing, so a caller can tell "not said" from "none".
+ */
+export function mapRejectionReason(
+  value: unknown,
+): TemplateRejectionReason | undefined {
+  if (value === undefined || value === null) return undefined;
+  return lookup(REJECTION_REASON, value, 'unknown');
 }

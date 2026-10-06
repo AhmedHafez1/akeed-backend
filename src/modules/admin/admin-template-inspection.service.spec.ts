@@ -137,6 +137,8 @@ function setup(
   };
   const catalog = {
     listTemplates: jest.fn(),
+    createTemplate: jest.fn(),
+    editTemplate: jest.fn(),
     // Stands in for the provider adapter: only one snapshot is readable.
     describeComponents: jest.fn(
       (snapshot: TemplateComponentsSnapshot | null) =>
