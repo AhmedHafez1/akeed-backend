@@ -104,6 +104,15 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
       );
     });
 
+    it('names a reminder akeed_cod_reminder_<style>_v<n> (US-08-07a)', () => {
+      expect(buildTemplateName('cod_reminder', 'gulf', 1)).toBe(
+        'akeed_cod_reminder_gulf_v1',
+      );
+      expect(buildDraftKey('cod_reminder', 'ar', 'gulf', 1)).toBe(
+        'cod_reminder.ar.gulf_v1',
+      );
+    });
+
     it('accepts the generated name', () => {
       expect(validateName(draft(), none)).toEqual([]);
     });

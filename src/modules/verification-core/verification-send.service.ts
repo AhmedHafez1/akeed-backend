@@ -23,6 +23,8 @@ import {
   type TemplateSendPurpose,
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
+import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
@@ -134,7 +136,15 @@ export class VerificationSendService {
     private readonly templateRegistry: TemplateRegistryPort,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly improvementSwitches?: MessageImprovementSwitches,
   ) {}
+
+  private switches() {
+    return (
+      this.improvementSwitches?.current() ?? MESSAGE_IMPROVEMENT_SWITCHES_OFF
+    );
+  }
 
   async sendInitial(
     verificationId: string,
@@ -266,6 +276,7 @@ export class VerificationSendService {
     kind: SendKind,
   ): Promise<SendOutcome> {
     const { verification, order, integration } = ctx;
+    const switches = this.switches();
     // Selected before the claim, so the ledger row and the message are built
     // from the same values and a send whose outcome is never learned still
     // says which template it carried.
@@ -281,6 +292,11 @@ export class VerificationSendService {
         guardrail: {
           enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
         },
+        kind,
+        arReminderKey: integration.codReminderArKey,
+        enReminderKey: integration.codReminderEnKey,
+        arAuto: integration.codTemplateArAuto,
+        switches,
       },
     );
     if (!selection.template) {

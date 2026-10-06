@@ -67,3 +67,43 @@ export function syncedApprovedTemplates(
     lastSyncedAt: syncedAt,
   }));
 }
+
+/**
+ * A staff-written reminder (US-08-07a) as the US-08-06 flow registers it:
+ * versioned style, `akeed_cod_reminder_<style>_v<n>`, approved and active.
+ */
+export function reminderTemplate(
+  language: RegistryTemplate['language'],
+  style: string,
+  change: Partial<RegistryTemplate> = {},
+): RegistryTemplate {
+  return {
+    key: `cod_reminder.${language}.${style}`,
+    purpose: 'cod_reminder',
+    language,
+    style,
+    templateName: `akeed_cod_reminder_${style}`,
+    languageCode: language,
+    parameterFormat: 'named',
+    variables: [
+      { key: 'customer', name: 'customer' },
+      { key: 'order', name: 'order' },
+      { key: 'store', name: 'store' },
+      { key: 'total', name: 'total' },
+    ],
+    preview: {
+      greeting: '',
+      body: 'Reminder {{order}}',
+      totalLabel: '',
+      ending: '',
+      confirmButton: 'Confirm',
+      cancelButton: 'Cancel',
+    },
+    isActive: true,
+    isDefault: false,
+    reviewStatus: 'approved',
+    category: 'utility',
+    lastSyncedAt: null,
+    ...change,
+  };
+}

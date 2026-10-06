@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import * as schema from '../src/infrastructure/database';
+import { WhatsappTemplateLifecycleRepository } from '../src/infrastructure/database/repositories/whatsapp-template-lifecycle.repository';
+import { WhatsappTemplateSyncRepository } from '../src/infrastructure/database/repositories/whatsapp-template-sync.repository';
+import { WhatsappTemplatesRepository } from '../src/infrastructure/database/repositories/whatsapp-templates.repository';
+import { AdminTemplateLifecycleService } from '../src/modules/admin/admin-template-lifecycle.service';
 
 /**
  * US-08-07 against real PostgreSQL: migrations 0059 and 0060, their
@@ -38,7 +44,19 @@ const client = postgres(isolatedDatabaseUrl(), {
   onnotice: () => undefined,
   connection: { search_path: `${namespace},public` },
 });
+const database = drizzle(client, { schema });
 let created = false;
+const registryRepository = new WhatsappTemplatesRepository(database);
+const registry = {
+  listTemplates: () => registryRepository.findAll(),
+  invalidate: jest.fn(),
+};
+const lifecycle = new AdminTemplateLifecycleService(
+  new WhatsappTemplateLifecycleRepository(database),
+  {} as never,
+  registry,
+);
+const syncRepository = new WhatsappTemplateSyncRepository(database);
 
 const MIGRATIONS = [
   '0054_whatsapp_templates_registry.sql',
@@ -111,7 +129,18 @@ describe('US-08-07 message improvements against PostgreSQL', () => {
         is_active boolean DEFAULT true,
         default_language text DEFAULT 'auto',
         cod_template_ar_variant text DEFAULT 'standard' NOT NULL,
-        cod_template_en_variant text DEFAULT 'friendly' NOT NULL
+        cod_template_en_variant text DEFAULT 'friendly' NOT NULL,
+        updated_at timestamp with time zone DEFAULT now()
+      );
+      CREATE TABLE admin_access_audit (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid,
+        action text NOT NULL,
+        outcome text NOT NULL,
+        request_id text,
+        target_integration_id uuid,
+        metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+        created_at timestamp with time zone DEFAULT now()
       );
       CREATE TABLE verification_message_dispatches (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid()
@@ -389,6 +418,67 @@ describe('US-08-07 message improvements against PostgreSQL', () => {
         'received_at',
         'created_at',
       ]);
+    });
+  });
+
+  describe('reminder templates in the US-08-06 lifecycle', () => {
+    async function insertReminder(style: string, isDefault = false) {
+      await client`
+        INSERT INTO whatsapp_templates (key, purpose, language, style,
+          meta_template_name, meta_language_code, parameter_format,
+          variable_mapping, preview, is_active, is_default, review_status,
+          category, last_synced_at)
+        VALUES (${`cod_reminder.ar.${style}`}, 'cod_reminder', 'ar', ${style},
+          ${`akeed_cod_reminder_${style}`}, 'ar', 'named', '[]'::jsonb,
+          '{}'::jsonb, true, ${isDefault}, 'approved', 'utility', now())`;
+    }
+
+    it('counts and moves the stores that chose a reminder, and leaves their first-send choice alone', async () => {
+      await insertReminder('warm_v1', true);
+      await insertReminder('calm_v1');
+      const [chosen] = await client<{ id: string }[]>`
+        INSERT INTO integrations (cod_template_ar_key, cod_reminder_ar_key)
+        VALUES ('cod_confirm.ar.gulf', 'cod_reminder.ar.calm_v1') RETURNING id`;
+
+      const counts = await syncRepository.activeStoreCountsByKey([
+        'cod_reminder.ar.calm_v1',
+        'cod_confirm.ar.gulf',
+      ]);
+      expect(counts.get('cod_reminder.ar.calm_v1')).toBe(1);
+      expect(
+        (await lifecycle.impact('cod_reminder.ar.calm_v1')).stores,
+      ).toEqual({ total: 1, active: 1 });
+
+      const result = await lifecycle.act({
+        userId: STAFF,
+        key: 'cod_reminder.ar.calm_v1',
+        action: 'retire',
+        replacementKey: 'cod_reminder.ar.warm_v1',
+        requestId: 'req-retire-reminder',
+      });
+      expect(result).toMatchObject({ retired: true, moved_stores: 1 });
+      const [after] = await client<
+        { cod_template_ar_key: string; cod_reminder_ar_key: string }[]
+      >`
+        SELECT cod_template_ar_key, cod_reminder_ar_key
+        FROM integrations WHERE id = ${chosen.id}`;
+      expect(after).toEqual({
+        cod_template_ar_key: 'cod_confirm.ar.gulf',
+        cod_reminder_ar_key: 'cod_reminder.ar.warm_v1',
+      });
+    });
+
+    it('refuses a first-send template as the replacement of a reminder', async () => {
+      await insertReminder('quiet_v1');
+      await expect(
+        lifecycle.act({
+          userId: STAFF,
+          key: 'cod_reminder.ar.quiet_v1',
+          action: 'retire',
+          replacementKey: 'cod_confirm.ar.gulf',
+          requestId: 'req-retire-wrong',
+        }),
+      ).rejects.toThrow();
     });
   });
 

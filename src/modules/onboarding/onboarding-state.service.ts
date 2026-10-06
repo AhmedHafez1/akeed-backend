@@ -33,10 +33,13 @@ import {
   type StorePlatformPort,
 } from '../../shared/ports/store-platform.port';
 import { findSelectableByStyle } from '../../shared/messaging/template-selector';
-import type {
-  RegistryTemplate,
-  TemplateLanguage,
+import {
+  COD_REMINDER_PURPOSE,
+  type RegistryTemplate,
+  type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
+import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
@@ -81,6 +84,8 @@ export class OnboardingStateService {
     private readonly organizationsRepo?: OrganizationsRepository,
     @Optional()
     private readonly sourceSetup?: SourceSetupService,
+    @Optional()
+    private readonly improvementSwitches?: MessageImprovementSwitches,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -162,7 +167,9 @@ export class OnboardingStateService {
     }
     if (
       payload.codTemplateArVariant !== undefined ||
-      payload.codTemplateEnVariant !== undefined
+      payload.codTemplateEnVariant !== undefined ||
+      payload.codReminderArVariant !== undefined ||
+      payload.codReminderEnVariant !== undefined
     ) {
       const templates = await this.templateRegistry.listTemplates();
       if (payload.codTemplateArVariant !== undefined) {
@@ -187,6 +194,31 @@ export class OnboardingStateService {
           updates.codTemplateEnVariant = template.style;
         }
       }
+      if (payload.codReminderArVariant !== undefined) {
+        updates.codReminderArKey = this.reminderKeyFor(
+          templates,
+          'ar',
+          payload.codReminderArVariant,
+        );
+      }
+      if (payload.codReminderEnVariant !== undefined) {
+        updates.codReminderEnKey = this.reminderKeyFor(
+          templates,
+          'en',
+          payload.codReminderEnVariant,
+        );
+      }
+    }
+    if (payload.codTemplateArAuto !== undefined) {
+      if (payload.codTemplateArAuto && !this.switches().arabicStyleAuto) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'The automatic Arabic style is not available',
+          code: 'SETTINGS_ARABIC_AUTO_UNAVAILABLE',
+        });
+      }
+      updates.codTemplateArAuto = payload.codTemplateArAuto;
     }
 
     // Cross-field validation: followUpDelayMinutes < escalationDelayMinutes
@@ -259,6 +291,40 @@ export class OnboardingStateService {
     );
 
     return this.toState(updated);
+  }
+
+  private switches() {
+    return (
+      this.improvementSwitches?.current() ?? MESSAGE_IMPROVEMENT_SWITCHES_OFF
+    );
+  }
+
+  /**
+   * A reminder style, or null for "same as the first message". Only an
+   * active reminder of that language, and only while the switch is on;
+   * clearing is always allowed.
+   */
+  private reminderKeyFor(
+    templates: readonly RegistryTemplate[],
+    language: TemplateLanguage,
+    style: string | null,
+  ): string | null {
+    if (style === null) return null;
+    const template = this.switches().reminderTemplate
+      ? findSelectableByStyle(templates, language, style, COD_REMINDER_PURPOSE)
+      : undefined;
+    if (!template) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message:
+          language === 'ar'
+            ? 'Unsupported Arabic reminder style'
+            : 'Unsupported English reminder style',
+        code: 'SETTINGS_REMINDER_STYLE_UNAVAILABLE',
+      });
+    }
+    return template.key;
   }
 
   /**

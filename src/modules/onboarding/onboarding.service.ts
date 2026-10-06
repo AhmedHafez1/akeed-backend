@@ -38,10 +38,13 @@ import {
   selectableTemplates,
   storedTemplateKey,
 } from '../../shared/messaging/template-selector';
-import type {
-  RegistryTemplate,
-  TemplateLanguage,
+import {
+  COD_REMINDER_PURPOSE,
+  type RegistryTemplate,
+  type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
+import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
@@ -96,6 +99,8 @@ export class OnboardingService {
     private readonly ordersRepo?: OrdersRepository,
     @Optional()
     private readonly sourceSetup?: SourceSetupService,
+    @Optional()
+    private readonly improvementSwitches?: MessageImprovementSwitches,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -358,6 +363,50 @@ export class OnboardingService {
         en: selectableTemplates(templates, 'en').map(toTemplateStyleDto),
       },
       previews: { ar: selected.ar.preview, en: selected.en.preview },
+      ...this.messageImprovementSettings(templates, integration),
+    };
+  }
+
+  /**
+   * The US-08-07 choices, each present only while its switch is on, so the
+   * response is unchanged with both off.
+   */
+  private messageImprovementSettings(
+    templates: readonly RegistryTemplate[],
+    integration: IntegrationRecord,
+  ): Pick<SettingsResponseDto['template'], 'reminder' | 'arabicAuto'> {
+    const switches =
+      this.improvementSwitches?.current() ?? MESSAGE_IMPROVEMENT_SWITCHES_OFF;
+    const reminders = (language: TemplateLanguage) =>
+      selectableTemplates(templates, language, COD_REMINDER_PURPOSE);
+    // A stored reminder that is no longer selectable reads as "same as the
+    // first message"; the send then uses the reminder default or the first
+    // message, and records why.
+    const selectedReminder = (language: TemplateLanguage) => {
+      const key =
+        language === 'ar'
+          ? integration.codReminderArKey
+          : integration.codReminderEnKey;
+      return reminders(language).find((row) => row.key === key)?.style ?? null;
+    };
+    return {
+      ...(switches.reminderTemplate
+        ? {
+            reminder: {
+              selected: {
+                ar: selectedReminder('ar'),
+                en: selectedReminder('en'),
+              },
+              variants: {
+                ar: reminders('ar').map(toTemplateStyleDto),
+                en: reminders('en').map(toTemplateStyleDto),
+              },
+            },
+          }
+        : {}),
+      ...(switches.arabicStyleAuto
+        ? { arabicAuto: { selected: integration.codTemplateArAuto === true } }
+        : {}),
     };
   }
 

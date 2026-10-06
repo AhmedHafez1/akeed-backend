@@ -98,6 +98,18 @@ function stateColumns(state: ProviderState) {
 export const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
 export const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
 
+/**
+ * Every store column that names a template a store sends: the first send per
+ * language and, since US-08-07a, the reminder per language. Keys of the two
+ * purposes never collide, so one store counts once per key.
+ */
+const STORE_KEY_EXPRESSIONS = [
+  STORE_AR_KEY,
+  STORE_EN_KEY,
+  sql<string>`${integrations.codReminderArKey}`,
+  sql<string>`${integrations.codReminderEnKey}`,
+];
+
 const EVENT_AT_FIELD = {
   status: 'statusEventAt',
   quality: 'qualityEventAt',
@@ -344,7 +356,7 @@ export class WhatsappTemplateSyncRepository {
   ): Promise<Map<string, number>> {
     if (keys.length === 0) return new Map();
     const counts = new Map<string, number>();
-    for (const expression of [STORE_AR_KEY, STORE_EN_KEY]) {
+    for (const expression of STORE_KEY_EXPRESSIONS) {
       const rows = await this.db
         .select({ key: expression, stores: sql<number>`count(*)::int` })
         .from(integrations)
@@ -369,7 +381,7 @@ export class WhatsappTemplateSyncRepository {
   ): Promise<{ total: number; stores: TemplateStoreUse[] }> {
     const uses = and(
       eq(integrations.isActive, true),
-      or(eq(STORE_AR_KEY, key), eq(STORE_EN_KEY, key)),
+      or(...STORE_KEY_EXPRESSIONS.map((expression) => eq(expression, key))),
     );
     const storeName = sql<
       string | null

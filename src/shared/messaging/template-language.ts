@@ -26,7 +26,15 @@ const ARABIC_COUNTRY_CALLING_CODES = [
   '967', // Yemen
 ] as const;
 
-export function isArabicPhoneNumber(phoneNumber: string): boolean {
+export type ArabicCallingCode = (typeof ARABIC_COUNTRY_CALLING_CODES)[number];
+
+/**
+ * The Arabic country calling code a number starts with, or NULL. The one
+ * matcher both the language choice and the Arabic style choice read.
+ */
+export function matchArabicCallingCode(
+  phoneNumber: string,
+): ArabicCallingCode | null {
   const normalizedNumber = phoneNumber.replace(/[^\d+]/g, '');
   const internationalDigits = normalizedNumber.startsWith('+')
     ? normalizedNumber.slice(1)
@@ -34,9 +42,15 @@ export function isArabicPhoneNumber(phoneNumber: string): boolean {
       ? normalizedNumber.slice(2)
       : normalizedNumber;
 
-  return ARABIC_COUNTRY_CALLING_CODES.some((dialCode) =>
-    internationalDigits.startsWith(dialCode),
+  return (
+    ARABIC_COUNTRY_CALLING_CODES.find((dialCode) =>
+      internationalDigits.startsWith(dialCode),
+    ) ?? null
   );
+}
+
+export function isArabicPhoneNumber(phoneNumber: string): boolean {
+  return matchArabicCallingCode(phoneNumber) !== null;
 }
 
 export function resolveTemplateLanguageForPhone(

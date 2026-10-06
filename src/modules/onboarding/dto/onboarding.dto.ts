@@ -13,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import type {
@@ -173,6 +174,34 @@ export class UpdateOnboardingSettingsDto {
   @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
   codTemplateEnVariant?: string;
 
+  /**
+   * The style of an active Arabic reminder template, or null for "same as the
+   * first message" (US-08-07a). Accepted only while the reminder switch is
+   * on; checked in the service.
+   */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderArVariant?: string | null;
+
+  /** As `codReminderArVariant`, for English. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderEnVariant?: string | null;
+
+  /**
+   * The Arabic style follows the customer's calling code (US-08-07d).
+   * `true` is accepted only while the switch is on.
+   */
+  @IsOptional()
+  @IsBoolean()
+  codTemplateArAuto?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(32)
@@ -323,6 +352,21 @@ export interface SettingsResponseDto {
       ar: MessageTemplatePreviewDto;
       en: MessageTemplatePreviewDto;
     };
+    /**
+     * The reminder styles a merchant may choose (US-08-07a). Present only
+     * while WHATSAPP_REMINDER_TEMPLATE_ENABLED is on. `selected` is null for
+     * "same as the first message".
+     */
+    reminder?: {
+      selected: { ar: string | null; en: string | null };
+      variants: { ar: TemplateStyleDto[]; en: TemplateStyleDto[] };
+    };
+    /**
+     * Whether the Arabic style follows the customer's calling code
+     * (US-08-07d). Present only while WHATSAPP_ARABIC_STYLE_AUTO_ENABLED is
+     * on.
+     */
+    arabicAuto?: { selected: boolean };
   };
 }
 

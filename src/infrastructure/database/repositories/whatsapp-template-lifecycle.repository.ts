@@ -23,7 +23,7 @@ import {
   type TemplateLifecycleRefusal,
 } from '../../../shared/messaging/template-lifecycle.policy';
 import type { TemplateReviewStatus } from '../../../shared/messaging/template-provider.types';
-import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
+import { COD_REMINDER_PURPOSE } from '../../../shared/messaging/template-registry.types';
 import {
   insertTemplateAudit,
   toPreview,
@@ -120,9 +120,17 @@ export type EditStart =
       draft: TemplateDraftRow;
     };
 
-/** The store column that names a template of this language. */
-function storeKeyOf(language: TemplateLanguage) {
-  return language === 'ar' ? STORE_AR_KEY : STORE_EN_KEY;
+/**
+ * The store column that names a template of this purpose and language. A
+ * reminder (US-08-07a) has its own columns and no old variant column.
+ */
+function storeKeyOf(template: Pick<LifecycleTemplate, 'purpose' | 'language'>) {
+  if (template.purpose === COD_REMINDER_PURPOSE) {
+    return template.language === 'ar'
+      ? sql<string>`${integrations.codReminderArKey}`
+      : sql<string>`${integrations.codReminderEnKey}`;
+  }
+  return template.language === 'ar' ? STORE_AR_KEY : STORE_EN_KEY;
 }
 
 /**
@@ -413,7 +421,7 @@ export class WhatsappTemplateLifecycleRepository {
         active: sql<number>`count(*) FILTER (WHERE ${integrations.isActive})::int`,
       })
       .from(integrations)
-      .where(eq(storeKeyOf(template.language), template.key));
+      .where(eq(storeKeyOf(template), template.key));
     return { total: Number(row?.total ?? 0), active: Number(row?.active ?? 0) };
   }
 
@@ -428,23 +436,29 @@ export class WhatsappTemplateLifecycleRepository {
     to: LifecycleRow,
     now: string,
   ): Promise<number> {
-    const legacy = isLegacyVariant(from.language, to.style);
+    const legacy =
+      from.purpose !== COD_REMINDER_PURPOSE &&
+      isLegacyVariant(from.language, to.style);
+    const reminderColumn =
+      from.language === 'ar' ? 'codReminderArKey' : 'codReminderEnKey';
     const moved = await tx
       .update(integrations)
       .set(
-        from.language === 'ar'
-          ? {
-              codTemplateArKey: to.key,
-              ...(legacy ? { codTemplateArVariant: to.style } : {}),
-              updatedAt: now,
-            }
-          : {
-              codTemplateEnKey: to.key,
-              ...(legacy ? { codTemplateEnVariant: to.style } : {}),
-              updatedAt: now,
-            },
+        from.purpose === COD_REMINDER_PURPOSE
+          ? { [reminderColumn]: to.key, updatedAt: now }
+          : from.language === 'ar'
+            ? {
+                codTemplateArKey: to.key,
+                ...(legacy ? { codTemplateArVariant: to.style } : {}),
+                updatedAt: now,
+              }
+            : {
+                codTemplateEnKey: to.key,
+                ...(legacy ? { codTemplateEnVariant: to.style } : {}),
+                updatedAt: now,
+              },
       )
-      .where(eq(storeKeyOf(from.language), from.key))
+      .where(eq(storeKeyOf(from), from.key))
       .returning({ id: integrations.id });
     return moved.length;
   }

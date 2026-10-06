@@ -1,8 +1,10 @@
+import { arabicStyleForPhone } from './arabic-style';
 import type { SelectedCodTemplate } from './cod-template-selector';
 import { resolveTemplateLanguageForPhone } from './template-language';
 import { isSendableReviewStatus } from './template-provider.types';
 import {
   COD_CONFIRMATION_PURPOSE,
+  COD_REMINDER_PURPOSE,
   buildCodConfirmationKey,
   type RegistryTemplate,
   type TemplateLanguage,
@@ -16,7 +18,17 @@ export type TemplateFallbackReason =
   | 'key_inactive'
   | 'wrong_language'
   /** The guardrail is on and the provider has not approved the template. */
-  | 'not_approved';
+  | 'not_approved'
+  /**
+   * The store's reminder and the language's reminder default could not be
+   * sent, so the reminder carried the first-send template (US-08-07a).
+   */
+  | 'reminder_unavailable'
+  /**
+   * The style `auto` mapped the number to could not be sent, so the Arabic
+   * default was (US-08-07d).
+   */
+  | 'auto_style_unavailable';
 
 /**
  * Whether a send may use only templates the provider has approved. It applies
@@ -100,8 +112,9 @@ export function findSelectableByStyle(
   templates: readonly RegistryTemplate[],
   language: TemplateLanguage,
   style: string,
+  purpose: TemplatePurpose = COD_CONFIRMATION_PURPOSE,
 ): RegistryTemplate | undefined {
-  return selectableTemplates(templates, language).find(
+  return selectableTemplates(templates, language, purpose).find(
     (template) => template.style === style,
   );
 }
@@ -180,6 +193,47 @@ export function resolveTemplate(
     : { template: null, reason: 'default_unavailable' };
 }
 
+/**
+ * The sendable template of a style: the style itself, else its newest
+ * staff-written version (`<style>_v<n>`). US-08-06 names authored styles that
+ * way, so `egyptian` also finds `egyptian_v2`.
+ */
+export function findSendableByStyle(
+  templates: readonly RegistryTemplate[],
+  params: {
+    language: TemplateLanguage;
+    purpose: TemplatePurpose;
+    style: string;
+    guardrail?: TemplateSendGuardrail;
+  },
+): RegistryTemplate | undefined {
+  const guardrailOn = guardrailApplies(templates, params.guardrail);
+  const sendable = selectableTemplates(
+    templates,
+    params.language,
+    params.purpose,
+  ).filter((template) => isSendableTemplate(template, guardrailOn));
+  const exact = sendable.find((template) => template.style === params.style);
+  if (exact) return exact;
+  const versioned = new RegExp(`^${params.style}_v(\\d+)$`);
+  return sendable
+    .map((template) => ({
+      template,
+      version: Number(versioned.exec(template.style)?.[1] ?? NaN),
+    }))
+    .filter(({ version }) => Number.isInteger(version))
+    .sort((left, right) => right.version - left.version)[0]?.template;
+}
+
+/**
+ * The switches of US-08-07 the selector reads. Absent means off, which is how
+ * every send was selected before.
+ */
+export interface TemplateSelectionSwitches {
+  reminderTemplate?: boolean;
+  arabicStyleAuto?: boolean;
+}
+
 export type TemplateSelection =
   | {
       template: SelectedCodTemplate;
@@ -226,12 +280,78 @@ export function selectTemplateForSend(
     arLegacyVariant?: string | null;
     enLegacyVariant?: string | null;
     guardrail?: TemplateSendGuardrail;
+    /** `follow_up` is the reminder. Absent reads as the first send. */
+    kind?: 'initial' | 'follow_up';
+    arReminderKey?: string | null;
+    enReminderKey?: string | null;
+    /** The store chose `auto` as its Arabic style. */
+    arAuto?: boolean;
+    switches?: TemplateSelectionSwitches;
   },
 ): TemplateSelection {
   const language = resolveTemplateLanguageForPhone(
     params.preferredLanguage,
     params.phoneNumber ?? '',
   );
+  const autoStyle =
+    language === 'ar' &&
+    params.arAuto === true &&
+    params.switches?.arabicStyleAuto === true
+      ? arabicStyleForPhone(params.phoneNumber)
+      : null;
+
+  const firstSend = autoStyle
+    ? resolveAutoStyle(templates, {
+        style: autoStyle,
+        guardrail: params.guardrail,
+      })
+    : resolveStoredFirstSend(templates, language, params);
+  if (!firstSend.template) return firstSend;
+
+  if (params.kind !== 'follow_up' || params.switches?.reminderTemplate !== true)
+    return firstSend;
+  const reminderKey =
+    language === 'ar' ? params.arReminderKey : params.enReminderKey;
+  // No reminder chosen: the reminder is the first-send template, as before.
+  if (!reminderKey) return firstSend;
+
+  const reminder = autoStyle
+    ? resolveAutoReminder(templates, {
+        style: autoStyle,
+        storedKey: reminderKey,
+        guardrail: params.guardrail,
+      })
+    : resolveTemplate(templates, {
+        language,
+        storedKey: reminderKey,
+        purpose: COD_REMINDER_PURPOSE,
+        guardrail: params.guardrail,
+      });
+  if (reminder.template) {
+    return {
+      template: toSelectedTemplate(reminder.template),
+      storedKey: reminderKey,
+      fallbackReason: reminder.fallbackReason,
+    };
+  }
+  return {
+    template: firstSend.template,
+    storedKey: reminderKey,
+    fallbackReason: 'reminder_unavailable',
+  };
+}
+
+function resolveStoredFirstSend(
+  templates: readonly RegistryTemplate[],
+  language: TemplateLanguage,
+  params: {
+    arKey?: string | null;
+    enKey?: string | null;
+    arLegacyVariant?: string | null;
+    enLegacyVariant?: string | null;
+    guardrail?: TemplateSendGuardrail;
+  },
+): TemplateSelection {
   const storedKey = storedTemplateKey(
     language === 'ar'
       ? { language, key: params.arKey, legacyVariant: params.arLegacyVariant }
@@ -250,4 +370,71 @@ export function selectTemplateForSend(
     storedKey,
     fallbackReason: resolution.fallbackReason,
   };
+}
+
+/**
+ * `auto`: the Arabic template of the style the number maps to, else the
+ * Arabic default with `auto_style_unavailable`. The key `auto` stood for is
+ * recorded as the one passed over.
+ */
+function resolveAutoStyle(
+  templates: readonly RegistryTemplate[],
+  params: { style: string; guardrail?: TemplateSendGuardrail },
+): TemplateSelection {
+  const storedKey = buildCodConfirmationKey('ar', params.style);
+  const mapped = findSendableByStyle(templates, {
+    language: 'ar',
+    purpose: COD_CONFIRMATION_PURPOSE,
+    style: params.style,
+    guardrail: params.guardrail,
+  });
+  if (mapped) return { template: toSelectedTemplate(mapped), storedKey };
+  const fallback = findSendableDefault(
+    templates,
+    'ar',
+    COD_CONFIRMATION_PURPOSE,
+    guardrailApplies(templates, params.guardrail),
+  );
+  return fallback
+    ? {
+        template: toSelectedTemplate(fallback),
+        storedKey,
+        fallbackReason: 'auto_style_unavailable',
+      }
+    : {
+        template: null,
+        language: 'ar',
+        storedKey,
+        reason: 'default_unavailable',
+      };
+}
+
+/**
+ * A store on `auto` that chose a reminder gets the reminder of the mapped
+ * style, else the Arabic reminder default with `auto_style_unavailable`.
+ */
+function resolveAutoReminder(
+  templates: readonly RegistryTemplate[],
+  params: {
+    style: string;
+    storedKey: string;
+    guardrail?: TemplateSendGuardrail;
+  },
+): TemplateResolution {
+  const mapped = findSendableByStyle(templates, {
+    language: 'ar',
+    purpose: COD_REMINDER_PURPOSE,
+    style: params.style,
+    guardrail: params.guardrail,
+  });
+  if (mapped) return { template: mapped };
+  const fallback = findSendableDefault(
+    templates,
+    'ar',
+    COD_REMINDER_PURPOSE,
+    guardrailApplies(templates, params.guardrail),
+  );
+  return fallback
+    ? { template: fallback, fallbackReason: 'auto_style_unavailable' }
+    : { template: null, reason: 'default_unavailable' };
 }
