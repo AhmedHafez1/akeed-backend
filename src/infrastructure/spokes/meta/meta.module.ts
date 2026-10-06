@@ -9,6 +9,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { WhatsappTemplateSyncModule } from '../../../modules/template-registry/whatsapp-template-sync.module';
 import { MetaTemplateCatalogAdapter } from './meta-template-catalog.adapter';
 import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
+import { VerificationAutomationQueueModule } from '../../../modules/verification-automation/verification-automation-queue.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
     ConfigModule,
     DatabaseModule,
     WhatsappTemplateSyncModule,
+    VerificationAutomationQueueModule,
   ],
   controllers: [WhatsAppWebhookController],
   providers: [

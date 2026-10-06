@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DelayedError, Job } from 'bullmq';
 import {
   VERIFICATION_AUTOMATION_QUEUE_NAME,
@@ -22,6 +22,7 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { AUTOMATION_FINAL_STATUSES } from '../../shared/verification/verification-lifecycle';
+import { CustomerReplyFollowUpService } from '../verification-replies/customer-reply-follow-up.service';
 
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
 
@@ -37,6 +38,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly verificationHub: VerificationHubService,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
     private readonly billingEntitlements: BillingEntitlementService,
+    @Optional()
+    private readonly replyFollowUps?: CustomerReplyFollowUpService,
   ) {
     super();
   }
@@ -66,6 +69,10 @@ export class VerificationAutomationProcessor extends WorkerHost {
         return;
       case VerificationAutomationJobType.ESCALATE_NO_REPLY:
         await this.handleEscalateNoReply(job, token);
+        return;
+      case VerificationAutomationJobType.ACKNOWLEDGMENT:
+      case VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE:
+        await this.handleReplyFollowUp(job);
         return;
       default:
         this.logger.warn(
@@ -375,6 +382,55 @@ export class VerificationAutomationProcessor extends WorkerHost {
           outcome: 'failure',
           orgId: verification.orgId,
           verificationId: verification.id,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // ACKNOWLEDGMENT AND NUDGE (US-08-07 b, c)
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Best effort and never retried: nothing here throws back to BullMQ, and
+   * quiet hours do not apply because the message answers the customer.
+   */
+  private async handleReplyFollowUp(
+    job: Job<VerificationAutomationJobPayload>,
+  ): Promise<void> {
+    const { data } = job;
+    if (!this.replyFollowUps || !data.reply) {
+      this.logger.warn(
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-reply-follow-up',
+          outcome: 'skipped',
+          jobId: String(job.id),
+          verificationId: data.verificationId,
+          reason: this.replyFollowUps ? 'missing_reply' : 'not_configured',
+        }),
+      );
+      return;
+    }
+    try {
+      await this.replyFollowUps.handle({
+        kind:
+          (job.name as VerificationAutomationJobType) ===
+          VerificationAutomationJobType.ACKNOWLEDGMENT
+            ? 'acknowledgment'
+            : 'nudge',
+        verificationId: data.verificationId,
+        orgId: data.orgId,
+        repliedAt: data.reply.repliedAt,
+        intent: data.reply.intent,
+      });
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(VerificationAutomationProcessor.name, {
+          action: 'verification-automation-reply-follow-up',
+          outcome: 'failure',
+          jobId: String(job.id),
+          verificationId: data.verificationId,
           ...normalizeError(error),
         }),
       );

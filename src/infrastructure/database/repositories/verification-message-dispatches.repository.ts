@@ -2,7 +2,16 @@ import type { CreditTransaction } from '../credit-transaction';
 import { UsageAccountingRouter } from './usage-accounting.router';
 import { reconciliationRequired } from './prepaid-credit-accounting';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  notInArray,
+  sql,
+} from 'drizzle-orm';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import type {
@@ -802,6 +811,32 @@ export class VerificationMessageDispatchesRepository {
 
       return updated ? 1 : 0;
     });
+  }
+
+  /**
+   * The language and variant of the newest send the provider accepted for a
+   * verification, so a reply to it can be written in the same language and
+   * dialect (US-08-07b, c). NULL before any accepted send.
+   */
+  async findLatestAcceptedIdentity(verificationId: string): Promise<{
+    resolvedLanguage: 'ar' | 'en' | null;
+    variantKey: string | null;
+  } | null> {
+    const [row] = await this.db
+      .select({
+        resolvedLanguage: verificationMessageDispatches.resolvedLanguage,
+        variantKey: verificationMessageDispatches.templateVariantKey,
+      })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.verificationId, verificationId),
+          isNotNull(verificationMessageDispatches.acceptedAt),
+        ),
+      )
+      .orderBy(desc(verificationMessageDispatches.acceptedAt))
+      .limit(1);
+    return row ?? null;
   }
 
   async findByProviderMessageId(providerMessageId: string) {

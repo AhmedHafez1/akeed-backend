@@ -15,6 +15,14 @@ interface ScheduleParams {
   dueAt: Date;
 }
 
+interface ReplyFollowUpParams {
+  verificationId: string;
+  orgId: string;
+  /** The provider's time of the customer's message, ISO. */
+  repliedAt: string;
+  intent?: 'confirmed' | 'canceled';
+}
+
 /**
  * Producer for the verification-automation queue.
  *
@@ -53,6 +61,61 @@ export class VerificationAutomationProducer {
       params,
       VerificationAutomationJobType.ESCALATE_NO_REPLY,
       'no-reply',
+    );
+  }
+
+  /**
+   * The acknowledgment and the nudge (US-08-07 b, c): due now, attempted
+   * once. A deterministic job id per verification makes a replayed webhook a
+   * no-op; the row claimed by the worker is what guarantees one message.
+   */
+  async enqueueAcknowledgment(params: ReplyFollowUpParams): Promise<void> {
+    await this.enqueueReplyFollowUp(
+      params,
+      VerificationAutomationJobType.ACKNOWLEDGMENT,
+      'acknowledgment',
+    );
+  }
+
+  async enqueueUnresolvedReplyNudge(
+    params: ReplyFollowUpParams,
+  ): Promise<void> {
+    await this.enqueueReplyFollowUp(
+      params,
+      VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE,
+      'nudge',
+    );
+  }
+
+  private async enqueueReplyFollowUp(
+    params: ReplyFollowUpParams,
+    jobType: VerificationAutomationJobType,
+    suffix: string,
+  ): Promise<void> {
+    const jobId = `verification-${params.verificationId}-${suffix}`;
+    const payload: VerificationAutomationJobPayload = {
+      verificationId: params.verificationId,
+      orgId: params.orgId,
+      scheduledAt: new Date().toISOString(),
+      reply: {
+        repliedAt: params.repliedAt,
+        ...(params.intent ? { intent: params.intent } : {}),
+      },
+    };
+    await this.queue.add(jobType, payload, {
+      ...DEFAULT_QUEUE_JOB_OPTIONS,
+      jobId,
+      attempts: 1,
+    });
+    this.logger.log(
+      buildBackendLog('VerificationAutomationProducer', {
+        action: 'enqueue',
+        outcome: 'success',
+        jobType,
+        verificationId: params.verificationId,
+        delayMs: 0,
+        jobId,
+      }),
     );
   }
 

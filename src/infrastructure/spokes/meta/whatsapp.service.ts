@@ -1,7 +1,12 @@
 import {
   ConfirmedMessageRejection,
+  type FreeFormTextOutcome,
   type MessagingSenderStatus,
 } from '../../../shared/ports/messaging.port';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../../../shared/messaging/message-texts.types';
+
+/** Record 4.10.3: a free-form message outside the window. */
+const WINDOW_CLOSED_ERROR_CODE = 131047;
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -189,6 +194,78 @@ export class WhatsAppService {
         throw new ConfirmedMessageRejection('provider_rejected');
       }
       throw new Error(`WhatsApp send failed: ${context}`);
+    }
+  }
+
+  /**
+   * A text message (record 4.10.4), in the same envelope as a template send.
+   * Sent once, never retried. 131047 is the closed window (record 4.10.3),
+   * an expected outcome. Never throws.
+   */
+  async sendFreeFormText(params: {
+    to: string;
+    body: string;
+    verificationId: string;
+  }): Promise<FreeFormTextOutcome> {
+    if (!params.body || params.body.length > MESSAGE_TEXT_MAX_LENGTH) {
+      return { outcome: 'rejected', code: 'body_length' };
+    }
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: params.to,
+      type: 'text',
+      text: { body: params.body },
+    };
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(this.apiUrl, payload, {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+      const providerMessageId = (response.data as WhatsAppResponse)
+        ?.messages?.[0]?.id;
+      return providerMessageId
+        ? { outcome: 'accepted', providerMessageId }
+        : { outcome: 'failed', code: 'missing_provider_message_id' };
+    } catch (error) {
+      const metaCode = isAxiosError<{ error?: { code?: number } }>(error)
+        ? error.response?.data?.error?.code
+        : undefined;
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const outcome: FreeFormTextOutcome =
+        metaCode === WINDOW_CLOSED_ERROR_CODE
+          ? { outcome: 'window_closed' }
+          : Number.isInteger(metaCode) &&
+              [400, 401, 403, 404, 422].includes(status ?? 0)
+            ? { outcome: 'rejected', code: 'provider_rejected' }
+            : { outcome: 'failed', code: 'provider_error' };
+      const fields = {
+        action: 'whatsapp-text-send',
+        verificationId: params.verificationId,
+        reason: outcome.outcome,
+        providerErrorCode: metaCode ?? 'unknown',
+        ...(status ? { httpStatus: status } : {}),
+      };
+      if (outcome.outcome === 'window_closed') {
+        this.logger.warn(
+          buildBackendLog(WhatsAppService.name, {
+            ...fields,
+            outcome: 'skipped',
+          }),
+        );
+      } else {
+        this.logger.error(
+          buildBackendLog(WhatsAppService.name, {
+            ...fields,
+            outcome: 'failure',
+            ...normalizeError(error),
+          }),
+        );
+      }
+      return outcome;
     }
   }
 

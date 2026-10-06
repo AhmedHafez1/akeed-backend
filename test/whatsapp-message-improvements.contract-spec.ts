@@ -8,6 +8,7 @@ import * as schema from '../src/infrastructure/database';
 import { WhatsappTemplateLifecycleRepository } from '../src/infrastructure/database/repositories/whatsapp-template-lifecycle.repository';
 import { WhatsappTemplateSyncRepository } from '../src/infrastructure/database/repositories/whatsapp-template-sync.repository';
 import { WhatsappTemplatesRepository } from '../src/infrastructure/database/repositories/whatsapp-templates.repository';
+import { WhatsappMessageTextsRepository } from '../src/infrastructure/database/repositories/whatsapp-message-texts.repository';
 import { AdminTemplateLifecycleService } from '../src/modules/admin/admin-template-lifecycle.service';
 
 /**
@@ -479,6 +480,66 @@ describe('US-08-07 message improvements against PostgreSQL', () => {
           requestId: 'req-retire-wrong',
         }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('free-form texts written by staff', () => {
+    const texts = new WhatsappMessageTextsRepository(database);
+    const write = (body: string, isActive = true) =>
+      texts.upsert({
+        purpose: 'ack_canceled',
+        language: 'en',
+        style: 'default',
+        body,
+        isActive,
+        userId: STAFF,
+        requestId: 'req-text',
+        auditAction: 'whatsapp-message-texts.save',
+      });
+
+    it('records every change as an event and an audit row without the text, and nothing for a no-op', async () => {
+      expect((await write('Cancelled #{{order}}.')).action).toBe('create');
+      expect((await write('Cancelled #{{order}}.')).action).toBe('unchanged');
+      const updated = await write('Your order #{{order}} is cancelled.', false);
+      expect(updated.action).toBe('update');
+
+      const events = await client<
+        {
+          action: string;
+          previous_body: string | null;
+          body: string;
+          is_active: boolean;
+        }[]
+      >`
+        SELECT action, previous_body, body, is_active
+        FROM whatsapp_message_text_events WHERE text_id = ${updated.text.id}
+        ORDER BY changed_at, action`;
+      expect(events).toEqual([
+        {
+          action: 'create',
+          previous_body: null,
+          body: 'Cancelled #{{order}}.',
+          is_active: true,
+        },
+        {
+          action: 'update',
+          previous_body: 'Cancelled #{{order}}.',
+          body: 'Your order #{{order}} is cancelled.',
+          is_active: false,
+        },
+      ]);
+      const audits = await client<{ metadata: Record<string, unknown> }[]>`
+        SELECT metadata FROM admin_access_audit
+        WHERE action = 'whatsapp-message-texts.save' AND request_id = 'req-text'`;
+      expect(audits).toHaveLength(2);
+      expect(JSON.stringify(audits)).not.toContain('cancelled');
+      expect(audits[1].metadata).toMatchObject({
+        purpose: 'ack_canceled',
+        change: 'update',
+        isActiveBefore: true,
+        isActiveAfter: false,
+        bodyChanged: true,
+      });
     });
   });
 

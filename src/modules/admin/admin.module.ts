@@ -28,6 +28,8 @@ import { BillingReconciliationProducer } from './billing-reconciliation.producer
 import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
 import { AdminTemplatesController } from './admin-templates.controller';
 import { AdminTemplateAuthoringController } from './admin-template-authoring.controller';
+import { AdminMessageTextsController } from './admin-message-texts.controller';
+import { AdminMessageTextsService } from './admin-message-texts.service';
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
 import { AdminTemplatesService } from './admin-templates.service';
@@ -65,6 +67,7 @@ export class AdminModule {
         // be matched before that controller's `:key` routes.
         AdminTemplateAuthoringController,
         AdminTemplatesController,
+        AdminMessageTextsController,
       ],
       providers: [
         AdminAccessGuard,
@@ -90,6 +93,7 @@ export class AdminModule {
         AdminTemplateDraftService,
         AdminTemplateLifecycleService,
         WhatsappTemplateOperatorGuard,
+        AdminMessageTextsService,
       ],
     };
   }

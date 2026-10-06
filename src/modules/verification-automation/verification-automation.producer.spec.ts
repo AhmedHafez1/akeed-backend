@@ -49,4 +49,51 @@ describe('VerificationAutomationProducer', () => {
       );
     },
   );
+
+  it.each([
+    [
+      'enqueueAcknowledgment',
+      VerificationAutomationJobType.ACKNOWLEDGMENT,
+      'acknowledgment',
+      'confirmed',
+    ],
+    [
+      'enqueueUnresolvedReplyNudge',
+      VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE,
+      'nudge',
+      undefined,
+    ],
+  ] as const)(
+    '%s is due now, attempted once, under one job id per verification (US-08-07)',
+    async (methodName, jobType, suffix, intent) => {
+      await producer[methodName]({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        repliedAt: '2026-10-06T12:00:00.000Z',
+        ...(intent ? { intent } : {}),
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        jobType,
+        expect.objectContaining({
+          verificationId: 'ver-1',
+          orgId: 'org-1',
+          reply: {
+            repliedAt: '2026-10-06T12:00:00.000Z',
+            ...(intent ? { intent } : {}),
+          },
+        }),
+        expect.objectContaining({
+          jobId: `verification-ver-1-${suffix}`,
+          attempts: 1,
+        }),
+      );
+      const [, , options] = queue.add.mock.calls[0] as [
+        string,
+        unknown,
+        Record<string, unknown>,
+      ];
+      expect(options).not.toHaveProperty('delay');
+    },
+  );
 });

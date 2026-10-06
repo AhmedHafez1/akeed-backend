@@ -1,6 +1,6 @@
 {
   "rootDir": "..",
-  "testRegex": "test/whatsapp-message-improvements\\.contract-spec\\.ts$",
+  "testRegex": "test/whatsapp-message-improvements(-usage)?\\.contract-spec\\.ts$",
   "moduleFileExtensions": ["js", "json", "ts"],
   "transform": { "^.+\\.ts$": "ts-jest" },
   "testEnvironment": "node",
