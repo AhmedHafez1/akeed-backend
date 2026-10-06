@@ -167,11 +167,13 @@ export class WhatsAppService {
         template: toSentTemplateIdentity(template),
       };
     } catch (error) {
-      const context = this.buildSafeErrorContext(error, {
-        verificationId: params.verificationId,
-        resolvedLanguage: template.language,
-        templateName: template.templateName,
-      });
+      const context = this.withoutToken(
+        this.buildSafeErrorContext(error, {
+          verificationId: params.verificationId,
+          resolvedLanguage: template.language,
+          templateName: template.templateName,
+        }),
+      );
       this.logger.error(
         buildBackendLog(WhatsAppService.name, {
           action: 'whatsapp-template-send',
@@ -183,7 +185,7 @@ export class WhatsAppService {
           templateName: template.templateName,
           languageCode: template.languageCode,
           context,
-          ...normalizeError(error),
+          ...this.safeError(error),
         }),
       );
       if (
@@ -261,12 +263,34 @@ export class WhatsAppService {
           buildBackendLog(WhatsAppService.name, {
             ...fields,
             outcome: 'failure',
-            ...normalizeError(error),
+            ...this.safeError(error),
           }),
         );
       }
       return outcome;
     }
+  }
+
+  /**
+   * An error from the provider can quote the request, and with it the access
+   * token. Nothing built from one is logged or thrown with the token in it.
+   */
+  private withoutToken(text: string): string {
+    if (!this.accessToken) return text;
+    return text
+      .split(this.accessToken)
+      .join('[REDACTED]')
+      .split(encodeURIComponent(this.accessToken))
+      .join('[REDACTED]');
+  }
+
+  private safeError(error: unknown): ReturnType<typeof normalizeError> {
+    return Object.fromEntries(
+      Object.entries(normalizeError(error)).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? this.withoutToken(value) : value,
+      ]),
+    );
   }
 
   private buildSafeErrorContext(
