@@ -312,7 +312,7 @@ US-08-03 shipped: any template active in Akeed is sent.
 | --- | --- |
 | `WHATSAPP_TEMPLATE_SYNC_ENABLED` | `true` or `false` (default). Turns on the 6-hourly sync from Meta (BullMQ queue `whatsapp-template-sync`), the on-demand sync and the template webhooks. Needs `WA_BUSINESS_ACCOUNT_ID`, and a `WA_ACCESS_TOKEN` with the `whatsapp_business_management` permission. While `false`, template webhooks are acknowledged and ignored, and the schedule is removed. Turning it off keeps the last snapshot. |
 | `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off (US-08-04 open decision 3). Rollback is turning it off. |
-| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. |
+| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. Since US-08-06 the writes are drafts (`/drafts`, `/drafts/:id`, `/drafts/validate`), submission to Meta (`/drafts/:id/submit`, `/drafts/:id/reconcile`), a text edit (`/:key/edit`) and `/:key/activate`, `/:key/deactivate`, `/:key/set-default` and `/:key/retire`. Turning it off is the rollback: templates already approved and active keep sending. `GET /api/admin/session` reports `template_operations.enabled` and `.operator`, so the admin UI hides the controls. |
 | `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Required, each a UUID, whenever operations are on; startup fails otherwise. Staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. |
 | `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page (US-08-05), in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
 
@@ -349,6 +349,28 @@ Logs to grep:
   also writes one `admin_access_audit` row, `whatsapp-templates.test-send`.
 - `meta-template-webhook` — a template delivery that was skipped, with
   `reason` `wrong_account`, `malformed` or `template_sync_disabled`.
+- `meta-template-create`, `meta-template-edit` — each create or edit sent to
+  Meta (US-08-06), with a neutral `errorCode`, `ambiguous`, Meta's numeric
+  code, the HTTP status and Meta's trace reference; never the token, the URL
+  or the template text. `ambiguous: true` means Meta may have applied the
+  request: nothing is sent again until an operator runs "Check at Meta".
+- `whatsapp-template-draft-create`, `whatsapp-template-submit`,
+  `whatsapp-template-reconcile`, `whatsapp-template-edit`,
+  `whatsapp-template-activate`, `whatsapp-template-deactivate`,
+  `whatsapp-template-set_default`, `whatsapp-template-retire` — each staff
+  write, with the staff user, the request ID and the template key.
+
+Every template write also records one `admin_access_audit` row in the same
+transaction as the write, with `action` one of
+`whatsapp-templates.draft.create`, `.draft.update`, `.draft.discard`,
+`.submit`, `.reconcile`, `.edit`, `.activate`, `.deactivate`, `.set-default`
+or `.retire`. Its metadata holds the template key, the flags before and
+after, the replacement key, how many stores moved and Meta's reference;
+never template text.
+
+Before the first real submission in an environment: sync must have run, so
+the registry holds Meta's review status. Activate, set default and the
+replacement for a retire all need `approved`.
 
 The admin store list shows `template_unavailable` per store: critical when no
 template can be sent for a language the store sends in, attention when a

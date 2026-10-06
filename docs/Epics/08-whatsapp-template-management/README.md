@@ -185,7 +185,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | 3 | [US-08-03 — Template registry and send-path cutover](US-08-03-template-registry-and-send-path-cutover.md) | P0 | Technical enabler | [US-08-02](US-08-02-record-template-identity-per-send.md) | Done (2026-10-05) |
 | 4 | [US-08-04 — Meta sync, status webhooks and send guardrail](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | P0 | Feature | [US-08-03](US-08-03-template-registry-and-send-path-cutover.md) | Implemented (2026-10-05), switches off; awaiting webhook subscription confirmation |
 | 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Implemented (2026-10-05); test send off until its phone list is set |
-| 6 | [US-08-06 — Admin: create, edit, submit, activate, retire](US-08-06-admin-create-edit-submit-activate-retire.md) | P0 | Feature | [US-08-05](US-08-05-admin-inspect-templates.md) | Backlog |
+| 6 | [US-08-06 — Admin: create, edit, submit, activate, retire](US-08-06-admin-create-edit-submit-activate-retire.md) | P0 | Feature | [US-08-05](US-08-05-admin-inspect-templates.md) | Implemented (2026-10-06), switch off; first real submission awaiting dry-run approval |
 | 7 | [US-08-07 — Message improvements](US-08-07-message-improvements.md) | P1 | Feature | [US-08-06](US-08-06-admin-create-edit-submit-activate-retire.md) | Backlog |
 | 8 | [US-08-08 — Release gate](US-08-08-release-gate.md) | P0 | Quality gate | [US-08-07](US-08-07-message-improvements.md) | Backlog |
 
@@ -217,7 +217,7 @@ Each story lists its own open decisions after its acceptance criteria. The ones 
 4. **US-08-04:** the alert channel, and what happens when a language default itself becomes unavailable. **Decided 2026-10-05:** health signal plus a log alert, no email; skip and record, without pausing automation.
 5. **US-08-05:** the test phone allowlist and how stores are shown. **Decided 2026-10-05:** `WHATSAPP_TEMPLATE_TEST_PHONES` per environment; store names with a link.
 6. **Found by the US-08-01 dev run (2026-10-05), not decided:** `en` / `direct` is sent as `akeed_cod_verification_direct_`, a name Meta does not hold; Meta holds `akeed_cod_verification_direct`. Either the registry row is renamed (which changes that variant's payload on purpose) or a template with the old name is created at Meta. See contract record 5.2.
-7. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow.
+7. **US-08-06:** the naming convention, one-person or two-person submit, and the dev→prod promotion flow. **Decided 2026-10-06:** `akeed_<purpose>_<style>_v<n>`; one operator for every action, audited; the draft is re-entered in prod; no delete at Meta; variables limited to customer, store, order and total; edits follow the contract record, so a template in use is never edited in place.
 8. **US-08-07:**
    - Approval of every copy draft.
    - Whether free-form messages (acknowledgment and nudge) live in the registry.

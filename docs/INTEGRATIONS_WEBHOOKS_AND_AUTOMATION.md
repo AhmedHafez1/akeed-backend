@@ -274,7 +274,7 @@ Both sides take a transaction-scoped advisory lock on the wamid, so whichever si
 
 Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) keeps a synced copy. Everything here is off until `WHATSAPP_TEMPLATE_SYNC_ENABLED` and, last, `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` are turned on ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates-e08)). Meta behavior comes only from the [US-08-01 contract record](Epics/08-whatsapp-template-management/evidence/US-08-01-contract-record.md).
 
-**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records. `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
+**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records, and since US-08-06 two writes, `createTemplate` and `editTemplate` (see "Staff Template Authoring" below). `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
 
 **Sync.** A BullMQ repeatable job on the `whatsapp-template-sync` queue runs every 6 hours (`concurrency: 1`, one attempt), plus `POST /api/admin/templates/sync` for a named operator and a delayed follow-up after template webhooks. A run:
 
@@ -298,9 +298,27 @@ The adapter reads `components` in the creation syntax and `quality_score` as the
 
 `message_template_components_update` is not read.
 
+A status event also carries Meta's `reason`; it is stored as a neutral value in `whatsapp_templates.rejection_reason`, and a sync reads the same from `rejected_reason` on the list.
+
 **Guardrail.** `selectTemplateForSend` (`src/shared/messaging/template-selector.ts`) applies it on every send, reminders and the onboarding test included. With the switch on and the environment synced at least once, a template is sendable only when it is active and `review_status = 'approved'`. Otherwise the language default is sent and the dispatch records `template_fallback_reason = 'not_approved'` and `template_skipped_key`. With no sendable default the send is skipped as `template_unavailable` before the dispatch is claimed: no usage is reserved, nothing crosses to the other language, a first send marks the verification `failed` with that reason (retryable), and a reminder records `follow_up_skipped: template_unavailable`. A re-categorized template stays sendable and only alerts. The registry is cached for 60 seconds per process; the instance that applies a change drops its copy at once.
 
 **Alerts.** `TemplateAlertService` logs `whatsapp-template-alert` lines on a change, for a template in use (a language default, or sent by at least one active store): `template_unavailable` and `template_recategorized` (critical), `template_text_changed` and `template_sync_failed` (attention). The admin store list adds the per-store `template_unavailable` health signal (`src/modules/admin/admin-template-health.sql.ts`).
+
+### Staff Template Authoring (US-08-06)
+
+Staff write, submit and manage templates from `/admin/templates`; merchants never write template text. Everything is behind `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and the operator allowlist, and every write is one audited transaction. Nothing deletes a template at Meta.
+
+**Drafts.** A draft (`whatsapp_template_drafts`, migration `0058`) lives only in Akeed. Its body uses Akeed's own placeholders (`{{customer}}`, `{{store}}`, `{{order}}`, `{{total}}`); the Meta syntax is built in the spoke (`meta-template-components.builder.ts`). Akeed generates the name, `akeed_<purpose>_<style>_v<n>`, and the registry key, `cod_confirm.<language>.<style>_v<n>`. The legacy names are untouched.
+
+**Validation.** `src/shared/messaging/template-draft.validation.ts` holds one rule per contract-record finding: name and language code, the four supported values, parameter names or numbering, a single-line sample for each value, the 1024-character body, no value at either end of the body, and exactly two quick replies with Confirm first (the send path puts the confirm payload on index 0). The parameter-to-word ratio only warns. A draft can be saved while it fails; it cannot be submitted.
+
+**Submit.** One submit holds a draft at a time. Before anything is created, the adapter's list is read: if Meta already holds the draft's name and language, that template is adopted. Otherwise one `POST /{WABA_ID}/message_templates` is sent, once, with a 15-second deadline and no retry. A refusal returns the draft for editing with a neutral reason. No usable answer makes the draft `submit_unknown`: nothing is sent again until an operator runs "Check at Meta", which reads the list and either adopts the template or returns the draft for a new submit. The registry row is inserted only when Meta has confirmed the template, inactive and never a default, so no send path sees a draft.
+
+**Review.** Review status arrives through the US-08-04 sync and webhooks. A rejection shows Meta's reason as a neutral value.
+
+**Edit.** `POST /{TEMPLATE_ID}` replaces the text of a template Akeed wrote. It is allowed only for an approved, rejected or paused template that nothing can send (inactive, not a default, selected by no store), and an approved template gets one edit in 24 hours and ten in 30 days, counted in `whatsapp_template_edits`. From the moment an edit is sent the row reads `pending` until a sync or a webhook says `approved`.
+
+**Activate, deactivate, set default, retire.** `src/shared/messaging/template-lifecycle.policy.ts` decides; `WhatsappTemplateLifecycleRepository` locks every template of the purpose and language in key order, then writes the flags, the store move and the audit row in one transaction. Only an approved template can be activated or made the default. Set default unsets the old default and sets the new one in that transaction. Deactivating or retiring a template a store selects, or a language default, needs a replacement that is approved, active and of the same purpose and language; every store moves to it (a store with no stored key is matched through its old variant column, like a send), and a withdrawn default hands the default to the replacement. A retired template cannot be activated again.
 
 ### Staff Template Pages: Reading Status and Drift (US-08-05)
 

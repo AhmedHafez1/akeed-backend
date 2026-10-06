@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented (2026-10-06), switch off; the first real submission waits for the product owner to approve its dry run. Evidence: [US-08-06 evidence](../../US-08-06-ADMIN-TEMPLATE-AUTHORING-EVIDENCE.md)
 - **Dependencies:** [US-08-05](US-08-05-admin-inspect-templates.md)
 
 ## User story and value
@@ -30,7 +30,7 @@ As a named template operator, I want to draft, validate, submit and follow a tem
 ## Acceptance criteria
 
 1. **Operator allowlist.**
-   - Every write goes under `/api/admin/templates` and needs `AdminAccessGuard` plus a new method guard modeled on [`StandaloneBillingOperatorGuard`](../../../src/modules/admin/standalone-billing-operator.guard.ts).
+   - Every write goes under `/api/admin/templates` and needs `AdminAccessGuard` plus a method guard modeled on [`StandaloneBillingOperatorGuard`](../../../src/modules/admin/standalone-billing-operator.guard.ts). US-08-04 already shipped that guard (`WhatsappTemplateOperatorGuard`) and both settings; this story puts the guard on every new write route.
    - The settings are `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` (default `false`) and `WHATSAPP_TEMPLATE_OPERATOR_IDS` (comma-separated staff UUIDs). Startup fails when the switch is enabled with no IDs.
    - A non-operator gets 403 with a stable error code.
    - The session endpoint tells the UI whether the user is an operator, so write controls can be hidden.
@@ -57,7 +57,12 @@ As a named template operator, I want to draft, validate, submit and follow a tem
 4. **Submit and review.**
    - Submit sends the draft to Meta through the neutral port, gaining `createTemplate` (and `editTemplate`, plus `deleteTemplate` only if allowed). It stores the provider template ID and the review status.
    - Review progress arrives through the US-08-04 webhooks and sync. A rejection shows Meta's reason, mapped to a neutral message.
-5. **Edits.** An edit to a submitted or approved template respects the limits in the contract record (frequency, editable parts, re-review). An edit the record forbids is refused locally with the rule cited. An edit that triggers re-review makes the template not sendable until it is approved again, and staff are warned of this before they confirm.
+5. **Edits.** An edit follows the contract record, which is stricter than this criterion first read (decided 2026-10-06):
+   - Only an approved, rejected or paused template can be edited (record 4.3.1). A template still in review cannot.
+   - A template stores can send is never edited in place (record 4.3.9): it must be inactive, not a default and selected by no store. New text for a template in use is a new template, activated once it is approved.
+   - An approved template gets one edit in 24 hours and ten in 30 days, in rolling windows counted by Akeed (record 4.3.2, 4.3.10). A rejected or paused template has no limit.
+   - Only the text changes. The name, the language, the parameter format and the category of an approved template do not (record 4.3.5, 4.4.2, 4.4.7).
+   - An edit the record forbids is refused locally with the rule cited. From the moment an edit is sent the template is not sendable until it is approved again, and staff are warned of this before they confirm.
 6. **Separate audited actions.**
    - Activate, deactivate, set default and retire are separate actions.
    - Only an approved template can be activated or made default.
@@ -73,11 +78,14 @@ As a named template operator, I want to draft, validate, submit and follow a tem
 
 ## Open decisions (product owner)
 
-1. **Naming convention.** The proposal is `akeed_<purpose>_<style>_v<n>`, lowercase with underscores, for example `akeed_cod_confirm_egyptian_v1`, with the language carried by Meta's language code rather than in the name.
-2. **Approval.** Can any single operator submit and activate, or does activation need a second operator (four-eyes)? The proposal is one operator for submit and two for activate or set default in prod.
-3. **Dev to prod promotion.** Either (a) the operator re-enters the draft in prod (**proposal**, simple and explicit), or (b) export and import a draft file between environments.
-4. **Delete at Meta.** Never, with retire being local only (**proposal**), or allowed for templates that never reached approved?
-5. **Variable set.** Should new templates be limited to today's variables (customer, store, order, total)? Gap 5 (items, address) is out of scope, so the proposal is yes.
+All decided on 2026-10-06.
+
+1. **Naming convention.** **Decided:** `akeed_<purpose>_<style>_v<n>`, lowercase with underscores, for example `akeed_cod_confirm_egyptian_v1`, with the language carried by Meta's language code rather than in the name. The registry key of such a template is `cod_confirm.<language>.<style>_v<n>`.
+2. **Approval.** **Decided:** one operator for every action, each one audited. A second approver is not enforced by software, as for billing operations.
+3. **Dev to prod promotion.** **Decided:** (a) the operator re-enters the draft in prod. Nothing is copied between environments.
+4. **Delete at Meta.** **Decided:** never. Retire is local only, and the provider port has no delete.
+5. **Variable set.** **Decided:** yes, new templates are limited to customer, store, order and total.
+6. **Purposes (raised by the step brief).** **Decided:** drafts are `cod_confirmation` only. The rule "exactly Confirm then Cancel" is declared per purpose, so `cod_reminder` inherits it when [US-08-07](US-08-07-message-improvements.md) adds that purpose.
 
 ## Implementation notes
 
