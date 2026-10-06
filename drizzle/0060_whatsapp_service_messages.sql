@@ -28,6 +28,11 @@
 -- All four tables are service-role only. Merchants never read them directly.
 -- Additive and safe to replay. No row is written.
 --
+-- The two new verification tables reference "verifications" ("id", "org_id"),
+-- the key 0028 adds. A database that applied an earlier draft of 0028 has no
+-- such key and a single-column dispatch foreign key, so the first two
+-- statements repair both. They change nothing where 0028 ran as committed.
+--
 -- Rollback: set WHATSAPP_ACKNOWLEDGMENT_ENABLED,
 -- WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED and WHATSAPP_LOCALIZED_FALLBACKS_ENABLED
 -- to false, which stops every read and write of these tables. To remove the
@@ -36,6 +41,30 @@
 --   DROP TABLE IF EXISTS "verification_service_messages";
 --   DROP TABLE IF EXISTS "whatsapp_message_text_events";
 --   DROP TABLE IF EXISTS "whatsapp_message_texts";
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('verifications')
+      AND conname = 'verifications_id_org_id_key'
+  ) THEN
+    ALTER TABLE "verifications"
+      ADD CONSTRAINT "verifications_id_org_id_key" UNIQUE("id", "org_id");
+  END IF;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('verification_message_dispatches')
+      AND conname = 'verification_message_dispatches_verification_id_fkey'
+      AND array_length(conkey, 1) = 1
+  ) THEN
+    ALTER TABLE "verification_message_dispatches"
+      DROP CONSTRAINT "verification_message_dispatches_verification_id_fkey",
+      ADD CONSTRAINT "verification_message_dispatches_verification_id_fkey"
+        FOREIGN KEY ("verification_id", "org_id")
+        REFERENCES "verifications"("id", "org_id") ON DELETE CASCADE;
+  END IF;
+END $$;--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "whatsapp_message_texts" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "purpose" text NOT NULL,

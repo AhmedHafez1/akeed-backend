@@ -81,13 +81,15 @@ describe('WhatsappTemplateOperatorGuard (US-08-06 criterion 1)', () => {
     );
   });
 
-  it('fails at startup when the switch is on and no operator is named', () => {
-    expect(() =>
-      parseWhatsappTemplateConfig({
-        WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'true',
-      }),
-    ).toThrow(
-      'WHATSAPP_TEMPLATE_OPERATOR_IDS must name at least one staff user when WHATSAPP_TEMPLATE_OPERATIONS_ENABLED=true.',
+  it('admits every staff member when the switch is on and no operator is listed', () => {
+    const open = {
+      WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'true',
+      WHATSAPP_TEMPLATE_OPERATOR_IDS: '',
+    };
+    expect(guard(open).canActivate(context(OPERATOR))).toBe(true);
+    expect(guard(open).canActivate(context(OTHER_STAFF))).toBe(true);
+    expect(codeOf(() => guard(open).canActivate(context()))).toBe(
+      'WHATSAPP_TEMPLATE_OPERATOR_REQUIRED',
     );
   });
 });

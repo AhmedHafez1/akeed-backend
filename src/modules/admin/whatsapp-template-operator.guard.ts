@@ -48,7 +48,8 @@ export const WHATSAPP_TEMPLATE_ERROR_CODES = {
 
 /**
  * Admits a WhatsApp template write only for a named operator (E08; the
- * setting names are the ones US-08-06 defines). Like the billing operator
+ * setting names are the ones US-08-06 defines). An empty operator list
+ * admits every staff member while operations are on. Like the billing operator
  * guard it is a method guard, so the controller's `AdminAccessGuard` has
  * already admitted the staff member and set `request.admin`.
  */

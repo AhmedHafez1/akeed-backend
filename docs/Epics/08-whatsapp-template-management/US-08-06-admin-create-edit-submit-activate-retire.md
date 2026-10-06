@@ -31,7 +31,7 @@ As a named template operator, I want to draft, validate, submit and follow a tem
 
 1. **Operator allowlist.**
    - Every write goes under `/api/admin/templates` and needs `AdminAccessGuard` plus a method guard modeled on [`StandaloneBillingOperatorGuard`](../../../src/modules/admin/standalone-billing-operator.guard.ts). US-08-04 already shipped that guard (`WhatsappTemplateOperatorGuard`) and both settings; this story puts the guard on every new write route.
-   - The settings are `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` (default `false`) and `WHATSAPP_TEMPLATE_OPERATOR_IDS` (comma-separated staff UUIDs). Startup fails when the switch is enabled with no IDs.
+   - The settings are `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` (default `false`) and `WHATSAPP_TEMPLATE_OPERATOR_IDS` (comma-separated staff UUIDs). With the switch enabled and no IDs, every staff member is an operator (changed 2026-10-06; startup used to fail).
    - A non-operator gets 403 with a stable error code.
    - The session endpoint tells the UI whether the user is an operator, so write controls can be hidden.
 2. **Draft.** An operator creates a draft with:

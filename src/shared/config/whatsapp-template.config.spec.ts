@@ -122,12 +122,18 @@ describe('parseWhatsappTemplateConfig', () => {
     ).toThrow(/WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED must be true or false/);
   });
 
-  it('refuses operations without an operator, and an operator ID that is not a UUID', () => {
-    expect(() =>
-      parseWhatsappTemplateConfig({
+  it('lets every staff member write when operations are on and no operator is listed', () => {
+    for (const ids of [undefined, '', ' , ']) {
+      const open = parseWhatsappTemplateConfig({
         WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'true',
-      }),
-    ).toThrow(/must name at least one staff user/);
+        ...(ids === undefined ? {} : { WHATSAPP_TEMPLATE_OPERATOR_IDS: ids }),
+      });
+      expect(open.operatorIds.size).toBe(0);
+      expect(isWhatsappTemplateOperator(open, OPERATOR)).toBe(true);
+    }
+  });
+
+  it('refuses an operator ID that is not a UUID', () => {
     expect(() =>
       parseWhatsappTemplateConfig({ WHATSAPP_TEMPLATE_OPERATOR_IDS: 'alice' }),
     ).toThrow(/comma-separated list of staff user UUIDs/);

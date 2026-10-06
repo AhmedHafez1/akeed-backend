@@ -12,7 +12,8 @@ const UUID_PATTERN =
  * - `guardrailEnabled` lets a send use only templates the provider has
  *   approved. It acts only once the environment has synced.
  * - `operationsEnabled` and `operatorIds` name the staff who may trigger
- *   template writes, the sync among them.
+ *   template writes, the sync among them. With operations on and no ID
+ *   listed, every staff member may.
  * - `testPhones` are the staff numbers a template test may be sent to
  *   (US-08-05). With none listed, test sends are off.
  * - `messageImprovements` are the US-08-07 switches, one per item.
@@ -123,10 +124,6 @@ export function parseWhatsappTemplateConfig(
     errors.push(
       'WHATSAPP_TEMPLATE_OPERATOR_IDS must be a comma-separated list of staff user UUIDs.',
     );
-  if (operationsEnabled && operatorIds.length === 0)
-    errors.push(
-      'WHATSAPP_TEMPLATE_OPERATOR_IDS must name at least one staff user when WHATSAPP_TEMPLATE_OPERATIONS_ENABLED=true.',
-    );
   if (testPhones.includes(null))
     errors.push(
       'WHATSAPP_TEMPLATE_TEST_PHONES must be a comma-separated list of phone numbers in international format.',
@@ -172,6 +169,8 @@ export function isWhatsappTemplateOperator(
   userId: string,
 ): boolean {
   return (
-    config.operationsEnabled && config.operatorIds.has(userId.toLowerCase())
+    config.operationsEnabled &&
+    (config.operatorIds.size === 0 ||
+      config.operatorIds.has(userId.toLowerCase()))
   );
 }
