@@ -469,6 +469,35 @@ describe('US-08-08 role and operator controls', () => {
       expect(serviceCalls).toBe(0);
     });
 
+    it('with operations on and no operator named, is open to every staff member and still to no one else', async () => {
+      configure({ WHATSAPP_TEMPLATE_OPERATOR_IDS: '' });
+
+      const response = await send(route, TOKENS.staff);
+      expect(response.status).toBeLessThan(300);
+      expect(serviceCalls).toBe(1);
+
+      for (const who of NON_STAFF) {
+        const refused = await send(route, TOKENS[who]);
+        expect([401, 403]).toContain(refused.status);
+      }
+      await expect(send(route)).resolves.toMatchObject({ status: 401 });
+      expect(serviceCalls).toBe(1);
+    });
+
+    it('with no operator named, is still closed to every staff member while operations are off', async () => {
+      configure({
+        WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'false',
+        WHATSAPP_TEMPLATE_OPERATOR_IDS: '',
+      });
+
+      const response = await send(route, TOKENS.staff);
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({
+        code: 'WHATSAPP_TEMPLATE_OPERATIONS_DISABLED',
+      });
+      expect(serviceCalls).toBe(0);
+    });
+
     it('answers 403 to an operator of another environment, whose ID is not on this list', async () => {
       configure({ WHATSAPP_TEMPLATE_OPERATOR_IDS: randomUUID() });
 
