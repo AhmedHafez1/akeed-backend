@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** Backlog
+- **Status:** Automated gate passed (2026-10-06); live run, open US-08-01 items and the go/no-go decision pending
 - **Dependencies:** [US-08-07](US-08-07-message-improvements.md)
 
 ## User story and value
@@ -96,6 +96,18 @@ As the product owner, I want automated proof, a live run in dev and prod, a supp
 2. **Live run.** Who runs it with each environment's credentials? And may it use a real merchant store, or only a staff test store? The proposal is a staff test store.
 3. **Measurement period and rollback trigger.** How long each US-08-07 item is measured before the next is enabled (proposal: 7 days). What rollback threshold applies, for example a confirmation-rate drop of more than X points versus the previous period.
 4. **Retiring the legacy 8.** Whether retiring the legacy 8 variants or dropping the old `integrations` variant columns belongs to this gate or to a later cleanup. The proposal is later cleanup.
+
+## Reconciled at the gate (2026-10-06)
+
+Where this story and the code or the contract record disagreed. Details are in the [gate record](evidence/US-08-08-release-gate.md).
+
+- **Criterion 1, file name.** The fake is `test/contracts/meta-template-api-fake.ts`, written by US-08-04. It was not renamed. A second fake, `meta-messages-fake.ts`, covers the `messages` edge.
+- **Criterion 5, "re-categorized".** A re-categorized template does not fall back: Meta keeps it approved (record 4.5.5), so it stays sendable and staff are alerted (US-08-04 decision 5). The gate asserts that.
+- **Criterion 6, "404 or 403 for non-staff".** A request with no token, or with a token Supabase does not know, gets 401 from the existing admin guard.
+- **Criterion 6, "403 for a staff non-operator".** True while the environment lists at least one operator ID. Since `2fd3cc6` (2026-10-06) an empty `WHATSAPP_TEMPLATE_OPERATOR_IDS` lets every staff member write while operations are on.
+- **Criterion 11, file location.** The record is `evidence/US-08-08-release-gate.md`; `docs/US-08-08-WHATSAPP-TEMPLATE-RELEASE-GATE-EVIDENCE.md` points to it.
+- **Open decision 4.** The old variant columns and the code catalog were left in place. Both are still read; see section 6 of the record for the proposed two-release clean-up.
+- **Data note.** The migration rehearsal on each environment's schema was not done by the gate; its counts are in the live run script.
 
 ## Implementation notes
 

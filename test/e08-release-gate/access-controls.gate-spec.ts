@@ -550,16 +550,18 @@ describe('US-08-08 fixture secret scan', () => {
     expect(text).not.toContain(FAKE_MESSAGES_TOKEN);
   });
 
-  it('keeps real account identifiers out: every account ID in a fixture is the synthetic one or a placeholder', () => {
+  it('keeps real identifiers out: every long number in a fixture is a synthetic account ID, template ID or phone', () => {
+    // The fakes' account, the synthetic template IDs (9000000000000nn) and
+    // the characterization baseline's made-up Saudi number.
+    const synthetic = /^(100000000000001|9000000000000\d\d|966500000001)$/;
+    let checked = 0;
     for (const path of all) {
-      const text = readFileSync(path, 'utf8');
-      const accountIds = [
-        ...text.matchAll(/"id":\s*"(\d{12,})"\s*,\s*"time"/g),
-      ].map((match) => match[1]);
-      expect([
-        path,
-        accountIds.every((id) => id === '100000000000001'),
-      ]).toEqual([path, true]);
+      const numbers = readFileSync(path, 'utf8').match(/\d{12,}/g) ?? [];
+      checked += numbers.length;
+      expect([path, numbers.filter((value) => !synthetic.test(value))]).toEqual(
+        [path, []],
+      );
     }
+    expect(checked).toBeGreaterThan(50);
   });
 });

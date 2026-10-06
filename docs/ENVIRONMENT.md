@@ -328,7 +328,11 @@ Rollout, per environment, dev first:
 3. Turn on `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` last.
 
 Rollback: turn off the guardrail to restore today's sending; turn off sync to
-stop reading Meta (the last snapshot stays). Nothing is deleted.
+stop reading Meta (the last snapshot stays). Nothing is deleted. The
+[template support runbook](Epics/08-whatsapp-template-management/evidence/US-08-08-template-support-runbook.md)
+has the steps for support, and the
+[gate record](Epics/08-whatsapp-template-management/evidence/US-08-08-release-gate.md)
+the recommendation per switch.
 
 Logs to grep:
 

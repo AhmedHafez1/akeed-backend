@@ -149,6 +149,10 @@ function Get-WorktreeState {
 
 $backendStateBefore = Get-WorktreeState $backendRoot
 $frontendStateBefore = Get-WorktreeState $frontendRoot
+# Read before the first step: a commit that lands while the gate runs must
+# not be reported as the commit that was tested.
+$backendCommitBefore = Get-Commit $backendRoot
+$frontendCommitBefore = Get-Commit $frontendRoot
 
 Push-Location $backendRoot
 try {
@@ -236,10 +240,12 @@ New-Item -ItemType Directory -Force -Path $evidenceDirectory *> $null
     inheritedGate = if ($OwnOnly) { 'not run' } else { 'run' }
     startedAt = $startedAt.ToString('o')
     completedAt = [DateTimeOffset]::UtcNow.ToString('o')
-    backendCommit = Get-Commit $backendRoot
+    backendCommit = $backendCommitBefore
+    backendCommitChangedDuringGate = (Get-Commit $backendRoot) -ne $backendCommitBefore
     backendDirtyWorktree = -not [string]::IsNullOrEmpty($backendStateBefore)
     backendWorktreeChangedByGate = (Get-WorktreeState $backendRoot) -ne $backendStateBefore
-    frontendCommit = Get-Commit $frontendRoot
+    frontendCommit = $frontendCommitBefore
+    frontendCommitChangedDuringGate = (Get-Commit $frontendRoot) -ne $frontendCommitBefore
     frontendDirtyWorktree = -not [string]::IsNullOrEmpty($frontendStateBefore)
     frontendWorktreeChangedByGate = (Get-WorktreeState $frontendRoot) -ne $frontendStateBefore
     steps = $results

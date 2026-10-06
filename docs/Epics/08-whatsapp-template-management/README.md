@@ -1,7 +1,7 @@
 # E08 — WhatsApp Template Management
 
 - **Horizon:** NEXT
-- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; US-08-04 implemented 2026-10-05 and waiting for the Meta webhook subscription to be confirmed; US-08-05 implemented 2026-10-05; US-08-06 implemented 2026-10-06 with its switch off; US-08-07 implemented 2026-10-06 with every switch off; the US-08-01 contract record is still a draft, with the first dev run recorded on 2026-10-05, and the other stories are Backlog)
+- **Status:** In progress (authored 2026-10-05; US-08-02 and US-08-03 done 2026-10-05; US-08-04 implemented 2026-10-05 and waiting for the Meta webhook subscription to be confirmed; US-08-05 implemented 2026-10-05; US-08-06 implemented 2026-10-06 with its switch off; US-08-07 implemented 2026-10-06 with every switch off; US-08-08 automated gate passed 2026-10-06, with its live run and go/no-go decision pending; the US-08-01 contract record is still a draft, with the first dev run recorded on 2026-10-05)
 - **Stories:** 8
 - **Prerequisite epics:** [E02 — Platform Boundaries and Reliability](../02-platform-boundaries-and-reliability/README.md) (messaging port and per-send dispatch ledger). Regression gates from [E01](../01-shopify-baseline-stabilization/README.md), [E04](../04-standalone-manual-order-mvp/README.md), [E05](../05-standalone-order-ingestion-api/README.md), [E06](../06-easyorders-integration/README.md) and [E07](../07-woocommerce-integration/README.md) must stay green. E08 does not wait for any commerce epic to go live.
 - **Roadmap:** [Expansion backlog](../README.md)
@@ -187,7 +187,7 @@ Delivery rank is the execution order. All stories start in Backlog.
 | 5 | [US-08-05 — Admin: inspect templates](US-08-05-admin-inspect-templates.md) | P0 | Feature | [US-08-04](US-08-04-meta-sync-status-webhooks-and-send-guardrail.md) | Implemented (2026-10-05); test send off until its phone list is set |
 | 6 | [US-08-06 — Admin: create, edit, submit, activate, retire](US-08-06-admin-create-edit-submit-activate-retire.md) | P0 | Feature | [US-08-05](US-08-05-admin-inspect-templates.md) | Implemented (2026-10-06), switch off; first real submission awaiting dry-run approval |
 | 7 | [US-08-07 — Message improvements](US-08-07-message-improvements.md) | P1 | Feature | [US-08-06](US-08-06-admin-create-edit-submit-activate-retire.md) | Implemented (2026-10-06), switches off; copy approval and record 4.10.8 pending |
-| 8 | [US-08-08 — Release gate](US-08-08-release-gate.md) | P0 | Quality gate | [US-08-07](US-08-07-message-improvements.md) | Backlog |
+| 8 | [US-08-08 — Release gate](US-08-08-release-gate.md) | P0 | Quality gate | [US-08-07](US-08-07-message-improvements.md) | Automated gate passed (2026-10-06); live run and go/no-go pending. See the [gate record](evidence/US-08-08-release-gate.md) |
 
 ## Measurable exit criteria
 
