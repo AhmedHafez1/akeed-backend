@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Backlog
+- **Status:** Implemented (2026-10-06), switches off. The acknowledgment and nudge switches stay off until US-08-08 verifies contract record 4.10.8; every switch waits for copy approval. The registry `preview` column and the old API fields are removed after the US-08-08 gate.
 - **Dependencies:** [US-08-06](US-08-06-admin-create-edit-submit-activate-retire.md)
 
 ## User story and value

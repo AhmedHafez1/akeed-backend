@@ -34,16 +34,14 @@ Out of scope:
 
 ### Page Structure
 
-The dashboard supports two runtime skins:
+The settings page (`app/[locale]/(embedded)/settings/page.tsx`) renders one of two skins:
 
-| Mode       | Skin component            | UI framework    |
-| ---------- | ------------------------- | --------------- |
-| Embedded   | `MainEmbeddedSkin`        | Shopify Polaris |
-| Standalone | `DashboardStandaloneSkin` | Custom Tailwind |
+| Mode       | Page component           | UI framework    | Tabs                                    |
+| ---------- | ------------------------ | --------------- | --------------------------------------- |
+| Embedded   | `SettingsEmbeddedPage`   | Shopify Polaris | `message`, `timing`, `plan`             |
+| Standalone | `SettingsStandalonePage` | Custom Tailwind | `message`, `timing`, `store`, `api-keys` |
 
-Both skins share the same data hook (`useDashboard`) and render the same logical sections.
-
-The embedded skin has two tabs: **Metrics** (stats overview with funnel cards and date range selector) and **Confirmations** (verification list with status filters and actions). Each tab uses its own sub-hook (`useMainMetricsTab`, `useMainConfirmationsTab`).
+Both skins share the form model in `features/settings/domain/settingsForm.ts` and the data hook `useSettingsModel` (wrapped by `useEmbeddedSettings` and `useStandaloneSettings`). Standalone billing is a page of its own (`/billing`), not a Settings tab.
 
 ### Onboarding Guard
 
@@ -228,17 +226,19 @@ If `onboardingStatus` is `pending` when the settings page loads, the user is red
 
 ### Settings Tabs
 
-#### Tab 1 — Store
+#### Message tab (`message`)
 
-| Field             | Type   | Validation                                                        |
-| ----------------- | ------ | ----------------------------------------------------------------- |
-| Store name        | text   | Required, max 255 chars.                                          |
-| Default language  | select | `auto`, `en`, `ar`.                                               |
-| Shipping currency | select | Allowlist: USD, EUR, EGP, SAR, AED, QAR, KWD, BHD, OMR, JOD, MAD. |
-| Avg shipping cost | number | `>= 0`, max 2 decimal places.                                     |
-| Auto-verify       | toggle | Boolean.                                                          |
+| Field                  | Type   | Validation                                                                                         |
+| ---------------------- | ------ | -------------------------------------------------------------------------------------------------- |
+| Store name             | text   | Required, max 255 chars.                                                                           |
+| Default language       | select | `auto`, `en`, `ar`.                                                                                |
+| First-send style       | select | One style per language, from the sendable templates in the registry.                               |
+| Arabic style "auto"    | choice | `codTemplateArAuto`. Offered only while `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` is on (US-08-07 d).   |
+| Reminder style         | select | `codReminderArVariant` / `codReminderEnVariant`; empty means the first-send template. Offered only while `WHATSAPP_REMINDER_TEMPLATE_ENABLED` is on (US-08-07 a). |
 
-#### Tab 2 — Confirmation
+The shipping currency is shown read-only (it formats the preview amount); it is set during onboarding.
+
+#### Timing tab (`timing`)
 
 Automation settings that control the verification send pipeline.
 
@@ -261,18 +261,13 @@ Cross-field validation (mirrors backend):
 - If follow-up and escalation are both enabled, `followUpDelayMinutes < escalationDelayMinutes`.
 - If quiet hours are enabled, both start and end times are required.
 
-#### Tab 3 — Message Preview
+The timing tab also holds the auto-verify toggle.
 
-Displays a live preview of the WhatsApp confirmation template in both Arabic and English. The merchant can select branded template variants:
+#### Message preview
 
-| Language | Variants                                      | Default    |
-| -------- | --------------------------------------------- | ---------- |
-| Arabic   | `standard`, `egyptian`, `gulf`, `short`       | `standard` |
-| English  | `friendly`, `professional`, `direct`, `short` | `friendly` |
+The message tab shows the WhatsApp message for the chosen style. The text comes from the backend as neutral message lines (`template.messages` and `message` on each variant in `GET /api/settings`), built from the Meta snapshot when `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` is on and from the registered text otherwise (US-08-07 g). The frontend only fills the sample values; it holds no template copy. When no lines are available, the preview shows an empty state rather than invented text. With "auto" chosen, a note says the customer's country decides the Arabic style.
 
-The preview updates immediately when a variant is selected. Template variant selections are persisted on save.
-
-#### Tab 4 — Billing
+#### Plan tab (`plan`, embedded only)
 
 Displays current plan, billing status, usage progress, and plan options.
 
@@ -290,7 +285,7 @@ Plan change follows the flow described in `ONBOARDING_AND_BILLING.md`.
 
 ### Save Behavior
 
-- All saveable tabs (Store, Confirmation, Message Preview) share a single Save action.
+- All editable tabs (message, timing and the standalone store tab) share a single Save action.
 - Frontend validates all fields before calling `PATCH /api/settings`.
 - On success, all state is re-synced from the response (including billing and template data).
 - On failure, all fields are rolled back to their pre-save values.
@@ -299,18 +294,17 @@ Plan change follows the flow described in `ONBOARDING_AND_BILLING.md`.
 
 ### URL Tab Navigation
 
-The embedded skin supports `?tab=` query parameter for direct tab access:
+The embedded settings page reads the `?tab=` query parameter (`resolveSettingsTab` in `features/settings/domain/settingsTabs.ts`). Older ids keep working:
 
-| Parameter value       | Tab               |
-| --------------------- | ----------------- |
-| `store`               | Store             |
-| `confirmation`        | Confirmation      |
-| `message-preview`     | Message Preview   |
-| `billing`             | Billing           |
-| `confirmation-config` | → Confirmation    |
-| `message-template`    | → Message Preview |
+| Parameter value                                                    | Tab       |
+| ------------------------------------------------------------------ | --------- |
+| `message`, `timing`, `plan`                                        | Same name |
+| `store`, `settings`, `message-preview`, `message-template`, `templates` | → message |
+| `confirmation`, `confirmation-config`, `automation`                | → timing  |
+| `billing`, `subscription`                                          | → plan    |
+| Anything else                                                      | → message |
 
-Legacy routes `/message-preview` and `/automation-settings` redirect to the corresponding settings tab.
+The standalone page also reads `?section=` for older links; `billing` and `plan` lead to `/billing`. The routes `/message-preview` and `/automation-settings` redirect to `/settings?tab=message` and `/settings?tab=timing`.
 
 ## Backend Code Map
 
@@ -344,12 +338,13 @@ Legacy routes `/message-preview` and `/automation-settings` redirect to the corr
 | Embedded verifications table   | `features/dashboard/skins/embedded/VerificationsTableEmbedded.tsx`          | Polaris verification rows with cancel action.                                    |
 | Status badge                   | `features/dashboard/ui/shared/StatusBadge.tsx`                              | Color-coded status badge component.                                              |
 | Settings page                  | `app/[locale]/(embedded)/settings/page.tsx`                                 | Mode-aware settings entry point with onboarding guard.                           |
-| Settings hook                  | `features/settings/domain/useSettings.ts`                                   | All settings state, validation, save, plan change, template management.          |
-| Settings API                   | `features/settings/api/settingsApi.ts`                                      | GET/PATCH wrappers for `/api/settings`.                                          |
-| Settings embedded skin         | `features/settings/skins/embedded/SettingsEmbeddedTabbedSkin.tsx`           | Polaris tabbed settings UI with Store, Confirmation, Message Preview, Billing.   |
-| Settings standalone skin       | `features/settings/skins/standalone/SettingsStandaloneSkin.tsx`             | Standalone settings layout with sections.                                        |
-| Settings types                 | `features/settings/domain/settings.types.ts`                                | TypeScript types for settings skin props.                                        |
-| Message preview feature        | `features/message-preview/ui/VerificationTemplatePreview.tsx`               | WhatsApp message template preview component.                                     |
+| Settings hook                  | `features/settings/domain/useSettingsModel.ts`                              | Settings load, validation, save, plan change; wrapped per skin.                  |
+| Settings form                  | `features/settings/domain/settingsForm.ts`                                  | Form values, payload building, per-tab dirty tracking.                           |
+| Settings tabs                  | `features/settings/domain/settingsTabs.ts`                                  | Tab ids and `?tab=` / `?section=` aliases.                                       |
+| Settings API                   | `features/settings/api/settingsApi.ts`                                      | GET/PATCH wrappers and types for `/api/settings`.                                |
+| Settings embedded page         | `features/settings/skins/embedded/settings-page/SettingsEmbeddedPage.tsx`   | Polaris tabs: message, timing, plan.                                             |
+| Settings standalone page       | `features/settings/skins/standalone/settings-page/SettingsStandalonePage.tsx` | Tabs: message, timing, store, api-keys.                                        |
+| Template message filling       | `shared/lib/templateMessage.ts`                                             | Fills the backend's neutral message lines with sample values.                    |
 
 ## API Reference
 
@@ -487,12 +482,12 @@ npm --prefix akeed-frontend run build
 | Settings: save with empty store name          | Client-side validation error, save blocked.                                        |
 | Settings: follow-up delay >= escalation delay | Cross-field validation error on both delay fields.                                 |
 | Settings: quiet hours enabled without times   | Validation error: start and end required.                                          |
-| Settings: change template variant             | Preview updates immediately, variant persisted on save.                            |
+| Settings: change template style               | Preview updates immediately, style persisted on save.                              |
 | Settings: change billing plan                 | Redirects to Shopify billing confirmation.                                         |
 | Dashboard with no verifications               | Empty state shown with test verification panel.                                    |
-| Embedded mode tab navigation via URL          | `?tab=confirmation` opens Confirmation tab directly.                               |
-| Legacy route `/message-preview`               | Redirects to `/settings?tab=message-preview`.                                      |
-| Legacy route `/automation-settings`           | Redirects to `/settings?tab=confirmation`.                                         |
+| Embedded mode tab navigation via URL          | `?tab=confirmation` opens the timing tab.                                          |
+| Legacy route `/message-preview`               | Redirects to `/settings?tab=message`.                                              |
+| Legacy route `/automation-settings`           | Redirects to `/settings?tab=timing`.                                                 |
 
 ### US-02-03 cancellation contract
 

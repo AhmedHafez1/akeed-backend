@@ -133,7 +133,7 @@ styles and tell what a customer actually received.
 | `template_purpose` | `initial`, `reminder`, or `test` when the order is a test order |
 | `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
 | `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
-| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
+| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`; since US-08-07 also `reminder_unavailable` and `auto_style_unavailable`), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
 
 - **Selected before the claim.** `selectTemplateForSend`
   (`src/shared/messaging/template-selector.ts`) picks the template from the
@@ -196,6 +196,68 @@ store and source. Add `include_test=true` to count test sends.
 - Both dates are UTC days, both included, and at most 92 days apart. A bad range
   answers `400 ADMIN_TEMPLATE_METRICS_RANGE_INVALID`.
 - Sends without a recorded template are returned apart, under `not_recorded`.
+
+### Customer-message improvements (US-08-07)
+
+Seven improvements, each behind its own switch and all off by default (see
+[`ENVIRONMENT.md`](ENVIRONMENT.md#customer-message-improvements-us-08-07)).
+With every switch off, sends, settings and webhooks behave as before and the
+Meta payload is byte-identical to the characterization suite.
+
+- **Reminder template (a).** The follow-up sends the store's chosen
+  `cod_reminder` template for the resolved language
+  (`integrations.cod_reminder_ar_key`, `cod_reminder_en_key`). No reminder
+  chosen: the follow-up sends the first-send template, as before. A chosen
+  reminder that cannot be sent falls back to the language's reminder default,
+  then to the first-send template with `reminder_unavailable`. A reminder is
+  never skipped only because no reminder template exists. The dispatch is
+  still recorded with purpose `reminder`.
+- **Arabic style by country (d).** A store with
+  `integrations.cod_template_ar_auto = true` sends Arabic customers the
+  Egyptian style for `+20`, the Gulf style for `+966`, `+971`, `+973`, `+974`,
+  `+965`, `+968`, and the standard style for every other Arabic code
+  (`src/shared/messaging/arabic-style.ts`). A style that cannot be sent falls
+  back to the Arabic default with `auto_style_unavailable`. A store on `auto`
+  with a reminder chosen gets the reminder of the same mapped style.
+- **Name fallbacks (e).** A missing customer or store name is filled from the
+  `fallback_customer_name` / `fallback_store_name` texts of the send's language
+  (`whatsapp_message_texts`), never "Akeed". A missing text keeps the old word
+  and logs `sendOnce.localizedFallback` with `message_text_unavailable`.
+- **Amount (f).** `total` is written per language and currency
+  (`src/shared/messaging/message-values.ts`): `1,250.00 ج.م` in Arabic,
+  `EGP 1,250.00` in English, minor units always shown, Western digits, never
+  rounded. No currency: the number alone. A value that is not a plain decimal
+  is sent as before.
+- **Acknowledgment (b) and nudge (c).** Free-form texts, sent once and never
+  retried, after the verification's outcome is final (contract record 4.10.8
+  worst-case rule). The webhook only queues them on the
+  `verification-automation` queue (`verification.acknowledgment`,
+  `verification.unresolved_reply_nudge`, one attempt each);
+  `CustomerReplyFollowUpService` (`src/modules/verification-replies/`) sends
+  through `MessagingPort.sendFreeFormText`.
+  - The acknowledgment follows a customer confirm or cancel (button or a
+    recognized typed answer) that changed the row. Never after a merchant
+    cancellation, an automatic `no_reply` or a test order.
+  - The nudge follows a typed reply that quotes (`context.id`) an open
+    verification's message, by `wa_message_id` or by the dispatch that sent
+    it, and reads as no answer. The reply is stored in
+    `verification_reply_events` without its text. Without `context.id` nothing
+    is stored or sent. The verification still runs out to `no_reply` if the
+    customer never taps a button.
+  - One row per verification and kind in `verification_service_messages`,
+    claimed before the send, so a replay or a crash never sends twice. Outside
+    the 24-hour window, or when Meta answers 131047, the row is `skipped`
+    (`outside_window`, `window_closed`); a missing text is `text_unavailable`.
+    The text is the one for the language and dialect of the latest accepted
+    send, else the language's `default` text.
+  - A delivery receipt for a service message touches only its own row; a
+    `failed` receipt marks it `failed` (`delivery_failed`).
+- **Preview (g).** The settings response carries `template.messages` and
+  `message` on each style, and the onboarding test carries `message`: lines of
+  text and variable segments plus button labels. With
+  `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` on they are read from the template text
+  Meta returned at the last sync; otherwise from the stored preview. The
+  four-block `preview`/`previews` keys stay until the US-08-08 gate.
 
 ## Merchant Controls
 
@@ -324,6 +386,9 @@ Usage principles:
 - Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
+- Acknowledgments and nudges (US-08-07) are free at Meta (contract record
+  4.10.5): they reserve no usage, write no credit or dispatch row, and are
+  recorded only in `verification_service_messages`.
 - Dashboard usage shows consumed count and included limit for the current billing period.
 - Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade.
 

@@ -208,18 +208,30 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others.
 
-**Available template variants:**
-
-| Language | Variants                                      | Default    |
-| -------- | --------------------------------------------- | ---------- |
-| Arabic   | `standard`, `egyptian`, `gulf`, `short`       | `standard` |
-| English  | `friendly`, `professional`, `direct`, `short` | `friendly` |
-
-Each variant defines a Meta template name, language code, and parameter order.
+**Templates come from the registry.** Since US-08-03 the templates are rows of
+`whatsapp_templates`, not a list in code. Migration 0054 seeded the 8 COD
+confirmation styles (Arabic `standard` (default), `egyptian`, `gulf`, `short`;
+English `friendly` (default), `professional`, `direct`, `short`); staff add more
+through the US-08-06 flow, including `cod_reminder` templates (US-08-07a). The
+selector (`src/shared/messaging/template-selector.ts`) picks one per send; see
+[Which template a send carried](ORDER_CONFIRMATION_WORKFLOW.md#which-template-a-send-carried).
 
 **Template parameters:**
 
-Body parameters are mapped according to the variant's `bodyParameterOrder` (e.g., `['customer', 'store', 'order', 'total']`).
+Each registry row stores its parameter format (`named` or `positional`) and
+its variables in send order (`variable_mapping`), for example `customer`,
+`store`, `order`, `total`. The adapter builds the body parameters from them;
+a named variable carries the parameter name the template was registered with.
+`customer` and `store` fall back to the staff-managed words of US-08-07e when
+`WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` is on (otherwise `Customer` and
+`Akeed Store`), and `total` is formatted per language and currency when
+`WHATSAPP_AMOUNT_FORMATTING_ENABLED` is on.
+
+**Free-form text (US-08-07 b, c).** `WhatsAppService.sendFreeFormText` posts a
+`type: "text"` message in the same envelope (record 4.10.4), at most 4096
+characters. It is sent once and never retried; Meta's `131047` (window closed,
+record 4.10.3) is returned as `window_closed`, an expected outcome logged at
+warn level (`whatsapp-text-send`), never as a failure.
 
 **Quick-reply buttons:**
 
@@ -252,13 +264,28 @@ Two buttons are attached to every template:
    Anything ambiguous resolves to no intent and is logged as
    `unresolved_reply` rather than guessed at.
 4. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
-4. Update verification status in database.
-5. Set `cancellationSource: 'customer'` for customer-initiated cancellations.
+5. Update verification status in database, with `confirmationSource` or `cancellationSource` set to `customer`.
 6. Call `VerificationHubService.finalizeVerification()` → dispatch the customer outcome through the registry. Shopify adds the existing tag; customer cancellation never calls remote order cancellation.
+7. With `WHATSAPP_ACKNOWLEDGMENT_ENABLED` on, and only when step 5 changed the row, queue one `verification.acknowledgment` job (US-08-07b). Nothing is sent from the webhook request itself.
+
+**Unresolved typed replies (US-08-07c).** With
+`WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` on, an `unresolved_reply` that has a
+text body and a `context.id` is looked up by `verifications.wa_message_id`, then
+by the dispatch whose `provider_message_id` it is (a reminder repoints
+`wa_message_id`, so a reply to the first message is found that way). When that
+verification is still open and not canceled by the merchant, the reply is stored
+in `verification_reply_events` (provider message id and time, never the text)
+and one `verification.unresolved_reply_nudge` job is queued. Without
+`context.id` nothing is stored or queued.
 
 **Status updates:**
 
 Delivery statuses from Meta (`delivered`, `read`, `failed`) are matched by `waMessageId` and update the verification record.
+
+While either US-08-07 free-form switch is on, a status for an acknowledgment or
+a nudge (`verification_service_messages.provider_message_id`) is handled first
+and touches only that row: `failed` marks it `failed` with `delivery_failed`,
+and nothing is parked, dispatched or projected on the verification.
 
 `VerificationMessageDispatchesRepository.resolveOrParkReceipt` resolves each status to one of three outcomes:
 
@@ -493,6 +520,8 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 | `INITIAL_SEND`      | New COD order with `sendDelayMinutes > 0` | `sendDelayMinutes` + quiet-hours adjustment       |
 | `FOLLOW_UP`         | Successful initial send                   | `followUpDelayMinutes` + quiet-hours adjustment   |
 | `ESCALATE_NO_REPLY` | Successful initial send                   | `escalationDelayMinutes` + quiet-hours adjustment |
+| `ACKNOWLEDGMENT`    | Customer confirm or cancel (US-08-07b)    | None; one attempt, job id `verification-<id>-acknowledgment` |
+| `UNRESOLVED_REPLY_NUDGE` | Unreadable typed reply to an open verification (US-08-07c) | None; one attempt, job id `verification-<id>-nudge` |
 
 ### Initial Send Handler
 
@@ -518,6 +547,30 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 2. **Deferred follow-up check:** if follow-up is still pending (no `follow_up_sent_at` and follow-up enabled), reschedule escalation +60 seconds to allow follow-up to complete first.
 3. Mark verification status as `no_reply`.
 4. Dispatch `automatic_no_reply_tagging`; Shopify adds `Akeed: No Reply`. The registry suppresses external work for persisted `isTest` orders and `akeed-test-` IDs after validating source and capability.
+
+### Acknowledgment and Nudge Handler (US-08-07 b, c)
+
+`CustomerReplyFollowUpService` (`src/modules/verification-replies/`) runs each
+job once; the processor never rethrows, so BullMQ never retries it. Quiet hours
+do not apply: the message answers the customer.
+
+1. Switch on; the order is not a test order; the merchant has not canceled.
+2. Acknowledgment: the verification is `confirmed`/`canceled` with the
+   matching `confirmationSource`/`cancellationSource` = `customer`. Nudge: the
+   verification is still open.
+3. Claim the row in `verification_service_messages` (unique per verification
+   and kind). A row already there means a replay: nothing is sent.
+4. Outside the 24-hour window from the customer's message → `skipped`,
+   `outside_window`.
+5. Text for the language and dialect of the latest accepted send, else the
+   language's `default` text; a missing text or store name →
+   `skipped`, `text_unavailable`.
+6. `MessagingPort.sendFreeFormText` once → `sent` with the provider id,
+   `skipped` `window_closed` (131047), or `failed` `provider_rejected` /
+   `provider_error`.
+
+No usage, credit or dispatch row is written (record 4.10.5). Logs:
+`customer-reply-follow-up` with `kind`, `outcome` and `reason`.
 
 ### Quiet-Hours Engine
 
