@@ -1,5 +1,6 @@
 import type {
   TemplateCategory,
+  TemplateComponentsSnapshot,
   TemplateReviewStatus,
 } from './template-provider.types';
 
@@ -78,6 +79,11 @@ export interface RegistryTemplate {
   category: TemplateCategory | null;
   /** When a sync last read this template; NULL if it never has. */
   lastSyncedAt: string | null;
+  /**
+   * The provider's own text as the last sync stored it, opaque outside the
+   * adapter. Absent or NULL before a sync. Read only to build previews.
+   */
+  components?: TemplateComponentsSnapshot | null;
 }
 
 export function buildCodConfirmationKey(

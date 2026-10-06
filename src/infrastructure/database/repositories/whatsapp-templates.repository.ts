@@ -32,6 +32,7 @@ const REGISTRY_COLUMNS = {
   reviewStatus: whatsappTemplates.reviewStatus,
   category: whatsappTemplates.category,
   lastSyncedAt: whatsappTemplates.lastSyncedAt,
+  componentsSnapshot: whatsappTemplates.componentsSnapshot,
 };
 
 type WhatsappTemplateRow = Pick<
@@ -123,6 +124,10 @@ export function toRegistryTemplate(row: WhatsappTemplateRow): RegistryTemplate {
     reviewStatus: row.reviewStatus as TemplateReviewStatus | null,
     category: row.category as TemplateCategory | null,
     lastSyncedAt: row.lastSyncedAt,
+    // Only once a sync has stored one, so an unsynced row reads as before.
+    ...(row.componentsSnapshot
+      ? { components: row.componentsSnapshot as TemplateComponentsSnapshot }
+      : {}),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
@@ -44,6 +45,7 @@ import {
 } from '../../shared/ports/template-registry.port';
 import type { VerificationStatus } from '../../shared/interfaces/verification.interface';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import { TemplateMessageService } from '../template-registry/template-message.service';
 import type {
   OnboardingTestAttemptDto,
   OnboardingTestStatusDto,
@@ -74,6 +76,8 @@ export class OnboardingTestService {
     private readonly adminLifecycles: AdminStoreLifecyclesRepository,
     @Inject(TEMPLATE_REGISTRY_PORT)
     private readonly templateRegistry: TemplateRegistryPort,
+    @Optional()
+    private readonly templateMessages: TemplateMessageService = new TemplateMessageService(),
   ) {}
 
   async send(
@@ -328,6 +332,7 @@ export class OnboardingTestService {
       phone,
       language,
       preview: template.preview,
+      message: this.templateMessages.linesFor(template),
       sample: {
         customerName: SAMPLE_CUSTOMER_NAMES[language],
         orderNumber: ONBOARDING_TEST_ORDER_NUMBER,

@@ -22,6 +22,7 @@ import type {
   TemplatePreview,
   TemplateVariableKey,
 } from '../../../shared/messaging/template-registry.types';
+import type { TemplateMessageLines } from '../../../shared/messaging/template-text.types';
 import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 import {
   CLIENT_PRODUCT_EVENT_NAMES,
@@ -353,6 +354,11 @@ export interface SettingsResponseDto {
       en: MessageTemplatePreviewDto;
     };
     /**
+     * The selected message per language as neutral lines (US-08-07g). The
+     * four-block `previews` stay until the US-08-08 gate.
+     */
+    messages: { ar: TemplateMessageLines; en: TemplateMessageLines };
+    /**
      * The reminder styles a merchant may choose (US-08-07a). Present only
      * while WHATSAPP_REMINDER_TEMPLATE_ENABLED is on. `selected` is null for
      * "same as the first message".
@@ -384,6 +390,8 @@ export interface TemplateStyleDto {
   bodyVariableMode: TemplateParameterFormat;
   bodyParameterOrder: TemplateVariableKey[];
   preview: MessageTemplatePreviewDto;
+  /** The style's message as neutral lines (US-08-07g). */
+  message: TemplateMessageLines;
 }
 
 export class OnboardingBillingRequestDto {

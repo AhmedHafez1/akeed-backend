@@ -8,9 +8,12 @@ import type {
 import {
   templateDirection,
   type RenderedTemplateMessage,
+  type TemplateMessageLines,
+  type TemplateMessageSegment,
   type TemplateTextModel,
   type TemplateTextSegment,
 } from './template-text.types';
+import { TEMPLATE_VARIABLE_KEYS } from './template-draft.types';
 
 export type TemplateSampleValues = Record<TemplateVariableKey, string>;
 
@@ -136,5 +139,124 @@ export function renderRegisteredPreview(
       { label: template.preview.cancelButton, kind: 'quick_reply' },
     ],
     direction: templateDirection(template.language),
+  };
+}
+
+/**
+ * Splits segments into lines at their line breaks, trims each line's ends and
+ * drops empty lines, joining neighbouring text.
+ */
+function toLines(
+  blocks: readonly (readonly TemplateMessageSegment[])[],
+): TemplateMessageSegment[][] {
+  const lines: TemplateMessageSegment[][] = [];
+  let current: TemplateMessageSegment[] = [];
+  const push = (segment: TemplateMessageSegment) => {
+    const last = current[current.length - 1];
+    if ('text' in segment && last && 'text' in last) {
+      current[current.length - 1] = { text: last.text + segment.text };
+    } else {
+      current.push(segment);
+    }
+  };
+  const close = () => {
+    const trimmed = trimLine(current);
+    if (trimmed.length) lines.push(trimmed);
+    current = [];
+  };
+  for (const block of blocks) {
+    for (const segment of block) {
+      if (!('text' in segment)) {
+        push(segment);
+        continue;
+      }
+      const parts = segment.text.split(/\r?\n/g);
+      parts.forEach((part, index) => {
+        if (index > 0) close();
+        if (part) push({ text: part });
+      });
+    }
+    close();
+  }
+  return lines;
+}
+
+function trimLine(line: TemplateMessageSegment[]): TemplateMessageSegment[] {
+  const result = [...line];
+  const first = result[0];
+  if (first && 'text' in first) {
+    const text = first.text.trimStart();
+    if (text) result[0] = { text };
+    else result.shift();
+  }
+  const last = result[result.length - 1];
+  if (last && 'text' in last) {
+    const text = last.text.trimEnd();
+    if (text) result[result.length - 1] = { text };
+    else result.pop();
+  }
+  return result;
+}
+
+function isVariableKey(value: string): value is TemplateVariableKey {
+  return (TEMPLATE_VARIABLE_KEYS as readonly string[]).includes(value);
+}
+
+/** The provider's text, with each parameter named by the value it carries. */
+export function messageLinesFromProvider(
+  model: TemplateTextModel,
+  template: Pick<
+    RegistryTemplate,
+    'language' | 'parameterFormat' | 'variables'
+  >,
+): TemplateMessageLines {
+  const byParameter = variablesByParameter(template);
+  const segmentsOf = (
+    segments: readonly TemplateTextSegment[] | undefined,
+  ): TemplateMessageSegment[] =>
+    (segments ?? []).map((segment) => {
+      if ('text' in segment) return { text: segment.text };
+      const variable = byParameter.get(segment.parameter);
+      // A parameter the registry does not send has no value to show.
+      return variable
+        ? { variable: variable.key }
+        : { text: `[${segment.parameter}]` };
+    });
+  return {
+    lines: toLines([
+      segmentsOf(model.header),
+      segmentsOf(model.body),
+      segmentsOf(model.footer),
+    ]),
+    buttons: model.buttons.map((button) => button.text),
+    direction: templateDirection(template.language),
+    source: 'provider',
+  };
+}
+
+/** The stored preview blocks, with `{{key}}` read as the value it names. */
+export function messageLinesFromRegistered(
+  template: Pick<RegistryTemplate, 'language' | 'preview'>,
+): TemplateMessageLines {
+  const segmentsOf = (block: string): TemplateMessageSegment[] => {
+    const segments: TemplateMessageSegment[] = [];
+    let cursor = 0;
+    for (const match of block.matchAll(PREVIEW_TOKEN)) {
+      const key = match[1].toLowerCase();
+      if (!isVariableKey(key)) continue;
+      if (match.index > cursor) {
+        segments.push({ text: block.slice(cursor, match.index) });
+      }
+      segments.push({ variable: key });
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < block.length) segments.push({ text: block.slice(cursor) });
+    return segments;
+  };
+  return {
+    lines: toLines(previewBlocks(template.preview).map(segmentsOf)),
+    buttons: [template.preview.confirmButton, template.preview.cancelButton],
+    direction: templateDirection(template.language),
+    source: 'registered',
   };
 }

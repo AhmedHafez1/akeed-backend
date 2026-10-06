@@ -70,7 +70,8 @@ const MIGRATIONS = [
   '0056_dispatch_template_fallback.sql',
   '0057_whatsapp_template_sync.sql',
   // A status event also records the rejection reason, a 0058 column.
-  '0058_whatsapp_template_authoring.sql',
+  '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys (US-08-07a).
+  '0059_whatsapp_reminder_and_auto_style.sql',
 ];
 const SYNC_MIGRATION = '0057_whatsapp_template_sync.sql';
 

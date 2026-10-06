@@ -44,6 +44,7 @@ import {
   type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { TemplateMessageService } from '../template-registry/template-message.service';
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
@@ -70,7 +71,10 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  * One selectable style as the settings response has always carried it. The
  * field order is part of the response contract.
  */
-function toTemplateStyleDto(template: RegistryTemplate): TemplateStyleDto {
+function toTemplateStyleDto(
+  template: RegistryTemplate,
+  messages: TemplateMessageService,
+): TemplateStyleDto {
   return {
     language: template.language,
     variant: template.style,
@@ -79,6 +83,7 @@ function toTemplateStyleDto(template: RegistryTemplate): TemplateStyleDto {
     bodyVariableMode: template.parameterFormat,
     bodyParameterOrder: template.variables.map(({ key }) => key),
     preview: template.preview,
+    message: messages.linesFor(template),
   };
 }
 
@@ -101,6 +106,8 @@ export class OnboardingService {
     private readonly sourceSetup?: SourceSetupService,
     @Optional()
     private readonly improvementSwitches?: MessageImprovementSwitches,
+    @Optional()
+    private readonly templateMessages: TemplateMessageService = new TemplateMessageService(),
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -359,10 +366,18 @@ export class OnboardingService {
       },
       selected: { ar: selected.ar.style, en: selected.en.style },
       variants: {
-        ar: selectableTemplates(templates, 'ar').map(toTemplateStyleDto),
-        en: selectableTemplates(templates, 'en').map(toTemplateStyleDto),
+        ar: selectableTemplates(templates, 'ar').map((template) =>
+          toTemplateStyleDto(template, this.templateMessages),
+        ),
+        en: selectableTemplates(templates, 'en').map((template) =>
+          toTemplateStyleDto(template, this.templateMessages),
+        ),
       },
       previews: { ar: selected.ar.preview, en: selected.en.preview },
+      messages: {
+        ar: this.templateMessages.linesFor(selected.ar),
+        en: this.templateMessages.linesFor(selected.en),
+      },
       ...this.messageImprovementSettings(templates, integration),
     };
   }
@@ -398,8 +413,12 @@ export class OnboardingService {
                 en: selectedReminder('en'),
               },
               variants: {
-                ar: reminders('ar').map(toTemplateStyleDto),
-                en: reminders('en').map(toTemplateStyleDto),
+                ar: reminders('ar').map((template) =>
+                  toTemplateStyleDto(template, this.templateMessages),
+                ),
+                en: reminders('en').map((template) =>
+                  toTemplateStyleDto(template, this.templateMessages),
+                ),
               },
             },
           }

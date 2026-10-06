@@ -17,6 +17,8 @@ import { BillingEntitlementService } from '../verification-core/billing-entitlem
 import { UpdateOnboardingSettingsDto } from './dto/onboarding.dto';
 import { OnboardingStateService } from './onboarding-state.service';
 import { OnboardingService } from './onboarding.service';
+import { TemplateMessageService } from '../template-registry/template-message.service';
+import { describeMetaComponents } from '../../infrastructure/spokes/meta/meta-template-text';
 
 /**
  * US-08-07 a and d in Settings: the reminder style per language and the
@@ -118,6 +120,10 @@ function setup(
     undefined,
     undefined,
     switches as never,
+    new TemplateMessageService(
+      { describeComponents: describeMetaComponents } as never,
+      switches as never,
+    ),
   );
   return { state, settings, integrationsRepo, current: () => row };
 }
@@ -258,5 +264,58 @@ describe('Arabic auto style settings (US-08-07d)', () => {
       codTemplateArAuto: false,
     });
     expect(current().codTemplateArAuto).toBe(false);
+  });
+});
+
+describe('message lines in the settings response (US-08-07g)', () => {
+  const synced = TEMPLATES.map((template) =>
+    template.key === 'cod_confirm.en.friendly'
+      ? {
+          ...template,
+          components: {
+            body: 'Hello {{customer}}, order #{{order}} for {{total}}.',
+            buttons: [
+              { kind: 'quick_reply' as const, text: 'Yes' },
+              { kind: 'quick_reply' as const, text: 'No' },
+            ],
+          },
+        }
+      : template,
+  );
+
+  it('carries the selected message per language and one per style, from the stored preview while the switch is off', async () => {
+    const { settings } = setup({}, {}, synced);
+    const { template } = await settings.getSettings(owner);
+    expect(template.messages.en).toMatchObject({
+      source: 'registered',
+      direction: 'ltr',
+      buttons: ['Confirm Order', 'Cancel Order'],
+    });
+    expect(template.messages.ar.direction).toBe('rtl');
+    for (const style of [...template.variants.ar, ...template.variants.en]) {
+      expect(style.message.lines.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('reads the synced provider text with the switch on, and the stored preview for a style never synced', async () => {
+    const { settings } = setup({ snapshotPreview: true }, {}, synced);
+    const { template } = await settings.getSettings(owner);
+    expect(template.messages.en).toEqual({
+      lines: [
+        [
+          { text: 'Hello ' },
+          { variable: 'customer' },
+          { text: ', order #' },
+          { variable: 'order' },
+          { text: ' for ' },
+          { variable: 'total' },
+          { text: '.' },
+        ],
+      ],
+      buttons: ['Yes', 'No'],
+      direction: 'ltr',
+      source: 'provider',
+    });
+    expect(template.messages.ar.source).toBe('registered');
   });
 });

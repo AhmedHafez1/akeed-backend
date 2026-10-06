@@ -175,11 +175,30 @@ function buildOnboardingTestService(
   );
 }
 
+/**
+ * The block as it was recorded: the keys US-08-07g added (`messages`, and
+ * `message` on each style) are left out, in their recorded key order, so the
+ * legacy keys keep being compared byte for byte until the gate removes them.
+ */
+function legacyTemplateBlock(
+  template: Awaited<ReturnType<OnboardingService['getSettings']>>['template'],
+) {
+  const without = <T extends object>(value: T, key: string) =>
+    Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+  return {
+    ...without(template, 'messages'),
+    variants: {
+      ar: template.variants.ar.map((style) => without(style, 'message')),
+      en: template.variants.en.map((style) => without(style, 'message')),
+    },
+  };
+}
+
 async function observe(definition: StoreCase) {
   const settings = await buildSettingsService(definition).getSettings(owner);
   const test = await buildOnboardingTestService(definition).getStatus(owner);
   return {
-    settingsTemplate: settings.template,
+    settingsTemplate: legacyTemplateBlock(settings.template),
     onboardingTest: {
       language: test.language,
       preview: test.preview,
