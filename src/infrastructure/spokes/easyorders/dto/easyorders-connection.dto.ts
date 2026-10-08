@@ -12,17 +12,17 @@ export class StartEasyOrdersInstallDto {
 }
 
 /** Printable ASCII without spaces; EasyOrders secrets are 16 base64 characters. */
-const WEBHOOK_SECRET_PATTERN = /^[\x21-\x7E]{8,128}$/;
+export const EASYORDERS_WEBHOOK_SECRET_PATTERN = /^[\x21-\x7E]{8,128}$/;
 
 export class SaveEasyOrdersWebhookSecretsDto {
   @IsString()
   @TrimString()
-  @Matches(WEBHOOK_SECRET_PATTERN)
+  @Matches(EASYORDERS_WEBHOOK_SECRET_PATTERN)
   ordersSecret!: string;
 
   @IsString()
   @TrimString()
-  @Matches(WEBHOOK_SECRET_PATTERN)
+  @Matches(EASYORDERS_WEBHOOK_SECRET_PATTERN)
   statusSecret!: string;
 }
 
@@ -87,6 +87,10 @@ export interface EasyOrdersConnectionStatusDto {
      * once disconnected: the address is retired and answers nothing.
      */
     webhookUrlHint: string | null;
+    /**
+     * False until the webhook's first verified delivery, whose secret Akeed
+     * keeps. Orders are accepted before that; each is read back instead.
+     */
     ordersSecretSet: boolean;
     statusSecretSet: boolean;
     /** Store currency for every order; null until the merchant chooses it. */
@@ -101,5 +105,11 @@ export interface EasyOrdersConnectionStatusDto {
      * `pending`, `failed` or `expired`.
      */
     disconnectedAt: string | null;
+    /**
+     * After a disconnect: `removed` when Akeed deleted its webhooks at
+     * EasyOrders, `manual` when the merchant still has to. The API key is
+     * the merchant's to delete either way. Null while connected.
+     */
+    providerCleanup: 'removed' | 'manual' | null;
   } | null;
 }

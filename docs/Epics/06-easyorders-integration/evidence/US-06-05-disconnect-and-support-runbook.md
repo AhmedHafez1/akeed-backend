@@ -32,27 +32,25 @@ What stops, and where it is enforced:
 
 One thing cannot be stopped: a request to EasyOrders that was already on the wire at the instant of the disconnect.
 
-## 2. What a disconnect does not do: removal at EasyOrders
+## 2. Removal at EasyOrders
 
-**Akeed removes nothing at EasyOrders.** This is a decision (product owner, 2026-10-03), and it differs from the cleanup bullet in section 6 of the contract record, which says Akeed tries `DELETE webhooks/delete-by-url` at disconnect and reconnect. That call is not built, for two reasons the record itself states:
+**Changed 2026-10-08 (product owner).** Until then Akeed removed nothing at EasyOrders. It now deletes its own webhooks; the API key is still the merchant's to delete.
 
-- Its auth header is UNKNOWN (the docs page shows `Authorization: Bearer`, every other page shows `Api-Key`).
-- Akeed stores only a hash of the webhook URL token, so it cannot rebuild the URL to delete.
+After the local disconnect, Akeed calls `DELETE webhooks/delete-by-url` for the orders address and the status address, with the key it just wiped. To be able to name those addresses it keeps the webhook URL token as ciphertext next to its hash (migration 0062), which replaces the record's "stored only as a hash" rule.
 
-It stays owed to go-live step 12 of the record ("Uninstall behavior; delete-by-URL with `Api-Key` and with `Bearer`"). If that step verifies the call, it becomes a new story; storing the token in a recoverable form would also change the record's "stored only as a hash" rule.
+- The call is **not verified against a live store**. Its auth header is UNKNOWN in the record, so Akeed sends `Api-Key` and, after a `401` or `403`, `Authorization: Bearer`. It shipped on by default by decision, with the manual steps as the fallback. Go-live step 12 of the record is still owed: run one real disconnect and read `provider_cleanup`.
+- Each address is tried up to three times while EasyOrders answers 2xx, because a retried install registers the same address twice and whether one call removes every copy is not documented. `404` counts as nothing left.
+- The outcome is on the row and in the status: `provider_cleanup = 'removed'`, or `'manual'` when any call failed, when EasyOrders could not be reached, or when the connection was made before the token was kept.
+- It never blocks or undoes the disconnect. A failure is logged as `easyorders-disconnect-remove-webhooks`.
 
-The merchant therefore removes Akeed in EasyOrders by hand. The app shows these steps on the disconnected screen and in the disconnect dialog:
+What the merchant sees on the disconnected screen:
 
-1. In EasyOrders, open **Settings → Public API**.
-2. Delete the API key named **Akeed**.
-3. Under **Webhooks**, delete every webhook named **Akeed** (they are listed with the app name and description).
+- `removed`: open **Settings → Public API** in EasyOrders and delete the API key named **Akeed**. Nothing else.
+- `manual`: the same, and under **Webhooks** delete every webhook named **Akeed**. Until they do, EasyOrders keeps calling the old address; every call answers `401` and stores nothing, and those calls cannot be counted per merchant.
 
-Until they do:
+No API-key revocation endpoint is named anywhere in the contract record. Deleting the key in the EasyOrders dashboard is the only known way. Akeed no longer holds the key, so it cannot use it.
 
-- EasyOrders keeps the key valid. Akeed no longer holds it, so Akeed cannot use it.
-- EasyOrders keeps calling the old webhook address. Every call answers `401` and stores nothing. These calls cannot be counted per merchant, because the token no longer resolves to a connection.
-
-No API-key revocation endpoint is named anywhere in the contract record. Deleting the key in the EasyOrders dashboard is the only known way.
+Webhooks and keys left by an install the seller accepted but that never reached Akeed are not removed either: Akeed never received a key for them.
 
 ## 3. What is UNKNOWN
 
@@ -62,10 +60,10 @@ From the contract record. None of these is assumed in code or in merchant-facing
 | --- | --- | --- |
 | The response to a wrong, missing or revoked key, and how fast revocation takes effect | §2 | `401` and `403` are treated as a permanent rejection (`credentials_rejected`). The app says "the last answer EasyOrders gave, not a live check". |
 | Whether EasyOrders keeps calling a URL that answers `401`, or disables it | §6 | Nothing is promised. The merchant is told to delete the webhooks. |
-| The auth header of `delete-by-url`, and whether the call works | §6 | Not called. Manual removal only. |
+| The auth header of `delete-by-url`, and whether the call works | §6 | Called at disconnect with `Api-Key`, then `Bearer`. Any failure leaves the manual steps (`provider_cleanup = 'manual'`). |
 | What EasyOrders does on an app uninstall | §6, step 12 | Not relied on. |
-| Whether a webhook secret can be regenerated without recreating the webhook | §7 | A reconnect creates new webhooks with new secrets, and the merchant pastes both again. |
-| Whether the callback carries the webhook secrets | §7 | Assumed not. The merchant copies them. |
+| Whether a webhook secret can be regenerated without recreating the webhook | §7 | A reconnect creates new webhooks with new secrets, and Akeed learns both again. |
+| Whether the callback carries the webhook secrets | §7 | Assumed not. Akeed learns each secret from the first delivery whose order it can read back with the store's key. |
 
 Because the revoked-key response is unknown and outcome sync ships off, **a key removed at EasyOrders may go unnoticed**: nothing on the webhook path uses the key once the store is verified. Credential health is the last observed answer.
 
@@ -76,7 +74,7 @@ Only from the disconnected state, and only to the same store. There is one path:
 - Needs `EASYORDERS_CONNECT_ENABLED=true` and the organization on `EASYORDERS_PILOT_ORG_IDS`. A disconnect needs neither.
 - The callback's `store_id` must equal the one stored. Otherwise `409 EASYORDERS_RECONNECT_STORE_MISMATCH`, and nothing changes.
 - If another organization has verified that store since, `409 EASYORDERS_STORE_UNAVAILABLE`.
-- On success the same integration row becomes active again, with a new key and a new webhook address. Both webhook secrets are empty, so **orders are refused until the merchant pastes the two new secrets**. Orders placed while disconnected, or before the secrets are pasted, are not imported later.
+- On success the same integration row becomes active again, with a new key and a new webhook address. Both webhook secrets are empty and are learned from the first verified deliveries; orders are accepted in the meantime and each is read back from EasyOrders. Orders placed while disconnected are not imported later.
 - The store claim is unverified again and is re-verified on the first order read with the new key.
 - A reconnect leaves a second set of Akeed webhooks at EasyOrders if the old ones were not deleted. The old ones answer `401`. Guidance: keep exactly one orders webhook and one order-status webhook for Akeed, and delete the rest.
 
@@ -115,4 +113,8 @@ Requests that need staff and have no self-service path:
 
 - **Feature:** there is no new switch. Disconnect and reconnect ride on the existing connect switch; turning `EASYORDERS_CONNECT_ENABLED` off stops new connects and reconnects and leaves disconnect and history working.
 - **Migration `0050_easyorders_disconnect.sql`:** additive. To remove it, reconnect or delete every `easyorders_connections` row with `disconnected_at` set (its credentials are gone by design; deleting a connection row keeps the integration, its orders and its verifications), then drop `easyorders_connections_credentials_state_check`, `SET NOT NULL` on `api_key_encrypted`, `webhook_token_hash` and `webhook_token_hint`, and drop `disconnected_at` and `disconnected_by`.
-- **A disconnect made by mistake:** reconnect the same store (section 4). The integration id and history are unchanged; the merchant pastes the two new secrets.
+- **A disconnect made by mistake:** reconnect the same store (section 4). The integration id and history are unchanged, and nothing is pasted. If the first disconnect was recorded as `manual`, the old webhooks are still registered in EasyOrders next to the new ones; they answer `401` and can be deleted there.
+
+## Deliveries refused after the merchant recreated the webhooks
+
+Added 2026-10-08. A merchant who deletes and recreates the Akeed webhooks in EasyOrders gets new secrets, so every delivery is refused (`secret_mismatch`) and `rejected_deliveries` grows. Settings → order source shows the count and opens "Fix the webhook secrets": **Reset and learn again** (`DELETE /api/easyorders/connection/webhook-secrets`, owner or admin) forgets both secrets and the counter, and the next verified delivery is learned from. Pasting both secrets by hand (`PUT` on the same path) still works.

@@ -61,6 +61,8 @@ export interface NewEasyOrdersPendingInstall {
   callbackTokenHash: string;
   webhookTokenHash: string;
   webhookTokenHint: string;
+  /** Ciphertext from `encryptToken`, kept for the cleanup at disconnect. */
+  webhookTokenEncrypted: string;
   expiresAt: string;
 }
 
@@ -91,7 +93,18 @@ export type ConnectEasyOrdersResult =
   | { kind: 'store_mismatch'; orgId: string };
 
 export type DisconnectEasyOrdersResult =
-  | { kind: 'disconnected'; integrationId: string; storeWasVerified: boolean }
+  | {
+      kind: 'disconnected';
+      integrationId: string;
+      storeWasVerified: boolean;
+      /**
+       * The ciphertexts the transaction wiped, as read under its lock: what
+       * the caller needs to remove the webhooks at EasyOrders. The token is
+       * null on a row connected before it was kept.
+       */
+      apiKeyEncrypted: string | null;
+      webhookTokenEncrypted: string | null;
+    }
   | { kind: 'already_disconnected'; integrationId: string }
   | { kind: 'not_connected' };
 
@@ -106,6 +119,11 @@ type EasyOrdersSourceSlot =
   | { kind: 'fresh' }
   | { kind: 'reconnect'; connection: EasyOrdersConnection }
   | { kind: 'taken' };
+
+/** Whether EasyOrders still holds the webhooks of a disconnected source. */
+export type EasyOrdersProviderCleanup = 'removed' | 'manual';
+
+export type EasyOrdersWebhookSecretKind = 'orders' | 'status';
 
 export type EasyOrdersConnectionHealthState =
   | 'ok'
@@ -230,7 +248,7 @@ export class EasyOrdersConnectionsRepository {
    *
    * A disconnected source is brought back in place instead (US-06-05): the
    * same integration row, so its orders and history stay attached, with a new
-   * key and URL token and no webhook secrets. The store must be the one that
+   * key and URL token and no webhook secrets (they are learned again). The store must be the one that
    * was connected, and its claim is unverified again because the new key has
    * proven nothing yet.
    *
@@ -325,10 +343,12 @@ export class EasyOrdersConnectionsRepository {
           apiKeyEncrypted: input.apiKeyEncrypted,
           webhookTokenHash: pending.webhookTokenHash,
           webhookTokenHint: pending.webhookTokenHint,
+          webhookTokenEncrypted: pending.webhookTokenEncrypted,
           ordersWebhookSecretEncrypted: null,
           statusWebhookSecretEncrypted: null,
           disconnectedAt: null,
           disconnectedBy: null,
+          providerCleanup: null,
           health: input.health,
           rejectedDeliveries: 0,
           lastRejectedAt: null,
@@ -382,6 +402,7 @@ export class EasyOrdersConnectionsRepository {
       apiKeyEncrypted: input.apiKeyEncrypted,
       webhookTokenHash: pending.webhookTokenHash,
       webhookTokenHint: pending.webhookTokenHint,
+      webhookTokenEncrypted: pending.webhookTokenEncrypted,
       health: input.health,
       connectedBy: pending.createdBy,
     });
@@ -499,6 +520,7 @@ export class EasyOrdersConnectionsRepository {
             apiKeyEncrypted: null,
             webhookTokenHash: null,
             webhookTokenHint: null,
+            webhookTokenEncrypted: null,
             ordersWebhookSecretEncrypted: null,
             statusWebhookSecretEncrypted: null,
             storeVerifiedAt: null,
@@ -516,6 +538,8 @@ export class EasyOrdersConnectionsRepository {
           kind: 'disconnected' as const,
           integrationId,
           storeWasVerified: connection.storeVerifiedAt !== null,
+          apiKeyEncrypted: connection.apiKeyEncrypted,
+          webhookTokenEncrypted: connection.webhookTokenEncrypted,
         };
       }),
     );
@@ -675,6 +699,85 @@ export class EasyOrdersConnectionsRepository {
     const updated = await this.db
       .update(easyordersConnections)
       .set({ ...settings, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(easyordersConnections.orgId, orgId),
+          isNull(easyordersConnections.disconnectedAt),
+        ),
+      )
+      .returning({ integrationId: easyordersConnections.integrationId });
+    return updated.length > 0;
+  }
+
+  /**
+   * How the webhook removal at EasyOrders went, on the row a disconnect just
+   * closed. A reconnect that got in first leaves nothing to record.
+   */
+  async recordProviderCleanup(
+    integrationId: string,
+    orgId: string,
+    providerCleanup: EasyOrdersProviderCleanup,
+  ): Promise<void> {
+    await this.db
+      .update(easyordersConnections)
+      .set({ providerCleanup })
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, integrationId),
+          eq(easyordersConnections.orgId, orgId),
+          isNotNull(easyordersConnections.disconnectedAt),
+        ),
+      );
+  }
+
+  /**
+   * Keeps the secret a verified delivery carried, unless one is already
+   * held: the first writer wins, and a later delivery is compared with it.
+   */
+  async learnWebhookSecret(
+    integrationId: string,
+    orgId: string,
+    kind: EasyOrdersWebhookSecretKind,
+    secretEncrypted: string,
+  ): Promise<boolean> {
+    const column =
+      kind === 'orders'
+        ? easyordersConnections.ordersWebhookSecretEncrypted
+        : easyordersConnections.statusWebhookSecretEncrypted;
+    const updated = await this.db
+      .update(easyordersConnections)
+      .set({
+        ...(kind === 'orders'
+          ? { ordersWebhookSecretEncrypted: secretEncrypted }
+          : { statusWebhookSecretEncrypted: secretEncrypted }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(easyordersConnections.integrationId, integrationId),
+          eq(easyordersConnections.orgId, orgId),
+          isNull(column),
+          isNull(easyordersConnections.disconnectedAt),
+        ),
+      )
+      .returning({ integrationId: easyordersConnections.integrationId });
+    return updated.length > 0;
+  }
+
+  /**
+   * Forgets both secrets so they are learned again, and the rejections
+   * counted against the old ones. Answers whether there is a live connection.
+   */
+  async clearWebhookSecrets(orgId: string): Promise<boolean> {
+    const updated = await this.db
+      .update(easyordersConnections)
+      .set({
+        ordersWebhookSecretEncrypted: null,
+        statusWebhookSecretEncrypted: null,
+        rejectedDeliveries: 0,
+        lastRejectedAt: null,
+        updatedAt: new Date().toISOString(),
+      })
       .where(
         and(
           eq(easyordersConnections.orgId, orgId),

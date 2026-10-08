@@ -7,7 +7,10 @@ import type {
 import type { WebhookQueueProducer } from '../../../modules/webhook-queue/webhook-queue.producer';
 import { WebhookJobType } from '../../../modules/webhook-queue/webhook-queue.constants';
 import { EASYORDERS_CONFIG } from '../../../shared/config/easyorders.config';
-import { encryptToken } from '../../../shared/utils/token-encryption.util';
+import {
+  decryptToken,
+  encryptToken,
+} from '../../../shared/utils/token-encryption.util';
 import {
   orderCreatedFixture,
   orderStatusFixture,
@@ -16,6 +19,12 @@ import {
   generateInstallToken,
   hashInstallToken,
 } from '../../../shared/commerce/install-token';
+import type {
+  EasyOrdersApiClient,
+  EasyOrdersOrderLookup,
+} from './easyorders-api.client';
+import { EASYORDERS_UNVERIFIED_MARKER } from './easyorders-ingestion.policy';
+import { EasyOrdersRateLimiter } from './easyorders-rate-limiter';
 import { EasyOrdersWebhookService } from './easyorders-webhook.service';
 
 const orderCreated = orderCreatedFixture();
@@ -39,6 +48,8 @@ function connection(
     apiKeyEncrypted: encryptToken('api-key', ENCRYPTION_KEY),
     webhookTokenHash: hashInstallToken(TOKEN),
     webhookTokenHint: TOKEN.slice(-6),
+    webhookTokenEncrypted: encryptToken(TOKEN, ENCRYPTION_KEY),
+    providerCleanup: null,
     ordersWebhookSecretEncrypted: encryptToken(ORDERS_SECRET, ENCRYPTION_KEY),
     disconnectedAt: null,
     disconnectedBy: null,
@@ -60,6 +71,8 @@ function createService(
     ingestionEnabled?: boolean;
     connection?: EasyOrdersConnection | null;
     sourceActive?: boolean;
+    lookup?: EasyOrdersOrderLookup;
+    budgetLeft?: boolean;
   } = {},
 ) {
   const bound =
@@ -73,7 +86,22 @@ function createService(
       ),
     ),
     recordRejectedDelivery: jest.fn().mockResolvedValue(undefined),
+    learnWebhookSecret: jest.fn().mockResolvedValue(true),
   };
+  const api = {
+    getOrder: jest.fn().mockResolvedValue(
+      options.lookup ?? {
+        kind: 'found',
+        order: { ...orderCreated },
+      },
+    ),
+  };
+  const limiter = new EasyOrdersRateLimiter();
+  if (options.budgetLeft === false)
+    jest
+      .spyOn(limiter, 'acquire')
+      .mockReturnValue({ allowed: false, retryAfterMs: 1_000 });
+  const pause = jest.spyOn(limiter, 'pause');
   const producer = {
     ingest: jest.fn().mockResolvedValue({ enqueued: true }),
   };
@@ -88,8 +116,10 @@ function createService(
     connections as unknown as EasyOrdersConnectionsRepository,
     producer as unknown as WebhookQueueProducer,
     config as unknown as ConfigService,
+    api as unknown as EasyOrdersApiClient,
+    limiter,
   );
-  return { service, connections, producer };
+  return { service, connections, producer, api, pause };
 }
 
 async function answerOf(
@@ -140,6 +170,28 @@ describe('EasyOrdersWebhookService', () => {
       });
     });
 
+    it('asks EasyOrders nothing while it holds the secret', async () => {
+      const { service, api, connections } = createService();
+
+      await service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated);
+
+      expect(api.getOrder).not.toHaveBeenCalled();
+      expect(connections.learnWebhookSecret).not.toHaveBeenCalled();
+    });
+
+    it('drops a marker the payload brought itself', async () => {
+      const { service, producer } = createService();
+
+      await service.handleOrderCreated(TOKEN, ORDERS_SECRET, {
+        ...orderCreated,
+        [EASYORDERS_UNVERIFIED_MARKER]: true,
+      });
+
+      expect(producer.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ rawPayload: orderCreated }),
+      );
+    });
+
     it('answers a repeated delivery as a duplicate', async () => {
       const { service, producer } = createService();
       producer.ingest.mockResolvedValue({ enqueued: false, duplicate: true });
@@ -180,9 +232,15 @@ describe('EasyOrdersWebhookService', () => {
       ['no secret header', TOKEN, undefined, {}],
       ['the status webhook’s secret', TOKEN, STATUS_SECRET, {}],
       [
-        'a secret Akeed does not hold yet',
+        'no secret header while none is held yet',
         TOKEN,
-        ORDERS_SECRET,
+        undefined,
+        { connection: connection({ ordersWebhookSecretEncrypted: null }) },
+      ],
+      [
+        'something that is not a secret while none is held yet',
+        TOKEN,
+        'a b',
         { connection: connection({ ordersWebhookSecretEncrypted: null }) },
       ],
       ['a disconnected source', TOKEN, ORDERS_SECRET, { sourceActive: false }],
@@ -296,6 +354,216 @@ describe('EasyOrdersWebhookService', () => {
     });
   });
 
+  describe('learning a secret', () => {
+    const unlearned = () => ({
+      connection: connection({
+        ordersWebhookSecretEncrypted: null,
+        statusWebhookSecretEncrypted: null,
+      }),
+    });
+
+    it('keeps the secret of the first order EasyOrders confirms, encrypted, and queues it unmarked', async () => {
+      const { service, connections, producer, api } =
+        createService(unlearned());
+
+      await expect(
+        service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated),
+      ).resolves.toEqual({ received: true });
+
+      expect(api.getOrder).toHaveBeenCalledWith('api-key', orderCreated.id);
+      const [integrationId, orgId, kind, stored] = connections
+        .learnWebhookSecret.mock.calls[0] as [string, string, string, string];
+      expect([integrationId, orgId, kind]).toEqual([
+        INTEGRATION_ID,
+        ORG_ID,
+        'orders',
+      ]);
+      expect(stored).not.toContain(ORDERS_SECRET);
+      expect(decryptToken(stored, ENCRYPTION_KEY)).toBe(ORDERS_SECRET);
+      expect(producer.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ rawPayload: orderCreated }),
+      );
+    });
+
+    it.each([
+      ['an order the key cannot see', { kind: 'not_found' as const }],
+      [
+        'an order of another store',
+        {
+          kind: 'found' as const,
+          order: { ...orderCreated, store_id: 'other-store' },
+        },
+      ],
+    ])('refuses %s, counts it and keeps nothing', async (_label, lookup) => {
+      const { service, connections, producer } = createService({
+        ...unlearned(),
+        lookup,
+      });
+
+      await expect(
+        answerOf(
+          service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated),
+        ),
+      ).resolves.toEqual({
+        status: 401,
+        code: 'EASYORDERS_WEBHOOK_UNAUTHORIZED',
+      });
+      expect(connections.recordRejectedDelivery).toHaveBeenCalledTimes(1);
+      expect(connections.learnWebhookSecret).not.toHaveBeenCalled();
+      expect(producer.ingest).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'EasyOrders is unavailable',
+        { lookup: { kind: 'unavailable' as const } },
+      ],
+      [
+        'EasyOrders rate limits the key',
+        { lookup: { kind: 'rate_limited' as const, retryAfterMs: 30_000 } },
+      ],
+      [
+        'the store is inactive',
+        { lookup: { kind: 'store_inactive' as const } },
+      ],
+      [
+        'the key is rejected',
+        { lookup: { kind: 'credentials_rejected' as const } },
+      ],
+      [
+        'EasyOrders answers without a store id',
+        { lookup: { kind: 'found' as const, order: {} } },
+      ],
+      ['the rate budget is spent', { budgetLeft: false }],
+    ])(
+      'takes the order marked for a read-back and keeps nothing when %s',
+      async (_label, options) => {
+        const { service, connections, producer } = createService({
+          ...unlearned(),
+          ...options,
+        });
+
+        await expect(
+          service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated),
+        ).resolves.toEqual({ received: true });
+
+        expect(connections.learnWebhookSecret).not.toHaveBeenCalled();
+        expect(connections.recordRejectedDelivery).not.toHaveBeenCalled();
+        expect(producer.ingest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            rawPayload: {
+              ...orderCreated,
+              [EASYORDERS_UNVERIFIED_MARKER]: true,
+            },
+          }),
+        );
+      },
+    );
+
+    it('spends no request when the budget is spent, and holds the budget after a 429', async () => {
+      const spent = createService({ ...unlearned(), budgetLeft: false });
+      await spent.service.handleOrderCreated(
+        TOKEN,
+        ORDERS_SECRET,
+        orderCreated,
+      );
+      expect(spent.api.getOrder).not.toHaveBeenCalled();
+
+      const limited = createService({
+        ...unlearned(),
+        lookup: { kind: 'rate_limited', retryAfterMs: 30_000 },
+      });
+      await limited.service.handleOrderCreated(
+        TOKEN,
+        ORDERS_SECRET,
+        orderCreated,
+      );
+      expect(limited.pause).toHaveBeenCalledWith(INTEGRATION_ID, 30_000);
+    });
+
+    it('lets the first writer win: a second learner is still accepted', async () => {
+      const { service, connections, producer } = createService(unlearned());
+      connections.learnWebhookSecret.mockResolvedValue(false);
+
+      await expect(
+        service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated),
+      ).resolves.toEqual({ received: true });
+      expect(producer.ingest).toHaveBeenCalledTimes(1);
+    });
+
+    it('learns the status webhook’s own secret from the order its event names', async () => {
+      const { service, connections, producer, api } =
+        createService(unlearned());
+
+      await expect(
+        service.handleStatusUpdate(TOKEN, STATUS_SECRET, statusUpdate),
+      ).resolves.toEqual({ received: true });
+
+      expect(api.getOrder).toHaveBeenCalledWith(
+        'api-key',
+        statusUpdate.order_id,
+      );
+      expect(connections.learnWebhookSecret).toHaveBeenCalledWith(
+        INTEGRATION_ID,
+        ORG_ID,
+        'status',
+        expect.stringMatching(/^v1:/),
+      );
+      expect(producer.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ rawPayload: statusUpdate }),
+      );
+    });
+
+    it('refuses a status event naming an order the key cannot see, and records one it cannot check', async () => {
+      const forged = createService({
+        ...unlearned(),
+        lookup: { kind: 'not_found' },
+      });
+      expect(
+        (
+          await answerOf(
+            forged.service.handleStatusUpdate(
+              TOKEN,
+              STATUS_SECRET,
+              statusUpdate,
+            ),
+          )
+        ).status,
+      ).toBe(401);
+      expect(forged.producer.ingest).not.toHaveBeenCalled();
+
+      const unknown = createService({
+        ...unlearned(),
+        lookup: { kind: 'unavailable' },
+      });
+      await unknown.service.handleStatusUpdate(
+        TOKEN,
+        STATUS_SECRET,
+        statusUpdate,
+      );
+      expect(unknown.connections.learnWebhookSecret).not.toHaveBeenCalled();
+      expect(unknown.producer.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ rawPayload: statusUpdate }),
+      );
+    });
+
+    it('reads nothing back before the payload checks pass', async () => {
+      const { service, api } = createService(unlearned());
+
+      await answerOf(
+        service.handleOrderCreated(TOKEN, ORDERS_SECRET, {
+          ...orderCreated,
+          store_id: 'other',
+        }),
+      );
+      await answerOf(
+        service.handleStatusUpdate(TOKEN, STATUS_SECRET, orderCreated),
+      );
+
+      expect(api.getOrder).not.toHaveBeenCalled();
+    });
+  });
+
   describe('status update', () => {
     it('records the event as an update, keyed by integration, order and transition', async () => {
       const { service, producer } = createService();
@@ -360,6 +628,21 @@ describe('EasyOrdersWebhookService', () => {
         store_id: 'other-store',
       }),
     );
+    const learning = {
+      connection: connection({ ordersWebhookSecretEncrypted: null }),
+    };
+    await createService(learning).service.handleOrderCreated(
+      TOKEN,
+      ORDERS_SECRET,
+      orderCreated,
+    );
+    await answerOf(
+      createService({
+        ...learning,
+        lookup: { kind: 'not_found' },
+      }).service.handleOrderCreated(TOKEN, ORDERS_SECRET, orderCreated),
+    );
+    expect(logged.join('\n')).toContain('easyorders-webhook-secret-learn');
 
     const output = logged.join('\n');
     expect(logged.length).toBeGreaterThan(0);

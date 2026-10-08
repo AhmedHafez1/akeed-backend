@@ -18,6 +18,8 @@ function connection(
     apiKeyEncrypted: 'v1:key',
     webhookTokenHash: 'h'.repeat(64),
     webhookTokenHint: 'abc123',
+    webhookTokenEncrypted: 'v1:token',
+    providerCleanup: null,
     ordersWebhookSecretEncrypted: 'v1:orders',
     statusWebhookSecretEncrypted: 'v1:status',
     disconnectedAt: null,
@@ -88,20 +90,27 @@ describe('EasyOrdersSetupContributor', () => {
   it.each([
     [{ ordersWebhookSecretEncrypted: null }],
     [{ statusWebhookSecretEncrypted: null }],
-  ])('blocks setup while a webhook secret is missing: %j', async (missing) => {
-    await expect(
-      describeWith(
-        connection({
-          ...missing,
-          rejectedDeliveries: 2,
+  ])(
+    'reports a secret not learned yet without blocking setup: %j',
+    async (missing) => {
+      await expect(
+        describeWith(
+          connection({
+            ...missing,
+            rejectedDeliveries: 2,
+            lastRejectedAt: NOW,
+          }),
+        ).result,
+      ).resolves.toMatchObject({
+        blockedReasons: [],
+        delivery: {
+          secretsMissing: true,
+          rejectedCount: 2,
           lastRejectedAt: NOW,
-        }),
-      ).result,
-    ).resolves.toMatchObject({
-      blockedReasons: ['webhook_secrets_missing'],
-      delivery: { secretsMissing: true, rejectedCount: 2, lastRejectedAt: NOW },
-    });
-  });
+        },
+      });
+    },
+  );
 
   it.each([[{ currency: null }], [{ phoneCountry: null }]])(
     'blocks setup while an order default is missing: %j',
@@ -119,6 +128,8 @@ describe('EasyOrdersSetupContributor', () => {
           apiKeyEncrypted: null,
           webhookTokenHash: null,
           webhookTokenHint: null,
+          webhookTokenEncrypted: null,
+          providerCleanup: 'removed',
           ordersWebhookSecretEncrypted: null,
           statusWebhookSecretEncrypted: null,
           storeVerifiedAt: null,

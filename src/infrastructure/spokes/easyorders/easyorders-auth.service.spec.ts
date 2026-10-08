@@ -12,6 +12,10 @@ import {
   type EasyOrdersConfig,
 } from '../../../shared/config/easyorders.config';
 import { PhoneService } from '../../../shared/services/phone.service';
+import {
+  decryptToken,
+  encryptToken,
+} from '../../../shared/utils/token-encryption.util';
 import type { EasyOrdersApiClient } from './easyorders-api.client';
 import {
   EASYORDERS_INSTALL_TTL_MS,
@@ -43,6 +47,7 @@ function pendingInstall(
     callbackTokenHash: 'c'.repeat(64),
     webhookTokenHash: 'w'.repeat(64),
     webhookTokenHint: 'abc123',
+    webhookTokenEncrypted: 'v1:ciphertext-token',
     expiresAt: new Date(NOW.getTime() + 60_000).toISOString(),
     consumedAt: null,
     supersededAt: null,
@@ -64,6 +69,8 @@ function connectionRow(
     apiKeyEncrypted: 'v1:ciphertext-key',
     webhookTokenHash: 'h'.repeat(64),
     webhookTokenHint: 'abc123',
+    webhookTokenEncrypted: 'v1:ciphertext-token',
+    providerCleanup: null,
     ordersWebhookSecretEncrypted: 'v1:ciphertext-orders',
     statusWebhookSecretEncrypted: null,
     disconnectedAt: null,
@@ -86,6 +93,7 @@ function disconnectedRow(): EasyOrdersConnection {
     apiKeyEncrypted: null,
     webhookTokenHash: null,
     webhookTokenHint: null,
+    webhookTokenEncrypted: null,
     ordersWebhookSecretEncrypted: null,
     disconnectedAt: NOW.toISOString(),
     disconnectedBy: 'user-1',
@@ -113,13 +121,15 @@ function createService(settings: Partial<EasyOrdersConfig> = {}) {
     connect: jest.fn(),
     getOverview: jest.fn(),
     saveWebhookSecrets: jest.fn(),
+    clearWebhookSecrets: jest.fn(),
     saveOrderSettings: jest.fn(),
     disconnect: jest.fn(),
+    recordProviderCleanup: jest.fn().mockResolvedValue(undefined),
   };
   const outcomeSyncs = {
     failPendingForIntegration: jest.fn().mockResolvedValue(0),
   };
-  const api = { probeKey: jest.fn() };
+  const api = { probeKey: jest.fn(), deleteWebhookByUrl: jest.fn() };
   const configService = {
     get: (key: string) => (key === EASYORDERS_CONFIG ? config : undefined),
     getOrThrow: () => 'k'.repeat(32),
@@ -157,7 +167,7 @@ describe('EasyOrdersAuthService', () => {
   });
 
   describe('startInstall', () => {
-    it('stores only hashes, expires in 15 minutes and binds the context to the caller', async () => {
+    it('stores hashes and the encrypted webhook token, expires in 15 minutes and binds the context to the caller', async () => {
       const { service, connections } = createService();
       connections.createPendingInstall.mockImplementation(
         (input: { expiresAt: string }) =>
@@ -178,14 +188,22 @@ describe('EasyOrdersAuthService', () => {
         callbackTokenHash: hashInstallToken(callbackToken),
         webhookTokenHash: hashInstallToken(webhookToken),
         webhookTokenHint: webhookToken.slice(-6),
+        webhookTokenEncrypted: expect.stringMatching(/^v1:/) as unknown,
         expiresAt: new Date(
           NOW.getTime() + EASYORDERS_INSTALL_TTL_MS,
         ).toISOString(),
       });
       expect(EASYORDERS_INSTALL_TTL_MS).toBe(15 * 60 * 1000);
-      expect(
-        JSON.stringify(connections.createPendingInstall.mock.calls),
-      ).not.toContain(callbackToken);
+      const stored = JSON.stringify(
+        connections.createPendingInstall.mock.calls,
+      );
+      expect(stored).not.toContain(callbackToken);
+      expect(stored).not.toContain(webhookToken);
+      const [[{ webhookTokenEncrypted }]] = connections.createPendingInstall
+        .mock.calls as [[{ webhookTokenEncrypted: string }]];
+      expect(decryptToken(webhookTokenEncrypted, 'k'.repeat(32))).toBe(
+        webhookToken,
+      );
       expect(started.expiresAt).toBe(
         new Date(NOW.getTime() + EASYORDERS_INSTALL_TTL_MS).toISOString(),
       );
@@ -474,12 +492,148 @@ describe('EasyOrdersAuthService', () => {
       connection: disconnectedRow(),
     };
 
+    const WEBHOOK_TOKEN = generateInstallToken();
+    const wiped = () => ({
+      apiKeyEncrypted: encryptToken('eo-api-key', 'k'.repeat(32)),
+      webhookTokenEncrypted: encryptToken(WEBHOOK_TOKEN, 'k'.repeat(32)),
+    });
+    const WEBHOOK_URLS = (['orders', 'status'] as const).map(
+      (kind) =>
+        `https://api.akeed.test/webhooks/easyorders/${kind}/${WEBHOOK_TOKEN}`,
+    );
+
+    it('deletes both webhooks at EasyOrders after the local disconnect, and records it', async () => {
+      const { service, connections, api } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: true,
+        ...wiped(),
+      });
+      connections.getOverview.mockResolvedValue(overview);
+      // Each address was registered twice by a retried install.
+      const left = new Map(WEBHOOK_URLS.map((url) => [url, 2]));
+      api.deleteWebhookByUrl.mockImplementation((_key: string, url: string) => {
+        const count = left.get(url) ?? 0;
+        left.set(url, count - 1);
+        return Promise.resolve(count > 0 ? 'removed' : 'not_found');
+      });
+
+      await service.disconnect(owner);
+
+      expect(connections.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+        api.deleteWebhookByUrl.mock.invocationCallOrder[0],
+      );
+      for (const url of WEBHOOK_URLS)
+        expect(api.deleteWebhookByUrl).toHaveBeenCalledWith('eo-api-key', url);
+      expect(api.deleteWebhookByUrl).toHaveBeenCalledTimes(6);
+      expect(connections.recordProviderCleanup).toHaveBeenCalledWith(
+        'integration-1',
+        ORG_ID,
+        'removed',
+      );
+    });
+
+    it.each([
+      ['EasyOrders refuses the key', 'rejected'],
+      ['EasyOrders does not answer', 'unavailable'],
+    ])(
+      'leaves the webhooks to the merchant when %s',
+      async (_label, answer) => {
+        const { service, connections, api } = createService();
+        connections.disconnect.mockResolvedValue({
+          kind: 'disconnected',
+          integrationId: 'integration-1',
+          storeWasVerified: false,
+          ...wiped(),
+        });
+        connections.getOverview.mockResolvedValue(overview);
+        api.deleteWebhookByUrl.mockImplementation((_key: string, url: string) =>
+          Promise.resolve(url === WEBHOOK_URLS[0] ? 'not_found' : answer),
+        );
+
+        await expect(service.disconnect(owner)).resolves.toMatchObject({
+          state: 'disconnected',
+        });
+        expect(connections.recordProviderCleanup).toHaveBeenCalledWith(
+          'integration-1',
+          ORG_ID,
+          'manual',
+        );
+      },
+    );
+
+    it('calls nothing for a connection made before the token was kept', async () => {
+      const { service, connections, api } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: false,
+        ...wiped(),
+        webhookTokenEncrypted: null,
+      });
+      connections.getOverview.mockResolvedValue(overview);
+
+      await service.disconnect(owner);
+
+      expect(api.deleteWebhookByUrl).not.toHaveBeenCalled();
+      expect(connections.recordProviderCleanup).toHaveBeenCalledWith(
+        'integration-1',
+        ORG_ID,
+        'manual',
+      );
+    });
+
+    it('still disconnects when the cleanup itself fails, without logging a credential', async () => {
+      const errors: string[] = [];
+      jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation((...args: unknown[]) => {
+          errors.push(String(args[0]));
+        });
+      const { service, connections, api } = createService();
+      connections.disconnect.mockResolvedValue({
+        kind: 'disconnected',
+        integrationId: 'integration-1',
+        storeWasVerified: false,
+        ...wiped(),
+      });
+      connections.getOverview.mockResolvedValue(overview);
+      api.deleteWebhookByUrl.mockResolvedValue('removed');
+      connections.recordProviderCleanup.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+
+      await expect(service.disconnect(owner)).resolves.toMatchObject({
+        state: 'disconnected',
+      });
+      expect(errors.join('\n')).toContain(
+        'easyorders-disconnect-remove-webhooks',
+      );
+      expect(errors.join('\n')).not.toContain(WEBHOOK_TOKEN);
+      expect(errors.join('\n')).not.toContain('eo-api-key');
+    });
+
+    it('reports how the cleanup went', async () => {
+      const { service, connections } = createService();
+      connections.getOverview.mockResolvedValue({
+        ...overview,
+        connection: { ...disconnectedRow(), providerCleanup: 'removed' },
+      });
+
+      expect((await service.getStatus(owner)).connection).toMatchObject({
+        providerCleanup: 'removed',
+      });
+    });
+
     it('deactivates the source, closes waiting store updates and answers disconnected', async () => {
       const { service, connections, outcomeSyncs } = createService();
       connections.disconnect.mockResolvedValue({
         kind: 'disconnected',
         integrationId: 'integration-1',
         storeWasVerified: true,
+        apiKeyEncrypted: null,
+        webhookTokenEncrypted: null,
       });
       connections.getOverview.mockResolvedValue(overview);
 
@@ -510,6 +664,8 @@ describe('EasyOrdersAuthService', () => {
         kind: 'disconnected',
         integrationId: 'integration-1',
         storeWasVerified: false,
+        apiKeyEncrypted: null,
+        webhookTokenEncrypted: null,
       });
       connections.getOverview.mockResolvedValue(overview);
 
@@ -519,7 +675,7 @@ describe('EasyOrdersAuthService', () => {
     });
 
     it('is a no-op the second time', async () => {
-      const { service, connections, outcomeSyncs } = createService();
+      const { service, connections, outcomeSyncs, api } = createService();
       connections.disconnect.mockResolvedValue({
         kind: 'already_disconnected',
         integrationId: 'integration-1',
@@ -530,6 +686,8 @@ describe('EasyOrdersAuthService', () => {
         state: 'disconnected',
       });
       expect(outcomeSyncs.failPendingForIntegration).not.toHaveBeenCalled();
+      expect(api.deleteWebhookByUrl).not.toHaveBeenCalled();
+      expect(connections.recordProviderCleanup).not.toHaveBeenCalled();
     });
 
     it('still disconnects when closing the waiting store updates fails', async () => {
@@ -539,6 +697,8 @@ describe('EasyOrdersAuthService', () => {
         kind: 'disconnected',
         integrationId: 'integration-1',
         storeWasVerified: false,
+        apiKeyEncrypted: null,
+        webhookTokenEncrypted: null,
       });
       outcomeSyncs.failPendingForIntegration.mockRejectedValue(
         new Error('database unavailable'),
@@ -560,6 +720,45 @@ describe('EasyOrdersAuthService', () => {
 
       connections.disconnect.mockResolvedValue({ kind: 'not_connected' });
       expect(await codeOf(service.disconnect(owner))).toBe(
+        'EASYORDERS_NOT_CONNECTED',
+      );
+    });
+  });
+
+  describe('resetWebhookSecrets', () => {
+    it('forgets both secrets for an owner', async () => {
+      const { service, connections } = createService();
+      connections.clearWebhookSecrets.mockResolvedValue(true);
+      connections.getOverview.mockResolvedValue({
+        organizationName: 'Noor Store',
+        sourcePlatforms: ['easyorders'],
+        latestPending: undefined,
+        connection: connectionRow({
+          ordersWebhookSecretEncrypted: null,
+          rejectedDeliveries: 0,
+        }),
+      });
+
+      const status = await service.resetWebhookSecrets(owner);
+
+      expect(connections.clearWebhookSecrets).toHaveBeenCalledWith(ORG_ID);
+      expect(status.connection).toMatchObject({
+        ordersSecretSet: false,
+        statusSecretSet: false,
+        rejectedDeliveries: 0,
+      });
+    });
+
+    it('is refused for a viewer and for an organization without a connection', async () => {
+      const { service, connections } = createService();
+
+      expect(
+        await codeOf(service.resetWebhookSecrets({ ...owner, role: 'viewer' })),
+      ).toBe('EASYORDERS_ROLE_REQUIRED');
+      expect(connections.clearWebhookSecrets).not.toHaveBeenCalled();
+
+      connections.clearWebhookSecrets.mockResolvedValue(false);
+      expect(await codeOf(service.resetWebhookSecrets(owner))).toBe(
         'EASYORDERS_NOT_CONNECTED',
       );
     });
@@ -639,6 +838,7 @@ describe('EasyOrdersAuthService', () => {
           rejectedDeliveries: 3,
           connectedAt: NOW.toISOString(),
           disconnectedAt: null,
+          providerCleanup: null,
         },
       });
       const serialized = JSON.stringify(status);

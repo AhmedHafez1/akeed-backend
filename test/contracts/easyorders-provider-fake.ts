@@ -63,6 +63,8 @@ interface ScriptedFault {
   key?: string;
 }
 
+const DELETE_WEBHOOK_ROUTE = `${EASYORDERS_API_BASE}/webhooks/delete-by-url?`;
+
 const timeout = (): Promise<Response> =>
   Promise.reject(new DOMException('timed out', 'TimeoutError'));
 
@@ -77,6 +79,27 @@ export function easyOrdersProviderFake() {
     write: [],
   };
   const behavior = { crossStoreReads: false };
+  /** Registered webhook addresses, by store; an address may be there twice. */
+  const webhooks = new Map<string, string[]>();
+  const webhookDeletes: { url: string; answered: number }[] = [];
+
+  /**
+   * `DELETE webhooks/delete-by-url` (section 6: DOCUMENTED, its auth header
+   * UNKNOWN). The fake takes the header the webhooks page shows, a bearer
+   * token, and refuses `Api-Key`, so the client's second attempt is what
+   * gets through. One call removes one registration; 404 once none is left.
+   */
+  function deleteWebhook(url: string, init?: RequestInit): Promise<Response> {
+    const target = new URL(url).searchParams.get('url') ?? '';
+    const bearer = new Headers(init?.headers).get('Authorization') ?? '';
+    const store = keys.get(bearer.replace(/^Bearer /, ''));
+    const registered = store ? (webhooks.get(store.storeId) ?? []) : [];
+    const index = registered.indexOf(target);
+    const answered = !store ? 401 : index < 0 ? 404 : 200;
+    if (answered === 200) registered.splice(index, 1);
+    webhookDeletes.push({ url: target, answered });
+    return Promise.resolve(new Response('', { status: answered }));
+  }
 
   function storeOf(storeId: string): FakeStore {
     let store = stores.get(storeId);
@@ -102,6 +125,7 @@ export function easyOrdersProviderFake() {
     init?: RequestInit,
   ) => {
     const url = typeof input === 'string' ? input : '';
+    if (url.startsWith(DELETE_WEBHOOK_ROUTE)) return deleteWebhook(url, init);
     if (!url.startsWith(`${EASYORDERS_API_BASE}/orders/`))
       throw new Error(`The EasyOrders fake has no route for ${url}`);
     const method = init?.method === 'PATCH' ? 'PATCH' : 'GET';
@@ -186,6 +210,15 @@ export function easyOrdersProviderFake() {
       keys.set(key, storeOf(storeId));
       return key;
     },
+    /** What Accept on the install page creates besides the key. */
+    registerWebhook(storeId: string, url: string): void {
+      storeOf(storeId);
+      webhooks.set(storeId, [...(webhooks.get(storeId) ?? []), url]);
+    },
+    webhooksOf(storeId: string): string[] {
+      return [...(webhooks.get(storeId) ?? [])];
+    },
+    webhookDeletes,
     /** The seller deletes the key in the EasyOrders dashboard. */
     revokeKey(key: string): void {
       keys.delete(key);
@@ -234,6 +267,7 @@ export function easyOrdersProviderFake() {
     /** Between tests: the request log and unused faults go, the stores stay. */
     clear(): void {
       requests.length = 0;
+      webhookDeletes.length = 0;
       faults.read.length = 0;
       faults.write.length = 0;
       behavior.crossStoreReads = false;

@@ -180,10 +180,10 @@ Live onboarding stays blocked until the callback payload and a real `secret` hea
 **Mechanism (approved).** A per-install webhook URL token:
 
 - At least 256 bits from a CSPRNG, base64url, in the path of both `orders_webhook` and `order_status_webhook`. It is a different value from the one-time callback token.
-- Stored only as a hash on the integration. The lookup is by hash, so one token resolves to exactly one integration and one organization, or to nothing.
+- Stored as a hash on the integration, which is what the lookup uses, so one token resolves to exactly one integration and one organization, or to nothing. **Changed 2026-10-08 (product owner):** it is also kept as `encryptToken` ciphertext, only to rebuild the two webhook addresses for the cleanup below.
 - The token decides the tenant. For status webhooks it is the only tenant signal; for order webhooks the payload `store_id` must also match the integration.
 - **Rotation.** Reconnect issues a new token and invalidates the old one in the same transaction. Disconnect invalidates it. Because EasyOrders keeps old webhooks registered, deliveries to an old URL will keep arriving and must get `401` with nothing queued.
-- **Cleanup.** At disconnect and reconnect, Akeed tries to delete its old webhooks by URL while it still has a key; failure is non-fatal and surfaces in connection health.
+- **Cleanup.** At disconnect, Akeed tries to delete its webhooks by URL with the key it is giving up; failure is non-fatal and is recorded on the connection (`provider_cleanup`). **Built 2026-10-08** without the live check of the auth header: `Api-Key` is sent first, then `Authorization: Bearer` after a `401` or `403`. Go-live step 12 still has to confirm it. A reconnect follows a disconnect, so it needs no cleanup of its own.
 - The token is a credential: never logged, never returned by an API, never in a fixture. The seller can see it in their own dashboard, which is acceptable because it only identifies their own integration and the `secret` header is still required.
 
 **Proof status:**
@@ -210,11 +210,13 @@ Live status-webhook ingestion stays blocked until a real status delivery has bee
 | Whether the install page in fact passes the secret to the callback.                                                                      | UNKNOWN (the callback was not captured) |
 | Whether a secret can be regenerated without recreating the webhook.                                                                      | UNKNOWN                                 |
 
-**Default (approved): the seller copies the secrets.** If the owed run shows the secret arriving in the callback, this step is dropped and the record is updated.
+**Default until 2026-10-08: the seller copies the secrets.** If the owed run shows the secret arriving in the callback, this step is dropped and the record is updated.
+
+**Default from 2026-10-08 (product owner): Akeed learns the secrets.** The callback is still not known to carry them, and no endpoint returns them, but every delivery carries its webhook's secret in the `secret` header on a URL that holds Akeed's own 256-bit token. While Akeed holds no secret for a webhook, it reads the order the delivery names with the integration's own key (section 2) and keeps the header value of the first delivery that names a real order of the bound store. An order the key cannot see is refused. When EasyOrders gives no verdict the delivery is accepted, nothing is kept, and the order is read back in the worker before it becomes an order. From then on the secret is required as before. The bullets below describe the fallback: the seller can still paste both secrets, and can reset them to be learned again.
 
 - **Setup step.** After a successful callback the integration is in the state "awaiting webhook secrets". The connection screen shows the two webhook URLs' last characters so the seller can find the right rows, and asks for the secret of the orders webhook and the secret of the status webhook, copied from Settings → Public API → Webhooks.
 - **Storage.** Both secrets are encrypted at rest with the existing `encryptToken` utility and are write-only: never returned, never logged.
-- **Missing secret.** While either secret is missing, webhooks for that integration are rejected with `401` and nothing is queued. Connection health shows "action needed: add webhook secrets". Orders placed in that window are not ingested and are not recovered later; the guidance must say so.
+- **Missing secret.** Before 2026-10-08: webhooks were rejected with `401` until both were pasted. Now: a missing secret is the learning state above, and it blocks nothing in setup.
 - **Wrong secret.** `401`, nothing queued, and a connection-health warning counting rejected deliveries, so a mistyped secret is visible rather than silent.
 - **Duplicate registrations.** If the seller has the same URL registered twice, one of the two deliveries will carry a secret Akeed does not hold and will be rejected. Guidance for US-06-05: keep exactly one orders and one status webhook for Akeed and delete the rest.
 

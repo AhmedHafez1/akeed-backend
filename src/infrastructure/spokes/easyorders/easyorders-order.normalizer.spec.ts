@@ -38,6 +38,8 @@ function connection(
     apiKeyEncrypted: encryptToken(API_KEY, ENCRYPTION_KEY),
     webhookTokenHash: 'h'.repeat(64),
     webhookTokenHint: 'abc123',
+    webhookTokenEncrypted: null,
+    providerCleanup: null,
     ordersWebhookSecretEncrypted: null,
     disconnectedAt: null,
     disconnectedBy: null,
@@ -237,6 +239,26 @@ describe('EasyOrdersOrderNormalizer', () => {
         });
       },
     );
+
+    it('reads back an order taken before its webhook secret was known, and drops one the key cannot see', async () => {
+      const marked = { ...fixture, akeed_source_unverified: true };
+      const real = createNormalizer();
+
+      await expect(real.normalize(marked)).resolves.toMatchObject({
+        externalOrderId: fixture.id,
+      });
+      expect(real.api.getOrder).toHaveBeenCalledWith(API_KEY, fixture.id);
+
+      const forged = createNormalizer({ lookup: { kind: 'not_found' } });
+      await expect(forged.normalize(marked)).resolves.toEqual({
+        skipped: true,
+        reason: 'order_not_found',
+      });
+
+      const unmarked = createNormalizer();
+      await unmarked.normalize();
+      expect(unmarked.api.getOrder).not.toHaveBeenCalled();
+    });
 
     it('keeps what the webhook said and only fills what it lacked', async () => {
       const { normalize } = createNormalizer({

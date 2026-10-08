@@ -8,6 +8,13 @@
 /** The one event type the status webhook is documented to send. */
 export const EASYORDERS_STATUS_EVENT_TYPE = 'order-status-update';
 
+/**
+ * Set by Akeed, never by EasyOrders, on an order that was accepted before its
+ * webhook secret was known and could not be read back at the door. The
+ * normalizer reads such an order from EasyOrders before it becomes an order.
+ */
+export const EASYORDERS_UNVERIFIED_MARKER = 'akeed_source_unverified';
+
 const ID_MAX_LENGTH = 128;
 const STATUS_MAX_LENGTH = 64;
 /** Printable ASCII without spaces: an id or a status, never free text. */

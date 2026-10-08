@@ -91,12 +91,17 @@ type ProviderAnswer =
   | 'down';
 const providerAnswers = new Map<string, ProviderAnswer>();
 const probedKeys: string[] = [];
+/** The addresses Akeed asked EasyOrders to delete a webhook for, in order. */
+const webhookDeletes: string[] = [];
 
 const fakeEasyOrders: EasyOrdersHttp = (
-  _input: string | URL | Request,
+  input: string | URL | Request,
   init?: RequestInit,
 ) => {
   const key = new Headers(init?.headers).get('Api-Key') ?? '';
+  // The client only ever passes the URL as text.
+  if (init?.method === 'DELETE')
+    return fakeDeleteWebhook(typeof input === 'string' ? input : '', key);
   probedKeys.push(key);
   switch (providerAnswers.get(key) ?? 'unauthorized') {
     case 'live':
@@ -116,6 +121,24 @@ const fakeEasyOrders: EasyOrdersHttp = (
       return Promise.resolve(new Response('', { status: 401 }));
   }
 };
+
+/** One registration per address: the first delete removes it, the next finds none. */
+function fakeDeleteWebhook(url: string, key: string): Promise<Response> {
+  const address = new URL(url).searchParams.get('url') ?? '';
+  switch (providerAnswers.get(key) ?? 'unauthorized') {
+    case 'live': {
+      const repeated = webhookDeletes.includes(address);
+      webhookDeletes.push(address);
+      return Promise.resolve(
+        new Response('', { status: repeated ? 404 : 200 }),
+      );
+    }
+    case 'down':
+      return Promise.reject(new Error('socket hang up'));
+    default:
+      return Promise.resolve(new Response('', { status: 401 }));
+  }
+}
 
 const service = new EasyOrdersAuthService(
   repository,
@@ -238,6 +261,8 @@ function connectionsOf(orgId: string) {
       api_key_encrypted: string | null;
       webhook_token_hash: string | null;
       webhook_token_hint: string | null;
+      webhook_token_encrypted: string | null;
+      provider_cleanup: string | null;
       orders_webhook_secret_encrypted: string | null;
       status_webhook_secret_encrypted: string | null;
       health: string;
@@ -376,6 +401,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         '0047_easyorders_connection.sql',
         '0048_easyorders_ingestion.sql',
         '0050_easyorders_disconnect.sql',
+        '0062_easyorders_webhook_cleanup.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -466,7 +492,12 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         orders_webhook_secret_encrypted: null,
         status_webhook_secret_encrypted: null,
         webhook_token_hint: started.webhookToken.slice(-6),
+        provider_cleanup: null,
       });
+      // Kept so a disconnect can name the two webhook addresses.
+      expect(
+        decryptToken(connection.webhook_token_encrypted!, ENCRYPTION_KEY),
+      ).toBe(started.webhookToken);
       expect(connection.api_key_encrypted).toMatch(/^v1:/);
       expect(decryptToken(connection.api_key_encrypted!, ENCRYPTION_KEY)).toBe(
         key,
@@ -1036,8 +1067,9 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
     async function connectTenant(storeId: string, answer?: ProviderAnswer) {
       const tenant = await createTenant();
       const started = await start(tenant);
+      const apiKey = liveKey(answer);
       await expect(
-        callback(started.callbackToken, liveKey(answer), storeId),
+        callback(started.callbackToken, apiKey, storeId),
       ).resolves.toEqual({ status: 204 });
       await service.saveOrderSettings(member(tenant), {
         currency: 'EGP',
@@ -1047,8 +1079,14 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         ordersSecret: 'orders-secret-0001',
         statusSecret: 'status-secret-0001',
       });
-      return { tenant, started };
+      return { tenant, started, apiKey };
     }
+
+    const webhookUrls = (started: StartedInstall) =>
+      ['orders', 'status'].map(
+        (kind) =>
+          `${settings.publicApiBaseUrl}/webhooks/easyorders/${kind}/${started.webhookToken}`,
+      );
 
     async function disconnect(tenant: Tenant, user = member(tenant)) {
       const result = await service.disconnect(user);
@@ -1057,7 +1095,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
     }
 
     it('stops the source and wipes every credential, keeping the store and the integration', async () => {
-      const { tenant } = await connectTenant('store-disconnect');
+      const { tenant, started } = await connectTenant('store-disconnect');
       await client`UPDATE easyorders_connections SET store_verified_at = now() WHERE org_id = ${tenant.orgId}`;
       const [before] = await integrationsOf(tenant.orgId);
       const owner = member(tenant);
@@ -1072,8 +1110,12 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
           statusSecretSet: false,
           currency: 'EGP',
           phoneCountry: 'EG',
+          providerCleanup: 'removed',
         },
       });
+      // Both webhooks of this install were deleted at EasyOrders, by address.
+      for (const url of webhookUrls(started))
+        expect(webhookDeletes).toContain(url);
 
       const [after] = await integrationsOf(tenant.orgId);
       expect(after).toMatchObject({
@@ -1092,11 +1134,46 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         api_key_encrypted: null,
         webhook_token_hash: null,
         webhook_token_hint: null,
+        webhook_token_encrypted: null,
+        provider_cleanup: 'removed',
         orders_webhook_secret_encrypted: null,
         status_webhook_secret_encrypted: null,
         disconnected_by: owner.userId,
       });
       expect(connection.disconnected_at).not.toBeNull();
+    });
+
+    it.each([
+      ['EasyOrders cannot be reached', 'down' as const],
+      ['EasyOrders refuses the key', 'unauthorized' as const],
+    ])(
+      'still disconnects when %s, and leaves the webhooks to the merchant',
+      async (_label, answer) => {
+        const { tenant, apiKey } = await connectTenant(`store-${answer}`);
+        providerAnswers.set(apiKey, answer);
+
+        await expect(disconnect(tenant)).resolves.toMatchObject({
+          state: 'disconnected',
+          connection: { providerCleanup: 'manual' },
+        });
+        const [connection] = await connectionsOf(tenant.orgId);
+        expect(connection).toMatchObject({
+          api_key_encrypted: null,
+          webhook_token_encrypted: null,
+          provider_cleanup: 'manual',
+        });
+      },
+    );
+
+    it('asks EasyOrders for nothing when the connection predates the kept token', async () => {
+      const { tenant } = await connectTenant('store-legacy');
+      await client`UPDATE easyorders_connections SET webhook_token_encrypted = NULL WHERE org_id = ${tenant.orgId}`;
+      const deletesBefore = webhookDeletes.length;
+
+      await expect(disconnect(tenant)).resolves.toMatchObject({
+        connection: { providerCleanup: 'manual' },
+      });
+      expect(webhookDeletes).toHaveLength(deletesBefore);
     });
 
     it('a second disconnect changes nothing', async () => {
@@ -1210,6 +1287,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         "api_key_encrypted = 'v1:left-behind'",
         `webhook_token_hash = '${'c'.repeat(64)}'`,
         "orders_webhook_secret_encrypted = 'v1:left-behind'",
+        "webhook_token_encrypted = 'v1:left-behind'",
         'store_verified_at = now()',
       ])
         await expect(
@@ -1220,6 +1298,13 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
       await expect(
         client`UPDATE easyorders_connections SET api_key_encrypted = NULL WHERE disconnected_at IS NULL`,
       ).rejects.toThrow(/credentials_state_check/);
+      // The cleanup outcome belongs to a disconnected row, and is one of two.
+      await expect(
+        client`UPDATE easyorders_connections SET provider_cleanup = 'removed' WHERE disconnected_at IS NULL`,
+      ).rejects.toThrow(/provider_cleanup_check/);
+      await expect(
+        client`UPDATE easyorders_connections SET provider_cleanup = 'unknown' WHERE org_id = ${tenant.orgId}`,
+      ).rejects.toThrow(/provider_cleanup_check/);
     });
 
     it('reconnects the same store in place, with a new key and address and no secrets', async () => {
@@ -1264,12 +1349,16 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
         rejected_deliveries: 0,
         disconnected_at: null,
         disconnected_by: null,
+        provider_cleanup: null,
         currency: 'EGP',
         phone_country: 'EG',
       });
       expect(decryptToken(connection.api_key_encrypted!, ENCRYPTION_KEY)).toBe(
         key,
       );
+      expect(
+        decryptToken(connection.webhook_token_encrypted!, ENCRYPTION_KEY),
+      ).toBe(second.webhookToken);
       // The old address is gone and the new one resolves to this source.
       await expect(
         repository.findByWebhookTokenHash(hashInstallToken(first.webhookToken)),

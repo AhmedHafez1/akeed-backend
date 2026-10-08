@@ -47,6 +47,8 @@ export class EasyOrdersSetupContributor implements SourceSetupContributor {
       ? 'removed'
       : (CREDENTIAL_STATUS[connection.health] ?? 'ok');
 
+    // A missing webhook secret blocks nothing: it is learned from the first
+    // verified delivery, and orders are read back from EasyOrders until then.
     const blockedReasons: SourceSetupBlockedReason[] = [];
     if (disconnected) blockedReasons.push('source_disconnected');
     else {
@@ -54,7 +56,6 @@ export class EasyOrdersSetupContributor implements SourceSetupContributor {
         blockedReasons.push('credentials_rejected');
       if (!connection.currency || !connection.phoneCountry)
         blockedReasons.push('order_defaults_missing');
-      if (secretsMissing) blockedReasons.push('webhook_secrets_missing');
     }
 
     return {

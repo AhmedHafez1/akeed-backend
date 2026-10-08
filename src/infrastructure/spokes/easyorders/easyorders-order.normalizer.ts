@@ -19,6 +19,7 @@ import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { PhoneService } from '../../../shared/services/phone.service';
 import { decryptToken } from '../../../shared/utils/token-encryption.util';
 import { EasyOrdersApiClient } from './easyorders-api.client';
+import { EASYORDERS_UNVERIFIED_MARKER } from './easyorders-ingestion.policy';
 import {
   EasyOrdersRateLimiter,
   msUntilNextMinute,
@@ -75,8 +76,9 @@ function isIncomplete(order: Record<string, unknown>): boolean {
  *
  * Currency and phone country come from the integration's own settings, never
  * from the payload or a guess. The order is read back from EasyOrders only
- * when the webhook lacks a field or the store is still an unverified claim,
- * always with this integration's key and inside its rate budget.
+ * when the webhook lacks a field, the store is still an unverified claim, or
+ * the delivery was accepted before its webhook secret was known, always with
+ * this integration's key and inside its rate budget.
  */
 @Injectable()
 export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
@@ -114,7 +116,8 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
       !orderId ||
       isIncomplete(rawPayload) ||
       !text(rawPayload.payment_method) ||
-      connection.storeVerifiedAt === null
+      connection.storeVerifiedAt === null ||
+      rawPayload[EASYORDERS_UNVERIFIED_MARKER] === true
     ) {
       if (!orderId)
         return this.skip(orgId, integrationId, 'incomplete_payload');

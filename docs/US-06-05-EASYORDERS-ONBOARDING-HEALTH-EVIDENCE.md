@@ -152,3 +152,10 @@ Not run:
 - **A merchant reports no orders:** read `GET /api/settings/source-health`. "No events yet" with secrets set usually means the store has had no order, or its webhooks were deleted or duplicated in EasyOrders. Refused deliveries point at the secrets.
 - **Logs:** `easyorders-disconnect` (`outcome`, `storeWasVerified`, `closedPendingSyncs`), `easyorders-disconnect-close-syncs` (failure only), `easyorders-install-callback` (`reconnected`).
 - **Everything else:** the [runbook](Epics/06-easyorders-integration/evidence/US-06-05-disconnect-and-support-runbook.md).
+
+## Changed after this story (2026-10-08)
+
+Two decisions above were replaced by the product owner. This file is left as written; the current behavior is in the [runbook](Epics/06-easyorders-integration/evidence/US-06-05-disconnect-and-support-runbook.md) and in `INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md`.
+
+- **Provider cleanup at disconnect** is no longer manual only: Akeed deletes its two webhooks with `delete-by-url` and records `provider_cleanup` (migration 0062). Open item 3 is closed, except that the call is still unverified against a live store (go-live step 12). The API key stays manual.
+- **Webhook secrets are learned**, not pasted. `webhook_secrets_missing` is no longer a blocked reason, and open item 7 no longer applies: after a reconnect orders are accepted and read back until the new secrets are learned.

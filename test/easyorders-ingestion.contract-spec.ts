@@ -28,6 +28,7 @@ import {
 } from '../src/infrastructure/spokes/easyorders/easyorders-api.client';
 import { EasyOrdersAuthService } from '../src/infrastructure/spokes/easyorders/easyorders-auth.service';
 import { hashInstallToken } from '../src/shared/commerce/install-token';
+import { decryptToken } from '../src/shared/utils/token-encryption.util';
 import { EasyOrdersOrderEligibilityStrategy } from '../src/infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
 import { EasyOrdersOrderNormalizer } from '../src/infrastructure/spokes/easyorders/easyorders-order.normalizer';
 import { EasyOrdersRateLimiter } from '../src/infrastructure/spokes/easyorders/easyorders-rate-limiter';
@@ -261,10 +262,14 @@ const dispatcher = new WebhookDispatchService(
   { get: () => undefined } as never,
 );
 const producer = new WebhookQueueProducer(events, integrations, dispatcher);
+// Its own client and budget: what the door reads while it learns a secret is
+// not what the worker reads, and `providerRequests` counts only the worker.
 const webhooks = new EasyOrdersWebhookService(
   connections,
   producer,
   easyOrdersConfig,
+  new EasyOrdersApiClient(fakeEasyOrders),
+  new EasyOrdersRateLimiter(),
 );
 const auth = new EasyOrdersAuthService(
   connections,
@@ -653,6 +658,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
       await migrate('0048_easyorders_ingestion.sql');
       // US-06-05: the credentials become nullable for a disconnect.
       await migrate('0050_easyorders_disconnect.sql');
+      await migrate('0062_easyorders_webhook_cleanup.sql');
     }
   });
 
@@ -837,19 +843,120 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
       await expectNothingQueued(before);
     });
 
-    it('rejects every webhook while the seller has not added the secrets', async () => {
+    it('learns each webhook secret from the first delivery EasyOrders confirms, then requires it', async () => {
       const merchant = await connectMerchant({ secrets: false });
+      const order = orderFor(merchant);
+      orderAnswers.set(order.id, () => Response.json(order));
+      const statusEvent = { ...orderStatusFixture(), order_id: order.id };
+
+      expect((await deliverOrder(merchant, order)).status).toBe(200);
+      expect((await deliverStatus(merchant, statusEvent)).status).toBe(200);
+
+      const [stored] = await client<
+        {
+          orders_webhook_secret_encrypted: string;
+          status_webhook_secret_encrypted: string;
+        }[]
+      >`SELECT * FROM easyorders_connections WHERE integration_id = ${merchant.integrationId}`;
+      expect(
+        decryptToken(stored.orders_webhook_secret_encrypted, ENCRYPTION_KEY),
+      ).toBe(merchant.ordersSecret);
+      expect(
+        decryptToken(stored.status_webhook_secret_encrypted, ENCRYPTION_KEY),
+      ).toBe(merchant.statusSecret);
+      const status = await auth.getStatus(merchant.owner);
+      responses.push(status);
+      expect(status.connection).toMatchObject({
+        ordersSecretSet: true,
+        statusSecretSet: true,
+      });
+
+      // From here on the secret is the second factor again.
+      const next = orderFor(merchant);
+      orderAnswers.set(next.id, () => Response.json(next));
+      expect(
+        (await deliverOrder(merchant, next, { secret: secret() })).status,
+      ).toBe(401);
+      expect((await deliverOrder(merchant, next)).status).toBe(200);
+      await drain();
+      expect(await ordersOf(merchant)).toHaveLength(2);
+    });
+
+    it('refuses a delivery naming an order the key cannot see, and learns nothing from it', async () => {
+      const merchant = await connectMerchant({ secrets: false });
+      const forged = orderFor(merchant);
+      orderAnswers.set(forged.id, () => new Response('', { status: 404 }));
       const before = await totalEvents();
 
+      expect(
+        await deliverOrder(merchant, forged, { secret: secret() }),
+      ).toEqual({ status: 401, code: 'EASYORDERS_WEBHOOK_UNAUTHORIZED' });
+
+      await expectNothingQueued(before);
+      expect((await connectionOf(merchant)).rejected_deliveries).toBe(1);
+      const status = await auth.getStatus(merchant.owner);
+      responses.push(status);
+      expect(status.connection?.ordersSecretSet).toBe(false);
+
+      // The real first order is still learned from.
+      const real = orderFor(merchant);
+      orderAnswers.set(real.id, () => Response.json(real));
+      expect((await deliverOrder(merchant, real)).status).toBe(200);
+    });
+
+    it('takes an order it cannot check at the door, and the worker drops it unless EasyOrders has it', async () => {
+      const merchant = await connectMerchant({ secrets: false });
+      const unknown = orderFor(merchant);
+      const real = orderFor(merchant);
+      let reachable = false;
+      orderAnswers.set(real.id, () =>
+        reachable ? Response.json(real) : new Response('', { status: 503 }),
+      );
+
+      // `unknown` is answered 200 with an empty object: no store is named.
+      expect((await deliverOrder(merchant, unknown)).status).toBe(200);
+      expect((await deliverOrder(merchant, real)).status).toBe(200);
+      const status = await auth.getStatus(merchant.owner);
+      responses.push(status);
+      expect(status.connection?.ordersSecretSet).toBe(false);
+
+      reachable = true;
+      await drain();
+
+      expect(await ordersOf(merchant)).toMatchObject([
+        { external_order_id: real.id },
+      ]);
+      expect(await eventsOf(merchant)).toMatchObject([
+        { status: 'skipped', last_error: 'store_unverified' },
+        { status: 'completed' },
+      ]);
+    });
+
+    it('forgets the secrets on a reset, and learns them again', async () => {
+      const merchant = await connectMerchant();
+      await deliverOrder(merchant, orderFor(merchant), { secret: secret() });
+
+      const reset = await auth.resetWebhookSecrets(merchant.owner);
+      responses.push(reset);
+      expect(reset.connection).toMatchObject({
+        ordersSecretSet: false,
+        statusSecretSet: false,
+        rejectedDeliveries: 0,
+      });
+      await expect(
+        auth.resetWebhookSecrets({ ...merchant.owner, role: 'viewer' }),
+      ).rejects.toMatchObject({ status: 403 });
+
+      // The seller recreated the webhook: its deliveries carry a new secret.
+      const recreated = secret();
+      const order = orderFor(merchant);
+      orderAnswers.set(order.id, () => Response.json(order));
+      expect(
+        (await deliverOrder(merchant, order, { secret: recreated })).status,
+      ).toBe(200);
       expect((await deliverOrder(merchant, orderFor(merchant))).status).toBe(
         401,
       );
-      expect((await deliverStatus(merchant, orderStatusFixture())).status).toBe(
-        401,
-      );
-
-      await expectNothingQueued(before);
-      expect((await connectionOf(merchant)).rejected_deliveries).toBe(0);
     });
 
     it('counts wrong-secret deliveries so a mistyped secret is visible', async () => {
@@ -1640,15 +1747,8 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
         statusSecret: secret(),
       };
 
-      // Until the seller pastes the new secrets, nothing is accepted.
-      await expect(
-        deliverOrder(reconnected, orderFor(reconnected)),
-      ).resolves.toMatchObject({ status: 401 });
-      await auth.saveWebhookSecrets(reconnected.owner, {
-        ordersSecret: reconnected.ordersSecret,
-        statusSecret: reconnected.statusSecret,
-      });
-
+      // Nothing is pasted: the new webhook's secret is learned from its first
+      // order below. The old address stays dead.
       await expect(
         deliverOrder(merchant, orderFor(merchant)),
       ).resolves.toMatchObject({ status: 401 });
@@ -1664,6 +1764,9 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
 
       expect(providerRequests).toEqual([{ key: apiKey, orderId: next.id }]);
       expect((await connectionOf(merchant)).store_verified_at).not.toBeNull();
+      await expect(
+        deliverOrder(reconnected, orderFor(reconnected), { secret: secret() }),
+      ).resolves.toMatchObject({ status: 401 });
       // One source throughout: the earlier order and the new one side by side.
       expect(await ordersOf(merchant)).toHaveLength(2);
       const sources = await client`

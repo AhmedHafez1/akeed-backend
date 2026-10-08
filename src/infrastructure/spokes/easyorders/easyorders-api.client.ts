@@ -12,6 +12,7 @@ export const EASYORDERS_INACTIVE_STORE_MESSAGE =
 const PROBE_DEADLINE_MS = 10_000;
 const LOOKUP_DEADLINE_MS = 10_000;
 const STATUS_UPDATE_DEADLINE_MS = 10_000;
+const WEBHOOK_DELETE_DEADLINE_MS = 10_000;
 /** A `Retry-After` longer than this is not believed. */
 const MAX_RETRY_AFTER_MS = 10 * 60_000;
 
@@ -65,6 +66,18 @@ export type EasyOrdersStatusUpdate =
   | { kind: 'store_inactive' }
   | { kind: 'not_found' }
   | { kind: 'rejected' };
+
+/**
+ * - `removed`: EasyOrders answered 2xx.
+ * - `not_found`: 404. No webhook with that address is left.
+ * - `rejected`: any other answer, including a key refused under both headers.
+ * - `unavailable`: no verdict (timeout, network failure, 429 or 5xx).
+ */
+export type EasyOrdersWebhookDelete =
+  | 'removed'
+  | 'not_found'
+  | 'rejected'
+  | 'unavailable';
 
 @Injectable()
 export class EasyOrdersApiClient {
@@ -204,6 +217,54 @@ export class EasyOrdersApiClient {
       );
     } catch {
       return { kind: 'ambiguous' };
+    }
+  }
+
+  /**
+   * Asks EasyOrders to delete the webhook registered for one address, with
+   * the integration's own key. The webhooks page documents this call with
+   * `Authorization: Bearer` while every other page uses `Api-Key`, and which
+   * one is accepted has not been observed (contract record section 6), so a
+   * 401 or 403 under `Api-Key` is tried once more as a bearer token.
+   *
+   * One attempt per header, with a deadline. The key, the address (it holds
+   * the URL token) and the response bodies never leave this method.
+   */
+  async deleteWebhookByUrl(
+    apiKey: string,
+    webhookUrl: string,
+  ): Promise<EasyOrdersWebhookDelete> {
+    const attempt = async (
+      auth: Record<string, string>,
+    ): Promise<EasyOrdersWebhookDelete | 'refused'> => {
+      const response = await this.http(
+        `${EASYORDERS_API_BASE}/webhooks/delete-by-url?url=${encodeURIComponent(webhookUrl)}`,
+        {
+          method: 'DELETE',
+          headers: { ...auth, Accept: 'application/json' },
+          redirect: 'error',
+          signal: AbortSignal.timeout(WEBHOOK_DELETE_DEADLINE_MS),
+        },
+      );
+      if (response.ok) return 'removed';
+      if (response.status === 404) return 'not_found';
+      if (response.status === 401 || response.status === 403) return 'refused';
+      if (response.status === 429 || response.status >= 500)
+        return 'unavailable';
+      return 'rejected';
+    };
+    try {
+      return await boundedCall<EasyOrdersWebhookDelete>(
+        async () => {
+          const first = await attempt({ 'Api-Key': apiKey });
+          if (first !== 'refused') return first;
+          const second = await attempt({ Authorization: `Bearer ${apiKey}` });
+          return second === 'refused' ? 'rejected' : second;
+        },
+        { policy: NO_RETRY },
+      );
+    } catch {
+      return 'unavailable';
     }
   }
 }

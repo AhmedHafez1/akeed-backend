@@ -275,6 +275,8 @@ const webhooks = new EasyOrdersWebhookService(
   connections,
   new WebhookQueueProducer(events, integrations, dispatcher),
   config,
+  new EasyOrdersApiClient(fakeEasyOrders),
+  limiter,
 );
 /** The hub is never reached by a status event; a call would fail the test. */
 const hub = {
@@ -579,6 +581,7 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
       await migrate('0049_commerce_outcome_syncs.sql');
     // US-06-05: the credentials become nullable for a disconnect.
     await migrate('0050_easyorders_disconnect.sql');
+    await migrate('0062_easyorders_webhook_cleanup.sql');
   });
 
   afterAll(async () => {

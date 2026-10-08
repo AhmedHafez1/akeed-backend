@@ -266,6 +266,7 @@ describe('order imports PostgreSQL contract', () => {
         '0049_commerce_outcome_syncs.sql',
         // US-06-05: relaxes the EasyOrders credentials; proves 0050 re-runs.
         '0050_easyorders_disconnect.sql',
+        '0062_easyorders_webhook_cleanup.sql',
         // US-07-02: both tables reference integrations; proves 0051 re-runs.
         '0051_woocommerce_connection.sql',
         // US-07-05: relaxes the WooCommerce credentials; proves 0052 re-runs.

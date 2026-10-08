@@ -85,7 +85,10 @@ export class EasyOrdersConnectionController {
     );
   }
 
-  /** Local only: nothing is removed at EasyOrders (US-06-05 runbook). */
+  /**
+   * Stops the source here, then asks EasyOrders to delete Akeed's webhooks.
+   * The status says whether that worked (`connection.providerCleanup`).
+   */
   @Delete('connection')
   @Header('Cache-Control', 'no-store')
   disconnect(
@@ -104,6 +107,15 @@ export class EasyOrdersConnectionController {
       user,
       body as SaveEasyOrdersWebhookSecretsDto,
     );
+  }
+
+  /** Forgets the webhook secrets so they are learned again. */
+  @Delete('connection/webhook-secrets')
+  @Header('Cache-Control', 'no-store')
+  resetWebhookSecrets(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    return this.easyOrders.resetWebhookSecrets(user);
   }
 
   @Put('connection/order-settings')

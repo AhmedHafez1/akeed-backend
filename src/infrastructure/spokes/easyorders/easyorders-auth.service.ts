@@ -5,6 +5,7 @@ import {
   isUsablePendingInstall,
   type EasyOrdersConnectionOverview,
   type EasyOrdersPendingInstall,
+  type EasyOrdersProviderCleanup,
 } from '../../database/repositories/easyorders-connections.repository';
 import { CommerceOutcomeSyncsRepository } from '../../database/repositories/commerce-outcome-syncs.repository';
 import type { AuthenticatedUser } from '../../../modules/auth/guards/dual-auth.guard';
@@ -21,7 +22,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
-import { encryptToken } from '../../../shared/utils/token-encryption.util';
+import {
+  decryptToken,
+  encryptToken,
+} from '../../../shared/utils/token-encryption.util';
 import type {
   EasyOrdersConnectionHealth,
   EasyOrdersConnectionState,
@@ -37,7 +41,11 @@ import {
 } from '../../../shared/commerce/canonical-order.rules';
 import { PhoneService } from '../../../shared/services/phone.service';
 import { EasyOrdersApiClient } from './easyorders-api.client';
-import { buildEasyOrdersInstallLink } from './easyorders-install-link';
+import { readEasyOrdersApiKey } from './easyorders-credentials';
+import {
+  buildEasyOrdersInstallLink,
+  buildEasyOrdersWebhookUrl,
+} from './easyorders-install-link';
 import {
   generateInstallToken,
   hashInstallToken,
@@ -52,6 +60,12 @@ import {
 
 /** How long the seller has to accept on the EasyOrders consent page. */
 export const EASYORDERS_INSTALL_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * A retried install registers the same address again, and whether one delete
+ * call removes every copy is not documented, so it is repeated this often.
+ */
+const WEBHOOK_DELETE_PASSES = 3;
 
 const API_KEY_MAX_LENGTH = 512;
 const STORE_ID_MAX_LENGTH = 128;
@@ -125,6 +139,7 @@ export class EasyOrdersAuthService {
       callbackTokenHash: hashInstallToken(callbackToken),
       webhookTokenHash: hashInstallToken(webhookToken),
       webhookTokenHint: installTokenHint(webhookToken),
+      webhookTokenEncrypted: encryptToken(webhookToken, this.encryptionKey()),
       expiresAt: new Date(Date.now() + EASYORDERS_INSTALL_TTL_MS).toISOString(),
     });
     if (result.kind === 'source_exists') {
@@ -245,9 +260,12 @@ export class EasyOrdersAuthService {
   /**
    * Stops the source on Akeed's side (US-06-05): no new webhook is accepted,
    * nothing queued sends a message or writes to the store, and every stored
-   * credential is wiped. History stays. Nothing is removed at EasyOrders: the
-   * call that would do it is unverified (contract record section 6), so the
-   * merchant deletes the key and webhooks there by hand.
+   * credential is wiped. History stays.
+   *
+   * Then Akeed asks EasyOrders to delete its two webhooks by address, with the
+   * key it just gave up. That is best effort: the source is already stopped,
+   * and the status says whether the merchant still has to delete them by hand.
+   * The API key itself has no delete call; that row is always the merchant's.
    *
    * Not gated by the connect switch or the pilot list: turning the feature
    * off must never trap a merchant in a connection.
@@ -285,9 +303,92 @@ export class EasyOrdersAuthService {
           user.orgId,
           result.integrationId,
         ),
+        providerCleanup: await this.removeProviderWebhooks(
+          user.orgId,
+          result.integrationId,
+          result,
+        ),
       }),
     );
     return this.getStatus(user);
+  }
+
+  /**
+   * Deletes the two Akeed webhooks at EasyOrders and records how it went.
+   * Never throws. A connection made before the URL token was kept has no
+   * address to name, so its webhooks stay the merchant's to delete.
+   */
+  private async removeProviderWebhooks(
+    orgId: string,
+    integrationId: string,
+    credentials: {
+      apiKeyEncrypted: string | null;
+      webhookTokenEncrypted: string | null;
+    },
+  ): Promise<EasyOrdersProviderCleanup> {
+    let outcome: EasyOrdersProviderCleanup = 'manual';
+    try {
+      const apiKey = readEasyOrdersApiKey(credentials, this.encryptionKey());
+      const webhookToken = this.readWebhookToken(
+        credentials.webhookTokenEncrypted,
+      );
+      if (apiKey && webhookToken) {
+        const { publicApiBaseUrl } = readEasyOrdersConfig(this.config);
+        const removed = await Promise.all(
+          (['orders', 'status'] as const).map((kind) =>
+            this.removeWebhook(
+              apiKey,
+              buildEasyOrdersWebhookUrl(publicApiBaseUrl, kind, webhookToken),
+            ),
+          ),
+        );
+        if (removed.every(Boolean)) outcome = 'removed';
+      }
+      await this.connections.recordProviderCleanup(
+        integrationId,
+        orgId,
+        outcome,
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(EasyOrdersAuthService.name, {
+          action: 'easyorders-disconnect-remove-webhooks',
+          outcome: 'failure',
+          orgId,
+          integrationId,
+          ...normalizeError(error),
+        }),
+      );
+      return 'manual';
+    }
+    return outcome;
+  }
+
+  /** True once EasyOrders holds no webhook for the address. */
+  private async removeWebhook(
+    apiKey: string,
+    webhookUrl: string,
+  ): Promise<boolean> {
+    let removedOnce = false;
+    for (let pass = 0; pass < WEBHOOK_DELETE_PASSES; pass += 1) {
+      const result = await this.api.deleteWebhookByUrl(apiKey, webhookUrl);
+      if (result === 'not_found') return true;
+      if (result !== 'removed') return false;
+      removedOnce = true;
+    }
+    return removedOnce;
+  }
+
+  private readWebhookToken(encrypted: string | null): string | null {
+    if (!encrypted) return null;
+    try {
+      const token = decryptToken(encrypted, this.encryptionKey());
+      return token !== encrypted && isWellFormedInstallToken(token)
+        ? token
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -329,8 +430,9 @@ export class EasyOrdersAuthService {
   }
 
   /**
-   * The seller copies the two webhook secrets from their EasyOrders dashboard
-   * (contract record section 7). They are encrypted and write-only.
+   * The fallback for the learned secrets (contract record section 7): the
+   * seller copies both from their EasyOrders dashboard. They are encrypted
+   * and write-only.
    */
   async saveWebhookSecrets(
     user: AuthenticatedUser,
@@ -347,6 +449,29 @@ export class EasyOrdersAuthService {
     this.logger.log(
       buildBackendLog(EasyOrdersAuthService.name, {
         action: 'easyorders-webhook-secrets-save',
+        outcome: 'success',
+        orgId: user.orgId,
+        userId: user.userId,
+      }),
+    );
+    return this.getStatus(user);
+  }
+
+  /**
+   * Forgets both webhook secrets, so each is learned again from the next
+   * verified delivery. For a seller who recreated the webhooks in EasyOrders
+   * and whose deliveries now carry secrets Akeed does not hold.
+   */
+  async resetWebhookSecrets(
+    user: AuthenticatedUser,
+  ): Promise<EasyOrdersConnectionStatusDto> {
+    assertOrganizationWriteAllowed(user.role, EASYORDERS_ROLE_REQUIRED);
+    const cleared = await this.connections.clearWebhookSecrets(user.orgId);
+    if (!cleared) throw easyOrdersError('EASYORDERS_NOT_CONNECTED');
+
+    this.logger.log(
+      buildBackendLog(EasyOrdersAuthService.name, {
+        action: 'easyorders-webhook-secrets-reset',
         outcome: 'success',
         orgId: user.orgId,
         userId: user.userId,
@@ -453,6 +578,7 @@ export class EasyOrdersAuthService {
         rejectedDeliveries: connection.rejectedDeliveries,
         connectedAt: connection.createdAt,
         disconnectedAt: connection.disconnectedAt,
+        providerCleanup: toProviderCleanup(connection.providerCleanup),
       };
       if (!connection.disconnectedAt)
         return { ...base, state: 'connected', connection: details };
@@ -478,6 +604,12 @@ export class EasyOrdersAuthService {
   private encryptionKey(): string {
     return this.config.getOrThrow<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY');
   }
+}
+
+function toProviderCleanup(
+  value: string | null,
+): EasyOrdersProviderCleanup | null {
+  return value === 'removed' || value === 'manual' ? value : null;
 }
 
 function toHealth(value: string): EasyOrdersConnectionHealth {

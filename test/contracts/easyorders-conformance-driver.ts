@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { EasyOrdersConnectionsRepository } from '../../src/infrastructure/database/repositories/easyorders-connections.repository';
 import { EasyOrdersApiClient } from '../../src/infrastructure/spokes/easyorders/easyorders-api.client';
 import { EasyOrdersAuthService } from '../../src/infrastructure/spokes/easyorders/easyorders-auth.service';
+import { buildEasyOrdersWebhookUrl } from '../../src/infrastructure/spokes/easyorders/easyorders-install-link';
 import { hashInstallToken } from '../../src/shared/commerce/install-token';
 import { EasyOrdersOrderEligibilityStrategy } from '../../src/infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
 import { EasyOrdersOrderNormalizer } from '../../src/infrastructure/spokes/easyorders/easyorders-order.normalizer';
@@ -50,6 +51,7 @@ export const EASYORDERS_MIGRATIONS = [
   '0048_easyorders_ingestion.sql',
   '0049_commerce_outcome_syncs.sql',
   '0050_easyorders_disconnect.sql',
+  '0062_easyorders_webhook_cleanup.sql',
 ];
 
 export interface EasyOrdersMerchant extends ConformanceMerchant {
@@ -108,6 +110,8 @@ export function installEasyOrders(base: ConformanceBase) {
     connections,
     base.producer,
     config,
+    api,
+    limiter,
   );
   const auth = new EasyOrdersAuthService(
     connections,
@@ -176,6 +180,8 @@ export function easyOrdersConformanceDriver(
         disconnected_at: Date | null;
         api_key_encrypted: string | null;
         webhook_token_hash: string | null;
+        webhook_token_encrypted: string | null;
+        provider_cleanup: string | null;
       }[]
     >`SELECT * FROM easyorders_connections WHERE integration_id = ${merchant.integrationId}`;
     return row;
@@ -191,12 +197,24 @@ export function easyOrdersConformanceDriver(
     };
   }
 
-  /** Accept in EasyOrders: a new key for the store, not yet posted to Akeed. */
+  /**
+   * Accept in EasyOrders: the two webhooks and a new key for the store, not
+   * yet posted to Akeed.
+   */
   async function beginInstall(
     owner: AuthenticatedUser,
     storeId: string = randomUUID(),
   ): Promise<EasyOrdersInstall> {
     const tokens = await openInstallLink(owner);
+    for (const kind of ['orders', 'status'] as const)
+      provider.registerWebhook(
+        storeId,
+        buildEasyOrdersWebhookUrl(
+          'https://api.akeed.test',
+          kind,
+          tokens.webhookToken,
+        ),
+      );
     return { storeId, apiKey: track(provider.issueKey(storeId)), ...tokens };
   }
 
@@ -439,7 +457,8 @@ export function easyOrdersConformanceDriver(
       storeRequests(merchant.apiKey).map(
         (request) => `${request.method} ${request.answered}`,
       ),
-    // A disconnect makes no request, so every request with the old key counts.
+    // A disconnect reads and writes no order, so every order request with the
+    // old key counts; its webhook deletes are logged apart.
     retiredKeyRequests: (merchant) => storeRequests(merchant.apiKey),
     revokeKey: (merchant) => provider.revokeKey(merchant.apiKey),
     failNext: (merchant, channel, fault) =>
@@ -504,7 +523,15 @@ export function easyOrdersConformanceDriver(
         expect(await connectionOf(merchant)).toMatchObject({
           api_key_encrypted: null,
           webhook_token_hash: null,
+          webhook_token_encrypted: null,
+          // Akeed deleted the webhooks of this install at EasyOrders.
+          provider_cleanup: 'removed',
         });
+        expect(
+          provider
+            .webhooksOf(merchant.storeId)
+            .filter((url) => url.endsWith(merchant.webhookToken)),
+        ).toEqual([]);
       },
     },
 
