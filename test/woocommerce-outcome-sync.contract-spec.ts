@@ -147,7 +147,10 @@ const answers: unknown[] = [];
 
 // --- Real repositories and services; only the edges are fakes. ---
 
-const connections = new WooCommerceConnectionsRepository(db);
+const connections = new WooCommerceConnectionsRepository(
+  db,
+  standaloneCreditBillingConfigService(),
+);
 const events = new WebhookEventsRepository(db);
 const integrations = new IntegrationsRepository(db as never, coreConfig);
 const ordersRepo = new OrdersRepository(db);

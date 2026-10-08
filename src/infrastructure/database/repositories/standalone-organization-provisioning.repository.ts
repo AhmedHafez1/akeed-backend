@@ -77,24 +77,23 @@ export interface StandaloneSourceProvisioningOptions {
   freeGrant: number;
 }
 
-export async function provisionStandaloneSourceForOrganization(
+/**
+ * The billing half of provisioning a credit-billed source, shared by Standalone
+ * signup and the store platforms a merchant connects: opens the credit account
+ * with its launch grant (once per organization) and returns the entitlement
+ * columns the new source row takes.
+ */
+export async function provisionSourceBilling(
   tx: StandaloneProvisioningTransaction,
   orgId: string,
   options: StandaloneSourceProvisioningOptions,
+  now = new Date().toISOString(),
 ) {
-  const [organization] = await tx
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(eq(organizations.id, orgId))
-    .for('update');
-  if (!organization) throw new Error('Standalone organization was not found');
   await ensureActiveCreditAccount(tx, orgId, {
     actorId: options.actorId,
     freeGrant: options.freeGrant,
   });
-  const sourceIdentity = buildStandaloneSourceIdentity(orgId);
-  const now = new Date().toISOString();
-  const entitlement = options.grantEntitlement
+  return options.grantEntitlement
     ? {
         billingStatus: STANDALONE_BILLING_STATUS,
         billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
@@ -107,6 +106,34 @@ export async function provisionStandaloneSourceForOrganization(
         billingActivatedAt: null,
         billingStatusUpdatedAt: null,
       };
+}
+
+/** What `provisionSourceBilling` needs, read from configuration. */
+export function readSourceBillingOptions(
+  config: ConfigService,
+  actorId: string,
+): StandaloneSourceProvisioningOptions {
+  const creditBilling = readStandaloneCreditBillingConfig(config);
+  return {
+    grantEntitlement: !creditBilling.enabled,
+    actorId,
+    freeGrant: creditBilling.freeGrant,
+  };
+}
+
+export async function provisionStandaloneSourceForOrganization(
+  tx: StandaloneProvisioningTransaction,
+  orgId: string,
+  options: StandaloneSourceProvisioningOptions,
+) {
+  const [organization] = await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .for('update');
+  if (!organization) throw new Error('Standalone organization was not found');
+  const entitlement = await provisionSourceBilling(tx, orgId, options);
+  const sourceIdentity = buildStandaloneSourceIdentity(orgId);
   const [insertedSource] = await tx
     .insert(integrations)
     .values({
@@ -254,13 +281,12 @@ export class StandaloneOrganizationProvisioningRepository {
           set: { role: 'owner' },
         });
 
-      const creditBilling = readStandaloneCreditBillingConfig(this.config);
       const { integration, sourceCreated } =
-        await provisionStandaloneSourceForOrganization(tx, organization.id, {
-          grantEntitlement: !creditBilling.enabled,
-          actorId: userId,
-          freeGrant: creditBilling.freeGrant,
-        });
+        await provisionStandaloneSourceForOrganization(
+          tx,
+          organization.id,
+          readSourceBillingOptions(this.config, userId),
+        );
 
       return {
         organization,

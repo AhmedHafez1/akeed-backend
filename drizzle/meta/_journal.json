@@ -428,6 +428,13 @@
       "when": 1792108800000,
       "tag": "0060_whatsapp_service_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0061_connected_source_credit_accounts",
+      "breakpoints": true
     }
   ]
 }

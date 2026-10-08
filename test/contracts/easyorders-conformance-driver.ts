@@ -35,6 +35,7 @@ import type {
   SentOrder,
   SourceConformanceDriver,
 } from './source-conformance-harness';
+import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
 
 /**
  * EasyOrders for the source conformance harness: the spoke as the
@@ -97,7 +98,10 @@ export function installEasyOrders(base: ConformanceBase) {
   } as unknown as ConfigService;
 
   const provider = easyOrdersProviderFake();
-  const connections = new EasyOrdersConnectionsRepository(base.db);
+  const connections = new EasyOrdersConnectionsRepository(
+    base.db,
+    standaloneCreditBillingConfigService(),
+  );
   const limiter = new EasyOrdersRateLimiter();
   const api = new EasyOrdersApiClient(provider.http);
   const webhooks = new EasyOrdersWebhookService(

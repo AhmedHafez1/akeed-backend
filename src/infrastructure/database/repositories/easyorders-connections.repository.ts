@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
@@ -10,14 +11,14 @@ import {
   organizations,
 } from '../schema';
 import {
-  STANDALONE_BILLING_STATUS,
-  STANDALONE_DEFAULT_PLAN_ID,
-} from '../../../shared/billing/billing-plan';
-import {
   databaseErrorCode,
   withSerializableRetry,
 } from '../../../shared/database/serializable-retry';
-import { STANDALONE_SOURCE_DEFAULTS } from './standalone-organization-provisioning.repository';
+import {
+  provisionSourceBilling,
+  readSourceBillingOptions,
+  STANDALONE_SOURCE_DEFAULTS,
+} from './standalone-organization-provisioning.repository';
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -127,7 +128,10 @@ export interface EasyOrdersConnectionOverview {
 
 @Injectable()
 export class EasyOrdersConnectionsRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly config: ConfigService,
+  ) {}
 
   /**
    * Opens an install context for a source-less organization, or for one whose
@@ -221,8 +225,8 @@ export class EasyOrdersConnectionsRepository {
 
   /**
    * Consumes the context and provisions the source in one transaction: the
-   * `easyorders` integration with the pilot entitlement and the onboarding
-   * defaults, and its credentials. Either all of it is stored or none.
+   * `easyorders` integration with the onboarding defaults, its credentials
+   * and the organization's credit account with the launch grant. Either all of it is stored or none.
    *
    * A disconnected source is brought back in place instead (US-06-05): the
    * same integration row, so its orders and history stay attached, with a new
@@ -295,6 +299,14 @@ export class EasyOrdersConnectionsRepository {
     if (verifiedElsewhere) return { kind: 'store_unavailable', orgId };
 
     const timestamp = now.toISOString();
+    // Before the reconnect branch: a source disconnected before credit billing
+    // reached this platform gets its account too, and never a second grant.
+    const billing = await provisionSourceBilling(
+      tx,
+      orgId,
+      readSourceBillingOptions(this.config, pending.createdBy),
+      timestamp,
+    );
     if (slot.kind === 'reconnect') {
       const { integrationId } = slot.connection;
       await tx
@@ -356,12 +368,9 @@ export class EasyOrdersConnectionsRepository {
           organization.name.trim().slice(0, STORE_NAME_MAX_LENGTH).trim() ||
           null,
         onboardingStatus: 'pending',
-        // The existing pilot entitlement (US-03-02). Prepaid credits are a
-        // Standalone-only accounting mode, so the plan columns govern here.
-        billingStatus: STANDALONE_BILLING_STATUS,
-        billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
-        billingActivatedAt: timestamp,
-        billingStatusUpdatedAt: timestamp,
+        // Billed like Standalone: prepaid credits, or the Starter plan while
+        // credit billing is switched off.
+        ...billing,
       })
       .returning({ id: integrations.id });
 

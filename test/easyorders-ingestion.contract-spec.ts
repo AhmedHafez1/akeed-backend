@@ -154,7 +154,10 @@ const recordingEasyOrders: EasyOrdersHttp = (
 
 // --- Real repositories and services; only the edges are fakes. ---
 
-const connections = new EasyOrdersConnectionsRepository(db);
+const connections = new EasyOrdersConnectionsRepository(
+  db,
+  standaloneCreditBillingConfigService(),
+);
 const events = new WebhookEventsRepository(db);
 const integrations = new IntegrationsRepository(db as never, coreConfig);
 const ordersRepo = new OrdersRepository(db);

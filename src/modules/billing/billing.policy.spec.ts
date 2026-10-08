@@ -73,6 +73,13 @@ describe('purchaseDenial', () => {
     expect(purchaseDenial(base)).toBeNull();
   });
 
+  it.each(['easyorders', 'woocommerce'])(
+    'allows a connected %s source, billed like Standalone',
+    (platformType) => {
+      expect(purchaseDenial({ ...base, platformType })).toBeNull();
+    },
+  );
+
   it('allows an admin', () => {
     expect(purchaseDenial({ ...base, role: 'admin' })).toBeNull();
   });

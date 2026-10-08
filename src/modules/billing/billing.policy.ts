@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { usesPrepaidCredits } from '../../shared/billing/credit-eligibility';
 import type { CreditSummary } from '../../shared/ports/credit-accounting.port';
 import type { OrganizationRole } from '../auth/organization-role';
 import { canWriteOrganization } from '../auth/organization-role';
@@ -89,8 +90,7 @@ export function purchaseDenial(input: {
   summary: Pick<CreditSummary, 'status'> | undefined;
 }): PurchaseDenialCode | null {
   if (!input.enabled) return BILLING_ERROR_CODES.disabled;
-  if (input.platformType !== 'standalone')
-    return BILLING_ERROR_CODES.sourceUnsupported;
+  if (!usesPrepaidCredits(input)) return BILLING_ERROR_CODES.sourceUnsupported;
   if (!input.role || !canWriteOrganization(input.role))
     return BILLING_ERROR_CODES.roleRequired;
   if (!input.summary) return BILLING_ERROR_CODES.accountNotProvisioned;

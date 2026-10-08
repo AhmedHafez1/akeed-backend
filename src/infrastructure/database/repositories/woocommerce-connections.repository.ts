@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   and,
   desc,
@@ -20,14 +21,14 @@ import {
   woocommercePendingInstalls,
 } from '../schema';
 import {
-  STANDALONE_BILLING_STATUS,
-  STANDALONE_DEFAULT_PLAN_ID,
-} from '../../../shared/billing/billing-plan';
-import {
   databaseErrorCode,
   withSerializableRetry,
 } from '../../../shared/database/serializable-retry';
-import { STANDALONE_SOURCE_DEFAULTS } from './standalone-organization-provisioning.repository';
+import {
+  provisionSourceBilling,
+  readSourceBillingOptions,
+  STANDALONE_SOURCE_DEFAULTS,
+} from './standalone-organization-provisioning.repository';
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -172,7 +173,10 @@ function violatedConstraint(error: unknown): string | undefined {
 
 @Injectable()
 export class WooCommerceConnectionsRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly config: ConfigService,
+  ) {}
 
   /**
    * Opens an install context for a source-less organization, or for one whose
@@ -342,8 +346,9 @@ export class WooCommerceConnectionsRepository {
 
   /**
    * Consumes the context and provisions the source in one transaction: the
-   * `woocommerce` integration with the pilot entitlement and the onboarding
-   * defaults, and its credentials. Either all of it is stored or none.
+   * `woocommerce` integration with the onboarding defaults, its credentials
+   * and the organization's credit account with the launch grant. Either all
+   * of it is stored or none.
    *
    * A disconnected source is brought back in place instead (US-07-05): the
    * same integration row, so its orders and history stay attached, with new
@@ -424,6 +429,14 @@ export class WooCommerceConnectionsRepository {
     if (verifiedElsewhere) return { kind: 'store_unavailable', orgId };
 
     const timestamp = now.toISOString();
+    // Before the reconnect branch: a source disconnected before credit billing
+    // reached this platform gets its account too, and never a second grant.
+    const billing = await provisionSourceBilling(
+      tx,
+      orgId,
+      readSourceBillingOptions(this.config, pending.createdBy),
+      timestamp,
+    );
     const credentials = {
       storeVerifiedAt: timestamp,
       consumerKeyEncrypted: input.consumerKeyEncrypted,
@@ -501,12 +514,9 @@ export class WooCommerceConnectionsRepository {
           organization.name.trim().slice(0, STORE_NAME_MAX_LENGTH).trim() ||
           null,
         onboardingStatus: 'pending',
-        // The EasyOrders pilot entitlement (product decision 6). Prepaid
-        // credits are a Standalone-only accounting mode.
-        billingStatus: STANDALONE_BILLING_STATUS,
-        billingPlanId: STANDALONE_DEFAULT_PLAN_ID,
-        billingActivatedAt: timestamp,
-        billingStatusUpdatedAt: timestamp,
+        // Billed like Standalone: prepaid credits, or the Starter plan while
+        // credit billing is switched off.
+        ...billing,
       })
       .returning({ id: integrations.id });
 

@@ -11,6 +11,8 @@ import {
 import { readStandaloneCreditBillingConfig } from '../../../shared/config/standalone-credit-billing.config';
 import {
   creditDenial,
+  PREPAID_CREDIT_PLATFORMS,
+  usesPrepaidCredits,
   type CreditDenialCode,
 } from '../../../shared/billing/credit-eligibility';
 import type { UsageAccountingMode } from '../../../shared/billing/entitlement';
@@ -41,7 +43,7 @@ export class UsageAccountingRouter {
    * release and reverse through credits.
    */
   mode(platformType: string): UsageAccountingMode {
-    return platformType === 'standalone' && this.isEnabled()
+    return usesPrepaidCredits({ platformType }) && this.isEnabled()
       ? 'prepaid_credit'
       : 'periodic_plan';
   }
@@ -91,7 +93,7 @@ export class UsageAccountingRouter {
       )
       .where(
         and(
-          eq(integrations.platformType, 'standalone'),
+          inArray(integrations.platformType, [...PREPAID_CREDIT_PLATFORMS]),
           eq(verificationMessageDispatches.orgId, orgId),
           eq(verificationMessageDispatches.accountingMode, 'periodic_plan'),
           inArray(verificationMessageDispatches.state, [

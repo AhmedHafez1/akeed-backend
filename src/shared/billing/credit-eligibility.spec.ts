@@ -1,4 +1,4 @@
-import { creditDenial } from './credit-eligibility';
+import { creditDenial, usesPrepaidCredits } from './credit-eligibility';
 import type { CreditSummary } from '../ports/credit-accounting.port';
 
 describe('credit eligibility', () => {
@@ -14,6 +14,12 @@ describe('credit eligibility', () => {
   it('requires a provisioned account and permits the last available credit', () => {
     expect(creditDenial(undefined)).toBe('CREDIT_ACCOUNT_NOT_PROVISIONED');
     expect(creditDenial(active)).toBeNull();
+  });
+  it('meters Standalone and connected store platforms, never Shopify', () => {
+    for (const platformType of ['standalone', 'easyorders', 'woocommerce'])
+      expect(usesPrepaidCredits({ platformType })).toBe(true);
+    expect(usesPrepaidCredits({ platformType: 'shopify' })).toBe(false);
+    expect(usesPrepaidCredits({ platformType: null })).toBe(false);
   });
   it('distinguishes suspension, debt and holds that exhaust availability', () => {
     expect(creditDenial({ ...active, status: 'suspended' })).toBe(

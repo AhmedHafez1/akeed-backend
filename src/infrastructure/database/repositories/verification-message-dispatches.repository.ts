@@ -12,6 +12,7 @@ import {
   notInArray,
   sql,
 } from 'drizzle-orm';
+import { usesPrepaidCredits } from '../../../shared/billing/credit-eligibility';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import type {
@@ -1407,8 +1408,7 @@ export class VerificationMessageDispatchesRepository {
             ),
           )
           .for('update');
-        if (!source || source.platformType !== 'standalone')
-          reconciliationRequired();
+        if (!source || !usesPrepaidCredits(source)) reconciliationRequired();
         await this.accounting.prepaid.lock(tx, dispatch.orgId);
       }
       return work(tx);

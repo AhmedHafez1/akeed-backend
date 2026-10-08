@@ -196,7 +196,10 @@ const fakeEasyOrders: EasyOrdersHttp = (
 // --- Real repositories and services; only the edges are fakes. ---
 
 const coreConfig = standaloneCreditBillingConfigService();
-const connections = new EasyOrdersConnectionsRepository(db);
+const connections = new EasyOrdersConnectionsRepository(
+  db,
+  standaloneCreditBillingConfigService(),
+);
 const ordersRepo = new OrdersRepository(db);
 const syncs = new CommerceOutcomeSyncsRepository(db);
 const events = new WebhookEventsRepository(db);

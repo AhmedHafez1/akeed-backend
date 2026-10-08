@@ -12,6 +12,7 @@ import {
   paymentPurchases,
   verificationMessageDispatches,
 } from '../../infrastructure/database/schema';
+import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibility';
 import { balanceState } from './standalone-billing-operations.policy';
 import type {
   AccountBillingSummary,
@@ -97,7 +98,7 @@ export class StandaloneBillingRepository {
   }
 
   /**
-   * The rows the staff list renders: organization, its Standalone source, the
+   * The rows the staff list renders: organization, its credit-billed source, the
    * credit account and whether the launch grant is on the ledger.
    */
   async loadAccountRows(
@@ -126,7 +127,7 @@ export class StandaloneBillingRepository {
           .where(
             and(
               inArray(integrations.orgId, orgIds),
-              eq(integrations.platformType, 'standalone'),
+              inArray(integrations.platformType, [...PREPAID_CREDIT_PLATFORMS]),
             ),
           )
           .orderBy(asc(integrations.id)),

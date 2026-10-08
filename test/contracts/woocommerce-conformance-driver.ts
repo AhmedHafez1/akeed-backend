@@ -31,6 +31,7 @@ import type {
   SentOrder,
   SourceConformanceDriver,
 } from './source-conformance-harness';
+import { standaloneCreditBillingConfigService } from './standalone-credit-billing-config';
 import {
   FakeWooCommerce,
   type FakeWooCommerceRequest,
@@ -136,7 +137,10 @@ export function installWooCommerce(base: ConformanceBase) {
       timeoutMs: WOOCOMMERCE_ORDER_CALL_TIMEOUT_MS,
     }),
   );
-  const connections = new WooCommerceConnectionsRepository(base.db);
+  const connections = new WooCommerceConnectionsRepository(
+    base.db,
+    standaloneCreditBillingConfigService(),
+  );
   const health = new WooCommerceConnectionHealthService(
     connections,
     api,

@@ -3,6 +3,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
+import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibility';
 import type { AdminHealthColumns } from './admin-health-rule.service';
 import { templateHealthSql } from './admin-template-health.sql';
 
@@ -672,7 +673,10 @@ export class AdminQueryRepository {
       fallback_stores AS (
         SELECT
           raw_stores.*,
-          (platform_type = 'standalone' AND credit_account_status IS NOT NULL) AS is_credit,
+          (platform_type IN (${sql.join(
+            PREPAID_CREDIT_PLATFORMS.map((platform) => sql`${platform}`),
+            sql`, `,
+          )}) AND credit_account_status IS NOT NULL) AS is_credit,
           COALESCE(NULLIF(usage_limit, 0), ${planLimit}) AS usage_limit_effective,
           (NOT has_lifecycle AND platform_type <> 'shopify'
             AND first_eligible_order_at IS NULL

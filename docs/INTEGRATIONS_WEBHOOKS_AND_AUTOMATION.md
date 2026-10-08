@@ -721,7 +721,7 @@ The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This sect
 
 **What is stored.**
 
-- `integrations`: `platform_type = 'easyorders'`, source identity `easyorders:<orgId>`, the Starter / `not_required` pilot entitlement, the Standalone onboarding defaults with `assume_cod_when_payment_missing = false`. `access_token` and `webhook_secret` stay NULL.
+- `integrations`: `platform_type = 'easyorders'`, source identity `easyorders:<orgId>`, Standalone's billing (the organization's credit account with its one-time launch grant, plus the Starter / `not_required` entitlement only while `STANDALONE_CREDIT_BILLING_ENABLED` is `false`; WooCommerce is the same), the Standalone onboarding defaults with `assume_cod_when_payment_missing = false`. `access_token` and `webhook_secret` stay NULL.
 - `easyorders_connections`: the API key and both webhook secrets as `encryptToken` ciphertext (a CHECK refuses anything that is not a `v1:` envelope), the webhook URL token's hash and its last six characters, `health` (`ok` or `store_inactive`), and the claimed `store_id`.
 - Both tables have RLS on with no policy and all `anon` / `authenticated` grants revoked.
 

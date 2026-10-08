@@ -58,7 +58,10 @@ const client = postgres(isolatedDatabaseUrl(), {
   connection: { search_path: `${namespace},public` },
 });
 const database = drizzle(client, { schema });
-const repository = new WooCommerceConnectionsRepository(database);
+const repository = new WooCommerceConnectionsRepository(
+  database,
+  standaloneCreditBillingConfigService(),
+);
 let created = false;
 
 /** Synthetic, generated per run: never a real key. */
@@ -260,6 +263,17 @@ function integrationsOf(orgId: string) {
   >`SELECT * FROM integrations WHERE org_id = ${orgId} ORDER BY created_at`;
 }
 
+/** The organization's credit account and its launch grants. */
+async function launchGrantOf(orgId: string) {
+  const [account] = await client<
+    { status: string; posted_balance: number }[]
+  >`SELECT status, posted_balance FROM credit_accounts WHERE org_id = ${orgId}`;
+  const grants = await client<
+    { quantity: number; actor_id: string }[]
+  >`SELECT quantity, actor_id FROM credit_ledger_entries WHERE org_id = ${orgId} AND type = 'free_grant'`;
+  return { account, grants };
+}
+
 function connectionsOf(orgId: string) {
   return client<
     {
@@ -350,6 +364,32 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
         wa_access_token text,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now()
+      );
+      CREATE TABLE credit_accounts (
+        org_id uuid PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+        status text NOT NULL DEFAULT 'active',
+        posted_balance integer NOT NULL DEFAULT 0,
+        held_credits integer NOT NULL DEFAULT 0,
+        version integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE credit_ledger_entries (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id uuid NOT NULL REFERENCES credit_accounts(org_id) ON DELETE CASCADE,
+        type text NOT NULL,
+        quantity integer NOT NULL,
+        idempotency_key text NOT NULL UNIQUE,
+        reservation_id uuid,
+        dispatch_id uuid,
+        purchase_id uuid,
+        source_ledger_entry_id uuid,
+        source_reference text,
+        actor_id uuid,
+        reason text NOT NULL,
+        posted_balance_before integer NOT NULL,
+        posted_balance_after integer NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE TABLE memberships (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -486,6 +526,11 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
       ).toEqual(['system_status', 'list', 'create', 'create']);
 
       const sources = await integrationsOf(tenant.orgId);
+      // Billed like Standalone: the account opens with the launch grant.
+      await expect(launchGrantOf(tenant.orgId)).resolves.toEqual({
+        account: { status: 'active', posted_balance: 30 },
+        grants: [{ quantity: 30, actor_id: owner.userId }],
+      });
       expect(sources).toHaveLength(1);
       expect(sources[0]).toMatchObject({
         platform_type: 'woocommerce',
@@ -3075,6 +3120,11 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
         status: 200,
       });
       const sources = await integrationsOf(tenant.orgId);
+      // A reconnect never grants twice.
+      await expect(launchGrantOf(tenant.orgId)).resolves.toMatchObject({
+        account: { posted_balance: 30 },
+        grants: [{ quantity: 30 }],
+      });
       expect(sources.map((source) => source.platform_type)).toEqual([
         'woocommerce',
       ]);

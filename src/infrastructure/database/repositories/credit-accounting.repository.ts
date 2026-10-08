@@ -5,6 +5,7 @@ import type {
   CreditLedgerType,
   CreditSummary,
 } from '../../../shared/ports/credit-accounting.port';
+import { PREPAID_CREDIT_PLATFORMS } from '../../../shared/billing/credit-eligibility';
 import type { CreditTransaction, CreditWriter } from '../credit-transaction';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
@@ -107,7 +108,7 @@ export class CreditAccountingRepository {
       )
       .where(
         and(
-          eq(integrations.platformType, 'standalone'),
+          inArray(integrations.platformType, [...PREPAID_CREDIT_PLATFORMS]),
           eq(verificationMessageDispatches.orgId, orgId),
           eq(verificationMessageDispatches.accountingMode, 'periodic_plan'),
           inArray(verificationMessageDispatches.state, [

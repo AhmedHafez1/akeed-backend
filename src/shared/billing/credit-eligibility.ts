@@ -19,8 +19,23 @@ export function creditDenial(
   return null;
 }
 
-export function usesPrepaidCredits(source: { platformType: string }): boolean {
-  return source.platformType === 'standalone';
+/**
+ * The sources metered by prepaid credits: Standalone and the store platforms a
+ * merchant connects from it. Shopify settles through its own subscription.
+ */
+export const PREPAID_CREDIT_PLATFORMS: readonly string[] = [
+  'standalone',
+  'easyorders',
+  'woocommerce',
+];
+
+export function usesPrepaidCredits(source: {
+  platformType: string | null;
+}): boolean {
+  return (
+    source.platformType !== null &&
+    PREPAID_CREDIT_PLATFORMS.includes(source.platformType)
+  );
 }
 
 export function isCreditDenialCode(value: unknown): value is CreditDenialCode {
