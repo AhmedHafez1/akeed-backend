@@ -122,6 +122,25 @@ describe('normalizeError', () => {
     expect(JSON.stringify(normalized)).not.toContain(PHONE);
   });
 
+  it('names the codes of an AggregateError whose message is empty, and nothing else about its addresses', () => {
+    const error = new AggregateError([
+      Object.assign(new Error('connect ETIMEDOUT 31.13.0.1:443'), {
+        code: 'ETIMEDOUT',
+        address: '31.13.0.1',
+      }),
+      Object.assign(new Error('connect ENETUNREACH ::1:443'), {
+        code: 'ENETUNREACH',
+        address: '::1',
+      }),
+    ]);
+
+    const normalized = normalizeError(error);
+
+    expect(normalized.errorMessage).toBe('');
+    expect(normalized.errorCauseCodes).toEqual(['ETIMEDOUT', 'ENETUNREACH']);
+    expect(JSON.stringify(normalized)).not.toContain('31.13.0.1');
+  });
+
   it('leaves every other error as it is', () => {
     const error = new TypeError('not a query');
 

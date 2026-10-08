@@ -324,6 +324,10 @@ export class WhatsAppService {
     const metaError = responseData?.error;
     const status = error.response?.status;
     const rateLimitLabel = status === 429 ? ' rate_limited=true' : '';
+    // No response means the connection failed; its message is often empty.
+    const networkCodes = error.response
+      ? []
+      : (normalizeError(error).errorCauseCodes ?? []);
 
     return [
       `verificationId=${params.verificationId}`,
@@ -335,6 +339,7 @@ export class WhatsAppService {
       `type=${metaError?.type ?? 'unknown'}`,
       `fbtraceId=${metaError?.fbtrace_id ?? 'unknown'}`,
       `message=${metaError?.message ?? error.message}`,
+      networkCodes.length > 0 ? `network=${networkCodes.join(',')}` : '',
       rateLimitLabel.trim(),
     ]
       .filter(Boolean)

@@ -18,6 +18,7 @@ interface NormalizedError {
   errorName?: string;
   errorMessage?: string;
   stack?: string;
+  errorCauseCodes?: string[];
 }
 
 const REDACTED_VALUE = '[REDACTED]';
@@ -179,13 +180,38 @@ export function withoutQueryParameters(error: Error): Error {
   return safe;
 }
 
+/**
+ * A socket that cannot reach a host with several addresses (IPv4 and IPv6)
+ * fails as an `AggregateError` with an empty message, and the reason lives
+ * only in its `code` and in the `code` of each entry of `errors`
+ * (`ETIMEDOUT`, `ENETUNREACH`, `ECONNREFUSED`). Only those short codes are
+ * returned, never an address or a message.
+ */
+function networkErrorCodes(error: Error): string[] {
+  const sources: unknown[] = [error, error.cause];
+  const codes = new Set<string>();
+  for (const source of sources) {
+    if (source === null || typeof source !== 'object') continue;
+    const { code, errors } = source as { code?: unknown; errors?: unknown };
+    if (typeof code === 'string') codes.add(code);
+    if (!Array.isArray(errors)) continue;
+    for (const inner of errors as unknown[]) {
+      const innerCode = (inner as { code?: unknown } | null)?.code;
+      if (typeof innerCode === 'string') codes.add(innerCode);
+    }
+  }
+  return [...codes];
+}
+
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
     const safe = withoutQueryParameters(error);
+    const causeCodes = networkErrorCodes(error);
     return {
       errorName: safe.name,
       errorMessage: safe.message,
       stack: process.env.NODE_ENV === 'production' ? undefined : safe.stack,
+      ...(causeCodes.length > 0 ? { errorCauseCodes: causeCodes } : {}),
     };
   }
 
