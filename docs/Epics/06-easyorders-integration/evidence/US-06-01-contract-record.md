@@ -74,9 +74,11 @@ The docs were already wrong once (who sends the install callback, section 1), wh
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | API calls use the header `Api-Key: <key>` against `https://api.easy-orders.net/api/v1/external-apps/`.                                                                                 | DOCUMENTED                                   |
 | An inactive store answers authenticated calls with `400` and `{"message":"Store not active or has over due"}`. Seen on `GET orders/:id`, `PATCH orders/:id/status` and `GET products`. | VERIFIED                                     |
-| Responses carry no rate-limit or request-ID headers.                                                                                                                                   | VERIFIED (on the 400 and 404 responses only) |
+| A call with a recognized key on an active store carries `x-ratelimit-limit` (40), `x-ratelimit-remaining` and `x-ratelimit-reset`. A refused key, an inactive store and an unknown route carry none. No request-ID header. | VERIFIED (2026-10-08, `GET orders/:id`) |
 | There is no store, settings or countries endpoint: `store`, `stores`, `settings`, `shipping_areas`, `countries` and `orders?limit=1` returned `404` with an empty body.                | VERIFIED                                     |
-| Response to a wrong, missing or revoked key, and how fast revocation takes effect.                                                                                                     | UNKNOWN                                      |
+| A wrong key answers `400` with `{"message":"Api-Key not valid"}`; a missing key answers `400` with `{"message":"Api-Key not found"}`. Neither is a `401` or `403`. | VERIFIED (2026-10-08) |
+| A valid key on an active store reading an order id that does not exist answers `400` with `{"message":"record not found"}`, not a `404`. | VERIFIED (2026-10-08) |
+| Response to a revoked key, and how fast revocation takes effect. | UNKNOWN |
 | Whether a key can read another store's order.                                                                                                                                          | UNKNOWN                                      |
 | Which call proves that a key belongs to the `store_id` in the callback. No endpoint returns the key's store; an order fetched by ID carries `store_id`.                                | UNKNOWN                                      |
 | Webhooks carry a `secret` header holding a static value generated when the webhook is created.                                                                                         | DOCUMENTED                                   |
@@ -86,10 +88,10 @@ The docs were already wrong once (who sends the install callback, section 1), wh
 
 **Rules:**
 
-- **Callback verification.** Never trust the callback body. Before storing anything, call the API server-side with the received key. A success proves the key is live. A `400` with the inactive-store message also proves the key is recognized, and is recorded as a connection-health state ("store inactive"), not as a credential failure.
+- **Callback verification.** Never trust the callback body. Before storing anything, call the API server-side with the received key. A success proves the key is live, and so does the `400` "record not found": only a recognized key on an active store gets it. A `400` with the inactive-store message also proves the key is recognized, and is recorded as a connection-health state ("store inactive"), not as a credential failure.
 - **Store ownership.** Until a call that returns the key's own `store_id` is found, the callback's `store_id` is a **claim**. It becomes verified the first time data fetched with the stored key (an order by ID) carries the same `store_id`. Every order webhook's `store_id` must equal the stored one or the event is rejected. One EasyOrders store maps to at most one Akeed integration, and an unverified claim must not hold that slot against the real owner.
 - **Webhook authenticity** needs both factors: the per-install URL token (section 6) and the matching `secret` header (section 7). Either one missing or wrong is `401`, and nothing is queued.
-- **Credential failures.** Until the real responses are seen, treat `401` and `403` as permanent credential or permission failures that need merchant action, and the inactive-store `400` as a retryable health state with slow backoff. Do not retry either in a tight loop.
+- **Credential failures.** EasyOrders answers every refusal with a `400`, so the exact message decides: "Api-Key not valid" and "Api-Key not found" are permanent credential failures that need merchant action, as are a `401` or `403` should one ever appear; the inactive-store message is a retryable health state with slow backoff; "record not found" is a missing order. Any other `400` is not understood and fails closed. Do not retry a credential failure or an inactive store in a tight loop.
 
 Live onboarding stays blocked until the callback payload and a real `secret` header have been observed.
 

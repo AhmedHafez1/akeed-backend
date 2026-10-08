@@ -38,7 +38,7 @@ Run these steps of the [spike test plan](../../../../scripts/spikes/easyorders/R
 
 Two answers decide whether Part C can work at all. Check them before going on:
 
-1. **A valid key on an unknown order id.** Akeed's install probe reads an order that cannot exist and accepts the key only on a `2xx` or on the inactive-store `400`. If an active store answers `404`, every install is refused with `EASYORDERS_KEY_REJECTED`. That is a defect to fix before the pilot, not something to work around.
+1. **A valid key on an unknown order id.** Answered on 2026-10-08: an active store answers `400` with `{"message":"record not found"}`, and a wrong or missing key answers `400` with "Api-Key not valid" or "Api-Key not found". The install probe accepts the first and refuses the other two. If a store answers anything else, every install is refused with `EASYORDERS_KEY_REJECTED`; the `easyorders-key-probe` log line carries the HTTP status.
 2. **The shape of `GET orders/:id`.** Akeed expects `store_id` and `status` at the top level and fails closed otherwise (`store_unverified`, `remote_state_unreadable`). A different shape means no store update succeeds.
 
 Hand the results back so the contract record can be updated. Part B starts only when the record has no UNKNOWN in the "Blocks" column for the switch you are about to turn on.

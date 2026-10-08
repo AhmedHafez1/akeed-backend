@@ -10,7 +10,7 @@ EasyOrders behavior is taken only from the [US-06-01 contract record](Epics/06-e
 
 | Question the record left open | Decision |
 | --- | --- |
-| Which call proves a key, and what counts | `GET orders/<random UUID>` with `Api-Key`. Fail closed: only a 2xx or the exact inactive-store `400` passes. A `404` does not. An active store will probably be refused until the owed run shows the real responses. |
+| Which call proves a key, and what counts | `GET orders/<random UUID>` with `Api-Key`. EasyOrders answers a valid key, a wrong key and an inactive store all with `400`, so the message decides: "record not found" (active store) and the inactive-store message pass, as does a 2xx. Everything else is refused, a `404` included. Observed on an active store on 2026-10-08. |
 | `store_id` in the callback | A claim (`store_verified_at` NULL). Only a verified store holds the one-store slot. US-06-03 verifies it. |
 | How a merchant chooses EasyOrders | A visible source picker on signup, shown only when the frontend switch is on. Start-install is gated by the backend switch and an organization allow-list. |
 | Setup inputs in this story | The two webhook secrets only. Currency and phone country are US-06-05. |
@@ -93,7 +93,7 @@ Not run:
 
 ## Open items and known limits
 
-1. **Go-live is blocked** on the US-06-01 owed run. In particular the fail-closed probe is expected to refuse an active store until the response to a valid key on an unknown order is observed; the callback's headers and any extra body fields (for example a webhook secret) are unknown, and extra fields are ignored today.
+1. **Go-live is blocked** on the US-06-01 owed run. The probe question is closed: on 2026-10-08 an active store answered a valid key on an unknown order with `400` "record not found", which the fail-closed probe refused; the probe now accepts that answer and still refuses the wrong-key and missing-key `400`s. Still open: the callback's headers and any extra body fields (for example a webhook secret) are unknown, and extra fields are ignored today.
 2. **No disconnect or reconnect.** AC 3 names disconnect roles; the endpoint is US-06-05. Until then any existing integration row, active or not, blocks a connect.
 3. **The webhook URLs given to EasyOrders answer `404` until US-06-03.** Whether EasyOrders disables a failing webhook is unknown. Acceptable only because no real merchant connects before then.
 4. **Entitlement is the Starter / `not_required` plan even when Standalone credit billing is on.** Prepaid-credit accounting is Standalone-only in core; moving EasyOrders to credits is a core change and a product decision.

@@ -69,6 +69,16 @@ describe('EasyOrdersApiClient.updateOrderStatus', () => {
       { kind: 'store_inactive' },
     ],
     [
+      'the wrong-key 400',
+      () => Response.json({ message: 'Api-Key not valid' }, { status: 400 }),
+      { kind: 'credentials_rejected' },
+    ],
+    [
+      'the record-not-found 400',
+      () => Response.json({ message: 'record not found' }, { status: 400 }),
+      { kind: 'not_found' },
+    ],
+    [
       'another 400',
       () => Response.json({ message: 'Invalid status' }, { status: 400 }),
       { kind: 'rejected' },

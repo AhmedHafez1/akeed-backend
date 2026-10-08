@@ -1,5 +1,6 @@
 import {
   EASYORDERS_INACTIVE_STORE_MESSAGE,
+  EASYORDERS_RECORD_NOT_FOUND_MESSAGE,
   EasyOrdersApiClient,
   parseRetryAfter,
   type EasyOrdersHttp,
@@ -42,6 +43,26 @@ describe('EasyOrdersApiClient.probeKey', () => {
         ),
       'store_inactive',
     ],
+    // What an active store answers a valid key (observed 2026-10-08).
+    [
+      'the record-not-found 400',
+      () =>
+        Response.json(
+          { message: EASYORDERS_RECORD_NOT_FOUND_MESSAGE },
+          { status: 400 },
+        ),
+      'live',
+    ],
+    [
+      'the wrong-key 400',
+      () => Response.json({ message: 'Api-Key not valid' }, { status: 400 }),
+      'rejected',
+    ],
+    [
+      'the missing-key 400',
+      () => Response.json({ message: 'Api-Key not found' }, { status: 400 }),
+      'rejected',
+    ],
     [
       'another 400',
       () => Response.json({ message: 'Bad request' }, { status: 400 }),
@@ -54,8 +75,8 @@ describe('EasyOrdersApiClient.probeKey', () => {
     ],
     ['a 401', () => new Response('', { status: 401 }), 'rejected'],
     ['a 403', () => new Response('', { status: 403 }), 'rejected'],
-    // Fail closed: the record does not say what a wrong key answers, so an
-    // unknown order is not accepted as proof of a recognized key.
+    // Fail closed: the unknown order that proves a key is the 400 above. A
+    // 404 was never observed for it, and is what an unknown route answers.
     ['a 404', () => new Response('', { status: 404 }), 'rejected'],
     ['a 429', () => new Response('', { status: 429 }), 'unavailable'],
     ['a 500', () => new Response('', { status: 500 }), 'unavailable'],
@@ -117,6 +138,25 @@ describe('EasyOrdersApiClient.getOrder', () => {
           { status: 400 },
         ),
       { kind: 'store_inactive' },
+    ],
+    [
+      'the record-not-found 400',
+      () =>
+        Response.json(
+          { message: EASYORDERS_RECORD_NOT_FOUND_MESSAGE },
+          { status: 400 },
+        ),
+      { kind: 'not_found' },
+    ],
+    [
+      'the wrong-key 400',
+      () => Response.json({ message: 'Api-Key not valid' }, { status: 400 }),
+      { kind: 'credentials_rejected' },
+    ],
+    [
+      'the missing-key 400',
+      () => Response.json({ message: 'Api-Key not found' }, { status: 400 }),
+      { kind: 'credentials_rejected' },
     ],
     [
       'another 400',

@@ -11,6 +11,7 @@ import { EasyOrdersConnectionsRepository } from '../src/infrastructure/database/
 import { StandaloneOrganizationProvisioningRepository } from '../src/infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import {
   EASYORDERS_INACTIVE_STORE_MESSAGE,
+  EASYORDERS_RECORD_NOT_FOUND_MESSAGE,
   EasyOrdersApiClient,
   type EasyOrdersHttp,
 } from '../src/infrastructure/spokes/easyorders/easyorders-api.client';
@@ -82,11 +83,16 @@ const config = {
   },
 } as unknown as ConfigService;
 
-/** What the fake EasyOrders API answers a key with, by key. */
+/**
+ * What the fake EasyOrders API answers a key with, by key. `live` and
+ * `unauthorized` are the answers observed on 2026-10-08: both a 400, told
+ * apart by the message.
+ */
 type ProviderAnswer =
   | 'live'
   | 'inactive'
   | 'unauthorized'
+  | 'http_401'
   | 'not_found'
   | 'down';
 const providerAnswers = new Map<string, ProviderAnswer>();
@@ -105,7 +111,12 @@ const fakeEasyOrders: EasyOrdersHttp = (
   probedKeys.push(key);
   switch (providerAnswers.get(key) ?? 'unauthorized') {
     case 'live':
-      return Promise.resolve(Response.json({ id: 'order' }));
+      return Promise.resolve(
+        Response.json(
+          { message: EASYORDERS_RECORD_NOT_FOUND_MESSAGE },
+          { status: 400 },
+        ),
+      );
     case 'inactive':
       return Promise.resolve(
         Response.json(
@@ -117,8 +128,12 @@ const fakeEasyOrders: EasyOrdersHttp = (
       return Promise.resolve(new Response('', { status: 404 }));
     case 'down':
       return Promise.reject(new Error('socket hang up'));
-    default:
+    case 'http_401':
       return Promise.resolve(new Response('', { status: 401 }));
+    default:
+      return Promise.resolve(
+        Response.json({ message: 'Api-Key not valid' }, { status: 400 }),
+      );
   }
 };
 
@@ -724,8 +739,9 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
 
   describe('credential check', () => {
     it.each([
-      ['a key EasyOrders answers 401 for', 'unauthorized'],
-      // Fail closed: an unknown order is not proof of a recognized key.
+      ['a key EasyOrders says is not valid', 'unauthorized'],
+      ['a key EasyOrders answers 401 for', 'http_401'],
+      // Fail closed: the unknown order that proves a key is a 400, not a 404.
       ['a key EasyOrders answers 404 for', 'not_found'],
     ] as const)('rejects %s without mutation', async (_label, answer) => {
       const tenant = await createTenant();

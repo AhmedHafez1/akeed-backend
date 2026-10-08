@@ -1657,7 +1657,7 @@ export function defineSourceConformance<
         ]);
         expect(await driver.healthOf(merchant)).toBe('credentials_rejected');
         expect(driver.requestsOf(merchant)).toEqual([
-          expect.objectContaining({ method: 'GET', answered: 401 }),
+          expect.objectContaining({ method: 'GET', answered: 400 }),
         ]);
         expect(retryQueue.waiting).toHaveLength(0);
         expect(await world.runRetries()).toBe(0);

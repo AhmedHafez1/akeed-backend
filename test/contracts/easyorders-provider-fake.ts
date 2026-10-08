@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   EASYORDERS_API_BASE,
   EASYORDERS_INACTIVE_STORE_MESSAGE,
+  EASYORDERS_RECORD_NOT_FOUND_MESSAGE,
   type EasyOrdersHttp,
 } from '../../src/infrastructure/spokes/easyorders/easyorders-api.client';
 
@@ -12,15 +13,13 @@ import {
  * Its behavior comes only from the US-06-01 contract record. Where the record
  * says UNKNOWN the fake takes the record's worst-case rule and says which:
  *
- * - A wrong or revoked key answers 401 (section 2: the real answer is UNKNOWN;
- *   401 and 403 are to be treated as permanent).
+ * - A wrong or revoked key answers 400 "Api-Key not valid" (section 2,
+ *   VERIFIED for a wrong key; a revoked one is assumed to answer the same).
  * - An inactive store answers the documented 400 (section 2, VERIFIED).
  * - A key cannot see another store's order: 404 (section 2: UNKNOWN). The
  *   worst case, a key that can read across stores, is `crossStoreReads`.
- * - A valid key reading an order id nobody has answers 200 with an empty
- *   object. The record names no answer for this; it is what the install
- *   probe needs in order to accept a key, and it is an open question the
- *   live pilot has to settle (US-06-02 open item 1).
+ * - A valid key reading an order id nobody has answers 400 "record not
+ *   found" (section 2, VERIFIED). That is what the install probe accepts.
  * - Any status may follow any status (section 5: transition rules UNKNOWN).
  * - A 429 carries `Retry-After` only when the fault asks for it (section 8:
  *   headers UNKNOWN).
@@ -150,7 +149,7 @@ export function easyOrdersProviderFake() {
     };
 
     const store = keys.get(key);
-    if (!store) return answer(401);
+    if (!store) return answer(400, { message: 'Api-Key not valid' });
     if (!store.active)
       return answer(400, { message: EASYORDERS_INACTIVE_STORE_MESSAGE });
 
@@ -187,7 +186,9 @@ export function easyOrdersProviderFake() {
           store_id: visible.storeId,
           status: visible.status,
         });
-      return order ? answer(404) : answer(200, {});
+      return order
+        ? answer(404)
+        : answer(400, { message: EASYORDERS_RECORD_NOT_FOUND_MESSAGE });
     }
 
     if (!visible || visible.storeId !== store.storeId || !requested)

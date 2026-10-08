@@ -203,7 +203,7 @@ Order of enabling for a store: connect, check health, then ingestion, then outco
 
 | Symptom | Read | Likely cause and action |
 | --- | --- | --- |
-| Install ends in "EasyOrders did not accept the API key" on an active store | Log `easyorders-install-callback`, `lastErrorCode` on the connect screen | The fail-closed probe: a valid key reading an unknown order did not answer `2xx`. This is the open question in pilot script Part A. Stop; do not retry in a loop, each try leaves a key and two webhooks at EasyOrders. |
+| Install ends in "EasyOrders did not accept the API key" on an active store | Log `easyorders-install-callback` and, just before it, `easyorders-key-probe` with the `httpStatus`; `lastErrorCode` on the connect screen | EasyOrders answered the probe with something other than a `2xx`, the `400` "record not found" or the inactive-store `400`. Read the real answer with `api-probe.mjs get-order <unknown id>`. Stop; do not retry in a loop, each try leaves a key and two webhooks at EasyOrders. |
 | Connected, but no order arrives | `GET /api/settings/source-health`; `easyorders_connections.rejected_deliveries` | Refused deliveries rising: a wrong or missing secret, or a duplicate Akeed webhook in EasyOrders. None at all: ingestion switch off, the store had no order, or EasyOrders sent nothing (record section 3: inactive store or dashboard-created order). |
 | Order arrives, no message | `webhook_events.last_error` | `onboarding_incomplete`, `missing_currency`, a non-COD or unparsable phone (`skipped`), or the entitlement. |
 | Customer answered, EasyOrders unchanged | `commerce_outcome_syncs` for the order: `state`, `error_code`, `provider_status` | `unsupported`: writes are off. `remote_state_conflict`: the store had already moved the order. `store_unverified` or `remote_state_unreadable`: the order response is not the shape Akeed expects (Part A). `source_credentials_rejected`: disconnect and reconnect. `failed` with `source_unavailable` or `retry_not_scheduled`: the merchant's Retry on the row. |
@@ -222,7 +222,7 @@ Each one blocks release. They are the contract record's go-live table; none was 
 | # | Question | Record | Blocks | Closed by (pilot script Part A) |
 | --- | --- | --- | --- | --- |
 | 1 | The callback POST: headers, body fields, whether it carries a webhook secret; redirect and cancel behavior | §1, §2, §7 | Connect; the "seller copies the secrets" step | Steps 1, 4 |
-| 2 | What a valid key answers for an order id that does not exist (the install probe accepts only `2xx` or the inactive-store `400`) | §2; US-06-02 open item 1 | Connect: an active store may be refused | Step 5 (`get-order`) |
+| 2 | What a valid key answers for an order id that does not exist. **Closed 2026-10-08:** `400` "record not found"; the install probe accepts it | §2; US-06-02 open item 1 | None | Step 5 (`get-order`) |
 | 3 | A real order webhook: headers, the `secret` header, the payload; a captured fixture; storefront versus dashboard orders | §2, §3 | Ingestion | Step 5 |
 | 4 | Retries after `5xx` and timeout, duplicates, ordering | §3 | Ingestion (a lost event is recovered only if EasyOrders retries) | Step 6 |
 | 5 | A real status webhook on a token URL, and after the token is rotated; whether EasyOrders keeps calling a URL that answers `401` | §6 | Ingestion; disconnect guidance | Step 7 |
