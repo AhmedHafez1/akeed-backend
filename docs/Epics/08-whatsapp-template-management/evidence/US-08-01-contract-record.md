@@ -93,7 +93,7 @@ No request was sent to Meta to confirm this. The story's dry run against Meta wi
 | 3.2 | **List response shape.** Each template has `id` (a numeric string), `name`, `language`, `status`, `category`, `sub_category`, `quality_score`, `rejected_reason`, `parameter_format`, `components` and `cta_url_link_tracking_opted_out`. `quality_score` is an object, `{ "score": "<GREEN, YELLOW, RED or UNKNOWN>", "date": <Unix seconds> }`, not a bare string. `parameter_format` is `NAMED` or `POSITIONAL`. `previous_category`, `correct_category`, `message_send_ttl_seconds` and `library_template_name` were requested and absent from every template. | VERIFIED (dev, 2026-10-05) |
 | 3.3 | **Components in the list response.** `components` is a list in the creation syntax: `{ "type": "BODY", "text", "example" }` and `{ "type": "BUTTONS", "buttons": [{ "type": "QUICK_REPLY", "text" }] }`. A named body carries `example.body_text_named_params` as `{ param_name, example }`; a positional body carries `example.body_text` as a nested list. No Akeed template has a header or a footer. | VERIFIED (dev, 2026-10-05) |
 | 3.4 | **Summary.** The edge summary reports `total_count` 9, `message_template_count` 9 and `message_template_limit` 6000. | VERIFIED (dev, 2026-10-05) |
-| 3.5 | **Prod app.** The product owner reports that the prod app holds the same templates as dev. No prod output was read for this record. | NOT OBSERVED (reported 2026-10-05) |
+| 3.5 | **Prod app.** The product owner reports that the prod app holds the same templates as dev. No prod output was read for this record. **Corrected 2026-10-07:** the report was wrong for `en` / `direct` (5.5). The rest of the prod list is still not read by the script. | NOT OBSERVED (reported 2026-10-05) |
 | 3.6 | A sanitized copy of the dev response is [`test/fixtures/whatsapp-templates/template-list.json`](../../../../test/fixtures/whatsapp-templates/template-list.json): synthetic template IDs and cursors, no account ID, no token. | CODE |
 
 **Rule from 3.2.** The spoke reads quality from `quality_score.score` in the list response and from the bare string in webhooks (4.8.9). Any other shape or value is the neutral `unknown`.
@@ -118,12 +118,15 @@ All VERIFIED on the dev app. Quality `UNKNOWN` is Meta's "quality pending".
 | 5.1 | For the 7 variants found, the parameter format, the variables and their names, and the two quick-reply buttons in confirm-then-cancel order match what the code sends. Every button label equals the catalog's label. | VERIFIED (dev, 2026-10-05) |
 | 5.2 | **`en` / `direct` is not at Meta under the name the code sends.** The code sends `akeed_cod_verification_direct_` (trailing underscore). Meta holds `akeed_cod_verification_direct` in `en`, `APPROVED`, `UTILITY`, and no template with the trailing underscore in any language. A send of this variant names a template Meta does not have (4.2.6, error 132001). | VERIFIED (dev, 2026-10-05) |
 | 5.3 | Two templates at Meta are not in the catalog: `akeed_cod_verification_direct` [`en`] (5.2) and Meta's sample `hello_world` [`en_US`]. | VERIFIED (dev, 2026-10-05) |
-| 5.4 | Whether `akeed_cod_verification_direct` has the same text and variables the `direct` variant expects. Its body was captured but not compared. | UNKNOWN |
+| 5.4 | Whether `akeed_cod_verification_direct` has the same text and variables the `direct` variant expects. Its body was captured but not compared. **Closed 2026-10-07 as not needed:** the registry row is not pointed at that template (5.5). | UNKNOWN |
+| 5.5 | **5.2 is a dev-only gap.** The prod app holds `akeed_cod_verification_direct_` [`en`], Active, Utility, with the body, the four named variables (customer, order, store, total) and the two buttons (`Ship My Order`, `Cancel`) that dev's `akeed_cod_verification_direct` has. So the name the code sends is the prod name, and prod sends of this variant name a template Meta holds. Seen by the product owner in WhatsApp Manager for both apps; not read by the script. | OBSERVED in WhatsApp Manager (2026-10-07) |
 
 **Worst-case rules:**
 
 - **5.2.** Until the product owner decides, the registry row keeps the name the code has always sent, so no customer-facing payload changes. A sync marks the row `missing`; with the guardrail on, a store that chose it gets the English default with the reason `not_approved`. Staff see it as missing on the template pages (US-08-05).
 - **5.4.** The registry row is not pointed at `akeed_cod_verification_direct` without a reconciliation of that template's variables and button order first.
+
+**Decision on 5.2 (product owner, 2026-10-07).** The registry row keeps its name. The product owner creates `akeed_cod_verification_direct_` [`en`] in the dev app as a copy of dev's `akeed_cod_verification_direct`: Utility, named variables, the same body, `Ship My Order` then `Cancel`. Once Meta approves it and a sync runs, the row is no longer `missing` in dev. `akeed_cod_verification_direct` stays in the dev app, unused and listed as "At Meta, not in Akeed". The worst-case rule above still applies to dev until that sync.
 
 ## 6. Text compared with the catalog preview (AC 6), dev app, 2026-10-05
 

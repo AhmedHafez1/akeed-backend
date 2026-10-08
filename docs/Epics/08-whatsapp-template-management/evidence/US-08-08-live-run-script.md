@@ -18,6 +18,7 @@ Fill in the "Evidence" lines as you go. Do not paste tokens, app secrets, phone 
 | `WHATSAPP_TEMPLATE_TEST_PHONES` holds the staff phone | ☐ | ☐ |
 | `WA_BUSINESS_ACCOUNT_ID` is set, and the token has `whatsapp_business_management` (record 4.1.8) | ☐ | ☐ |
 | Every US-08-07 switch is **off**, and `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` is **off** | ☐ | ☐ |
+| `akeed_cod_verification_direct_` [`en`] is **Active** in WhatsApp Manager (record 5.5; created in dev on the 2026-10-07 decision, already in prod) | ☐ | ☐ |
 | Run start time (UTC), for the queries in section D | `____` | `____` |
 
 **Migration counts (story implementation note).** Before the release candidate boots in an environment, and again after, run this read-only query and write both results down. After: `templates` is 8 or more, and `stores_without_ar_key` and `stores_without_en_key` count only stores created after the migration or stores whose old style has no registry row.
@@ -56,8 +57,8 @@ Before the first boot the first two sub-queries fail because the table does not 
 
 **Expected.**
 - The script's last line says the access token is not in the output files.
-- The sync finishes as **Succeeded**. "Missing at Meta" lists exactly `cod_confirm.en.direct`, and "At Meta, not in Akeed" lists `akeed_cod_verification_direct` [`en`] and `hello_world` [`en_US`] (record 5.2, 5.3). Anything else is a finding: stop and record it.
-- Every other registry template shows **Approved**, category Utility.
+- The sync finishes as **Succeeded**. "Missing at Meta" lists nothing (record 5.5). "At Meta, not in Akeed" lists `hello_world` [`en_US`], and in dev also `akeed_cod_verification_direct` [`en`] (record 5.3). Anything else is a finding: stop and record it.
+- Every registry template shows **Approved**, category Utility.
 - The status, category and quality of each template on the page equal the script's output for the same name and language.
 
 **Evidence.**
@@ -79,8 +80,8 @@ Open three templates on **Admin › Templates**: the Arabic default, the English
 
 **Expected.**
 - Each shows Meta's own text in the phone preview, with sample values, in the right direction (RTL for Arabic).
-- The two defaults show a **preview** difference (amber), not a **send** difference (red): record 6.1 found no hand-kept preview equal to Meta's text.
-- `cod_confirm.en.direct` shows **Missing at Meta**.
+- The two defaults show a **preview** difference (amber), not a **send** difference (red): record 6.1 found no hand-kept preview equal to Meta's text. This holds while `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` is off. Once it is on (step 11, item g), merchants read Meta's text and the same templates show **Matches Meta**.
+- `cod_confirm.en.direct` shows **Approved** under the name `akeed_cod_verification_direct_` (record 5.5), not **Missing at Meta**.
 - "Stores" lists your test store under the styles it chose.
 
 **Evidence.** dev: `____`. prod: `____`. Any red (send) difference: `____`.
@@ -145,9 +146,7 @@ Then **Send test** with the new template to the staff phone.
 
 ### 7b. Fallback and the staff alert (AC 9.7), dev only unless the product owner says otherwise
 
-Turn on `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=true` and restart. Make a non-default template unsendable where Meta allows it:
-- **Option A:** edit the throwaway template's text (**Edit text**) after first moving the default back and taking the test store off it. It goes to review and reads **In review** (record 4.3.8 rule).
-- **Option B:** point the test store's English style at `cod_confirm.en.direct`, which is **Missing at Meta** in both apps.
+Turn on `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=true` and restart. Make a non-default template unsendable where Meta allows it: edit the throwaway template's text (**Edit text**) after first moving the default back and taking the test store off it. It goes to review and reads **In review** (record 4.3.8 rule). Point the test store's style at it again.
 
 Then place one order in that language from the test store.
 
@@ -156,7 +155,7 @@ Then place one order in that language from the test store.
 - The dispatch records `template_fallback_reason = not_approved` and the passed-over key.
 - A `whatsapp-template-alert` log line exists for a template in use; the test store shows no `template_unavailable` signal, because the default stood in.
 
-**Evidence.** dev: option `_`, received default ☐, fallback row ☐, alert line ☐.
+**Evidence.** dev: received default ☐, fallback row ☐, alert line ☐.
 - Record 4.3.8 (status between an edit and re-approval): observed `____`.
 - Record 4.3.9 (after a failed edit review), only if it happens: `____`.
 

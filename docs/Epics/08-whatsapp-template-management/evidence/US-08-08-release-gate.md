@@ -126,7 +126,7 @@ Step 5 of the gate brief was to remove them only if every check was green. The f
 
 1. **The gate was green only at the fourth attempt.** Runs 2 and 3 each had a failed step and run 5 straddled a commit (section 1). None of that is an E08 defect, but it is not the footing to start a change to every send from.
 2. **The columns are not dead.** A source created after migration `0055` starts with no key, and the send path, Settings, the merchant test, the health SQL and the retire-with-replacement move all read its old variant column instead (`storedTemplateKey` in `template-selector.ts`, `STORE_AR_KEY` / `STORE_EN_KEY` in `whatsapp-template-sync.repository.ts`). Dropping the columns first needs a backfill of keys and a change to how a new source gets its default. That is a change to every send, made after the gate that is supposed to describe the release.
-3. **The catalog is not dead.** `scripts/spikes/whatsapp-templates/reconcile.mjs` imports it, and step 1 of the live run uses that script. Record 5.4 (comparing `akeed_cod_verification_direct`) and the prod reconciliation are still open. The specs' seeded registry is also built from it.
+3. **The catalog is not dead.** `scripts/spikes/whatsapp-templates/reconcile.mjs` imports it, and step 1 of the live run uses that script. The prod reconciliation is still open. The specs' seeded registry is also built from it.
 4. **Dropping the columns in this release would break a rolling deploy and the rollback.** The running release names both columns in every `integrations` query. A migration that drops them at boot fails those queries until every instance is replaced, and it ends the "redeploy the previous release" rollback that `0055` kept the dual write for. The live run has not happened yet.
 
 **Proposed, as its own change after go:** (a) a release that backfills keys, gives new sources a key, and stops reading and writing the two columns, with the characterization suite's store inputs moved to keys and the gate run again; (b) one release later, migration `0061` drops the columns and their two CHECKs. The catalog file can go once `reconcile.mjs` reads the registry seed instead, after the prod reconciliation. Rollback of (b): `ALTER TABLE integrations ADD COLUMN ...` and refill from the keys.
@@ -150,10 +150,9 @@ The record is still a **draft** with no verdict. By the rule of this gate, **any
 | Item | What is open | Closed by |
 | --- | --- | --- |
 | Record state | Draft; "verdict in one line: not given yet" | US-08-01 closing |
-| 3.5 | The prod app's templates were reported, not read | Live run step 1 on prod |
-| 5.2 | `en` / `direct` is sent under a name Meta does not hold. Not decided: rename the registry row, or create the template | Product owner (epic README decision 6). Until then that style is refused by Meta today, and falls back to the English default once the guardrail is on |
-| 5.4 | Whether `akeed_cod_verification_direct` has the text and variables `direct` expects | Reconciliation in live run step 1, before any rename |
-| Section 7 | Variant usage per environment was never counted | The read-only query in the kit README, both environments. It says how many stores 5.2 touches |
+| 3.5 | The prod app's templates were reported, not read. The report was wrong for `en` / `direct` (record 5.5) | Live run step 1 on prod |
+| 5.2 | `en` / `direct` is sent under a name the dev app does not hold. **Decided 2026-10-07** (epic README decision 6): the row keeps its name, which prod already holds (record 5.5), and the template is created in dev | The dev sync that shows `cod_confirm.en.direct` as Approved (live run step 1). Until then that style is refused by Meta in dev only |
+| Section 7 | Variant usage per environment was never counted | The read-only query in the kit README, both environments |
 | US-08-04 | Webhook subscription of the three template fields is not confirmed | Live run step 2 |
 | US-08-07 | Copy drafts are not approved | Product owner |
 
@@ -162,7 +161,7 @@ The record is still a **draft** with no verdict. By the rule of this gate, **any
 | Finding | Unknown | Worst-case rule in force | Blocks | Can the live run close it? |
 | --- | --- | --- | --- | --- |
 | 4.10.8 | Does a button tap open the service window | Text is best effort, once, 131047 is a skip | **Items b and c** | Yes: step 10, dev |
-| 4.3.8 | Status and sendability between an edit and re-approval | Not sendable until `approved` is read again | Editing a template | Yes: step 7b option A |
+| 4.3.8 | Status and sendability between an edit and re-approval | Not sendable until `approved` is read again | Editing a template | Yes: step 7b |
 | 4.3.9 | What a failed edit review leaves | A template in use is never edited in place | Editing a template | Only if a review fails |
 | 4.2.11, 4.2.12, 4.8.17 | Meaning of `LIMIT_EXCEEDED`, `IN_APPEAL`, `FLAGGED`, `LOCKED`, `REINSTATED`; what a pause ending looks like | Only `APPROVED` is sendable; a sync decides | Guardrail (it errs towards not sending) | Partly: step 6 shows `APPROVED`; a pause cannot be provoked |
 | 4.8.15, 4.8.16, 4.8.18 | Webhook order, language code form, answer deadline | Ordered by `entry.time` per field; `-` and `_` alike; answered at once | Sync and webhooks | Partly: step 6 shows one real payload |
@@ -186,7 +185,7 @@ Unknowns the live run cannot close stay open with their worst-case rule. Releasi
 | --- | --- | --- |
 | `WHATSAPP_TEMPLATE_SYNC_ENABLED` | **Go in dev now**, as live run step 1. Prod after the dev run reconciles | It only reads Meta. Needs `WA_BUSINESS_ACCOUNT_ID` and a token with `whatsapp_business_management` |
 | `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED`, operator IDs, test phones | **Go in dev now**, for the live run. Prod after the dev run, **with `WHATSAPP_TEMPLATE_OPERATOR_IDS` filled in**: an empty list lets every staff member write | Nothing else. Off is the instant rollback |
-| `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | **No-go** | The environment's first sync read and compared; the variant usage count; a decision on 5.2. Note that `en` / `direct` is refused by Meta today, so for those stores the guardrail is an improvement, not a risk |
+| `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | **No-go** | The environment's first sync read and compared; the variant usage count; in dev, `akeed_cod_verification_direct_` approved and synced (record 5.2 decision) |
 | a. `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | **No-go** | Approved copy, and a reminder template approved at Meta in that environment |
 | b. `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | **No-go** | Record 4.10.8 verified "yes" (live run step 10) and approved copy |
 | c. `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | **No-go** | The same two |

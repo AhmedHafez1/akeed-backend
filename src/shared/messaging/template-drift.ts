@@ -6,6 +6,7 @@ import {
   variablesByParameter,
 } from './template-rendering';
 import type {
+  TemplateMessageLines,
   TemplateTextModel,
   TemplateTextSegment,
 } from './template-text.types';
@@ -107,8 +108,14 @@ export function compareTemplateDrift(params: {
   reviewStatus: TemplateReviewStatus | null;
   /** NULL when the provider's text is absent or could not be read. */
   model: TemplateTextModel | null;
+  /**
+   * What merchants are shown. With `provider` they read the provider's own
+   * text, so the hand-kept preview is not compared.
+   */
+  previewSource?: TemplateMessageLines['source'];
 }): TemplateDrift {
   const { template, model } = params;
+  const previewsRegistered = params.previewSource !== 'provider';
   if (template.lastSyncedAt === null) {
     return { state: 'not_synced', differences: [] };
   }
@@ -157,8 +164,9 @@ export function compareTemplateDrift(params: {
       provider: model.buttons.map((button) => button.kind).join(', '),
     });
   } else if (
-    confirm.text !== template.preview.confirmButton ||
-    cancel.text !== template.preview.cancelButton
+    previewsRegistered &&
+    (confirm.text !== template.preview.confirmButton ||
+      cancel.text !== template.preview.cancelButton)
   ) {
     differences.push({
       kind: 'button_labels',
@@ -170,7 +178,7 @@ export function compareTemplateDrift(params: {
 
   const registered = registeredText(template);
   const provider = providerText(template, model);
-  if (registered !== provider) {
+  if (previewsRegistered && registered !== provider) {
     differences.push({
       kind: 'body',
       severity: 'preview',

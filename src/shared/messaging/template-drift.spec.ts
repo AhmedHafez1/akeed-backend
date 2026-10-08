@@ -239,6 +239,53 @@ describe('compareTemplateDrift', () => {
     });
   });
 
+  describe('when merchants preview the provider text', () => {
+    function compareShown(provider: TemplateTextModel) {
+      const template = named();
+      return compareTemplateDrift({
+        template,
+        reviewStatus: template.reviewStatus,
+        model: provider,
+        previewSource: 'provider',
+      });
+    }
+
+    it('does not compare the stored preview text or button labels', () => {
+      expect(
+        compareShown(
+          model({
+            body: [
+              { text: 'Hello ' },
+              { parameter: 'customer' },
+              { text: '! Your order #' },
+              { parameter: 'order_number' },
+              { text: ' is on its way.' },
+            ],
+            buttons: [
+              { kind: 'quick_reply', text: 'Confirm order' },
+              { kind: 'quick_reply', text: 'Cancel order' },
+            ],
+          }),
+        ),
+      ).toEqual({ state: 'in_sync', differences: [] });
+    });
+
+    it('still reports what differs in the send', () => {
+      const drift = compareShown(
+        model({
+          body: [{ text: 'Hi ' }, { parameter: 'customer' }],
+          buttons: [{ kind: 'quick_reply', text: 'Confirm' }],
+        }),
+      );
+
+      expect(drift.state).toBe('drift');
+      expect(drift.differences).toEqual([
+        expect.objectContaining({ kind: 'variables', severity: 'send' }),
+        expect.objectContaining({ kind: 'buttons', severity: 'send' }),
+      ]);
+    });
+  });
+
   it('matches a positional template by position', () => {
     const template = named({
       parameterFormat: 'positional',

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { InspectedTemplate } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import type { TemplateSyncRun } from '../../infrastructure/database/repositories/whatsapp-template-sync.repository';
 import {
+  MESSAGE_IMPROVEMENT_SWITCHES_OFF,
   WHATSAPP_TEMPLATE_CONFIG,
   parseWhatsappTemplateConfig,
 } from '../../shared/config/whatsapp-template.config';
@@ -12,6 +13,7 @@ import {
 } from '../../shared/messaging/testing/seeded-template-registry';
 import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
 import type { TemplateTextModel } from '../../shared/messaging/template-text.types';
+import { TemplateMessageService } from '../template-registry/template-message.service';
 import type {
   AdminTemplateMetricsRow,
   AdminTemplatePurposeMetricsRow,
@@ -106,6 +108,7 @@ function setup(
     runs?: TemplateSyncRun[];
     storeCounts?: Map<string, number>;
     env?: Record<string, string>;
+    snapshotPreview?: boolean;
   } = {},
 ) {
   const rows =
@@ -160,6 +163,12 @@ function setup(
     sync as never,
     catalog,
     { get: (key: string) => values[key] } as never,
+    new TemplateMessageService(catalog, {
+      current: () => ({
+        ...MESSAGE_IMPROVEMENT_SWITCHES_OFF,
+        snapshotPreview: options.snapshotPreview ?? false,
+      }),
+    } as never),
   );
   return { service, templates, syncRepository, metrics, sync, catalog, rows };
 }
@@ -468,6 +477,46 @@ describe('AdminTemplateInspectionService', () => {
       expect(response.template.text_changed_at).toBe(
         '2026-10-04T08:00:00.000Z',
       );
+    });
+
+    it('compares only what is sent once merchants preview the provider text', async () => {
+      const rows = syncedApprovedTemplates().map((template) =>
+        template.key === 'cod_confirm.en.short'
+          ? inspected(
+              {
+                ...template,
+                preview: { ...template.preview, confirmButton: 'Yes' },
+                components: SHORT_EN_SNAPSHOT,
+              },
+              { components: SHORT_EN_SNAPSHOT },
+            )
+          : inspected(template),
+      );
+      const stored = await setup({ rows }).service.list(STAFF, RANGE);
+      const { service } = setup({ rows, snapshotPreview: true });
+
+      const shown = await service.list(STAFF, RANGE);
+      const detail = await service.detail(STAFF, 'cod_confirm.en.short', RANGE);
+      const driftOfShort = (response: typeof shown) =>
+        response.templates.find(
+          (template) => template.key === 'cod_confirm.en.short',
+        )?.drift;
+
+      expect(driftOfShort(stored)).toMatchObject({
+        state: 'drift',
+        severity: 'preview',
+      });
+      expect(driftOfShort(shown)).toEqual({
+        state: 'in_sync',
+        kinds: [],
+        severity: null,
+      });
+      expect(detail.drift).toEqual({
+        state: 'in_sync',
+        kinds: [],
+        severity: null,
+        differences: [],
+      });
     });
 
     it('returns per-purpose metrics, history and the stores that send it', async () => {

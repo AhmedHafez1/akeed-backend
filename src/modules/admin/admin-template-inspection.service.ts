@@ -26,6 +26,7 @@ import {
   TEMPLATE_CATALOG_PORT,
   type TemplateCatalogPort,
 } from '../../shared/ports/template-catalog.port';
+import { TemplateMessageService } from '../template-registry/template-message.service';
 import { WhatsappTemplateSyncService } from '../template-registry/whatsapp-template-sync.service';
 import {
   AdminQueryRepository,
@@ -91,6 +92,7 @@ export class AdminTemplateInspectionService {
     @Inject(TEMPLATE_CATALOG_PORT)
     private readonly catalog: TemplateCatalogPort,
     private readonly config: ConfigService,
+    private readonly messages: TemplateMessageService,
   ) {}
 
   async list(
@@ -118,6 +120,7 @@ export class AdminTemplateInspectionService {
           drift: driftOf(
             entry,
             this.catalog.describeComponents(entry.components),
+            this.messages.linesFor(entry.template).source,
           ),
           sendable: isSendableTemplate(entry.template, guardrailOn),
           activeStoreCount: storeCounts.get(entry.template.key) ?? 0,
@@ -148,7 +151,11 @@ export class AdminTemplateInspectionService {
         this.syncRepository.activeStoresUsingKey(template.key, STORE_LIMIT),
       ]);
     const model = this.catalog.describeComponents(entry.components);
-    const drift = driftOf(entry, model);
+    const drift = driftOf(
+      entry,
+      model,
+      this.messages.linesFor(template).source,
+    );
     const runViews = runs.map(toSyncRunView);
 
     return {

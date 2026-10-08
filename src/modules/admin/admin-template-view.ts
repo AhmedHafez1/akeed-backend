@@ -28,6 +28,7 @@ import {
 } from '../../shared/messaging/template-rendering';
 import type {
   RenderedTemplateMessage,
+  TemplateMessageLines,
   TemplateTextModel,
 } from '../../shared/messaging/template-text.types';
 import type {
@@ -210,11 +211,13 @@ function summarizeDrift(drift: TemplateDrift): AdminTemplateDriftSummary {
 export function driftOf(
   inspected: InspectedTemplate,
   model: TemplateTextModel | null,
+  previewSource: TemplateMessageLines['source'],
 ): TemplateDrift {
   return compareTemplateDrift({
     template: inspected.template,
     reviewStatus: inspected.template.reviewStatus,
     model,
+    previewSource,
   });
 }
 
