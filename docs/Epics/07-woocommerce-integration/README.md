@@ -13,7 +13,7 @@ The epic was rewritten on 2026-10-04 after E06 was built. What changed and why:
 
 - **No validation spike.** EasyOrders needed one because its provider contract had material unknowns. WooCommerce has a documented REST and webhook contract, so US-07-01 is now a contract-and-plan story written from the official docs, and live proof is the US-07-06 release gate.
 - **No hosting matrix.** A stated support boundary replaces the "supported-store matrix".
-- **Decoupled from E06 go-live.** US-06-06 is release-blocked on EasyOrders provider questions that WooCommerce does not depend on. E07 depends on the E06 shared code and its automated gate only.
+- **Decoupled from E06 go-live.** US-06-06 was release-blocked on EasyOrders provider questions that WooCommerce does not depend on (closed 2026-10-08). E07 depends on the E06 shared code and its automated gate only.
 - **Stories rewritten against the code as it is now.** The earlier E07 notes said only Shopify had a normalizer, that onboarding was Shopify-specific and that a common outcome registry had to be preserved. E06 left reusable extension points for all three; each story now names them.
 
 Story filenames now follow their titles; the renamed files preserve the existing US-07 story IDs.

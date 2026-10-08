@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-03
 **Revision:** backend and frontend working trees on `develop`, on top of backend `f5f7e50` and frontend `0e86641`
-**Decision:** implemented locally and shipped disabled (`EASYORDERS_CONNECT_ENABLED=false`). No real merchant may connect until the US-06-01 go-live verification has observed the real install callback. Order ingestion (US-06-03) and remote status writes (US-06-04) are not part of this story.
+**Decision:** implemented locally and shipped disabled (`EASYORDERS_CONNECT_ENABLED=false`). **Update 2026-10-08:** ready for deploy; the US-06-01 go-live block was lifted on the product owner's end-to-end test report (no step-level record handed back). The switch stays off until deploy. Order ingestion (US-06-03) and remote status writes (US-06-04) are not part of this story.
 
 EasyOrders behavior is taken only from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md). No request was sent to EasyOrders while building or testing this story: the provider is a fake `fetch` in every test.
 

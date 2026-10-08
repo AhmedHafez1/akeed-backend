@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Implemented, disabled (2026-10-03) — [evidence](../../US-06-04-EASYORDERS-OUTCOME-SYNC-EVIDENCE.md); remote status writes blocked on US-06-01 go-live verification
+- **Status:** Done — ready for deploy (2026-10-08) — [evidence](../../US-06-04-EASYORDERS-OUTCOME-SYNC-EVIDENCE.md); behind `EASYORDERS_OUTCOME_SYNC_ENABLED=false`, turned on at deploy; the US-06-01 go-live block was lifted on the product owner's end-to-end test report
 - **Dependencies:** [US-06-03](../06-easyorders-integration/US-06-03-easyorders-webhook-ingestion.md)
 
 ## User story and value

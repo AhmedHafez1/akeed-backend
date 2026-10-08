@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-03
 **Revision:** backend `ab2cd6c`, frontend `98e60ba`, both on `develop`
-**Decision:** implemented and shipped behind the existing switches. It adds no switch of its own: connect and reconnect need `EASYORDERS_CONNECT_ENABLED` and the pilot list, disconnect and the health read need neither. Live onboarding stays blocked on the US-06-01 go-live verification, as for US-06-02 to US-06-04.
+**Decision:** implemented and shipped behind the existing switches. It adds no switch of its own: connect and reconnect need `EASYORDERS_CONNECT_ENABLED` and the pilot list, disconnect and the health read need neither. **Update 2026-10-08:** ready for deploy; the US-06-01 go-live block was lifted on the product owner's end-to-end test report, as for US-06-02 to US-06-04.
 
 EasyOrders behavior is taken only from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 1, 2, 4, 6 and 7. No request was sent to EasyOrders, Meta or Shopify while building or testing this story: the provider is a fake `fetch` in every test.
 

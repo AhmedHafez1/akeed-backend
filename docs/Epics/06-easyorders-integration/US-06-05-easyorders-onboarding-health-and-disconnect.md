@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Implemented, disabled (2026-10-03) — [evidence](../../US-06-05-EASYORDERS-ONBOARDING-HEALTH-EVIDENCE.md), [runbook](evidence/US-06-05-disconnect-and-support-runbook.md); live onboarding blocked on US-06-01 go-live verification
+- **Status:** Done — ready for deploy (2026-10-08) — [evidence](../../US-06-05-EASYORDERS-ONBOARDING-HEALTH-EVIDENCE.md), [runbook](evidence/US-06-05-disconnect-and-support-runbook.md); the US-06-01 go-live block was lifted on the product owner's end-to-end test report
 - **Dependencies:** [US-06-04](../06-easyorders-integration/US-06-04-easyorders-outcome-status-adapter.md)
 
 ## User story and value

@@ -2,9 +2,18 @@
 
 - **Story:** [US-06-06 — Qualify the EasyOrders adapter for pilot release](../US-06-06-easyorders-contract-and-pilot-release-gate.md)
 - **Date:** 2026-10-03
-- **State:** Automated gate run. **Live pilot NOT RUN.** US-06-01 go-live verification still owed.
-- **Recommendation:** **No-go** for a pilot merchant today. See [Go / no-go](#go--no-go). The decision is the product owner's.
+- **State:** **Closed 2026-10-08, ready for deploy.** Automated gate run 2026-10-03; closed on the product owner's end-to-end test report. See [Closure](#closure-2026-10-08).
+- **Recommendation:** Superseded 2026-10-08: **go**. The 2026-10-03 recommendation (no-go) and the tables below are kept as the record of that date. See [Go / no-go](#go--no-go).
 - **Source of truth for EasyOrders behavior:** the [US-06-01 contract record](US-06-01-contract-record.md).
+
+## Closure (2026-10-08)
+
+The product owner tested EasyOrders end to end and reported it working as expected. The step-level observations (the pilot script results, the reconciliation counts, the real API responses with secrets removed, and captured fixtures) were not handed back, so the tables that say NOT RUN or UNKNOWN keep the values recorded on 2026-10-03 and the result on record is that report.
+
+- **Decision:** the gate is closed and E06 is ready for deploy. The product owner made the go decision.
+- **Not changed:** the 2026-10-03 results below. The "Live pilot" table, the acceptance-criterion results and the open-questions table describe what was recorded on that date; they were not edited to match the report.
+- **Deploy:** the adapter ships dark. Turn the switches on in this order: `EASYORDERS_CONNECT_ENABLED` (with `EASYORDERS_PILOT_ORG_IDS` if the pilot list is used), check health, then `EASYORDERS_INGESTION_ENABLED`, then `EASYORDERS_OUTCOME_SYNC_ENABLED`. See [Switches](#switches).
+- **Still true after closure:** the carried limits below (entitlement is the Starter plan, the rate budget is per API instance so run one instance, a `pending` store update whose process died has no sweeper, webhooks are not removed at EasyOrders on disconnect).
 
 ## What this gate is, and is not
 
@@ -152,7 +161,7 @@ Not run:
 
 ## Live pilot
 
-**NOT RUN.** The [pilot script](US-06-06-live-pilot-script.md) is ready. Its Part A is the US-06-01 verification the contract record still owes, and must come first.
+**As recorded 2026-10-03: NOT RUN.** Closed 2026-10-08 on the product owner's end-to-end test report; no per-item results were handed back, so the cells below stay as they were. The [pilot script](US-06-06-live-pilot-script.md) is ready. Its Part A is the US-06-01 verification the contract record still owes, and must come first.
 
 | Item to reconcile from the run | Result |
 | --- | --- |
@@ -217,7 +226,7 @@ Order of enabling for a store: connect, check health, then ingestion, then outco
 
 ## Open US-06-01 questions
 
-Each one blocks release. They are the contract record's go-live table; none was closed by this gate.
+Each one blocked release as of 2026-10-03. They are the contract record's go-live table; none was closed by this gate. On 2026-10-08 the product owner's end-to-end test report lifted the block as a whole; individual answers were not handed back, so the contract record keeps its UNKNOWN rows.
 
 | # | Question | Record | Blocks | Closed by (pilot script Part A) |
 | --- | --- | --- | --- | --- |
@@ -246,7 +255,9 @@ Also open, from the earlier stories, and not changed by this gate: US-06-01 itse
 
 ## Go / no-go
 
-**Recommendation: no-go for connecting a pilot merchant now. Go for running the pilot script, Part A first.**
+**Update 2026-10-08: go.** The product owner tested EasyOrders end to end and the gate is closed. The text below is the 2026-10-03 recommendation, kept as written.
+
+**Recommendation (2026-10-03): no-go for connecting a pilot merchant now. Go for running the pilot script, Part A first.**
 
 For:
 

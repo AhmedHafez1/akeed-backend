@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** In progress, release blocked (2026-10-03) — automated gate run, [evidence](evidence/US-06-06-release-gate.md); live pilot ([script](evidence/US-06-06-live-pilot-script.md)) NOT RUN and US-06-01 go-live verification owed; recommendation no-go
+- **Status:** Done — gate closed, ready for deploy (2026-10-08). Closed on the product owner's end-to-end test report; automated gate run 2026-10-03; see [evidence](evidence/US-06-06-release-gate.md#closure-2026-10-08) and the [pilot script](evidence/US-06-06-live-pilot-script.md)
 - **Dependencies:** [US-06-05](../06-easyorders-integration/US-06-05-easyorders-onboarding-health-and-disconnect.md)
 
 ## User story and value
@@ -44,6 +44,8 @@ Adapter contracts, installation/ingestion/outcome journey, fault recovery and li
 ## Migration and rollout
 
 Use fresh/unprovisioned pilot organizations; WooCommerce remains later and inherits the proven contracts.
+
+Closed 2026-10-08: the gate is closed and E06 is ready for deploy. The adapter still ships dark, so enabling it for a merchant is a deploy-time step: connect, check health, then ingestion, then outcome sync (see "Switches" in the [gate evidence](evidence/US-06-06-release-gate.md#switches)).
 
 ## Evidence and references
 

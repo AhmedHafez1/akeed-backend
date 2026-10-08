@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-03
 **Revision:** backend `440230a` (platform-neutral tracking) and `d347175` (EasyOrders adapter), frontend `e075eaf`, all on `develop`
-**Decision:** implemented locally and shipped disabled (`EASYORDERS_OUTCOME_SYNC_ENABLED=false`). No status is written to EasyOrders for any merchant until the US-06-01 go-live verification has observed the side effects of `confirmed` and `canceled` and the echo behavior, and the product owner has accepted them.
+**Decision:** implemented locally and shipped disabled (`EASYORDERS_OUTCOME_SYNC_ENABLED=false`). **Update 2026-10-08:** ready for deploy; the product owner's end-to-end test report lifted the block on the side effects of `confirmed` and `canceled` and the echo behavior (no step-level record handed back). The switch stays off until deploy.
 
 EasyOrders behavior is taken only from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 2, 5, 6 and 8. No request was sent to EasyOrders while building or testing this story: the provider is a fake `fetch` in every test.
 

@@ -2,7 +2,7 @@
 
 - **Written:** 2026-10-03
 - **Run by:** the product owner, on a store they are authorized to test with and a phone number they own.
-- **Status:** NOT RUN. Results go into the [release-gate evidence](US-06-06-release-gate.md), section "Live pilot".
+- **Status:** Run by the product owner as an end-to-end test; reported passing on 2026-10-08. Step-level results were not handed back, so the tables are blank. Results would go into the [release-gate evidence](US-06-06-release-gate.md), section "Live pilot".
 - **Source of truth for EasyOrders behavior:** the [US-06-01 contract record](US-06-01-contract-record.md).
 
 This script proves acceptance criterion 1 of [US-06-06](../US-06-06-easyorders-contract-and-pilot-release-gate.md) on a real store: install → COD order → Akeed send → customer outcome → EasyOrders status. It also closes the go-live verification the contract record still owes, because the pilot must not run on behavior that is UNKNOWN.

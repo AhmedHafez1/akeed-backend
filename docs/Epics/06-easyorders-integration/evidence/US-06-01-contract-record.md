@@ -4,6 +4,7 @@
 - **Record date:** 2026-10-03
 - **State:** Interim. Written from the public docs plus one test run on an inactive store. A second run on an active store is owed before any live traffic (see [Go-live verification](#go-live-verification-owed)).
 - **Verdict in one line:** US-06-02 and US-06-03 may be built, disabled. Remote status writes and live onboarding stay blocked.
+- **Update 2026-10-08:** the product owner tested EasyOrders end to end and reported it working; the blocks below are lifted and the gate is closed. The per-question observations were not handed back, so this record was not edited to VERIFIED and its UNKNOWN rows stand as written.
 
 This record is the only source of truth for EasyOrders behavior in E06. Where it says UNKNOWN, do not fill the gap from the public docs or by assumption: follow the worst-case rule written next to it, or stop and ask.
 
