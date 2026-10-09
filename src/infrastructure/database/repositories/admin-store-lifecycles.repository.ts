@@ -224,12 +224,19 @@ export class AdminStoreLifecyclesRepository {
           { test_delivery: 'captured_exact' },
         );
       }
-      if (params.status === 'confirmed') {
+      // testConfirmedAt means "the merchant answered the test": tapping Cancel
+      // ends the test as surely as Confirm, since a reply is final. The event
+      // props keep the two answers apart.
+      if (params.status === 'confirmed' || params.status === 'canceled') {
         await this.reachMilestone(
           verification.integrationId,
           'testConfirmedAt',
           'test_confirmed',
-          { occurredAt, provenance: { test_confirmed: 'captured_exact' } },
+          {
+            occurredAt,
+            provenance: { test_confirmed: 'captured_exact' },
+            props: { reply: params.status },
+          },
         );
       }
       return;

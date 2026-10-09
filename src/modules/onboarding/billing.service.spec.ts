@@ -41,6 +41,9 @@ function createMocks() {
   };
   const monthlyUsageRepo = {
     resetCountersForPeriod: jest.fn(),
+    getIntegrationUsageForPeriod: jest
+      .fn()
+      .mockResolvedValue({ consumedCount: 0, includedLimit: 30 }),
   };
   const storePlatform = {
     createRecurringApplicationCharge: jest
@@ -152,6 +155,120 @@ describe('BillingService', () => {
         service.activateStarterSilently(makeIntegration(planless) as any),
       ).resolves.toBe('already_claimed');
       expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    describe('reinstall with the free claim already used', () => {
+      const cancelledStarter = {
+        billingPlanId: 'starter',
+        billingStatus: 'cancelled',
+        shopifySubscriptionId: null,
+        onboardingStatus: 'pending',
+      };
+
+      it('resumes Starter with its remaining messages', async () => {
+        const mocks = createMocks();
+        mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+        mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+        mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
+          consumedCount: 12,
+          includedLimit: 30,
+        });
+
+        await expect(
+          mocks.service.activateStarterSilently(
+            makeIntegration(cancelledStarter) as any,
+          ),
+        ).resolves.toBe('resumed');
+
+        expect(
+          mocks.monthlyUsageRepo.getIntegrationUsageForPeriod,
+        ).toHaveBeenCalledWith({
+          integrationId: 'int-1',
+          periodStart: '2026-01-01',
+        });
+        const [, updates] = mocks.integrationsRepo.updateById.mock.calls[0];
+        expect(updates).toMatchObject({
+          billingStatus: 'active',
+          billingCanceledAt: null,
+        });
+        // The activation date keys the one-time allowance; moving it or
+        // resetting the counters would hand out a second grant.
+        expect(updates).not.toHaveProperty('billingActivatedAt');
+        expect(updates).not.toHaveProperty('billingPlanId');
+        expect(
+          mocks.monthlyUsageRepo.resetCountersForPeriod,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('leaves the store planless once the allowance is spent', async () => {
+        const mocks = createMocks();
+        mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+        mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+        mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
+          consumedCount: 30,
+          includedLimit: 30,
+        });
+
+        await expect(
+          mocks.service.activateStarterSilently(
+            makeIntegration(cancelledStarter) as any,
+          ),
+        ).resolves.toBe('already_claimed');
+        expect(mocks.integrationsRepo.updateById).not.toHaveBeenCalled();
+      });
+
+      it('does not resume a store that left on a paid plan', async () => {
+        const mocks = createMocks();
+        mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+        mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+
+        await expect(
+          mocks.service.activateStarterSilently(
+            makeIntegration({
+              ...cancelledStarter,
+              billingPlanId: 'pro',
+            }) as any,
+          ),
+        ).resolves.toBe('already_claimed');
+        expect(mocks.integrationsRepo.updateById).not.toHaveBeenCalled();
+      });
+
+      it('lets the store pick Starter again from the plan list', async () => {
+        const mocks = createMocks();
+        mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+        mocks.freePlanClaimsRepo.hasClaim.mockResolvedValue(true);
+        mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
+        const integration = makeIntegration(cancelledStarter);
+
+        await expect(
+          mocks.service.getBillingPlans(integration as any),
+        ).resolves.toMatchObject({ isFreePlanClaimed: false });
+        const result = await mocks.service.initiateBilling(
+          integration as any,
+          'starter',
+        );
+        expect(result.confirmationUrl).toContain('app.akeed.co');
+        expect(mocks.integrationsRepo.updateById).toHaveBeenCalledWith(
+          'int-1',
+          expect.objectContaining({ billingStatus: 'active' }),
+        );
+      });
+
+      it('reports the free plan as claimed once the allowance is spent', async () => {
+        const mocks = createMocks();
+        mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
+        mocks.freePlanClaimsRepo.hasClaim.mockResolvedValue(true);
+        mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
+          consumedCount: 30,
+          includedLimit: 30,
+        });
+
+        await expect(
+          mocks.service.getBillingPlans(
+            makeIntegration(cancelledStarter) as any,
+          ),
+        ).resolves.toMatchObject({ isFreePlanClaimed: true });
+      });
     });
 
     it('keeps an already active plan untouched', async () => {

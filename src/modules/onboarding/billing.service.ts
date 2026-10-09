@@ -33,6 +33,8 @@ import {
 } from './onboarding.service.helpers';
 import { BillingConfigService } from './billing-config.service';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import { isOneTimeBillingPlan } from '../../shared/billing/billing-plan';
+import { getOneTimePeriodStart } from '../../shared/billing/billing-period';
 import {
   buildBackendLog,
   normalizeError,
@@ -49,6 +51,7 @@ export interface BillingCallbackParams {
 export type StarterActivationResult =
   | 'activated'
   | 'already_active'
+  | 'resumed'
   | 'already_claimed'
   | 'not_applicable';
 
@@ -80,10 +83,13 @@ export class BillingService {
       return { plans: [], isFreePlanClaimed: false, billingManagement };
     const plans = this.billingConfig.resolveAllPlans();
 
-    const isFreePlanClaimed = await this.freePlanClaimsRepo.hasClaim({
-      platformType: integration.platformType,
-      shopDomain: integration.platformStoreUrl,
-    });
+    // A store with free messages left can still pick Starter: that resumes
+    // its first grant instead of claiming a second one.
+    const isFreePlanClaimed =
+      (await this.freePlanClaimsRepo.hasClaim({
+        platformType: integration.platformType,
+        shopDomain: integration.platformStoreUrl,
+      })) && !(await this.findResumableFreePlan(integration));
 
     return {
       billingManagement,
@@ -209,9 +215,10 @@ export class BillingService {
 
   /**
    * Onboarding v2 grants Starter without a plan picker. A store that already
-   * has an active plan keeps it, and a store whose one free claim is used
-   * (reinstall) is left planless instead of failing setup: it still goes live
-   * and is offered plans from the dashboard.
+   * has an active plan keeps it. A reinstalled store, whose one free claim is
+   * used, gets its Starter plan back while free messages remain; otherwise it
+   * is left planless instead of failing setup: it still goes live and is
+   * offered plans from the dashboard.
    */
   async activateStarterSilently(
     integration: IntegrationRecord,
@@ -234,7 +241,10 @@ export class BillingService {
       integration,
       starterPlan,
     );
-    return activated ? 'activated' : 'already_claimed';
+    if (activated) return 'activated';
+    return (await this.resumeFreePlanIfAllowanceLeft(integration))
+      ? 'resumed'
+      : 'already_claimed';
   }
 
   private async initiateFreePlan(
@@ -247,7 +257,10 @@ export class BillingService {
       billingPlan,
     );
 
-    if (!activated) {
+    if (
+      !activated &&
+      !(await this.resumeFreePlanIfAllowanceLeft(integration))
+    ) {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
@@ -311,6 +324,72 @@ export class BillingService {
         shopDomain: integration.platformStoreUrl,
         integrationId: integration.id,
         billingPlanId: billingPlan.id,
+        billingStatus: 'active',
+      }),
+    );
+
+    return true;
+  }
+
+  /**
+   * The free plan a store may take up again: it held the one-time plan, the
+   * plan stopped (uninstall cancels it) and part of the allowance is unused.
+   */
+  private async findResumableFreePlan(
+    integration: IntegrationRecord,
+  ): Promise<BillingPlanConfig | null> {
+    if (
+      !getBillingManagement(integration).canManageBilling ||
+      !integration.billingActivatedAt ||
+      isBillingStatusActive(integration.billingStatus)
+    ) {
+      return null;
+    }
+    const freePlan = this.billingConfig
+      .resolveAllPlans()
+      .find(
+        (plan) =>
+          plan.amount === 0 &&
+          plan.id === integration.billingPlanId &&
+          isOneTimeBillingPlan(plan.id),
+      );
+    if (!freePlan) return null;
+
+    const usage = await this.monthlyUsageRepo.getIntegrationUsageForPeriod({
+      integrationId: integration.id,
+      periodStart: getOneTimePeriodStart(integration.billingActivatedAt),
+    });
+    return usage.consumedCount < freePlan.includedVerifications
+      ? freePlan
+      : null;
+  }
+
+  /**
+   * Reactivates the free plan as it was. The activation date and the usage
+   * counters are left alone: together they key the one-time allowance, so the
+   * store gets back what it had left, never a second grant.
+   */
+  private async resumeFreePlanIfAllowanceLeft(
+    integration: IntegrationRecord,
+  ): Promise<boolean> {
+    const freePlan = await this.findResumableFreePlan(integration);
+    if (!freePlan) return false;
+
+    await this.persistBillingState({
+      integrationId: integration.id,
+      status: 'active',
+      clearCanceledAt: true,
+      shopifySubscriptionId: null,
+    });
+
+    this.logger.log(
+      buildBackendLog(BillingService.name, {
+        action: 'billing-resume-free-plan',
+        outcome: 'success',
+        orgId: integration.orgId,
+        shopDomain: integration.platformStoreUrl,
+        integrationId: integration.id,
+        billingPlanId: freePlan.id,
         billingStatus: 'active',
       }),
     );

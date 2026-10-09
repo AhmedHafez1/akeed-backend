@@ -74,4 +74,25 @@ export class ProductEventsRepository {
       .limit(1);
     return row;
   }
+
+  /** The newest events first, capped by `limit`. */
+  async listSince(params: {
+    integrationId: string;
+    names: readonly ProductEventName[];
+    since: string;
+    limit: number;
+  }): Promise<ProductEventRecord[]> {
+    return this.db
+      .select()
+      .from(productEvents)
+      .where(
+        and(
+          eq(productEvents.integrationId, params.integrationId),
+          inArray(productEvents.name, [...params.names]),
+          gte(productEvents.createdAt, params.since),
+        ),
+      )
+      .orderBy(desc(productEvents.createdAt))
+      .limit(params.limit);
+  }
 }

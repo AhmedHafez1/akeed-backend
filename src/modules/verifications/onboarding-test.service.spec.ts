@@ -74,6 +74,7 @@ function setup(
       ),
     ),
     countSince: jest.fn().mockResolvedValue(options.sentToday ?? 0),
+    listSince: jest.fn().mockResolvedValue([]),
   };
   const lifecycles = {
     markMilestone: jest.fn(),
@@ -226,7 +227,97 @@ describe('OnboardingTestService', () => {
     expect(status.resendAvailableAt).toBe(
       new Date(new Date(sentAt).getTime() + 30_000).toISOString(),
     );
+    expect(status.resendAvailableInSeconds).toBe(25);
     expect(status.sendsRemainingToday).toBe(5);
+  });
+
+  it('reports no cooldown once the resend window has passed', async () => {
+    const { service } = setup({
+      latestSentAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const status = await service.getStatus(owner);
+
+    expect(status.resendAvailableInSeconds).toBe(0);
+  });
+
+  describe('a reply to an earlier message after a resend', () => {
+    const firstSentAt = '2026-09-23T08:00:00.000Z';
+    const resentAt = '2026-09-23T08:02:00.000Z';
+
+    function setupResent(earlier: Record<string, unknown>) {
+      const context = setup({ latestSentAt: new Date().toISOString() });
+      context.productEvents.listSince.mockResolvedValue([
+        { name: 'test_resend', props: { verificationId: 'verification-1' } },
+        { name: 'test_sent', props: { verificationId: 'verification-0' } },
+      ]);
+      context.verifications.findByIdForOrg.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'verification-0'
+            ? {
+                id: 'verification-0',
+                lastSentAt: firstSentAt,
+                deliveredAt: firstSentAt,
+                readAt: null,
+                confirmedAt: null,
+                canceledAt: null,
+                ...earlier,
+              }
+            : {
+                id: 'verification-1',
+                status: 'delivered',
+                lastSentAt: resentAt,
+                deliveredAt: resentAt,
+                readAt: null,
+                confirmedAt: null,
+                canceledAt: null,
+              },
+        ),
+      );
+      return context;
+    }
+
+    it('shows the earlier message when it was answered after the resend', async () => {
+      const { service } = setupResent({
+        status: 'canceled',
+        canceledAt: '2026-09-23T08:03:00.000Z',
+      });
+
+      const status = await service.getStatus(owner);
+
+      expect(status.test).toMatchObject({
+        verificationId: 'verification-0',
+        status: 'canceled',
+      });
+    });
+
+    it('keeps the latest message when the earlier answer came before the resend', async () => {
+      const { service } = setupResent({
+        status: 'confirmed',
+        confirmedAt: '2026-09-23T08:01:00.000Z',
+      });
+
+      const status = await service.getStatus(owner);
+
+      expect(status.test).toMatchObject({ verificationId: 'verification-1' });
+    });
+
+    it('does not look back once the latest message is answered', async () => {
+      const { service, productEvents, verifications } = setupResent({});
+      verifications.findByIdForOrg.mockResolvedValue({
+        id: 'verification-1',
+        status: 'confirmed',
+        lastSentAt: resentAt,
+        deliveredAt: resentAt,
+        readAt: null,
+        confirmedAt: resentAt,
+        canceledAt: null,
+      });
+
+      await service.getStatus(owner);
+
+      expect(productEvents.listSince).not.toHaveBeenCalled();
+    });
   });
 
   it('ignores a test sent by a previous install of the same store', async () => {

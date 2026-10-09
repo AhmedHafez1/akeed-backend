@@ -78,13 +78,56 @@ describe('AdminStoreLifecyclesRepository funnel milestones', () => {
       statements.some(({ query }) => query.includes('"test_confirmed_at"')),
     ).toBe(true);
     expect(productEvents.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'test_confirmed' }),
+      expect.objectContaining({
+        name: 'test_confirmed',
+        props: { reply: 'confirmed' },
+      }),
     );
     expect(
       statements.some(({ query }) =>
         query.includes('"first_real_confirmed_at"'),
       ),
     ).toBe(false);
+  });
+
+  it('counts a canceled onboarding test as answered', async () => {
+    const { repository, productEvents, statements } = buildRepository({
+      isTest: true,
+    });
+
+    await repository.recordMessageStatus({
+      verificationId: 'verification-1',
+      status: 'canceled',
+    });
+
+    expect(
+      statements.some(({ query }) => query.includes('"test_confirmed_at"')),
+    ).toBe(true);
+    expect(productEvents.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'test_confirmed',
+        props: { reply: 'canceled' },
+      }),
+    );
+  });
+
+  it('keeps a canceled real order out of the test milestone', async () => {
+    const { repository, productEvents, statements } = buildRepository({
+      isTest: false,
+    });
+
+    await repository.recordMessageStatus({
+      verificationId: 'verification-1',
+      status: 'canceled',
+    });
+
+    expect(
+      statements.some(({ query }) => query.includes('"test_confirmed_at"')),
+    ).toBe(false);
+    const names = productEvents.insert.mock.calls.map(
+      ([event]: [{ name: string }]) => event.name,
+    );
+    expect(names).toEqual(['first_order_sent', 'first_reply']);
   });
 
   it('marks the first real confirmation and first reply for a real order', async () => {

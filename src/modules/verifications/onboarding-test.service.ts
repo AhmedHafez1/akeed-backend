@@ -12,7 +12,10 @@ import {
 import { randomUUID } from 'crypto';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
-import { ProductEventsRepository } from '../../infrastructure/database/repositories/product-events.repository';
+import {
+  ProductEventsRepository,
+  type ProductEventRecord,
+} from '../../infrastructure/database/repositories/product-events.repository';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { integrations } from '../../infrastructure/database/schema';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
@@ -59,6 +62,10 @@ const ONBOARDING_TEST_TOTAL = TEMPLATE_SAMPLE_TOTAL;
 const DEFAULT_SHIPPING_CURRENCY = TEMPLATE_SAMPLE_CURRENCY;
 const SAMPLE_CUSTOMER_NAMES = TEMPLATE_SAMPLE_CUSTOMER_NAMES;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function isAnswered(attempt: OnboardingTestAttemptDto): boolean {
+  return attempt.status === 'confirmed' || attempt.status === 'canceled';
+}
 
 /**
  * The onboarding "aha" step: a free confirmation message to the merchant's
@@ -278,27 +285,14 @@ export class OnboardingTestService {
     // Only Shopify installs open a lifecycle; a standalone source is one
     // continuous install, so its latest send is the displayed test.
     const displayed = lifecycle ? latestThisInstall : latest;
-    const verificationId =
-      typeof displayed?.props === 'object' &&
-      displayed.props !== null &&
-      'verificationId' in displayed.props &&
-      typeof displayed.props.verificationId === 'string'
-        ? displayed.props.verificationId
-        : null;
-    const verification = verificationId
-      ? await this.verificationsRepo.findByIdForOrg(verificationId, orgId)
-      : undefined;
-    const test: OnboardingTestAttemptDto | null = verification
-      ? {
-          verificationId: verification.id,
-          status: verification.status as VerificationStatus,
-          sentAt: verification.lastSentAt ?? null,
-          deliveredAt: verification.deliveredAt ?? null,
-          readAt: verification.readAt ?? null,
-          confirmedAt: verification.confirmedAt ?? null,
-          canceledAt: verification.canceledAt ?? null,
-        }
-      : null;
+    const latestAttempt = await this.findAttempt(displayed, orgId);
+    const test =
+      (await this.findEarlierAnswer(
+        integration.id,
+        orgId,
+        latestAttempt,
+        lifecycle?.installedAt,
+      )) ?? latestAttempt;
 
     // The same resolution a send uses, so the preview is the message the
     // test would carry.
@@ -328,6 +322,7 @@ export class OnboardingTestService {
       });
     }
 
+    const resendAvailableAt = this.resendAvailableAt(latest?.createdAt);
     return {
       phone,
       language,
@@ -341,12 +336,83 @@ export class OnboardingTestService {
         storeName: integration.storeName?.trim() || '',
       },
       test,
-      resendAvailableAt:
-        this.resendAvailableAt(latest?.createdAt)?.toISOString() ?? null,
+      resendAvailableAt: resendAvailableAt?.toISOString() ?? null,
+      resendAvailableInSeconds: resendAvailableAt
+        ? Math.max(
+            0,
+            Math.ceil((resendAvailableAt.getTime() - Date.now()) / 1000),
+          )
+        : 0,
       sendsRemainingToday: Math.max(0, ONBOARDING_TEST_DAILY_LIMIT - sentToday),
       testConfirmedAt: lifecycle?.testConfirmedAt ?? null,
       testSkippedAt: lifecycle?.testSkippedAt ?? null,
     };
+  }
+
+  private async findAttempt(
+    sendEvent: ProductEventRecord | undefined,
+    orgId: string,
+  ): Promise<OnboardingTestAttemptDto | null> {
+    const props = sendEvent?.props;
+    const verificationId =
+      typeof props === 'object' &&
+      props !== null &&
+      'verificationId' in props &&
+      typeof props.verificationId === 'string'
+        ? props.verificationId
+        : null;
+    const verification = verificationId
+      ? await this.verificationsRepo.findByIdForOrg(verificationId, orgId)
+      : undefined;
+    if (!verification) return null;
+    return {
+      verificationId: verification.id,
+      status: verification.status as VerificationStatus,
+      sentAt: verification.lastSentAt ?? null,
+      deliveredAt: verification.deliveredAt ?? null,
+      readAt: verification.readAt ?? null,
+      confirmedAt: verification.confirmedAt ?? null,
+      canceledAt: verification.canceledAt ?? null,
+    };
+  }
+
+  /**
+   * Each message's buttons answer that message's own verification, so after a
+   * resend the merchant may tap the earlier message. A reply to it that came
+   * after the latest send is the reply to the test. Bounded by the daily
+   * limit, and never reaches back past this install.
+   */
+  private async findEarlierAnswer(
+    integrationId: string,
+    orgId: string,
+    latestAttempt: OnboardingTestAttemptDto | null,
+    installedAt: string | undefined,
+  ): Promise<OnboardingTestAttemptDto | null> {
+    if (!latestAttempt?.sentAt || isAnswered(latestAttempt)) return null;
+    const latestSentAt = new Date(latestAttempt.sentAt).getTime();
+    const dayAgo = new Date(Date.now() - DAY_MS).toISOString();
+    const sends = await this.productEvents.listSince({
+      integrationId,
+      names: ONBOARDING_TEST_SEND_EVENTS,
+      since: installedAt && installedAt > dayAgo ? installedAt : dayAgo,
+      limit: ONBOARDING_TEST_DAILY_LIMIT,
+    });
+
+    for (const send of sends) {
+      const attempt = await this.findAttempt(send, orgId);
+      if (!attempt || attempt.verificationId === latestAttempt.verificationId) {
+        continue;
+      }
+      const answeredAt = attempt.confirmedAt ?? attempt.canceledAt;
+      if (
+        isAnswered(attempt) &&
+        answeredAt &&
+        new Date(answeredAt).getTime() >= latestSentAt
+      ) {
+        return attempt;
+      }
+    }
+    return null;
   }
 
   private resendAvailableAt(lastSentAt: string | undefined): Date | null {

@@ -34,6 +34,11 @@ export interface OnboardingTestStatusDto {
   };
   test: OnboardingTestAttemptDto | null;
   resendAvailableAt: string | null;
+  /**
+   * The same cooldown as seconds from now, so the screen can count down on
+   * its own clock whatever that clock says.
+   */
+  resendAvailableInSeconds: number;
   sendsRemainingToday: number;
   testConfirmedAt: string | null;
   testSkippedAt: string | null;
