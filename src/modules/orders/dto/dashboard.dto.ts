@@ -294,6 +294,10 @@ export interface NeedsActionItemDto {
   customer_phone: string | null;
   total_price: string | null;
   currency: string | null;
+  /** When the order reached Akeed. */
+  created_at: string | null;
+  /** The newest thing recorded on the row; `created_at` when nothing is. */
+  updated_at: string | null;
   reason: {
     type: NeedsActionReason;
     /** First message time, or the read time for `read_no_reply`. */

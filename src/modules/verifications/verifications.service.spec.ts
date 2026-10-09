@@ -1,7 +1,7 @@
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { ShopifyOutcomeAdapter } from '../../infrastructure/spokes/shopify/services/shopify-outcome.adapter';
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
-import { VerificationsService } from './verifications.service';
+import { VerificationsService, latestTimestamp } from './verifications.service';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 
 /**
@@ -22,6 +22,26 @@ function withHeldDefaults(repo: Record<string, unknown>) {
     ...repo,
   };
 }
+
+describe('latestTimestamp', () => {
+  it('returns the newest value, whatever order they come in', () => {
+    expect(
+      latestTimestamp([
+        '2026-09-16T06:49:00.000Z',
+        '2026-09-16T07:00:00.000Z',
+        null,
+        '2026-09-16T06:50:00.000Z',
+      ]),
+    ).toBe('2026-09-16T07:00:00.000Z');
+  });
+
+  it('skips what is not a date and is null with nothing to compare', () => {
+    expect(latestTimestamp(['soon', '2026-09-16T06:49:00.000Z'])).toBe(
+      '2026-09-16T06:49:00.000Z',
+    );
+    expect(latestTimestamp([null, undefined])).toBeNull();
+  });
+});
 
 const organizationOwner: AuthenticatedUser = {
   userId: 'owner-1',

@@ -154,6 +154,22 @@ const DEFAULT_STATS_DATE_RANGE: DashboardDateRange = 'last_30_days';
  */
 const HELD_STATUS = 'awaiting_start';
 
+/** The newest of the given timestamps, or null when none is a date. */
+export function latestTimestamp(
+  values: ReadonlyArray<string | null | undefined>,
+): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const time = Date.parse(value);
+    if (Number.isNaN(time) || time <= latestTime) continue;
+    latest = value;
+    latestTime = time;
+  }
+  return latest;
+}
+
 /** Narrows a merged row to the held projection `toHeldListRow` produced. */
 function isHeldRow(row: unknown): row is { held: true } {
   return typeof row === 'object' && row !== null && 'held' in row;
@@ -642,6 +658,18 @@ export class VerificationsService {
       customer_phone: row.order.customerPhone ?? null,
       total_price: row.order.totalPrice ?? null,
       currency: row.order.currency ?? null,
+      created_at: row.createdAt ?? null,
+      // The newest event rather than `updatedAt` alone, so a step recorded
+      // without touching that column still moves the dashboard's time.
+      updated_at: latestTimestamp([
+        row.createdAt,
+        row.updatedAt,
+        row.lastSentAt,
+        row.deliveredAt,
+        row.readAt,
+        row.followUpSentAt,
+        row.noReplyAt,
+      ]),
       reason: {
         type,
         since,

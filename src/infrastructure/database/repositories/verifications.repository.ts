@@ -576,7 +576,9 @@ export class VerificationsRepository {
         actionReason: reason,
         metadata: verifications.metadata,
         createdAt: verifications.createdAt,
+        updatedAt: verifications.updatedAt,
         lastSentAt: verifications.lastSentAt,
+        deliveredAt: verifications.deliveredAt,
         readAt: verifications.readAt,
         followUpSentAt: verifications.followUpSentAt,
         noReplyAt: verifications.noReplyAt,
@@ -1068,7 +1070,9 @@ export interface NeedsActionRow {
   actionReason: NeedsActionReason | null;
   metadata: unknown;
   createdAt: string | null;
+  updatedAt: string | null;
   lastSentAt: string | null;
+  deliveredAt: string | null;
   readAt: string | null;
   followUpSentAt: string | null;
   noReplyAt: string | null;
