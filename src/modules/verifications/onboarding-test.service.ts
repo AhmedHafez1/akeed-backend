@@ -37,6 +37,7 @@ import {
   TEMPLATE_SAMPLE_CUSTOMER_NAMES,
   TEMPLATE_SAMPLE_ORDER_NUMBER,
   TEMPLATE_SAMPLE_TOTAL,
+  templateSampleOrderDetails,
 } from '../../shared/messaging/template-rendering';
 import {
   resolveTemplate,
@@ -129,6 +130,8 @@ export class OnboardingTestService {
         totalPrice: ONBOARDING_TEST_TOTAL,
         currency: this.resolveCurrency(integration),
         paymentMethod: 'cod',
+        // So a store that chose a detailed template tests that template.
+        ...templateSampleOrderDetails(language),
         rawPayload: {
           source: 'onboarding_test',
           synthetic: true,

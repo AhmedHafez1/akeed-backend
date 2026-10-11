@@ -195,6 +195,7 @@ A sync that fails changes nothing and is not retried; the next scheduled run is 
 | `wrong_language` | The stored key belongs to another language or purpose. |
 | `reminder_unavailable` | The chosen reminder could not be sent, so the reminder carried the first-send template. |
 | `auto_style_unavailable` | The style `auto` picked could not be sent, so the Arabic default was. |
+| `order_details_missing` | The chosen template shows the order's items, region or address and this order has none (its source does not deliver them, or it was stored before migration `0063`), so the language default was sent. Expected for every source except EasyOrders and Shopify. |
 
 A skipped send has no dispatch row. Its reason is `template_unavailable`, on the verification (first send) or as `follow_up_skipped` (reminder).
 

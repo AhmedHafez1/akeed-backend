@@ -29,6 +29,10 @@ import {
   formatOrderTotal,
   legacyOrderTotal,
 } from '../../shared/messaging/message-values';
+import {
+  buildOrderDetailValues,
+  canFillTemplate,
+} from '../../shared/messaging/order-detail-values';
 import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
@@ -305,6 +309,9 @@ export class VerificationSendService {
         enReminderKey: integration.codReminderEnKey,
         arAuto: integration.codTemplateArAuto,
         switches,
+        // A template that shows items or an address is sent only to an order
+        // that has them; any other order gets the language default.
+        canFill: (variables) => canFillTemplate(variables, order),
       },
     );
     if (!selection.template) {
@@ -460,6 +467,11 @@ export class VerificationSendService {
     let response: Awaited<
       ReturnType<MessagingPort['sendVerificationTemplate']>
     > | null = null;
+    const detailValues = buildOrderDetailValues(
+      order,
+      template.variables,
+      template.language,
+    );
 
     try {
       response = await this.messagingPort.sendVerificationTemplate({
@@ -481,6 +493,7 @@ export class VerificationSendService {
           : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
         template,
+        ...(Object.keys(detailValues).length ? { detailValues } : {}),
         ...(switches.localizedFallbacks
           ? await this.localizedFallbacks({
               language: template.language,

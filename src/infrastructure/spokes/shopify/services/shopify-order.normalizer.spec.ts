@@ -39,6 +39,70 @@ describe('ShopifyOrderNormalizer compatibility', () => {
     });
   });
 
+  it('reads the order lines, the governorate and the street for a detailed message', () => {
+    expect(
+      normalize({
+        line_items: [
+          {
+            title: 'Lunch box',
+            name: 'Lunch box - Blue',
+            variant_title: 'Blue',
+            quantity: 2,
+            price: '180.00',
+          },
+          {
+            title: 'Bottle',
+            variant_title: 'Default Title',
+            quantity: 1,
+            price: '40.00',
+          },
+          null,
+        ],
+        shipping_address: {
+          address1: ' 12 Nile Street ',
+          address2: 'Floor 3',
+          city: 'Maadi',
+          province: 'Cairo',
+        },
+      }),
+    ).toMatchObject({
+      lineItems: [
+        {
+          name: 'Lunch box',
+          quantity: 2,
+          unitPrice: '180.00',
+          options: [{ value: 'Blue' }],
+        },
+        { name: 'Bottle', quantity: 1, unitPrice: '40.00', options: [] },
+      ],
+      shippingRegion: 'Cairo',
+      shippingAddress: '12 Nile Street, Floor 3',
+    });
+  });
+
+  it('uses the city when the address has no governorate', () => {
+    expect(
+      normalize({
+        shipping_address: {
+          address1: '5 King Road',
+          city: 'Riyadh',
+          province: null,
+        },
+      }),
+    ).toMatchObject({
+      shippingRegion: 'Riyadh',
+      shippingAddress: '5 King Road',
+    });
+  });
+
+  it('leaves the details out when Shopify delivers none', () => {
+    const order = normalize({ shipping_address: { phone: '+201001234567' } });
+
+    expect(order).not.toHaveProperty('lineItems');
+    expect(order).not.toHaveProperty('shippingRegion');
+    expect(order).not.toHaveProperty('shippingAddress');
+  });
+
   it.each([
     [
       'top-level E.164',

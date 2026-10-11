@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
-import { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
+import {
+  NormalizedOrder,
+  type OrderLineItem,
+} from '../../../../shared/interfaces/order.interface';
 import { WebhookOrderNormalizer } from '../../../../modules/webhook-queue/interfaces/webhook-normalizer.interface';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import type { PlatformType } from '../../../../shared/interfaces/commerce-source.interface';
+import { toOrderLineItems } from '../../../../shared/commerce/order-line-items';
 import {
   appendPaymentSignal,
   classifyCodStatus,
@@ -50,6 +54,7 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
 
     const paymentMethod = this.resolvePaymentMethod(payload);
     const paymentSignals = this.collectPaymentSignals(payload, paymentMethod);
+    const lineItems = this.resolveLineItems(payload);
 
     return {
       orgId,
@@ -65,7 +70,49 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
       paymentMethod,
       paymentSignals,
       codStatus: classifyCodStatus(paymentSignals),
+      ...(lineItems.length ? { lineItems } : {}),
+      ...this.resolveShipping(payload),
       rawPayload,
+    };
+  }
+
+  private resolveLineItems(payload: ShopifyRawOrder): OrderLineItem[] {
+    return toOrderLineItems(
+      (Array.isArray(payload.line_items) ? payload.line_items : [])
+        .filter((item) => item !== null && typeof item === 'object')
+        .map((item) => ({
+          name: item.title ?? item.name,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          // A product without variants reports this placeholder title.
+          options:
+            typeof item.variant_title === 'string' &&
+            item.variant_title !== 'Default Title'
+              ? [{ value: item.variant_title }]
+              : [],
+        })),
+    );
+  }
+
+  /**
+   * Where the order ships: the governorate (`province`), else the city, and
+   * the street lines. Shopify omits these for an app without access to
+   * protected customer data, and then both are absent.
+   */
+  private resolveShipping(payload: ShopifyRawOrder): {
+    shippingRegion?: string;
+    shippingAddress?: string;
+  } {
+    const address = payload.shipping_address;
+    const line = (value: unknown) =>
+      typeof value === 'string' ? value.trim() : '';
+    const region = line(address?.province) || line(address?.city);
+    const street = [line(address?.address1), line(address?.address2)]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      ...(region ? { shippingRegion: region } : {}),
+      ...(street ? { shippingAddress: street } : {}),
     };
   }
 
@@ -132,7 +179,21 @@ interface ShopifyRawOrder {
     default_address?: { phone?: string; country_code?: string };
   };
   billing_address?: { phone?: string; country_code?: string };
-  shipping_address?: { phone?: string; country_code?: string };
+  shipping_address?: {
+    phone?: string;
+    country_code?: string;
+    address1?: string | null;
+    address2?: string | null;
+    city?: string | null;
+    province?: string | null;
+  };
+  line_items?: Array<{
+    title?: unknown;
+    name?: unknown;
+    variant_title?: unknown;
+    quantity?: unknown;
+    price?: unknown;
+  } | null>;
   total_price?: string;
   currency?: string;
   gateway?: string;

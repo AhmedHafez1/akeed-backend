@@ -9,6 +9,7 @@ import {
   type RegistryTemplate,
   type TemplateLanguage,
   type TemplatePurpose,
+  type TemplateVariable,
 } from './template-registry.types';
 
 /** Why a store's stored choice was not used and the default was. */
@@ -28,7 +29,12 @@ export type TemplateFallbackReason =
    * The style `auto` mapped the number to could not be sent, so the Arabic
    * default was (US-08-07d).
    */
-  | 'auto_style_unavailable';
+  | 'auto_style_unavailable'
+  /**
+   * The chosen template shows the order's items or delivery address and this
+   * order has none, so the language default was sent.
+   */
+  | 'order_details_missing';
 
 /**
  * Whether a send may use only templates the provider has approved. It applies
@@ -287,7 +293,48 @@ export function selectTemplateForSend(
     /** The store chose `auto` as its Arabic style. */
     arAuto?: boolean;
     switches?: TemplateSelectionSwitches;
+    /**
+     * Whether the order has every detail these variables show. Absent: any
+     * template can be filled, as before order details existed.
+     */
+    canFill?: (variables: readonly TemplateVariable[]) => boolean;
   },
+): TemplateSelection {
+  const selection = selectStoredTemplate(templates, params);
+  const canFill = params.canFill;
+  if (!selection.template || !canFill || canFill(selection.template.variables))
+    return selection;
+
+  // The order lacks an item list or an address the template shows. The
+  // language default carries the confirmation instead; it must be fillable
+  // too, which `decideLifecycle` ensures for a default set by staff.
+  const language = selection.template.language;
+  const fallback = findSendableDefault(
+    templates,
+    language,
+    COD_CONFIRMATION_PURPOSE,
+    guardrailApplies(templates, params.guardrail),
+  );
+  return fallback && canFill(fallback.variables)
+    ? {
+        template: toSelectedTemplate(fallback),
+        storedKey: selection.storedKey,
+        fallbackReason: 'order_details_missing',
+      }
+    : {
+        template: null,
+        language,
+        storedKey: selection.storedKey,
+        reason: 'default_unavailable',
+      };
+}
+
+type TemplateSendParams = Parameters<typeof selectTemplateForSend>[1];
+
+/** The store's template for this send, before the order's details are read. */
+function selectStoredTemplate(
+  templates: readonly RegistryTemplate[],
+  params: TemplateSendParams,
 ): TemplateSelection {
   const language = resolveTemplateLanguageForPhone(
     params.preferredLanguage,

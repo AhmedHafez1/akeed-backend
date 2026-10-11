@@ -23,7 +23,10 @@ import {
   type TemplateLifecycleRefusal,
 } from '../../../shared/messaging/template-lifecycle.policy';
 import type { TemplateReviewStatus } from '../../../shared/messaging/template-provider.types';
-import { COD_REMINDER_PURPOSE } from '../../../shared/messaging/template-registry.types';
+import {
+  COD_REMINDER_PURPOSE,
+  TEMPLATE_DETAIL_VARIABLE_KEYS,
+} from '../../../shared/messaging/template-registry.types';
 import {
   insertTemplateAudit,
   toPreview,
@@ -51,6 +54,7 @@ const LIFECYCLE_COLUMNS = {
   retiredAt: whatsappTemplates.retiredAt,
   providerTemplateId: whatsappTemplates.metaTemplateId,
   rejectionReason: whatsappTemplates.rejectionReason,
+  variableMapping: whatsappTemplates.variableMapping,
 };
 
 export interface LifecycleRow extends LifecycleTemplate {
@@ -60,12 +64,26 @@ export interface LifecycleRow extends LifecycleTemplate {
   rejectionReason: string | null;
 }
 
+/** Whether a stored variable mapping names an order-detail variable. */
+function showsOrderDetails(mapping: unknown): boolean {
+  return (
+    Array.isArray(mapping) &&
+    mapping.some((entry: { key?: unknown } | null) =>
+      (TEMPLATE_DETAIL_VARIABLE_KEYS as readonly unknown[]).includes(
+        entry?.key,
+      ),
+    )
+  );
+}
+
 function toLifecycleRow(row: {
   [K in keyof typeof LIFECYCLE_COLUMNS]: unknown;
 }): LifecycleRow {
+  const { variableMapping, ...rest } = row;
   return {
-    ...(row as unknown as LifecycleRow),
+    ...(rest as unknown as LifecycleRow),
     reviewStatus: row.reviewStatus as TemplateReviewStatus | null,
+    showsOrderDetails: showsOrderDetails(variableMapping),
   };
 }
 

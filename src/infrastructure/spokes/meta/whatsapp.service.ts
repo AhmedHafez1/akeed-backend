@@ -7,11 +7,14 @@ import { MESSAGE_TEXT_MAX_LENGTH } from '../../../shared/messaging/message-texts
 
 /** Record 4.10.3: a free-form message outside the window. */
 const WINDOW_CLOSED_ERROR_CODE = 131047;
+/** Sent for an order detail the caller gave no value for. */
+const MISSING_DETAIL = '-';
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
+import type { OrderDetailValues } from '../../../shared/messaging/order-detail-values';
 import type { TemplateVariableKey } from '../../../shared/messaging/template-registry.types';
 import {
   toSentTemplateIdentity,
@@ -79,6 +82,7 @@ export class WhatsAppService {
     verificationId: string;
     template: SelectedCodTemplate;
     fallbacks?: { customer?: string; store?: string };
+    detailValues?: OrderDetailValues;
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     const bodyParameterValueByKey: Record<TemplateVariableKey, string> = {
@@ -92,6 +96,11 @@ export class WhatsAppService {
         'Akeed Store',
       order: params.orderNumber,
       total: params.totalPrice,
+      // The provider rejects an empty parameter. The caller does not send a
+      // template the order cannot fill, so the dash is a last resort.
+      items: params.detailValues?.items || MISSING_DETAIL,
+      region: params.detailValues?.region || MISSING_DETAIL,
+      address: params.detailValues?.address || MISSING_DETAIL,
     };
 
     // The registry gives the format and the variables in send order; a named

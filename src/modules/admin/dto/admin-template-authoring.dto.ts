@@ -8,6 +8,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { ORDER_DETAIL_MAX_LENGTH } from '../../../shared/messaging/order-detail-values';
 import {
   TEMPLATE_LANGUAGES,
   TEMPLATE_PURPOSES,
@@ -31,6 +32,9 @@ import {
 const BODY_STORE_LIMIT = 4096;
 const LABEL_STORE_LIMIT = 200;
 const SAMPLE_STORE_LIMIT = 200;
+/** As long as the value a send may carry (`ORDER_DETAIL_MAX_LENGTH`). */
+const ITEMS_SAMPLE_STORE_LIMIT = ORDER_DETAIL_MAX_LENGTH.items;
+const ADDRESS_SAMPLE_STORE_LIMIT = ORDER_DETAIL_MAX_LENGTH.address;
 
 export class AdminTemplateSamplesDto {
   @IsOptional()
@@ -56,6 +60,24 @@ export class AdminTemplateSamplesDto {
   @IsString()
   @MaxLength(SAMPLE_STORE_LIMIT)
   total?: string;
+
+  @IsOptional()
+  @TrimString()
+  @IsString()
+  @MaxLength(ITEMS_SAMPLE_STORE_LIMIT)
+  items?: string;
+
+  @IsOptional()
+  @TrimString()
+  @IsString()
+  @MaxLength(SAMPLE_STORE_LIMIT)
+  region?: string;
+
+  @IsOptional()
+  @TrimString()
+  @IsString()
+  @MaxLength(ADDRESS_SAMPLE_STORE_LIMIT)
+  address?: string;
 }
 
 /** The text of a template: what an edit can change. */

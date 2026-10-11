@@ -84,7 +84,7 @@ All decided on 2026-10-06.
 2. **Approval.** **Decided:** one operator for every action, each one audited. A second approver is not enforced by software, as for billing operations.
 3. **Dev to prod promotion.** **Decided:** (a) the operator re-enters the draft in prod. Nothing is copied between environments.
 4. **Delete at Meta.** **Decided:** never. Retire is local only, and the provider port has no delete.
-5. **Variable set.** **Decided:** yes, new templates are limited to customer, store, order and total.
+5. **Variable set.** **Decided:** yes, new templates are limited to customer, store, order and total. **Changed after the epic closed:** `items`, `region` and `address` were added (migration `0063`; see the epic README, "After E08: order details in a template"). A template that uses them cannot be a language default.
 6. **Purposes (raised by the step brief).** **Decided:** drafts are `cod_confirmation` only. The rule "exactly Confirm then Cancel" is declared per purpose, so `cod_reminder` inherits it when [US-08-07](US-08-07-message-improvements.md) adds that purpose.
 
 ## Implementation notes

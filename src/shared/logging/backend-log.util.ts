@@ -114,6 +114,18 @@ const REDACTED_KEYS = new Set([
   'email',
   'customer_email',
   'customeremail',
+  // What a customer ordered and where it ships (detailed confirmation). A
+  // bare `address` is not listed: network errors log the host they reached
+  // under that name.
+  'shipping_address',
+  'shippingaddress',
+  'shipping_region',
+  'shippingregion',
+  'government',
+  'line_items',
+  'lineitems',
+  'cart_items',
+  'detailvalues',
 ]);
 
 function redact(value: unknown): unknown {

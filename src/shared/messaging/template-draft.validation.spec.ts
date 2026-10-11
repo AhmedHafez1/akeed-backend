@@ -210,10 +210,20 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
       expect(rules(validateBody('  \n '))).toEqual(['body_required']);
     });
 
-    it('decision 5: refuses a variable outside customer, store, order, total', () => {
+    it('decision 5: refuses a variable outside the set a send can fill', () => {
       expect(
-        rules(validateBody('Your items {{items}} are ready today')),
+        rules(validateBody('Your parcel {{tracking}} is ready today')),
       ).toEqual(['variable_unknown']);
+    });
+
+    it('accepts the order-detail variables items, region and address', () => {
+      expect(
+        rules(
+          validateBody(
+            'Your items: {{items}}. Shipping to {{region}}, {{address}}. Please confirm.',
+          ),
+        ),
+      ).toEqual([]);
     });
 
     it.each(['Hello {{customer} now', 'Hello {customer}} now', 'Hello { now'])(

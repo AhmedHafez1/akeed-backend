@@ -120,6 +120,11 @@ export class AdminTemplateTestSendService {
         totalPrice: values.total,
         verificationId: randomUUID(),
         template: toSelectedTemplate(template),
+        detailValues: {
+          items: values.items,
+          region: values.region,
+          address: values.address,
+        },
       });
     } catch (error) {
       this.logger.warn(

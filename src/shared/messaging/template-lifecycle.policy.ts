@@ -29,6 +29,8 @@ export interface LifecycleTemplate {
   isDefault: boolean;
   reviewStatus: TemplateReviewStatus | null;
   retiredAt: string | null;
+  /** It uses `items`, `region` or `address`, which not every order has. */
+  showsOrderDetails: boolean;
 }
 
 export type TemplateLifecycleRefusal =
@@ -36,7 +38,12 @@ export type TemplateLifecycleRefusal =
   | 'not_approved'
   | 'not_active'
   | 'replacement_required'
-  | 'replacement_invalid';
+  | 'replacement_invalid'
+  /**
+   * A default is what an order without items or an address is sent, so it
+   * cannot be a template that shows them.
+   */
+  | 'default_shows_order_details';
 
 export interface LifecycleRowChange {
   id: string;
@@ -94,6 +101,9 @@ function withdraw(
   if (replacement && !isEligibleReplacement(target, replacement)) {
     return { ok: false, reason: 'replacement_invalid' };
   }
+  if (target.isDefault && replacement?.showsOrderDetails) {
+    return { ok: false, reason: 'default_shows_order_details' };
+  }
   const changes: LifecycleRowChange[] = [
     {
       id: target.id,
@@ -141,6 +151,9 @@ export function decideLifecycle(params: {
         return { ok: false, reason: 'not_approved' };
       }
       if (!target.isActive) return { ok: false, reason: 'not_active' };
+      if (target.showsOrderDetails) {
+        return { ok: false, reason: 'default_shows_order_details' };
+      }
       if (target.isDefault)
         return { ok: true, changes: [], moveStoresTo: null };
       return {

@@ -18,6 +18,7 @@ function template(
     isDefault: false,
     reviewStatus: 'approved',
     retiredAt: null,
+    showsOrderDetails: false,
     ...overrides,
   };
 }
@@ -90,6 +91,12 @@ describe('template lifecycle rules (US-08-06 criteria 6 and 7)', () => {
       expect(
         decide('set_default', { ...egyptian, reviewStatus: 'paused' }),
       ).toEqual({ ok: false, reason: 'not_approved' });
+    });
+
+    it('refuses a template that shows order items or an address', () => {
+      expect(
+        decide('set_default', { ...egyptian, showsOrderDetails: true }),
+      ).toEqual({ ok: false, reason: 'default_shows_order_details' });
     });
 
     it('changes nothing for the current default', () => {
@@ -171,6 +178,23 @@ describe('template lifecycle rules (US-08-06 criteria 6 and 7)', () => {
       expect(isEligibleReplacement(egyptian, replacement)).toBe(false);
     });
   });
+
+  it.each(['deactivate', 'retire'] as const)(
+    'refuses to %s the default in favour of a template that shows order details',
+    (action) => {
+      const detailed = template('cod_confirm.ar.detailed_v1', {
+        showsOrderDetails: true,
+      });
+      expect(decide(action, standard, { replacement: detailed })).toEqual({
+        ok: false,
+        reason: 'default_shows_order_details',
+      });
+      // A template that is not the default may hand its stores to it.
+      expect(
+        decide(action, egyptian, { storeCount: 2, replacement: detailed }),
+      ).toMatchObject({ ok: true, moveStoresTo: detailed });
+    },
+  );
 
   it('changes nothing when an inactive template is deactivated', () => {
     expect(decide('deactivate', fresh)).toEqual({

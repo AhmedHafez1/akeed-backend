@@ -111,7 +111,7 @@ The [current-state review (2026-10-05)](https://claude.ai/artifact/VNW6m8wkVrYiS
 | 2. Preview text is a hand-kept copy that nothing checks against Meta | US-08-04, US-08-05, US-08-07g |
 | 3. The reminder resends the identical message | US-08-07a |
 | 4. Nothing is sent after confirm or cancel | US-08-07b |
-| 5. No items, address or delivery estimate | **Not in E08.** It needs new order data, not template work. |
+| 5. No items, address or delivery estimate | **Not in E08.** It needs new order data, not template work. Items and address were added after E08 closed: see "After E08: order details in a template" below. A delivery estimate is still not sent. |
 | 6. One Arabic dialect per store | US-08-07d |
 | 7. Inconsistent naming | US-08-03 (legacy names kept and mapped), US-08-06 (convention for new names) |
 | 8. The four-block preview model does not fit the variants | US-08-07g |
@@ -150,13 +150,23 @@ Rules for the whole epic:
 - **Only approved and active templates are sent.** A template must be approved at Meta and active in Akeed. Anything else falls back to the language default. If the default is unavailable, the send is skipped with a recorded reason and never guessed.
 - **No customer-facing change before US-08-07.** US-08-02 to US-08-06 change no customer-facing message. A characterization test proves the Meta payload for every existing variant and language is byte-identical before and after.
 - **Secrets and safe logging.** Access tokens and app secrets are never logged, returned or put in fixtures. Template text and customer data in logs go through `buildBackendLog`.
-- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. `0053` was used by US-08-02, `0054` and `0055` by US-08-03, `0056` and `0057` by US-08-04, `0058` by US-08-06, and `0059` and `0060` by US-08-07; the next number is `0061`. Migrations are additive first, each with a written rollback.
+- **Hand-written migrations.** Each migration is the next numbered `drizzle/NNNN_name.sql` plus a `_journal.json` entry. `0053` was used by US-08-02, `0054` and `0055` by US-08-03, `0056` and `0057` by US-08-04, `0058` by US-08-06, and `0059` and `0060` by US-08-07. Later work took `0061` to `0063`; read `drizzle/meta/_journal.json` for the next number. Migrations are additive first, each with a written rollback.
 - **No regressions.** Shopify, Standalone (manual, import, API), EasyOrders and WooCommerce sends keep working, and their tests pass untouched.
 
 **Out of scope:**
 - Tenant or merchant-owned senders and templates.
 - Merchant-authored template text.
-- Order items, shipping address or delivery estimate in the message (gap 5).
+- Order items, shipping address or delivery estimate in the message (gap 5). Items and address were added later, outside the epic.
+
+## After E08: order details in a template
+
+A template may also use `items`, `region` and `address` (migration `0063`). This reverses US-08-06 decision 5 for those three values.
+
+- **Where the values come from.** The EasyOrders and Shopify normalizers fill `orders.line_items`, `orders.shipping_region` (the governorate, else the city) and `orders.shipping_address` at ingest. No other source fills them.
+- **What is sent.** `shared/messaging/order-detail-values.ts` writes the items as one line (numbered, joined with a bullet, five at most, then "+N more items") and puts every value on one line within a length cap. The provider rejects a parameter that holds a line break.
+- **An order without them.** A store may choose a template that shows these values. An order that cannot fill one of them is sent the language default, and the dispatch records `template_fallback_reason = order_details_missing`.
+- **Defaults.** A template that shows these values cannot be a language default, or an order without them would get no message. `set-default`, and a deactivate or retire that would hand the default to such a template, are refused with `WHATSAPP_TEMPLATE_DEFAULT_SHOWS_ORDER_DETAILS`.
+- **Creating one.** Staff write it as a draft and submit it through the US-08-06 flow, per environment. Nothing is seeded.
 - Message types other than COD confirmation and the purposes listed here, such as marketing campaigns, order-status updates and OTP.
 - Media, location or document headers.
 - Automatic translation.

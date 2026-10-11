@@ -133,7 +133,7 @@ styles and tell what a customer actually received.
 | `template_purpose` | `initial`, `reminder`, or `test` when the order is a test order |
 | `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
 | `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
-| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`; since US-08-07 also `reminder_unavailable` and `auto_style_unavailable`), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
+| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`; since US-08-07 also `reminder_unavailable` and `auto_style_unavailable`; `order_details_missing` when the chosen template shows items or an address the order does not have), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
 
 - **Selected before the claim.** `selectTemplateForSend`
   (`src/shared/messaging/template-selector.ts`) picks the template from the

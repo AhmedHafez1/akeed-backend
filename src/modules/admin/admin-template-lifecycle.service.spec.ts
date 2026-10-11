@@ -38,6 +38,7 @@ function row(overrides: Partial<LifecycleRow> = {}): LifecycleRow {
     retiredAt: null,
     providerTemplateId: '900000000000001',
     rejectionReason: 'invalid_format',
+    showsOrderDetails: false,
     ...overrides,
   };
 }

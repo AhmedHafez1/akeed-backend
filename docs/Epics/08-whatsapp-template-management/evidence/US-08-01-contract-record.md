@@ -290,7 +290,7 @@ The two legacy names with a stray underscore, `_akeed_cod_verification_professio
 **Worst-case rules:**
 
 - **4.6.11.** Named values are sent in the order the catalog lists them today, per variant, and that order does not change (it is part of the byte-identical baseline).
-- **4.6.12.** No new code sends a value that today's code would not. A neutral validation rule for new templates keeps every sample single-line and the filled sample body under 1024 characters. A refusal on a real send is already a recorded rejection.
+- **4.6.12.** No new code sends a value that today's code would not. A neutral validation rule for new templates keeps every sample single-line and the filled sample body under 1024 characters. A refusal on a real send is already a recorded rejection. **Since migration `0063`** a send may also carry the order's items, region and address, which come from customers. `sanitizeParameterValue` (`shared/messaging/order-detail-values.ts`) puts each on one line, with no tab and no run of spaces, and caps its length (items 600, region 80, address 300). The limit itself is still unknown, so the first live send of a detailed template should be a five-item order.
 - **4.6.13.** The language code sent is exactly the code the template is registered under. There is no fallback between codes.
 - **4.6.14.** Local validation does not guess the ratio. It warns when a body has more than one parameter per three words and leaves the decision to Meta's review.
 

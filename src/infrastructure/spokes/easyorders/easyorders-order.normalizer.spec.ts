@@ -118,6 +118,20 @@ describe('EasyOrdersOrderNormalizer', () => {
       currency: 'EGP',
       paymentMethod: 'cod',
       paymentSignals: ['cod'],
+      lineItems: [
+        {
+          name: 'Sample item 1',
+          quantity: 1,
+          unitPrice: '220',
+          options: [
+            { name: 'color', value: '#808080' },
+            { name: 'size', value: 'L' },
+          ],
+        },
+        { name: 'Sample item 2', quantity: 1, unitPrice: '510', options: [] },
+      ],
+      shippingRegion: 'Cairo',
+      shippingAddress: 'Synthetic address 1',
       rawPayload: fixture,
     });
     expect(connections.findByIntegration).toHaveBeenCalledWith(
@@ -274,6 +288,43 @@ describe('EasyOrdersOrderNormalizer', () => {
         customerName: 'From the API',
         totalPrice: '750.00',
       });
+    });
+
+    it('takes the items and the address from the lookup when the webhook lacked them', async () => {
+      const { normalize } = createNormalizer();
+
+      await expect(
+        normalize({
+          ...fixture,
+          full_name: undefined,
+          cart_items: undefined,
+          government: undefined,
+          address: '',
+        }),
+      ).resolves.toMatchObject({
+        lineItems: [{ name: 'Sample item 1' }, { name: 'Sample item 2' }],
+        shippingRegion: 'Cairo',
+        shippingAddress: 'Synthetic address 1',
+      });
+    });
+
+    it('leaves the details out when neither the webhook nor the lookup has them', async () => {
+      const bare = {
+        ...fixture,
+        cart_items: undefined,
+        government: undefined,
+        address: undefined,
+      };
+      const { normalize } = createNormalizer({
+        lookup: { kind: 'found', order: bare },
+      });
+
+      const order = await normalize({ ...bare, full_name: undefined });
+
+      expect(order).toMatchObject({ customerName: 'Test Customer' });
+      expect(order).not.toHaveProperty('lineItems');
+      expect(order).not.toHaveProperty('shippingRegion');
+      expect(order).not.toHaveProperty('shippingAddress');
     });
 
     it('records an order that is still incomplete after the lookup', async () => {

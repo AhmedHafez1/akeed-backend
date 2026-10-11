@@ -1,3 +1,5 @@
+import type { OrderLineItem } from '../interfaces/order.interface';
+import { formatItemList } from './order-detail-values';
 import type {
   RegistryTemplate,
   TemplateLanguage,
@@ -30,15 +32,69 @@ const TEMPLATE_SAMPLE_STORE_NAMES = {
   en: 'Akeed Store',
 } as const satisfies Record<TemplateLanguage, string>;
 
+interface SampleOrderDetails {
+  lineItems: OrderLineItem[];
+  shippingRegion: string;
+  shippingAddress: string;
+}
+
+/**
+ * The items and delivery address of the sample order. The items add up to
+ * `TEMPLATE_SAMPLE_TOTAL`, and a synthetic test order carries them so a store
+ * on a detailed template can test it.
+ */
+const TEMPLATE_SAMPLE_ORDER_DETAILS: Record<
+  TemplateLanguage,
+  SampleOrderDetails
+> = {
+  ar: {
+    lineItems: [
+      {
+        name: 'قميص قطن',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'اللون', value: 'أزرق' }],
+      },
+      { name: 'جورب رياضي', quantity: 2, unitPrice: '50.00', options: [] },
+    ],
+    shippingRegion: 'القاهرة',
+    shippingAddress: '12 شارع النيل، المعادي',
+  },
+  en: {
+    lineItems: [
+      {
+        name: 'Cotton shirt',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'Color', value: 'Blue' }],
+      },
+      { name: 'Sport socks', quantity: 2, unitPrice: '50.00', options: [] },
+    ],
+    shippingRegion: 'Cairo',
+    shippingAddress: '12 Nile Street, Maadi',
+  },
+};
+
+/** A copy, so a caller that changes its order does not change the sample. */
+export function templateSampleOrderDetails(
+  language: TemplateLanguage,
+): SampleOrderDetails {
+  return structuredClone(TEMPLATE_SAMPLE_ORDER_DETAILS[language]);
+}
+
 /** The values staff see in a preview and receive in a staff test send. */
 export function templateSampleValues(
   language: TemplateLanguage,
 ): TemplateSampleValues {
+  const details = TEMPLATE_SAMPLE_ORDER_DETAILS[language];
   return {
     customer: TEMPLATE_SAMPLE_CUSTOMER_NAMES[language],
     store: TEMPLATE_SAMPLE_STORE_NAMES[language],
     order: TEMPLATE_SAMPLE_ORDER_NUMBER,
     total: `${TEMPLATE_SAMPLE_TOTAL} ${TEMPLATE_SAMPLE_CURRENCY}`,
+    items: formatItemList(details.lineItems, language),
+    region: details.shippingRegion,
+    address: details.shippingAddress,
   };
 }
 

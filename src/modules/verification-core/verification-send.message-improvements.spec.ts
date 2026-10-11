@@ -120,6 +120,112 @@ function claimed(dispatches: { claim: jest.Mock }) {
   return { templateName: params.templateName, identity: params.identity };
 }
 
+const DETAILED_KEY = 'cod_confirm.ar.detailed_v1';
+const DETAILED: RegistryTemplate = {
+  ...seededRegistryTemplates().find(
+    (template) => template.key === 'cod_confirm.ar.standard',
+  )!,
+  key: DETAILED_KEY,
+  style: 'detailed_v1',
+  templateName: 'akeed_cod_confirm_detailed_v1',
+  isDefault: false,
+  variables: [
+    { key: 'customer', name: 'customer' },
+    { key: 'order', name: 'order' },
+    { key: 'items', name: 'items' },
+    { key: 'total', name: 'total' },
+    { key: 'region', name: 'region' },
+    { key: 'address', name: 'address' },
+  ],
+};
+
+describe('VerificationSendService and a template that shows the order', () => {
+  const store = {
+    templates: [...seededRegistryTemplates(), DETAILED],
+    integration: { codTemplateArKey: DETAILED_KEY },
+  };
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('sends the items, region and address of an order that has them', async () => {
+    const { service, messageDispatches, messagingPort } = setup({
+      ...store,
+      order: {
+        lineItems: [
+          {
+            name: 'Lunch box',
+            quantity: 2,
+            unitPrice: '180.00',
+            options: [{ name: 'color', value: 'Blue' }],
+          },
+        ],
+        shippingRegion: 'الرياض',
+        shippingAddress: ['حي النخيل', 'شارع 12'].join(String.fromCharCode(10)),
+      },
+    });
+
+    await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+    });
+    expect(claimed(messageDispatches)).toEqual({
+      templateName: 'akeed_cod_confirm_detailed_v1',
+      identity: {
+        variantKey: 'ar.detailed_v1',
+        purpose: 'initial',
+        language: 'ar',
+      },
+    });
+    expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detailValues: {
+          items: '1. Lunch box (2x 180) = 360، color: Blue',
+          region: 'الرياض',
+          address: 'حي النخيل شارع 12',
+        },
+      }),
+    );
+  });
+
+  it('sends the language default to an order without them, and records why', async () => {
+    const { service, messageDispatches, messagingPort } = setup(store);
+
+    await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+    });
+    expect(claimed(messageDispatches)).toEqual({
+      templateName: 'akeed_cod_verification_friendly',
+      identity: {
+        variantKey: 'ar.standard',
+        purpose: 'initial',
+        language: 'ar',
+        fallbackReason: 'order_details_missing',
+        skippedKey: DETAILED_KEY,
+      },
+    });
+    const [sent] = messagingPort.sendVerificationTemplate.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(sent).not.toHaveProperty('detailValues');
+  });
+
+  it('passes no detail values for a template that does not show them', async () => {
+    const { service, messagingPort } = setup({
+      order: { shippingRegion: 'الرياض', shippingAddress: 'حي النخيل' },
+    });
+
+    await service.sendInitial('ver-1');
+    const [sent] = messagingPort.sendVerificationTemplate.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(sent).not.toHaveProperty('detailValues');
+  });
+});
+
 const REMINDERS = [
   ...seededRegistryTemplates(),
   reminderTemplate('ar', 'standard_v1', { isDefault: true }),

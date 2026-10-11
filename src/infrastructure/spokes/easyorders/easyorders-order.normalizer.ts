@@ -9,6 +9,10 @@ import type {
   WebhookOrderNormalizer,
 } from '../../../modules/webhook-queue/interfaces/webhook-normalizer.interface';
 import { CANONICAL_TOTAL_PRICE_PATTERN } from '../../../shared/commerce/canonical-order.rules';
+import {
+  toOrderLineItems,
+  type OrderLineItemInput,
+} from '../../../shared/commerce/order-line-items';
 import { collectPaymentSignals } from '../../../shared/commerce/payment-signals';
 import {
   RetryableProviderError,
@@ -142,6 +146,7 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
     if (!totalPrice) return this.skip(orgId, integrationId, 'invalid_amount');
 
     const paymentMethod = text(order.payment_method);
+    const lineItems = toOrderLineItems(readCartItems(order.cart_items));
     return {
       orgId,
       integrationId,
@@ -155,6 +160,12 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
       currency: connection.currency,
       paymentMethod,
       paymentSignals: collectPaymentSignals(undefined, paymentMethod),
+      ...(lineItems.length ? { lineItems } : {}),
+      // EasyOrders names the governorate `government`; it has no city field.
+      ...(text(order.government)
+        ? { shippingRegion: text(order.government) }
+        : {}),
+      ...(text(order.address) ? { shippingAddress: text(order.address) } : {}),
       rawPayload,
     };
   }
@@ -280,5 +291,41 @@ function fillMissing(
       fetched[field] !== undefined
     )
       merged[field] = fetched[field];
+  for (const field of ['government', 'address'])
+    if (!text(merged[field]) && fetched[field] !== undefined)
+      merged[field] = fetched[field];
+  if (
+    readCartItems(merged.cart_items).length === 0 &&
+    fetched.cart_items !== undefined
+  )
+    merged.cart_items = fetched.cart_items;
   return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * `cart_items` as the order carries them: the product's name, the quantity,
+ * the unit price and the variant's properties (colour, size).
+ */
+function readCartItems(value: unknown): OrderLineItemInput[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => {
+    const product = isRecord(item.product) ? item.product : {};
+    const variant = isRecord(item.variant) ? item.variant : {};
+    const props = Array.isArray(variant.variation_props)
+      ? variant.variation_props.filter(isRecord)
+      : [];
+    return {
+      name: product.name,
+      quantity: item.quantity,
+      unitPrice: item.price,
+      options: props.map((prop) => ({
+        name: prop.variation,
+        value: prop.variation_prop,
+      })),
+    };
+  });
 }

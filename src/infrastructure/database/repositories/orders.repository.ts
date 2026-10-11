@@ -316,6 +316,9 @@ export class OrdersRepository {
         customerName: null,
         customerEmail: null,
         rawPayload: {},
+        lineItems: null,
+        shippingRegion: null,
+        shippingAddress: null,
         updatedAt: new Date().toISOString(),
       })
       .where(inArray(orders.id, orderIds))

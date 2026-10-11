@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { integrations } from '../../infrastructure/database/schema';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
 import { SYNTHETIC_TEST_ORDER_ID_PREFIX } from '../../shared/commerce/synthetic-order';
+import { templateSampleOrderDetails } from '../../shared/messaging/template-rendering';
 import {
   resolveFallbackActiveIntegration,
   resolveShopifyLinkedIntegration,
@@ -92,6 +93,16 @@ export class TestVerificationService {
         totalPrice: '1.00',
         currency: defaultCurrency,
         paymentMethod: 'cod',
+        // So a store that chose a detailed template tests that template.
+        ...templateSampleOrderDetails('en'),
+        lineItems: [
+          {
+            name: 'Akeed test item',
+            quantity: 1,
+            unitPrice: '1.00',
+            options: [],
+          },
+        ],
         rawPayload: {
           source: 'dashboard_test_verification',
           synthetic: true,

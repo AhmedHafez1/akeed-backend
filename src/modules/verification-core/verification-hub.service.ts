@@ -656,6 +656,9 @@ export class VerificationHubService {
       currency: orderData.currency,
       paymentMethod: orderData.paymentMethod,
       rawPayload: orderData.rawPayload,
+      lineItems: orderData.lineItems?.length ? orderData.lineItems : null,
+      shippingRegion: orderData.shippingRegion || null,
+      shippingAddress: orderData.shippingAddress || null,
       isTest: isSyntheticTestOrderId(orderData.externalOrderId),
     };
   }

@@ -285,4 +285,74 @@ describe('WhatsAppService', () => {
       },
     ]);
   });
+
+  describe('a template that shows the order', () => {
+    const detailed: SelectedCodTemplate = {
+      variantKey: 'ar.detailed_v1',
+      language: 'ar',
+      templateName: 'akeed_cod_confirm_detailed_v1',
+      languageCode: 'ar',
+      parameterFormat: 'named',
+      variables: [
+        { key: 'customer', name: 'customer' },
+        { key: 'order', name: 'order' },
+        { key: 'items', name: 'items' },
+        { key: 'total', name: 'total' },
+        { key: 'region', name: 'region' },
+        { key: 'address', name: 'address' },
+      ],
+    };
+    const send = async (
+      detailValues?: Parameters<
+        WhatsAppService['sendVerificationTemplate']
+      >[0]['detailValues'],
+    ) => {
+      const { service, httpService } = createService();
+      await service.sendVerificationTemplate({
+        to: '+201001112223',
+        customerName: 'محمد السيد',
+        storeName: 'Akeed Egypt',
+        orderNumber: '44',
+        totalPrice: '440.00 ج.م',
+        verificationId: 'ver-3',
+        template: detailed,
+        ...(detailValues ? { detailValues } : {}),
+      });
+      const payload = httpService.post.mock.calls[0][1] as {
+        template: {
+          components: Array<{
+            parameters: Array<{ parameter_name?: string; text: string }>;
+          }>;
+        };
+      };
+      return payload.template.components[0].parameters.map(
+        ({ parameter_name, text }) => [parameter_name, text],
+      );
+    };
+
+    it('sends the items, the region and the address in the registered order', async () => {
+      await expect(
+        send({
+          items: '1. Lunch box (1x 180) = 180، color: Blue',
+          region: 'القاهرة',
+          address: 'حلوان المشروع الامريكي',
+        }),
+      ).resolves.toEqual([
+        ['customer', 'محمد السيد'],
+        ['order', '44'],
+        ['items', '1. Lunch box (1x 180) = 180، color: Blue'],
+        ['total', '440.00 ج.م'],
+        ['region', 'القاهرة'],
+        ['address', 'حلوان المشروع الامريكي'],
+      ]);
+    });
+
+    it('never sends an empty parameter for a detail it was not given', async () => {
+      const parameters = await send({ items: '1. Lunch box (1x)' });
+
+      expect(parameters).toContainEqual(['region', '-']);
+      expect(parameters).toContainEqual(['address', '-']);
+      expect((await send()).every(([, text]) => text !== '')).toBe(true);
+    });
+  });
 });

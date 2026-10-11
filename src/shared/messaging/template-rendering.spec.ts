@@ -128,6 +128,19 @@ describe('template rendering', () => {
       store: 'متجر أكيد',
       order: 'TEST-1',
       total: '250.00 USD',
+      items:
+        '1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100',
+      region: 'القاهرة',
+      address: '12 شارع النيل، المعادي',
     });
+  });
+
+  it('gives every sample value on one line, as the provider requires', () => {
+    for (const language of ['ar', 'en'] as const) {
+      for (const value of Object.values(templateSampleValues(language))) {
+        expect(value).not.toMatch(/[\r\n\t]/);
+        expect(value.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

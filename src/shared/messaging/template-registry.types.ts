@@ -28,8 +28,26 @@ export const TEMPLATE_PURPOSES = [
 export const COD_CONFIRMATION_PURPOSE: TemplatePurpose = 'cod_confirmation';
 export const COD_REMINDER_PURPOSE: TemplatePurpose = 'cod_reminder';
 
-/** The values a send can put in a template. */
-export type TemplateVariableKey = 'customer' | 'store' | 'order' | 'total';
+/**
+ * The values a send can put in a template. `items`, `region` and `address`
+ * are order details: only an order whose source delivered them can fill them.
+ */
+export type TemplateVariableKey =
+  | 'customer'
+  | 'store'
+  | 'order'
+  | 'total'
+  | 'items'
+  | 'region'
+  | 'address';
+
+export type TemplateDetailVariableKey = 'items' | 'region' | 'address';
+
+export const TEMPLATE_DETAIL_VARIABLE_KEYS = [
+  'items',
+  'region',
+  'address',
+] as const satisfies readonly TemplateDetailVariableKey[];
 
 export type TemplateParameterFormat = 'named' | 'positional';
 

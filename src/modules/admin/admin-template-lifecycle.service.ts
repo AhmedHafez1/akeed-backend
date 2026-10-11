@@ -59,6 +59,8 @@ const REFUSAL_CODES: Record<TemplateLifecycleRefusal, string> = {
   not_active: WHATSAPP_TEMPLATE_ERROR_CODES.notActive,
   replacement_required: WHATSAPP_TEMPLATE_ERROR_CODES.replacementRequired,
   replacement_invalid: WHATSAPP_TEMPLATE_ERROR_CODES.replacementInvalid,
+  default_shows_order_details:
+    WHATSAPP_TEMPLATE_ERROR_CODES.defaultShowsOrderDetails,
 };
 
 const REFUSAL_MESSAGES: Record<TemplateLifecycleRefusal, string> = {
@@ -69,6 +71,8 @@ const REFUSAL_MESSAGES: Record<TemplateLifecycleRefusal, string> = {
     'Stores send this template or it is a language default: name a replacement.',
   replacement_invalid:
     'The replacement must be an approved, active template of the same purpose and language.',
+  default_shows_order_details:
+    'A template that shows order items or an address cannot be a language default.',
 };
 
 interface TemplateRef {

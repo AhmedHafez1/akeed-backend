@@ -271,6 +271,8 @@ describe('order imports PostgreSQL contract', () => {
         '0051_woocommerce_connection.sql',
         // US-07-05: relaxes the WooCommerce credentials; proves 0052 re-runs.
         '0052_woocommerce_disconnect.sql',
+        // Detailed confirmation: three nullable order columns; proves 0063 re-runs.
+        '0063_order_message_details.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

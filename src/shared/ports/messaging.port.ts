@@ -2,6 +2,7 @@ import type {
   SelectedCodTemplate,
   SentTemplateIdentity,
 } from '../messaging/cod-template-selector';
+import type { OrderDetailValues } from '../messaging/order-detail-values';
 
 export const MESSAGING_PORT = Symbol('MESSAGING_PORT');
 
@@ -32,6 +33,12 @@ export interface MessagingPort {
      * (US-08-07e). Absent: the adapter keeps its own words, as before.
      */
     fallbacks?: { customer?: string; store?: string };
+    /**
+     * The order's items, region and address, ready to send, for the detail
+     * variables the template uses. The caller sends a template only when the
+     * order can fill it, so a value is absent only for a variable not used.
+     */
+    detailValues?: OrderDetailValues;
   }): Promise<{
     messages?: Array<{ id: string }>;
     /** What the adapter sent. Absent when an adapter does not report it. */

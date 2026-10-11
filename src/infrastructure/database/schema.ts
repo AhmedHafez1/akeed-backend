@@ -22,6 +22,7 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { OrderLineItem } from '../../shared/interfaces/order.interface';
 import type {
   TemplateLanguage,
   TemplateParameterFormat,
@@ -872,6 +873,11 @@ export const orders = pgTable(
     currency: text().default('SAR'),
     paymentMethod: text('payment_method'),
     rawPayload: jsonb('raw_payload'),
+    // What a detailed confirmation message shows (migration 0063). NULL for a
+    // source that does not deliver them and for every order stored before.
+    lineItems: jsonb('line_items').$type<OrderLineItem[]>(),
+    shippingRegion: text('shipping_region'),
+    shippingAddress: text('shipping_address'),
     isTest: boolean('is_test').default(false).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
