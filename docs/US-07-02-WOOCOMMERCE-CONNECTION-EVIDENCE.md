@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-04
 **Revision:** backend `develop` at `1490631` (restricted client), `6fcf414` (connect switch), `79e27e4` (spoke); frontend `develop` at `3c0e1db` (skin selection), `6e4d5f9` (WooCommerce skin)
-**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_CONNECT_ENABLED=false`, empty `WOOCOMMERCE_PILOT_ORG_IDS`). No real merchant may connect before order ingestion (US-07-03) is on and the US-07-06 gate has observed a real store. No order is ingested and nothing is written to a store's orders by this story.
+**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_CONNECT_ENABLED=false`, empty `WOOCOMMERCE_PILOT_ORG_IDS`). No real merchant may connect before order ingestion (US-07-03) is on and the US-07-06 gate has observed a real store. No order is ingested and nothing is written to a store's orders by this story. **Update 2026-10-12:** ready for deploy; the wait on the US-07-06 gate was lifted on the product owner's end-to-end test report (no step-level record handed back). The switch stays off until deploy.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md). No request was sent to any store while building or testing this story: every store is an in-process fake (`test/contracts/woocommerce-provider-fake.ts`) placed under the real restricted outbound client as its DNS and its transport.
 

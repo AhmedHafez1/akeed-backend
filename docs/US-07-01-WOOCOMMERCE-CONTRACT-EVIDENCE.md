@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-04
 **Revision:** backend working tree on `develop`, on top of `f144b54`. The frontend repository was not changed.
-**Decision:** contract record written; verdict "US-07-02 to US-07-06 unblocked to build". The record waits for product-owner review before US-07-02 starts.
+**Decision:** contract record written; verdict "US-07-02 to US-07-06 unblocked to build". The record waits for product-owner review before US-07-02 starts. **Update 2026-10-12:** the US-07-06 gate is closed on the product owner's end-to-end test report; the record's rows were not edited to VERIFIED.
 
 This story produced documents and fixtures only. No production code was written, no request was sent to any store, and no test store exists. The documentation pages listed below were read from the public internet.
 

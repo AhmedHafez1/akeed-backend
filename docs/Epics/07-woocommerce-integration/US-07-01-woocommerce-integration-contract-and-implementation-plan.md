@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Contract and plan
-- **Status:** Done, awaiting product-owner review (2026-10-04) — [contract record](evidence/US-07-01-contract-record.md) and [fixtures](../../../test/fixtures/woocommerce/README.md) written from the official documentation; verdict: US-07-02 to US-07-06 unblocked to build. No store was contacted. Evidence: [US-07-01 evidence](../../US-07-01-WOOCOMMERCE-CONTRACT-EVIDENCE.md)
+- **Status:** Done (2026-10-12); live behavior accepted on the product owner's end-to-end test report (per-observation results were not handed back) — [contract record](evidence/US-07-01-contract-record.md) and [fixtures](../../../test/fixtures/woocommerce/README.md) written from the official documentation; verdict: US-07-02 to US-07-06 unblocked to build. No store was contacted. Evidence: [US-07-01 evidence](../../US-07-01-WOOCOMMERCE-CONTRACT-EVIDENCE.md)
 - **Dependencies:** [US-02-07](../02-platform-boundaries-and-reliability/US-02-07-platform-boundary-release-gate.md), [US-03-05](../03-standalone-foundation-and-onboarding/US-03-05-standalone-tenant-and-primary-source-guards.md), [US-05-06](../05-standalone-order-ingestion-api/US-05-06-api-security-and-recovery-release-gate.md); the E06 shared code on `develop` (US-06-02 to US-06-05). Not US-06-06.
 
 Retitled on 2026-10-04 (was "Validate WooCommerce hosting, authentication and mappings", a validation spike). The filename was aligned with the title on 2026-10-04.

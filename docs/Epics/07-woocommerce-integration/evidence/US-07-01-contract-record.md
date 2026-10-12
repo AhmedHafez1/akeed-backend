@@ -5,6 +5,7 @@
 - **Baseline:** `akeed-backend` `develop` at `f144b54`
 - **State:** Written from the official WooCommerce documentation. No request was sent to any store and no test store exists. The VERIFIED column is empty until the US-07-06 live run.
 - **Verdict in one line:** US-07-02 to US-07-06 are unblocked to build, each behind its switch. Nothing is enabled for a real merchant before the US-07-06 gate.
+- **Update 2026-10-12:** the product owner tested WooCommerce end to end on a real store and reported it working; the US-07-06 gate is closed. The per-observation results were not handed back, so this record was not edited to VERIFIED and its DOCUMENTED and UNKNOWN rows stand as written.
 
 This record is the only source of truth for WooCommerce behavior in E07. Where it says UNKNOWN, do not fill the gap from memory of WooCommerce's source code or by assumption: follow the worst-case rule written next to it, or stop and ask.
 

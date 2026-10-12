@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Done (2026-10-04), shipped disabled; real-store proof is owed to US-07-06 — [evidence](../../US-07-02-WOOCOMMERCE-CONNECTION-EVIDENCE.md)
+- **Status:** Done — ready for deploy (2026-10-12). Shipped behind `WOOCOMMERCE_CONNECT_ENABLED=false`; the switch is turned on at deploy. The real-store proof owed to US-07-06 was accepted on the product owner's end-to-end test report. [Evidence](../../US-07-02-WOOCOMMERCE-CONNECTION-EVIDENCE.md)
 - **Dependencies:** [US-07-01](US-07-01-woocommerce-integration-contract-and-implementation-plan.md)
 
 ## User story and value

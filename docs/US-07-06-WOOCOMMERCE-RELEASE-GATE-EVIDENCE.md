@@ -2,11 +2,20 @@
 
 **Validated:** 2026-10-05
 **Revision:** backend `develop` at `639c7bf`; frontend `develop` at `8c134ae` (the fourth gate run, after the three review fixes)
-**State:** automated gate run as scripts. **Live pilot NOT RUN.** The story stays open: acceptance criteria 4, 5 and 7 need the run on a real store, and the release-gate record with the go/no-go recommendation (`Epics/07-woocommerce-integration/evidence/US-07-06-release-gate.md`) is written after it.
+**State:** **Closed 2026-10-12, ready for deploy.** Automated gate run as scripts on 2026-10-05; closed on the product owner's end-to-end test report. See [Closure](#closure-2026-10-12). The text and tables below the closure are kept as the record of 2026-10-05.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md) and its amendments. No request was sent to any store, to Meta, to Shopify or to Paymob, no WhatsApp message was sent, and no shared database was touched: stores are the in-process fake (`test/contracts/woocommerce-provider-fake.ts`) under the real restricted outbound client, as its DNS and its transport.
 
 For the product owner's run: [live pilot script](Epics/07-woocommerce-integration/evidence/US-07-06-live-pilot-script.md), `scripts/woocommerce-pilot-reconcile.sql`, `scripts/woocommerce-pilot-probe.mjs`.
+
+## Closure (2026-10-12)
+
+The product owner tested WooCommerce end to end on a real store (connect, a COD order confirmed, a COD order cancelled, disconnect) and reported it working as expected. The pilot script was not run step by step, and its results (the observation notes, the reconciliation files, the real API responses with secrets removed) were not handed back, so the rows that say NOT RUN, Not met or Open keep the values recorded on 2026-10-05 and the result on record is that report.
+
+- **Decision:** the gate is closed and E07 is ready for deploy. The product owner made the go decision (acceptance criterion 7).
+- **Not changed:** the 2026-10-05 results below, the contract record's DOCUMENTED and UNKNOWN rows, and the fixtures, which are still the documented shapes and not captures. The separate release-gate record (`Epics/07-woocommerce-integration/evidence/US-07-06-release-gate.md`) was not written; this section stands in for it.
+- **Deploy:** the adapter ships dark. Turn the switches on in the order given under [Operational notes](#operational-notes): `WOOCOMMERCE_CONNECT_ENABLED` (with `WOOCOMMERCE_PILOT_ORG_IDS` if the pilot list is used), check health, then `WOOCOMMERCE_INGESTION_ENABLED`, then `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`.
+- **Still true after closure:** the known limits under [Open items and known limits](#open-items-and-known-limits), apart from the live run itself.
 
 ## What this gate is, and is not
 
@@ -322,7 +331,7 @@ Before run 4 the changed suites were also run alone: the WooCommerce spoke unit 
 
 ## Open items and known limits
 
-- **The live pilot is NOT RUN**, so acceptance criteria 4, 5 and 7 are open and all eight observations of the contract record are still unverified.
+- **As recorded 2026-10-05: the live pilot is NOT RUN**, so acceptance criteria 4, 5 and 7 are open and all eight observations of the contract record are still unverified. Closed 2026-10-12 on the product owner's end-to-end test report; no per-observation results were handed back, so the observations stay unverified in the record.
 - **The module wiring of the spoke refactor (`50a0604`) has not been started once.** The gate passed with it twice, but no test boots `AppModule`. Start the backend once before the pilot.
 - **No screen was looked at by a person.** The rendering tests and the locale tests pass; that shows the strings exist in both languages, not that a screen reads well in Arabic. Part H of the pilot script is the check.
 - **Limits of the corrected-order retry (fix 5).** It needs the store to send `order.updated` when the merchant edits the order, which is observation 9 of the pilot (step C5). A correction delivered before the first event has been processed is recorded as an update and is not tried; the delivery after it is. Shopify and EasyOrders do not have this behavior. As the US-07-03 evidence recorded, an order that was skipped is not listed in the dashboard, so the merchant learns of an unreadable order from the store and not from Akeed; that was not re-checked or changed here.
@@ -339,4 +348,4 @@ Before run 4 the changed suites were also run alone: the WooCommerce spoke unit 
 - **Switches, in the order to turn them on for a store:** `WOOCOMMERCE_CONNECT_ENABLED` (with `WOOCOMMERCE_PUBLIC_API_BASE_URL`, `WOOCOMMERCE_APP_BASE_URL` and, on the frontend, `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED`), check health, `WOOCOMMERCE_INGESTION_ENABLED`, then `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`. Off in the reverse order. No order may be placed on a connected store while ingestion is off: each is answered `404` and the fifth disables the webhooks.
 - **The pilot list after `9161b3e`:** an empty `WOOCOMMERCE_PILOT_ORG_IDS` allows every organization. To stop one organization, remove its id **and keep at least one other id in the list**; removing the last id opens connect to everyone. To stop all new connections, turn the connect switch off.
 - **Logs:** a database fault now reads `Failed query: <sql>` and `cause: <code> <message>`, without the statement's parameters.
-- The full switch table, the pause procedure and the go/no-go recommendation belong to `US-07-06-release-gate.md`, after the run.
+- The full switch table, the pause procedure and the go/no-go recommendation were to go into `US-07-06-release-gate.md` after the run. That record was not written; the go decision is in [Closure](#closure-2026-10-12), and the pause procedure is Part J of the pilot script.

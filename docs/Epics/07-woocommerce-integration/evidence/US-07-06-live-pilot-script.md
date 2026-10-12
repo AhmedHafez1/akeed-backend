@@ -2,7 +2,7 @@
 
 - **Written:** 2026-10-05
 - **Run by:** the product owner, on a WooCommerce store they are authorized to test with and a phone number they own.
-- **Status:** NOT RUN. Results go into the release-gate evidence (`US-07-06-release-gate.md`, written after this run), section "Live pilot".
+- **Status:** Not run step by step. The product owner ran an end-to-end test on a real store (connect, a confirmed order, a cancelled order, disconnect) and reported it passing on 2026-10-12; step-level results and the observation notes were not handed back. Results would go into the release-gate evidence (`US-07-06-release-gate.md`, written after this run), section "Live pilot".
 - **Source of truth for WooCommerce behavior:** the [US-07-01 contract record](US-07-01-contract-record.md).
 
 This script proves acceptance criterion 4 of [US-07-06](../US-07-06-woocommerce-release-gate-and-pilot.md) on a real store, and makes the eight observations the contract record hands to this gate (criterion 5). Each observation turns the findings listed beside it from DOCUMENTED or UNKNOWN into VERIFIED.

@@ -5,7 +5,7 @@
 - **Priority:** P1
 - **Horizon:** NEXT
 - **Story type:** Feature
-- **Status:** Done (2026-10-05). No switch of its own: connect and reconnect ride on `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list, re-enable on `WOOCOMMERCE_INGESTION_ENABLED`, and disconnect, the check, status and health on none. [Evidence](../../US-07-05-WOOCOMMERCE-SETUP-HEALTH-EVIDENCE.md), [runbook](evidence/US-07-05-disconnect-and-support-runbook.md)
+- **Status:** Done — ready for deploy (2026-10-12). No switch of its own: connect and reconnect ride on `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list, re-enable on `WOOCOMMERCE_INGESTION_ENABLED`, and disconnect, the check, status and health on none. [Evidence](../../US-07-05-WOOCOMMERCE-SETUP-HEALTH-EVIDENCE.md), [runbook](evidence/US-07-05-disconnect-and-support-runbook.md)
 - **Dependencies:** [US-07-04](US-07-04-apply-approved-verification-outcomes-in-woocommerce.md)
 
 Retitled on 2026-10-04 (was "Provide WooCommerce diagnostics and reconnection"). The filename was aligned with the title on 2026-10-04. P1, but the US-07-06 gate depends on it.

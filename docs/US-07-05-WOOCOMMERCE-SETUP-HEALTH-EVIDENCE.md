@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-05
 **Revision:** backend `develop` at `c6b8d5e` (shared change `1757659`); frontend `develop` at `62c3198` (shared extraction `69132ac`)
-**Decision:** implemented locally. It adds no switch of its own: connect and reconnect need `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list, re-enabling a webhook needs `WOOCOMMERCE_INGESTION_ENABLED`, and disconnect, the connection check, the status and the health read need none. Nothing is enabled for a real merchant before the US-07-06 gate, as for US-07-02 to US-07-04.
+**Decision:** implemented locally. It adds no switch of its own: connect and reconnect need `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list, re-enabling a webhook needs `WOOCOMMERCE_INGESTION_ENABLED`, and disconnect, the connection check, the status and the health read need none. Nothing is enabled for a real merchant before the US-07-06 gate, as for US-07-02 to US-07-04. **Update 2026-10-12:** ready for deploy; the gate was closed on the product owner's end-to-end test report.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 2, 3 and 7, and its amendments. No request was sent to any store while building or testing this story: stores are the in-process fake (`test/contracts/woocommerce-provider-fake.ts`) under the real restricted outbound client, as its DNS and its transport.
 

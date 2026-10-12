@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-04
 **Revision:** backend `develop` at `1029ae9`; frontend `develop` at `cbd1aac`
-**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_OUTCOME_SYNC_ENABLED=false`). Nothing is written to any WooCommerce store for any merchant until the US-07-06 live run has shown the real effect of the note, the marker and `cancelled` on a store (observations 5 and 6 of the contract record) and the product owner has accepted it.
+**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_OUTCOME_SYNC_ENABLED=false`). Nothing is written to any WooCommerce store for any merchant until the US-07-06 live run has shown the real effect of the note, the marker and `cancelled` on a store (observations 5 and 6 of the contract record) and the product owner has accepted it. **Update 2026-10-12:** ready for deploy; the product owner tested a confirmation and a cancellation on a real store and accepted the result (no step-level record handed back). The switch stays off until deploy.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 5 and 8. No request was sent to any store while building or testing this story: stores are the in-process fake (`test/contracts/woocommerce-provider-fake.ts`) under the real restricted outbound client, as its DNS and its transport.
 

@@ -5,7 +5,7 @@
 - **Priority:** P0
 - **Horizon:** NEXT
 - **Story type:** Quality gate
-- **Status:** In progress. The automated gate passed as a script on 2026-10-05 (`npm run test:gate:e07`, with the E06, E05, E04, E03 and E02 gates inside it). **The live pilot has not been run**, so acceptance criteria 4, 5 and 7 are open and the contract record's observations are still unverified. [Evidence](../../US-07-06-WOOCOMMERCE-RELEASE-GATE-EVIDENCE.md), [pilot script](evidence/US-07-06-live-pilot-script.md)
+- **Status:** Done — gate closed, ready for deploy (2026-10-12). Closed on the product owner's end-to-end test report; automated gate run 2026-10-05 (`npm run test:gate:e07`, with the E06, E05, E04, E03 and E02 gates inside it); see [evidence](../../US-07-06-WOOCOMMERCE-RELEASE-GATE-EVIDENCE.md#closure-2026-10-12) and the [pilot script](evidence/US-07-06-live-pilot-script.md)
 - **Dependencies:** [US-07-05](US-07-05-woocommerce-setup-health-disconnect-and-support.md); the E06 automated gate (`test:gate:e06`) passing. Not the E06 live pilot.
 
 ## User story and value
@@ -47,6 +47,8 @@ Shared conformance tests, WooCommerce-specific contract tests against a provider
 ## Migration and rollout
 
 Enable in order for a pilot store: connect, check health, ingestion, then outcome sync; disable in reverse. On a failure, pause new WooCommerce connections while other sources and all history stay untouched. Future plugin work remains unapproved.
+
+Closed 2026-10-12: the gate is closed and E07 is ready for deploy. The adapter still ships dark, so enabling it for a merchant is a deploy-time step: connect, check health, then ingestion, then outcome sync (see "Operational notes" in the [gate evidence](../../US-07-06-WOOCOMMERCE-RELEASE-GATE-EVIDENCE.md#operational-notes)).
 
 ## Evidence and references
 

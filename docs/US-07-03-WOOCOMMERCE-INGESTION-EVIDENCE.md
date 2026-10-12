@@ -2,7 +2,7 @@
 
 **Validated:** 2026-10-04
 **Revision:** backend `develop` at `813bc29`; frontend `develop` at `df1d795`
-**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_INGESTION_ENABLED=false`). No real traffic until the US-07-06 gate has observed a real store. Acting on a store-side status change and writing outcomes to a store are US-07-04 and are not part of this story.
+**Decision:** implemented locally and shipped disabled (`WOOCOMMERCE_INGESTION_ENABLED=false`). No real traffic until the US-07-06 gate has observed a real store. **Update 2026-10-12:** ready for deploy; that wait was lifted on the product owner's end-to-end test report (no step-level record handed back). The switch stays off until deploy. Acting on a store-side status change and writing outcomes to a store are US-07-04 and are not part of this story.
 
 WooCommerce behavior is taken only from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md). No request was sent to any store while building or testing this story: stores are the in-process fake (`test/contracts/woocommerce-provider-fake.ts`), used only to connect a source, and ingestion itself never calls a store. The fixtures are still the documented shapes, not captures.
 
