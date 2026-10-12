@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -23,6 +24,7 @@ import {
 import { TestVerificationService } from './test-verification.service';
 import { SendTestVerificationDto } from './dto/send-test-verification.dto';
 import {
+  ExportVerificationsQueryDto,
   GetVerificationOverviewQueryDto,
   GetVerificationStatsQueryDto,
   GetVerificationsQueryDto,
@@ -75,6 +77,16 @@ export class VerificationsController {
         permissions: { can_confirm_orders: canWriteOrganization(user.role) },
       },
     };
+  }
+
+  @Get('export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="confirmations.csv"')
+  async exportVerifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExportVerificationsQueryDto,
+  ): Promise<string> {
+    return this.verificationsService.exportByOrg(user.orgId, query);
   }
 
   @Get()

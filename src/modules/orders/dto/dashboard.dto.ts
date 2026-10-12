@@ -7,6 +7,7 @@ import {
   type NeedsActionReason,
   type VerificationListTab,
 } from '../../../shared/verification/verification-needs-action';
+import type { CustomerHistory } from '../../../shared/verification/customer-history';
 import type {
   MessageFunnel,
   UsageState,
@@ -78,6 +79,28 @@ export class GetVerificationsQueryDto {
   q?: string;
 }
 
+/** The list's filters, without paging: an export is the whole filtered set. */
+export class ExportVerificationsQueryDto {
+  @IsOptional()
+  @IsIn(DASHBOARD_DATE_RANGE_VALUES)
+  date_range?: DashboardDateRange;
+
+  @IsOptional()
+  @IsUUID()
+  importBatchId?: string;
+
+  @IsOptional()
+  @IsIn(VERIFICATION_LIST_TABS)
+  tab?: VerificationListTab;
+
+  @IsOptional()
+  @TrimOptionalString()
+  @IsString()
+  @MaxLength(32)
+  @Matches(/^[#+\d\s()-]*$/)
+  q?: string;
+}
+
 export class GetVerificationStatsQueryDto {
   @IsOptional()
   @IsIn(DASHBOARD_DATE_RANGE_VALUES)
@@ -140,6 +163,11 @@ export interface VerificationListItemDto {
    * once it went out, was skipped or failed, or when reminders are off.
    */
   follow_up_scheduled_for: string | null;
+  /**
+   * How this customer's other real orders with the merchant ended. Null for
+   * test rows, which describe no customer.
+   */
+  customer_history: CustomerHistory | null;
 }
 
 /**
@@ -205,6 +233,16 @@ export interface DashboardUsageBudgetDto {
   period_end: string | null;
 }
 
+/** How confirmations currently behave, as the settings line shows it. */
+export interface DashboardSettingsSummaryDto {
+  auto_verify_enabled: boolean;
+  follow_up_enabled: boolean;
+  follow_up_delay_minutes: number;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   next_cursor: string | null;
@@ -217,6 +255,8 @@ export interface PaginatedResponse<T> {
       follow_up_enabled: boolean;
       quiet_hours_enabled: boolean;
     };
+    /** The same summary the dashboard shows under its title. */
+    settings?: DashboardSettingsSummaryDto;
     permissions?: {
       can_send_test_verification: boolean;
       can_cancel_orders: boolean;
@@ -307,6 +347,7 @@ export interface NeedsActionItemDto {
     failure_code: string | null;
   };
   capabilities: VerificationRowCapability[];
+  customer_history?: CustomerHistory | null;
 }
 
 /** Everything the embedded dashboard shows, from one request. */
@@ -314,14 +355,7 @@ export interface VerificationOverviewDto {
   date_range: DashboardDateRange;
   reporting_timezone: string;
   source: DashboardSourceState;
-  settings: {
-    auto_verify_enabled: boolean;
-    follow_up_enabled: boolean;
-    follow_up_delay_minutes: number;
-    quiet_hours_enabled: boolean;
-    quiet_hours_start: string | null;
-    quiet_hours_end: string | null;
-  };
+  settings: DashboardSettingsSummaryDto;
   /** Null when there is no single active source to bill. */
   usage: {
     used: number;
@@ -344,6 +378,8 @@ export interface VerificationOverviewDto {
     };
   };
   funnel: MessageFunnel;
+  /** How quickly customers answered; null until there are enough replies. */
+  reply_time: { median_seconds: number | null; replies: number };
   needs_action: {
     count: number;
     items: NeedsActionItemDto[];

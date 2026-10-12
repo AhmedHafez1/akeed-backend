@@ -1,6 +1,7 @@
 import {
   buildMessageFunnel,
   rateOfSent,
+  resolveTypicalReplySeconds,
   resolveUsage,
   type OverviewCounts,
 } from './verification-metrics';
@@ -147,5 +148,16 @@ describe('resolveUsage', () => {
       percent: 0,
       state: 'ok',
     });
+  });
+});
+
+describe('resolveTypicalReplySeconds', () => {
+  it('is null until the period has three replies', () => {
+    expect(resolveTypicalReplySeconds(240, 2)).toBeNull();
+    expect(resolveTypicalReplySeconds(null, 10)).toBeNull();
+  });
+
+  it('rounds the median to whole seconds', () => {
+    expect(resolveTypicalReplySeconds(359.6, 3)).toBe(360);
   });
 });

@@ -69,6 +69,7 @@ import {
 import {
   buildMessageFunnel,
   rateOfSent,
+  resolveTypicalReplySeconds,
   resolveUsage,
 } from '../../shared/verification/verification-metrics';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
@@ -77,7 +78,17 @@ import {
   resolveHeldScheduledFor,
   resolveScheduledFor,
 } from './verification-schedule.policy';
+import {
+  resolveCustomerHistory,
+  type CustomerHistory,
+} from '../../shared/verification/customer-history';
+import {
+  VERIFICATION_EXPORT_ROW_LIMIT,
+  buildVerificationsCsv,
+} from './verification-export';
 import type {
+  DashboardSettingsSummaryDto,
+  ExportVerificationsQueryDto,
   GetVerificationOverviewQueryDto,
   NeedsActionItemDto,
   VerificationOverviewDto,
@@ -387,6 +398,8 @@ export class VerificationsService {
         items.filter((item) => !isHeldRow(item)).map((item) => item.id),
       )) ?? [];
 
+    const historyOf = await this.loadCustomerHistory(orgId, items);
+
     const now = new Date();
     const sourceOf = (integrationId: string | null | undefined) =>
       integrations.find((integration) => integration.id === integrationId);
@@ -464,6 +477,7 @@ export class VerificationsService {
               sourceOf(verification.order?.integrationId),
               now,
             ),
+        customer_history: historyOf(verification),
       })),
       next_cursor: nextCursor,
       total_count: totalCount + (wantsHeld ? heldCount : 0),
@@ -471,6 +485,11 @@ export class VerificationsService {
         source: this.resolveDashboardSourceState(integrations),
         reporting_timezone: reportingTimezone,
         automation: this.resolveDashboardAutomationSettings(activeIntegrations),
+        // Several active sources have no one answer; the line is left out.
+        settings:
+          activeIntegrations.length === 1
+            ? this.resolveSettingsSummary(activeIntegrations[0])
+            : undefined,
         usage,
         tab_counts: {
           ...tabCounts,
@@ -508,31 +527,25 @@ export class VerificationsService {
     const now = new Date().toISOString();
     const source = activeIntegrations[0];
 
-    const [counts, confirmedValue, topRows, entitlement] = await Promise.all([
-      this.verificationsRepo.getOverviewCounts(orgId, period),
-      this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
-      this.verificationsRepo.findNeedsActionTop(
-        orgId,
-        period,
-        NEEDS_ACTION_TOP_LIMIT,
-      ),
-      source ? this.billingEntitlements.readEntitlement(source) : null,
-    ]);
+    const [counts, confirmedValue, replyTiming, topRows, entitlement] =
+      await Promise.all([
+        this.verificationsRepo.getOverviewCounts(orgId, period),
+        this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
+        this.verificationsRepo.getReplyTiming(orgId, period),
+        this.verificationsRepo.findNeedsActionTop(
+          orgId,
+          period,
+          NEEDS_ACTION_TOP_LIMIT,
+        ),
+        source ? this.billingEntitlements.readEntitlement(source) : null,
+      ]);
+    const historyOf = await this.loadCustomerHistory(orgId, topRows);
 
     return {
       date_range: dateRange,
       reporting_timezone: reportingTimezone,
       source: this.resolveDashboardSourceState(integrations),
-      settings: {
-        auto_verify_enabled: source?.isAutoVerifyEnabled ?? false,
-        follow_up_enabled: source?.followUpEnabled ?? false,
-        follow_up_delay_minutes:
-          source?.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
-        quiet_hours_enabled:
-          source?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
-        quiet_hours_start: source?.quietHoursStart ?? null,
-        quiet_hours_end: source?.quietHoursEnd ?? null,
-      },
+      settings: this.resolveSettingsSummary(source),
       usage: entitlement
         ? resolveUsage(entitlement.consumedCount, entitlement.includedLimit)
         : null,
@@ -546,18 +559,117 @@ export class VerificationsService {
         },
       },
       funnel: buildMessageFunnel(counts),
+      reply_time: {
+        median_seconds: resolveTypicalReplySeconds(
+          replyTiming.medianSeconds,
+          replyTiming.replies,
+        ),
+        replies: replyTiming.replies,
+      },
       needs_action: {
         count: counts.needsAction,
-        items: topRows.map((row) =>
-          this.toNeedsActionItem(
+        items: topRows.map((row) => ({
+          ...this.toNeedsActionItem(
             row,
             orgId,
             activeIntegrations,
             integrations,
             now,
           ),
-        ),
+          customer_history: historyOf(row),
+        })),
       },
+    };
+  }
+
+  /**
+   * The confirmations list as a CSV file, for handing confirmed orders to a
+   * courier. Same filters as the list; refuses rather than truncates when the
+   * set is larger than one file holds.
+   */
+  async exportByOrg(
+    orgId: string,
+    query: ExportVerificationsQueryDto,
+  ): Promise<string> {
+    const integrations = await this.integrationsRepo.findByOrg(orgId);
+    const reportingTimezone = this.resolveReportingTimezone(integrations);
+    const period = resolveDashboardDateRangeBounds(
+      query.date_range ?? DEFAULT_STATS_DATE_RANGE,
+      reportingTimezone,
+    );
+    const rows = await this.verificationsRepo.findForExport(
+      orgId,
+      period,
+      {
+        tab: query.tab && query.tab !== 'all' ? query.tab : undefined,
+        searchDigits: toSearchDigits(query.q),
+        importBatchId: query.importBatchId,
+      },
+      VERIFICATION_EXPORT_ROW_LIMIT + 1,
+    );
+    if (rows.length > VERIFICATION_EXPORT_ROW_LIMIT) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Too many orders to export at once. Narrow the period or tab.',
+        code: 'VERIFICATION_EXPORT_TOO_LARGE',
+      });
+    }
+    return buildVerificationsCsv(rows, reportingTimezone);
+  }
+
+  /**
+   * Track records for a page of rows, from one grouped read.
+   *
+   * Test rows describe no customer and get null. A held row has no
+   * verification, so the totals never counted it and nothing is subtracted.
+   */
+  private async loadCustomerHistory<
+    Row extends {
+      status: string | null;
+      order?: {
+        customerPhone?: string | null;
+        isTest?: boolean | null;
+        externalOrderId?: string | null;
+      } | null;
+    },
+  >(orgId: string, rows: Row[]): Promise<(row: Row) => CustomerHistory | null> {
+    const phones = [
+      ...new Set(
+        rows
+          .filter((row) => !isSyntheticOrder(row.order))
+          .map((row) => row.order?.customerPhone)
+          .filter((phone): phone is string => Boolean(phone)),
+      ),
+    ];
+    const totals = new Map(
+      (
+        await this.verificationsRepo.getCustomerHistoryByPhones(orgId, phones)
+      ).map((row) => [row.phone, row]),
+    );
+    return (row) => {
+      const phone = row.order?.customerPhone;
+      if (!phone || isSyntheticOrder(row.order)) return null;
+      return resolveCustomerHistory(totals.get(phone), {
+        status: row.status,
+        countsItself: !isHeldRow(row),
+      });
+    };
+  }
+
+  /** How confirmations behave for one source; all off when there is none. */
+  private resolveSettingsSummary(
+    source: IntegrationRecord | undefined,
+  ): DashboardSettingsSummaryDto {
+    return {
+      auto_verify_enabled: source?.isAutoVerifyEnabled ?? false,
+      follow_up_enabled: source?.followUpEnabled ?? false,
+      follow_up_delay_minutes:
+        source?.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,
+      quiet_hours_enabled:
+        source?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
+      quiet_hours_start: source?.quietHoursStart ?? null,
+      quiet_hours_end: source?.quietHoursEnd ?? null,
     };
   }
 

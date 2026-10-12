@@ -12,6 +12,7 @@ function withHeldDefaults(repo: Record<string, unknown>) {
   return {
     findHeldByOrg: jest.fn().mockResolvedValue([]),
     countHeldByOrg: jest.fn().mockResolvedValue(0),
+    getCustomerHistoryByPhones: jest.fn().mockResolvedValue([]),
     countByTab: jest.fn().mockResolvedValue({
       all: 0,
       needs_action: 0,
@@ -1232,5 +1233,135 @@ describe('Held orders on the verifications listing', () => {
 
     expect(result.data).toHaveLength(3);
     expect(result.next_cursor).not.toBeNull();
+  });
+});
+
+describe('Customer track record and export', () => {
+  function buildService(repo: Record<string, unknown>) {
+    return new VerificationsService(
+      withHeldDefaults(repo) as never,
+      {
+        readEntitlement: jest.fn().mockResolvedValue({
+          consumedCount: 0,
+          includedLimit: 30,
+          periodEnd: null,
+        }),
+      } as never,
+      {
+        findByOrg: jest.fn().mockResolvedValue([
+          {
+            id: 'int-1',
+            orgId: 'org-1',
+            isActive: true,
+            platformType: 'shopify',
+            timezone: 'Africa/Cairo',
+          },
+        ]),
+      } as never,
+      {} as never,
+      new CommerceOutcomeRegistryService({} as never, [
+        new ShopifyOutcomeAdapter({} as never),
+      ]),
+      { finalizeVerification: jest.fn() } as never,
+    );
+  }
+
+  const row = (id: string, status: string, order: Record<string, unknown>) => ({
+    id,
+    status,
+    orderId: `order-${id}`,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    order: {
+      orgId: 'org-1',
+      integrationId: 'int-1',
+      externalOrderId: `ext-${id}`,
+      isTest: false,
+      ...order,
+    },
+  });
+
+  it('reports the other orders of each customer from one grouped read', async () => {
+    const repo = {
+      findByOrg: jest.fn().mockResolvedValue([
+        row('a', 'canceled', { customerPhone: '+201000000001' }),
+        row('b', 'confirmed', { customerPhone: '+201000000001' }),
+        row('c', 'sent', { customerPhone: '+201000000002' }),
+        row('t', 'confirmed', {
+          customerPhone: '+201000000003',
+          isTest: true,
+        }),
+      ]),
+      countByOrg: jest.fn().mockResolvedValue(4),
+      getCustomerHistoryByPhones: jest.fn().mockResolvedValue([
+        {
+          phone: '+201000000001',
+          orders: 5,
+          confirmed: 3,
+          canceled: 2,
+          noReply: 0,
+        },
+      ]),
+    };
+
+    const result = await buildService(repo).listByOrg('org-1', {});
+
+    expect(repo.getCustomerHistoryByPhones).toHaveBeenCalledTimes(1);
+    expect(repo.getCustomerHistoryByPhones).toHaveBeenCalledWith('org-1', [
+      '+201000000001',
+      '+201000000002',
+    ]);
+    expect(result.data.map((item) => item.customer_history)).toEqual([
+      { other_orders: 4, confirmed: 3, canceled: 1, no_reply: 0 },
+      { other_orders: 4, confirmed: 2, canceled: 2, no_reply: 0 },
+      { other_orders: 0, confirmed: 0, canceled: 0, no_reply: 0 },
+      null,
+    ]);
+  });
+
+  it('exports the filtered list for the authenticated org as CSV', async () => {
+    const repo = {
+      findForExport: jest.fn().mockResolvedValue([
+        {
+          orderNumber: '#1170',
+          customerName: 'Russell Winfield',
+          customerPhone: '+201148675077',
+          totalPrice: '973.75',
+          currency: 'USD',
+          shippingRegion: 'Cairo',
+          shippingAddress: '12 Tahrir St, Floor 3',
+          lineItems: null,
+          status: 'confirmed',
+          createdAt: '2026-10-09T14:42:00.000Z',
+          confirmedAt: '2026-10-09T14:50:00.000Z',
+          canceledAt: null,
+        },
+      ]),
+    };
+
+    const csv = await buildService(repo).exportByOrg('org-1', {
+      tab: 'confirmed',
+      q: '#11 70',
+    });
+
+    expect(repo.findForExport).toHaveBeenCalledWith(
+      'org-1',
+      expect.anything(),
+      { tab: 'confirmed', searchDigits: '1170', importBatchId: undefined },
+      5001,
+    );
+    expect(csv).toContain('#1170,Russell Winfield,+201148675077,973.75,USD');
+    expect(csv).toContain('2026-10-09 17:42');
+  });
+
+  it('refuses an export larger than one file instead of truncating it', async () => {
+    const repo = {
+      findForExport: jest.fn().mockResolvedValue(new Array(5001).fill({})),
+    };
+
+    await expect(
+      buildService(repo).exportByOrg('org-1', {}),
+    ).rejects.toMatchObject({
+      response: { code: 'VERIFICATION_EXPORT_TOO_LARGE' },
+    });
   });
 });

@@ -112,3 +112,68 @@ describe('Merchant cancellation persistence', () => {
     );
   });
 });
+
+describe('Dashboard insight SQL contract', () => {
+  function build() {
+    const execute = jest.fn<
+      Promise<{ rows: unknown[][] }>,
+      [string, unknown[]]
+    >(() => Promise.resolve({ rows: [] }));
+    const repository = new VerificationsRepository(
+      drizzle(execute, { schema }) as never,
+    );
+    return { execute, repository };
+  }
+  const period = {
+    startAt: '2026-09-01T00:00:00.000Z',
+    endAt: '2026-10-01T00:00:00.000Z',
+  };
+
+  it("measures reply time from the first send to the customer's own answer", async () => {
+    const { execute, repository } = build();
+    await expect(repository.getReplyTiming('org-1', period)).resolves.toEqual({
+      medianSeconds: null,
+      replies: 0,
+    });
+    const [query, params] = execute.mock.calls[0];
+    expect(query).toContain('percentile_cont(0.5) WITHIN GROUP');
+    expect(query).toContain(
+      `"verifications"."confirmation_source" IS DISTINCT FROM 'merchant_manual'`,
+    );
+    expect(query).toContain('"verifications"."last_sent_at" IS NOT NULL');
+    expect(params).toContain('org-1');
+  });
+
+  it('groups a page of phones in one org-scoped query and skips an empty page', async () => {
+    const { execute, repository } = build();
+    await expect(
+      repository.getCustomerHistoryByPhones('org-1', []),
+    ).resolves.toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
+
+    await repository.getCustomerHistoryByPhones('org-1', ['+201', '+202']);
+    const [query, params] = execute.mock.calls[0];
+    expect(query).toMatch(/"orders"\."org_id" = \$\d+/);
+    expect(query).toMatch(/"orders"\."customer_phone" in \(\$\d+, \$\d+\)/);
+    expect(query).toContain('group by "orders"."customer_phone"');
+    expect(params).toEqual(expect.arrayContaining(['org-1', '+201', '+202']));
+  });
+
+  it('exports with the list filters, without test orders, up to the limit', async () => {
+    const { execute, repository } = build();
+    await repository.findForExport(
+      'org-1',
+      period,
+      { tab: 'confirmed', searchDigits: '2074' },
+      5001,
+    );
+    const [query, params] = execute.mock.calls[0];
+    expect(query).toMatch(/"verifications"\."org_id" = \$\d+/);
+    expect(query).toMatch(/"verifications"\."status" = \$\d+/);
+    expect(query).toMatch(/"orders"\."is_test" = \$\d+/);
+    expect(query).toMatch(/limit \$\d+/);
+    expect(params).toEqual(
+      expect.arrayContaining(['org-1', 'confirmed', '%2074%', 5001]),
+    );
+  });
+});

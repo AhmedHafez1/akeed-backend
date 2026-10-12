@@ -80,6 +80,22 @@ export function buildMessageFunnel(counts: OverviewCounts): MessageFunnel {
   };
 }
 
+/** Fewer replies than this say nothing dependable about a typical customer. */
+export const MIN_REPLIES_FOR_TYPICAL_TIME = 3;
+
+/**
+ * The typical reply time in whole seconds, or null when the period has too
+ * few replies for a median to mean anything.
+ */
+export function resolveTypicalReplySeconds(
+  medianSeconds: number | null,
+  replies: number,
+): number | null {
+  if (medianSeconds === null || !Number.isFinite(medianSeconds)) return null;
+  if (replies < MIN_REPLIES_FOR_TYPICAL_TIME) return null;
+  return Math.max(Math.round(medianSeconds), 0);
+}
+
 export type UsageState = 'ok' | 'warning' | 'exhausted';
 
 /** Share of the plan used; the credits bar appears from 80% and turns critical at 100%. */

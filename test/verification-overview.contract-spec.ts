@@ -524,8 +524,16 @@ describe('overview aggregate', () => {
       percent: 90,
       state: 'warning',
     });
+    // Two customer replies are too few to call a typical time.
+    expect(overview.reply_time).toEqual({ median_seconds: null, replies: 2 });
     expect(overview.needs_action.count).toBe(5);
     expect(overview.needs_action.items).toHaveLength(3);
+    expect(overview.needs_action.items[1].customer_history).toEqual({
+      other_orders: 0,
+      confirmed: 0,
+      canceled: 0,
+      no_reply: 0,
+    });
     expect(overview.needs_action.items[0].reason).toMatchObject({
       type: 'send_failed',
       failure_code: null,
@@ -545,6 +553,15 @@ describe('overview aggregate', () => {
     });
   });
 
+  it('times only the customer’s own replies, from the first send', async () => {
+    const timing = await repository.getReplyTiming(orgA, period());
+    expect(timing.replies).toBe(2);
+    expect(timing.medianSeconds).toBeGreaterThan(0);
+    await expect(
+      repository.getReplyTiming(orgEmpty, period()),
+    ).resolves.toEqual({ medianSeconds: null, replies: 0 });
+  });
+
   it('reports an empty shop as zeros with no rate', async () => {
     const overview = await service.getOverview(orgEmpty, {});
     expect(overview.kpis.confirmation_rate).toEqual({
@@ -554,6 +571,56 @@ describe('overview aggregate', () => {
     });
     expect(overview.funnel.sent).toEqual({ count: 0, percent_of_sent: null });
     expect(overview.needs_action).toEqual({ count: 0, items: [] });
+  });
+});
+
+describe('customer track record', () => {
+  it('groups real orders by phone within the shop', async () => {
+    const rows = await repository.getCustomerHistoryByPhones(orgA, [
+      '+201007611456',
+      '+201000000007',
+      '+201000000010',
+    ]);
+    const byPhone = new Map(rows.map((row) => [row.phone, row]));
+    // The same phone has an order in another shop; it is not counted here.
+    expect(byPhone.get('+201007611456')?.orders).toBe(1);
+    expect(byPhone.get('+201000000007')).toEqual({
+      phone: '+201000000007',
+      orders: 1,
+      confirmed: 1,
+      canceled: 0,
+      noReply: 0,
+    });
+    // A test order describes no customer.
+    expect(byPhone.has('+201000000010')).toBe(false);
+  });
+
+  it('reads a single order as a customer with no other orders', async () => {
+    const list = await service.listByOrg(orgA, { q: '1132' });
+    expect(list.data.map((row) => row.customer_history)).toEqual([
+      { other_orders: 0, confirmed: 0, canceled: 0, no_reply: 0 },
+    ]);
+  });
+});
+
+describe('confirmations export', () => {
+  it('exports the tab on screen without test orders or other shops', async () => {
+    const rows = await repository.findForExport(
+      orgA,
+      period(),
+      { tab: 'confirmed' },
+      10,
+    );
+    expect(rows.map((row) => row.orderNumber).sort()).toEqual(['1132', '1133']);
+
+    const everything = await service.exportByOrg(orgA, {});
+    expect(everything).toContain('1132');
+    expect(everything).not.toContain('1135');
+    expect(everything).not.toContain('777.00');
+
+    const otherShop = await service.exportByOrg(orgB, {});
+    expect(otherShop).toContain('777.00');
+    expect(otherShop).not.toContain('1132');
   });
 });
 

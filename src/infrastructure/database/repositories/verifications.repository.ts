@@ -13,6 +13,7 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
+import type { OrderLineItem } from '../../../shared/interfaces/order.interface';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import { DRIZZLE } from '../database.provider';
 import {
@@ -521,6 +522,143 @@ export class VerificationsRepository {
       customerCanceledAfterSend: row?.customerCanceledAfterSend ?? 0,
       needsAction: row?.needsAction ?? 0,
     };
+  }
+
+  /**
+   * How long customers took to answer, over the period's real orders.
+   *
+   * Measured from the first message (`last_sent_at` is not moved by a
+   * reminder) to the customer's own confirm or cancel; merchant decisions are
+   * not replies and are left out.
+   */
+  async getReplyTiming(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+  ): Promise<{ medianSeconds: number | null; replies: number }> {
+    const repliedAt = sql`COALESCE(${verifications.confirmedAt}, ${verifications.canceledAt})`;
+    const seconds = sql`EXTRACT(EPOCH FROM (${repliedAt} - ${verifications.lastSentAt}))`;
+    const [row] = await this.db
+      .select({
+        medianSeconds: sql<
+          number | null
+        >`(percentile_cont(0.5) WITHIN GROUP (ORDER BY ${seconds}))::float8`,
+        replies: sql<number>`count(*)::int`,
+      })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          gte(verifications.createdAt, period.startAt),
+          lt(verifications.createdAt, period.endAt),
+          sql`${verifications.lastSentAt} IS NOT NULL`,
+          sql`${repliedAt} >= ${verifications.lastSentAt}`,
+          sql`(
+            (${verifications.confirmedAt} IS NOT NULL AND ${verifications.confirmationSource} IS DISTINCT FROM 'merchant_manual')
+            OR (${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer'))
+          )`,
+          this.excludesTestOrders(),
+        ),
+      );
+
+    return {
+      medianSeconds:
+        row?.medianSeconds === null || row?.medianSeconds === undefined
+          ? null
+          : Number(row.medianSeconds),
+      replies: row?.replies ?? 0,
+    };
+  }
+
+  /**
+   * How each phone's real orders with this org ended, for the customer's
+   * track record on the confirmations list. One grouped read for a whole page
+   * of rows; a phone with no real orders has no row.
+   */
+  async getCustomerHistoryByPhones(
+    orgId: string,
+    phones: string[],
+  ): Promise<CustomerHistoryRow[]> {
+    if (phones.length === 0) return [];
+    return this.db
+      .select({
+        phone: orders.customerPhone,
+        orders: sql<number>`count(*)::int`,
+        confirmed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'confirmed')::int`,
+        canceled: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'canceled')::int`,
+        noReply: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'no_reply')::int`,
+      })
+      .from(orders)
+      .innerJoin(
+        verifications,
+        and(
+          eq(verifications.orderId, orders.id),
+          eq(verifications.orgId, orders.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orders.orgId, orgId),
+          inArray(orders.customerPhone, phones),
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+        ),
+      )
+      .groupBy(orders.customerPhone);
+  }
+
+  /**
+   * The rows a confirmations export contains, newest first.
+   *
+   * Filtered by the same conditions as the list, so the file holds what the
+   * merchant is looking at. Test orders are left out: the file is handed to a
+   * courier. The caller passes `limit + 1` to learn whether the cap was hit.
+   */
+  async findForExport(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+    refinement: Pick<VerificationListRefinement, 'tab' | 'searchDigits'> & {
+      importBatchId?: string;
+    },
+    limit: number,
+  ): Promise<VerificationExportRow[]> {
+    return this.db
+      .select({
+        orderNumber: orders.orderNumber,
+        customerName: orders.customerName,
+        customerPhone: orders.customerPhone,
+        totalPrice: orders.totalPrice,
+        currency: orders.currency,
+        shippingRegion: orders.shippingRegion,
+        shippingAddress: orders.shippingAddress,
+        lineItems: orders.lineItems,
+        status: verifications.status,
+        createdAt: verifications.createdAt,
+        confirmedAt: verifications.confirmedAt,
+        canceledAt: verifications.canceledAt,
+      })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          ...this.buildOrgListConditions(
+            orgId,
+            undefined,
+            period,
+            refinement.importBatchId,
+            refinement,
+          ),
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+        ),
+      )
+      .orderBy(desc(verifications.createdAt), desc(verifications.id))
+      .limit(limit);
   }
 
   /**
@@ -1060,6 +1198,31 @@ export interface VerificationListRefinement {
   searchDigits?: string;
   /** Adds each row's `actionReason`. */
   withActionReason?: boolean;
+}
+
+/** How one phone's real orders with an org ended. */
+export interface CustomerHistoryRow {
+  phone: string;
+  orders: number;
+  confirmed: number;
+  canceled: number;
+  noReply: number;
+}
+
+/** One line of the confirmations export. */
+export interface VerificationExportRow {
+  orderNumber: string | null;
+  customerName: string | null;
+  customerPhone: string;
+  totalPrice: string | null;
+  currency: string | null;
+  shippingRegion: string | null;
+  shippingAddress: string | null;
+  lineItems: OrderLineItem[] | null;
+  status: VerificationStatus | null;
+  createdAt: string | null;
+  confirmedAt: string | null;
+  canceledAt: string | null;
 }
 
 /** A row of the dashboard's needs-action card. */
