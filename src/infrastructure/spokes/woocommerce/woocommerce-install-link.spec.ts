@@ -43,15 +43,16 @@ describe('buildWooCommerceAuthorizeLink', () => {
     expect(query).not.toContain('://');
   });
 
-  it('sends the merchant back in the language they started in', () => {
-    const url = new URL(
-      buildWooCommerceAuthorizeLink({ ...input, locale: 'en' }),
-    );
+  it.each(['en', 'ur'] as const)(
+    'sends the merchant back in the language they started in (%s)',
+    (locale) => {
+      const url = new URL(buildWooCommerceAuthorizeLink({ ...input, locale }));
 
-    expect(url.searchParams.get('return_url')).toBe(
-      'https://app.akeed.test/en/onboarding',
-    );
-  });
+      expect(url.searchParams.get('return_url')).toBe(
+        `https://app.akeed.test/${locale}/onboarding`,
+      );
+    },
+  );
 
   it('carries the callback token in a path and no webhook address', () => {
     const link = buildWooCommerceAuthorizeLink(input);
