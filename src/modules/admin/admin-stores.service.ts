@@ -6,7 +6,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { maskPhone } from '../../shared/utils/mask-phone.util';
-import { readVerificationReason } from '../../shared/verification/verification-row-actions';
+import {
+  readProviderErrorCode,
+  readProviderErrorTitle,
+  readVerificationReason,
+} from '../../shared/verification/verification-row-actions';
 import {
   decodeCursor,
   encodeCursor,
@@ -97,6 +101,7 @@ export interface AdminStoreMilestone {
 
 export interface AdminStoreDetailView extends AdminStoreView {
   owner_email: string | null;
+  merchant_whatsapp_phone: string | null;
   created_at: string | null;
   last_synced_at: string | null;
   billing_activated_at: string | null;
@@ -125,6 +130,9 @@ export interface AdminStoreVerificationView {
   id: string;
   status: string;
   reason: string | null;
+  /** The provider's error code and title, for a failed verification only. */
+  failure_code: string | null;
+  failure_title: string | null;
   order_number: string | null;
   external_order_id: string;
   is_test: boolean;
@@ -278,6 +286,7 @@ export class AdminStoresService {
     return {
       ...view,
       owner_email: row.owner_email,
+      merchant_whatsapp_phone: row.merchant_whatsapp_phone,
       created_at: row.created_at,
       last_synced_at: row.last_synced_at,
       billing_activated_at: row.billing_activated_at,
@@ -362,10 +371,13 @@ export class AdminStoresService {
   private toVerificationView(
     row: AdminStoreVerificationRow,
   ): AdminStoreVerificationView {
+    const failed = row.status === 'failed';
     return {
       id: row.id,
       status: row.status,
       reason: readVerificationReason(row.metadata),
+      failure_code: failed ? readProviderErrorCode(row.metadata) : null,
+      failure_title: failed ? readProviderErrorTitle(row.metadata) : null,
       order_number: row.order_number,
       external_order_id: row.external_order_id,
       is_test: row.is_test,

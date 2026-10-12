@@ -113,6 +113,7 @@ function detailRow(row: AdminStorePageRow): AdminStoreDetailQueryRow {
   return {
     ...row,
     owner_email: 'owner@example.com',
+    merchant_whatsapp_phone: '+966500000001',
     default_language: 'auto',
     follow_up_enabled: false,
     follow_up_delay_minutes: 120,
@@ -313,6 +314,7 @@ describe('AdminStoresService', () => {
     const { store } = await service.getStore(STANDALONE_ID);
 
     expect(store.owner_email).toBe('owner@example.com');
+    expect(store.merchant_whatsapp_phone).toBe('+966500000001');
     expect(store.settings.follow_up_enabled).toBe(false);
     expect(store.verification_totals).toMatchObject({
       total: 5,
@@ -393,5 +395,36 @@ describe('AdminStoresService', () => {
     expect(result.next_cursor).not.toBeNull();
     expect(result.data[0].customer_phone_masked).toBe('+9665•••••123');
     expect(JSON.stringify(result)).not.toContain('+966512345123');
+  });
+
+  it('reports the provider error of a failed verification only', async () => {
+    const metadata = {
+      reason: 'provider_delivery_failed',
+      providerErrorCode: 131026,
+      providerErrorTitle: 'Message undeliverable',
+    };
+    const row = (id: string, status: string) => ({
+      id,
+      status,
+      metadata,
+      customer_phone: '+966512345123',
+      created_at: '2026-09-01T00:00:00Z',
+    });
+    const service = createService({
+      findStoreById: jest.fn().mockResolvedValue(detailRow(shopifyRow())),
+      findStoreVerifications: jest.fn().mockResolvedValue({
+        rows: [row('v-2', 'failed'), row('v-1', 'confirmed')],
+        totalCount: 2,
+      }),
+    });
+
+    const { data } = await service.getStoreVerifications('store', {});
+
+    expect(data[0]).toMatchObject({
+      reason: 'provider_delivery_failed',
+      failure_code: '131026',
+      failure_title: 'Message undeliverable',
+    });
+    expect(data[1]).toMatchObject({ failure_code: null, failure_title: null });
   });
 });

@@ -41,3 +41,18 @@ export function readVerificationReason(metadata: unknown): string | null {
   const reason = (metadata as Record<string, unknown>).reason;
   return typeof reason === 'string' && reason.length > 0 ? reason : null;
 }
+
+/** Read the provider's error code for a delivery the provider reported failed. */
+export function readProviderErrorCode(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const code = (metadata as Record<string, unknown>).providerErrorCode;
+  if (typeof code === 'number' && Number.isFinite(code)) return String(code);
+  return typeof code === 'string' && code.length > 0 ? code : null;
+}
+
+/** Read the provider's own title for that error code. */
+export function readProviderErrorTitle(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const title = (metadata as Record<string, unknown>).providerErrorTitle;
+  return typeof title === 'string' && title.length > 0 ? title : null;
+}

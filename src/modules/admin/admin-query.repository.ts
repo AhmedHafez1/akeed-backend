@@ -69,6 +69,7 @@ export interface AdminStoreViewRow extends AdminStoreQueryRow {
 
 export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
   owner_email: string | null;
+  merchant_whatsapp_phone: string | null;
   default_language: string;
   follow_up_enabled: boolean;
   follow_up_delay_minutes: number;
@@ -374,6 +375,7 @@ export class AdminQueryRepository {
           ORDER BY membership.created_at ASC
           LIMIT 1
         ) AS owner_email,
+        i.merchant_whatsapp_phone,
         i.default_language::text AS default_language,
         i.follow_up_enabled,
         i.follow_up_delay_minutes,

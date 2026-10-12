@@ -25,6 +25,7 @@ import {
 import { VerificationStatus } from '../../shared/interfaces/verification.interface';
 import {
   canRetryVerification,
+  readProviderErrorCode,
   readVerificationReason,
   type VerificationRowCapability,
 } from '../../shared/verification/verification-row-actions';
@@ -115,13 +116,6 @@ const MS_PER_HOUR = 3_600_000;
 function toSearchDigits(term: string | undefined): string | undefined {
   const digits = term?.replace(/\D/g, '') ?? '';
   return digits.length > 0 ? digits : undefined;
-}
-
-function readProviderErrorCode(metadata: unknown): string | null {
-  if (!metadata || typeof metadata !== 'object') return null;
-  const code = (metadata as Record<string, unknown>).providerErrorCode;
-  if (typeof code === 'number' && Number.isFinite(code)) return String(code);
-  return typeof code === 'string' && code.length > 0 ? code : null;
 }
 
 function readConfirmationSource(
