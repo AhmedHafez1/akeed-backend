@@ -55,7 +55,7 @@ const EXTRAS = {
 };
 
 /**
- * US-05-02: one order, three channels. The manual form, a file import row and
+ * One order, three channels. The manual form, a file import row and
  * an API request describing the same order must reach the acceptance
  * repository as the same canonical order, in the same key order, with the
  * same fingerprint. Only the audit metadata (channel, namespaced key, import

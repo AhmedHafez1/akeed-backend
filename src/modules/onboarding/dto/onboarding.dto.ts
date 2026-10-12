@@ -177,7 +177,7 @@ export class UpdateOnboardingSettingsDto {
 
   /**
    * The style of an active Arabic reminder template, or null for "same as the
-   * first message" (US-08-07a). Accepted only while the reminder switch is
+   * first message". Accepted only while the reminder switch is
    * on; checked in the service.
    */
   @IsOptional()
@@ -196,7 +196,7 @@ export class UpdateOnboardingSettingsDto {
   codReminderEnVariant?: string | null;
 
   /**
-   * The Arabic style follows the customer's calling code (US-08-07d).
+   * The Arabic style follows the customer's calling code.
    * `true` is accepted only while the switch is on.
    */
   @IsOptional()
@@ -304,7 +304,7 @@ export interface OnboardingStateDto {
     accountStatus: CreditAccountStatus | null;
   } | null;
   /**
-   * The connection of a source whose spoke describes one (US-06-05). The key
+   * The connection of a source whose spoke describes one. The key
    * is absent for every other source.
    */
   sourceSetup?: SourceSetupDto;
@@ -354,12 +354,12 @@ export interface SettingsResponseDto {
       en: MessageTemplatePreviewDto;
     };
     /**
-     * The selected message per language as neutral lines (US-08-07g). The
-     * four-block `previews` stay until the US-08-08 gate.
+     * The selected message per language as neutral lines. The
+     * four-block `previews` are still returned; the frontend does not read them.
      */
     messages: { ar: TemplateMessageLines; en: TemplateMessageLines };
     /**
-     * The reminder styles a merchant may choose (US-08-07a). Present only
+     * The reminder styles a merchant may choose. Present only
      * while WHATSAPP_REMINDER_TEMPLATE_ENABLED is on. `selected` is null for
      * "same as the first message".
      */
@@ -368,8 +368,8 @@ export interface SettingsResponseDto {
       variants: { ar: TemplateStyleDto[]; en: TemplateStyleDto[] };
     };
     /**
-     * Whether the Arabic style follows the customer's calling code
-     * (US-08-07d). Present only while WHATSAPP_ARABIC_STYLE_AUTO_ENABLED is
+     * Whether the Arabic style follows the customer's calling code.
+     * Present only while WHATSAPP_ARABIC_STYLE_AUTO_ENABLED is
      * on.
      */
     arabicAuto?: { selected: boolean };
@@ -390,7 +390,7 @@ export interface TemplateStyleDto {
   bodyVariableMode: TemplateParameterFormat;
   bodyParameterOrder: TemplateVariableKey[];
   preview: MessageTemplatePreviewDto;
-  /** The style's message as neutral lines (US-08-07g). */
+  /** The style's message as neutral lines. */
   message: TemplateMessageLines;
 }
 

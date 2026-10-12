@@ -56,7 +56,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Re-validates every stored row of a draft against its saved mapping and
- * options, and recomputes the batch counts (US-04.6-04).
+ * options, and recomputes the batch counts.
  *
  * Every row is judged from its raw cells, so a changed mapping or country
  * re-normalizes from scratch. The pure row rules run first, then in-file

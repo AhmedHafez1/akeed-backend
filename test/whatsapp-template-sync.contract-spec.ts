@@ -23,7 +23,7 @@ import {
 } from './contracts/meta-template-api-fake';
 
 /**
- * US-08-04 against real PostgreSQL: migrations 0056 and 0057, the sync and event
+ * Template sync against real PostgreSQL: migrations 0056 and 0057, the sync and event
  * repository, and the template health SQL the admin store list embeds.
  *
  * Meta is the in-process fake from `contracts/meta-template-api-fake.ts`; no
@@ -70,7 +70,7 @@ const MIGRATIONS = [
   '0056_dispatch_template_fallback.sql',
   '0057_whatsapp_template_sync.sql',
   // A status event also records the rejection reason, a 0058 column.
-  '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys (US-08-07a).
+  '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys.
   '0059_whatsapp_reminder_and_auto_style.sql',
 ];
 const SYNC_MIGRATION = '0057_whatsapp_template_sync.sql';
@@ -513,7 +513,7 @@ describe('WhatsApp template sync against PostgreSQL', () => {
     });
   });
 
-  describe('staff inspection reads (US-08-05)', () => {
+  describe('staff inspection reads', () => {
     const KEY = 'cod_confirm.en.professional';
     let named: string;
     let viaVariant: string;

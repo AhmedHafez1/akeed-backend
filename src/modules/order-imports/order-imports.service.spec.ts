@@ -147,7 +147,7 @@ describe('OrderImportsService', () => {
           },
           issues: [],
         })),
-        // US-04.6-03: detected mapping and the store's default options.
+        // Detected mapping and the store's default options.
         mappingDictionaryVersion: MAPPING_DICTIONARY_VERSION,
         mappingProfileApplied: false,
         options: {

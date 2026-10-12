@@ -69,7 +69,7 @@ function toView(text: MessageText): AdminMessageTextView {
 }
 
 /**
- * The free-form texts staff manage (US-08-07): the acknowledgment, the nudge
+ * The free-form texts staff manage: the acknowledgment, the nudge
  * and the name fallbacks. Reads are open to staff; writes need a named
  * template operator, checked by the controller's guard.
  */

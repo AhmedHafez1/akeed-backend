@@ -186,7 +186,7 @@ export class OnboardingService {
   }
 
   /**
-   * The source's health as separate signals (US-06-05). Any member may read
+   * The source's health as separate signals. Any member may read
    * it, and it stays readable after a disconnect: it holds no credential.
    */
   async getSourceHealth(user: AuthenticatedUser): Promise<SourceHealthDto> {
@@ -383,7 +383,7 @@ export class OnboardingService {
   }
 
   /**
-   * The US-08-07 choices, each present only while its switch is on, so the
+   * The reminder and `auto` choices, each present only while its switch is on, so the
    * response is unchanged with both off.
    */
   private messageImprovementSettings(

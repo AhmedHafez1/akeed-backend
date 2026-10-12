@@ -1,6 +1,6 @@
 /**
- * The ingestion rule of an EasyOrders webhook (US-06-03, contract record
- * sections 3 and 6): what a payload must look like to be taken, and the
+ * The ingestion rule of an EasyOrders webhook:
+ * what a payload must look like to be taken, and the
  * idempotency key it is stored under. Pure, so the webhook service only
  * authenticates and persists.
  */

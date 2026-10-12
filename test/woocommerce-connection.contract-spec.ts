@@ -71,7 +71,7 @@ const DELIVERY_BASE = 'https://api.akeed.test/api/woocommerce/webhooks/';
 
 const settings: WooCommerceConfig & { pilotOrgIds: string[] } = {
   enabled: true,
-  // Order ingestion is US-07-03 and has its own suite; here it stays off.
+  // Order ingestion has its own suite; here it stays off.
   ingestionEnabled: false,
   outcomeSyncEnabled: false,
   pilotOrgIds: [],
@@ -340,7 +340,7 @@ async function connect(path = '') {
   return { tenant, store, started, keys };
 }
 
-describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
+describe('WooCommerce connection PostgreSQL contract', () => {
   beforeAll(async () => {
     const capture: LoggerService = {
       log: (message: unknown) => logs.push(String(message)),
@@ -1952,7 +1952,7 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
     });
   });
 
-  describe('setup, health, re-enable, disconnect and reconnect (US-07-05)', () => {
+  describe('setup, health, re-enable, disconnect and reconnect', () => {
     /** Keeps the answer for the secrets check, then hands it back. */
     async function answered<T>(promise: Promise<T>): Promise<T> {
       const result = await promise;
@@ -2590,7 +2590,7 @@ describe('WooCommerce connection PostgreSQL contract (US-07-02)', () => {
           expect(row.disconnected_at).not.toBeNull();
           expect((await integrationsOf(tenant.orgId))[0].is_active).toBe(false);
           // A webhook left behind reaches an address Akeed no longer honours,
-          // so the store disables it by itself (contract record section 3).
+          // so the store disables it by itself.
           expect(akeedWebhooks(store).length).toBeGreaterThan(0);
           await withIngestion(async () => {
             for (const topic of [undefined, 'order.created', 'order.updated'])

@@ -588,7 +588,7 @@ async function createHarness(): Promise<AcceptanceHarness> {
   const eligibility = new OrderEligibilityService([
     new StandaloneOrderEligibilityStrategy(),
   ]);
-  // E04.5 approval is not part of the E04 acceptance contract; the harness
+  // Credit approval is not part of this acceptance contract; the harness
   // runs with credit billing disabled, which always approves.
   const creditEligibility = {
     isEnforced: () => false,
@@ -796,7 +796,7 @@ function submitManualOrder(
     });
 }
 
-describe('US-04-05 Standalone manual MVP acceptance composition', () => {
+describe('Standalone manual MVP acceptance composition', () => {
   let harness: AcceptanceHarness;
 
   beforeEach(async () => {

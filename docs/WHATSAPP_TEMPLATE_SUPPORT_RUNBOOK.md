@@ -1,9 +1,6 @@
-# US-08-08 — WhatsApp template support runbook
+# WhatsApp template support runbook
 
-- **Story:** [US-08-08 — Release gate](../US-08-08-release-gate.md)
-- **Written:** 2026-10-06
-- **For:** support and staff operators. No step here needs a developer or a deploy, except where it says so.
-- **Meta behavior:** every statement about Meta comes from the [US-08-01 contract record](US-08-01-contract-record.md). The number in brackets is the record finding.
+For support and staff operators. No step here needs a developer or a deploy, except where it says so. How template sync, the guardrail and authoring work is in [Integrations, Webhooks, And Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#template-sync-status-webhooks-and-the-send-guardrail).
 
 Each environment (dev, prod) has its own Meta app, its own templates and its own switches. Do every step in the environment that has the problem.
 
@@ -12,12 +9,12 @@ Each environment (dev, prod) has its own Meta app, its own templates and its own
 | I need to | Do this | Section |
 | --- | --- | --- |
 | Stop staff changing templates, without touching sends | Set `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED=false` and restart. Do **not** empty the operator list: that opens writes to all staff | [5](#5-pause-template-writes-without-touching-sends) |
-| Send exactly as before E08 | Turn off the guardrail and the US-08-07 switches | [4](#4-fall-back-to-the-seeded-defaults) |
+| Send only the stored choice, with none of the optional behavior | Turn off the guardrail and the message-improvement switches | [4](#4-fall-back-to-the-seeded-defaults) |
 | Stop reading Meta | Set `WHATSAPP_TEMPLATE_SYNC_ENABLED=false` and restart | [6](#6-stop-the-sync) |
 | Replace a template Meta paused or rejected | Activate an approved one, then retire the old one with it as the replacement | [3](#3-choose-and-activate-a-replacement) |
 | Find out why a customer got a different style | Read the dispatch's fallback reason | [7](#7-logs-alert-codes-and-queries) |
 
-Switches are environment variables ([ENVIRONMENT.md](../../../ENVIRONMENT.md#whatsapp-templates-e08)). A change takes effect when the service restarts. Turning a switch off deletes nothing.
+Switches are environment variables ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)). A change takes effect when the service restarts. Turning a switch off deletes nothing.
 
 ## 2. A template is paused, rejected, disabled or re-categorized
 
@@ -26,21 +23,21 @@ Switches are environment variables ([ENVIRONMENT.md](../../../ENVIRONMENT.md#wha
 - **Admin › Templates** (`/admin/templates`) shows the status Meta last reported and "Cannot be sent" next to a template that is active in Akeed but not approved at Meta.
 - **Admin › Stores** raises the `template_unavailable` health signal on each store that can send nothing in a language it sends in.
 - The log has a `whatsapp-template-alert` line (section 7).
-- Meta also emails the account admins and shows a notification in WhatsApp Manager (4.2.4).
+- Meta also emails the account admins and shows a notification in WhatsApp Manager.
 
-A webhook is only a hint. Press **Sync now** (operators only) to read the real status from Meta; a sync is the truth (worst-case rule under 4.8).
+A webhook is only a hint. Press **Sync now** (operators only) to read the real status from Meta; a sync is the truth.
 
 ### What each status means
 
 | Meta says | Can it be sent? | Does it recover by itself? | What to do |
 | --- | --- | --- | --- |
-| Paused | No (4.2.5) | Yes. The first pause lasts 3 hours and the second 6 hours (4.2.7). | Wait, then Sync now. If stores depend on it, use a replacement meanwhile (section 3). A third pause disables it. |
-| Disabled | No (4.2.5) | No | Replace it (section 3). |
-| Rejected | No | No | Read the rejection reason on the template page. Write a new template, or edit this one only if no store can send it (4.3.9 rule). |
-| Flagged, Locked, Limit exceeded, In appeal, Reinstated, Unarchived | No, until a sync reads `Approved` (4.2.11 rule) | Unknown | Sync now. If it stays, treat it as Disabled. |
-| Archived | No (4.2.5) | No. Meta deletes it 28 days later (4.2.9). | If it is still needed, unarchive it in WhatsApp Manager within the 28 days, then Sync now. |
+| Paused | No | Yes. The first pause lasts 3 hours and the second 6 hours. | Wait, then Sync now. If stores depend on it, use a replacement meanwhile (section 3). A third pause disables it. |
+| Disabled | No | No | Replace it (section 3). |
+| Rejected | No | No | Read the rejection reason on the template page. Write a new template, or edit this one only if no store can send it. |
+| Flagged, Locked, Limit exceeded, In appeal, Reinstated, Unarchived | No, until a sync reads `Approved` | Unknown | Sync now. If it stays, treat it as Disabled. |
+| Archived | No | No. Meta deletes it 28 days later. | If it is still needed, unarchive it in WhatsApp Manager within the 28 days, then Sync now. |
 | Missing at Meta | No | No | Compare with "At Meta, not in Akeed" on the sync result. Replace it (section 3). |
-| Re-categorized (utility to marketing) | **Yes.** Meta keeps it approved (4.5.5). | No | It now costs more and some messages will not be delivered (4.5.9, 4.5.12). Decide with the product owner whether to replace it. Meta gives 60 days to appeal through Business Support (4.5.8). |
+| Re-categorized (utility to marketing) | **Yes.** Meta keeps it approved. | No | It now costs more and some messages will not be delivered. Decide with the product owner whether to replace it. Meta gives 60 days to appeal through Business Support. |
 
 ### What the customer sees (guardrail on)
 
@@ -51,7 +48,7 @@ A webhook is only a hint. Press **Sync now** (operators only) to read the real s
 | The reminder's template cannot be sent | The same two rules, decided again when the reminder is due. |
 | Re-categorized | The same message as before. |
 
-With the guardrail **off**, Akeed sends the chosen template whatever Meta says. Meta then refuses it (132001, 132015 or 132016 in 4.2.6), and the send is recorded as a provider rejection.
+With the guardrail **off**, Akeed sends the chosen template whatever Meta says. Meta then refuses it (error 132001, 132015 or 132016), and the send is recorded as a provider rejection.
 
 ### What the store sees
 
@@ -71,7 +68,7 @@ Operators only. Each action is audited.
 4. If the broken template is the language default, press **Make default** on the replacement.
 5. On the broken template, press **Retire** (or **Deactivate**, if you expect it back) and choose the replacement. Every store that had chosen the broken template moves to the replacement in the same step.
 
-If no approved template exists in that language, there is nothing to activate. Either wait for the pause to end, or write a new template (**New draft**, **Submit to Meta**) and wait for Meta's review, which can take 24 hours (4.2.3). Until then sends in that language are skipped while the guardrail is on. If skipped sends are worse than refused sends for you, turn the guardrail off (section 4): this only helps when Meta would in fact accept the template.
+If no approved template exists in that language, there is nothing to activate. Either wait for the pause to end, or write a new template (**New draft**, **Submit to Meta**) and wait for Meta's review, which can take 24 hours. Until then sends in that language are skipped while the guardrail is on. If skipped sends are worse than refused sends for you, turn the guardrail off (section 4): this only helps when Meta would in fact accept the template.
 
 A retired template never comes back. Use **Deactivate** when you are not sure.
 
@@ -79,7 +76,7 @@ A retired template never comes back. Use **Deactivate** when you are not sure.
 
 "Seeded defaults" means the state migration `0054` created: the 8 original templates, all active, with `ar` / `standard` and `en` / `friendly` as the defaults. That state is always a valid one, so going back never needs a code revert.
 
-### Step 1: turn the new behavior off (no data change)
+### Step 1: turn the optional behavior off (no data change)
 
 Set these to `false` (or remove them) and restart:
 
@@ -94,7 +91,7 @@ WHATSAPP_AMOUNT_FORMATTING_ENABLED=false
 WHATSAPP_SNAPSHOT_PREVIEW_ENABLED=false
 ```
 
-Now every send uses the store's stored choice if it is active in Akeed, with the payload the characterization suite pins. Stored reminder choices, `auto` choices and free-form texts stay in the database and are ignored.
+Now every send uses the store's stored choice if it is active in Akeed. Stored reminder choices, `auto` choices and free-form texts stay in the database and are ignored.
 
 This is enough in almost every case.
 
@@ -152,7 +149,7 @@ Set `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED=false` and restart.
 
 **Who may write.** `WHATSAPP_TEMPLATE_OPERATOR_IDS` is the list of staff user IDs allowed to write. While it names at least one ID, staff who are not on it get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`.
 
-> **An empty list means every staff member may write** while operations are on (rule changed on 2026-10-06, commit `2fd3cc6`). So taking the *last* ID off the list does not lock anyone out: it lets everyone in. To remove one person, leave at least one other ID on the list. To stop everyone, use the switch above.
+> **An empty list means every staff member may write** while operations are on. So taking the *last* ID off the list does not lock anyone out: it lets everyone in. To remove one person, leave at least one other ID on the list. To stop everyone, use the switch above.
 
 In prod, keep the list filled in. Every write is audited with the user who made it either way.
 
@@ -179,9 +176,9 @@ A sync that fails changes nothing and is not retried; the next scheduled run is 
 | `sendOnce.templateFallback` | A send used the language default. `reason` and `storedTemplateKey` say why and which choice was passed over. |
 | `sendOnce.templateSelection` with `reason: template_unavailable` | A send was skipped: no template could be sent in that language. |
 | `whatsapp-template-operator-check` | A template write was refused, with `errorCode`. |
-| `whatsapp-text-send`, `customer-reply-follow-up` | An acknowledgment or a nudge (US-08-07 b, c): sent, skipped (`window_closed`, `outside_window`, `text_unavailable`) or failed. |
+| `whatsapp-text-send`, `customer-reply-follow-up` | An acknowledgment or a nudge: sent, skipped (`window_closed`, `outside_window`, `text_unavailable`) or failed. |
 
-`permission_denied` and `auth_failed` are a token problem, not a template problem: the token needs `whatsapp_business_management` (4.1.8).
+`permission_denied` and `auth_failed` are a token problem, not a template problem: the token needs `whatsapp_business_management`.
 
 ### Fallback and skip reasons on a send
 
@@ -237,12 +234,12 @@ order by created_at desc limit 50;
 
 ## 8. Never do this
 
-- **Never edit a live template in WhatsApp Manager.** Akeed's variables, button order and preview no longer match, the template goes back to review and cannot be sent meanwhile (4.3.8), and a failed review may leave it rejected with the old text gone (4.3.9). New text is always a new template, activated once approved.
-- **Never delete a template in WhatsApp Manager.** Deleting by name removes every language of that name (4.4.3), and the name cannot be reused for 30 days (4.4.4). Retire it in Akeed instead.
-- **Never swap the confirm and cancel buttons** in WhatsApp Manager. Akeed puts the confirm payload on the first button (4.7.6); a swapped template records a confirmation as a cancellation.
-- **Never change a template's variables or parameter format** in WhatsApp Manager (4.4.7 rule).
+- **Never edit a live template in WhatsApp Manager.** Akeed's variables, button order and preview no longer match, the template goes back to review and cannot be sent meanwhile, and a failed review may leave it rejected with the old text gone. New text is always a new template, activated once approved.
+- **Never delete a template in WhatsApp Manager.** Deleting by name removes every language of that name, and the name cannot be reused for 30 days. Retire it in Akeed instead.
+- **Never swap the confirm and cancel buttons** in WhatsApp Manager. Akeed puts the confirm payload on the first button; a swapped template records a confirmation as a cancellation.
+- **Never change a template's variables or parameter format** in WhatsApp Manager.
 - **Never copy a template ID, status or category from dev to prod.** Each environment reads its own from its own sync.
 - **Never turn the guardrail on before the environment's first successful sync has been read and compared.** A registry template that is `missing` at Meta stops being sent the moment the guardrail is on.
 - **Never run a write statement on `whatsapp_templates` or `integrations` other than the reset in section 4**, and that one only on the product owner's word.
 - **Never paste an access token or app secret** into a ticket, a chat or a log. Support never needs one.
-- **Never retry a submit or an edit that answered "unresolved"** by pressing it again elsewhere. Use **Check at Meta**: the first request may have been applied (rule under 4.1).
+- **Never retry a submit or an edit that answered "unresolved"** by pressing it again elsewhere. Use **Check at Meta**: the first request may have been applied.

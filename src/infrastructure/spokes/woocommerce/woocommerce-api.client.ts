@@ -98,7 +98,7 @@ export interface WooCommerceOrderState {
 }
 
 /**
- * Why an order call gave no usable answer (contract record, section 5).
+ * Why an order call gave no usable answer.
  *
  * - `credentials_rejected`: a 401. `permission_denied`: a 403.
  * - `not_found`: a 404 on the order.

@@ -8,7 +8,7 @@ import {
 
 /**
  * The longest value a send puts in each order-detail variable. The provider
- * does not publish a limit on a parameter value (contract record 4.6.12), so
+ * does not publish a limit on a parameter value, so
  * these keep a filled message near the 1024 characters a body may have.
  */
 export const ORDER_DETAIL_MAX_LENGTH = {

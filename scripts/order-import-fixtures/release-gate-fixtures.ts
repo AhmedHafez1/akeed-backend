@@ -1,11 +1,11 @@
 /**
- * The US-04.6-10 AC1 fixtures that carry whole-file merchant data rather than
+ * The release-gate fixtures that carry whole-file merchant data rather than
  * a single parser quirk. Like the rest of the pack, every expectation (the
  * parsed grid and the per-row manifest) is written by hand from the stories.
  *
  * ASSUMPTION / REQUIRES VALIDATION: these are synthetic best estimates of real
  * merchant files. Anonymized pilot samples replace or join them once the pilot
- * provides them (US-04.6-10 pilot checklist, section 6).
+ * provides them.
  */
 import type { CellObject } from 'xlsx';
 import {

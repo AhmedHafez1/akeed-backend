@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-describe('US-04-03 migration contract', () => {
+describe('manual order lifecycle migration contract', () => {
   // Normalize line endings: on a Windows checkout with `core.autocrlf=true`
   // the migration lands with CRLF, which would never match the multi-line
   // assertions below.

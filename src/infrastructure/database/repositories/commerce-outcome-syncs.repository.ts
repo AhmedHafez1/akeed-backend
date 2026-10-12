@@ -43,7 +43,7 @@ function toIsoOrNull(value: string | Date | null | undefined): string | null {
 }
 
 /**
- * Whether a store has an outcome yet, per order and action (US-06-04). Every
+ * Whether a store has an outcome yet, per order and action. Every
  * method is scoped by the organization the caller already trusts.
  */
 @Injectable()

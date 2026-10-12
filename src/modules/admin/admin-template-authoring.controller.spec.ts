@@ -69,7 +69,7 @@ const WRITES: [string, 'post' | 'patch' | 'delete', string, object?][] = [
   ['retire', 'post', `/${KEY}/retire`, {}],
 ];
 
-describe('Admin template write routes (US-08-06)', () => {
+describe('Admin template write routes', () => {
   let app: INestApplication;
   const operatorId = randomUUID();
   const staffId = randomUUID();

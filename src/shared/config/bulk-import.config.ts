@@ -1,7 +1,7 @@
 export const BULK_IMPORT_CONFIG = 'bulkImport';
 
 /**
- * Standalone bulk order import (E04.6).
+ * Standalone bulk order import.
  *
  * The switch hides every order-import route. The limits bound what one upload
  * can cost: the file is held in memory, inflated and parsed in the request, so
@@ -10,7 +10,7 @@ export const BULK_IMPORT_CONFIG = 'bulkImport';
 export interface BulkImportConfig {
   enabled: boolean;
   /**
-   * The pilot allow-list (US-04.6-10): while it has entries, only these
+   * The pilot allow-list: while it has entries, only these
    * organizations see bulk import even with the switch on. Empty means every
    * Standalone organization, which is general availability.
    */

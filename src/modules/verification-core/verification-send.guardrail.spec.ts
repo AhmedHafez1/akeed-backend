@@ -11,7 +11,7 @@ import { VerificationSendService } from './verification-send.service';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 /**
- * US-08-04 criterion 4: with the guardrail on, a send uses only a template
+ * With the guardrail on, a send uses only a template
  * that is active in Akeed and approved at the provider. Otherwise it falls
  * back to the language default and records why on the dispatch, or, with no
  * sendable default, it is skipped before the claim so no usage is reserved.

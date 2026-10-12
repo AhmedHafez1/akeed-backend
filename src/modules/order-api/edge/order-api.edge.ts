@@ -30,7 +30,7 @@ export const ORDER_API_MOUNT_PATH = '/api/v1';
 const LOG_MODULE = 'OrderApi';
 
 /**
- * The first thing an order API request meets (US-05-04).
+ * The first thing an order API request meets.
  *
  * It settles the correlation ID, reads the body under the API's own size
  * limit and writes the one log line of the request when the response ends,

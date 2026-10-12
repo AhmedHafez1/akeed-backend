@@ -274,7 +274,7 @@ export class OrdersRepository {
       .where(eq(orders.orgId, orgId))
       // By position: the projection carries bound parameters, and PostgreSQL
       // will not match a GROUP BY copy of it whose placeholders are numbered
-      // anew ("must appear in the GROUP BY clause"). Found by US-04.6-10.
+      // anew ("must appear in the GROUP BY clause").
       .groupBy(sql`1`);
     return rows.map((row) => ({
       status: row.status,

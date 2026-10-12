@@ -194,7 +194,7 @@ export const memberships = pgTable(
 );
 
 /**
- * The WhatsApp template registry (US-08-03): one row per template and
+ * The WhatsApp template registry: one row per template and
  * language. The provider-side columns (`metaTemplateId`, `reviewStatus`,
  * `category`, `quality`, `componentsSnapshot`, `lastSyncedAt`) are
  * environment data filled by sync, never by a migration.
@@ -293,8 +293,8 @@ export const whatsappTemplates = pgTable(
 ).enableRLS();
 
 /**
- * What an operator writes before and after a template exists at the provider
- * (US-08-06). `body` uses Akeed's own placeholders (`{{customer}}`); the
+ * What an operator writes before and after a template exists at the provider.
+ * `body` uses Akeed's own placeholders (`{{customer}}`); the
  * provider's syntax is built in its adapter. `templateId` is set only once the
  * provider has confirmed the template, which is when its registry row is
  * inserted.
@@ -384,7 +384,7 @@ export const whatsappTemplateDrafts = pgTable(
 ).enableRLS();
 
 /**
- * Every edit sent to the provider for a template (US-08-06). Akeed counts an
+ * Every edit sent to the provider for a template. Akeed counts an
  * approved template's edits from these rows; `unknown` counts, `refused` does
  * not.
  */
@@ -428,7 +428,7 @@ export const whatsappTemplateEdits = pgTable(
 ).enableRLS();
 
 /**
- * Every template notification received from the provider (US-08-04), applied
+ * Every template notification received from the provider, applied
  * or not. `identity_key` makes a redelivery a no-op. `outcome` says what
  * happened to it: `applied`, `stale` (older than the state already applied),
  * `conflict` (same second, different value), `unregistered` (no registry row).
@@ -484,7 +484,7 @@ export const whatsappTemplateEvents = pgTable(
 ).enableRLS();
 
 /**
- * One run of the template sync (US-08-04). At most one run is `running` at a
+ * One run of the template sync. At most one run is `running` at a
  * time across every instance. A failed run changed no registry row; its
  * `error_code` is neutral and never carries the provider's text.
  */
@@ -571,15 +571,15 @@ export const integrations = pgTable(
     codTemplateEnVariant: text('cod_template_en_variant')
       .default('friendly')
       .notNull(),
-    // Registry keys of the chosen styles (US-08-03). The two variant columns
+    // Registry keys of the chosen styles. The two variant columns
     // above are still written with them until a later migration drops them.
     codTemplateArKey: text('cod_template_ar_key'),
     codTemplateEnKey: text('cod_template_en_key'),
-    // The reminder each language sends (US-08-07a). NULL sends the first-send
+    // The reminder each language sends. NULL sends the first-send
     // template, as before. Read only with WHATSAPP_REMINDER_TEMPLATE_ENABLED.
     codReminderArKey: text('cod_reminder_ar_key'),
     codReminderEnKey: text('cod_reminder_en_key'),
-    // The store chose `auto` as its Arabic style (US-08-07d).
+    // The store chose `auto` as its Arabic style.
     codTemplateArAuto: boolean('cod_template_ar_auto').default(false).notNull(),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
     avgShippingCost: numeric('avg_shipping_cost', { precision: 10, scale: 2 })
@@ -1119,7 +1119,7 @@ export const verificationMessageDispatches = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
-    // Which template this send carried (US-08-02). NULL on rows written before
+    // Which template this send carried. NULL on rows written before
     // it was recorded; those are never backfilled.
     templateVariantKey: text('template_variant_key'),
     templatePurpose: text('template_purpose').$type<
@@ -1324,7 +1324,7 @@ export const webhookEvents = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
-    // Source-neutral hold (US-04.6-01). A held event is invisible to dispatch
+    // Source-neutral hold. A held event is invisible to dispatch
     // and reconciliation until released; `hold_group_id` is the import batch.
     holdState: text('hold_state').default('none').notNull(),
     holdGroupId: uuid('hold_group_id'),
@@ -2390,7 +2390,7 @@ export const billingReconciliationFindings = pgTable(
 ).enableRLS();
 
 /**
- * E04.6: one uploaded order file and its lifecycle. A draft holds the parsed
+ * One uploaded order file and its lifecycle. A draft holds the parsed
  * rows; commit, start and release (later stories) move it forward. The status
  * list is the epic's canonical batch state machine.
  */
@@ -2420,7 +2420,7 @@ export const orderImportBatches = pgTable(
     counts: jsonb().notNull().default({}),
     orderDateMin: date('order_date_min'),
     orderDateMax: date('order_date_max'),
-    /** The row-rule version that last validated the batch (US-04.6-04). */
+    /** The row-rule version that last validated the batch. */
     validationVersion: integer('validation_version'),
     commitIdempotencyKey: text('commit_idempotency_key'),
     startIdempotencyKey: text('start_idempotency_key'),
@@ -2446,7 +2446,7 @@ export const orderImportBatches = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
-    /** Append-only transition log (US-04.6-07); written in the same UPDATE. */
+    /** Append-only transition log; written in the same UPDATE. */
     events: jsonb().notNull().default([]),
     expiresAt: timestamp('expires_at', {
       withTimezone: true,
@@ -2619,7 +2619,7 @@ export const orderImportPaymentClassifications = pgTable(
   ],
 ).enableRLS();
 
-/** A column mapping remembered per organization and header set (US-04.6-03). */
+/** A column mapping remembered per organization and header set. */
 export const orderImportMappingProfiles = pgTable(
   'order_import_mapping_profiles',
   {
@@ -2657,7 +2657,7 @@ export const orderImportMappingProfiles = pgTable(
 ).enableRLS();
 
 /**
- * Server credentials for one Standalone integration (US-05-01, 0046). Only the
+ * Server credentials for one Standalone integration. Only the
  * SHA-256 of the secret is stored; `prefix` is the non-secret lookup handle.
  * Members may read the metadata through RLS but never the hash, and only the
  * API issues or revokes keys (see the migration's grants).
@@ -2733,7 +2733,7 @@ export const integrationApiKeys = pgTable(
 ).enableRLS();
 
 /**
- * EasyOrders install contexts (US-06-02). EasyOrders has no `state`
+ * EasyOrders install contexts. EasyOrders has no `state`
  * parameter, so a one-time token rides in the path of the callback URL; only
  * its hash is stored, bound to the organization that started the install.
  * API-only: RLS is on with no policy, and the table grants are revoked.
@@ -2808,7 +2808,7 @@ export const easyordersPendingInstalls = pgTable(
 ).enableRLS();
 
 /**
- * One integration's EasyOrders credentials (US-06-02): ciphertext for the API
+ * One integration's EasyOrders credentials: ciphertext for the API
  * key and the two webhook secrets (learned from the first verified delivery,
  * or pasted by the seller), the per-install webhook URL token as a hash and
  * as ciphertext, and the store the callback claimed. Only a verified
@@ -2824,7 +2824,7 @@ export const easyordersConnections = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
-    // Null only on a disconnected row (US-06-05): a disconnect wipes every
+    // Null only on a disconnected row: a disconnect wipes every
     // credential and keeps the store id for a same-store reconnect.
     apiKeyEncrypted: text('api_key_encrypted'),
     webhookTokenHash: text('webhook_token_hash'),
@@ -2843,7 +2843,7 @@ export const easyordersConnections = pgTable(
     // On a disconnected row: whether EasyOrders still holds the webhooks.
     providerCleanup: text('provider_cleanup'),
     health: text().default('ok').notNull(),
-    // Setup inputs (US-06-03): the order payload carries neither, and a
+    // Setup inputs: the order payload carries neither, and a
     // missing one makes an order not eligible instead of being guessed.
     currency: text(),
     phoneCountry: varchar('phone_country', { length: 2 }),
@@ -2937,7 +2937,7 @@ export const easyordersConnections = pgTable(
 ).enableRLS();
 
 /**
- * WooCommerce install contexts (US-07-02). The authorize link has no `state`
+ * WooCommerce install contexts. The authorize link has no `state`
  * and the callback names no store, so both the organization and the store
  * come from this row: a one-time token rides in the path of the callback URL
  * and only its hash is stored, next to the canonical store URL the merchant
@@ -3029,13 +3029,13 @@ export const woocommercePendingInstalls = pgTable(
 ).enableRLS();
 
 /**
- * One integration's WooCommerce credentials (US-07-02): ciphertext for the
+ * One integration's WooCommerce credentials: ciphertext for the
  * consumer key, the consumer secret and the webhook secret Akeed generated,
  * the hash of the per-install delivery URL token, the two webhooks Akeed
  * created, and the canonical store URL. The store is verified at connect and
  * a verified store belongs to one integration. API-only, like the contexts.
  *
- * A disconnect (US-07-05) keeps the row and the store URL, wipes the three
+ * A disconnect keeps the row and the store URL, wipes the three
  * ciphertexts, the token hash and the webhook ids, and gives up the verified
  * slot; `woocommerce_connections_credentials_state_check` ties them together.
  */
@@ -3166,7 +3166,7 @@ export const woocommerceConnections = pgTable(
 ).enableRLS();
 
 /**
- * Whether a store has an outcome yet (US-06-04): one row per order and outcome
+ * Whether a store has an outcome yet: one row per order and outcome
  * action, written only for sources whose adapter tracks synchronization. The
  * verification row keeps the local decision whatever this row says. Codes
  * only: no provider text, customer data or credential. API-only.
@@ -3253,7 +3253,7 @@ export const commerceOutcomeSyncs = pgTable(
 ).enableRLS();
 
 /**
- * Free-form copy staff manage (US-08-07): acknowledgments, the nudge and the
+ * Free-form copy staff manage: acknowledgments, the nudge and the
  * name fallbacks. One row per purpose, language and style; `default` is the
  * language's text and a dialect style overrides it.
  */
@@ -3345,7 +3345,7 @@ export const whatsappMessageTextEvents = pgTable(
 ).enableRLS();
 
 /**
- * Each acknowledgment and nudge (US-08-07). The unique (verification, kind)
+ * Each acknowledgment and nudge. The unique (verification, kind)
  * is the once-per-verification rule; the row is claimed before the send.
  * Free at the provider: no usage, dispatch or credit row is written.
  */
@@ -3419,7 +3419,7 @@ export const verificationServiceMessages = pgTable(
 
 /**
  * A typed reply that resolved to an open verification but was not read as an
- * answer (US-08-07c). No text is stored. Unique per provider message, so a
+ * answer. No text is stored. Unique per provider message, so a
  * redelivery is stored once.
  */
 export const verificationReplyEvents = pgTable(

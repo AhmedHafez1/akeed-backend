@@ -33,9 +33,9 @@ export class UsageAccountingRouter {
   /**
    * Which accounting system a *new* send is billed through.
    *
-   * The feature flag is part of the answer, not a later denial. E04.5 ships
-   * dark: with credit billing off, a Standalone source must keep the periodic
-   * plan accounting it shipped with in E04, and disabling the flag must restore
+   * The feature flag is part of the answer, not a later denial. Credit
+   * billing is switchable: with it off, a Standalone source must keep the
+   * periodic plan accounting, and disabling the flag must restore
    * that rather than block every Standalone send behind a reconciliation code.
    *
    * This decides new work only. Settlement follows the `accounting_mode`

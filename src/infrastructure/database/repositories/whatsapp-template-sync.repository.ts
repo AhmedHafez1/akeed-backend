@@ -93,14 +93,14 @@ function stateColumns(state: ProviderState) {
 /**
  * The registry key a store sends for each language. A store with no stored
  * key is read from its old variant column, which is what its sends use while
- * that column exists (US-08-03).
+ * that column exists.
  */
 export const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
 export const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
 
 /**
  * Every store column that names a template a store sends: the first send per
- * language and, since US-08-07a, the reminder per language. Keys of the two
+ * language and the reminder per language. Keys of the two
  * purposes never collide, so one store counts once per key.
  */
 const STORE_KEY_EXPRESSIONS = [
@@ -349,7 +349,7 @@ export class WhatsappTemplateSyncRepository {
   /**
    * How many active stores send each registry key, per language. A store with
    * no stored key is counted under the key of its old variant column, which
-   * is what its sends read while that column exists (US-08-03).
+   * is what its sends read while that column exists.
    */
   async activeStoreCountsByKey(
     keys: readonly string[],

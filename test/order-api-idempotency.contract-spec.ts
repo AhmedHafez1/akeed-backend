@@ -245,13 +245,13 @@ function apiBodyOf(stored: OrderRow, overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * US-05-03 over PostgreSQL: an order Akeed already has is replayed or refused
+ * Idempotency over PostgreSQL: an order Akeed already has is replayed or refused
  * by the ingestion core, whichever key or channel brings it back, and neither
  * answer writes an event, starts a verification, sends a message or holds a
  * credit. Real repositories and services; only the messaging port and the
  * queues are fakes (see `releaseGateHarness`).
  */
-describe('order API idempotency PostgreSQL contract (US-05-03)', () => {
+describe('order API idempotency PostgreSQL contract', () => {
   beforeAll(() => gate.setup());
   afterAll(() => gate.teardown());
 

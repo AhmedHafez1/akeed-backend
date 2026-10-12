@@ -11,7 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { WooCommerceAuthService } from './woocommerce-auth.service';
 
 /**
- * The install callback (contract record section 1). Who sends it is not
+ * The install callback. Who sends it is not
  * documented (finding 1.12), so it is public, throttled and trusts nothing
  * about the sender: no origin check, no address allow-list and, unlike the
  * EasyOrders callback, no route-scoped CORS entry. The path token is the only

@@ -124,7 +124,7 @@ describe('order-import fixtures', () => {
   );
 
   /**
-   * US-04.6-09: an external link is data about another file, never a path to
+   * An external link is data about another file, never a path to
    * open, and an embedded object is never read. Nothing touches the disk
    * while the workbook is parsed.
    */

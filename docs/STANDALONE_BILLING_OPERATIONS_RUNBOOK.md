@@ -1,6 +1,6 @@
 # Standalone billing operations runbook
 
-Staff procedures for inspecting and reconciling Standalone credit accounts in the admin console (`/[locale]/admin/standalone-billing`) and its API (`/api/admin/standalone-billing`). Introduced by [US-04.5-06](Epics/04.5-standalone-paymob-usage-billing/US-04.5-06-staff-billing-operations.md).
+Staff procedures for inspecting and reconciling Standalone credit accounts in the admin console (`/[locale]/admin/standalone-billing`) and its API (`/api/admin/standalone-billing`).
 
 Nothing here can mark a payment successful, delete or edit a ledger entry, change a provider identifier or issue a Paymob refund. Those actions do not exist in the console or the API.
 

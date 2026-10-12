@@ -1,7 +1,7 @@
 import { isIP } from 'net';
 
 /**
- * The canonical store URL (US-07-01 contract record, section 2).
+ * The canonical store URL.
  *
  * The address is merchant-supplied and treated as hostile. It is accepted
  * only in one shape and stored in one form, `https://<host>` or

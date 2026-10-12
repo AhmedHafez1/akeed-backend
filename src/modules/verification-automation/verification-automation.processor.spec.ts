@@ -113,7 +113,7 @@ function buildJob(
 }
 
 describe('VerificationAutomationProcessor', () => {
-  describe('remaining E01 boundaries', () => {
+  describe('remaining baseline boundaries', () => {
     afterEach(() => jest.useRealTimers());
     function setup(status = 'sent', integration: Record<string, unknown> = {}) {
       const mocks = createMocks();

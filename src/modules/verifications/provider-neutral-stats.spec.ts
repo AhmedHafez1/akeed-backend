@@ -61,8 +61,8 @@ describe('integration-scoped dashboard entitlement usage', () => {
     expect(repository.getIntegrationUsageForPeriod).not.toHaveBeenCalled();
   });
   it('falls back to the monthly quota while credit billing is switched off', async () => {
-    // E04.5 ships dark. Until the feature is enabled a Standalone source keeps
-    // reading the periodic plan it shipped with in E04, rather than a credit
+    // Until credit billing is enabled a Standalone source keeps
+    // reading the periodic plan, rather than a credit
     // balance nobody has been granted yet.
     const { service, repository } = setup([source], usageAccountingFixture());
     const result = await service.getStatsByOrg('org-1', {});

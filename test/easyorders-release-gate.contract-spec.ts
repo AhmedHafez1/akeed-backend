@@ -11,14 +11,14 @@ import {
 } from './contracts/source-conformance-harness';
 
 /**
- * US-06-06 release gate: one EasyOrders store through install, order, send,
+ * The EasyOrders release gate: one store through install, order, send,
  * customer outcome and store status, over PostgreSQL, with two tenants and a
  * Shopify source beside it. Real repositories and services; the edges are
  * fakes: the provider fake (never EasyOrders), the messaging port (never
  * Meta) and the BullMQ queues, whose jobs are recorded and run in process.
  *
- * The matrix every source shares lives in the source conformance harness
- * (US-07-06); what only EasyOrders decides is in its driver. The cases below
+ * The matrix every source shares lives in the source conformance harness;
+ * what only EasyOrders decides is in its driver. The cases below
  * the matrix are the ones only EasyOrders has: it reads an order back from
  * the provider while it ingests it.
  */
@@ -34,7 +34,7 @@ const { driver, connectionOf, storeRequests, deliverPayload } =
 const { provider } = easyOrders;
 
 defineSourceConformance({
-  title: 'EasyOrders release gate PostgreSQL contract (US-06-06)',
+  title: 'EasyOrders release gate PostgreSQL contract',
   world,
   driver,
   migrations: EASYORDERS_MIGRATIONS,

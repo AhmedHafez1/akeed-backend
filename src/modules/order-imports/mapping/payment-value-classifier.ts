@@ -35,7 +35,7 @@ const TOKEN_SEPARATOR = /[^\p{L}\p{N}]+/u;
 /**
  * The key a payment value is classified and stored under in
  * `paymentValueMap`: Arabic spelling folded, then the shared payment-signal
- * normalization. Row validation (US-04.6-04) looks values up with this too.
+ * normalization. Row validation looks values up with this too.
  */
 export function normalizePaymentValue(value: string): string {
   return normalizePaymentSignal(foldArabicText(value));

@@ -4,7 +4,7 @@ import type {
   TemplateTextSegment,
 } from '../../../shared/messaging/template-text.types';
 
-/** Meta's placeholder: `{{name}}` or `{{1}}` (record 4.6.2, 4.6.3). */
+/** Meta's placeholder: `{{name}}` or `{{1}}`. */
 const PLACEHOLDER = /{{\s*([A-Za-z0-9_]+)\s*}}/g;
 
 function toSegments(text: string): TemplateTextSegment[] {
@@ -24,7 +24,7 @@ function toSegments(text: string): TemplateTextSegment[] {
 /**
  * Reads Meta's placeholder syntax out of a synced snapshot, so nothing outside
  * the spoke parses Meta's text. A template whose placeholders are all numbers
- * is positional (record 4.6.1); any name makes it named. NULL when there is no
+ * is positional; any name makes it named. NULL when there is no
  * snapshot or it could not be read.
  */
 export function describeMetaComponents(

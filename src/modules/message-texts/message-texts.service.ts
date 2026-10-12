@@ -15,7 +15,7 @@ import type { TemplateLanguage } from '../../shared/messaging/template-registry.
 export const MESSAGE_TEXTS_CACHE_TTL_MS = 60_000;
 
 /**
- * Serves the free-form texts (US-08-07) from a short-lived in-memory copy,
+ * Serves the free-form texts from a short-lived in-memory copy,
  * like the template registry. A staff write calls `invalidate()`; other
  * instances pick the change up when their copy expires. A failed refresh
  * keeps serving the last good copy.

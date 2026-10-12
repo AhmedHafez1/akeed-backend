@@ -60,7 +60,7 @@ const NO_SYNCS = {
 };
 
 /**
- * The source-setup seam over HTTP (US-06-05): a source whose spoke describes
+ * The source-setup seam over HTTP: a source whose spoke describes
  * its connection gets a setup block, can finish onboarding through the common
  * route, and stays readable after its merchant disconnects it. The connected
  * source here is a made-up platform on purpose: nothing in the onboarding

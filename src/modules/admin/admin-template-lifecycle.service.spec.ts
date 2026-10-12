@@ -122,7 +122,7 @@ async function refusal(promise: Promise<unknown>) {
   throw new Error('expected a refusal');
 }
 
-describe('AdminTemplateLifecycleService (US-08-06 criteria 5 to 7)', () => {
+describe('AdminTemplateLifecycleService', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
@@ -288,7 +288,7 @@ describe('AdminTemplateLifecycleService (US-08-06 criteria 5 to 7)', () => {
         requestId: 'req-2',
       });
 
-      // Not sendable until the provider approves it again (record 4.3.8).
+      // Not sendable until the provider approves it again.
       expect(result).toEqual({ key: KEY, review_status: 'pending' });
       expect(api.writes).toHaveLength(1);
       expect(api.writes[0].url).toMatch(/\/900000000000001$/);

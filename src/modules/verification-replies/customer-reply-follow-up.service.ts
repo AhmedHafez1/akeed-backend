@@ -65,13 +65,13 @@ function baseStyleOf(variantKey: string | null | undefined): string | null {
 
 /**
  * The acknowledgment after a customer confirms or cancels, and the nudge
- * after a typed reply Akeed could not read (US-08-07 b, c).
+ * after a typed reply Akeed could not read.
  *
- * Built under the contract record's worst-case rule for 4.10.8: best
+ * Meta does not document what a retried free-form send does, so: best
  * effort, sent once and never retried, and the verification's outcome is
  * final before anything is attempted and never depends on it. The row is
  * claimed before the send, so a replay or a crash never sends twice. These
- * messages are free at the provider (record 4.10.5): no usage, dispatch or
+ * messages are free at the provider: no usage, dispatch or
  * credit row is written.
  *
  * Reaches the provider only through `MessagingPort`.

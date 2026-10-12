@@ -75,12 +75,12 @@ describe('Shopify isolated PostgreSQL contract', () => {
     )) {
       await client.unsafe(statement.replaceAll('"public".', `"${namespace}".`));
     }
-    // The current repository selects the additive E04 linkage column. This
+    // The repository selects the order linkage column. This
     // Shopify-only fixture has no orders table and deliberately leaves it null.
     await client.unsafe(
       `ALTER TABLE "${namespace}"."webhook_events" ADD COLUMN "order_id" uuid`,
     );
-    // The repository also selects the source-neutral hold columns (US-04.6-01).
+    // The repository also selects the source-neutral hold columns.
     // Shopify events never hold, so every row here reads 'none'.
     const holdMigration = readFileSync(
       resolve(__dirname, '../drizzle/0036_webhook_event_hold.sql'),

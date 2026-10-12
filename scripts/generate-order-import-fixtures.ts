@@ -1,6 +1,6 @@
 /**
  * Regenerates test/fixtures/order-imports: one file per quirk plus
- * `<file>.expected.json` (the parsed grid) and, for the US-04.6-10 release
+ * `<file>.expected.json` (the parsed grid) and, for the release
  * gate pack, `<file>.manifest.json` (every row's outcome and issue codes).
  * Run with `npm run fixtures:order-imports`.
  */

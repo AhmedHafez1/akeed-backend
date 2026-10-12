@@ -1,4 +1,4 @@
--- Read-only reconciliation for the US-06-06 EasyOrders live pilot.
+-- Read-only reconciliation for an EasyOrders live pilot.
 --
 -- For one pilot organization it lists what Akeed holds: the connection (no
 -- credential), accepted events, orders, verifications, sends, usage and what
@@ -11,10 +11,6 @@
 -- Usage (PowerShell, against the pilot environment's database):
 --   psql "$env:PILOT_DATABASE_URL" -v org_id="'<organization uuid>'" `
 --     -f scripts/easyorders-pilot-reconcile.sql > .tmp/pilots/easyorders/reconcile-<step>.txt
---
--- The pilot script (docs/Epics/06-easyorders-integration/evidence/
--- US-06-06-live-pilot-script.md) says when to run it and what each section
--- must show.
 
 \pset pager off
 BEGIN TRANSACTION READ ONLY;

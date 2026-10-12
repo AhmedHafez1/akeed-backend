@@ -817,7 +817,7 @@ export class VerificationMessageDispatchesRepository {
   /**
    * The language and variant of the newest send the provider accepted for a
    * verification, so a reply to it can be written in the same language and
-   * dialect (US-08-07b, c). NULL before any accepted send.
+   * dialect. NULL before any accepted send.
    */
   async findLatestAcceptedIdentity(verificationId: string): Promise<{
     resolvedLanguage: 'ar' | 'en' | null;

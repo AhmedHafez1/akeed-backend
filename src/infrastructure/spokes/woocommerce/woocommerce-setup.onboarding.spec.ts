@@ -65,8 +65,8 @@ function connection(
 }
 
 /**
- * The WooCommerce contributor behind the real onboarding and settings routes
- * (US-07-05): setup can be finished with no currency and no phone country,
+ * The WooCommerce contributor behind the real onboarding and settings routes:
+ * setup can be finished with no currency and no phone country,
  * and health carries each webhook's state. Only the edges are fakes.
  */
 describe('WooCommerce setup through the onboarding routes', () => {

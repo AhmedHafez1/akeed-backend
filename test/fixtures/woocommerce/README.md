@@ -1,6 +1,6 @@
 # WooCommerce fixtures
 
-Webhook bodies for the WooCommerce spoke (E07). **Documented, not captured:** no request was sent to any store to make them.
+Webhook bodies for the WooCommerce spoke. **Documented, not captured:** no request was sent to any store to make them.
 
 | File                        | Delivery                                         | Source                                        |
 | --------------------------- | ------------------------------------------------ | --------------------------------------------- |
@@ -23,9 +23,9 @@ What is not in them, on purpose:
 - **No `X-WC-Webhook-Signature`.** A test computes the base64 HMAC-SHA256 over the exact bytes it sends, with a secret it generates.
 - **No consumer key, consumer secret, webhook secret or URL token.** Never put one in this folder, and never a real customer value.
 
-Two parts are assumptions, because the documentation is silent (see the [contract record](../../../docs/Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), findings 3.10 and 4.7):
+Two parts are assumptions, because the documentation is silent:
 
-- **The ping.** No page documents its body, content type or headers. `ping.txt` holds a form-encoded body (`application/x-www-form-urlencoded`) as a placeholder; trim the trailing line break before use. The ping rule in the record does not read the body, so a test should also pass with any other body.
+- **The ping.** No page documents its body, content type or headers. `ping.txt` holds a form-encoded body (`application/x-www-form-urlencoded`) as a placeholder; trim the trailing line break before use. The ping rule does not read the body, so a test should also pass with any other body.
 - **The draft status value.** The REST reference lists no draft status. `checkout-draft` in `order-checkout-draft.json` is a placeholder; any status other than `processing` or `on-hold` is skipped the same way.
 
-Replace all five with sanitized captures after the US-07-06 live run.
+Replace all five with sanitized captures from a real store when they are available.

@@ -402,7 +402,7 @@ describe('OrdersService manual creation', () => {
     });
   });
 
-  it('answers a retry whose first attempt was already dispatched (US-05-03)', async () => {
+  it('answers a retry whose first attempt was already dispatched', async () => {
     // The lost-response retry: the first request committed and queued the
     // event, so the retry has nothing left to dispatch and nothing to fail.
     creditEligibility.resolveDenial.mockResolvedValue(null);

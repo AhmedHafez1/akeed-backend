@@ -12,7 +12,7 @@ import {
 } from '../../shared/ports/template-catalog.port';
 
 /**
- * The message a merchant previews for a template (US-08-07g). With
+ * The message a merchant previews for a template. With
  * WHATSAPP_SNAPSHOT_PREVIEW_ENABLED on and a synced snapshot, it is read from
  * the provider's own text; otherwise from the stored preview. Either way the
  * caller gets the same neutral lines.

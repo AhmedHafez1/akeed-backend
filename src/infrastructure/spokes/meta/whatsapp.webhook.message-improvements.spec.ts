@@ -12,7 +12,7 @@ import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 /**
- * US-08-07 b and c at the webhook: it only stores the unresolved reply and
+ * Acknowledgment and nudge at the webhook: it only stores the unresolved reply and
  * queues work. Nothing is sent inline, and the reply text is never stored.
  */
 const TIMESTAMP = '1791892800';
@@ -121,7 +121,7 @@ function setup(
   };
 }
 
-describe('WhatsAppWebhookService and US-08-07', () => {
+describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();

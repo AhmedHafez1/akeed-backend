@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Sequential, fail-fast E04.5 release gate. Cheap static checks run first, then
-# focused US-04.5 units, the disposable PostgreSQL contracts and finally the
+# focused billing units, the disposable PostgreSQL contracts and finally the
 # inherited E04/E03/E02/Shopify gates. The inherited chain already owns the
 # full backend regression, backend build, non-fixing lint, structured-log check
 # and the frontend typecheck, lint and isolated production build, so they are
@@ -23,32 +23,32 @@ $results = [System.Collections.Generic.List[object]]::new()
 $gateStatus = 'FAILED'
 $failure = $null
 
-# US-04.5 unit suites by story area. US-04.5-05 is frontend-only and is covered
+# Billing unit suites by area. The merchant billing experience is frontend-only and is covered
 # by locale parity plus the inherited frontend typecheck, lint and build.
 $focusedUnitSuites = @(
-    # US-04.5-01 credit and payment foundation
+    # Credit and payment foundation
     'src/infrastructure/database/credit-domain-contracts.spec.ts',
     'src/shared/billing/',
     'src/shared/config/standalone-credit-billing.config.spec.ts',
-    # US-04.5-09 signup auto-activation and one-time grant
+    # Signup auto-activation and one-time grant
     'src/modules/verification-core/credit-eligibility.service.spec.ts',
     'src/modules/admin/standalone-billing.service.spec.ts',
     'src/infrastructure/database/repositories/standalone-organization-provisioning.repository.spec.ts',
-    # US-04.5-03 provider-neutral usage accounting
+    # Provider-neutral usage accounting
     'src/infrastructure/database/repositories/verification-message-dispatches.repository.spec.ts',
     'src/modules/verification-core/billing-entitlement.service.spec.ts',
     'src/modules/admin/message-dispatch-resolution.service.spec.ts',
-    # US-04.5-04 Paymob checkout, HMAC, callbacks and inquiry
+    # Paymob checkout, HMAC, callbacks and inquiry
     'src/modules/billing/',
     'src/infrastructure/spokes/paymob/',
     'src/shared/guards/payment-callback-rate-limit.guard.spec.ts',
-    # US-04.5-06 staff operations
+    # Staff operations
     'src/modules/admin/standalone-billing-operations.policy.spec.ts',
     'src/modules/admin/standalone-billing-operator.guard.spec.ts',
     'src/modules/admin/standalone-billing-logging.interceptor.spec.ts',
     'src/modules/admin/standalone-billing.controller.spec.ts',
     'src/shared/config/standalone-billing-operations.config.spec.ts',
-    # US-04.5-07 observability and finance reconciliation
+    # Observability and finance reconciliation
     'src/modules/admin/billing-observability.service.spec.ts',
     'src/modules/admin/billing-reconciliation.producer.spec.ts',
     'src/shared/config/standalone-billing-observability.config.spec.ts'
@@ -111,10 +111,6 @@ $frontendStateBefore = Get-WorktreeState $frontendRoot
 
 Push-Location $backendRoot
 try {
-    Invoke-GateStep 'documentation, status and safe-evidence contract' `
-        'node scripts/check-e045-release-docs.js' {
-        & node scripts/check-e045-release-docs.js
-    }
     Invoke-GateStep 'Arabic/English billing locale parity' `
         'node scripts/check-e045-locale-parity.js' {
         & node scripts/check-e045-locale-parity.js

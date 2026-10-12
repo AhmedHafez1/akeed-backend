@@ -1,7 +1,7 @@
 import { arabicStyleForPhone } from './arabic-style';
 import { isArabicPhoneNumber } from './template-language';
 
-describe('arabicStyleForPhone (US-08-07d mapping)', () => {
+describe('arabicStyleForPhone (country mapping)', () => {
   it.each([
     ['+201001234567', 'egyptian'],
     ['00201001234567', 'egyptian'],

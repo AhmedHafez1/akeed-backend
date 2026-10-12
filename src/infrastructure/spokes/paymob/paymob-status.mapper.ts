@@ -96,8 +96,8 @@ function orderId(transaction: PaymobTransaction): string | undefined {
  *
  * Chargebacks are absent on purpose. Paymob's dispute payload shape is not
  * verified against a live account, so nothing here invents one; the state
- * machine and the ledger already accept dispute signals, and US-04.5-06 wires
- * the source once the contract is captured.
+ * machine and the ledger already accept dispute signals, and staff record
+ * disputes as evidence until the contract is captured.
  */
 export function paymobSignal(transaction: PaymobTransaction): PurchaseSignal {
   if (flag(transaction.is_refunded)) return 'refund';

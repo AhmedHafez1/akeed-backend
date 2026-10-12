@@ -17,8 +17,8 @@ import type { TemplateTextSegment } from './template-text.types';
 
 /**
  * The rules a staff-written template must pass before it is sent to the
- * provider (US-08-06 criterion 3). Every limit comes from the US-08-01
- * contract record; each rule names the finding it enforces. Nothing here
+ * provider. Every limit is a Meta requirement; each rule carries its
+ * reference. Nothing here
  * knows the provider's syntax: the body uses Akeed's own placeholders.
  */
 
@@ -66,7 +66,7 @@ const NAME_PATTERN = /^[a-z0-9_]+$/;
 const NAMED_PARAMETER = /^[a-z_]+$/;
 const TOKEN = /{{([^{}]*)}}/g;
 
-/** `akeed_<purpose>_<style>_v<n>` (US-08-06 decision 1). */
+/** `akeed_<purpose>_<style>_v<n>`. */
 export function buildTemplateName(
   purpose: TemplatePurpose,
   style: string,

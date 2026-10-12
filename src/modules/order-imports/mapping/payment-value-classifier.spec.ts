@@ -6,7 +6,7 @@ import {
   summarizePaymentValues,
 } from './payment-value-classifier';
 
-describe('classifyPaymentValue (US-04.6-03 AC6)', () => {
+describe('classifyPaymentValue', () => {
   it.each([
     'COD',
     'cod',

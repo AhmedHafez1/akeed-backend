@@ -92,7 +92,7 @@ function partialAliasKeys(field: ImportField): string[] {
 }
 
 /**
- * Suggests a source column for every canonical field (US-04.6-03 AC1–AC3).
+ * Suggests a source column for every canonical field.
  * Pure: the same headers and samples always give the same suggestions.
  *
  * 1. Exact: the header key equals an alias. Several exact columns are settled

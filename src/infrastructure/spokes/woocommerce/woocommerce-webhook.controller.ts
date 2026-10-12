@@ -11,7 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { WooCommerceWebhookService } from './woocommerce-webhook.service';
 
 /**
- * The delivery URL Akeed registers in a store (contract record section 6).
+ * The delivery URL Akeed registers in a store.
  * Public: the path token decides the tenant, and the service checks the
  * signature and the source before anything else. The body reaches the route
  * as raw bytes (`applyWooCommerceWebhookEdge`), which the signature is over.

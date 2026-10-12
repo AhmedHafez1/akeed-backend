@@ -43,7 +43,7 @@ function sent(selection: ReturnType<typeof selectTemplateForSend>) {
   };
 }
 
-describe('selectTemplateForSend: reminder purpose (US-08-07a)', () => {
+describe('selectTemplateForSend: reminder purpose', () => {
   const base = {
     preferredLanguage: 'auto',
     phoneNumber: EGYPT,
@@ -185,7 +185,7 @@ describe('selectTemplateForSend: reminder purpose (US-08-07a)', () => {
   });
 });
 
-describe('selectTemplateForSend: Arabic style by country (US-08-07d)', () => {
+describe('selectTemplateForSend: Arabic style by country', () => {
   const base = {
     preferredLanguage: 'auto',
     arKey: 'cod_confirm.ar.short',

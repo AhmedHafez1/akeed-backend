@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Turns one captured webhook into a committable fixture for the US-06-01
+// Turns one captured webhook into a committable fixture for the validation
 // spike: synthetic IDs, no customer data, no secrets, key order preserved.
 //
 //   node scripts/spikes/easyorders/sanitize-fixture.mjs --seq 4 --out test/fixtures/easyorders/order-created.json

@@ -165,7 +165,7 @@ async function keyRow(id: string) {
   return row;
 }
 
-describe('integration API keys PostgreSQL contract (US-05-01)', () => {
+describe('integration API keys PostgreSQL contract', () => {
   const logs: string[] = [];
 
   beforeAll(async () => {

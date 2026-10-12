@@ -213,14 +213,14 @@ async function expectReconciled(
 }
 
 /**
- * US-05-06 release gate over PostgreSQL and real HTTP. The order API is
+ * The order API release gate over PostgreSQL and real HTTP. The order API is
  * mounted as `main.ts` mounts it (edge, guards, pipe, controller, adapter) in
  * front of the real ingestion command, repositories, worker, hub, send service
  * and credit ledger; keys are issued and revoked through the Settings service.
  * Only the messaging port and the queues are fakes (see `releaseGateHarness`),
  * and the fault cases break one boundary each.
  */
-describe('E05 release gate PostgreSQL contract (US-05-06)', () => {
+describe('order API release gate PostgreSQL contract', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -658,7 +658,7 @@ describe('E05 release gate PostgreSQL contract (US-05-06)', () => {
       expect(stored.api.order.externalOrderId).toBe('ref:eq-envelope');
       expect(stored.file_import.order.externalOrderId).toBe('ref:eq-envelope');
 
-      // The manual form has its own identity scheme (E04), so the identity
+      // The manual form has its own identity scheme, so the identity
       // and the fingerprint over it differ, and nothing else does.
       expect(differing('api', 'manual')).toEqual([
         'ingestionType',

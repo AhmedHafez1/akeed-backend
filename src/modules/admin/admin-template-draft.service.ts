@@ -77,7 +77,7 @@ export const WHATSAPP_TEMPLATE_DRAFT_AUDIT_ACTIONS = {
   reconcile: 'whatsapp-templates.reconcile',
 } as const;
 
-/** A review decision can take this long (record 4.2.3). */
+/** A review decision can take this long. */
 export const TEMPLATE_REVIEW_MAX_HOURS = 24;
 
 const DRAFT_LIST_LIMIT = 200;
@@ -160,8 +160,7 @@ function previewOf(content: TemplateDraftContent): RenderedTemplateMessage {
 }
 
 /**
- * Staff template drafts and their submission to the provider (US-08-06
- * criteria 2 to 4).
+ * Staff template drafts and their submission to the provider.
  *
  * A submit is safe to repeat:
  * - Only one submit holds a draft at a time; a second one is told so.
@@ -170,7 +169,7 @@ function previewOf(content: TemplateDraftContent): RenderedTemplateMessage {
  *   nothing is created.
  * - A create is sent once. With no usable answer the draft becomes
  *   `submit_unknown` and nothing more is sent until staff ask Akeed to check
- *   the provider, which reads the list again (contract record 4.1 rule).
+ *   the provider, which reads the list again.
  * - The registry row is inserted only when the provider has confirmed the
  *   template, inactive and never a default.
  */

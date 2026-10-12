@@ -233,8 +233,8 @@ If `onboardingStatus` is `pending` when the settings page loads, the user is red
 | Store name             | text   | Required, max 255 chars.                                                                           |
 | Default language       | select | `auto`, `en`, `ar`.                                                                                |
 | First-send style       | select | One style per language, from the sendable templates in the registry.                               |
-| Arabic style "auto"    | choice | `codTemplateArAuto`. Offered only while `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` is on (US-08-07 d).   |
-| Reminder style         | select | `codReminderArVariant` / `codReminderEnVariant`; empty means the first-send template. Offered only while `WHATSAPP_REMINDER_TEMPLATE_ENABLED` is on (US-08-07 a). |
+| Arabic style "auto"    | choice | `codTemplateArAuto`. Offered only while `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` is on.                |
+| Reminder style         | select | `codReminderArVariant` / `codReminderEnVariant`; empty means the first-send template. Offered only while `WHATSAPP_REMINDER_TEMPLATE_ENABLED` is on. |
 
 The shipping currency is shown read-only (it formats the preview amount); it is set during onboarding.
 
@@ -265,7 +265,7 @@ The timing tab also holds the auto-verify toggle.
 
 #### Message preview
 
-The message tab shows the WhatsApp message for the chosen style. The text comes from the backend as neutral message lines (`template.messages` and `message` on each variant in `GET /api/settings`), built from the Meta snapshot when `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` is on and from the registered text otherwise (US-08-07 g). The frontend only fills the sample values; it holds no template copy. When no lines are available, the preview shows an empty state rather than invented text. With "auto" chosen, a note says the customer's country decides the Arabic style.
+The message tab shows the WhatsApp message for the chosen style. The text comes from the backend as neutral message lines (`template.messages` and `message` on each variant in `GET /api/settings`), built from the Meta snapshot when `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` is on and from the registered text otherwise. The frontend only fills the sample values; it holds no template copy. When no lines are available, the preview shows an empty state rather than invented text. With "auto" chosen, a note says the customer's country decides the Arabic style.
 
 #### Plan tab (`plan`, embedded only)
 
@@ -489,10 +489,8 @@ npm --prefix akeed-frontend run build
 | Legacy route `/message-preview`               | Redirects to `/settings?tab=message`.                                              |
 | Legacy route `/automation-settings`           | Redirects to `/settings?tab=timing`.                                                 |
 
-### US-02-03 cancellation contract
+### Cancellation contract
 
-The list exposes per-row `capabilities` and optional `cancellation_operation`. Both dashboard domain hooks and skins honor merchant cancellation support and display pending/untracked provider state in English and Arabic. Missing capabilities remain compatible with the older Shopify-only backend; explicit unsupported capabilities suppress the action.
+The list exposes per-row `capabilities` and optional `cancellation_operation`. Both dashboard domain hooks and skins honor merchant cancellation support and display pending/untracked provider state in English and Arabic. A row without capabilities is treated as Shopify; explicit unsupported capabilities suppress the action.
 
-The cancellation POST returns `providerOperationId` and `operation` when known. The controller temporarily also returns `shopifyJobId` as the same reference for old deployments. New frontend consumers use the neutral shared response type. Local `status: canceled` does not prove remote completion. References are merged into verification metadata with the guarded local update and returned on idempotent repeats; historical rows without references remain unknown.
-
-[Validation, deployment order, and recovery](US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).
+The cancellation POST returns `providerOperationId` and `operation` when known. The controller also returns `shopifyJobId` as the same reference; frontend consumers use the neutral shared response type. Local `status: canceled` does not prove remote completion. References are merged into verification metadata with the guarded local update and returned on idempotent repeats; rows without references remain unknown.

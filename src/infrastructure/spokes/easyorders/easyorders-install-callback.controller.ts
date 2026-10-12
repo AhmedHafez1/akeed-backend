@@ -11,7 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { EasyOrdersAuthService } from './easyorders-auth.service';
 
 /**
- * The install callback (contract record section 1). It is called by the
+ * The install callback. It is called by the
  * seller's browser from the EasyOrders dashboard, not by EasyOrders' servers,
  * so it is public and its CORS preflight is answered for that one origin
  * (`ROUTE_SCOPED_CORS`). The path token is the only tenant binding.

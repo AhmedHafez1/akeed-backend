@@ -90,7 +90,7 @@ describe('parseBulkImportConfig', () => {
   });
 });
 
-describe('isBulkImportEnabledForOrg (US-04.6-10 pilot allow-list)', () => {
+describe('isBulkImportEnabledForOrg (pilot allow-list)', () => {
   const PILOT = '0a0a0a0a-0000-4000-8000-00000000000a';
   const OTHER = '0b0b0b0b-0000-4000-8000-00000000000b';
 

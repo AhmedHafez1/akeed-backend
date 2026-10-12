@@ -146,7 +146,7 @@ function toImpactView(impact: TemplateImpact): AdminTemplateImpactView {
 }
 
 /**
- * The staff actions on a registry template (US-08-06 criteria 5 to 7):
+ * The staff actions on a registry template:
  * activate, deactivate, set default, retire and edit. Each is one audited
  * transaction; the rules are in `template-lifecycle.policy.ts`.
  */
@@ -226,7 +226,7 @@ export class AdminTemplateLifecycleService {
    * Sends new text for a template the provider already holds. The edit is
    * recorded before it is sent, sent once, and never repeated here. From the
    * moment it is sent the template reads `pending`, so it cannot be activated
-   * until the provider approves it again (contract record 4.3.8).
+   * until the provider approves it again.
    */
   async edit(params: {
     userId: string;

@@ -93,8 +93,7 @@ function parseJson(rawBody: Buffer): unknown {
 }
 
 /**
- * WooCommerce delivery ingress (US-07-03, contract record sections 2, 3, 4
- * and 6).
+ * WooCommerce delivery ingress.
  *
  * An order delivery is accepted only after three checks, in this order and
  * before any business work: the per-install URL token, which alone decides
@@ -304,7 +303,7 @@ export class WooCommerceWebhookService {
     return order ? 'taken' : 'awaiting_correction';
   }
 
-  /** Answered 200 with nothing stored (contract record section 3). */
+  /** Answered 200 with nothing stored. */
   private logIgnored(
     connection: WooCommerceConnection | undefined,
     topic: string,

@@ -5,7 +5,7 @@ import { paymobBillingHarness } from './contracts/paymob-billing-harness';
 import { paymentPurchases } from '../src/infrastructure/database/schema';
 
 /**
- * US-04.5-04 against real PostgreSQL.
+ * Paymob checkout and callbacks against real PostgreSQL.
  *
  * Most of the exactly-once and fail-closed behaviour in this story is enforced
  * by unique indexes, CHECK constraints and triggers rather than by application
@@ -28,7 +28,7 @@ async function pendingPurchase(user: Awaited<ReturnType<typeof buyer>>) {
   return created;
 }
 
-describe('US-04.5-04 PostgreSQL Paymob checkout and callbacks', () => {
+describe('PostgreSQL Paymob checkout and callbacks', () => {
   beforeAll(harness.setup);
   afterAll(harness.teardown);
   afterEach(() => jest.restoreAllMocks());

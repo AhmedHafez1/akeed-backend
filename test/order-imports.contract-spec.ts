@@ -180,7 +180,7 @@ describe('order imports PostgreSQL contract', () => {
         -- Migration 0024's key; 0049 references it.
         CONSTRAINT orders_id_org_id_key UNIQUE (id, org_id)
       );
-      -- The rest of the columns a commit writes (US-04.6-06).
+      -- The rest of the columns a commit writes.
       ALTER TABLE orders
         ADD COLUMN customer_name text,
         ADD COLUMN customer_email text,
@@ -191,7 +191,7 @@ describe('order imports PostgreSQL contract', () => {
         ADD COLUMN updated_at timestamptz DEFAULT now();
       -- webhook_events with the hold columns and the two constraints the
       -- acceptance relies on: the source idempotency key, and the guard that
-      -- a held event can never be dispatchable (US-04.6-01).
+      -- a held event can never be dispatchable.
       CREATE TYPE webhook_event_status AS ENUM
         ('pending', 'processing', 'completed', 'failed', 'skipped');
       CREATE TABLE webhook_events (
@@ -256,20 +256,20 @@ describe('order imports PostgreSQL contract', () => {
         '0039_order_import_release.sql',
         '0040_order_import_row_retention.sql',
         '0044_order_import_payment_classifications.sql',
-        // US-05-01: keys reference integrations; proves 0046 layers on the base.
+        // Keys reference integrations; proves 0046 layers on the base.
         '0046_integration_api_keys.sql',
-        // US-06-02: both tables reference integrations; proves 0047 re-runs.
+        // Both tables reference integrations; proves 0047 re-runs.
         '0047_easyorders_connection.sql',
-        // US-06-03: alters the EasyOrders connection table; proves 0048 re-runs.
+        // Alters the EasyOrders connection table; proves 0048 re-runs.
         '0048_easyorders_ingestion.sql',
-        // US-06-04: references integrations and orders; proves 0049 re-runs.
+        // References integrations and orders; proves 0049 re-runs.
         '0049_commerce_outcome_syncs.sql',
-        // US-06-05: relaxes the EasyOrders credentials; proves 0050 re-runs.
+        // Relaxes the EasyOrders credentials; proves 0050 re-runs.
         '0050_easyorders_disconnect.sql',
         '0062_easyorders_webhook_cleanup.sql',
-        // US-07-02: both tables reference integrations; proves 0051 re-runs.
+        // Both tables reference integrations; proves 0051 re-runs.
         '0051_woocommerce_connection.sql',
-        // US-07-05: relaxes the WooCommerce credentials; proves 0052 re-runs.
+        // Relaxes the WooCommerce credentials; proves 0052 re-runs.
         '0052_woocommerce_disconnect.sql',
         // Detailed confirmation: three nullable order columns; proves 0063 re-runs.
         '0063_order_message_details.sql',
@@ -750,7 +750,7 @@ describe('order imports PostgreSQL contract', () => {
     ).resolves.toEqual([]);
   });
 
-  it('reads a batch detail, its first rows and an issue count, org-scoped (US-04.6-05)', async () => {
+  it('reads a batch detail, its first rows and an issue count, org-scoped', async () => {
     const source = await createSource();
     const draft = await repository.createDraftWithRows(
       batch(source, { headers: ['payment'] }),
@@ -1048,7 +1048,7 @@ describe('order imports PostgreSQL contract', () => {
     expect(policies.count).toBe(4);
   });
 
-  describe('row validation (US-04.6-04)', () => {
+  describe('row validation', () => {
     const DAY = 24 * HOUR;
     const cairo = 'Africa/Cairo';
     const columns = {
@@ -1446,7 +1446,7 @@ describe('order imports PostgreSQL contract', () => {
    * a database guarantee: the two unique indexes, the savepoint rollback and
    * the recount from rows. A fake cannot prove any of them.
    */
-  describe('idempotent commit (US-04.6-06)', () => {
+  describe('idempotent commit', () => {
     const acceptance = new ManualOrderIngestionRepository(database);
     const ingestion = new StandaloneOrderIngestionService(
       acceptance,
@@ -1853,7 +1853,7 @@ describe('order imports PostgreSQL contract', () => {
       expect(order.raw_payload).toHaveProperty('submissionFingerprint');
     });
 
-    describe('start and paced release (US-04.6-07)', () => {
+    describe('start and paced release', () => {
       const releases = new OrderImportReleaseRepository(database);
       const events = new WebhookEventsRepository(database);
       const claims = new Map<string, number>();
@@ -2232,7 +2232,7 @@ describe('order imports PostgreSQL contract', () => {
       });
 
       /**
-       * US-04.6-09 AC3: the whole path a merchant's file takes, with the real
+       * The whole path a merchant's file takes, with the real
        * parser worker, validation, commit job, start checkpoint and release
        * tick over PostgreSQL, while every byte any logger writes is captured.
        * None of the customer data in the file, nor the file's name, may be in
@@ -2437,7 +2437,7 @@ describe('order imports PostgreSQL contract', () => {
       });
     });
 
-    describe('retention purge (US-04.6-09)', () => {
+    describe('retention purge', () => {
       const purge = new OrderImportPurgeService(repository);
       const DAY = 24 * HOUR;
 

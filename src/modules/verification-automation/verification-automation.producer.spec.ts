@@ -64,7 +64,7 @@ describe('VerificationAutomationProducer', () => {
       undefined,
     ],
   ] as const)(
-    '%s is due now, attempted once, under one job id per verification (US-08-07)',
+    '%s is due now, attempted once, under one job id per verification',
     async (methodName, jobType, suffix, intent) => {
       await producer[methodName]({
         verificationId: 'ver-1',

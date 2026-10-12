@@ -41,8 +41,7 @@ function text(value: unknown): string {
 }
 
 /**
- * Turns a stored WooCommerce delivery into a `NormalizedOrder` (US-07-03,
- * contract record section 4).
+ * Turns a stored WooCommerce delivery into a `NormalizedOrder`.
  *
  * Everything comes from the order itself: currency, total and the billing
  * country that a local phone number is read in. Nothing is looked up at the

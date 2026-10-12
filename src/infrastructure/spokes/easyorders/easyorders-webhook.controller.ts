@@ -14,8 +14,8 @@ import {
 } from './easyorders-webhook.service';
 
 /**
- * The two webhook URLs an install registers at EasyOrders (contract record
- * section 6). Public: the path token and the `secret` header are the only
+ * The two webhook URLs an install registers at EasyOrders.
+ * Public: the path token and the `secret` header are the only
  * authentication, and both are checked by the service before anything else.
  */
 @Controller('webhooks/easyorders')

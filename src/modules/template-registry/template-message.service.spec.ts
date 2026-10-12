@@ -4,7 +4,7 @@ import { seededRegistryTemplates } from '../../shared/messaging/testing/seeded-t
 import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
 import { TemplateMessageService } from './template-message.service';
 
-/** US-08-07g: the neutral message Settings and the onboarding test render. */
+/** The neutral message Settings and the onboarding test render. */
 const catalog = { describeComponents: describeMetaComponents };
 
 function service(snapshotPreview: boolean) {

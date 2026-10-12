@@ -51,7 +51,7 @@ import { signQuoteToken } from './release/quote-token';
 import { RowValidationService } from './validation/row-validation.service';
 
 /**
- * US-04.6-09 AC1 and AC5: every order-import route, and the Verifications
+ * The authorization matrix: every order-import route, and the Verifications
  * import filter, for every kind of caller.
  *
  * Only the database is faked. Authentication is the real `DualAuthGuard` in
@@ -104,12 +104,12 @@ const IDENTITIES: Record<
   otherOrgOwner: { orgId: ORG_B, role: 'owner' },
   shopifyOrg: { orgId: ORG_SHOPIFY, role: 'owner' },
   flagOff: { orgId: ORG_A, role: 'owner' },
-  // US-04.6-10: owners of organization A with the pilot allow-list set.
+  // Owners of organization A with the pilot allow-list set.
   pilotOrg: { orgId: ORG_A, role: 'owner' },
   nonPilotOrg: { orgId: ORG_A, role: 'owner' },
 };
 
-/** The allow-list each pilot principal runs under (US-04.6-10). */
+/** The allow-list each pilot principal runs under. */
 const PILOT_LISTS: Partial<Record<Principal, string[]>> = {
   pilotOrg: [ORG_B, ORG_A],
   nonPilotOrg: [ORG_B],
@@ -315,7 +315,7 @@ function expected(endpoint: Endpoint, principal: Principal): Expected {
   }
 }
 
-describe('order-import authorization matrix (US-04.6-09)', () => {
+describe('order-import authorization matrix', () => {
   jest.setTimeout(60_000);
 
   let app: INestApplication;

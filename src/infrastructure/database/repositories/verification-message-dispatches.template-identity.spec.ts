@@ -10,7 +10,7 @@ import {
 } from './verification-message-dispatches.repository';
 
 /**
- * US-08-02: the ledger records which template each send carried, at claim
+ * The ledger records which template each send carried, at claim
  * time, and the acceptance mirrors it onto the verification. Rows written
  * before that keep the identity columns NULL and are never given a guess.
  */

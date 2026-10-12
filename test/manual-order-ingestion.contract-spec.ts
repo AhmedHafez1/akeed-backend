@@ -548,7 +548,7 @@ describe('manual order ingestion PostgreSQL contract', () => {
     ).resolves.toBeUndefined();
   });
 
-  describe('webhook event hold (US-04.6-01)', () => {
+  describe('webhook event hold', () => {
     const maxAttempts = 8;
     const farFuture = '2999-01-01T00:00:00.000Z';
 

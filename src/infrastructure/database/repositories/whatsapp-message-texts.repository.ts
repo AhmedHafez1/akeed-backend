@@ -41,7 +41,7 @@ export interface MessageTextWriteResult {
 }
 
 /**
- * The free-form copy staff manage (US-08-07). Global, like the template
+ * The free-form copy staff manage. Global, like the template
  * registry: every text belongs to the single Akeed sender.
  */
 @Injectable()

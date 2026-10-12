@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 /**
- * US-08-03: the template registry is the source of what Akeed sends. The code
- * catalog stays in the repository until the US-08-08 gate as the seed source
+ * The template registry is the source of what Akeed sends. The code
+ * catalog stays in the repository only as the seed source
  * and the characterization baseline, and nothing at runtime may read it.
  */
 const SRC_ROOT = resolve(__dirname, '../..');

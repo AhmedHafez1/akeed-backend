@@ -12,7 +12,7 @@ import {
 import { TrimString } from '../../../shared/validation/trim.transform';
 
 /**
- * One free-form text (US-08-07). These DTOs bound what is stored; the
+ * One free-form text. These DTOs bound what is stored; the
  * placeholder rules per purpose are checked in the service.
  */
 export class AdminMessageTextDto {

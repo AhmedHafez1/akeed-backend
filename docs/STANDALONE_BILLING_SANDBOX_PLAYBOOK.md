@@ -125,5 +125,3 @@ Do these later, one short session each, in the same Goal/Done style:
 2. One sandbox refund. Confirm Paymob's refund callback shape matches what Akeed expects.
 3. One real card payment and one real Vodafone Cash payment on an internal production organization.
 4. Named go/no-go.
-
-The [US-04.5-08 evidence](US-04.5-08-SANDBOX-AND-PRODUCTION-RELEASE-GATE-EVIDENCE.md) tracks the status of each item.

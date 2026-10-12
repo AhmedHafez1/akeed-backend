@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { databaseErrorCode } from '../../../shared/database/serializable-retry';
 
 /**
- * The codes the API's protection layer answers with (US-05-04), beside the
+ * The codes the API's protection layer answers with, beside the
  * `API_*` codes of the channel adapter and the key guard. Integrators switch
  * on them, so they are never renamed.
  */
@@ -64,7 +64,7 @@ export interface OrderApiErrorEnvelope {
  * Reduces whatever a request threw to the API's failure shape.
  *
  * A coded exception was written for the caller: its code and message pass
- * through, which keeps the adapter's `API_*` codes and the E04.5 credit codes
+ * through, which keeps the adapter's `API_*` codes and the credit billing codes
  * unchanged. Anything else gets a fixed message, so SQL, stack traces, provider
  * text and other tenants' identifiers cannot reach the response.
  */

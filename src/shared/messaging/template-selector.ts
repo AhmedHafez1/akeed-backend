@@ -22,12 +22,12 @@ export type TemplateFallbackReason =
   | 'not_approved'
   /**
    * The store's reminder and the language's reminder default could not be
-   * sent, so the reminder carried the first-send template (US-08-07a).
+   * sent, so the reminder carried the first-send template.
    */
   | 'reminder_unavailable'
   /**
    * The style `auto` mapped the number to could not be sent, so the Arabic
-   * default was (US-08-07d).
+   * default was.
    */
   | 'auto_style_unavailable'
   /**
@@ -40,7 +40,7 @@ export type TemplateFallbackReason =
  * Whether a send may use only templates the provider has approved. It applies
  * once this environment has synced at least once: before that no row says
  * anything about the provider, and sends behave as they did before the
- * guardrail existed (US-08-04 open decision 3).
+ * guardrail existed.
  */
 export interface TemplateSendGuardrail {
   enabled: boolean;
@@ -63,7 +63,7 @@ function guardrailApplies(
 /**
  * Whether a template may be sent: active in Akeed and, when the guardrail
  * applies, approved by the provider. A category the provider changed does not
- * make it unsendable; that is a staff alert only (US-08-04 open decision 5).
+ * make it unsendable; that is a staff alert only.
  */
 export function isSendableTemplate(
   template: RegistryTemplate,
@@ -84,8 +84,7 @@ export type TemplateResolution =
 /**
  * The registry key a store has chosen for one language.
  *
- * While the old variant columns exist (until the migration after the US-08-08
- * gate drops them), a store without a stored key is read from its old variant.
+ * While the old variant columns exist, a store without a stored key is read from its old variant.
  * That covers a source created after the key columns were added, which starts
  * with no key.
  */
@@ -201,7 +200,7 @@ export function resolveTemplate(
 
 /**
  * The sendable template of a style: the style itself, else its newest
- * staff-written version (`<style>_v<n>`). US-08-06 names authored styles that
+ * staff-written version (`<style>_v<n>`). Staff authoring names styles that
  * way, so `egyptian` also finds `egyptian_v2`.
  */
 export function findSendableByStyle(
@@ -232,8 +231,7 @@ export function findSendableByStyle(
 }
 
 /**
- * The switches of US-08-07 the selector reads. Absent means off, which is how
- * every send was selected before.
+ * The message-improvement switches the selector reads. Absent means off.
  */
 export interface TemplateSelectionSwitches {
   reminderTemplate?: boolean;

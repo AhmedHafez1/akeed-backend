@@ -2,10 +2,10 @@ import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios';
 import { Observable } from 'rxjs';
 
 /**
- * An in-process Meta Graph `messages` edge for the E08 gate. No request
+ * An in-process Meta Graph `messages` edge for the release gate. No request
  * leaves the process, and no token it sees is a real one.
  *
- * Its behavior comes only from the US-08-01 contract record:
+ * Its behavior is what Meta documents:
  *
  * - A customer's message opens a 24-hour customer service window, and
  *   another one resets it (4.10.1).

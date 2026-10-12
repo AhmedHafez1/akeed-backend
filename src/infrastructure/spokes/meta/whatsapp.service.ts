@@ -209,8 +209,8 @@ export class WhatsAppService {
   }
 
   /**
-   * A text message (record 4.10.4), in the same envelope as a template send.
-   * Sent once, never retried. 131047 is the closed window (record 4.10.3),
+   * A text message, in the same envelope as a template send.
+   * Sent once, never retried. 131047 is the closed window,
    * an expected outcome. Never throws.
    */
   async sendFreeFormText(params: {

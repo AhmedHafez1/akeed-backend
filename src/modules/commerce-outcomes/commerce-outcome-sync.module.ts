@@ -5,7 +5,7 @@ import { CommerceOutcomeSyncTracker } from './commerce-outcome-sync-tracker.serv
 import { CommerceOutcomeSyncProcessor } from './commerce-outcome-sync.processor';
 
 /**
- * Sync-state tracking and its retry worker (US-06-04). Kept apart from
+ * Sync-state tracking and its retry worker. Kept apart from
  * `CommerceOutcomeModule` so the registry still loads without a queue: where
  * this module is absent the registry has no tracker and dispatches exactly as
  * it did before sync states existed. Global, so the registry finds the tracker

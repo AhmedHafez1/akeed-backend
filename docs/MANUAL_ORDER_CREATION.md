@@ -50,7 +50,7 @@ The modal accepts COD orders only and supports `USD`, `EUR`, `EGP`, `SAR`, `AED`
 
 The browser creates the UUID only when the first valid request is sent and keeps it and the normalized submitted payload in component memory. It never stores the draft or token in local/session storage. Network failure, abort, the 30-second timeout, and `MANUAL_ORDER_ACCEPTANCE_FAILED` lock that exact snapshot and expose a same-token retry. Starting over requires a second localized confirmation because the earlier request may already have been accepted. Closing a failed modal preserves the retry state; closing an accepted modal or choosing “Create another order” resets fields and token.
 
-Accepted and duplicate responses show the durable order ID and an accepted/processing-pending state. They never claim that verification, send, delivery, or read has occurred. The follow-up action opens the existing Standalone verifications view; complete accepted-order visibility remains owned by US-04-04.
+Accepted and duplicate responses show the durable order ID and an accepted/processing-pending state. They never claim that verification, send, delivery, or read has occurred. The follow-up action opens the Standalone verifications view, where the accepted order appears once it is processed.
 
 ## Stable error codes
 
@@ -73,6 +73,6 @@ Accepted and duplicate responses show the durable order ID and an accepted/proce
 
 The backend atomically inserts the normalized `orders` row and a pending, dispatch-required `webhook_events` row. Existing source-scoped uniqueness constraints serialize concurrent retries. If either insert fails, both roll back. If queue dispatch fails after commit, the accepted event remains recoverable and the caller still receives the durable acceptance response.
 
-No migration is required for this story. Operators must not delete an accepted event to unblock a retry or manually change its fingerprint. Investigate by event ID, organization, integration, and structured `manual-order-accept` / `manual-order-dispatch` logs without logging customer payloads. Retry with the original key after transient failure.
+Operators must not delete an accepted event to unblock a retry or manually change its fingerprint. Investigate by event ID, organization, integration, and structured `manual-order-accept` / `manual-order-dispatch` logs without logging customer payloads. Retry with the original key after transient failure.
 
-The Standalone normalizer and verification lifecycle are delivered by US-04-03. Until that gate is complete, local durable acceptance is not release authorization for merchant traffic.
+The accepted event is processed by the Standalone normalizer and then follows the common verification lifecycle in [ORDER_CONFIRMATION_WORKFLOW.md](ORDER_CONFIRMATION_WORKFLOW.md).

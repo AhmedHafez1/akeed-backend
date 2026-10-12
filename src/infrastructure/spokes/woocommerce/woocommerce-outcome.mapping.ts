@@ -2,8 +2,8 @@ import type { CommerceOutcomeAction } from '../../../shared/commerce/commerce-ou
 import { isRecord, WOOCOMMERCE_OUTCOME_META_KEY } from './woocommerce-delivery';
 
 /**
- * The outcome mapping approved for building (US-07-01 contract record,
- * section 5). WooCommerce status names stay in this spoke.
+ * The outcome mapping approved for building.
+ * WooCommerce status names stay in this spoke.
  *
  * A confirmation writes the Akeed marker and one internal note and changes no
  * status: WooCommerce has no "confirmed", `processing` is where a placed COD

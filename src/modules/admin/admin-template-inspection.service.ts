@@ -78,7 +78,7 @@ export function templateNotFound(): NotFoundException {
 }
 
 /**
- * What staff see about the template registry (US-08-05): each template, what
+ * What staff see about the template registry: each template, what
  * the provider says about it, who sends it and how it performed. Read-only,
  * and not scoped to a tenant.
  */

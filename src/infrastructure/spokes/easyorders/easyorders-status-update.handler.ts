@@ -19,7 +19,7 @@ export type EasyOrdersStatusEventReason =
   | 'remote_status_observed';
 
 /**
- * EasyOrders order-status events (US-06-04, contract record sections 5, 6).
+ * EasyOrders order-status events.
  *
  * A status event never causes an action: nothing is written to EasyOrders and
  * no verification changes, so it cannot loop. The handler only says what the

@@ -11,11 +11,11 @@ import type {
 /**
  * Meta's template vocabulary and its neutral meaning. This file is the only
  * place Meta's status, event, category and quality strings appear; every
- * table comes from the US-08-01 contract record, and any value the record
- * does not list maps to `unknown`, which is never sendable.
+ * table comes from Meta's documented values, and any value they
+ * do not list maps to `unknown`, which is never sendable.
  */
 
-/** API `status` values (record 4.2.1). `ARCHIVED` is a filter value too. */
+/** API `status` values. `ARCHIVED` is a filter value too. */
 const API_STATUS: Record<string, TemplateReviewStatus> = {
   APPROVED: 'approved',
   IN_APPEAL: 'in_appeal',
@@ -30,7 +30,7 @@ const API_STATUS: Record<string, TemplateReviewStatus> = {
 };
 
 /**
- * Webhook `event` values (record 4.8.7). `FLAGGED`, `LOCKED`, `REINSTATED`
+ * Webhook `event` values. `FLAGGED`, `LOCKED`, `REINSTATED`
  * and `UNARCHIVED` have no documented meaning for sending (4.2.11, 4.2.12):
  * they are carried as their own neutral values, none of which is sendable,
  * and the receiver asks for a sync to read the real status.
@@ -91,8 +91,8 @@ export function mapCategory(value: unknown): TemplateCategory {
 
 /**
  * Reads a quality score. The list response carries it as `{ score, date }`
- * (record 3.2, VERIFIED on the dev app); webhooks carry the bare string
- * (record 4.8.9). Any other shape or value is `unknown`. Quality never decides
+ * (record 3.2, VERIFIED on the dev app); webhooks carry the bare string.
+ * Any other shape or value is `unknown`. Quality never decides
  * whether a template may be sent.
  */
 export function mapQuality(value: unknown): TemplateQuality {
@@ -102,7 +102,7 @@ export function mapQuality(value: unknown): TemplateQuality {
 
 /**
  * Meta writes language codes with `_` in the API and sometimes with `-` in
- * webhooks (record 4.8.16). Both are read as the same code.
+ * webhooks. Both are read as the same code.
  */
 export function normalizeLanguageCode(value: string): string {
   return value.trim().replaceAll('-', '_');
@@ -124,8 +124,7 @@ function buttonKind(type: unknown): TemplateButtonKind {
  * Reads `components` in the creation syntax the record documents (S2, 4.7.5):
  * `BODY`, optional text `HEADER` and `FOOTER`, and a `BUTTONS` component of
  * `{ type, text }`. Anything else, including a header that is not text, makes
- * the whole snapshot `unknown` rather than a partial guess (PROVISIONAL until
- * the US-08-01 live run captures a list response).
+ * the whole snapshot `unknown` rather than a partial guess.
  */
 export function mapComponents(value: unknown): TemplateComponentsSnapshot {
   const unknown = { unknown: true } as const;
@@ -162,7 +161,7 @@ export function mapComponents(value: unknown): TemplateComponentsSnapshot {
   };
 }
 
-/** Graph error codes for template management (record 4.1.11). */
+/** Graph error codes for template management. */
 export const RATE_LIMIT_ERROR_CODES: ReadonlySet<number> = new Set([
   4, 80007, 80008,
 ]);
@@ -173,7 +172,7 @@ export function isPermissionErrorCode(code: number): boolean {
   return code === 10 || (code >= 200 && code <= 299);
 }
 
-/** The codes Meta names for refusing a template's text (record 4.1.11). */
+/** The codes Meta names for refusing a template's text. */
 const SUBMISSION_ERROR: Record<number, TemplateSubmissionErrorCode> = {
   100: 'invalid_parameter',
   131009: 'invalid_parameter',
@@ -215,7 +214,7 @@ const REJECTION_REASON: Record<string, TemplateRejectionReason> = {
 
 /**
  * Why review rejected a template: `rejected_reason` on a listed template
- * (record 3.2) or `reason` on a status webhook (4.8.6). Undefined when the
+ * or `reason` on a status webhook (4.8.6). Undefined when the
  * provider sent nothing, so a caller can tell "not said" from "none".
  */
 export function mapRejectionReason(

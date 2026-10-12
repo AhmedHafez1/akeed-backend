@@ -25,7 +25,7 @@ export const INTEGRATION_API_KEY_LIST_LIMIT = 50;
 const PREFIX_ATTEMPTS = 3;
 
 /**
- * Issues, lists and revokes integration API keys (US-05-01).
+ * Issues, lists and revokes integration API keys.
  *
  * A key is a credential for exactly one Standalone source: the one the
  * shared resolver returns for the caller's organization. Nothing here queries

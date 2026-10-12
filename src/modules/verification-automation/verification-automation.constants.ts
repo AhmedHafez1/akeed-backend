@@ -12,9 +12,9 @@
  *                            `integrations.escalation_delay_minutes` and tag
  *                            the Shopify order.
  *   4. ACKNOWLEDGMENT      — one free-form reply after a customer confirms or
- *                            cancels (US-08-07b). Attempted once, never retried.
+ *                            cancels. Attempted once, never retried.
  *   5. UNRESOLVED_REPLY_NUDGE — one free-form nudge after a typed reply Akeed
- *                            could not read (US-08-07c). Attempted once.
+ *                            could not read. Attempted once.
  */
 
 export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';

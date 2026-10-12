@@ -1,6 +1,6 @@
-# Standalone onboarding v2
+# Standalone onboarding
 
-Status: approved design, 29 Sep 2026. Mockups: "Akeed Standalone Onboarding" design canvas (Claude artifact).
+The screens, defaults and states of Standalone onboarding. The API calls behind them are in [ONBOARDING_AND_BILLING.md](ONBOARDING_AND_BILLING.md#standalone-onboarding).
 
 ## Goal
 Signup to first real WhatsApp confirmation as fast as possible, for merchants without Shopify. Standalone should be a sibling of Shopify embedded onboarding v2, not a copy: same philosophy (one short form, prove it on your own phone, then go live), with a platform-appropriate implementation.
@@ -14,7 +14,7 @@ Signup to first real WhatsApp confirmation as fast as possible, for merchants wi
 6. Dashboard first-run: one "first real confirmation" card with two ways to add orders (manual, file). KPIs and top-bar actions stay hidden until the first order exists.
 
 ## Decisions
-- Remove from onboarding: the confirmation-rules step, the review step, the auto-verify switch, "Save progress", and WelcomeCreditsModal.
+- Onboarding has no confirmation-rules step, no review step, no auto-verify switch and no "Save progress".
 - Auto-verify is always on for standalone. Manual orders are rejected when it is off.
 - Defaults: language auto; currency from the merchant phone's country; timezone from the browser if it is in the curated list, else from the phone country; first send immediate; one follow-up after 2 h; escalation after 6 h; quiet hours off; COD fallback false.
 - Completion: call POST /api/onboarding/complete only when the test is confirmed, skipped, or WhatsApp is unavailable, never on the Your store submit. The onboarding test (/api/onboarding/test) is billing-exempt and works while onboarding is pending.

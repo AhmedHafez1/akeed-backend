@@ -78,8 +78,8 @@ interface InstallCallbackBody {
 }
 
 /**
- * Reads only the two documented fields and ignores anything else, which the
- * contract record lists as unknown. Nothing in the body is trusted beyond its
+ * Reads only the two documented fields and ignores anything else, which
+ * EasyOrders does not document. Nothing in the body is trusted beyond its
  * shape: the key is probed and the store id is stored as a claim.
  */
 export function parseInstallCallbackBody(
@@ -108,8 +108,7 @@ export function parseInstallCallbackBody(
 }
 
 /**
- * The EasyOrders install (US-06-02), as the US-06-01 contract record defines
- * it: an owner or admin of a source-less pilot organization opens a
+ * The EasyOrders install: an owner or admin of a source-less pilot organization opens a
  * single-use context, the seller accepts in EasyOrders, and the seller's
  * browser calls back with a key that is checked before anything is stored.
  */
@@ -258,7 +257,7 @@ export class EasyOrdersAuthService {
   }
 
   /**
-   * Stops the source on Akeed's side (US-06-05): no new webhook is accepted,
+   * Stops the source on Akeed's side: no new webhook is accepted,
    * nothing queued sends a message or writes to the store, and every stored
    * credential is wiped. History stays.
    *
@@ -430,7 +429,7 @@ export class EasyOrdersAuthService {
   }
 
   /**
-   * The fallback for the learned secrets (contract record section 7): the
+   * The fallback for the learned secrets: the
    * seller copies both from their EasyOrders dashboard. They are encrypted
    * and write-only.
    */
@@ -482,7 +481,7 @@ export class EasyOrdersAuthService {
 
   /**
    * The store currency and the country local phone numbers are read in. The
-   * order payload has neither (contract record section 4), so until both are
+   * order payload has neither, so until both are
    * chosen every order is recorded as not eligible.
    */
   async saveOrderSettings(

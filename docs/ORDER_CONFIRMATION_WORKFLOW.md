@@ -33,7 +33,7 @@ Out of scope:
 
 - Creating Shopify orders before checkout submission.
 - Automatically canceling Shopify orders on a customer cancel reply. The current customer cancel flow marks and tags the order, but does not call Shopify order cancellation.
-- Platforms other than Shopify and Standalone. EasyOrders order ingestion is built and switched off (US-06-03); its outcome writes and WooCommerce are roadmap items.
+- How an EasyOrders or WooCommerce order arrives and how its outcome is written back to the store. Both feed the same lifecycle described here; their ingestion and outcome synchronization are in [Integrations, Webhooks, And Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#easyorders-connection).
 
 ## Lifecycle States
 
@@ -124,7 +124,7 @@ Shared vocabulary for these rules lives in
 
 ### Which template a send carried
 
-Each dispatch records the template it carried (US-08-02), so staff can compare
+Each dispatch records the template it carried, so staff can compare
 styles and tell what a customer actually received.
 
 | Column on `verification_message_dispatches` | Holds |
@@ -133,14 +133,14 @@ styles and tell what a customer actually received.
 | `template_purpose` | `initial`, `reminder`, or `test` when the order is a test order |
 | `meta_template_name`, `meta_language_code` | The provider's template name and language code as sent, for example `akeed_cod_verification_direct_eg` and `ar_EG` |
 | `resolved_language` | `ar` or `en`: the language the send resolved to, never the store's `auto` |
-| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`; since US-08-07 also `reminder_unavailable` and `auto_style_unavailable`; `order_details_missing` when the chosen template shows items or an address the order does not have), and that stored key. NULL when the choice was sent or the store had none (US-08-04) |
+| `template_fallback_reason`, `template_skipped_key` | Why the store's stored choice was not the template sent (`key_unknown`, `key_inactive`, `wrong_language`, `not_approved`, `reminder_unavailable`, `auto_style_unavailable`; `order_details_missing` when the chosen template shows items or an address the order does not have), and that stored key. NULL when the choice was sent or the store had none |
 
 - **Selected before the claim.** `selectTemplateForSend`
   (`src/shared/messaging/template-selector.ts`) picks the template from the
   template registry, the store's settings and the customer's number, and the
   claim writes it. A send whose outcome is never learned, or that the provider
   rejects, still says which template it carried.
-- **From the registry (US-08-03).** Templates are rows of `whatsapp_templates`,
+- **From the registry.** Templates are rows of `whatsapp_templates`,
   read through `TEMPLATE_REGISTRY_PORT` (a 60-second in-memory copy). A store
   holds the registry key of its Arabic and its English style in
   `integrations.cod_template_ar_key` and `cod_template_en_key`, for example
@@ -149,18 +149,18 @@ styles and tell what a customer actually received.
     falls back to the language default. The fallback is logged as
     `sendOnce.templateFallback` with the stored key and the reason
     (`key_unknown`, `key_inactive`, `wrong_language`), and recorded on the
-    dispatch (US-08-04).
+    dispatch.
   - With no sendable default for the language, nothing is sent: the send returns
     `skipped` with `template_unavailable` before the dispatch is claimed, so no
     usage is reserved, and `sendOnce.templateSelection` is logged as an error.
-    It never falls back to the other language. Since US-08-04 a skipped first
+    It never falls back to the other language. A skipped first
     send marks the verification `failed` with reason `template_unavailable`
     (retryable once a template is back), and a skipped reminder records
     `follow_up_skipped: template_unavailable`.
-  - Until the old columns are dropped (after the US-08-08 gate), a store with
-    no key is read from `cod_template_ar_variant` / `cod_template_en_variant`,
-    and a settings write sets both the key and the old column.
-  - **Guardrail (US-08-04).** With `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=true`
+  - A store with no key is read from the variant columns
+    `cod_template_ar_variant` / `cod_template_en_variant`, and a settings
+    write sets both the key and the variant column.
+  - **Guardrail.** With `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED=true`
     and the environment synced from Meta at least once, a template is sent
     only when it is active **and** approved at Meta. A selection Meta has not
     approved (paused, rejected, disabled, missing, unknown, and so on) falls
@@ -169,7 +169,7 @@ styles and tell what a customer actually received.
     so a template paused after the first send falls back or skips. Before the
     first sync, and with the switch off, only `is_active` counts. A template
     Meta re-categorized stays sendable and raises a staff alert. See
-    [Template sync, status webhooks and the send guardrail](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#template-sync-status-webhooks-and-the-send-guardrail-us-08-04).
+    [Template sync, status webhooks and the send guardrail](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#template-sync-status-webhooks-and-the-send-guardrail).
 - **Confirmed at acceptance.** The messaging adapter is handed that selection and
   answers with what it sent. The acceptance transaction stamps the answer on the
   dispatch and, in the same statement that stores `wa_message_id`, writes the
@@ -177,8 +177,8 @@ styles and tell what a customer actually received.
   Those two columns always describe the message `wa_message_id` points at, and
   are NULL until a send is accepted.
 - **No placeholders.** `template_name` and `language_code` on a new dispatch hold
-  the same provider name and code. Nothing writes `cod_verification` or `auto`
-  any more.
+  the same provider name and code, never a placeholder such as
+  `cod_verification` or `auto`.
 - **Old rows.** Rows from before migration `0053_dispatch_template_identity.sql`
   keep the five columns NULL and are reported as "not recorded". They are never
   backfilled.
@@ -197,40 +197,48 @@ store and source. Add `include_test=true` to count test sends.
   answers `400 ADMIN_TEMPLATE_METRICS_RANGE_INVALID`.
 - Sends without a recorded template are returned apart, under `not_recorded`.
 
-### Customer-message improvements (US-08-07)
+### Customer-message improvements
 
 Seven improvements, each behind its own switch and all off by default (see
-[`ENVIRONMENT.md`](ENVIRONMENT.md#customer-message-improvements-us-08-07)).
-With every switch off, sends, settings and webhooks behave as before and the
-Meta payload is byte-identical to the characterization suite.
+[`ENVIRONMENT.md`](ENVIRONMENT.md#customer-message-improvements)).
+With every switch off, the Meta payload is the one the characterization
+suite pins.
 
-- **Reminder template (a).** The follow-up sends the store's chosen
+- **Reminder template.** The follow-up sends the store's chosen
   `cod_reminder` template for the resolved language
   (`integrations.cod_reminder_ar_key`, `cod_reminder_en_key`). No reminder
-  chosen: the follow-up sends the first-send template, as before. A chosen
+  chosen: the follow-up sends the first-send template. A chosen
   reminder that cannot be sent falls back to the language's reminder default,
   then to the first-send template with `reminder_unavailable`. A reminder is
   never skipped only because no reminder template exists. The dispatch is
   still recorded with purpose `reminder`.
-- **Arabic style by country (d).** A store with
+- **Arabic style by country.** A store with
   `integrations.cod_template_ar_auto = true` sends Arabic customers the
   Egyptian style for `+20`, the Gulf style for `+966`, `+971`, `+973`, `+974`,
   `+965`, `+968`, and the standard style for every other Arabic code
   (`src/shared/messaging/arabic-style.ts`). A style that cannot be sent falls
   back to the Arabic default with `auto_style_unavailable`. A store on `auto`
   with a reminder chosen gets the reminder of the same mapped style.
-- **Name fallbacks (e).** A missing customer or store name is filled from the
+- **Name fallbacks.** A missing customer or store name is filled from the
   `fallback_customer_name` / `fallback_store_name` texts of the send's language
-  (`whatsapp_message_texts`), never "Akeed". A missing text keeps the old word
-  and logs `sendOnce.localizedFallback` with `message_text_unavailable`.
-- **Amount (f).** `total` is written per language and currency
+  (`whatsapp_message_texts`), never "Akeed". A missing text keeps the built-in
+  word (`Customer`, `Akeed Store`) and logs `sendOnce.localizedFallback` with `message_text_unavailable`.
+- **Amount.** `total` is written per language and currency
   (`src/shared/messaging/message-values.ts`): `1,250.00 ج.م` in Arabic,
   `EGP 1,250.00` in English, minor units always shown, Western digits, never
   rounded. No currency: the number alone. A value that is not a plain decimal
-  is sent as before.
-- **Acknowledgment (b) and nudge (c).** Free-form texts, sent once and never
-  retried, after the verification's outcome is final (contract record 4.10.8
-  worst-case rule). The webhook only queues them on the
+  is sent as stored.
+
+  | Currency | Arabic | English |
+  | --- | --- | --- |
+  | EGP, SAR, AED, QAR | `1,250.00 ج.م`, `ر.س`, `د.إ`, `ر.ق` | `EGP 1,250.00` |
+  | KWD, BHD, OMR (3 decimals) | `1,250.000 د.ك`, `د.ب`, `ر.ع` | `KWD 1,250.000` |
+  | USD | `1,250.00 $` | `USD 1,250.00` |
+  | Unknown code, for example XYZ | `1,250.00 XYZ` | `XYZ 1,250.00` |
+
+- **Acknowledgment and nudge.** Free-form texts, sent once and never
+  retried, after the verification's outcome is final: Meta does not document
+  what a retried free-form send does, so each is best effort. The webhook only queues them on the
   `verification-automation` queue (`verification.acknowledgment`,
   `verification.unresolved_reply_nudge`, one attempt each);
   `CustomerReplyFollowUpService` (`src/modules/verification-replies/`) sends
@@ -252,12 +260,13 @@ Meta payload is byte-identical to the characterization suite.
     send, else the language's `default` text.
   - A delivery receipt for a service message touches only its own row; a
     `failed` receipt marks it `failed` (`delivery_failed`).
-- **Preview (g).** The settings response carries `template.messages` and
+- **Preview.** The settings response carries `template.messages` and
   `message` on each style, and the onboarding test carries `message`: lines of
   text and variable segments plus button labels. With
   `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` on they are read from the template text
   Meta returned at the last sync; otherwise from the stored preview. The
-  four-block `preview`/`previews` keys stay until the US-08-08 gate.
+  response still carries the four-block `preview`/`previews` keys; the
+  frontend reads only the neutral message.
 
 ## Merchant Controls
 
@@ -386,8 +395,7 @@ Usage principles:
 - Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
-- Acknowledgments and nudges (US-08-07) are free at Meta (contract record
-  4.10.5): they reserve no usage, write no credit or dispatch row, and are
+- Acknowledgments and nudges are free at Meta: they reserve no usage, write no credit or dispatch row, and are
   recorded only in `verification_service_messages`.
 - Dashboard usage shows consumed count and included limit for the current billing period.
 - Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade.

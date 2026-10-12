@@ -52,7 +52,7 @@ export class AdminController {
       user_id: request.admin.userId,
       feature_enabled: true,
       // So the UI can hide template write controls; the backend refuses
-      // them for anyone else whatever the UI shows (US-08-06 criterion 1).
+      // them for anyone else whatever the UI shows.
       template_operations: {
         enabled: templates.operationsEnabled,
         operator: isWhatsappTemplateOperator(templates, request.admin.userId),

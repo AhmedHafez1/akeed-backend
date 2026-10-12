@@ -40,7 +40,7 @@ function codeOf(run: () => unknown): unknown {
   return null;
 }
 
-describe('WhatsappTemplateOperatorGuard (US-08-06 criterion 1)', () => {
+describe('WhatsappTemplateOperatorGuard', () => {
   const enabled = {
     WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'true',
     WHATSAPP_TEMPLATE_OPERATOR_IDS: OPERATOR,

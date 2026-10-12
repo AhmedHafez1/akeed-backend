@@ -76,7 +76,7 @@ describe('MetaTemplateWebhookHandler', () => {
       languageCode: 'ar',
       providerTemplateId: '900000000000001',
       status: status as TemplateProviderEvent['status'],
-      // The reason travels with every status event (record 4.8.8); a
+      // The reason travels with every status event; a
       // scheduled deletion carries none.
       rejectionReason:
         name === 'status-rejected'

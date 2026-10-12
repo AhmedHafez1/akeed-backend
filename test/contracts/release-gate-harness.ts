@@ -125,7 +125,7 @@ export interface RecordedAutomationJob {
 }
 
 /**
- * US-04.6-10 release gate: the whole Standalone confirmation path over
+ * The bulk import release gate: the whole Standalone confirmation path over
  * PostgreSQL. Real repositories, real ingestion, real import services, the
  * real dispatcher and queue processor, the real hub, send service, credit
  * ledger and WhatsApp webhook service. Only the edges are fakes: the messaging

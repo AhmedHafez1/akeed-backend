@@ -4,7 +4,7 @@ import type { WhatsAppWebhookPayloadDto } from './dto/whatsapp-webhook.dto';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
 
 /**
- * A staff template test (US-08-05) is sent with an ID that belongs to no
+ * A staff template test is sent with an ID that belongs to no
  * verification. These cases pin that whatever comes back for it, a button tap
  * or a typed answer, changes nothing.
  */

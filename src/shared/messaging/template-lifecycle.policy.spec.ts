@@ -42,7 +42,7 @@ function decide(
   });
 }
 
-describe('template lifecycle rules (US-08-06 criteria 6 and 7)', () => {
+describe('template lifecycle rules', () => {
   describe('activate', () => {
     it('activates an approved template', () => {
       expect(decide('activate', fresh)).toEqual({
@@ -214,7 +214,7 @@ describe('template lifecycle rules (US-08-06 criteria 6 and 7)', () => {
   );
 });
 
-describe('template edit rules (US-08-06 criterion 5)', () => {
+describe('template edit rules', () => {
   const unused = {
     isActive: false,
     isDefault: false,

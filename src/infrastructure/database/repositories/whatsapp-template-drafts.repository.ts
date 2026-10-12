@@ -124,7 +124,7 @@ export function effectiveDraftState(
 }
 
 /**
- * Staff template drafts (US-08-06). Every write records its audit row in the
+ * Staff template drafts. Every write records its audit row in the
  * same transaction. Like the registry, drafts are global: every template
  * belongs to Akeed's one sender.
  */
@@ -165,7 +165,7 @@ export class WhatsappTemplateDraftsRepository {
 
   /**
    * Every provider name and language already spoken for: registry rows and
-   * the other drafts. A new draft may not reuse one (record 4.4.3).
+   * the other drafts. A new draft may not reuse one.
    */
   async takenIdentities(exceptDraftId?: string): Promise<Set<string>> {
     const [templates, drafts] = await Promise.all([

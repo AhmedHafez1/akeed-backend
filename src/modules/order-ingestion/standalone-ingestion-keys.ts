@@ -29,7 +29,7 @@ export function importRowKey(batchId: string, rowNumber: number): string {
 /**
  * The shared external identity of a merchant's own order reference.
  *
- * File import and the E05 API both call this, so the same merchant order
+ * File import and the order API both call this, so the same merchant order
  * resolves to the same `externalOrderId` whichever channel it arrives by and
  * the `(integration_id, external_order_id)` unique index dedupes it.
  * "#1001", " 1001 " and "# 10 01" are all `ref:1001`. Returns null when

@@ -2,7 +2,7 @@ import type { TemplateLanguage } from './template-registry.types';
 
 /**
  * The currency word Arabic readers expect after an amount. A currency not
- * listed here is written with its ISO code (US-08-07f).
+ * listed here is written with its ISO code.
  */
 const ARABIC_CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
   EGP: 'ج.م',
@@ -60,7 +60,7 @@ function fractionFor(fraction: string, minorUnits: number): string {
 }
 
 /**
- * The `total` value written per language and currency (US-08-07f):
+ * The `total` value written per language and currency:
  * `1,250.00 ج.م` in Arabic, `EGP 1,250.00` in English, Western digits, the
  * currency's minor units always shown. It works on the stored decimal
  * string and never rounds, so the amount cannot change. A missing currency

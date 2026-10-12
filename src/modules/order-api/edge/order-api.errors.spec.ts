@@ -48,7 +48,7 @@ describe('order API error envelope', () => {
     });
   });
 
-  it('passes a code it does not own through unchanged (E04.5 credit codes)', () => {
+  it('passes a code it does not own through unchanged (credit codes)', () => {
     const exception = new ConflictException({
       statusCode: 409,
       message: 'Not enough credits.',

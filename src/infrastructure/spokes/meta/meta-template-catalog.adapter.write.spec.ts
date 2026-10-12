@@ -81,7 +81,7 @@ async function failure(
   throw new Error('expected a failure');
 }
 
-describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', () => {
+describe('MetaTemplateCatalogAdapter create and edit', () => {
   let warn: jest.SpyInstance;
   let log: jest.SpyInstance;
 
@@ -143,7 +143,7 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
     expect(logged()).not.toContain(FAKE_TOKEN);
   });
 
-  it('writes a positional body as {{1}}, {{2}} with a nested example list (record 4.6.4)', async () => {
+  it('writes a positional body as {{1}}, {{2}} with a nested example list', async () => {
     const { adapter, api } = setup();
 
     await adapter.createTemplate(
@@ -169,7 +169,7 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
     });
   });
 
-  it('puts the confirm button first, which is index 0 at send time (record 4.7.6)', async () => {
+  it('puts the confirm button first, which is index 0 at send time', async () => {
     const { adapter, api } = setup();
 
     await adapter.createTemplate(toTemplateSubmission(draft()));
@@ -187,17 +187,14 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
     ['APPROVED', 'approved'],
     ['PENDING', 'pending'],
     ['REJECTED', 'rejected'],
-  ])(
-    'reads a create answered %s as %s (record 4.2.2)',
-    async (status, neutral) => {
-      const { adapter, api } = setup();
-      api.createStatus = status;
+  ])('reads a create answered %s as %s', async (status, neutral) => {
+    const { adapter, api } = setup();
+    api.createStatus = status;
 
-      await expect(
-        adapter.createTemplate(toTemplateSubmission(draft())),
-      ).resolves.toMatchObject({ status: neutral });
-    },
-  );
+    await expect(
+      adapter.createTemplate(toTemplateSubmission(draft())),
+    ).resolves.toMatchObject({ status: neutral });
+  });
 
   it.each<[number, TemplateSubmissionErrorCode]>([
     [100, 'invalid_parameter'],
@@ -300,7 +297,7 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
     expect(api.writes).toHaveLength(0);
   });
 
-  describe('edit (record 4.1.4, 4.3.4)', () => {
+  describe('edit', () => {
     it('replaces every component of the template, and nothing else', async () => {
       const { adapter, api } = setup();
       const [template] = api.templates;
@@ -382,7 +379,7 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
     });
   });
 
-  describe('rejection reason (record 3.2, 4.8.8)', () => {
+  describe('rejection reason', () => {
     it.each([
       ['ABUSIVE_CONTENT', 'abusive_content'],
       ['INCORRECT_CATEGORY', 'incorrect_category'],
@@ -421,7 +418,7 @@ describe('MetaTemplateCatalogAdapter create and edit (US-08-06 criterion 4)', ()
   });
 
   /**
-   * The dry run of the first real submission (US-08-06). The request below is
+   * The dry run of the first real submission. The request below is
    * built by the real validation and the real adapter and is compared with
    * the fixture staff review before anything is sent to Meta. It reaches only
    * the in-process fake.

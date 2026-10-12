@@ -35,7 +35,7 @@ function at(payload: Payload, time: number): Payload {
 }
 
 /**
- * US-08-04 criterion 3, from the committed webhook fixtures through the real
+ * Template notifications, from the committed webhook fixtures through the real
  * handler and the real event rules. The fixtures name the Arabic default
  * (`akeed_cod_verification_friendly` / `ar`).
  */

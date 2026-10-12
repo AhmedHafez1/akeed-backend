@@ -22,7 +22,7 @@ describe('parseWhatsappTemplateConfig', () => {
     expect(isWhatsappTemplateOperator(config, OPERATOR)).toBe(false);
   });
 
-  it('ships with every US-08-07 switch off, and reads each on its own', () => {
+  it('ships with every message-improvement switch off, and reads each on its own', () => {
     expect(parseWhatsappTemplateConfig({}).messageImprovements).toEqual({
       reminderTemplate: false,
       acknowledgment: false,
@@ -51,7 +51,7 @@ describe('parseWhatsappTemplateConfig', () => {
     }
   });
 
-  it('rejects a US-08-07 switch that is not true or false', () => {
+  it('rejects a message-improvement switch that is not true or false', () => {
     expect(() =>
       parseWhatsappTemplateConfig({ WHATSAPP_ACKNOWLEDGMENT_ENABLED: 'yes' }),
     ).toThrow(/WHATSAPP_ACKNOWLEDGMENT_ENABLED must be true or false/);

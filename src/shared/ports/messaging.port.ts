@@ -29,8 +29,8 @@ export interface MessagingPort {
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
     /**
-     * Words for a missing customer or store name, in the template's language
-     * (US-08-07e). Absent: the adapter keeps its own words, as before.
+     * Words for a missing customer or store name, in the template's language.
+     * Absent: the adapter keeps its own words, as before.
      */
     fallbacks?: { customer?: string; store?: string };
     /**
@@ -57,8 +57,8 @@ export interface MessagingPort {
 }
 
 /**
- * What became of a free-form text (US-08-07 b, c). Sent once and never
- * retried (contract record, worst-case rule for 4.10.8).
+ * What became of a free-form text. Sent once and never
+ * retried.
  *
  * - `accepted`: the provider took it and gave its message id.
  * - `window_closed`: the customer service window had closed (record

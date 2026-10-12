@@ -43,7 +43,7 @@ import { FAKE_MESSAGES_TOKEN } from '../contracts/meta-messages-fake';
 import { FAKE_TOKEN } from '../contracts/meta-template-api-fake';
 
 /**
- * US-08-08 criterion 6: who can reach the template routes.
+ * Who can reach the template routes.
  *
  * The routes are read from the controllers by reflection, so a route added
  * later is in the matrix without anyone listing it. The guards and the staff
@@ -207,7 +207,7 @@ const NON_STAFF = [
   'unknownToSupabase',
 ] as const;
 
-describe('US-08-08 role and operator controls', () => {
+describe('template role and operator controls', () => {
   let app: INestApplication;
   let lines: string[];
   let responses: string[];
@@ -510,11 +510,11 @@ describe('US-08-08 role and operator controls', () => {
 });
 
 /**
- * US-08-08 criterion 6, last point: no fixture carries a token or an app
+ * No fixture carries a token or an app
  * secret. The fakes' own tokens are synthetic and live in `test/contracts`,
  * not in a fixture; they must not have leaked into one either.
  */
-describe('US-08-08 fixture secret scan', () => {
+describe('template fixture secret scan', () => {
   const ROOT = resolve(__dirname, '../fixtures/whatsapp-templates');
   const PATTERNS: [string, RegExp][] = [
     ['a Meta access token', /EAA[A-Za-z0-9]{20,}/],
@@ -534,7 +534,7 @@ describe('US-08-08 fixture secret scan', () => {
 
   const all = files(ROOT);
 
-  it('reads every committed E08 fixture', () => {
+  it('reads every committed template fixture', () => {
     expect(all.length).toBeGreaterThanOrEqual(25);
   });
 

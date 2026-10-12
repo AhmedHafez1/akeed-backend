@@ -7,9 +7,9 @@ import {
 } from './whatsapp-template.config';
 
 /**
- * The US-08-07 switches for code that has no `ConfigService` of its own, the
+ * The message-improvement switches for code that has no `ConfigService` of its own, the
  * send path among it. Without a validated configuration every switch reads
- * off, which is how every send behaved before US-08-07.
+ * off.
  */
 @Injectable()
 export class MessageImprovementSwitches {

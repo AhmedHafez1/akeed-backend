@@ -1,7 +1,7 @@
 import type { TemplateLanguage } from './template-registry.types';
 
 /**
- * Free-form copy staff manage (US-08-07). Not a provider template: these are
+ * Free-form copy staff manage. Not a provider template: these are
  * sent as plain text inside the customer service window, or used as words in
  * a template's values.
  *

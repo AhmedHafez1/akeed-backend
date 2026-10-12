@@ -690,7 +690,7 @@ describe('POST /api/v1/orders', () => {
         'API_PLAN_LIMIT_REACHED',
       ],
       [
-        'a suspended credit account (E04.5 code unchanged)',
+        'a suspended credit account (credit code unchanged)',
         () =>
           creditEligibility.resolveDenial.mockResolvedValue(
             'CREDIT_ACCOUNT_SUSPENDED',
@@ -699,7 +699,7 @@ describe('POST /api/v1/orders', () => {
         'CREDIT_ACCOUNT_SUSPENDED',
       ],
       [
-        'no credits left (E04.5 code unchanged)',
+        'no credits left (credit code unchanged)',
         () =>
           creditEligibility.resolveDenial.mockResolvedValue(
             'INSUFFICIENT_CREDITS',
@@ -804,7 +804,7 @@ describe('POST /api/v1/orders', () => {
     );
   });
 
-  describe('correlation ID (US-05-04)', () => {
+  describe('correlation ID', () => {
     it('generates one for a request that brings none and returns it on success', async () => {
       const response = await post().send(order).expect(202);
 
@@ -874,7 +874,7 @@ describe('POST /api/v1/orders', () => {
     });
   });
 
-  describe('one error envelope (US-05-04)', () => {
+  describe('one error envelope', () => {
     const ENVELOPE_KEYS = ['code', 'correlationId', 'message'];
 
     it.each<[string, () => request.Test, number, string]>([
@@ -960,7 +960,7 @@ describe('POST /api/v1/orders', () => {
     });
   });
 
-  describe('body-size limit (US-05-04)', () => {
+  describe('body-size limit', () => {
     const LIMIT = ROOMY_LIMITS.maxBodyBytes;
     const TOO_LARGE = {
       code: 'API_PAYLOAD_TOO_LARGE',
@@ -1053,7 +1053,7 @@ describe('POST /api/v1/orders', () => {
     );
   });
 
-  describe('rate limits (US-05-04)', () => {
+  describe('rate limits', () => {
     const LIMITS: OrderApiConfig = {
       perIntegrationPerMinute: 3,
       globalPerMinute: 5,
@@ -1211,7 +1211,7 @@ describe('POST /api/v1/orders', () => {
     });
   });
 
-  describe('request log (US-05-04)', () => {
+  describe('request log', () => {
     /** Things no log line or error body may ever contain. */
     const SECRETS = [
       keyA.plaintext,

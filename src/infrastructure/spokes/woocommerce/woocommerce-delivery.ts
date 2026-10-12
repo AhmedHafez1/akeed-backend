@@ -1,11 +1,11 @@
 /**
- * What Akeed keeps of a WooCommerce order delivery (US-07-03).
+ * What Akeed keeps of a WooCommerce order delivery.
  *
  * The delivered order carries the customer's email, addresses, IP address,
  * line items and whatever other plugins put in `meta_data`. None of that is
  * needed to confirm an order, so the event row holds the delivery's
- * identifiers and only the fields the contract record reads (section 4), plus
- * Akeed's own outcome marker for the echo rule (section 5).
+ * identifiers and only the fields ingestion reads, plus
+ * Akeed's own outcome marker for the echo rule.
  */
 export interface WooCommerceStoredDelivery {
   topic: string;

@@ -8,8 +8,8 @@ import {
 } from './woocommerce-ingestion.policy';
 
 /**
- * WooCommerce states the payment gateway on every order (contract record
- * section 4). Only the core gateway `cod` is cash on delivery; a custom
+ * WooCommerce states the payment gateway on every order.
+ * Only the core gateway `cod` is cash on delivery; a custom
  * gateway, and a missing one, is not eligible. The ingestion policy already
  * applied the same test, and it is repeated here so the core never falls back
  * to another platform's rule.

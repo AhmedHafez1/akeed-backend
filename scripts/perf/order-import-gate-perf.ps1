@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
-# US-04.6-10 AC6: local performance baseline on a disposable PostgreSQL.
-# Results are written to the epic evidence/US-04.6-10-perf-local.json and are
+# Local performance baseline on a disposable PostgreSQL.
+# Results are written to .tmp/release-gates/order-import-gate-perf.json and are
 # TARGET VALIDATION REQUIRED (the targets are defined on staging).
 $containerId = $null
 $originalTestUrl = $env:E01_TEST_DATABASE_URL
@@ -19,7 +19,7 @@ try {
     $binding = (& docker port $containerId 5432/tcp).Trim()
     if ($binding -notmatch '^127\.0\.0\.1:(\d+)$') { throw 'Unexpected test database port binding.' }
     $env:E01_TEST_DATABASE_URL = "postgresql://e01_test:e01-synthetic-only@127.0.0.1:$($Matches[1])/akeed_e01_test"
-    if (-not $env:PERF_OUT) { $env:PERF_OUT = Join-Path (Get-Location) 'docs/Epics/04.6-standalone-bulk-order-import/evidence/US-04.6-10-perf-local.json' }
+    if (-not $env:PERF_OUT) { $env:PERF_OUT = Join-Path (Get-Location) '.tmp/release-gates/order-import-gate-perf.json' }
     & docker version --format 'Docker {{.Server.Version}}'
     & npm.cmd run perf:order-import-gate
     $testExitCode = $LASTEXITCODE

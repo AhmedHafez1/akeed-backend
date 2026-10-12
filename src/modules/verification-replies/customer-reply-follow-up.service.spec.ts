@@ -127,7 +127,7 @@ const NUDGE: CustomerReplyFollowUp = {
   repliedAt: new Date(NOW - 60_000).toISOString(),
 };
 
-describe('CustomerReplyFollowUpService (US-08-07 b, c)', () => {
+describe('CustomerReplyFollowUpService', () => {
   beforeEach(() => {
     jest.spyOn(Date, 'now').mockReturnValue(NOW);
     jest.spyOn(Logger.prototype, 'log').mockImplementation();

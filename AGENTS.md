@@ -103,7 +103,7 @@ boot via `runMigrations()` in `main.ts`.
 - Environment guide (every env var): `docs/ENVIRONMENT.md`
 - Domain guides: `docs/ORDER_CONFIRMATION_WORKFLOW.md`, `docs/ONBOARDING_AND_BILLING.md`, `docs/INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md`, `docs/IDENTITY_ACCESS_AND_ORGANIZATION.md`, and the other `docs/*.md` files
 - Billing runbooks: `docs/STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`, `docs/STANDALONE_BILLING_SANDBOX_PLAYBOOK.md`
-- Epics and user stories: `docs/Epics/` (completed stories have `docs/US-*-EVIDENCE.md`)
+- Support runbooks: `docs/EASYORDERS_SUPPORT_RUNBOOK.md`, `docs/WOOCOMMERCE_SUPPORT_RUNBOOK.md`, `docs/WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`
 - Database: schema in `src/infrastructure/database/schema.ts`; hand-written migrations in `drizzle/`
 
 ## Response & Formatting Guidance for Agents

@@ -38,7 +38,7 @@ function fixture(name: string): string {
  * app-wide ValidationPipe, and the real signature guard. Template fields are
  * signed like message events, and the message path sees what it saw before.
  */
-describe('WhatsApp webhook route with template fields (US-08-04)', () => {
+describe('WhatsApp webhook route with template fields', () => {
   let app: INestApplication;
   const messages = {
     processIncoming: jest.fn().mockResolvedValue({ status: 'success' }),

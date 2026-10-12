@@ -1,12 +1,10 @@
-# EasyOrders validation spike — test plan (US-06-01)
+# EasyOrders validation spike — test plan
 
-This kit produces the evidence for
-[US-06-01](../../../docs/Epics/06-easyorders-integration/US-06-01-easyorders-integration-validation.md).
+This kit observes how EasyOrders behaves where its documentation is silent.
 It is not production code and nothing in `src/` depends on it.
 
-The findings go into
-`docs/Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md`
-after the steps below have been run against a test store.
+What the integration relies on, and the rule it follows for each undocumented
+behavior, is in `docs/EASYORDERS_SUPPORT_RUNBOOK.md`.
 
 ## Rules
 
@@ -19,7 +17,7 @@ after the steps below have been run against a test store.
 
 ## Status after the first run (2026-10-03)
 
-The first run was on an inactive store, with a capture server that did not answer the CORS preflight of the install callback (fixed since). What it established is in the [contract record](../../../docs/Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md). Still owed, on an active store, before any live traffic: steps 1, 5, 6, 7, 8, 10, 11 and 12, plus a second store for the cross-tenant and two-key checks.
+The first run was on an inactive store, with a capture server that did not answer the CORS preflight of the install callback (fixed since). Still owed, on an active store, before any live traffic: steps 1, 5, 6, 7, 8, 10, 11 and 12, plus a second store for the cross-tenant and two-key checks.
 
 Before rerunning, delete the API keys and webhooks the failed installs left behind (**Public API → Webhooks** and **Public API**). Each Accept creates new ones even when the callback fails.
 
@@ -219,7 +217,7 @@ Write down for each row:
 - Response status and body.
 - Whether the customer received an SMS, WhatsApp message or email from EasyOrders.
 - Whether stock changed, whether a shipment was created or canceled, whether anything was refunded.
-- Whether a status webhook came back to the capture server for a change Akeed itself made (the feedback loop US-06-04 must not react to), and whether a repeat of the same status sends one.
+- Whether a status webhook came back to the capture server for a change Akeed itself made (the feedback loop outcome sync must not react to), and whether a repeat of the same status sends one.
 
 ### 11. Rate limit (AC 8) — live
 

@@ -5,7 +5,7 @@ import { WhatsAppService } from './whatsapp.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 
-/** US-08-07e at the Meta spoke: the words for a missing name. */
+/** Name fallbacks at the Meta spoke: the words for a missing name. */
 function setup() {
   const httpService = {
     post: jest.fn().mockReturnValue(of({ data: { messages: [{ id: 'w' }] } })),
@@ -47,7 +47,7 @@ const base = {
   verificationId: 'ver-1',
 };
 
-describe('WhatsAppService fallbacks (US-08-07e)', () => {
+describe('WhatsAppService fallbacks', () => {
   it.each([
     ['ar', 'عميلنا العزيز', 'متجرنا'],
     ['en', 'there', 'our store'],

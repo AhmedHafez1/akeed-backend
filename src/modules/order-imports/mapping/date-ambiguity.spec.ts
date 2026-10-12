@@ -1,6 +1,6 @@
 import { detectDateAmbiguity } from './date-ambiguity';
 
-describe('detectDateAmbiguity (US-04.6-03 AC5)', () => {
+describe('detectDateAmbiguity', () => {
   it.each([
     [
       'every date like 05/06/2026',

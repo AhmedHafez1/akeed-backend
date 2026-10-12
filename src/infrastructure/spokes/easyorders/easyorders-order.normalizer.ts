@@ -75,8 +75,7 @@ function isIncomplete(order: Record<string, unknown>): boolean {
 }
 
 /**
- * Turns an EasyOrders order into a `NormalizedOrder` (US-06-03, contract
- * record sections 2, 4 and 8).
+ * Turns an EasyOrders order into a `NormalizedOrder`.
  *
  * Currency and phone country come from the integration's own settings, never
  * from the payload or a guess. The order is read back from EasyOrders only

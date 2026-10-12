@@ -54,7 +54,7 @@ export function foldArabicText(value: string): string {
 }
 
 /**
- * The comparable form of a header (US-04.6-03 AC1): folded as above, with all
+ * The comparable form of a header: folded as above, with all
  * punctuation, symbols and whitespace removed. `Order #`, `ORDER-#` and
  * `order` share one key; a header of only punctuation has an empty key.
  */

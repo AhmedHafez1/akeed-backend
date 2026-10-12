@@ -13,9 +13,9 @@ import { EasyOrdersWebhookService } from './easyorders-webhook.service';
 
 /**
  * The EasyOrders spoke: the authorized connection with its disconnect and
- * reconnect (US-06-02, US-06-05) and the webhook routes that feed the common
- * queue (US-06-03). The order normalizer, the eligibility strategy, the
- * outcome adapter (US-06-04) and the setup contributor live in
+ * reconnect and the webhook routes that feed the common
+ * queue. The order normalizer, the eligibility strategy, the
+ * outcome adapter and the setup contributor live in
  * `EasyOrdersIngestionModule`.
  */
 @Module({

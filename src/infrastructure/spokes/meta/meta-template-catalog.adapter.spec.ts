@@ -32,7 +32,7 @@ function setup(
   return { adapter, api, values };
 }
 
-/** The list response captured from the dev app, sanitized (US-08-01). */
+/** The list response captured from the dev app, sanitized. */
 function capturedTemplates(): FakeMetaTemplate[] {
   const fixture = JSON.parse(
     readFileSync(
@@ -164,7 +164,7 @@ describe('MetaTemplateCatalogAdapter', () => {
     ]);
   });
 
-  it('reads the list response captured from the dev app (US-08-01)', async () => {
+  it('reads the list response captured from the dev app', async () => {
     const { adapter } = setup(
       new FakeMetaTemplateApi({
         templates: capturedTemplates(),

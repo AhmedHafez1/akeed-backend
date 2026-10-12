@@ -26,7 +26,7 @@ import {
 } from './contracts/meta-template-api-fake';
 
 /**
- * US-08-06 against real PostgreSQL: migration 0058, drafts and their
+ * Template authoring against real PostgreSQL: migration 0058, drafts and their
  * submission, and the activate, set-default, deactivate, retire and edit
  * actions, with the locking and the audit rows they depend on.
  *
@@ -71,7 +71,7 @@ const MIGRATIONS = [
   '0055_integration_template_keys.sql',
   '0056_dispatch_template_fallback.sql',
   '0057_whatsapp_template_sync.sql',
-  '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys (US-08-07a).
+  '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys.
   '0059_whatsapp_reminder_and_auto_style.sql',
 ];
 const AUTHORING_MIGRATION = '0058_whatsapp_template_authoring.sql';
@@ -282,7 +282,7 @@ async function approvedTemplate(style: string): Promise<string> {
   return key;
 }
 
-describe('WhatsApp template authoring against PostgreSQL (US-08-06)', () => {
+describe('WhatsApp template authoring against PostgreSQL', () => {
   beforeAll(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();

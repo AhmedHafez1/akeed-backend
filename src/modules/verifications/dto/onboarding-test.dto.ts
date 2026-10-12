@@ -23,7 +23,7 @@ export interface OnboardingTestStatusDto {
   phone: string | null;
   language: 'ar' | 'en';
   preview: TemplatePreview;
-  /** The test's message as neutral lines (US-08-07g). */
+  /** The test's message as neutral lines. */
   message: TemplateMessageLines;
   sample: {
     customerName: string;

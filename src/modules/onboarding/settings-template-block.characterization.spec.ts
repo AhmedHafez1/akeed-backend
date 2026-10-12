@@ -8,7 +8,7 @@ import { OnboardingService } from './onboarding.service';
 import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /**
- * US-08-03 characterization of what a merchant sees: the `template` block of
+ * Characterization of what a merchant sees: the `template` block of
  * `GET /api/settings` and the preview and sample of the onboarding test.
  *
  * Every case runs the real services and compares the result with the one
@@ -176,7 +176,7 @@ function buildOnboardingTestService(
 }
 
 /**
- * The block as it was recorded: the keys US-08-07g added (`messages`, and
+ * The block as it was recorded: the neutral-message keys (`messages`, and
  * `message` on each style) are left out, in their recorded key order, so the
  * legacy keys keep being compared byte for byte until the gate removes them.
  */

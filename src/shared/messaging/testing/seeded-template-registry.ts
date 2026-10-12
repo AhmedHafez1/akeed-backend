@@ -13,7 +13,7 @@ import {
 /**
  * The registry as migration 0054 seeds it, built from the code catalog. For
  * specs only: the catalog file is the seed source and the characterization
- * baseline until the US-08-08 gate, and nothing at runtime reads it.
+ * baseline, and nothing at runtime reads it.
  */
 export function seededRegistryTemplates(): RegistryTemplate[] {
   const definitions = getAvailableCodTemplateDefinitions();
@@ -69,7 +69,7 @@ export function syncedApprovedTemplates(
 }
 
 /**
- * A staff-written reminder (US-08-07a) as the US-08-06 flow registers it:
+ * A staff-written reminder as staff authoring registers it:
  * versioned style, `akeed_cod_reminder_<style>_v<n>`, approved and active.
  */
 export function reminderTemplate(

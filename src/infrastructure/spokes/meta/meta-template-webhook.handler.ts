@@ -19,7 +19,7 @@ import {
   normalizeLanguageCode,
 } from './meta-template.mapping';
 
-/** The template fields Akeed subscribes to (record 4.8.1), and their meaning. */
+/** The template fields Akeed subscribes to, and their meaning. */
 export const META_TEMPLATE_WEBHOOK_FIELDS: Record<string, TemplateEventField> =
   {
     message_template_status_update: 'status',
@@ -37,7 +37,7 @@ function asRecord(value: unknown): JsonRecord | null {
 
 /**
  * Parses the signed body. `message_template_id` is an integer that can be
- * larger than 2^53 (record 4.8.12), so its source text is kept as a string
+ * larger than 2^53, so its source text is kept as a string
  * instead of a rounded number.
  */
 function parseBody(rawBody: Buffer): unknown {
@@ -63,7 +63,7 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * Template notifications on the WhatsApp webhook (US-08-04 criterion 3).
+ * Template notifications on the WhatsApp webhook.
  *
  * The controller hands over the raw body its signature guard has just
  * verified: the request DTO is shaped for `messages` and `statuses`, and the
@@ -205,7 +205,7 @@ export class MetaTemplateWebhookHandler {
         return { ...base, quality: mapQuality(value.new_quality_score) };
       case 'category': {
         // A scheduled change names the current category and the coming one;
-        // a completed change names the new one (record 4.8.10).
+        // a completed change names the new one.
         const category = mapCategory(value.new_category);
         const coming =
           value.correct_category === undefined ||

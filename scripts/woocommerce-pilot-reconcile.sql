@@ -1,4 +1,4 @@
--- Read-only reconciliation for the US-07-06 WooCommerce live pilot.
+-- Read-only reconciliation for a WooCommerce live pilot.
 --
 -- For one pilot organization it lists what Akeed holds: the connection (no
 -- credential), install attempts, accepted deliveries, orders, verifications,
@@ -14,10 +14,6 @@
 -- Usage (PowerShell, against the pilot environment's database):
 --   psql "$env:PILOT_DATABASE_URL" -v org_id="'<organization uuid>'" `
 --     -f scripts/woocommerce-pilot-reconcile.sql > .tmp/pilots/woocommerce/reconcile-<step>.txt
---
--- The pilot script (docs/Epics/07-woocommerce-integration/evidence/
--- US-07-06-live-pilot-script.md) says when to run it and what each section
--- must show.
 
 \pset pager off
 BEGIN TRANSACTION READ ONLY;

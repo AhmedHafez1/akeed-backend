@@ -29,7 +29,7 @@ export interface TemplateTransition {
 }
 
 /**
- * Staff alerts for templates (US-08-04 criterion 6), as structured log lines
+ * Staff alerts for templates, as structured log lines
  * like the billing alerts. The per-store side of the same signal is the
  * `template_unavailable` admin health rule.
  *

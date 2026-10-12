@@ -42,11 +42,11 @@ Core order outcomes use CommerceOutcomeRegistryService. It reloads the source-sc
 | MessagingPort | WhatsAppService (existing Akeed sender) |
 | CommerceOutcomeRegistryService | ShopifyOutcomeAdapter selected from the persisted integration |
 | ORDER_ELIGIBILITY_STRATEGIES | ShopifyOrderEligibilityStrategy supplied at composition time |
-| STORE_PLATFORM_PORT | ShopifyApiService for existing onboarding/billing; separation remains US-02-04 |
+| STORE_PLATFORM_PORT | ShopifyApiService for Shopify onboarding and billing |
 
 ORDER_ADMIN_PORT and ORDER_TAGGING_PORT remain legacy interface files, with no runtime global bindings or core consumers. ShopifyCommerceModule provides the API and outcome adapter without importing webhook ingestion.
 
-See [US-02-03 implementation evidence and rollout](US-02-03-SHOPIFY-ADAPTER-EVIDENCE.md).
+EasyOrders and WooCommerce are spokes on the same boundaries: each adds a normalizer to `WEBHOOK_ORDER_NORMALIZERS`, an eligibility strategy to `ORDER_ELIGIBILITY_STRATEGIES`, an outcome adapter to `COMMERCE_OUTCOME_ADAPTERS`, an update handler to `WEBHOOK_ORDER_UPDATE_HANDLERS` and a setup contributor to `SOURCE_SETUP_CONTRIBUTORS`. Their sections are below.
 
 ## Shopify Webhooks
 
@@ -208,11 +208,12 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others.
 
-**Templates come from the registry.** Since US-08-03 the templates are rows of
+**Templates come from the registry.** The templates are rows of
 `whatsapp_templates`, not a list in code. Migration 0054 seeded the 8 COD
 confirmation styles (Arabic `standard` (default), `egyptian`, `gulf`, `short`;
 English `friendly` (default), `professional`, `direct`, `short`); staff add more
-through the US-08-06 flow, including `cod_reminder` templates (US-08-07a). The
+through [Staff Template Authoring](#staff-template-authoring), including
+`cod_reminder` templates. The
 selector (`src/shared/messaging/template-selector.ts`) picks one per send; see
 [Which template a send carried](ORDER_CONFIRMATION_WORKFLOW.md#which-template-a-send-carried).
 
@@ -222,15 +223,17 @@ Each registry row stores its parameter format (`named` or `positional`) and
 its variables in send order (`variable_mapping`), for example `customer`,
 `store`, `order`, `total`. The adapter builds the body parameters from them;
 a named variable carries the parameter name the template was registered with.
-`customer` and `store` fall back to the staff-managed words of US-08-07e when
+`customer` and `store` fall back to the staff-managed per-language words when
 `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` is on (otherwise `Customer` and
 `Akeed Store`), and `total` is formatted per language and currency when
 `WHATSAPP_AMOUNT_FORMATTING_ENABLED` is on.
 
-**Free-form text (US-08-07 b, c).** `WhatsAppService.sendFreeFormText` posts a
-`type: "text"` message in the same envelope (record 4.10.4), at most 4096
-characters. It is sent once and never retried; Meta's `131047` (window closed,
-record 4.10.3) is returned as `window_closed`, an expected outcome logged at
+**Free-form text.** `WhatsAppService.sendFreeFormText` posts a
+`type: "text"` message in the same envelope, at most 4096
+characters. It carries the acknowledgment and the nudge (see
+[Acknowledgment and Nudge Handler](#acknowledgment-and-nudge-handler)). It is
+sent once and never retried; Meta's `131047` (the 24-hour customer service
+window is closed) is returned as `window_closed`, an expected outcome logged at
 warn level (`whatsapp-text-send`), never as a failure.
 
 **Quick-reply buttons:**
@@ -266,9 +269,9 @@ Two buttons are attached to every template:
 4. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
 5. Update verification status in database, with `confirmationSource` or `cancellationSource` set to `customer`.
 6. Call `VerificationHubService.finalizeVerification()` → dispatch the customer outcome through the registry. Shopify adds the existing tag; customer cancellation never calls remote order cancellation.
-7. With `WHATSAPP_ACKNOWLEDGMENT_ENABLED` on, and only when step 5 changed the row, queue one `verification.acknowledgment` job (US-08-07b). Nothing is sent from the webhook request itself.
+7. With `WHATSAPP_ACKNOWLEDGMENT_ENABLED` on, and only when step 5 changed the row, queue one `verification.acknowledgment` job. Nothing is sent from the webhook request itself.
 
-**Unresolved typed replies (US-08-07c).** With
+**Unresolved typed replies.** With
 `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` on, an `unresolved_reply` that has a
 text body and a `context.id` is looked up by `verifications.wa_message_id`, then
 by the dispatch whose `provider_message_id` it is (a reminder repoints
@@ -282,7 +285,7 @@ and one `verification.unresolved_reply_nudge` job is queued. Without
 
 Delivery statuses from Meta (`delivered`, `read`, `failed`) are matched by `waMessageId` and update the verification record.
 
-While either US-08-07 free-form switch is on, a status for an acknowledgment or
+While the acknowledgment or the nudge switch is on, a status for an acknowledgment or
 a nudge (`verification_service_messages.provider_message_id`) is handled first
 and touches only that row: `failed` marks it `failed` with `delivery_failed`,
 and nothing is parked, dispatched or projected on the verification.
@@ -293,15 +296,15 @@ and nothing is parked, dispatched or projected on the verification.
 - **Pre-ledger verification:** the status goes through `updateStatusByWamid`.
 - **Nothing yet:** the status is parked in `provider_message_receipts`, and the log line is `outcome: retry` with `reason: awaiting_acceptance`.
 
-Meta can report delivery before the transaction that stores the wamid has committed. This is routine for prepaid sends, because their acceptance also moves credits under the org credit lock. Such a receipt used to be dropped, and because the webhook still answers 200, Meta never resent it. Now `markAccepted` applies the parked receipts in its own transaction, oldest first, using the same rules as the live path. It then sets `applied_at`.
+Meta can report delivery before the transaction that stores the wamid has committed. This is routine for prepaid sends, because their acceptance also moves credits under the org credit lock. The webhook still answers 200, so Meta never resends such a receipt; it is parked instead of dropped. `markAccepted` applies the parked receipts in its own transaction, oldest first, using the same rules as the live path. It then sets `applied_at`.
 
 Both sides take a transaction-scoped advisory lock on the wamid, so whichever side runs second always sees the other's committed write. Receipts for wamids Akeed never sent stay parked with `applied_at IS NULL`.
 
-### Template Sync, Status Webhooks and the Send Guardrail (US-08-04)
+### Template Sync, Status Webhooks and the Send Guardrail
 
-Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) keeps a synced copy. Everything here is off until `WHATSAPP_TEMPLATE_SYNC_ENABLED` and, last, `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` are turned on ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates-e08)). Meta behavior comes only from the [US-08-01 contract record](Epics/08-whatsapp-template-management/evidence/US-08-01-contract-record.md).
+Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) keeps a synced copy. Everything here is off until `WHATSAPP_TEMPLATE_SYNC_ENABLED` and, last, `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` are turned on ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)).
 
-**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records, and since US-08-06 two writes, `createTemplate` and `editTemplate` (see "Staff Template Authoring" below). `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
+**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records, and two writes, `createTemplate` and `editTemplate` (see "Staff Template Authoring" below). `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
 
 **Sync.** A BullMQ repeatable job on the `whatsapp-template-sync` queue runs every 6 hours (`concurrency: 1`, one attempt), plus `POST /api/admin/templates/sync` for a named operator and a delayed follow-up after template webhooks. A run:
 
@@ -312,7 +315,7 @@ Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) k
 
 Re-running with the same Meta data changes nothing. `GET /api/admin/templates/sync/runs` shows the last 20 runs to any staff member.
 
-The adapter reads `components` in the creation syntax and `quality_score` as the `{ score, date }` object the list response carries; both shapes were observed on the dev app on 2026-10-05 (contract record section 3). Anything else is `unknown`, which never blocks a send and is never called drift.
+The adapter reads `components` in the creation syntax and `quality_score` as the `{ score, date }` object the list response carries. Anything else is `unknown`, which never blocks a send and is never called drift.
 
 **Template webhooks.** `POST /webhooks/whatsapp` keeps its message handling unchanged. After it, `MetaTemplateWebhookHandler` reads the signed raw body, because the request DTO and the global validation pipe strip `field`, `entry.id`, `entry.time` and every template member. It reads `message_template_status_update`, `message_template_quality_update` and `template_category_update`:
 
@@ -329,27 +332,27 @@ A status event also carries Meta's `reason`; it is stored as a neutral value in 
 
 **Guardrail.** `selectTemplateForSend` (`src/shared/messaging/template-selector.ts`) applies it on every send, reminders and the onboarding test included. With the switch on and the environment synced at least once, a template is sendable only when it is active and `review_status = 'approved'`. Otherwise the language default is sent and the dispatch records `template_fallback_reason = 'not_approved'` and `template_skipped_key`. With no sendable default the send is skipped as `template_unavailable` before the dispatch is claimed: no usage is reserved, nothing crosses to the other language, a first send marks the verification `failed` with that reason (retryable), and a reminder records `follow_up_skipped: template_unavailable`. A re-categorized template stays sendable and only alerts. The registry is cached for 60 seconds per process; the instance that applies a change drops its copy at once.
 
-**When something goes wrong.** The [template support runbook](Epics/08-whatsapp-template-management/evidence/US-08-08-template-support-runbook.md) covers a paused, rejected, disabled or re-categorized template, choosing a replacement, falling back to the seeded defaults, pausing template writes, stopping the sync, and the logs and alert codes to read. `npm run test:gate:e08` runs the release gate ([record](Epics/08-whatsapp-template-management/evidence/US-08-08-release-gate.md)).
+**When something goes wrong.** The [template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md) covers a paused, rejected, disabled or re-categorized template, choosing a replacement, falling back to the seeded defaults, pausing template writes, stopping the sync, and the logs and alert codes to read. `npm run test:gate:e08` runs the release gate.
 
 **Alerts.** `TemplateAlertService` logs `whatsapp-template-alert` lines on a change, for a template in use (a language default, or sent by at least one active store): `template_unavailable` and `template_recategorized` (critical), `template_text_changed` and `template_sync_failed` (attention). The admin store list adds the per-store `template_unavailable` health signal (`src/modules/admin/admin-template-health.sql.ts`).
 
-### Staff Template Authoring (US-08-06)
+### Staff Template Authoring
 
 Staff write, submit and manage templates from `/admin/templates`; merchants never write template text. Everything is behind `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and the operator allowlist, and every write is one audited transaction. Nothing deletes a template at Meta.
 
 **Drafts.** A draft (`whatsapp_template_drafts`, migration `0058`) lives only in Akeed. Its body uses Akeed's own placeholders (`{{customer}}`, `{{store}}`, `{{order}}`, `{{total}}`); the Meta syntax is built in the spoke (`meta-template-components.builder.ts`). Akeed generates the name, `akeed_<purpose>_<style>_v<n>`, and the registry key, `cod_confirm.<language>.<style>_v<n>`. The legacy names are untouched.
 
-**Validation.** `src/shared/messaging/template-draft.validation.ts` holds one rule per contract-record finding: name and language code, the four supported values, parameter names or numbering, a single-line sample for each value, the 1024-character body, no value at either end of the body, and exactly two quick replies with Confirm first (the send path puts the confirm payload on index 0). The parameter-to-word ratio only warns. A draft can be saved while it fails; it cannot be submitted.
+**Validation.** `src/shared/messaging/template-draft.validation.ts` holds one rule per Meta requirement: name and language code, the four supported values, parameter names or numbering, a single-line sample for each value, the 1024-character body, no value at either end of the body, and exactly two quick replies with Confirm first (the send path puts the confirm payload on index 0). The parameter-to-word ratio only warns. A draft can be saved while it fails; it cannot be submitted.
 
 **Submit.** One submit holds a draft at a time. Before anything is created, the adapter's list is read: if Meta already holds the draft's name and language, that template is adopted. Otherwise one `POST /{WABA_ID}/message_templates` is sent, once, with a 15-second deadline and no retry. A refusal returns the draft for editing with a neutral reason. No usable answer makes the draft `submit_unknown`: nothing is sent again until an operator runs "Check at Meta", which reads the list and either adopts the template or returns the draft for a new submit. The registry row is inserted only when Meta has confirmed the template, inactive and never a default, so no send path sees a draft.
 
-**Review.** Review status arrives through the US-08-04 sync and webhooks. A rejection shows Meta's reason as a neutral value.
+**Review.** Review status arrives through the sync and the template webhooks. A rejection shows Meta's reason as a neutral value.
 
 **Edit.** `POST /{TEMPLATE_ID}` replaces the text of a template Akeed wrote. It is allowed only for an approved, rejected or paused template that nothing can send (inactive, not a default, selected by no store), and an approved template gets one edit in 24 hours and ten in 30 days, counted in `whatsapp_template_edits`. From the moment an edit is sent the row reads `pending` until a sync or a webhook says `approved`.
 
 **Activate, deactivate, set default, retire.** `src/shared/messaging/template-lifecycle.policy.ts` decides; `WhatsappTemplateLifecycleRepository` locks every template of the purpose and language in key order, then writes the flags, the store move and the audit row in one transaction. Only an approved template can be activated or made the default. Set default unsets the old default and sets the new one in that transaction. Deactivating or retiring a template a store selects, or a language default, needs a replacement that is approved, active and of the same purpose and language; every store moves to it (a store with no stored key is matched through its old variant column, like a send), and a withdrawn default hands the default to the replacement. A retired template cannot be activated again.
 
-### Staff Template Pages: Reading Status and Drift (US-08-05)
+### Staff Template Pages: Reading Status and Drift
 
 Staff inspect the registry at `/[locale]/admin/templates` (list) and `/[locale]/admin/templates/[key]` (detail). The pages are read-only apart from "Sync now" and a test send, which need a named template operator. They are served by `GET /api/admin/templates`, `GET /api/admin/templates/:key` and `POST /api/admin/templates/:key/test-send`, all behind `AdminAccessGuard`; `from` and `to` (UTC calendar dates, at most 92 days) choose the range for metrics.
 
@@ -377,11 +380,11 @@ Staff inspect the registry at `/[locale]/admin/templates` (list) and `/[locale]/
 | Could not read | Meta returned the template in a form Akeed does not read (a media header, for example). Nothing was compared. |
 | Not checked | Never synced. |
 
-The detail page lists each difference with Akeed's side and Meta's side, and shows Meta's text in a phone with sample values, in the template's own direction. Until US-08-07g replaces the merchant preview, every existing template shows a preview difference: the dev run of 2026-10-05 found none of the hand-kept previews equal to Meta's text.
+The detail page lists each difference with Akeed's side and Meta's side, and shows Meta's text in a phone with sample values, in the template's own direction. While `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` is off the merchant preview is the hand-kept one, so a seeded template can show a preview difference; with it on, the preview is rendered from Meta's copy.
 
 **Test send.** An operator sends the template with sample values to a number on `WHATSAPP_TEMPLATE_TEST_PHONES`. It goes through the messaging port like a store's send, so the payload is the real one, but it creates no order, verification, dispatch or usage, and its buttons carry an ID no verification has, so a tap changes nothing. The template must be active and, once the environment has synced, approved. Limits are the onboarding test's (30 seconds apart, 5 per 24 hours), per staff member. One audit row records the template key, never the phone or the text. A staff test is not counted in template metrics.
 
-**Metrics.** Sends WhatsApp accepted in the range, merchant tests excluded, from the per-send identity of US-08-02. Rates are shares of those sends, and a reply after a reminder counts for the reminder.
+**Metrics.** Sends WhatsApp accepted in the range, merchant tests excluded, from the template identity recorded on each send. Rates are shares of those sends, and a reply after a reminder counts for the reminder.
 
 ## Verification Core Pipeline
 
@@ -522,8 +525,8 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 | `INITIAL_SEND`      | New COD order with `sendDelayMinutes > 0` | `sendDelayMinutes` + quiet-hours adjustment       |
 | `FOLLOW_UP`         | Successful initial send                   | `followUpDelayMinutes` + quiet-hours adjustment   |
 | `ESCALATE_NO_REPLY` | Successful initial send                   | `escalationDelayMinutes` + quiet-hours adjustment |
-| `ACKNOWLEDGMENT`    | Customer confirm or cancel (US-08-07b)    | None; one attempt, job id `verification-<id>-acknowledgment` |
-| `UNRESOLVED_REPLY_NUDGE` | Unreadable typed reply to an open verification (US-08-07c) | None; one attempt, job id `verification-<id>-nudge` |
+| `ACKNOWLEDGMENT`    | Customer confirm or cancel                | None; one attempt, job id `verification-<id>-acknowledgment` |
+| `UNRESOLVED_REPLY_NUDGE` | Unreadable typed reply to an open verification | None; one attempt, job id `verification-<id>-nudge` |
 
 ### Initial Send Handler
 
@@ -550,7 +553,7 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 3. Mark verification status as `no_reply`.
 4. Dispatch `automatic_no_reply_tagging`; Shopify adds `Akeed: No Reply`. The registry suppresses external work for persisted `isTest` orders and `akeed-test-` IDs after validating source and capability.
 
-### Acknowledgment and Nudge Handler (US-08-07 b, c)
+### Acknowledgment and Nudge Handler
 
 `CustomerReplyFollowUpService` (`src/modules/verification-replies/`) runs each
 job once; the processor never rethrows, so BullMQ never retries it. Quiet hours
@@ -571,7 +574,8 @@ do not apply: the message answers the customer.
    `skipped` `window_closed` (131047), or `failed` `provider_rejected` /
    `provider_error`.
 
-No usage, credit or dispatch row is written (record 4.10.5). Logs:
+No usage, credit or dispatch row is written: Meta does not charge for a
+free-form message inside the window. Logs:
 `customer-reply-follow-up` with `kind`, `outcome` and `reason`.
 
 ### Quiet-Hours Engine
@@ -669,9 +673,9 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 | Store platform port            | `shared/ports/store-platform.port.ts`                                        | Interface for billing and shop metadata.                                    |
 | Phone service                  | `shared/services/phone.service.ts`                                           | Phone number normalization and validation.                                  |
 
-## Integration API Keys (Standalone, US-05-01)
+## Integration API Keys (Standalone)
 
-Server credentials that let a merchant's own back end submit orders to their Standalone store. A key belongs to exactly one integration and grants exactly one capability: submitting orders to it (the order endpoint arrives in US-05-02). It is not a general authentication framework.
+Server credentials that let a merchant's own back end submit orders to their Standalone store. A key belongs to exactly one integration and grants exactly one capability: submitting orders to it through `POST /api/v1/orders`. It is not a general authentication framework.
 
 **Format.** `ak_live_<8 lowercase alphanumerics>_<43 base64url chars>`. The first 16 characters are the non-secret, unique **prefix**. The rest encodes 32 random bytes. Only the SHA-256 of those 32 bytes is stored (`integration_api_keys.key_hash`), and the full key is returned once, in the create response.
 
@@ -697,7 +701,7 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 - It accepts only `Authorization: Bearer <key>`. A request with a key-like query parameter (`api_key`, `apikey`, `key`, `access_token`, `token`, `authorization`) or any query value containing `ak_live_` is refused, even when the header also holds a valid key.
 - It looks the key up by prefix, compares hashes in constant time (an unknown prefix still runs a comparison) and refuses revoked keys.
 - Every failure answers the same 401 `API_KEY_INVALID`. The reason (`malformed`, `unknown`, `mismatch`, `revoked`, `query_string`, `missing_header`) appears only in the warn log, beside the prefix.
-- On success it attaches `request.integrationApiKey = { orgId, integrationId, keyId, prefix }`, which a handler reads with `@CurrentIntegrationKey()`. It never builds a `StandaloneIngestionContext`: US-05-02 turns the principal into one through the source resolver.
+- On success it attaches `request.integrationApiKey = { orgId, integrationId, keyId, prefix }`, which a handler reads with `@CurrentIntegrationKey()`. It never builds a `StandaloneIngestionContext`: the order endpoint turns the principal into one through the source resolver.
 - `last_used_at` is written at most once a minute per key, by a conditional `UPDATE` that never touches `revoked_at`. A failed write never fails the request.
 
 **Data and RLS.** `integration_api_keys` (migration `0046`) has a composite FK to `integrations (id, org_id)`, a unique `prefix`, and indexes `(integration_id, revoked_at)` and `(org_id, created_at DESC)`. RLS is enabled. `anon` and `authenticated` lose every grant, then get back `SELECT` on the metadata columns only, under an `org_id = get_user_org_id()` policy. Members can read their organization's key metadata, never the hash, and cannot insert, update or delete through PostgREST.
@@ -706,9 +710,20 @@ At most **5 active keys** per integration, which leaves room for zero-downtime r
 
 **Operations.** Accepted orders survive key revocation; only disabling the source stops their processing. Idempotency is scoped to the source, so rotating a key resets neither usage nor idempotency history. Contract suite: `npm run test:contract:integration-keys`, or `scripts/test-integration-api-keys-contract.ps1` for a disposable PostgreSQL.
 
-## EasyOrders Connection (US-06-02)
+## EasyOrders Connection
 
-The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This section covers the authorized connection; order webhooks are in [EasyOrders Webhook Ingestion](#easyorders-webhook-ingestion-us-06-03) and status writes in [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization-us-06-04) below. EasyOrders behavior is taken from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), not from the public docs.
+The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This section covers the authorized connection; order webhooks are in [EasyOrders Webhook Ingestion](#easyorders-webhook-ingestion) and status writes in [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization) below. It ships behind `EASYORDERS_CONNECT_ENABLED` ([ENVIRONMENT.md](ENVIRONMENT.md#easyorders-connection)).
+
+**What the spoke relies on.** EasyOrders documents little, so the code builds only on the first column and follows a worst-case rule for the rest (the rules are with each step below and in the [support runbook](EASYORDERS_SUPPORT_RUNBOOK.md#3-what-easyorders-does-not-document)).
+
+| Area | Built on | Not available from EasyOrders |
+| --- | --- | --- |
+| Install | The authorized-app link with `orders:read,orders:update`; the tenant token in Akeed's own URL paths | A `state` parameter, a server-to-server callback, an atomic install |
+| Credentials | The `Api-Key` header; the inactive-store `400` as a health state | A store or account endpoint that proves which store a key belongs to |
+| Webhook authenticity | The per-install URL token plus the static `secret` header | A payload signature, replay protection |
+| Delivery | Idempotency keys derived from the order | A delivery ID, an event timestamp, documented retries |
+| Order data | `total_cost`, `phone` (local format), `payment_method`, `store_id` | Currency and country, in the payload or the API |
+| Rate limit | 40 requests a minute, documented; Akeed spends at most 30 per integration | The scope and window of the limit, a `Retry-After` header |
 
 **Flow.**
 
@@ -722,20 +737,20 @@ The EasyOrders spoke lives in `src/infrastructure/spokes/easyorders/`. This sect
 **What is stored.**
 
 - `integrations`: `platform_type = 'easyorders'`, source identity `easyorders:<orgId>`, Standalone's billing (the organization's credit account with its one-time launch grant, plus the Starter / `not_required` entitlement only while `STANDALONE_CREDIT_BILLING_ENABLED` is `false`; WooCommerce is the same), the Standalone onboarding defaults with `assume_cod_when_payment_missing = false`. `access_token` and `webhook_secret` stay NULL.
-- `easyorders_connections`: the API key and both webhook secrets as `encryptToken` ciphertext (a CHECK refuses anything that is not a `v1:` envelope), the webhook URL token's hash, its last six characters and its ciphertext (kept since migration 0062 so a disconnect can name the two webhook addresses), `health` (`ok` or `store_inactive`), and the claimed `store_id`.
+- `easyorders_connections`: the API key and both webhook secrets as `encryptToken` ciphertext (a CHECK refuses anything that is not a `v1:` envelope), the webhook URL token's hash, its last six characters and its ciphertext (kept so a disconnect can name the two webhook addresses), `health` (`ok` or `store_inactive`), and the claimed `store_id`.
 - Both tables have RLS on with no policy and all `anon` / `authenticated` grants revoked.
 
-**Store ownership.** The callback's `store_id` is a claim (`store_verified_at` NULL). A partial unique index makes a store unique only once verified, so a claim never blocks the real owner. A callback naming a store that is verified for another organization is refused (`409 EASYORDERS_STORE_UNAVAILABLE`). The claim is verified on the first order (US-06-03, below).
+**Store ownership.** The callback's `store_id` is a claim (`store_verified_at` NULL). A partial unique index makes a store unique only once verified, so a claim never blocks the real owner. A callback naming a store that is verified for another organization is refused (`409 EASYORDERS_STORE_UNAVAILABLE`). The claim is verified on the first order (see "Order lookup" below).
 
 **Secrets.** The key, both tokens, both secrets and the install link are never logged (added to `REDACTED_KEYS`) and never returned, with one exception: the install link is returned once to the member who started the install, because the browser has to carry it to EasyOrders. `GET /api/easyorders/connection` reports state, store id, health, the URL hint and whether each secret is set.
 
-**Disconnect and reconnect** are in [EasyOrders Setup, Health and Disconnect](#easyorders-setup-health-and-disconnect-us-06-05) below. A source of another platform, active or not, still blocks a connect: there is no source switching.
+**Disconnect and reconnect** are in [EasyOrders Setup, Health and Disconnect](#easyorders-setup-health-and-disconnect) below. A source of another platform, active or not, still blocks a connect: there is no source switching.
 
 **Validate.** `scripts/test-easyorders-connection-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders`.
 
-## EasyOrders Setup, Health and Disconnect (US-06-05)
+## EasyOrders Setup, Health and Disconnect
 
-No switch of its own. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 1, 2, 4, 6 and 7. Operations are in the [runbook](Epics/06-easyorders-integration/evidence/US-06-05-disconnect-and-support-runbook.md).
+No switch of its own. Operations are in the [support runbook](EASYORDERS_SUPPORT_RUNBOOK.md).
 
 **Source setup seam.** A source whose connection has state of its own registers a `SourceSetupContributor` in `SOURCE_SETUP_CONTRIBUTORS` (`src/shared/commerce/source-setup.ts`, bound in `onboarding.module.ts`). `SourceSetupService` reads it by platform type; the onboarding module never names a provider. `EasyOrdersSetupContributor` answers from the connection row alone, with no provider call.
 
@@ -745,15 +760,15 @@ No switch of its own. Behavior comes from the [US-06-01 contract record](Epics/0
 
 **Health.** `GET /api/settings/source-health` (any member) returns separate signals and no overall status: credentials (the provider's last answer, not a live check), the last accepted event and the count in the last 7 days, processing failures, events waiting, store updates that failed or are pending, deliveries refused before processing, and each outcome action with whether the store takes it now. A null last event means "no events yet" and is never a fault. A contributor that can read its webhooks from the store (optional `inspectWebhooks`; WooCommerce) adds a `webhooks` block with each one's state; the key is absent for every other source.
 
-**Disconnect.** `DELETE /api/easyorders/connection` (owner or admin; not gated by the connect switch or the pilot list). One transaction: open install contexts are retired, `integrations.is_active` becomes false, and the API key, the URL token, both webhook secrets and the verified-store claim are wiped. The store id, the settings and all history stay. Waiting store updates are then closed as `integration_inactive`. Queued events, messages and store writes are stopped by the same `is_active` checks that already guarded them. Then, best effort, Akeed asks EasyOrders to delete its two webhooks with `DELETE webhooks/delete-by-url` (the wiped key, `Api-Key` first and `Authorization: Bearer` after a 401 or 403; up to three passes per address for duplicates). The result is stored in `easyorders_connections.provider_cleanup` and returned as `connection.providerCleanup`: `removed`, or `manual` when a call failed or the connection predates the kept token. The API key has no delete call, so the merchant always deletes that row in EasyOrders.
+**Disconnect.** `DELETE /api/easyorders/connection` (owner or admin; not gated by the connect switch or the pilot list). One transaction: open install contexts are retired, `integrations.is_active` becomes false, and the API key, the URL token, both webhook secrets and the verified-store claim are wiped. The store id, the settings and all history stay. Waiting store updates are then closed as `integration_inactive`. Queued events, messages and store writes are stopped by the same `is_active` checks that already guarded them. Then, best effort, Akeed asks EasyOrders to delete its two webhooks with `DELETE webhooks/delete-by-url` (the wiped key, `Api-Key` first and `Authorization: Bearer` after a 401 or 403; up to three passes per address for duplicates). The result is stored in `easyorders_connections.provider_cleanup` and returned as `connection.providerCleanup`: `removed`, or `manual` when a call failed or the row holds no URL token to build the addresses from. The API key has no delete call, so the merchant always deletes that row in EasyOrders.
 
 **Reconnect.** The same install and callback. Only when the organization's one source is its own disconnected EasyOrders source, and only for the same `store_id` (`409 EASYORDERS_RECONNECT_STORE_MISMATCH` otherwise). The same integration row is reactivated in place with a new key and a new URL token and no secrets; the new secrets are learned from the first verified deliveries.
 
 **Validate.** The three `scripts/test-easyorders-*-contract.ps1` suites, `npx jest src/modules/onboarding src/infrastructure/spokes/easyorders`.
 
-## EasyOrders Webhook Ingestion (US-06-03)
+## EasyOrders Webhook Ingestion
 
-Order-created webhooks enter the common queue through the EasyOrders spoke. It ships dark behind `EASYORDERS_INGESTION_ENABLED`. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 2 to 4, 6 and 8.
+Order-created webhooks enter the common queue through the EasyOrders spoke, behind `EASYORDERS_INGESTION_ENABLED`.
 
 **Routes.** `POST /webhooks/easyorders/orders/:token` and `POST /webhooks/easyorders/status/:token` (`EasyOrdersWebhookController`). Public, with a per-address flood cap instead of the app-wide limit.
 
@@ -771,7 +786,7 @@ Nothing is stored for steps 1 to 5.
 
 **Idempotency.** EasyOrders sends no delivery id. The key is `order.create:<integrationId>:<orderId>`, and `order.status:<integrationId>:<orderId>:<old>:<new>` for a status event, under source identity `easyorders:<orgId>`. Repeated and concurrent deliveries collapse into one event; the order and verification unique constraints are the second line.
 
-**Status events** are authenticated and recorded as `order.update` only. The worker has no handler for that job type and marks them skipped, so no order is read or changed. Handling them is US-06-04.
+**Status events** are authenticated and recorded as `order.update`. The worker hands them to `EasyOrdersStatusUpdateHandler` (see "Status webhooks" under outcome synchronization), which only records what the event was: no order is read or changed.
 
 **Normalization (`EasyOrdersOrderNormalizer`, in the worker).** Registered in `WEBHOOK_ORDER_NORMALIZERS` next to the Shopify and Standalone ones.
 
@@ -788,23 +803,21 @@ Nothing is stored for steps 1 to 5.
 - Budget (`EasyOrdersRateLimiter`): 30 requests a minute per integration, 20 of them for lookups so outcome writes keep headroom, on the clock minute. In memory, per instance.
 - `429`: the integration's calls pause for `Retry-After`, or until the next clock minute plus up to 10 seconds, and the job is rescheduled for that delay. Timeout, network failure and `5xx` use the queue's normal backoff. The inactive-store `400` sets health `store_inactive` and retries after 5 minutes. `401` and `403` set health `credentials_rejected` and are not retried.
 
-**Queue contract change.** A normalizer may now answer asynchronously and may return `{ skipped: true, reason }`. One that throws `RetryAfterError` (`src/shared/http/bounded-http.ts`) has its job moved to the delayed set for that long, at most 5 minutes and at most 5 times, without spending an attempt; after that it fails and retries like any other error. The Shopify and Standalone normalizers are unchanged.
+**Queue contract.** A normalizer may answer asynchronously and may return `{ skipped: true, reason }`. One that throws `RetryAfterError` (`src/shared/http/bounded-http.ts`) has its job moved to the delayed set for that long, at most 5 minutes and at most 5 times, without spending an attempt; after that it fails and retries like any other error. The Shopify and Standalone normalizers answer synchronously and never defer.
 
 **Sources that must not send.** A source that is not active is refused at the route and skipped in the worker (`integration_inactive`). One whose onboarding is not complete is accepted and skipped by the hub (`onboarding_incomplete`), like every other source.
-
-**Migration.** `0048_easyorders_ingestion.sql` adds `currency`, `phone_country`, `rejected_deliveries` and `last_rejected_at` to `easyorders_connections` and allows the health value `credentials_rejected`. Additive and re-runnable. Rollback: move any `credentials_rejected` row back to `ok`, restore the two-value check, drop the four columns.
 
 **Logs.** `easyorders-webhook-accept` (outcome, `reason` or `errorCode`), `easyorders-webhook-not-persisted`, `easyorders-order-lookup`, `easyorders-order-normalize`, `easyorders-order-settings-save`, `webhook-job-defer`. None carries the token, a secret, the key or the payload.
 
 **Validate.** `scripts/test-easyorders-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/webhook-queue`.
 
-## EasyOrders Outcome Synchronization (US-06-04)
+## EasyOrders Outcome Synchronization
 
-Approved outcomes are written to EasyOrders as an order status, and the local result is kept apart from whether the store has it. It ships dark behind `EASYORDERS_OUTCOME_SYNC_ENABLED`. Behavior comes from the [US-06-01 contract record](Epics/06-easyorders-integration/evidence/US-06-01-contract-record.md), sections 2, 5, 6 and 8.
+Approved outcomes are written to EasyOrders as an order status, and the local result is kept apart from whether the store has it. It sits behind `EASYORDERS_OUTCOME_SYNC_ENABLED`.
 
-**Shared part (platform-neutral).** The outcome contract is the one Shopify already uses (`src/shared/commerce/commerce-outcome.ts`, `CommerceOutcomeRegistryService`). This story added what was missing around it:
+**Shared part (platform-neutral).** The outcome contract is the one every source uses (`src/shared/commerce/commerce-outcome.ts`, `CommerceOutcomeRegistryService`). Around it, for a source that writes to a remote store:
 
-- An adapter may set `tracksSynchronization`. For such an adapter the registry records every dispatch in `commerce_outcome_syncs` (one row per order and action): `pending` before the adapter runs, then `succeeded`, `failed` or `unsupported`. Shopify and Standalone do not set it and dispatch exactly as before, with no row.
+- An adapter may set `tracksSynchronization`. For such an adapter the registry records every dispatch in `commerce_outcome_syncs` (one row per order and action): `pending` before the adapter runs, then `succeeded`, `failed` or `unsupported`. Shopify and Standalone do not set it and dispatch with no row.
 - A caller may pass `retryInBackground`. The hub does, for customer confirmation and cancellation (and the merchant's manual confirmation, which takes the same path). A merchant no-reply cancellation does not: its failure goes back to the merchant, who is the retry.
 - `CommerceOutcomeSyncProcessor` (queue `commerce-outcome-sync`) tries a `pending` row again through the same registry. `planOutcomeSync` decides: at most 5 attempts, backing off 30 seconds, 2, 8 and 30 minutes; a wait the provider names (`retryAfterMs`) is honored up to 10 minutes and up to 5 times without spending an attempt. A permanent failure is never retried. If the retry cannot be queued the row becomes `failed` with `retry_not_scheduled` instead of waiting forever.
 - A tracking failure is logged and never changes the dispatch result. The verification's status is never changed by any of this.
@@ -839,17 +852,70 @@ Automatic no-reply is local only. It never becomes a cancellation and never borr
 | `404` | `permanent_failure` `order_not_found` |
 | Any other answer to the write | `permanent_failure` `remote_rejected` |
 
-**Status webhooks (`EasyOrdersStatusUpdateHandler`).** The tenant is the one the URL token resolved to (US-06-03). The handler never writes to EasyOrders and never changes a verification, so a status event cannot start a loop. It records what the event was on `webhook_events.last_error`: `reflected_outcome` when the new status is the one Akeed asked for on that order (matched from a `pending` or `failed` row too, for a write whose answer was lost), `remote_status_observed` for any other change, `order_not_owned` for an order id the integration does not own, `malformed_status_event` otherwise.
+**Status webhooks (`EasyOrdersStatusUpdateHandler`).** The tenant is the one the URL token resolved to at ingestion. The handler never writes to EasyOrders and never changes a verification, so a status event cannot start a loop. It records what the event was on `webhook_events.last_error`: `reflected_outcome` when the new status is the one Akeed asked for on that order (matched from a `pending` or `failed` row too, for a write whose answer was lost), `remote_status_observed` for any other change, `order_not_owned` for an order id the integration does not own, `malformed_status_event` otherwise.
 
-**Migration.** `0049_commerce_outcome_syncs.sql` creates the table, API-only (RLS on, grants revoked). Additive and re-runnable. Rollback: drop the table; no other row is touched.
+`commerce_outcome_syncs` is API-only: RLS on, all `anon` / `authenticated` grants revoked.
 
 **Logs.** `commerce-outcome-dispatch`, `easyorders-outcome-sync` (`errorCode`, `providerStatus`), `commerce-outcome-sync-schedule`, `commerce-outcome-sync-retry`, `commerce-outcome-sync-settle` / `-begin` / `-schedule` (failures of the tracking itself), `verification-outcome-sync-retry`, `webhook-order-update-handle`. None carries the key or a payload.
 
 **Validate.** `scripts/test-easyorders-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/easyorders src/modules/commerce-outcomes src/modules/webhook-queue`.
 
-## WooCommerce Webhook Ingestion (US-07-03)
+## WooCommerce Connection
 
-Order deliveries enter the common queue through the WooCommerce spoke (`src/infrastructure/spokes/woocommerce/`). It ships dark behind `WOOCOMMERCE_INGESTION_ENABLED`. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 2, 3, 4 and 6, and its amendments.
+The WooCommerce spoke lives in `src/infrastructure/spokes/woocommerce/`. A store is connected through WooCommerce application authentication only: the merchant approves in their own store and the store posts the new keys to Akeed. There is no manual key entry and no WordPress plugin. It ships behind `WOOCOMMERCE_CONNECT_ENABLED` ([ENVIRONMENT.md](ENVIRONMENT.md#woocommerce-connection)).
+
+**Restricted outbound client.** Every request to a merchant's store goes through `src/shared/http/restricted-http.ts`, because the address is merchant-supplied: `https:` on 443 only, no credentials in the URL; the host is resolved once and every address must be public; the connection is pinned to the checked address; certificates are always verified; a `3xx` is an error and is never followed; one 10-second deadline; the body is capped at 1 MiB; errors carry a code and the host only.
+
+**Support boundary.** A store is supported when it has all of this. Akeed promises nothing about hosting, plugins or versions beyond it.
+
+- A public HTTPS address on the default port, at the root of a domain or in a subdirectory.
+- Pretty permalinks, so that `wp-json/wc/v3` answers.
+- The `Authorization` header reaching WordPress.
+- A WordPress user who can manage WooCommerce approving the connection.
+- The core Cash on Delivery gateway (`cod`) and the core order statuses.
+- `PUT` and `DELETE` accepted by the host.
+
+A custom gateway, a custom status or a plugin that changes the order payload cannot be detected at connect. Its orders are recorded as skipped with a reason.
+
+**Flow.**
+
+1. Signup records the chosen source; the organization is created with no source, as for EasyOrders.
+2. `POST /api/woocommerce/install` with `{ storeUrl, locale }` (owner or admin, Supabase session, switch on, organization allowed by the pilot list, no source or only its own disconnected WooCommerce source). The address is canonicalized, then one unauthenticated `GET {store}/wp-json/wc/v3` probes it. A 15-minute context in `woocommerce_pending_installs` binds the organization, the user and the canonical store URL, and retires earlier open contexts. The answer `{ authorizeUrl, storeUrl, expiresAt }` is the only response that carries the callback token. The link asks for `read_write`.
+3. The merchant approves in the store. The store calls `POST /api/woocommerce/install/callback/:token` with the keys. The endpoint is public; the path token and the `user_id` it echoes are the tenant binding. The browser's return (`success=1` or `0`) is only a hint: the app polls `GET /api/woocommerce/connection`.
+4. The callback claims the context for 45 seconds, so two callbacks on one link cannot delete each other's webhooks. It refuses a store verified for another organization before any store call, then proves the keys with `GET system_status`: the store's `home_url`, canonicalized, must equal the store URL of the context.
+5. It lists the store's webhooks, deletes every one that delivers to Akeed, and creates `order.created` and `order.updated` on one per-install delivery URL with one 32-byte secret Akeed generates. If the second cannot be created the first is removed.
+6. One transaction stores the connection and provisions the `woocommerce` integration (source identity `woocommerce:<orgId>`, billing and onboarding defaults as for EasyOrders). If it is refused, the two webhooks are removed again. A context allows 5 refused callbacks.
+
+**Refusals.** Each is refused without storing a connection, and the connect screen shows the code's message in Arabic or English.
+
+| Case | Detected | Code | HTTP |
+| --- | --- | --- | --- |
+| The address is not a usable URL (credentials, query, port, IP literal) | Start | `WOOCOMMERCE_STORE_URL_INVALID` | `400` |
+| The address is not HTTPS | Start | `WOOCOMMERCE_STORE_HTTPS_REQUIRED` | `400` |
+| The host does not resolve, or resolves to a non-public address | Start, and every call | `WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC` | `422` |
+| The address redirects | Start, and every call | `WOOCOMMERCE_STORE_REDIRECTS` | `422` |
+| The TLS certificate is not valid | Start, and every call | `WOOCOMMERCE_STORE_TLS_FAILED` | `422` |
+| `wp-json/wc/v3` answers `404` (plain permalinks, or WooCommerce too old) | Start, callback | `WOOCOMMERCE_REST_NOT_FOUND` | `422` |
+| No answer, a timeout or a `5xx` | Start, callback | `WOOCOMMERCE_REST_UNREACHABLE` | `503` |
+| The new keys get `401` (header not arriving, or key not accepted) | Callback | `WOOCOMMERCE_CREDENTIALS_REJECTED` | `422` |
+| The keys get `403`, or `key_permissions` is not `read_write` | Callback | `WOOCOMMERCE_PERMISSION_DENIED` | `422` |
+| The store reports a different address from the one entered | Callback | `WOOCOMMERCE_STORE_URL_MISMATCH` | `422` |
+| The webhooks could not be created | Callback | `WOOCOMMERCE_WEBHOOK_SETUP_FAILED` | `503` |
+| The store is already connected to another Akeed organization | Callback | `WOOCOMMERCE_STORE_UNAVAILABLE` | `409` |
+
+The remaining connect codes mirror the EasyOrders ones: `WOOCOMMERCE_CONNECT_UNAVAILABLE` (`404`), `WOOCOMMERCE_PILOT_REQUIRED`, `WOOCOMMERCE_SESSION_REQUIRED`, `WOOCOMMERCE_ROLE_REQUIRED` (`403`), `WOOCOMMERCE_SOURCE_EXISTS`, `WOOCOMMERCE_RECONNECT_STORE_MISMATCH` (`409`), `WOOCOMMERCE_INSTALL_VALIDATION_FAILED`, `WOOCOMMERCE_CALLBACK_INVALID` (`400`), `WOOCOMMERCE_INSTALL_CONTEXT_INVALID` (`401`), `WOOCOMMERCE_PROVIDER_UNAVAILABLE` (`503`), `WOOCOMMERCE_NOT_CONNECTED` (`404`).
+
+**What is stored.** `woocommerce_connections`: the canonical `store_url`, the consumer key, consumer secret and webhook secret as `v1:` ciphertext (a CHECK refuses anything else), the delivery URL token as a hash only, the two webhook ids, `woo_version`, `health`, `rejected_deliveries` and `connected_at`. A partial unique index makes a store unique once verified: one store, one organization. Both tables have RLS on with no policy and all `anon` / `authenticated` grants revoked. `consumer_key`, `consumer_secret` and `authorize_url` are in `REDACTED_KEYS`; log lines name a store by host only.
+
+**Known limits.** An unused API key can stay in the store after a denied, refused or abandoned install; the screens tell the merchant where to delete it. Two different links of one organization calling back at the same instant can still delete each other's webhooks; the database stays consistent, health shows the webhooks as missing, and the fix is to reconnect.
+
+**Logs.** `woocommerce-install-start`, `woocommerce-install-callback` (with `errorCode` on refusal), `woocommerce-install-webhook-cleanup`, `woocommerce-install-claim-release`.
+
+**Validate.** `scripts/test-woocommerce-connection-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce src/shared/http`.
+
+## WooCommerce Webhook Ingestion
+
+Order deliveries enter the common queue through the WooCommerce spoke, behind `WOOCOMMERCE_INGESTION_ENABLED`.
 
 **Route.** `POST /api/woocommerce/webhooks/:token` (`WooCommerceWebhookController`), one URL for both `order.created` and `order.updated`. Public, with a per-address flood cap. `applyWooCommerceWebhookEdge` (`main.ts`) hands the route the body as raw bytes whatever the content type is; the signature is over those bytes.
 
@@ -874,7 +940,7 @@ An inactive source with a live token is not refused: the event is recorded and t
 | Update | A create event for the order exists | `order.update` | `order.update:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
 | Skipped | Neither | `order.create` | `order.skip:<integrationId>:<orderId>:<status>:<date_modified_gmt>` |
 
-The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stored for audit and is never a key. A skipped delivery never takes the create key, so a checkout draft followed by the placed order gives one verification. A create event that ended on the order's own data (`incomplete_payload`, `order_currency_unsupported`, `order_phone_country_missing`, `invalid_phone`, `invalid_amount`) has not taken the order: its next delivery that passes the start rule is tried again as a create under `order.retry:<integrationId>:<orderId>:<status>:<date_modified_gmt>`, until Akeed holds the order (US-07-06). Update events go to `WooCommerceOrderUpdateHandler` (US-07-04, below), which records what the update was and changes nothing.
+The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stored for audit and is never a key. A skipped delivery never takes the create key, so a checkout draft followed by the placed order gives one verification. A create event that ended on the order's own data (`incomplete_payload`, `order_currency_unsupported`, `order_phone_country_missing`, `invalid_phone`, `invalid_amount`) has not taken the order: its next delivery that passes the start rule is tried again as a create under `order.retry:<integrationId>:<orderId>:<status>:<date_modified_gmt>`, until Akeed holds the order. Update events go to `WooCommerceOrderUpdateHandler` (below), which records what the update was and changes nothing.
 
 **What an event keeps (`woocommerce-delivery.ts`).** `raw_payload` is `{ topic, webhookId, deliveryId, order }`, where `order` holds only `id`, `number`, `status`, `currency`, the two GMT dates, `total`, `payment_method`, the billing name, phone and country, and `meta_data` entries whose key is `akeed_outcome`. Email, addresses, IP address, line items and other plugins' meta are not stored.
 
@@ -882,9 +948,11 @@ The source identity is `woocommerce:<orgId>`. `X-WC-Webhook-Delivery-ID` is stor
 
 **Validate.** `scripts/test-woocommerce-ingestion-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
-## WooCommerce Outcome Synchronization (US-07-04)
+## WooCommerce Outcome Synchronization
 
-Approved outcomes are written to the merchant's WooCommerce store, and the local result is kept apart from whether the store has it. It ships dark behind `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 5 and 8, and its US-07-04 amendment. Nothing shared was changed: the outcome contract, the registry, `commerce_outcome_syncs`, the retry worker and policy, the retry endpoint and the processor's `order.update` routing are the ones described under [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization-us-06-04).
+Approved outcomes are written to the merchant's WooCommerce store, and the local result is kept apart from whether the store has it. It sits behind `WOOCOMMERCE_OUTCOME_SYNC_ENABLED`. The outcome contract, the registry, `commerce_outcome_syncs`, the retry worker and policy, the retry endpoint and the processor's `order.update` routing are the shared ones described under [EasyOrders Outcome Synchronization](#easyorders-outcome-synchronization).
+
+WooCommerce has no "confirmed" status: `processing` is already where a placed COD order sits and `completed` means fulfilled. So a confirmation leaves a marker and a note and changes no status. A cancellation writes `cancelled`, and the store's own side effects (stock restored, cancellation email) are accepted.
 
 **Mapping (`woocommerce-outcome.mapping.ts`).**
 
@@ -924,9 +992,9 @@ A successful read sets the health back to `ok`. There is no rate limiter.
 
 **Validate.** `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
-## WooCommerce Setup, Health and Disconnect (US-07-05)
+## WooCommerce Setup, Health and Disconnect
 
-No switch of its own. Behavior comes from the [US-07-01 contract record](Epics/07-woocommerce-integration/evidence/US-07-01-contract-record.md), sections 3 and 7, and its US-07-05 amendment. Operations: the [runbook](Epics/07-woocommerce-integration/evidence/US-07-05-disconnect-and-support-runbook.md).
+No switch of its own. Operations are in the [support runbook](WOOCOMMERCE_SUPPORT_RUNBOOK.md).
 
 **Setup (`WooCommerceSetupContributor`).** Registered in `SOURCE_SETUP_CONTRIBUTORS` next to the EasyOrders one. `describe` reads the connection row alone and never calls a store: the store, the last credential answer, refused deliveries and the last webhook states. Currency and phone country are reported as null and never block: every order carries its own. Reasons: `source_disconnected`, or `credentials_rejected` (a `401` or a `403`) and `webhook_disabled`.
 
@@ -946,7 +1014,7 @@ No switch of its own. Behavior comes from the [US-07-01 contract record](Epics/0
 
 **Validate.** `scripts/test-woocommerce-connection-contract.ps1`, `scripts/test-woocommerce-ingestion-contract.ps1`, `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
-## Server API Guide (US-05-05)
+## Server API Guide
 
 The integrator-facing guide for `POST /api/v1/orders` is public: `akeed-frontend/content/docs/en/server-api.md` (`/en/docs/server-api`), with a short Arabic overview at `content/docs/ar/server-api.md`. Settings → API keys links to it and shows the endpoint address.
 
@@ -982,14 +1050,14 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 | Method | Endpoint             | Auth                    | Purpose                                       |
 | ------ | -------------------- | ----------------------- | --------------------------------------------- |
 | `GET`  | `/webhooks/whatsapp` | `WA_VERIFY_TOKEN` check | Meta subscription verification challenge.     |
-| `POST` | `/webhooks/whatsapp` | `MetaWebhookSignatureGuard` (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body, timing-safe) | Customer replies and delivery status updates; template status, quality and category updates (US-08-04). |
+| `POST` | `/webhooks/whatsapp` | `MetaWebhookSignatureGuard` (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body, timing-safe) | Customer replies and delivery status updates; template status, quality and category updates. |
 
 ### Outbound API Calls
 
 | Target                | Endpoint                                           | Purpose                           |
 | --------------------- | -------------------------------------------------- | --------------------------------- |
 | Meta Cloud API        | `POST graph.facebook.com/v24.0/{phoneId}/messages` | Send WhatsApp template messages.  |
-| Meta Graph API        | `GET graph.facebook.com/v24.0/{wabaId}/message_templates` | Template sync (read-only, US-08-04). |
+| Meta Graph API        | `GET graph.facebook.com/v24.0/{wabaId}/message_templates` | Template sync (read-only). |
 | Shopify Admin GraphQL | `POST {shop}/admin/api/2026-01/graphql.json`       | Tags, cancel, billing, shop name. |
 
 ## Environment Variables
@@ -1084,7 +1152,13 @@ The `metadata` column on verifications stores operational notes:
 ## Known Business Decisions
 
 - Webhook ingestion is designed as a thin fast path: accept and return 200, process asynchronously. This prevents Shopify from retrying webhooks due to slow processing.
-- The `WEBHOOK_ORDER_NORMALIZERS` multi-token pattern was chosen to support future e-commerce platforms (Salla, WooCommerce, Zid) without modifying the queue processor.
+- The `WEBHOOK_ORDER_NORMALIZERS` multi-token pattern lets a platform be added (EasyOrders and WooCommerce today) without modifying the queue processor.
+- A connected store has exactly one source. There is no source switching: a different store, or another platform, needs staff.
+- Orders placed while a store was disconnected, or while its webhook was disabled, are not imported later. There is no polling and no backfill.
+- An automatic no-reply stays local on EasyOrders and WooCommerce. It never cancels an order in the store; only the customer's reply or the merchant's own action does.
+- WooCommerce is connected through application authentication only, with no manual key entry and no WordPress plugin, and only stores inside the support boundary are connected.
+- A WooCommerce confirmation writes an order note and an Akeed marker and changes no status; a cancellation writes `cancelled`.
+- Akeed never revokes a store's API key, because neither platform offers a call for it. The merchant deletes it, and the app shows where.
 - COD detection uses multiple signal sources (payment method, gateway names, transactions) because Shopify stores don't consistently populate a single field.
 - Arabic COD patterns are included because many MENA merchants use Arabic gateway names.
 - Language auto-detection from phone country code is used as the default because merchants serve mixed-language customer bases.

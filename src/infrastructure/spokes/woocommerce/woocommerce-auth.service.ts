@@ -158,12 +158,11 @@ function refused(
 }
 
 /**
- * The WooCommerce install (US-07-02), as the US-07-01 contract record defines
- * it: an owner or admin of a source-less pilot organization names a store and
+ * The WooCommerce install: an owner or admin of a source-less pilot organization names a store and
  * opens a single-use context, approves in the store, and the store posts keys
  * that are proven against that store before anything is stored.
  *
- * The same flow reconnects a source its merchant disconnected (US-07-05):
+ * The same flow reconnects a source its merchant disconnected:
  * only that organization's own disconnected WooCommerce source, and only to
  * the store that was connected.
  */
@@ -315,7 +314,7 @@ export class WooCommerceAuthService {
   }
 
   /**
-   * Stops the source and removes what Akeed holds of the store (US-07-05).
+   * Stops the source and removes what Akeed holds of the store.
    *
    * First, in one transaction: the source stops being active, which every
    * queued message and store update already checks, and the keys, the
@@ -493,7 +492,7 @@ export class WooCommerceAuthService {
   }
 
   /**
-   * Steps 2 to 5 of the callback acceptance (contract record section 1).
+   * Steps 2 to 5 of the callback acceptance.
    * Nothing is stored before the last step, and every store call is made
    * against the URL the install context holds.
    */

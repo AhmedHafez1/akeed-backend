@@ -36,7 +36,7 @@ const OTHER_STORE_ID = '00000000-0000-4000-8000-0000000000ff';
 
 /**
  * The adapter and the normalizer as the application builds them, over the
- * provider fake, with the documented fixtures as the store's data (US-06-06).
+ * provider fake, with the documented fixtures as the store's data.
  */
 function setup(options: { enabled?: boolean } = {}) {
   const order = orderCreatedFixture();
@@ -275,7 +275,7 @@ describe('EasyOrders adapter against the provider fake', () => {
 
     it('fails closed if EasyOrders lets a key read another store’s order', async () => {
       const { adapter, request, provider, order, connection } = setup();
-      // Section 2 of the contract record: cross-store reads are UNKNOWN.
+      // Whether a key can read another store's order is not documented.
       provider.behavior.crossStoreReads = true;
       connection.storeId = OTHER_STORE_ID;
       connection.apiKeyEncrypted = encryptToken(

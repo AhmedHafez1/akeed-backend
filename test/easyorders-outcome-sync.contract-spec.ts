@@ -229,7 +229,7 @@ const registry = new CommerceOutcomeRegistryService(
   new CommerceOutcomeSyncTracker(syncs, retryProducer),
 );
 const retryWorker = new CommerceOutcomeSyncProcessor(syncs, registry);
-/** The real disconnect (US-06-05), with the real outcome-sync repository. */
+/** The real disconnect, with the real outcome-sync repository. */
 const connectionService = new EasyOrdersAuthService(
   connections,
   new EasyOrdersApiClient(fakeEasyOrders),
@@ -532,7 +532,7 @@ async function migrate(name: string) {
   for (const statement of statements) await client.unsafe(statement);
 }
 
-describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', () => {
+describe('EasyOrders outcome synchronization PostgreSQL contract', () => {
   let merchant: Merchant;
 
   beforeAll(async () => {
@@ -579,7 +579,7 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
     await migrate('0048_easyorders_ingestion.sql');
     for (let pass = 0; pass < 2; pass++)
       await migrate('0049_commerce_outcome_syncs.sql');
-    // US-06-05: the credentials become nullable for a disconnect.
+    // The credentials become nullable for a disconnect.
     await migrate('0050_easyorders_disconnect.sql');
     await migrate('0062_easyorders_webhook_cleanup.sql');
   });
@@ -1101,7 +1101,7 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
     });
   });
 
-  describe('a disconnected source (US-06-05)', () => {
+  describe('a disconnected source', () => {
     it('a retry queued before the disconnect makes no request and ends failed', async () => {
       const order = await orderWith(merchant, { status: 'confirmed' });
       readFaults.push('unavailable');
@@ -1198,7 +1198,7 @@ describe('EasyOrders outcome synchronization PostgreSQL contract (US-06-04)', ()
     });
   });
 
-  describe('store-update health (US-06-05)', () => {
+  describe('store-update health', () => {
     const since = () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const summaryOf = (target: Merchant) =>
       syncs.summarizeForIntegration(

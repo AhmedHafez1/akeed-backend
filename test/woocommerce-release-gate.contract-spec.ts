@@ -30,7 +30,7 @@ import {
 } from './fixtures/woocommerce/load';
 
 /**
- * US-07-06 release gate: one WooCommerce store through connect, order, send,
+ * The WooCommerce release gate: one store through connect, order, send,
  * customer outcome and store update, over PostgreSQL, with two tenants and a
  * Shopify, a Standalone and an EasyOrders source beside it. Real
  * repositories and services; the edges are fakes: the provider fake under
@@ -71,7 +71,7 @@ const sourceOf = (merchant: WooCommerceMerchant) => ({
 const strangerToken = () => randomBytes(32).toString('base64url');
 
 defineSourceConformance({
-  title: 'WooCommerce release gate PostgreSQL contract (US-07-06)',
+  title: 'WooCommerce release gate PostgreSQL contract',
   world,
   driver,
   migrations: [...EASYORDERS_MIGRATIONS, ...WOOCOMMERCE_MIGRATIONS],

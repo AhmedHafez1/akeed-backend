@@ -22,8 +22,7 @@ export interface TemplateEventsSummary {
 }
 
 /**
- * Applies template notifications from the provider to the registry
- * (US-08-04 criterion 3), following the contract record's webhook rules:
+ * Applies template notifications from the provider to the registry:
  *
  * - **Duplicates.** The same event identity twice is a no-op.
  * - **Order.** An event applies only when it is later than the newest one

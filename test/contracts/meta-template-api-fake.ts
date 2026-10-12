@@ -2,15 +2,15 @@ import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios';
 import { Observable } from 'rxjs';
 
 /**
- * An in-process Meta Graph `message_templates` list for the E08 suites. No
+ * An in-process Meta Graph `message_templates` list for the template suites. No
  * request leaves the process, and no token it sees is a real one.
  *
- * Its behavior comes only from the US-08-01 contract record. Where the record
- * is silent the fake takes the record's worst case and says which:
+ * Its behavior is what Meta documents. Where Meta is silent the fake
+ * takes the worst case and says which:
  *
  * - The list answers `data`, `paging.cursors.after` and `paging.next`
  *   (4.1.1). `paging.next` is a full URL that echoes the token, so an adapter
- *   that followed or logged it would leak it (record 1.4).
+ *   that followed or logged it would leak it.
  * - `components` uses the creation syntax (S2, 4.7.5) and `quality_score` a
  *   bare documented string. Neither shape is documented for the list
  *   response, so both are "documented shape, not captured", like the webhook
@@ -112,7 +112,7 @@ export class FakeMetaTemplateApi {
   readonly requests: FakeMetaTemplateRequest[] = [];
   /** Every create and edit received, applied or not. */
   readonly writes: FakeMetaTemplateWrite[] = [];
-  /** The status a create answers with (record 4.2.2). */
+  /** The status a create answers with. */
   createStatus = 'PENDING';
   /** Failures to answer, by 1-based page number. */
   private readonly failures = new Map<number, FakeMetaFailure>();

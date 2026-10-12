@@ -1,8 +1,8 @@
 export const WOOCOMMERCE_CONFIG = 'wooCommerce';
 
 /**
- * WooCommerce connection (US-07-02), order ingestion (US-07-03) and outcome
- * writes (US-07-04).
+ * WooCommerce connection, order ingestion and outcome
+ * writes.
  *
  * The switch hides the start-install and callback routes. The optional
  * allow-list restricts installs when populated; an empty list allows any
@@ -13,7 +13,7 @@ export interface WooCommerceConfig {
   /** While false the delivery URL answers 404 to every order delivery. */
   ingestionEnabled: boolean;
   /**
-   * Remote outcome writes (US-07-04). Off means the outcome adapter has no
+   * Remote outcome writes. Off means the outcome adapter has no
    * capability: nothing is sent to any store and every outcome stays local.
    */
   outcomeSyncEnabled: boolean;

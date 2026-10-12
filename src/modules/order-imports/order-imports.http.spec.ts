@@ -1025,7 +1025,7 @@ describe('order-import routes over HTTP', () => {
     );
   });
 
-  describe('GET /api/order-imports and /:id (US-04.6-05)', () => {
+  describe('GET /api/order-imports and /:id', () => {
     const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
     const columns = {
       phone: 'Mobile',
@@ -1496,7 +1496,7 @@ describe('order-import routes over HTTP', () => {
       expect(response.body).toMatchObject({ code: 'IMPORT_DISABLED' });
     });
   });
-  describe('start checkpoint routes (US-04.6-07)', () => {
+  describe('start checkpoint routes', () => {
     const batchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
     const route = (name: string) => `/api/order-imports/${batchId}/${name}`;
 

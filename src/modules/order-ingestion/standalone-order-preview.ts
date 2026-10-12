@@ -12,7 +12,7 @@ import {
  *
  * A channel that has to show an eligibility decision before the order exists
  * (the import review step) previews here, so no channel adapter calls the
- * envelope builder itself (the adapter boundary, US-04.6-10).
+ * envelope builder itself (the adapter boundary).
  */
 export function previewCanonicalOrder(
   channel: StandaloneIngestionChannel,

@@ -13,7 +13,7 @@ interface CapturedTemplate {
   components: unknown;
 }
 
-/** The list response captured from the dev app, sanitized (US-08-01). */
+/** The list response captured from the dev app, sanitized. */
 const captured = (
   JSON.parse(
     readFileSync(
@@ -47,7 +47,7 @@ const synced = seededRegistryTemplates().map((template) => {
   };
 });
 
-describe('drift against the templates the dev app holds (US-08-01 run)', () => {
+describe('drift against the templates the dev app holds', () => {
   it('finds only a text difference on the seven templates Meta holds', () => {
     const found = synced.filter(({ model }) => model !== null);
 

@@ -67,7 +67,7 @@ export type TemplateDraftField =
 
 /**
  * One validation finding. `rule` is stable and translated by the UI;
- * `finding` names the US-08-01 contract-record finding the rule enforces, or
+ * `finding` is the reference of the Meta requirement the rule enforces, or
  * `akeed` for a rule of Akeed's own. A `warning` does not block a submit.
  */
 export interface TemplateDraftIssue {

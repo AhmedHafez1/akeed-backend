@@ -12,7 +12,7 @@ import {
 } from '../src/infrastructure/database/schema';
 
 /**
- * US-04.5-06 against real PostgreSQL.
+ * Staff billing operations against real PostgreSQL.
  *
  * Staff operations lean on the same unique indexes, CHECK constraints and
  * triggers as the money paths they reconcile, so the guarantees are only
@@ -48,7 +48,7 @@ async function listed(query: Parameters<typeof accounts.list>[1]) {
   return page.rows.map((row) => row.orgId);
 }
 
-describe('US-04.5-06 PostgreSQL staff billing operations', () => {
+describe('PostgreSQL staff billing operations', () => {
   beforeAll(harness.setup);
   afterAll(harness.teardown);
   afterEach(() => jest.restoreAllMocks());

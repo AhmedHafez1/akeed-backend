@@ -3,7 +3,7 @@ import { WOOCOMMERCE_CONFIG } from './woocommerce.config';
 export const EASYORDERS_CONFIG = 'easyOrders';
 
 /**
- * EasyOrders connection (US-06-02).
+ * EasyOrders connection.
  *
  * The switch hides every connect route. The optional allow-list restricts
  * installs when populated; an empty list allows any organization.
@@ -11,12 +11,12 @@ export const EASYORDERS_CONFIG = 'easyOrders';
 export interface EasyOrdersConfig {
   enabled: boolean;
   /**
-   * Order-webhook ingestion (US-06-03), switched separately from connect so
+   * Order-webhook ingestion, switched separately from connect so
    * a store can be connected and checked before its orders are accepted.
    */
   ingestionEnabled: boolean;
   /**
-   * Remote status writes (US-06-04). Off means the outcome adapter has no
+   * Remote status writes. Off means the outcome adapter has no
    * capability: nothing is sent to EasyOrders and every outcome stays local.
    */
   outcomeSyncEnabled: boolean;

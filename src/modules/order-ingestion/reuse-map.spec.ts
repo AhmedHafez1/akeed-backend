@@ -24,15 +24,15 @@ function filesMatching(pattern: RegExp, scope?: RegExp): string[] {
     .sort();
 }
 
-/** Every Standalone channel and the command they share (the API since E05). */
+/** Every Standalone channel and the command they share. */
 const CHANNELS = /^modules\/(orders|order-imports|order-api|order-ingestion)\//;
 
 /**
- * US-04.6-10 AC3 and US-05-06 AC2: the epic README "Reuse map" row by row.
+ * The epic README "Reuse map" row by row.
  * Every rule the manual form, the import and the server API share exists
  * exactly once; a second copy is a place for the channels to drift apart.
  */
-describe('E04.6 and E05 release gates: one implementation per rule (Reuse map)', () => {
+describe('bulk import and order API release gates: one implementation per rule (Reuse map)', () => {
   it('source resolution: one resolver decides the writable Standalone source', () => {
     expect(
       filesMatching(
@@ -114,8 +114,8 @@ describe('E04.6 and E05 release gates: one implementation per rule (Reuse map)',
 
   it('idempotency-key validation: one pattern for the order channels', () => {
     // KNOWN, outside the Reuse map: two staff billing endpoints kept their own
-    // copies before E04.6 (recorded in US-04.6-06 and US-04.6-10 evidence as
-    // follow-ups). No order channel may add another.
+    // copies.
+    // No order channel may add another.
     expect(filesMatching(/\[A-Za-z0-9\._:-\]|\[A-Za-z0-9\._:\\-\]/)).toEqual([
       'modules/admin/billing-observability.service.ts',
       'modules/admin/standalone-billing-operator.guard.ts',

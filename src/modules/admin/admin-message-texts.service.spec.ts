@@ -57,7 +57,7 @@ const SAVED = {
   updatedAt: '2026-10-06T00:00:00.000Z',
 };
 
-describe('AdminMessageTextsService (US-08-07)', () => {
+describe('AdminMessageTextsService', () => {
   beforeEach(() => jest.spyOn(Logger.prototype, 'log').mockImplementation());
   afterEach(() => jest.restoreAllMocks());
 

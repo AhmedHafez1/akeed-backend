@@ -1,5 +1,5 @@
 /**
- * BullMQ queue for outcomes a store has not taken yet (US-06-04).
+ * BullMQ queue for outcomes a store has not taken yet.
  *
  * The `commerce_outcome_syncs` row is the truth; a job only names the row to
  * try again. Only adapters that track synchronization ever produce one.

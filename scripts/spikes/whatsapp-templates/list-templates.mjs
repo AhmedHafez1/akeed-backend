@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Lists every message template in the WhatsApp Business Account of the
-// environment it runs in, for US-08-01. READ-ONLY: it sends GET requests to one
+// environment it runs in. READ-ONLY: it sends GET requests to one
 // Graph API edge and never creates, edits or deletes anything.
 //
 //   node --env-file=.env scripts/spikes/whatsapp-templates/list-templates.mjs --env dev

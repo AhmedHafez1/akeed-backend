@@ -69,7 +69,7 @@ function numberRecord(value: unknown): Record<string, number> {
 }
 
 /**
- * The read side of the import wizard (US-04.6-05): the open drafts to
+ * The read side of the import wizard: the open drafts to
  * resume and one batch as the page renders it after a refresh. Any member
  * may read; `permissions.canEdit` tells the page whether to offer changes.
  */
@@ -98,7 +98,7 @@ export class OrderImportDetailService {
     status: string | undefined,
   ): Promise<OrderImportDraftListDto> {
     // Open drafts, or (listActive) started imports, until the history list
-    // (US-04.6-08) extends this route.
+    // extends this route.
     if (status !== 'draft')
       throw orderImportError('IMPORT_VALIDATION_FAILED', {
         fieldErrors: { status: 'status must be draft or active.' },

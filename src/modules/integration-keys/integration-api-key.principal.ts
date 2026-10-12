@@ -4,7 +4,7 @@ import type { Request } from 'express';
 /**
  * Who an API request authenticated as: one key of one integration.
  *
- * It is not an ingestion context. US-05-02 turns it into the existing
+ * It is not an ingestion context. The order API turns it into the existing
  * `StandaloneIngestionContext` through the source resolver, so the command
  * never learns which authentication produced the order; `keyId` and `prefix`
  * are log metadata only.

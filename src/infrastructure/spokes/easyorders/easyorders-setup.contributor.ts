@@ -14,12 +14,12 @@ const CREDENTIAL_STATUS: Record<string, SourceCredentialStatus> = {
 };
 
 /**
- * What the EasyOrders connection adds to setup and health (US-06-05), from
+ * What the EasyOrders connection adds to setup and health, from
  * the connection row alone: no provider call, so the credential status is the
  * last answer EasyOrders gave, not a live check.
  *
- * An inactive store is not a setup blocker: the contract record (section 2)
- * treats it as a retryable health state, and its orders simply wait.
+ * An inactive store is not a setup blocker: it is
+ * a retryable health state, and its orders simply wait.
  */
 @Injectable()
 export class EasyOrdersSetupContributor implements SourceSetupContributor {

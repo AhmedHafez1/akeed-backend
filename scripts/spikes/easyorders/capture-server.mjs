@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Capture server for the US-06-01 EasyOrders validation spike.
+// Capture server for the EasyOrders validation spike.
 //
 // Receives the authorized-app callback and both webhooks behind a public
 // tunnel and records what EasyOrders actually sends. Not production code.

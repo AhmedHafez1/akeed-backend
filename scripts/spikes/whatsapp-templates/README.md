@@ -1,11 +1,7 @@
-# WhatsApp template reconciliation kit (US-08-01)
+# WhatsApp template reconciliation kit
 
-This kit produces the evidence for
-[US-08-01](../../../docs/Epics/08-whatsapp-template-management/US-08-01-meta-contract-and-live-template-reconciliation.md).
+This kit reads an environment's templates from Meta and compares them with what Akeed sends.
 It is not production code and nothing in `src/` depends on it.
-
-The findings go into
-`docs/Epics/08-whatsapp-template-management/evidence/US-08-01-contract-record.md`.
 
 | Script                 | Calls Meta      | What it does                                                              |
 | ---------------------- | --------------- | ------------------------------------------------------------------------- |

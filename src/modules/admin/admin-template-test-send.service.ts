@@ -46,7 +46,7 @@ export const WHATSAPP_TEMPLATE_TEST_SEND_AUDIT_ACTION =
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Sends one template, with sample values, to a staff phone (US-08-05).
+ * Sends one template, with sample values, to a staff phone.
  *
  * The message is the one a store would send, through the same messaging port,
  * so staff see exactly what a customer would. Nothing else is created: no

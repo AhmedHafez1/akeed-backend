@@ -33,7 +33,7 @@ const LIMITS = {
 /** Rows the upload shows the column matcher (order-import-mapping.service). */
 const MATCHER_SAMPLE_ROWS = 20;
 
-/** The US-04.6-10 AC1 pack, in the story's order. */
+/** The whole-file fixture pack. */
 const AC1_FILES = [
   'arabic-excel.xlsx',
   'unicode-text-utf16le.csv',
@@ -144,12 +144,12 @@ async function validate(
 }
 
 /**
- * US-04.6-10 AC1: every file of the fixture pack turns into the outcome its
+ * Every file of the fixture pack turns into the outcome its
  * hand-written manifest says: the file-level refusal, or each row's outcome,
  * issue codes and pinned normalized values, with the columns the upload
  * detects and the payment and date choices the mapping step requires.
  */
-describe('order-import fixture manifests (US-04.6-10 AC1)', () => {
+describe('order-import fixture manifests', () => {
   const index = JSON.parse(
     readFileSync(join(FIXTURES, 'index.json'), 'utf8'),
   ) as { file: string; manifest: boolean }[];
@@ -192,7 +192,7 @@ describe('order-import fixture manifests (US-04.6-10 AC1)', () => {
     const column = (name: string | null) =>
       name ? grid.rows.map((row) => row.cells[grid.headers.indexOf(name)]) : [];
     // The mapping step refuses to save until every unknown payment value is
-    // classified and an ambiguous date column has a format (US-04.6-03 AC5).
+    // classified and an ambiguous date column has a format.
     const corrections = manifestPaymentValueMap(manifest);
     const unresolved = [...new Set(column(mapping.paymentMethod))].filter(
       (value) =>

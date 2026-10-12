@@ -2,14 +2,14 @@ param([switch] $OwnOnly)
 
 $ErrorActionPreference = 'Stop'
 
-# US-08-08 release gate: the WhatsApp template suites (criteria 1 to 6), each
+# Release gate: the WhatsApp template suites (criteria 1 to 6), each
 # PostgreSQL contract on its own disposable container, then the inherited E07
 # gate, which carries E06, E05, E04, E03, E02 and E01/Shopify, the full
 # backend regression, both builds and the frontend checks (criterion 7).
 # Every step runs even after a failure, so one run reports the whole picture.
 # The summary lines and the JSON report are what the story evidence records.
 # No step calls Meta: both Meta edges are in-process fakes built from the
-# US-08-01 contract record. The live run is not part of this gate.
+# Contract record. The live run is not part of this gate.
 #
 # `-OwnOnly` (npm run test:gate:e08 -- -OwnOnly) skips the inherited gate and
 # says so in the report. It is for iterating; it is not a gate result.
@@ -31,7 +31,7 @@ $reportPath = Join-Path $evidenceDirectory "e08-$($startedAt.ToString('yyyyMMddT
 $results = New-Object System.Collections.Generic.List[object]
 $failed = $false
 
-# Criterion 3 runs with every US-08-07 switch off, and no suite may inherit a
+# Criterion 3 runs with every message-improvement switch off, and no suite may inherit a
 # template switch from the shell that started the gate.
 $templateSwitches = @(
     'WHATSAPP_TEMPLATE_SYNC_ENABLED',
@@ -168,7 +168,7 @@ try {
 
     # Criterion 3: the recorded Meta payload for all 8 variants on the first
     # send, the reminder and the test, and the Settings template block, with
-    # every US-08-07 switch off; and nothing at runtime reads the code catalog.
+    # every message-improvement switch off; and nothing at runtime reads the code catalog.
     Invoke-Step 'no-behavior-change characterization, every US-08-07 switch off' 'npx jest whatsapp-send-payload.characterization settings-template-block.characterization no-runtime-catalog-import' {
         npx.cmd jest src/infrastructure/spokes/meta/whatsapp-send-payload.characterization.spec.ts src/modules/onboarding/settings-template-block.characterization.spec.ts src/shared/messaging/no-runtime-catalog-import.spec.ts --silent
     }
@@ -205,7 +205,7 @@ finally {
 }
 
 # The staff template pages, the Settings Message tab in both skins and the
-# neutral preview (US-08-05, US-08-06, US-08-07g).
+# neutral preview.
 Push-Location $frontendRoot
 try {
     Invoke-Step 'frontend: admin template pages, Settings message tab and previews' 'npx vitest run src/features/admin src/features/settings src/features/onboarding src/shared/lib/templateMessage.test.ts' {

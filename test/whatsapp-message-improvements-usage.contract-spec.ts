@@ -17,9 +17,9 @@ import type { MessagingPort } from '../src/shared/ports/messaging.port';
 import { creditUsageHarness } from './contracts/credit-usage-harness';
 
 /**
- * US-08-07 b and c against real PostgreSQL, through the real repositories
+ * Acknowledgment and nudge against real PostgreSQL, through the real repositories
  * and the real usage accounting: an acknowledgment and a nudge are recorded
- * once each and take no usage, no credit and no dispatch (record 4.10.5).
+ * once each and take no usage, no credit and no dispatch.
  */
 const harness = creditUsageHarness();
 const { db, client, dispatches, merchant, verification, acceptance } = harness;
@@ -80,7 +80,7 @@ async function sentVerification(platformType: 'standalone' | 'shopify') {
   return input;
 }
 
-describe('US-08-07 service messages take no usage (PostgreSQL)', () => {
+describe('service messages take no usage (PostgreSQL)', () => {
   beforeAll(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();

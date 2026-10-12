@@ -90,7 +90,7 @@ const fixture = JSON.parse(
   ),
 ) as GuideFixture;
 
-/** What US-05-05 acceptance criterion 5 requires an example for. */
+/** What the guide must carry an example for. */
 const REQUIRED_EXAMPLES = [
   'create-order',
   'replay-same-key',
@@ -205,13 +205,13 @@ function expectDocumentedHeaders(
 }
 
 /**
- * US-05-05: every example the integration guide prints, run over real HTTP
+ * Every example the integration guide prints, run over real HTTP
  * against PostgreSQL with a key issued for the test and dropped with its
  * schema. Real edge, guards, pipe, controller, adapter, repositories and
  * ingestion; only the messaging port and the queues are fakes (see
  * `releaseGateHarness`).
  */
-describe('order API guide examples (US-05-05)', () => {
+describe('order API guide examples', () => {
   let app: INestApplication;
 
   beforeAll(async () => {

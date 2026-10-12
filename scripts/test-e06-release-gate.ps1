@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-# US-06-06 release gate: the EasyOrders spoke's own suites (each PostgreSQL
+# Release gate: the EasyOrders spoke's own suites (each PostgreSQL
 # contract on its own disposable container), the suites of the shared rules it
 # touches, then the inherited E05 gate, which carries the E04, E03, E02 and
 # E01/Shopify gates and the frontend checks.
@@ -110,7 +110,7 @@ Push-Location $backendRoot
 try {
     Invoke-Step 'type check' 'npx tsc --noEmit -p tsconfig.json' { npx.cmd tsc --noEmit -p tsconfig.json }
     Invoke-Step 'structured-log contract' 'npm run log:check' { npm.cmd run log:check }
-    # US-06-06 AC2: the shared adapter contract, and the EasyOrders
+    # The shared adapter contract, and the EasyOrders
     # authentication and mapping fixtures, against the provider fake.
     Invoke-Step 'EasyOrders spoke: shared adapter contract, fixtures and unit specs' 'npx jest src/infrastructure/spokes/easyorders' {
         npx.cmd jest src/infrastructure/spokes/easyorders --silent
@@ -120,7 +120,7 @@ try {
         npx.cmd jest src/modules/onboarding src/modules/verifications --silent
     }
 
-    # US-06-06 AC1 (against the fake), AC3 and AC4.
+    # AC1 (against the fake), AC3 and AC4.
     Invoke-E01Contract 'E06 release-gate contract (journey, isolation, replay, revocation, limits, outages, disconnect, no-reply)' 'test:contract:easyorders-release-gate'
     Invoke-E01Contract 'EasyOrders connection contract' 'test:contract:easyorders-connection'
     Invoke-E01Contract 'EasyOrders ingestion contract' 'test:contract:easyorders-ingestion'

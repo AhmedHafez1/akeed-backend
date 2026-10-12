@@ -10,7 +10,7 @@ export const WOOCOMMERCE_APP_NAME = 'Akeed';
 
 /**
  * The least that works: Akeed reads orders and webhooks, and it creates
- * webhooks and updates orders (contract record finding 1.3).
+ * webhooks and updates orders.
  */
 export const WOOCOMMERCE_SCOPE = 'read_write';
 

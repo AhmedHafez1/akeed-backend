@@ -215,7 +215,7 @@ function toHeldListRow(row: HeldOrderListRow) {
  *
  * Both sides are already sorted and already cursor-filtered, so taking the
  * larger head repeatedly gives the same page a single UNION would, without
- * touching the query the rest of E04 is built on.
+ * touching the single-table list query.
  */
 function mergeByRecency<
   A extends { createdAt: string | null; id: string },

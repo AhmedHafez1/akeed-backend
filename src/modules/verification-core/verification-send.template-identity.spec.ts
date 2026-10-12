@@ -7,7 +7,7 @@ import { VerificationSendService } from './verification-send.service';
 import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 /**
- * US-08-02: every send records which template it carried. All sources and
+ * Every send records which template it carried. All sources and
  * channels reach WhatsApp through this one service, so the identity is pinned
  * here for each source and each kind of send.
  */

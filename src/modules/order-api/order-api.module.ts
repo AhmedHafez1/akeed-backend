@@ -13,7 +13,7 @@ import {
 import { OrderApiController } from './order-api.controller';
 
 /**
- * The server order API (E05): a controller, a request DTO and a channel
+ * The server order API: a controller, a request DTO and a channel
  * adapter. Order rules, persistence and dispatch stay in `OrderIngestionModule`.
  * `edge/` holds the API's protection: rate limits, the error envelope and the
  * request log (the body limit is mounted from `main.ts`).

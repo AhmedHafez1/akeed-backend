@@ -87,7 +87,7 @@ describe('Standalone ingestion boundary', () => {
     ]);
   });
 
-  describe('the order API is a channel adapter and nothing else (E05)', () => {
+  describe('the order API is a channel adapter and nothing else', () => {
     const api = files.filter(({ path }) =>
       path.startsWith('modules/order-api/'),
     );
@@ -96,7 +96,7 @@ describe('Standalone ingestion boundary', () => {
     const channel = api.filter(
       ({ path }) => !path.startsWith('modules/order-api/edge/'),
     );
-    // The protection around it (US-05-04): rate limits, the error envelope
+    // The protection around it: rate limits, the error envelope
     // and the request log. It knows who is calling and nothing about orders.
     const edge = api.filter(({ path }) =>
       path.startsWith('modules/order-api/edge/'),
@@ -143,7 +143,7 @@ describe('Standalone ingestion boundary', () => {
       expect(offenders).toEqual([]);
     });
 
-    it('reaches the database, the queues and the providers through nothing of its own (US-05-06)', () => {
+    it('reaches the database, the queues and the providers through nothing of its own', () => {
       // The named list above is the README's; this is the rule behind it. The
       // module file wires DatabaseModule for the key guard, and nothing else
       // in the module may name a repository, the schema, a queue or a spoke.
@@ -226,7 +226,7 @@ describe('Standalone ingestion boundary', () => {
     });
   });
 
-  describe('integration API keys are credentials and nothing else (E05)', () => {
+  describe('integration API keys are credentials and nothing else', () => {
     const keys = files.filter(({ path }) =>
       path.startsWith('modules/integration-keys/'),
     );
@@ -309,8 +309,8 @@ describe('Standalone ingestion boundary', () => {
       // re-drives through `resetForRedispatch`, which refuses held and
       // withdrawn events.
       'modules/admin/message-dispatch-resolution.service.ts': 1,
-      // The bulk-import release scheduler: the only code in E04.6 allowed to
-      // turn a held order into a send (epic invariant 6), and only for events
+      // The bulk-import release scheduler: the only bulk-import code allowed to
+      // turn a held order into a send, and only for events
       // `releaseHeld` has just released.
       'modules/order-imports/release/order-import-release-tick.service.ts': 1,
     });

@@ -9,7 +9,7 @@ const MAX_PASSES = 500;
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
- * The daily `import.purge` job (US-04.6-09 AC4): the only retention path for
+ * The daily `import.purge` job: the only retention path for
  * bulk import. Expired drafts are deleted with their rows, and committed rows
  * lose their customer data after 90 days while keeping outcome, issues, order
  * link and row number. Each statement is bounded and selects only what is

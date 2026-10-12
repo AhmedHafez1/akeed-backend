@@ -11,8 +11,8 @@ import {
 import { toOrderApiFailure } from './order-api.errors';
 
 /**
- * Answers every error of the order API with `{code, message, correlationId}`
- * (US-05-04): authentication, throttling, validation, conflicts and unexpected
+ * Answers every error of the order API with `{code, message, correlationId}`:
+ * authentication, throttling, validation, conflicts and unexpected
  * failures alike. It catches everything, so nothing on this route falls
  * through to the app-wide filter and its looser body.
  */

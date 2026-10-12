@@ -16,7 +16,7 @@ export interface TemplateRegistryPort {
   invalidate(): void;
   /**
    * Whether a send may use only templates the provider has approved. Absent
-   * means off, which is how every send behaved before US-08-04.
+   * means off: any active template is sent.
    */
   sendGuardrailEnabled?(): boolean;
 }

@@ -8,7 +8,7 @@ import { WhatsappTemplateSyncProducer } from './whatsapp-template-sync.producer'
 import { WhatsappTemplateSyncService } from './whatsapp-template-sync.service';
 
 /**
- * Template sync and template events (US-08-04). The provider catalog and the
+ * Template sync and template events. The provider catalog and the
  * registry come in through `TEMPLATE_CATALOG_PORT` and
  * `TEMPLATE_REGISTRY_PORT`, which the verification core module binds.
  */

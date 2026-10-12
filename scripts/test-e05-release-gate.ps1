@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-# US-05-06 release gate: the order API's own suites, every regression suite of
+# Release gate: the order API's own suites, every regression suite of
 # the E05 shared rules (each PostgreSQL contract on its own disposable
 # container), the inherited E04/E03/E02/Shopify gates and the frontend checks.
 # Every step runs even after a failure, so one run reports the whole picture.
@@ -109,16 +109,16 @@ try {
     Invoke-Step 'type check' 'npx tsc --noEmit -p tsconfig.json' { npx.cmd tsc --noEmit -p tsconfig.json }
     Invoke-Step 'structured-log contract' 'npm run log:check' { npm.cmd run log:check }
     Invoke-Step 'server API guide matches the tested examples' 'npm run docs:order-api-guide:check' { npm.cmd run docs:order-api-guide:check }
-    # US-05-06 AC2: reuse-map, ingestion-boundary and release-gate-architecture.
+    # Reuse-map, ingestion-boundary and release-gate-architecture.
     Invoke-Step 'ingestion core and architecture guards' 'npx jest src/modules/order-ingestion' { npx.cmd jest src/modules/order-ingestion --silent }
     Invoke-Step 'manual, file-import, API and key channels' 'npx jest src/modules/orders src/modules/order-imports src/modules/order-api src/modules/integration-keys' {
         npx.cmd jest src/modules/orders src/modules/order-imports src/modules/order-api src/modules/integration-keys --silent
     }
     Invoke-Step 'platform-neutral core' 'npm run test:core:platform-neutral' { npm.cmd run test:core:platform-neutral -- --silent }
 
-    # US-05-06 AC1, AC3, AC4, AC5 and AC6.
+    # AC1, AC3, AC4, AC5 and AC6.
     Invoke-E01Contract 'E05 release-gate contract (equivalence, isolation, revocation, recovery, end to end)' 'test:contract:order-api-release-gate'
-    # US-05-02, US-05-03 and every documented example of US-05-05.
+    # Ingestion, idempotency and every documented example of the guide.
     Invoke-E01Contract 'order API contracts (endpoint, idempotency, guide examples)' 'test:contract:order-api'
     Invoke-E01Contract 'integration API keys contract' 'test:contract:integration-keys'
 

@@ -21,7 +21,7 @@ import type { PaymentInquiryResult } from '../src/shared/ports/payments.port';
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 
 /**
- * US-04.5-07 against real PostgreSQL with migration 0034 applied.
+ * Billing observability against real PostgreSQL with migration 0034 applied.
  *
  * Reconciliation is only as retry-safe as the unique keys and foreign keys
  * underneath it, and the metrics are only honest if they are computed from
@@ -162,7 +162,7 @@ async function databaseNow(harness: Harness, offsetMs = 0) {
   return new Date(Number(row.ms) + offsetMs).toISOString();
 }
 
-describe('US-04.5-07 PostgreSQL billing reconciliation', () => {
+describe('PostgreSQL billing reconciliation', () => {
   const harness = billingOperationsHarness();
   const { db } = harness;
   let local: Observability;
@@ -1010,7 +1010,7 @@ describe('US-04.5-07 PostgreSQL billing reconciliation', () => {
   });
 });
 
-describe('US-04.5-07 PostgreSQL product and finance metrics', () => {
+describe('PostgreSQL product and finance metrics', () => {
   const harness = billingOperationsHarness();
   const { db } = harness;
   let target: Observability;

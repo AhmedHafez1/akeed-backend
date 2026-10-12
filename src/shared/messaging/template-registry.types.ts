@@ -15,8 +15,7 @@ export const TEMPLATE_LANGUAGES = [
 /**
  * What a registry template is for. The COD confirmation is the first send and
  * the merchant's test, and the reminder too unless the store chose a
- * `cod_reminder` template and WHATSAPP_REMINDER_TEMPLATE_ENABLED is on
- * (US-08-07a).
+ * `cod_reminder` template and WHATSAPP_REMINDER_TEMPLATE_ENABLED is on.
  */
 export type TemplatePurpose = 'cod_confirmation' | 'cod_reminder';
 
@@ -111,7 +110,7 @@ export function buildCodConfirmationKey(
   return `cod_confirm.${language}.${style}`;
 }
 
-/** `cod_reminder.<language>.<style>`, as the US-08-06 flow builds it. */
+/** `cod_reminder.<language>.<style>`, as staff authoring builds it. */
 export function buildCodReminderKey(
   language: TemplateLanguage,
   style: string,

@@ -42,8 +42,7 @@ type Failure = Extract<
 >;
 
 /**
- * Writes approved outcomes to EasyOrders as an order status (US-06-04,
- * contract record sections 2, 5 and 8).
+ * Writes approved outcomes to EasyOrders as an order status.
  *
  * Every call uses the connection and key of the order's own integration. The
  * order is read before it is written: only `pending` is written from, an order
@@ -260,7 +259,7 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
         connection.orgId,
         'ok',
       );
-    // The response shape is not in the contract record, so this fails closed:
+    // EasyOrders does not document the response shape, so this fails closed:
     // an order that does not name this integration's store is not written to.
     if (typeof lookup.order.store_id !== 'string')
       return {

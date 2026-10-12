@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// EasyOrders public API probes for the US-06-01 spike. Every call hits the
+// EasyOrders public API probes for the validation spike. Every call hits the
 // live EasyOrders API with the key in the environment, so the product owner
 // runs these against an authorized test store.
 //

@@ -232,7 +232,7 @@ function sendsTo(orderIds: string[], verificationIds: Set<string>) {
   return gate.sends.filter((send) => verificationIds.has(send.verificationId));
 }
 
-describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
+describe('bulk import release gate PostgreSQL contract', () => {
   beforeAll(() => gate.setup());
   afterAll(() => gate.teardown());
 
@@ -1058,8 +1058,8 @@ describe('E04.6 release gate PostgreSQL contract (US-04.6-10)', () => {
   });
 
   /**
-   * Edge-case catalogue entries the per-story suites did not exercise over
-   * PostgreSQL with the real pipeline (US-04.6-10 traceability table).
+   * Edge cases the focused suites do not exercise over
+   * PostgreSQL with the real pipeline.
    */
   describe('edge-case catalogue gaps closed by the gate', () => {
     const MAPPING: ImportManifest = {

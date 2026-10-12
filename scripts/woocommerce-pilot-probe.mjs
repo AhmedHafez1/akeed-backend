@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Read-only probe for the US-07-06 WooCommerce live pilot.
+// Read-only probe for a WooCommerce live pilot.
 //
 // It asks the pilot store what Akeed asks it, with a key the product owner
 // made for the probe, and prints the answer with everything personal or
@@ -17,9 +17,6 @@
 //
 // Every answer is printed and appended to .tmp/pilots/woocommerce/api.jsonl
 // (gitignored). The key and the secret are never printed or written.
-//
-// The pilot script (docs/Epics/07-woocommerce-integration/evidence/
-// US-07-06-live-pilot-script.md) says when to run each command.
 
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

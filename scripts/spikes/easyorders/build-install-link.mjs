@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Builds an EasyOrders authorized-app install link for the US-06-01 spike and
+// Builds an EasyOrders authorized-app install link for the validation spike and
 // registers its throwaway URL token with the capture server.
 //
 //   node scripts/spikes/easyorders/build-install-link.mjs --label storeA

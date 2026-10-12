@@ -13,7 +13,7 @@ interface DenialCopy {
  * a new order right now. Like `StandaloneSourceCodeMap`, only the vocabulary
  * is per-channel: the rules live in `StandaloneSendReadinessService` and the
  * precedence in `assertSendReady`. Credit denials are not listed because every
- * channel answers them with the E04.5 code unchanged.
+ * channel answers them with the credit billing code unchanged.
  */
 export interface StandaloneReadinessCodeMap {
   /** The source has no active entitlement. */

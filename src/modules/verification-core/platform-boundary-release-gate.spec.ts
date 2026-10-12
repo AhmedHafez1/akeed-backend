@@ -19,7 +19,7 @@ import { CreditEligibilityService } from './credit-eligibility.service';
 import { VerificationSendService } from './verification-send.service';
 import { VerificationHubService } from './verification-hub.service';
 
-describe('E02 platform-neutral verification core release gate', () => {
+describe('platform-neutral verification core release gate', () => {
   it('keeps production verification-core files free of Shopify service imports', () => {
     const directory = resolve(__dirname);
     const productionFiles = readdirSync(directory).filter(

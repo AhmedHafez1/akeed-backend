@@ -3,7 +3,7 @@ import {
   type ArabicCallingCode,
 } from './template-language';
 
-/** The Arabic styles `auto` chooses between (US-08-07d). */
+/** The Arabic styles `auto` chooses between. */
 export type ArabicAutoStyle = 'egyptian' | 'gulf' | 'standard';
 
 /**

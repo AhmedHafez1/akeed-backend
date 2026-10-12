@@ -57,8 +57,7 @@ type Decision =
   | { write: false; result: CommerceOutcomeOperationResult };
 
 /**
- * Writes approved outcomes to a WooCommerce store (US-07-04, contract record
- * sections 5 and 8).
+ * Writes approved outcomes to a WooCommerce store.
  *
  * Every call uses the connection and keys of the order's own integration,
  * through the restricted outbound client. The order is read before it is
@@ -209,7 +208,7 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
   }
 
   /**
-   * The decision table of the contract record, section 5. A cancellation is
+   * The decision table for an outcome. A cancellation is
    * done when the order is cancelled; a confirmation, which changes no
    * status, when its marker is there. Otherwise only `processing` and
    * `on-hold` are written from.
@@ -322,7 +321,7 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
     return { order: lookup.order };
   }
 
-  /** The failure mapping of the contract record, section 5. */
+  /** Maps a failed store call to an outcome result. */
   private async failed(
     connection: WooCommerceConnection,
     failure: WooCommerceOrderCallFailure,

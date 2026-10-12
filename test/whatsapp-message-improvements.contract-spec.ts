@@ -12,7 +12,7 @@ import { WhatsappMessageTextsRepository } from '../src/infrastructure/database/r
 import { AdminTemplateLifecycleService } from '../src/modules/admin/admin-template-lifecycle.service';
 
 /**
- * US-08-07 against real PostgreSQL: migrations 0059 and 0060, their
+ * Message improvements against real PostgreSQL: migrations 0059 and 0060, their
  * constraints and the once-per-verification rule.
  */
 function isolatedDatabaseUrl(): string {
@@ -114,7 +114,7 @@ async function insertVerification(): Promise<{ id: string; orgId: string }> {
   return { id: row.id, orgId };
 }
 
-describe('US-08-07 message improvements against PostgreSQL', () => {
+describe('message improvements against PostgreSQL', () => {
   beforeAll(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
@@ -422,7 +422,7 @@ describe('US-08-07 message improvements against PostgreSQL', () => {
     });
   });
 
-  describe('reminder templates in the US-08-06 lifecycle', () => {
+  describe('reminder templates in the authoring lifecycle', () => {
     async function insertReminder(style: string, isDefault = false) {
       await client`
         INSERT INTO whatsapp_templates (key, purpose, language, style,

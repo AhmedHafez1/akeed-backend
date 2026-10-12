@@ -2,7 +2,7 @@ import type { MessagingSenderStatus } from '../ports/messaging.port';
 import type { CommerceOutcomeAction } from './commerce-outcome';
 
 /**
- * What a connected source adds to setup and health (US-06-05). A spoke whose
+ * What a connected source adds to setup and health. A spoke whose
  * connection has its own state (a store, credentials, setup inputs) registers
  * a contributor; onboarding and settings read it by platform type and never
  * branch on a provider name. Sources with nothing to add register none.
@@ -103,7 +103,7 @@ export interface SourceSetupDto {
 }
 
 /**
- * A source's health as separate facts (US-06-05). There is no overall status
+ * A source's health as separate facts. There is no overall status
  * on purpose: each signal has its own cause and its own fix, and a store with
  * no recent events is not a broken one.
  */

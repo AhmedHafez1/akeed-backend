@@ -350,7 +350,7 @@ export class WooCommerceConnectionsRepository {
    * and the organization's credit account with the launch grant. Either all
    * of it is stored or none.
    *
-   * A disconnected source is brought back in place instead (US-07-05): the
+   * A disconnected source is brought back in place instead: the
    * same integration row, so its orders and history stay attached, with new
    * keys, a new delivery token and the webhooks this callback created. The
    * store must be the one that was connected, and `connected_at` moves to
@@ -508,7 +508,7 @@ export class WooCommerceConnectionsRepository {
         isActive: true,
         ...STANDALONE_SOURCE_DEFAULTS,
         // Every order states its payment method; a missing one is unknown,
-        // not cash on delivery (contract record section 4).
+        // not cash on delivery.
         assumeCodWhenPaymentMissing: false,
         storeName:
           organization.name.trim().slice(0, STORE_NAME_MAX_LENGTH).trim() ||
@@ -593,7 +593,7 @@ export class WooCommerceConnectionsRepository {
   }
 
   /**
-   * The local half of a disconnect (US-07-05), in one transaction: the source
+   * The local half of a disconnect, in one transaction: the source
    * stops being active, which every queued effect already checks, and every
    * credential, the delivery token hash and the webhook ids are wiped. The
    * store URL stays for a same-store reconnect, and the integration, its

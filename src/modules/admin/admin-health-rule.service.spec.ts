@@ -125,7 +125,7 @@ describe('AdminHealthRuleService', () => {
     );
   });
 
-  it('raises template_unavailable as critical when nothing can be sent, and as attention when a template in use is unhealthy (US-08-04)', () => {
+  it('raises template_unavailable as critical when nothing can be sent, and as attention when a template in use is unhealthy', () => {
     const { critical, attention } = render();
 
     expect(critical.sql).toContain(

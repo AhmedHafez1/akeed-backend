@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-# US-07-06 release gate: the WooCommerce spoke's own suites (each PostgreSQL
+# Release gate: the WooCommerce spoke's own suites (each PostgreSQL
 # contract on its own disposable container), the suites of the shared rules it
 # touches, then the inherited E06 gate, which carries the EasyOrders suites
 # and the E05 gate, and through it the E04, E03, E02 and E01/Shopify gates,
@@ -114,7 +114,7 @@ Push-Location $backendRoot
 try {
     Invoke-Step 'type check' 'npx tsc --noEmit -p tsconfig.json' { npx.cmd tsc --noEmit -p tsconfig.json }
     Invoke-Step 'structured-log contract' 'npm run log:check' { npm.cmd run log:check }
-    # US-07-06 AC2: the shared adapter contract and the WooCommerce
+    # The shared adapter contract and the WooCommerce
     # authentication, mapping, COD and status fixtures, against the fake.
     Invoke-Step 'WooCommerce spoke: shared adapter contract, fixtures and unit specs' 'npx jest src/infrastructure/spokes/woocommerce' {
         npx.cmd jest src/infrastructure/spokes/woocommerce --silent
@@ -127,7 +127,7 @@ try {
         npx.cmd jest src/modules/onboarding src/modules/verifications --silent
     }
 
-    # US-07-06 AC1 to AC3 against the fake: the shared conformance matrix and
+    # AC1 to AC3 against the fake: the shared conformance matrix and
     # the cases only WooCommerce has.
     Invoke-E01Contract 'E07 release-gate contract (conformance matrix, HMAC and source, draft then placed, webhook re-enable, SSRF)' 'test:contract:woocommerce-release-gate'
     Invoke-E01Contract 'WooCommerce connection contract' 'test:contract:woocommerce-connection'

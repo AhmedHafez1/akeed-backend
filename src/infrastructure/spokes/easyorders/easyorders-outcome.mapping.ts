@@ -1,7 +1,7 @@
 import type { CommerceOutcomeAction } from '../../../shared/commerce/commerce-outcome';
 
 /**
- * The outcome mapping approved for building (contract record section 5).
+ * The outcome mapping approved for building.
  * EasyOrders status names stay in this spoke.
  *
  * Automatic no-reply and the two tagging actions have no entry: EasyOrders has

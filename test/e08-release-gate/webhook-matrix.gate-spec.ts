@@ -20,13 +20,13 @@ import { MetaWebhookSignatureGuard } from '../../src/shared/guards/meta-webhook-
 import { isSendableReviewStatus } from '../../src/shared/messaging/template-provider.types';
 
 /**
- * US-08-08 criterion 4: the webhook replay and ordering matrix, over HTTP.
+ * The webhook replay and ordering matrix, over HTTP.
  *
  * The route is assembled as `main.ts` assembles it (raw body, the app-wide
  * ValidationPipe, the real signature guard), with the real template handler,
  * the real event rules and the real message service. Only the tables behind
  * them are in memory. The payloads are the committed fixtures, which are
- * built from the contract record (4.8.4 to 4.8.14).
+ * built from Meta's documented webhook shapes.
  */
 const APP_SECRET = 'synthetic-app-secret';
 const ACCOUNT_ID = '100000000000001';
@@ -83,7 +83,7 @@ function messagesChange(): Change {
   };
 }
 
-describe('US-08-08 webhook replay and ordering matrix', () => {
+describe('template webhook replay and ordering matrix', () => {
   let app: INestApplication;
   let repository: InMemoryTemplateSyncRepository;
   let lines: string[];
@@ -227,7 +227,7 @@ describe('US-08-08 webhook replay and ordering matrix', () => {
     expect(logged).not.toContain(APP_SECRET);
   });
 
-  describe('duplicates (record 4.8.13 and 4.8.14)', () => {
+  describe('duplicates', () => {
     it.each([
       ['status', 'status-paused', { reviewStatus: 'paused' }],
       ['quality', 'quality-red', { quality: 'low' }],
@@ -307,7 +307,7 @@ describe('US-08-08 webhook replay and ordering matrix', () => {
     );
   });
 
-  describe('signature (record 4.8.5)', () => {
+  describe('signature', () => {
     it.each([
       ['a wrong signature', `sha256=${'0'.repeat(64)}`],
       ['a signature of another body', sign('{"object":"other"}')],

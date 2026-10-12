@@ -56,12 +56,12 @@ export const createApiOrderPipe = new ValidationPipe({
 });
 
 /**
- * The server order API (E05). It authenticates by integration API key only,
+ * The server order API. It authenticates by integration API key only,
  * translates the request and submits it to the same ingestion command the
  * manual form and file import use; the tenant and source come from the key,
  * never from the request.
  *
- * Protection comes first (US-05-04): the API's own rate limits replace the
+ * Protection comes first: the API's own rate limits replace the
  * app-wide IP throttler, so a throttled request never reaches the adapter or
  * the ingestion command, and every error leaves in one envelope.
  */

@@ -174,7 +174,7 @@ describe('StandaloneOrderIngestionService.acceptOne', () => {
     expect(dispatcher.dispatchById).not.toHaveBeenCalled();
   });
 
-  describe('replays (US-05-03)', () => {
+  describe('replays', () => {
     let logged: jest.SpyInstance;
     let errors: jest.SpyInstance;
     const acceptLogs = () =>

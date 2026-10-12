@@ -25,7 +25,7 @@ export function orderImportCommitJobId(batchId: string): string {
   return `import-commit-${batchId}`;
 }
 
-/** One paced release tick for an organization (US-04.6-07). */
+/** One paced release tick for an organization. */
 export const ORDER_IMPORT_RELEASE_JOB = 'import.release';
 
 export interface OrderImportReleaseJob {
@@ -54,7 +54,7 @@ export const ORDER_IMPORT_EXPIRE_SCHEDULER = 'import-expire';
 export const ORDER_IMPORT_EXPIRE_EVERY_MS = 60 * 60_000;
 
 /**
- * The daily retention job (US-04.6-09): deletes expired drafts and, 90 days
+ * The daily retention job: deletes expired drafts and, 90 days
  * after a commit, drops the rows' raw cells and normalized order while keeping
  * outcome, issues, order link and row number.
  */

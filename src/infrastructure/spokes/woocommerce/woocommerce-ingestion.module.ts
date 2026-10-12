@@ -16,9 +16,9 @@ import { WooCommerceSetupContributor } from './woocommerce-setup.contributor';
 
 /**
  * What the workers need from the WooCommerce spoke: the order normalizer and
- * the eligibility strategy (US-07-03), the order-update handler and the
- * outcome adapter (US-07-04), the setup contributor and the connection health
- * service (US-07-05), and the API client on the restricted outbound client
+ * the eligibility strategy, the order-update handler and the
+ * outcome adapter, the setup contributor and the connection health
+ * service, and the API client on the restricted outbound client
  * that every request to a store goes through. Kept apart from
  * `WooCommerceModule`, which imports the webhook queue for its delivery
  * route, so the queue, the verification core, the outcome registry and

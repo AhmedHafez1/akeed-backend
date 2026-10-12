@@ -42,7 +42,7 @@ const STARTED_STATUSES = new Set([
 const QUOTABLE_STATUSES = new Set(['awaiting_start', 'paused']);
 
 /**
- * The start checkpoint (US-04.6-07 AC1–AC4, AC7, AC8): the quote, the
+ * The start checkpoint: the quote, the
  * start, stop and resume. Nothing here sends; a start only makes the
  * batch `releasing` and ensures the organization's release ticks run.
  */

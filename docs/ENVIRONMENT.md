@@ -93,14 +93,13 @@ npm run db:push
 
 ## Standalone Account Activation
 
-Standalone accounts no longer wait for staff approval. `STANDALONE_CREDIT_APPROVAL_ENABLED` and the `/api/admin/standalone-billing/approvals/*` routes are retired; remove the variable from deployed environments.
+Standalone accounts do not wait for staff approval.
 
 - Email verification is the only gate. Supabase issues no session until the address is confirmed, and Standalone provisioning (`POST /api/organizations`) requires that session, so the Supabase project's **Confirm email** setting must stay on. The backend does not re-check confirmation itself.
 - Provisioning opens the credit account `active` and posts the one-time `free_grant` of `STANDALONE_FREE_GRANT` credits (default 30) in the same transaction as the organization and source, with the owner as `actor_id` and reason `signup_auto_activation`. This happens in both billing modes, so switching `STANDALONE_CREDIT_BILLING_ENABLED` on later never strands an account without credits. An EasyOrders or WooCommerce connect does the same through `provisionSourceBilling`, with the member who connected the store as `actor_id`; `usesPrepaidCredits` (`src/shared/billing/credit-eligibility.ts`) is the one list of credit-billed platforms.
 - `STANDALONE_CREDIT_BILLING_ENABLED` still decides metering. While it is `true`, provisioning writes no Starter/`not_required` entitlement and sends consume credits. While it is `false`, provisioning writes that entitlement and the credit ledger is bookkeeping only.
 - The grant is exactly-once at the database boundary: the ledger key is `standalone-free-grant:<orgId>:v1`, and `credit_ledger_free_grant_key` allows one `free_grant` row per organization. Retried or concurrent provisioning never grants twice. Never delete a committed grant or reset merchant history as a rollback.
-- Migration `0035_standalone_auto_activation.sql` activates accounts left `pending_approval`, posts their grant (reason `auto_activation_backfill`), then drops `approved_by`/`approved_at`/`approval_reason` and the `pending_approval` status. It aborts, naming the organizations, if any pending account has a native source, native billing history, or other than exactly one owner. Run the preflight in the [US-04.5-09 evidence](US-04.5-09-STANDALONE-AUTO-ACTIVATION-EVIDENCE.md) first and escalate conflicts; never edit data ad hoc to make it pass.
-- See [US-03-02 evidence](US-03-02-STANDALONE-PILOT-ENTITLEMENTS-EVIDENCE.md) and the `US-04.5-02` evidence for the pilot and approval history this replaced.
+- Migration `0035_standalone_auto_activation.sql` activates accounts left `pending_approval`, posts their grant (reason `auto_activation_backfill`), then drops `approved_by`/`approved_at`/`approval_reason` and the `pending_approval` status. It aborts, naming the organizations, if any pending account has a native source, native billing history, or other than exactly one owner. Escalate conflicts; never edit data ad hoc to make it pass.
 
 ### Standalone source eligibility and support policy
 
@@ -128,7 +127,7 @@ Any exceptional intervention requires an approved support or migration ticket, n
 
 ## Standalone Paymob Billing
 
-`STANDALONE_CREDIT_BILLING_ENABLED` is the single switch. While it is `false` the deployment is dark: `UsageAccountingRouter.mode()` keeps Standalone sources on the periodic plan they shipped with in E04, no `PAYMOB_*` value is read, and the merchant billing APIs refuse a purchase with `BILLING_DISABLED`. Nothing about the credit tables changes, so a rollback is the same switch in reverse — holds already taken settle through credits, because settlement follows the `accounting_mode` persisted on each dispatch rather than the flag.
+`STANDALONE_CREDIT_BILLING_ENABLED` is the single switch. While it is `false` the deployment is dark: `UsageAccountingRouter.mode()` keeps Standalone sources on the periodic plan, no `PAYMOB_*` value is read, and the merchant billing APIs refuse a purchase with `BILLING_DISABLED`. Nothing about the credit tables changes, so a rollback is the same switch in reverse — holds already taken settle through credits, because settlement follows the `accounting_mode` persisted on each dispatch rather than the flag.
 
 Setting it to `true` makes every variable below required and validated at startup (the one exception is the wallet id in `test` mode, see its row). Validation is deliberately strict: a placeholder value, a hostname that reads as a sandbox in `live` mode, credentials or a query string in a URL, or a key whose embedded `test`/`live` marker disagrees with `PAYMOB_MODE` all abort boot rather than reaching a payment.
 
@@ -195,7 +194,7 @@ Staff inspect and reconcile Standalone credit accounts under `/api/admin/standal
 
 Roll out read-only first (switch off), name operators only after a recovery drill, and roll back by turning the switch off. Nothing is deleted on rollback: ledger entries, purchases, provider events and audit rows all stay.
 
-## Standalone Bulk Order Import (E04.6)
+## Standalone Bulk Order Import
 
 `/api/order-imports` lets a Standalone owner or admin upload a CSV or XLSX file of orders. The behavior is documented in `BULK_ORDER_IMPORT.md`. Every route is hidden behind one switch, and the limits bound the cost of a single upload (the file is held in memory and parsed in the request). Each limit can be lowered; startup fails if one is raised past its default.
 
@@ -210,10 +209,10 @@ Roll out read-only first (switch off), name operators only after a recovery dril
 | `BULK_IMPORT_MAX_UNCOMPRESSED_BYTES` | Total inflated size of an XLSX package, 1–50 MB (default 50 MB). Counted while inflating, so a zip bomb is stopped early: `422 IMPORT_FILE_UNREADABLE`. |
 | `BULK_IMPORT_PARSE_TIMEOUT_MS` | Budget for reading one file, 1000–20000 (default 20000). Exceeding it answers `422 IMPORT_FILE_UNREADABLE`. |
 | `BULK_IMPORT_MAX_ORDER_AGE_DAYS` | Oldest order date an import confirms, in days before today in the store timezone, 1–90 (default 7). Older rows are `excluded` with `ORDER_TOO_OLD`. Pilot default; revisit against pilot data. |
-| `BULK_IMPORT_RELEASE_PER_MINUTE` | First messages an organization's releasing imports send per minute, shared by all of them, 1–120 (default 20). The release job ticks every 30 s and releases `ceil(rate × 0.5)` held orders per tick. Pilot default, not a Meta threshold; revisit after the quality-rating review (US-04.6-10). Manual and Shopify orders never pass through it. |
+| `BULK_IMPORT_RELEASE_PER_MINUTE` | First messages an organization's releasing imports send per minute, shared by all of them, 1–120 (default 20). The release job ticks every 30 s and releases `ceil(rate × 0.5)` held orders per tick. A conservative default, not a Meta threshold. Manual and Shopify orders never pass through it. |
 | `BULK_IMPORT_QUOTE_SECRET` | HMAC secret that signs the start quote (`GET /:id/start-quote`), so `POST /:id/start` can prove the count and balance the merchant saw. At least 32 characters; required while `STANDALONE_BULK_IMPORT_ENABLED=true`, otherwise startup fails. Rotating it only invalidates quotes younger than 10 minutes (`409 IMPORT_QUOTE_STALE`, the dialog re-quotes). |
 
-## Server Order API (E05)
+## Server Order API
 
 `POST /api/v1/orders` accepts orders from a merchant's own server, authenticated by an integration API key. These variables bound what the route can cost; none is required, and startup fails on a value outside its range.
 
@@ -230,9 +229,9 @@ The counters live in memory, which is correct for one backend instance. Do not r
 
 Every `/api/v1/orders` error answers `{code, message, correlationId}` (validation failures add `fieldErrors`), and every response carries `X-Correlation-Id`. A client may send its own `X-Correlation-Id` (8–64 letters, digits, `.`, `_` or `-`); any other value is replaced. Support triage starts from that ID: ask the integrator for it, then filter the backend log for `"action":"order-api-request"` and the ID. The line holds the integration, the key prefix, the outcome code, the HTTP status, the duration and the order ID, and never the key, the body or customer data.
 
-## EasyOrders Connection (E06)
+## EasyOrders Connection
 
-The authorized connection of an EasyOrders store (US-06-02), its order-webhook ingestion (US-06-03) and its remote status writes (US-06-04). All three ship dark, each behind its own switch. Setup, health, disconnect and reconnect (US-06-05) add no variable: connect and reconnect follow the connect switch and the pilot list, while disconnect and the health read work with everything off, so turning the feature off never traps a merchant in a connection.
+The authorized connection of an EasyOrders store, its order-webhook ingestion and its remote status writes. Each has its own switch, off by default. Setup, health, disconnect and reconnect add no variable: connect and reconnect follow the connect switch and the pilot list, while disconnect and the health read work with everything off, so turning the feature off never traps a merchant in a connection.
 
 | Variable | Notes |
 | --- | --- |
@@ -240,8 +239,8 @@ The authorized connection of an EasyOrders store (US-06-02), its order-webhook i
 | `EASYORDERS_PILOT_ORG_IDS` | Optional pilot allow-list: a comma-separated list of organization UUIDs (a malformed entry fails startup). Empty (default) means any organization may start an install or have a callback honoured; a populated list restricts access to listed organizations. Removing a UUID stops new installs for that organization; an existing connection is not removed. |
 | `EASYORDERS_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the two webhook URLs. Must be `https` outside development (the API key travels through the seller's browser to it). No trailing slash, query or fragment. |
 | `EASYORDERS_APP_BASE_URL` | Required when enabled. Public base of the web app: the post-install redirect (`/<locale>/onboarding`) and the app icon. Same rules as above. |
-| `EASYORDERS_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /webhooks/easyorders/orders/:token` and `.../status/:token` answer `404` and store nothing, which is what they answered before US-06-03. Independent of the connect switch, so a store can be connected and checked before its orders are accepted. Rollback is turning it off; events already queued are still processed. Keep it off for real merchants until the US-06-01 go-live verification has observed a real delivery. |
-| `EASYORDERS_OUTCOME_SYNC_ENABLED` | `true` or `false` (default). While `false` the EasyOrders outcome adapter has no capability: no order status is ever read from or written to EasyOrders, every outcome is recorded as `unsupported` in `commerce_outcome_syncs`, and the merchant's cancel action is not offered. Rollback is turning it off; a retry already queued then records `unsupported` and stops. Keep it off for real merchants until the US-06-01 go-live verification has observed the side effects of `confirmed` and `canceled` and the product owner has accepted them. |
+| `EASYORDERS_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /webhooks/easyorders/orders/:token` and `.../status/:token` answer `404` and store nothing. Independent of the connect switch, so a store can be connected and checked before its orders are accepted. Rollback is turning it off; events already queued are still processed. |
+| `EASYORDERS_OUTCOME_SYNC_ENABLED` | `true` or `false` (default). While `false` the EasyOrders outcome adapter has no capability: no order status is ever read from or written to EasyOrders, every outcome is recorded as `unsupported` in `commerce_outcome_syncs`, and the merchant's cancel action is not offered. Rollback is turning it off; a retry already queued then records `unsupported` and stops. Turn it on last of the three switches. |
 | `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the EasyOrders API key and webhook secrets, so startup fails when EasyOrders connect, ingestion or outcome sync is enabled without it. |
 
 The frontend shows the source picker on signup only when `NEXT_PUBLIC_EASYORDERS_CONNECT_ENABLED=true`. Turn the backend switch on first: an account that picked EasyOrders while the backend switch is off gets a normal Standalone organization.
@@ -250,9 +249,9 @@ EasyOrders requests are limited to 30 a minute per integration (at most 20 of th
 
 The install callback is called by the seller's browser from `https://app.easy-orders.net`. Its CORS answer is fixed to that origin in `src/shared/config/route-scoped-cors.config.ts` and ignores `CORS_ALLOWED_ORIGINS`.
 
-## WooCommerce Connection (E07)
+## WooCommerce Connection
 
-The application-authentication connection of a WooCommerce store (US-07-02) and signed order-webhook ingestion (US-07-03) and outcome writes to the store (US-07-04). All three ship dark, each behind its own switch.
+The application-authentication connection of a WooCommerce store, its signed order-webhook ingestion and its outcome writes to the store. Each has its own switch, off by default. Setup, health, the connection check, re-enable and disconnect add no variable.
 
 | Variable | Notes |
 | --- | --- |
@@ -261,7 +260,7 @@ The application-authentication connection of a WooCommerce store (US-07-02) and 
 | `WOOCOMMERCE_PUBLIC_API_BASE_URL` | Required when enabled. Public base of this API, used to build the install callback URL and the webhook delivery URL Akeed registers in the store. Must be `https` outside development (the store posts the new API keys to it). No trailing slash, query or fragment. |
 | `WOOCOMMERCE_APP_BASE_URL` | Required when enabled. Public base of the web app: the `return_url` the store sends the merchant back to (`/<locale>/onboarding`). Same rules as above. |
 | `WOOCOMMERCE_INGESTION_ENABLED` | `true` or `false` (default). While `false`, `POST /api/woocommerce/webhooks/:token` answers `404 WOOCOMMERCE_INGESTION_UNAVAILABLE` to every order delivery and stores nothing; the ping on a known token is still answered `200`. Independent of the connect switch. Rollback is turning it off; events already queued are still processed. |
-| `WOOCOMMERCE_OUTCOME_SYNC_ENABLED` | `true` or `false` (default). While `false` the WooCommerce outcome adapter has no capability: no order is ever read from or written to a store, every outcome is recorded as `unsupported` in `commerce_outcome_syncs`, and the merchant's cancel action is not offered. Independent of the other two switches. Rollback is turning it off; a retry already queued then records `unsupported` and stops. The US-07-06 gate was closed on 2026-10-12 on the product owner's end-to-end test report, so it is turned on at deploy, last of the three switches. |
+| `WOOCOMMERCE_OUTCOME_SYNC_ENABLED` | `true` or `false` (default). While `false` the WooCommerce outcome adapter has no capability: no order is ever read from or written to a store, every outcome is recorded as `unsupported` in `commerce_outcome_syncs`, and the merchant's cancel action is not offered. Independent of the other two switches. Rollback is turning it off; a retry already queued then records `unsupported` and stops. Turn it on last of the three switches. |
 | `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Already required for Shopify. It also encrypts the WooCommerce consumer key, consumer secret and webhook secret, so startup fails when WooCommerce connect, ingestion or outcome sync is enabled without it. |
 
 The frontend offers WooCommerce on signup only when `NEXT_PUBLIC_WOOCOMMERCE_CONNECT_ENABLED=true`. Turn the backend switch on first.
@@ -270,7 +269,7 @@ Every request Akeed sends to a store goes through the restricted outbound client
 
 WooCommerce has no request budget: no rate limit is documented, and Akeed sends two or three requests per outcome (a read, a write, and a note for a confirmation; one more read when an answer is lost). A `429` or `503` from the store's host is retried, and its `Retry-After` is honored through the outcome retry policy. Outcome retries run on the `commerce-outcome-sync` BullMQ queue, which needs Redis like the other queues.
 
-WooCommerce disables a webhook after five consecutive answers that are not `2xx`. While `WOOCOMMERCE_INGESTION_ENABLED` is `false` every order delivery is such an answer, so turn ingestion on before a pilot organization connects. A store connected earlier needs its webhooks re-enabled (US-07-05) once ingestion is on. Orders placed in between are not imported later.
+WooCommerce disables a webhook after five consecutive answers that are not `2xx`. While `WOOCOMMERCE_INGESTION_ENABLED` is `false` every order delivery is such an answer, so turn ingestion on before any organization connects. A store connected earlier needs its webhooks re-enabled (Settings → order source, or `POST /api/woocommerce/connection/webhooks/enable`) once ingestion is on. Orders placed in between are not imported later.
 
 ## WhatsApp (Meta) Configuration
 
@@ -282,7 +281,7 @@ WooCommerce disables a webhook after five consecutive answers that are not `2xx`
 - `WA_BUSINESS_ACCOUNT_ID` (the WhatsApp Business Account ID, numeric) is
   required only when `WHATSAPP_TEMPLATE_SYNC_ENABLED=true`; startup fails
   without it then. Sending and message webhooks never read it. See
-  [WhatsApp templates](#whatsapp-templates-e08) below.
+  [WhatsApp templates](#whatsapp-templates) below.
 
 `META_APP_SECRET` is the App Secret from the Meta app dashboard (App settings >
 Basic). It signs every inbound webhook. **If it does not match, the signature
@@ -302,19 +301,19 @@ field. To tell the failure modes apart, grep the backend log for:
 - `whatsapp-webhook-receive` with `messageCount` / `statusCount` — accepted, and
   how much of each kind arrived.
 
-### WhatsApp templates (E08)
+### WhatsApp templates
 
-Template sync, template webhooks and the send guardrail (US-08-04). Every
-switch is off by default. With all of them off, sending is exactly what
-US-08-03 shipped: any template active in Akeed is sent.
+Template sync, template webhooks and the send guardrail. Every
+switch is off by default. With all of them off, any template active in Akeed
+is sent, whatever Meta says about it.
 
 | Variable | Notes |
 | --- | --- |
 | `WHATSAPP_TEMPLATE_SYNC_ENABLED` | `true` or `false` (default). Turns on the 6-hourly sync from Meta (BullMQ queue `whatsapp-template-sync`), the on-demand sync and the template webhooks. Needs `WA_BUSINESS_ACCOUNT_ID`, and a `WA_ACCESS_TOKEN` with the `whatsapp_business_management` permission. While `false`, template webhooks are acknowledged and ignored, and the schedule is removed. Turning it off keeps the last snapshot. |
-| `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off (US-08-04 open decision 3). Rollback is turning it off. |
-| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. Since US-08-06 the writes are drafts (`/drafts`, `/drafts/:id`, `/drafts/validate`), submission to Meta (`/drafts/:id/submit`, `/drafts/:id/reconcile`), a text edit (`/:key/edit`) and `/:key/activate`, `/:key/deactivate`, `/:key/set-default` and `/:key/retire`. Turning it off is the rollback: templates already approved and active keep sending. `GET /api/admin/session` reports `template_operations.enabled` and `.operator`, so the admin UI hides the controls. |
+| `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off. Rollback is turning it off. |
+| `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. The writes are drafts (`/drafts`, `/drafts/:id`, `/drafts/validate`), submission to Meta (`/drafts/:id/submit`, `/drafts/:id/reconcile`), a text edit (`/:key/edit`) and `/:key/activate`, `/:key/deactivate`, `/:key/set-default` and `/:key/retire`. Turning it off is the rollback: templates already approved and active keep sending. `GET /api/admin/session` reports `template_operations.enabled` and `.operator`, so the admin UI hides the controls. |
 | `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Empty (the default) means every staff member may write while operations are on. When IDs are listed, staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. Startup fails on an entry that is not a UUID. |
-| `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page (US-08-05), in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
+| `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page, in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
 
 Rollout, per environment, dev first:
 
@@ -322,17 +321,15 @@ Rollout, per environment, dev first:
    `message_template_quality_update` and `template_category_update`, next to
    `messages` (see below).
 2. Set `WA_BUSINESS_ACCOUNT_ID`, turn on `WHATSAPP_TEMPLATE_SYNC_ENABLED`, and
-   run one sync (`POST /api/admin/templates/sync` as an operator). Compare the
-   result with the US-08-01 contract record: every registry template should be
-   `approved`, with nothing `missing`.
+   run one sync (`POST /api/admin/templates/sync` as an operator). Read the
+   result: every registry template should be `approved`, with nothing
+   `missing`.
 3. Turn on `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` last.
 
-Rollback: turn off the guardrail to restore today's sending; turn off sync to
-stop reading Meta (the last snapshot stays). Nothing is deleted. The
-[template support runbook](Epics/08-whatsapp-template-management/evidence/US-08-08-template-support-runbook.md)
-has the steps for support, and the
-[gate record](Epics/08-whatsapp-template-management/evidence/US-08-08-release-gate.md)
-the recommendation per switch.
+Rollback: turn off the guardrail to send any active template again; turn off
+sync to stop reading Meta (the last snapshot stays). Nothing is deleted. The
+[template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md)
+has the steps for support.
 
 Logs to grep:
 
@@ -354,7 +351,7 @@ Logs to grep:
 - `meta-template-webhook` — a template delivery that was skipped, with
   `reason` `wrong_account`, `malformed` or `template_sync_disabled`.
 - `meta-template-create`, `meta-template-edit` — each create or edit sent to
-  Meta (US-08-06), with a neutral `errorCode`, `ambiguous`, Meta's numeric
+  Meta, with a neutral `errorCode`, `ambiguous`, Meta's numeric
   code, the HTTP status and Meta's trace reference; never the token, the URL
   or the template text. `ambiguous: true` means Meta may have applied the
   request: nothing is sent again until an operator runs "Check at Meta".
@@ -388,10 +385,10 @@ the dev and the prod app:
 
 | Field | Needed for |
 | --- | --- |
-| `messages` | Delivery and read statuses, button taps and replies (since before E08). |
-| `message_template_status_update` | Template review status: approved, paused, disabled, rejected and the rest (US-08-04). |
-| `message_template_quality_update` | Template quality score (US-08-04). |
-| `template_category_update` | Scheduled and completed re-categorizations (US-08-04). |
+| `messages` | Delivery and read statuses, button taps and replies. |
+| `message_template_status_update` | Template review status: approved, paused, disabled, rejected and the rest. |
+| `message_template_quality_update` | Template quality score. |
+| `template_category_update` | Scheduled and completed re-categorizations. |
 
 The three template fields need the `whatsapp_business_management` permission,
 and the app must be subscribed to the WhatsApp Business Account
@@ -400,25 +397,25 @@ are signed with the same `META_APP_SECRET`. `message_template_components_update`
 is not read: a sync detects changed text. If it is subscribed, it is
 acknowledged and ignored.
 
-### Customer-message improvements (US-08-07)
+### Customer-message improvements
 
 One switch per improvement, each `true` or `false` (default), each read on
-its own. With every switch off the Meta payload is byte-identical to the
-US-08-03 characterization suite on every path. Rollback for any item is
+its own. With every switch off the Meta payload is the one the
+characterization suite pins on every path. Rollback for any item is
 turning its switch off. Enable one at a time, dev first, and compare its
-US-08-02 metrics before enabling the next.
+template metrics (Admin › Templates) before enabling the next.
 
 | Variable | Item | What `true` does |
 | --- | --- | --- |
-| `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | a | The Message tab offers a reminder style per language, among active `cod_reminder` templates. A store that chose one sends it as the reminder; a store that chose none sends its first-send template, as before. A chosen reminder that cannot be sent falls back to the language's reminder default, then to the first-send template, recorded on the dispatch as `template_fallback_reason = reminder_unavailable`. |
-| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | After a customer confirms or cancels (a button or a recognized typed answer), one free-form text is sent, in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. Keep off until US-08-08 verifies contract record 4.10.8. |
-| `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | c | A typed reply to an open verification's message that Akeed could not read gets one free-form nudge, at most once per verification. The reply is stored in `verification_reply_events` without its text; this is stored only while the switch is on. A reply without `context.id` gets nothing. Needs the `unresolved_reply_nudge` texts. Keep off until US-08-08 verifies record 4.10.8. |
+| `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | a | The Message tab offers a reminder style per language, among active `cod_reminder` templates. A store that chose one sends it as the reminder; a store that chose none sends its first-send template. A chosen reminder that cannot be sent falls back to the language's reminder default, then to the first-send template, recorded on the dispatch as `template_fallback_reason = reminder_unavailable`. |
+| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | After a customer confirms or cancels (a button or a recognized typed answer), one free-form text is sent, in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. |
+| `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | c | A typed reply to an open verification's message that Akeed could not read gets one free-form nudge, at most once per verification. The reply is stored in `verification_reply_events` without its text; this is stored only while the switch is on. A reply without `context.id` gets nothing. Needs the `unresolved_reply_nudge` texts. |
 | `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` | d | The Message tab offers `auto` as the Arabic style. A store on `auto` sends the Egyptian style to `+20`, the Gulf style to `+966`, `+971`, `+973`, `+974`, `+965` and `+968`, and the standard style to every other Arabic code. A mapped style that cannot be sent falls back to the Arabic default with `auto_style_unavailable`. Turning it off sends the store's stored Arabic style again. |
 | `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` | e | A missing customer or store name is filled from the `fallback_customer_name` and `fallback_store_name` texts of the send's language, not `Customer` and `Akeed Store`. A missing text keeps the old word for that value and logs `message_text_unavailable`, so add all four texts first. |
 | `WHATSAPP_AMOUNT_FORMATTING_ENABLED` | f | The `total` value is written per language and currency (`1,250.00 ج.م`, `EGP 1,250.00`), with the currency's minor units and Western digits. The amount itself never changes. |
 | `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` | g | The Settings preview and the onboarding test phone are built from the template text Meta returned at the last sync. A template without a snapshot keeps the stored preview. The staff text check on Admin › Templates follows it: for a template previewed from the snapshot it reports only differences in what is sent, not the stored preview's wording. |
 
-The acknowledgment and the nudge are free at Meta (record 4.10.5): they take
+The acknowledgment and the nudge are free at Meta: they take
 no usage or credit and write no dispatch row. They are recorded in
 `verification_service_messages`, once per verification and kind, claimed
 before the send. Each is sent once and never retried. Outside the 24-hour

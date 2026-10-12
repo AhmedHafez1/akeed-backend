@@ -13,7 +13,7 @@ import type {
 import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
 
 /**
- * Acknowledgments and nudges (US-08-07 b, c), and the unresolved replies a
+ * Acknowledgments and nudges, and the unresolved replies a
  * nudge answers. Every write is row-guarded: a row is claimed once per
  * verification and kind, and moves out of `claimed` once.
  */
@@ -76,7 +76,7 @@ export class VerificationServiceMessagesRepository {
       );
   }
 
-  /** `skipped` is expected (record 4.10.3); `failed` is anything else. */
+  /** `skipped` is expected; `failed` is anything else. */
   async markNotSent(params: {
     id: string;
     state: 'skipped' | 'failed';

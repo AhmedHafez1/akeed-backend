@@ -38,11 +38,11 @@ const REDACTED_KEYS = new Set([
   'passcode',
   'otp',
   'secret',
-  // Integration API keys (US-05-01): the stored hash and the full key.
+  // Integration API keys: the stored hash and the full key.
   'key_hash',
   'keyhash',
   'plaintext',
-  // EasyOrders install (US-06-02): the one-time callback token, the webhook
+  // EasyOrders install: the one-time callback token, the webhook
   // URL token, the seller-copied webhook secrets and the link carrying both
   // tokens.
   'callback_token',
@@ -55,7 +55,7 @@ const REDACTED_KEYS = new Set([
   'statussecret',
   'install_url',
   'installurl',
-  // WooCommerce install (US-07-02): the keys the store posts to the callback
+  // WooCommerce install: the keys the store posts to the callback
   // and the authorize link, which carries the one-time callback token.
   'consumer_key',
   'consumerkey',
@@ -90,7 +90,7 @@ const REDACTED_KEYS = new Set([
   'wallettoken',
   'msisdn',
   // A merchant's upload name often carries a customer or store name, and a
-  // file's cells are customer data (E04.6 bulk import).
+  // file's cells are customer data (bulk import).
   'filename',
   'file_name',
   'originalname',

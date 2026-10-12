@@ -187,7 +187,7 @@ export function toPurposeMetricsView(
   return { purpose: row.purpose, ...toMetricsView(row) };
 }
 
-/** The variant key sends record for a registry template (US-08-02). */
+/** The variant key sends record for a registry template. */
 export function variantKeyOf(
   template: Pick<InspectedTemplate['template'], 'language' | 'style'>,
 ): string {

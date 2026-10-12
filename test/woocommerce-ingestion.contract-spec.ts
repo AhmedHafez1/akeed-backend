@@ -211,7 +211,7 @@ const hub = new VerificationHubService(
 );
 
 const phones = new PhoneService();
-// No WooCommerce order-update handler yet: handling an update is US-07-04.
+// No order-update handler here: the outcome-sync suite covers updates.
 const processor = new WebhookQueueProcessor(
   [
     new ShopifyOrderNormalizer(phones),
@@ -571,7 +571,7 @@ async function migrate(name: string) {
     await client.unsafe(statement);
 }
 
-describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
+describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
   beforeAll(async () => {
     const capture: LoggerService = {
       log: (message: unknown) => logs.push(String(message)),
@@ -1055,7 +1055,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
         { job_type: 'order.create', status: 'completed' },
         {
           job_type: 'order.update',
-          // Recorded only: acting on a store-side change is US-07-04.
+          // Recorded only: this suite registers no update handler.
           status: 'skipped',
           last_error: 'unhandled_job_type:order.update',
           idempotency_key: `order.update:${merchant.integrationId}:1001:completed:2026-01-02T07:30:00`,
@@ -1087,7 +1087,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
     });
   });
 
-  describe('an order corrected in the store (US-07-06)', () => {
+  describe('an order corrected in the store', () => {
     /** The same order as the store sends it after an edit. */
     const edited = (
       minute: number,
@@ -1949,7 +1949,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract (US-07-03)', () => {
     });
   });
 
-  describe('a disconnected source (US-07-05)', () => {
+  describe('a disconnected source', () => {
     const ownerOf = (merchant: Merchant): AuthenticatedUser => ({
       userId: randomUUID(),
       orgId: merchant.orgId,

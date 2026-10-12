@@ -1,4 +1,4 @@
-// Shared helpers for the US-08-01 WhatsApp template reconciliation kit.
+// Shared helpers for the WhatsApp template reconciliation kit.
 //
 // Nothing here is production code and nothing in `src/` depends on it.
 // `graphGet` is the only function that talks to Meta: GET only, a pinned host

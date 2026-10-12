@@ -2,8 +2,8 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import type { WooCommerceCallFailure } from './woocommerce-api.client';
 
 /**
- * The codes the WooCommerce connection and delivery URL answer with (US-07-01
- * contract record, support boundary). The frontend translates by code, so these are
+ * The codes the WooCommerce connection and delivery URL answer with.
+ * The frontend translates by code, so these are
  * never renamed.
  */
 export type WooCommerceErrorCode =

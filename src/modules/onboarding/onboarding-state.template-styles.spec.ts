@@ -14,7 +14,7 @@ import { OnboardingStateService } from './onboarding-state.service';
 import { OnboardingService } from './onboarding.service';
 
 /**
- * US-08-03: a store's style is a registry key. These specs save a style
+ * A store's style is a registry key. These specs save a style
  * through the settings write and read it back through the settings response,
  * over one in-memory integration row.
  */

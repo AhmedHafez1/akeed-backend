@@ -55,7 +55,7 @@ function run(overrides: Partial<TemplateSyncRun> = {}): TemplateSyncRun {
 const RANGE = 'from=2026-09-06&to=2026-10-05';
 const KEY = 'cod_confirm.ar.standard';
 
-describe('Admin template routes (US-08-04, US-08-05)', () => {
+describe('Admin template routes', () => {
   let app: INestApplication;
   const operatorId = randomUUID();
   const staffId = randomUUID();

@@ -72,7 +72,7 @@ export class WhatsAppWebhookService {
   }
 
   /**
-   * US-08-07c: a typed reply that quotes an open verification's message but
+   * A typed reply that quotes an open verification's message but
    * reads as no answer. The reply is stored without its text and one nudge
    * is queued. Without `context.id` nothing is stored or sent: matching by
    * phone could pick another store's order (decision 8). Never throws: the
@@ -117,7 +117,7 @@ export class WhatsAppWebhookService {
     }
   }
 
-  /** US-08-07b: queue one acknowledgment. Never throws. */
+  /** Queue one acknowledgment. Never throws. */
   private async queueAcknowledgment(
     verificationId: string,
     intent: CustomerReplyIntent,
@@ -391,7 +391,7 @@ export class WhatsAppWebhookService {
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
 
-      // An acknowledgment or a nudge (US-08-07 b, c) is no dispatch: its
+      // An acknowledgment or a nudge is no dispatch: its
       // receipt touches only its own row, and a failure marks it failed.
       if (await this.isServiceMessageReceipt(wamid, typedStatus)) continue;
 

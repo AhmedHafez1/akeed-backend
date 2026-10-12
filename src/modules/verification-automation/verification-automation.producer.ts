@@ -65,7 +65,7 @@ export class VerificationAutomationProducer {
   }
 
   /**
-   * The acknowledgment and the nudge (US-08-07 b, c): due now, attempted
+   * The acknowledgment and the nudge: due now, attempted
    * once. A deterministic job id per verification makes a replayed webhook a
    * no-op; the row claimed by the worker is what guarantees one message.
    */

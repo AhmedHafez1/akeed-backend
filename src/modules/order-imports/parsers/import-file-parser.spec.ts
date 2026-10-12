@@ -48,7 +48,7 @@ describe('parseInWorker', () => {
   });
 
   /**
-   * US-04.6-09: a 5 MB line with no delimiter, or one quote never closed,
+   * A 5 MB line with no delimiter, or one quote never closed,
    * is the input most likely to make a parser crawl. Under the real 20 s cap
    * it settles, as a grid or a file refusal, and never hangs; under a spent
    * budget the worker is terminated with IMPORT_FILE_UNREADABLE.

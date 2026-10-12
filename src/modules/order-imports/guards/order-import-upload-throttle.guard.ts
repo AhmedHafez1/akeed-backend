@@ -16,7 +16,7 @@ const WINDOW_MS = 60_000;
 const THROTTLER_NAME = 'order-import-upload';
 
 /**
- * 10 uploads a minute per user (US-04.6-02).
+ * 10 uploads a minute per user.
  *
  * The app-wide throttler keys by IP and runs before authentication, so it
  * cannot count per user, and its 429 carries no code. The upload route skips

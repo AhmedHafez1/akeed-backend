@@ -39,7 +39,7 @@ export function templateDirection(language: TemplateLanguage): 'rtl' | 'ltr' {
 }
 
 /**
- * A message as merchants preview it (US-08-07g): lines of literal text and
+ * A message as merchants preview it: lines of literal text and
  * the places a value goes, and the button labels. The client fills the
  * values, so a preview shows the merchant's own store name. `source` says
  * whether it was read from the provider's synced text or from the stored

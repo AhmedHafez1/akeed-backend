@@ -78,8 +78,8 @@ function isStoredState(
 }
 
 /**
- * The store's side of a WooCommerce connection, read on demand (US-07-05,
- * contract record section 3): the state of Akeed's two webhooks, a connection
+ * The store's side of a WooCommerce connection, read on demand:
+ * the state of Akeed's two webhooks, a connection
  * check that tells the failures apart, and the re-enabling of a webhook the
  * store disabled.
  *

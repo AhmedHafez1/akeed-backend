@@ -15,7 +15,7 @@ export const TEMPLATE_CATALOG_PORT = Symbol('TEMPLATE_CATALOG_PORT');
  * The templates the messaging provider holds for Akeed's one sender: reading
  * them, creating one and editing one. Records are neutral: the provider's
  * statuses, categories, error codes and component JSON never pass this port.
- * There is no delete: a template is retired in Akeed only (US-08-06).
+ * There is no delete: a template is retired in Akeed only.
  */
 export interface TemplateCatalogPort {
   /**

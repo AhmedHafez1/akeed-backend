@@ -40,8 +40,8 @@ import {
 } from '../contracts/meta-template-api-fake';
 
 /**
- * US-08-08 criteria 1 and 2: the Meta fakes follow the US-08-01 contract
- * record, and the port adapter, the sync, the submit and edit rules and the
+ * The Meta fakes follow what Meta
+ * documents, and the port adapter, the sync, the submit and edit rules and the
  * free-form window rule hold against them. Every test names the record
  * finding it covers. The per-story suites the gate also runs go deeper; this
  * file is the one place that walks the record end to end.
@@ -115,7 +115,7 @@ async function rejection<T extends Error>(
   throw new Error('expected a failure');
 }
 
-describe('US-08-08 Meta contract gate', () => {
+describe('Meta contract gate', () => {
   let lines: string[];
 
   beforeEach(() => {
@@ -518,7 +518,7 @@ describe('US-08-08 Meta contract gate', () => {
     });
   });
 
-  describe('criterion 2: the free-form window rule (US-08-07 b, c)', () => {
+  describe('criterion 2: the free-form window rule', () => {
     const NOW = Date.parse('2026-10-06T12:00:00.000Z');
     const PHONE = '+201001112223';
 

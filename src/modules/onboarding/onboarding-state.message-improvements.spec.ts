@@ -21,7 +21,7 @@ import { TemplateMessageService } from '../template-registry/template-message.se
 import { describeMetaComponents } from '../../infrastructure/spokes/meta/meta-template-text';
 
 /**
- * US-08-07 a and d in Settings: the reminder style per language and the
+ * Message improvements in Settings: the reminder style per language and the
  * Arabic `auto` style, saved through the settings write and read back
  * through the settings response, each offered only while its switch is on.
  */
@@ -137,7 +137,7 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
   return (error as BadRequestException).getResponse();
 }
 
-describe('reminder style settings (US-08-07a)', () => {
+describe('reminder style settings', () => {
   it('with the switch off, the response has no reminder block and a reminder write is refused', async () => {
     const { settings } = setup();
     const response = await settings.getSettings(owner);
@@ -229,7 +229,7 @@ describe('reminder style settings (US-08-07a)', () => {
   });
 });
 
-describe('Arabic auto style settings (US-08-07d)', () => {
+describe('Arabic auto style settings', () => {
   it('saves auto and reads it back, keeping the stored Arabic style for when it is turned off', async () => {
     const { settings, current } = setup(
       { arabicStyleAuto: true },
@@ -267,7 +267,7 @@ describe('Arabic auto style settings (US-08-07d)', () => {
   });
 });
 
-describe('message lines in the settings response (US-08-07g)', () => {
+describe('message lines in the settings response', () => {
   const synced = TEMPLATES.map((template) =>
     template.key === 'cod_confirm.en.friendly'
       ? {

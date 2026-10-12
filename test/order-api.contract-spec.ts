@@ -108,12 +108,12 @@ async function codeOf(attempt: Promise<unknown>): Promise<string> {
 }
 
 /**
- * US-05-02 over PostgreSQL: an API order goes through the same ingestion
+ * The order API over PostgreSQL: an API order goes through the same ingestion
  * command, event, normalizer, eligibility, hub and send path as a manual
  * order. Real repositories and services; only the messaging port and the
  * queues are fakes (see `releaseGateHarness`).
  */
-describe('order API PostgreSQL contract (US-05-02)', () => {
+describe('order API PostgreSQL contract', () => {
   beforeAll(() => gate.setup());
   afterAll(() => gate.teardown());
 
@@ -302,8 +302,8 @@ describe('order API PostgreSQL contract (US-05-02)', () => {
   });
 
   it('a retry with the same key and content never creates a second order, event or send', async () => {
-    // The replay semantics themselves are US-05-03's subject
-    // (`order-api-idempotency.contract-spec.ts`).
+    // The replay semantics themselves are covered by
+    // `order-api-idempotency.contract-spec.ts`.
     const merchant = await gate.merchant();
     const key = `order-${randomUUID()}`;
     const body = order({ externalOrderId: 'R-1' });
@@ -415,7 +415,7 @@ describe('order API PostgreSQL contract (US-05-02)', () => {
       await expectNothingStored(merchant.orgId);
     });
 
-    it('a used-up credit balance answers the E04.5 code unchanged', async () => {
+    it('a used-up credit balance answers the credit code unchanged', async () => {
       const merchant = await gate.merchant({ credits: 1 });
       await submit(merchant, order(), `order-${randomUUID()}`);
       await gate.drain();

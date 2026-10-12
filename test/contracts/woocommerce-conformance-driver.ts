@@ -39,10 +39,10 @@ import {
 } from './woocommerce-provider-fake';
 
 /**
- * WooCommerce for the source conformance harness (US-07-06): the spoke as the
+ * WooCommerce for the source conformance harness: the spoke as the
  * application binds it, over the WooCommerce provider fake, and the driver
  * that says what only WooCommerce decides. Every provider behavior here comes
- * from the US-07-01 contract record, through the fake.
+ * through the fake.
  */
 
 /**
@@ -97,7 +97,7 @@ export interface WooCommerceDeliveryOverrides {
 
 /** The status WooCommerce holds after each action Akeed may write. */
 const STATUS_AFTER: Partial<Record<CommerceOutcomeAction, string>> = {
-  // A confirmation changes no status (contract record, finding 5.13).
+  // A confirmation changes no status.
   customer_confirmation: 'processing',
   customer_cancellation: 'cancelled',
   merchant_no_reply_cancellation: 'cancelled',
@@ -458,8 +458,8 @@ export function wooCommerceConformanceDriver(
     },
     // The delivery route answers 200 with an empty body.
     accepted: { status: 200, body: undefined },
-    // The first repeat of a placed order is an update of it (contract record,
-    // section 4 routing): one create event and one update event.
+    // The first repeat of a placed order is an update of it:
+    // one create event and one update event.
     repeatedDeliveryEvents: 2,
     minimums: { secrets: 150, logs: 300, storedRows: 100 },
     secretTables: ['woocommerce_connections', 'woocommerce_pending_installs'],

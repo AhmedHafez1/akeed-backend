@@ -407,7 +407,7 @@ describe('resolveTemplate', () => {
   });
 });
 
-describe('send guardrail (US-08-04)', () => {
+describe('send guardrail', () => {
   const synced = syncedApprovedTemplates();
   const GUARDRAIL_ON = { enabled: true };
 

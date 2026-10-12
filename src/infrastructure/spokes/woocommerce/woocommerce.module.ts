@@ -12,10 +12,10 @@ import { WooCommerceWebhookService } from './woocommerce-webhook.service';
 
 /**
  * The WooCommerce spoke: the application-authentication connection
- * (US-07-02) and the delivery URL that feeds the common queue (US-07-03).
+ * and the delivery URL that feeds the common queue.
  * The API client, bound to the restricted outbound client, the order
  * normalizer, the eligibility strategy, the order-update handler and the
- * outcome adapter (US-07-04) live in `WooCommerceIngestionModule`.
+ * outcome adapter live in `WooCommerceIngestionModule`.
  */
 @Module({
   imports: [

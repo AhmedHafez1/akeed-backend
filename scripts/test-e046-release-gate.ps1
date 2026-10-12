@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-# US-04.6-10 release gate: every unit, acceptance and PostgreSQL contract
+# Release gate: every unit, acceptance and PostgreSQL contract
 # suite, each contract suite on its own disposable container. The summary
 # lines are what the story evidence records.
 

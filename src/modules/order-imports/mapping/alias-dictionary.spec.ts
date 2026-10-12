@@ -98,8 +98,8 @@ const AC2_ALIASES: [ImportField, string[]][] = [
 ];
 
 /**
- * Aliases added after AC2, from real files: `الهاتف` in Arabic Excel exports
- * (US-04.6-10 gate observation G1), dictionary version 2; `إجمالي المبلغ`
+ * Aliases added after AC2, from real files: `الهاتف` in Arabic Excel exports,
+ * dictionary version 2; `إجمالي المبلغ`
  * and its siblings, which were only a partial match on `المبلغ`, version 3;
  * `Contact Number`, `Client` and `Emirate`, which matched nothing, so a file
  * had no phone column to tell its country by, version 4.
@@ -128,7 +128,7 @@ function suggestionFor(field: ImportField, headers: string[]) {
   )!;
 }
 
-describe('alias dictionary (US-04.6-03 AC2)', () => {
+describe('alias dictionary', () => {
   it('is versioned', () => {
     expect(MAPPING_DICTIONARY_VERSION).toBe(4);
   });

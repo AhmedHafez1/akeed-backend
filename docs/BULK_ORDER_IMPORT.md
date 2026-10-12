@@ -4,7 +4,7 @@ Last updated: 2026-10-01
 
 ## Purpose
 
-This document describes how a Standalone merchant imports COD orders from a CSV or XLSX file, how the file becomes **held** orders, and how the merchant starts WhatsApp confirmation. It is the engineering reference for the merchant guide in `akeed-frontend/content/docs/{en,ar}/bulk-order-import.md`. For single orders see `MANUAL_ORDER_CREATION.md`. For the confirmation lifecycle after release see `ORDER_CONFIRMATION_WORKFLOW.md`. For credits and Paymob see `ENVIRONMENT.md` and `STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`. The backlog and decision history live in `Epics/04.6-standalone-bulk-order-import/README.md`.
+This document describes how a Standalone merchant imports COD orders from a CSV or XLSX file, how the file becomes **held** orders, and how the merchant starts WhatsApp confirmation. It is the engineering reference for the merchant guide in `akeed-frontend/content/docs/{en,ar}/bulk-order-import.md`. For single orders see `MANUAL_ORDER_CREATION.md`. For the confirmation lifecycle after release see `ORDER_CONFIRMATION_WORKFLOW.md`. For credits and Paymob see `ENVIRONMENT.md` and `STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`.
 
 Flow: **CSV/XLSX → map columns → preview → import (held orders) → start confirmation**. The wizard shows it as three screens (File, Check, Send). The Send screen's single action commits the ready rows and then starts release.
 

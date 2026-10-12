@@ -1,7 +1,6 @@
 /**
  * What only the EasyOrders install adds to the shared install tokens
- * (`shared/commerce/install-token.ts`; US-06-02, contract record sections 1
- * and 6).
+ * (`shared/commerce/install-token.ts`).
  */
 const HINT_LENGTH = 6;
 

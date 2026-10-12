@@ -23,7 +23,7 @@ import { readRequestId } from './standalone-billing-operator.guard';
 import { WhatsappTemplateOperatorGuard } from './whatsapp-template-operator.guard';
 
 /**
- * Staff template routes (E08). Every route sits behind `AdminAccessGuard`;
+ * Staff template routes. Every route sits behind `AdminAccessGuard`;
  * a route that writes or sends, the sync and the test send among them, also
  * needs a named template operator. Responses carry neutral values only: never
  * a token, the app secret or the provider's own error text.

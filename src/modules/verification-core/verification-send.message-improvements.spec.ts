@@ -18,7 +18,7 @@ import { VerificationSendService } from './verification-send.service';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 /**
- * US-08-07 on the send path, one switch at a time. With every switch off the
+ * The message improvements on the send path, one switch at a time. With every switch off the
  * payload is covered by the characterization suite; these are the on-cases.
  */
 function setup(
@@ -232,7 +232,7 @@ const REMINDERS = [
   reminderTemplate('ar', 'gulf_v1'),
 ];
 
-describe('VerificationSendService and US-08-07', () => {
+describe('VerificationSendService: message improvements', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'error').mockImplementation();

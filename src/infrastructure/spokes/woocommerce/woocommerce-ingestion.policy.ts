@@ -1,7 +1,7 @@
 import { WebhookJobType } from '../../../modules/webhook-queue/webhook-queue.constants';
 
 /**
- * The ingestion rule (US-07-01 contract record, section 4). One pure policy
+ * The ingestion rule. One pure policy
  * decides what a delivery is: the webhook service uses it to pick the
  * idempotency key, and the normalizer uses it for the recorded reason.
  */

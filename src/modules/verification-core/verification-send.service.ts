@@ -630,7 +630,7 @@ export class VerificationSendService {
 
   /**
    * The staff-managed words for a missing customer or store name, read only
-   * for the name that is missing (US-08-07e). A missing text leaves that word
+   * for the name that is missing. A missing text leaves that word
    * to the adapter, as before, and says so in the log; it never stops the
    * send.
    */

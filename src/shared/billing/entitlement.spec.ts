@@ -116,7 +116,7 @@ describe('provider-neutral entitlement policy', () => {
   );
 
   // With credit billing off a Standalone source is billed on the periodic plan
-  // it shipped with, so the plan columns gate it exactly as they did in E04.
+  // so the plan columns gate it.
   it.each(legacyPlanFieldGaps)(
     'does not infer periodic Standalone provisioning from %j',
     (overrides) => {

@@ -7,11 +7,11 @@ import {
 } from '../../src/infrastructure/spokes/easyorders/easyorders-api.client';
 
 /**
- * An in-process EasyOrders for the US-06-06 gate. No request leaves the
+ * An in-process EasyOrders for the release gate. No request leaves the
  * process, and no key it issues is a real one.
  *
- * Its behavior comes only from the US-06-01 contract record. Where the record
- * says UNKNOWN the fake takes the record's worst-case rule and says which:
+ * Its behavior is what EasyOrders documents. Where EasyOrders documents
+ * nothing the fake takes the worst-case rule and says which:
  *
  * - A wrong or revoked key answers 400 "Api-Key not valid" (section 2,
  *   VERIFIED for a wrong key; a revoked one is assumed to answer the same).

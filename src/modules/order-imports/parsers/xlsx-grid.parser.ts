@@ -32,7 +32,7 @@ function pad(value: number, width = 2): string {
  * SheetJS's date code reproduces Excel's 1900 leap-year bug: serial 60 is the
  * phantom 1900-02-29 and serial 61 is 1900-03-01, so every real date keeps the
  * day Excel shows. Times are local wall-clock; the store's timezone is applied
- * when the row is validated (US-04.6-04).
+ * when the row is validated.
  */
 export function excelSerialToIso(serial: number, date1904: boolean): string {
   const code = ssf.parse_date_code(serial, { date1904 });
@@ -50,7 +50,7 @@ export function excelSerialToIso(serial: number, date1904: boolean): string {
  * - Date-formatted numbers become ISO dates.
  * - Numbers under a text (`@`) or any explicit format keep the text Excel
  *   displays, so a phone formatted `00000000000` keeps its leading zero.
- * - `General` numbers keep the raw stored number; US-04.6-04 then flags a lost
+ * - `General` numbers keep the raw stored number; row validation then flags a lost
  *   leading zero or scientific notation instead of this reader guessing.
  */
 function cellText(cell: CellObject | undefined, date1904: boolean): string {

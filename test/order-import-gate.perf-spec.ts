@@ -10,7 +10,7 @@ import { readBulkImportConfig } from '../src/shared/config/bulk-import.config';
 import { releaseGateHarness } from './contracts/release-gate-harness';
 
 /*
- * US-04.6-10 AC6, measured locally on disposable PostgreSQL through the same
+ * Import performance, measured locally on disposable PostgreSQL through the same
  * real services as the release-gate suite. These numbers are a local
  * baseline only: the targets are defined on staging, so every result is
  * reported as TARGET VALIDATION REQUIRED. Run with
@@ -128,7 +128,7 @@ async function commit(merchant: Merchant, batchId: string) {
   return { ms, orders };
 }
 
-describe('US-04.6-10 AC6 local performance baseline (5000-rows.csv)', () => {
+describe('local performance baseline (5000-rows.csv)', () => {
   const results: Record<string, unknown> = {};
 
   beforeAll(() => gate.setup());
@@ -241,7 +241,7 @@ describe('US-04.6-10 AC6 local performance baseline (5000-rows.csv)', () => {
     };
   });
 
-  it('exports (target < 5 s): N/A, errors.csv/results.csv deferred with US-04.6-08', () => {
+  it('exports (target < 5 s): N/A, errors.csv/results.csv are not measured here', () => {
     results.exports = { verdict: 'N/A (deferred)' };
   });
 });

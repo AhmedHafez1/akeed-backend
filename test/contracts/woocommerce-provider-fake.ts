@@ -7,13 +7,13 @@ import type {
 } from '../../src/shared/http/restricted-http';
 
 /**
- * In-process WooCommerce stores for the E07 contract suites. No request
+ * In-process WooCommerce stores for the contract suites. No request
  * leaves the process, and no key a store issues is a real one.
  *
  * The fake sits under the real restricted outbound client, as its DNS and its
  * transport, so every store call in a suite runs the production address
- * checks. Its behavior comes only from the US-07-01 contract record. Where
- * the record says UNKNOWN the fake takes the record's worst-case rule and
+ * checks. Its behavior is what WooCommerce documents. Where
+ * WooCommerce documents nothing the fake takes the worst-case rule and
  * says which:
  *
  * - A wrong key answers 401 and a key whose user may not manage WooCommerce

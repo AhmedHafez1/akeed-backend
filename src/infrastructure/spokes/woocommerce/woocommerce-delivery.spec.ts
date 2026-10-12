@@ -6,7 +6,7 @@ import {
 } from './woocommerce-delivery';
 
 describe('projectWooCommerceOrder', () => {
-  it('keeps the fields the contract record reads and nothing else', () => {
+  it('keeps the fields ingestion reads and nothing else', () => {
     expect(projectWooCommerceOrder(placedCodFixture().payload)).toEqual({
       id: 1001,
       number: '1001',

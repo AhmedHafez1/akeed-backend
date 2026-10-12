@@ -4,7 +4,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * WhatsApp template management (E08). Every switch is off by default.
+ * WhatsApp template management. Every switch is off by default.
  *
  * - `syncEnabled` turns on the scheduled and on-demand sync from the
  *   provider and the template webhooks. It needs the WhatsApp Business
@@ -14,9 +14,9 @@ const UUID_PATTERN =
  * - `operationsEnabled` and `operatorIds` name the staff who may trigger
  *   template writes, the sync among them. With operations on and no ID
  *   listed, every staff member may.
- * - `testPhones` are the staff numbers a template test may be sent to
- *   (US-08-05). With none listed, test sends are off.
- * - `messageImprovements` are the US-08-07 switches, one per item.
+ * - `testPhones` are the staff numbers a template test may be sent to.
+ *   With none listed, test sends are off.
+ * - `messageImprovements` are the customer-message switches, one per item.
  */
 export interface WhatsappTemplateConfig {
   syncEnabled: boolean;
@@ -30,8 +30,8 @@ export interface WhatsappTemplateConfig {
 }
 
 /**
- * The US-08-07 customer-message improvements. Each is off by default, and
- * with every one off the provider payload is byte-identical to before.
+ * The customer-message improvements. Each is off by default, and with every
+ * one off the provider payload is the one the characterization suite pins.
  *
  * - `reminderTemplate` (a): a store may choose a `cod_reminder` template.
  * - `acknowledgment` (b): a free-form reply after a customer confirms or

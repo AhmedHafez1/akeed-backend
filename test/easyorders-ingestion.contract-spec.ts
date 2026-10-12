@@ -588,7 +588,7 @@ async function migrate(name: string) {
     await client.unsafe(statement);
 }
 
-describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
+describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
   beforeAll(async () => {
     const capture: LoggerService = {
       log: (message: unknown) => logs.push(String(message)),
@@ -656,7 +656,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
     for (let pass = 0; pass < 2; pass++) {
       await migrate('0047_easyorders_connection.sql');
       await migrate('0048_easyorders_ingestion.sql');
-      // US-06-05: the credentials become nullable for a disconnect.
+      // The credentials become nullable for a disconnect.
       await migrate('0050_easyorders_disconnect.sql');
       await migrate('0062_easyorders_webhook_cleanup.sql');
     }
@@ -1528,7 +1528,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
     });
   });
 
-  describe('source health (US-06-05)', () => {
+  describe('source health', () => {
     const since = () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const summaryOf = (merchant: Merchant) =>
       events.summarizeForIntegration(
@@ -1624,7 +1624,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract (US-06-03)', () => {
     });
   });
 
-  describe('a disconnected source (US-06-05)', () => {
+  describe('a disconnected source', () => {
     it('answers the old webhook address with 401, stores nothing and stops an order already queued', async () => {
       const merchant = await connectMerchant();
       await deliverOrder(merchant, orderFor(merchant));

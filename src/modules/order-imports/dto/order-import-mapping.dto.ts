@@ -35,7 +35,7 @@ import {
 } from '../mapping/mapping-rules';
 import type { PaymentValueSummary } from '../mapping/payment-value-classifier';
 
-/** Headers are at most 1,000 characters (US-04.6-02 AC7). */
+/** Headers are at most 1,000 characters. */
 const MAX_HEADER_LENGTH = 1_000;
 const MAX_PAYMENT_VALUE_KEYS = 200;
 const MAX_PAYMENT_VALUE_KEY_LENGTH = 1_000;
@@ -152,7 +152,7 @@ export class OrderImportOptionsDto {
   paymentValueMap?: Record<string, PaymentClassification>;
 }
 
-/** `PUT /api/order-imports/:id/mapping` (US-04.6-03 AC4, AC5, AC7). */
+/** `PUT /api/order-imports/:id/mapping`. */
 export class SaveOrderImportMappingDto {
   @IsDefined({ message: 'mapping is required.' })
   @ValidateNested()
@@ -206,7 +206,7 @@ export interface OrderImportFieldStateDto extends Omit<
   source: MappingSource;
 }
 
-/** The mapping part of `GET /api/order-imports/:id` (US-04.6-05). */
+/** The mapping part of `GET /api/order-imports/:id`. */
 export interface OrderImportMappingStateDto {
   /** False while the mapping is only the upload's suggestion. */
   mappingConfirmed: boolean;

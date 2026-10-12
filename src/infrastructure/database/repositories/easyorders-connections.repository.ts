@@ -246,7 +246,7 @@ export class EasyOrdersConnectionsRepository {
    * `easyorders` integration with the onboarding defaults, its credentials
    * and the organization's credit account with the launch grant. Either all of it is stored or none.
    *
-   * A disconnected source is brought back in place instead (US-06-05): the
+   * A disconnected source is brought back in place instead: the
    * same integration row, so its orders and history stay attached, with a new
    * key and URL token and no webhook secrets (they are learned again). The store must be the one that
    * was connected, and its claim is unverified again because the new key has
@@ -382,7 +382,7 @@ export class EasyOrdersConnectionsRepository {
         isActive: true,
         ...STANDALONE_SOURCE_DEFAULTS,
         // EasyOrders states the payment method; a missing one is unknown,
-        // not cash on delivery (contract record section 4).
+        // not cash on delivery.
         assumeCodWhenPaymentMissing: false,
         storeName:
           organization.name.trim().slice(0, STORE_NAME_MAX_LENGTH).trim() ||
@@ -462,7 +462,7 @@ export class EasyOrdersConnectionsRepository {
   }
 
   /**
-   * The local half of a disconnect (US-06-05), in one transaction: the source
+   * The local half of a disconnect, in one transaction: the source
    * stops being active, which every queued effect already checks, and every
    * credential is wiped. The store id stays for a same-store reconnect, and
    * the integration, its orders and its history are not touched.

@@ -956,7 +956,7 @@ export class VerificationsRepository {
    * waiting for the start, queued behind the paced release, or released and
    * on its way to the worker that creates its verification.
    * Kept as its own query rather than a UNION inside `findByOrg` so the
-   * verification list the rest of E04 is built on stays exactly as it was; the
+   * verification list query stays a single-table read; the
    * service merges the two sorted streams.
    */
   async findHeldByOrg(

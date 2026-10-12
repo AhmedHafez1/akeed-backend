@@ -23,8 +23,7 @@ export type WooCommerceUpdateEventReason =
   | 'remote_status_observed';
 
 /**
- * WooCommerce `order.updated` deliveries for an order Akeed already has
- * (US-07-04, contract record sections 5 and 6).
+ * WooCommerce `order.updated` deliveries for an order Akeed already has.
  *
  * An update never causes an action: nothing is written to the store and no
  * verification changes or starts, so it cannot loop. The handler only says

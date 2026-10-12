@@ -8,8 +8,8 @@ import type {
 } from './template-registry.types';
 
 /**
- * The rules for the staff actions on a registry template (US-08-06 criteria
- * 5 to 7). Pure: the caller reads the rows under a lock, asks here what to
+ * The rules for the staff actions on a registry template.
+ * Pure: the caller reads the rows under a lock, asks here what to
  * do, and writes the answer in the same transaction.
  */
 

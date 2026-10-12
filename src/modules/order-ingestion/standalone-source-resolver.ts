@@ -66,7 +66,7 @@ export const MANUAL_ORDER_SOURCE_CODES: StandaloneSourceCodeMap = {
 };
 
 /**
- * Issuing an integration API key (US-05-01). A key is bound to the source
+ * Issuing an integration API key. A key is bound to the source
  * resolved here, so it answers the same situations as the order channels.
  */
 export const API_KEY_SOURCE_CODES: StandaloneSourceCodeMap = {

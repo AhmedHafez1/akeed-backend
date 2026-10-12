@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Keeps the public server API guide and the tested contract the same thing
-// (US-05-05). The examples, field limits, request limits and error codes of
+// Keeps the public server API guide and the tested contract the same thing.
+// The examples, field limits, request limits and error codes of
 // the guide are rendered from test/fixtures/order-api/guide-examples.json,
 // the fixture that test/order-api-guide.contract-spec.ts runs over HTTP.
 //

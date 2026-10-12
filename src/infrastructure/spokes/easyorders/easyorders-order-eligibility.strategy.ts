@@ -7,8 +7,8 @@ import type { NormalizedOrder } from '../../../shared/interfaces/order.interface
 export const EASYORDERS_COD_PAYMENT_METHOD = 'cod';
 
 /**
- * EasyOrders states the payment method on every order (contract record
- * section 4). Only `cod` is known to mean cash on delivery; the other values
+ * EasyOrders states the payment method on every order.
+ * Only `cod` is known to mean cash on delivery; the other values
  * are not listed yet, so any of them, and a missing one, is not eligible.
  */
 @Injectable()

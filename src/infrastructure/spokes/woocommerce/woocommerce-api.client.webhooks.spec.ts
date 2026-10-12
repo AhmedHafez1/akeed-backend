@@ -38,7 +38,7 @@ function clientAnswering(
 const refusedBy = (code: RestrictedHttpErrorCode) =>
   new RestrictedHttpError(code, 'example.com');
 
-/** Reading and re-enabling one webhook (US-07-05, findings 3.15 and 3.16). */
+/** Reading and re-enabling one webhook. */
 describe('WooCommerceApiClient webhook state', () => {
   describe('getWebhook', () => {
     it('reads one webhook of the bound store with Basic authentication', async () => {

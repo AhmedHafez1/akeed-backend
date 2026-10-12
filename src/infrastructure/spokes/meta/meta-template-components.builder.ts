@@ -5,7 +5,7 @@ import type {
 import type { TemplateCategory } from '../../../shared/messaging/template-provider.types';
 
 /**
- * Meta's creation syntax for a template (record 3.3, 4.6.4, 4.7.5). This file
+ * Meta's creation syntax for a template. This file
  * and `meta-template.mapping.ts` are the only places it is written.
  */
 
@@ -25,7 +25,7 @@ const META_PARAMETER_FORMAT = {
 /**
  * `BODY` with its example values, then `BUTTONS` with the quick replies in
  * send order. A named body carries `example.body_text_named_params`, a
- * positional one `example.body_text` as a nested list (record 4.6.4). A quick
+ * positional one `example.body_text` as a nested list. A quick
  * reply has no payload at creation (4.7.5); it is set at send time.
  */
 export function buildMetaComponents(
@@ -61,7 +61,7 @@ export function buildMetaComponents(
   ];
 }
 
-/** The create request body (record 4.1.3). No time-to-live is set in E08. */
+/** The create request body. No time-to-live is set. */
 export function buildMetaCreateBody(
   submission: TemplateSubmission,
 ): Record<string, unknown> | null {
@@ -76,7 +76,7 @@ export function buildMetaCreateBody(
   };
 }
 
-/** The edit request body (record 4.1.4, 4.3.4): every component, replaced. */
+/** The edit request body: every component, replaced. */
 export function buildMetaEditBody(
   submission: TemplateEditSubmission,
 ): Record<string, unknown> {

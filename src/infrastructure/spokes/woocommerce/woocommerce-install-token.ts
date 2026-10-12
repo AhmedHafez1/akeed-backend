@@ -2,8 +2,7 @@ import { randomBytes, randomInt } from 'crypto';
 
 /**
  * What only the WooCommerce install adds to the shared install tokens
- * (`shared/commerce/install-token.ts`; US-07-01 contract record, sections 1,
- * 6 and 7): the install reference and the webhook secret.
+ * (`shared/commerce/install-token.ts`): the install reference and the webhook secret.
  */
 const REFERENCE_PATTERN = /^[1-9][0-9]{14}$/;
 const WEBHOOK_SECRET_BYTES = 32;

@@ -271,7 +271,7 @@ async function refusal(promise: Promise<unknown>) {
   throw new Error('expected a refusal');
 }
 
-describe('AdminTemplateDraftService (US-08-06 criteria 2 to 4)', () => {
+describe('AdminTemplateDraftService', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'log').mockImplementation();

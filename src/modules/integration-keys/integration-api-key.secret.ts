@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 
 /**
- * The integration API key format (US-05-01):
+ * The integration API key format:
  *
  *   ak_live_<8 lowercase alphanumerics>_<43 base64url chars>
  *   └──────── prefix (non-secret) ────┘ └── 32 random bytes ──┘

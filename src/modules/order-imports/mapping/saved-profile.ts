@@ -36,7 +36,7 @@ function resolveColumn(
 }
 
 /**
- * Lays a saved profile over the detected suggestions (US-04.6-03 AC8).
+ * Lays a saved profile over the detected suggestions.
  *
  * A field whose saved columns are all still in the file takes them with
  * source `saved`, including a saved "not imported". A field whose saved

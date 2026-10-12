@@ -69,7 +69,7 @@ function secretsMatch(given: unknown, expected: string): boolean {
 }
 
 /**
- * EasyOrders webhook ingress (US-06-03).
+ * EasyOrders webhook ingress.
  *
  * A delivery is accepted only with both factors: the per-install URL token,
  * which alone decides the tenant, and that webhook's `secret` header. An order
@@ -77,7 +77,7 @@ function secretsMatch(given: unknown, expected: string): boolean {
  * before all of that holds, and the answer is 200 only after the event row is
  * written: EasyOrders is assumed not to retry.
  *
- * EasyOrders never hands the secret to Akeed (contract record section 7), so
+ * EasyOrders never hands the secret to Akeed, so
  * it is learned: while none is held for a webhook, the order a delivery names
  * is read back with the integration's own key, and the secret of the first
  * delivery that names a real order of the bound store is kept. A delivery

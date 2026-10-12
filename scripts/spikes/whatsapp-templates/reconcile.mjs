@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Compares a saved template list with
-// src/shared/messaging/cod-template-catalog.ts for US-08-01.
+// src/shared/messaging/cod-template-catalog.ts.
 // Offline: it reads files and calls nothing.
 //
 //   node scripts/spikes/whatsapp-templates/reconcile.mjs --env dev

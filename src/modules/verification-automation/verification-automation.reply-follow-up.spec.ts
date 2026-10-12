@@ -6,7 +6,7 @@ import {
 } from './verification-automation.constants';
 import { VerificationAutomationProcessor } from './verification-automation.processor';
 
-/** US-08-07 b and c: the worker hands each job to the follow-up service. */
+/** The worker hands each job to the follow-up service. */
 function setup(handle: jest.Mock) {
   const processor = new VerificationAutomationProcessor(
     {} as never,

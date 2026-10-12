@@ -1,6 +1,6 @@
 /**
- * Every order-import file quirk from US-04.6-02 and the E04.6 "File and
- * format" catalogue, built from code so the fixtures are reviewable and can be
+ * Every order-import file and format quirk the parser handles,
+ * built from code so the fixtures are reviewable and can be
  * regenerated. Each fixture carries the result it must parse to, written by
  * hand from the story, never captured from the parser under test.
  */
@@ -29,7 +29,7 @@ export type FixtureExpectation =
       rowsAreSample?: boolean;
     };
 
-/** One row's hand-written verdict after mapping and validation (US-04.6-10). */
+/** One row's hand-written verdict after mapping and validation. */
 export interface ManifestRow {
   rowNumber: number;
   outcome: 'ready' | 'invalid' | 'duplicate' | 'excluded';
@@ -41,7 +41,7 @@ export interface ManifestRow {
 }
 
 /**
- * What a whole file must turn into for a merchant (US-04.6-10 AC1): the
+ * What a whole file must turn into for a merchant: the
  * file-level refusal, or every row's outcome and issue codes under the given
  * mapping, options, store settings and clock. Written by hand from the stories,
  * never captured from the validator under test.
@@ -422,7 +422,7 @@ export const ORDER_IMPORT_FIXTURES: OrderImportFixture[] = [
           issues: [],
           normalized: { totalPrice: '125.50', customerPhone: '+201001234567' },
         },
-        // Both separators: the last one is the decimal (US-04.6-04 AC4).
+        // Both separators: the last one is the decimal.
         {
           rowNumber: 3,
           outcome: 'ready',

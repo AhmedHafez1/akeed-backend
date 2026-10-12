@@ -108,7 +108,7 @@ export class EasyOrdersApiClient {
 
   /**
    * Asks EasyOrders whether a key is real, by reading an order that cannot
-   * exist. The contract record names no endpoint that identifies a key.
+   * exist. EasyOrders documents no endpoint that identifies a key.
    * EasyOrders answers a valid key, a wrong key and an inactive store all with
    * a 400, so the message decides: "record not found" and the inactive-store
    * message prove a recognized key, and so does a 2xx. Everything else fails
@@ -262,7 +262,7 @@ export class EasyOrdersApiClient {
    * Asks EasyOrders to delete the webhook registered for one address, with
    * the integration's own key. The webhooks page documents this call with
    * `Authorization: Bearer` while every other page uses `Api-Key`, and which
-   * one is accepted has not been observed (contract record section 6), so a
+   * one is accepted has not been observed, so a
    * 401 or 403 under `Api-Key` is tried once more as a bearer token.
    *
    * One attempt per header, with a deadline. The key, the address (it holds

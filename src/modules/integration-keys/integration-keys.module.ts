@@ -7,8 +7,8 @@ import { IntegrationKeysController } from './integration-keys.controller';
 import { IntegrationKeysService } from './integration-keys.service';
 
 /**
- * Integration API keys (US-05-01): session-authenticated management, and the
- * guard the order API (US-05-02) authenticates server requests with.
+ * Integration API keys: session-authenticated management, and the
+ * guard the order API authenticates server requests with.
  */
 @Module({
   imports: [DatabaseModule, AuthModule, OrderIngestionModule],

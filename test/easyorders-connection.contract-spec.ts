@@ -295,7 +295,7 @@ async function expectNothingProvisioned(tenant: Tenant) {
   await expect(connectionsOf(tenant.orgId)).resolves.toHaveLength(0);
 }
 
-describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () => {
+describe('EasyOrders connection PostgreSQL contract', () => {
   beforeAll(async () => {
     const capture: LoggerService = {
       log: (message: unknown) => logs.push(String(message)),
@@ -408,8 +408,8 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
       );
       CREATE UNIQUE INDEX integrations_one_active_source_per_org_idx ON integrations (org_id) WHERE is_active = true;
     `);
-    // Applied twice: the migrations must be re-runnable. 0048 (US-06-03)
-    // adds the columns the repository now selects; 0050 (US-06-05) makes the
+    // Applied twice: the migrations must be re-runnable. 0048
+    // adds the columns the repository now selects; 0050 makes the
     // credentials nullable for a disconnect.
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
@@ -1079,7 +1079,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
     });
   });
 
-  describe('disconnect and reconnect (US-06-05)', () => {
+  describe('disconnect and reconnect', () => {
     async function connectTenant(storeId: string, answer?: ProviderAnswer) {
       const tenant = await createTenant();
       const started = await start(tenant);
@@ -1357,7 +1357,7 @@ describe('EasyOrders connection PostgreSQL contract (US-06-02, US-06-05)', () =>
       expect(connection).toMatchObject({
         integration_id: source.id,
         store_id: 'store-same',
-        // The new key has proven nothing yet (contract record section 2).
+        // The new key has proven nothing yet.
         store_verified_at: null,
         orders_webhook_secret_encrypted: null,
         status_webhook_secret_encrypted: null,

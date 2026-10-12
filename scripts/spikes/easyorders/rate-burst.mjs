@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Rate-limit burst for the US-06-01 spike: who does the documented
+// Rate-limit burst for the validation spike: who does the documented
 // 40 requests/minute apply to, and what does a 429 look like? Calls the live
 // EasyOrders API, so the product owner runs it against a test store.
 //

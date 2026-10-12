@@ -194,7 +194,7 @@ async function reservation(
   });
 }
 
-describe('US-04.5-01 disposable PostgreSQL foundation', () => {
+describe('credit foundation on disposable PostgreSQL', () => {
   beforeAll(async () => {
     await client`CREATE SCHEMA ${client(namespace)}`;
     created = true;

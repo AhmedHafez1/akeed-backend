@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Proves the E04.5 merchant and staff billing surfaces ship complete Arabic and
+// Proves the merchant and staff billing surfaces ship complete Arabic and
 // English copy: identical keys, non-empty values and the same ICU arguments.
 // Marketing namespaces are outside the billing release and are not checked.
 

@@ -389,7 +389,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
   }
 
   // ───────────────────────────────────────────────────────────────────────
-  // ACKNOWLEDGMENT AND NUDGE (US-08-07 b, c)
+  // ACKNOWLEDGMENT AND NUDGE
   // ───────────────────────────────────────────────────────────────────────
 
   /**

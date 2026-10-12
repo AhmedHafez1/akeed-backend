@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Turns a saved template list into a committable fixture for US-08-01:
+// Turns a saved template list into a committable fixture:
 // synthetic template IDs and cursors, no account ID, no token.
 // Offline: it reads files and calls nothing.
 //

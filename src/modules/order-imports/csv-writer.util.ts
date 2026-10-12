@@ -1,6 +1,6 @@
 /**
  * The one CSV writer for files Akeed hands to merchants (templates here,
- * results and errors in US-04.6-08). Output opens correctly in Excel,
+ * results and errors in the import exports). Output opens correctly in Excel,
  * including Arabic, and cannot run as a formula.
  */
 

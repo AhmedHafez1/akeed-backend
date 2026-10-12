@@ -140,7 +140,7 @@ export type EditStart =
 
 /**
  * The store column that names a template of this purpose and language. A
- * reminder (US-08-07a) has its own columns and no old variant column.
+ * reminder has its own columns and no old variant column.
  */
 function storeKeyOf(template: Pick<LifecycleTemplate, 'purpose' | 'language'>) {
   if (template.purpose === COD_REMINDER_PURPOSE) {
@@ -152,7 +152,7 @@ function storeKeyOf(template: Pick<LifecycleTemplate, 'purpose' | 'language'>) {
 }
 
 /**
- * Staff writes on registry templates (US-08-06): activate, deactivate, set
+ * Staff writes on registry templates: activate, deactivate, set
  * default, retire and edit.
  *
  * Every action locks all templates of the target's purpose and language, in
@@ -328,8 +328,7 @@ export class WhatsappTemplateLifecycleRepository {
    * Records how an edit ended.
    *
    * - `applied`: the draft and the registry row take the new text, and the
-   *   template reads `pending` until a sync or a webhook says otherwise
-   *   (record 4.3.8).
+   *   template reads `pending` until a sync or a webhook says otherwise.
    * - `unknown`: the provider may have applied it, so the template reads
    *   `pending` too and the edit still counts.
    * - `refused`: nothing changed and the edit does not count.

@@ -12,7 +12,7 @@ const arabicIndic = (digits: string) =>
 const persian = (digits: string) =>
   [...digits].map((d) => String.fromCharCode(0x06f0 + Number(d))).join('');
 
-describe('headerKey (US-04.6-03 AC1)', () => {
+describe('headerKey', () => {
   it.each([
     ['lowercases', 'PHONE', 'phone'],
     ['removes whitespace', ' Phone   Number ', 'phonenumber'],

@@ -1,16 +1,14 @@
-# US-07-05 — WooCommerce disconnect, webhook recovery and support runbook
+# WooCommerce support runbook
 
-- **Written:** 2026-10-05
-- **For:** Akeed support and on-call staff, and whoever runs the US-07-06 release gate.
-- **Source of truth for WooCommerce behavior:** the [US-07-01 contract record](US-07-01-contract-record.md) and its amendments. Where this runbook says UNKNOWN, the record does too. Do not fill those gaps from memory of WooCommerce or from its source code.
+For Akeed support and on-call staff: what a disconnect does, how to recover a disabled webhook, how a merchant reconnects, how to read the health card, and when to escalate. How the integration works is in [Integrations, Webhooks, And Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#woocommerce-connection); the switches are in [ENVIRONMENT.md](ENVIRONMENT.md#woocommerce-connection).
 
-Nothing here has been observed on a real store yet. The US-07-06 live run owns that; until then every statement about what a store does is the documented behavior or the record's worst-case rule.
+Some WooCommerce behavior is not documented by WooCommerce. Section 8 lists it with the rule Akeed follows meanwhile. Do not fill those gaps from memory of WooCommerce or from its source code.
 
 ## 1. What a disconnect does
 
-An owner or admin disconnects from Settings → order source, or from the setup screen when the store rejected Akeed's key. The API is `DELETE /api/woocommerce/connection`. It works with `WOOCOMMERCE_CONNECT_ENABLED=false` and for an organization that is no longer on the pilot list.
+An owner or admin disconnects from Settings → order source, or from the setup screen when the store rejected Akeed's key. The API is `DELETE /api/woocommerce/connection`. It works with `WOOCOMMERCE_CONNECT_ENABLED=false` and for an organization that is not on the pilot list.
 
-It runs in this order (product owner, 2026-10-05; see the amendment in the contract record):
+It runs in this order:
 
 1. **One transaction, on Akeed's side.** The source stops and its credentials are wiped.
 2. **Then the store is asked to delete Akeed's two webhooks**, with the keys step 1 read, held in memory for that request only. Best effort, 15 seconds at most.
@@ -46,7 +44,7 @@ A second disconnect changes nothing and calls no store. It does retire a reconne
 
 ### The API key stays in the store
 
-Akeed cannot revoke its own key. The REST reference lists no resource for API keys (contract record 7.4), and whether any call can remove one is UNKNOWN (7.5), so Akeed makes none. The merchant does it. The app shows these steps on the disconnected screen, in the disconnect dialog and in Settings:
+Akeed cannot revoke its own key: the WooCommerce REST API has no resource for API keys, so Akeed makes no call. The merchant does it. The app shows these steps on the disconnected screen, in the disconnect dialog and in Settings:
 
 1. In WordPress, open **WooCommerce → Settings → Advanced → REST API**.
 2. Find the key named **Akeed** and choose **Revoke**.
@@ -61,7 +59,7 @@ The answer to the disconnect says what happened: `webhookCleanup` is `removed`, 
 
 3. Under **WooCommerce → Settings → Advanced → Webhooks**, delete any webhook whose name starts with **Akeed** (`Akeed order created`, `Akeed order updated`).
 
-Until they do, the store keeps calling the old address. Every call answers `401` and stores nothing, and by the documented rule the store disables each webhook after 5 failures in a row (contract record 3.11; the real number is the store's own, 3.14). These calls cannot be counted per merchant, because the token no longer resolves to a connection.
+Until they do, the store keeps calling the old address. Every call answers `401` and stores nothing, and WooCommerce disables each webhook after 5 failures in a row (the store can set another number). These calls cannot be counted per merchant, because the token no longer resolves to a connection.
 
 If the API process dies between step 1 and step 2, the source is disconnected, no deletion was tried and nothing reports it. The same end state applies: the webhooks answer `401` and disable themselves. A reconnect removes them (section 4).
 
@@ -92,7 +90,7 @@ When a merchant reports that orders stopped arriving:
 | `missing` | It was deleted in the store | Disconnect, then reconnect the same store. |
 | `unknown` | The store did not answer, or refused the key | Run **Check connection** for the code. |
 
-3. **Before re-enabling, find why it was disabled.** A webhook re-enabled into the same failure is disabled again, and whether re-enabling resets the store's failure count is UNKNOWN (3.17): assume one more failure disables it.
+3. **Before re-enabling, find why it was disabled.** A webhook re-enabled into the same failure is disabled again. Assume one more failure disables it.
 
 | Cause | How to tell | Fix |
 | --- | --- | --- |
@@ -107,17 +105,17 @@ When a merchant reports that orders stopped arriving:
 | --- | --- |
 | `200` | Every webhook that was disabled reads `active`. |
 | `409 WOOCOMMERCE_WEBHOOK_MISSING` | One was deleted in the store. Nothing was changed. Reconnect. |
-| `503 WOOCOMMERCE_WEBHOOK_ENABLE_FAILED` | The store did not take the change, or still shows `disabled`. A host that refuses `PUT` lands here (contract record 8.4): outside the support boundary. |
+| `503 WOOCOMMERCE_WEBHOOK_ENABLE_FAILED` | The store did not take the change, or still shows `disabled`. A host that refuses `PUT` lands here: outside the support boundary. |
 | `503 WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE` | Ingestion is off on this deployment. A staff decision, not something the merchant can fix. |
 | `422 WOOCOMMERCE_CREDENTIALS_REJECTED`, `WOOCOMMERCE_PERMISSION_DENIED` | The store refuses the key. Disconnect and reconnect. |
 
-5. **Tell the merchant plainly: orders placed while the webhook was disabled were not sent to Akeed and are not imported** (product decision 7). There is no backfill and no polling. They confirm those orders by hand.
+5. **Tell the merchant plainly: orders placed while the webhook was disabled were not sent to Akeed and are not imported.** There is no backfill and no polling. They confirm those orders by hand.
 
 ## 4. Reconnect
 
 Only from the disconnected state, only for the organization's own WooCommerce source, and only to the same canonical store URL. There is one path: the same start and callback as a first connect (`POST /api/woocommerce/install`, then the merchant approves in the store). The app sends the stored address; there is no field to type another.
 
-- Needs `WOOCOMMERCE_CONNECT_ENABLED=true` and the organization on `WOOCOMMERCE_PILOT_ORG_IDS`. A disconnect needs neither.
+- Needs `WOOCOMMERCE_CONNECT_ENABLED=true` and, when `WOOCOMMERCE_PILOT_ORG_IDS` is not empty, the organization on it. A disconnect needs neither.
 - A different store, the same host under another path, or `www.` against the bare domain is refused at the start with `409 WOOCOMMERCE_RECONNECT_STORE_MISMATCH`, before any request leaves Akeed. A disconnected organization cannot make Akeed call another host.
 - If another organization has connected that store since, `409 WOOCOMMERCE_STORE_UNAVAILABLE`, before any authenticated request. The other organization's webhooks are not touched.
 - On success the same integration row becomes active again, with new keys, a new webhook secret and a new delivery address. Orders and history stay attached.
@@ -138,6 +136,8 @@ Refusals a merchant can hit, and what to tell them:
 
 Rejected keys (`credentials_rejected`, `permission_denied`) and a deleted webhook are recovered the same way: disconnect, then reconnect. There is no in-place key rotation.
 
+A disconnect made by mistake is undone by reconnecting the same store. The integration id and history are unchanged. Orders placed in between are not imported.
+
 ## 5. Support escalation
 
 1. **Merchant → Akeed support.** For anything in Akeed: the connection state, a disabled webhook, refused deliveries, a reconnect that fails.
@@ -157,8 +157,8 @@ Rejected keys (`credentials_rejected`, `permission_denied`) and a deleted webhoo
 | `WOOCOMMERCE_STORE_REDIRECTS` | The address now redirects (a domain move, a forced `www`). Akeed never follows a redirect. |
 | `WOOCOMMERCE_REST_NOT_FOUND` | Plain permalinks, or WooCommerce deactivated. |
 | `WOOCOMMERCE_REST_UNREACHABLE` | The store is down, in maintenance, or a firewall blocks Akeed. |
-| `WOOCOMMERCE_CREDENTIALS_REJECTED` with a key the merchant did not revoke | The host strips the `Authorization` header (contract record 2.5). |
-| `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED` on every attempt | The host refuses `PUT` (contract record 8.4). |
+| `WOOCOMMERCE_CREDENTIALS_REJECTED` with a key the merchant did not revoke | The host strips the `Authorization` header. |
+| `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED` on every attempt | The host refuses `PUT`. |
 
    A custom payment gateway, a custom order status or a plugin that changes the order payload is outside the support boundary. Its orders are recorded as skipped with a reason. Direct the merchant to support and **make no compatibility promise**.
 
@@ -186,21 +186,19 @@ Each row is one fact. There is no overall verdict, and a store with no recent ev
 
 A health read sends two requests to the store and waits 8 seconds at most. A connection check sends three and waits 20 seconds at most. Both go through the restricted outbound client: HTTPS on 443 only, public addresses only, no redirect followed.
 
-## 7. Rollback
+## 7. Turning the feature off
 
-- **Feature:** there is no new switch. Connect and reconnect ride on `WOOCOMMERCE_CONNECT_ENABLED` and the pilot list; turning the switch off stops both and leaves disconnect, the check, re-enable, status and health working. Re-enable also needs `WOOCOMMERCE_INGESTION_ENABLED`.
-- **Migration `0052_woocommerce_disconnect.sql`:** additive and re-runnable. To remove it, reconnect or delete every `woocommerce_connections` row with `disconnected_at` set (its credentials are gone by design; deleting a connection row keeps the integration, its orders and its verifications), then drop `woocommerce_connections_credentials_state_check` and `woocommerce_connections_webhook_state_check`, `SET NOT NULL` on `consumer_key_encrypted`, `consumer_secret_encrypted`, `webhook_secret_encrypted`, `webhook_token_hash`, `order_created_webhook_id` and `order_updated_webhook_id`, and drop `disconnected_at`, `disconnected_by`, `order_created_webhook_state`, `order_updated_webhook_state` and `webhooks_checked_at`.
-- **A disconnect made by mistake:** reconnect the same store (section 4). The integration id and history are unchanged. Orders placed in between are not imported.
+Disconnect, the check and re-enable have no switch of their own. Turning `WOOCOMMERCE_CONNECT_ENABLED` off stops connects and reconnects and leaves disconnect, the check, re-enable, status and health working. Re-enable also needs `WOOCOMMERCE_INGESTION_ENABLED`.
 
-## 8. What is UNKNOWN
+## 8. What WooCommerce does not document
 
-From the contract record. None of these is assumed in code or in merchant-facing copy; US-07-06 observes them on a real store.
+None of these is assumed in code or in merchant-facing copy.
 
-| Unknown | Record | What Akeed does meanwhile |
-| --- | --- | --- |
-| The status and code for a revoked key, a stripped header and a missing permission | 2.6, 2.8 | `401` is rejected, `403` is denied. The merchant message for a rejection names both the key and the header. |
-| Whether a key can be removed through REST | 7.5 | Not attempted. Manual revocation only. |
-| Whether re-enabling resets the failure count, and whether it sends a ping | 3.17 | One more failure is assumed to disable it again. A ping after a re-enable is answered `200`. |
-| The real failure threshold on a store | 3.14 | The fifth failure in a row is assumed; the store may set another. |
-| The exact `X-WC-Webhook-Source` value, and how `home_url` and `site_url` differ | 2.9, 2.16 | Strict equality. A store that spells it differently has its deliveries refused, visibly. |
-| Which hosts refuse `PUT` or `DELETE` | 8.4 | A refused re-enable is `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED`; a refused deletion at disconnect is reported as `failed`. |
+| Not documented | What Akeed does meanwhile |
+| --- | --- |
+| The status and code for a revoked key, a stripped header and a missing permission | `401` is rejected, `403` is denied. The merchant message for a rejection names both the key and the header. |
+| Whether a key can be removed through REST | Not attempted. Manual revocation only. |
+| Whether re-enabling resets the failure count, and whether it sends a ping | One more failure is assumed to disable it again. A ping after a re-enable is answered `200`. |
+| The real failure threshold on a store | The fifth failure in a row is assumed; the store may set another. |
+| The exact `X-WC-Webhook-Source` value, and how `home_url` and `site_url` differ | Strict equality. A store that spells it differently has its deliveries refused, visibly. |
+| Which hosts refuse `PUT` or `DELETE` | A refused re-enable is `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED`; a refused deletion at disconnect is reported as `failed`. |

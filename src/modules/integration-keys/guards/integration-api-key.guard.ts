@@ -46,7 +46,7 @@ type FailureReason =
   | 'revoked';
 
 /**
- * Authenticates a server request by its integration API key (US-05-01).
+ * Authenticates a server request by its integration API key.
  *
  * It accepts only `Authorization: Bearer <key>`, finds the key by its
  * non-secret prefix, compares the secret's hash in constant time and refuses

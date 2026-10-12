@@ -43,7 +43,7 @@ import { describeMetaComponents } from './meta-template-text';
 /** The Graph version Akeed already sends with (record, "Graph API version"). */
 export const META_TEMPLATE_GRAPH_BASE_URL = 'https://graph.facebook.com/v24.0';
 
-/** The fields read for each template (record 4.1.2). */
+/** The fields read for each template. */
 export const META_TEMPLATE_FIELDS = [
   'id',
   'name',
@@ -62,7 +62,7 @@ export const META_TEMPLATE_WRITE_TIMEOUT_MS = 15_000;
 /** A provider trace reference is kept only when it looks like one. */
 const TRACE_REFERENCE = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** A template node ID is digits (record 4.1.2); it goes into a URL path. */
+/** A template node ID is digits; it goes into a URL path. */
 const TEMPLATE_NODE_ID = /^\d{1,32}$/;
 
 type MetaWriteAction = 'meta-template-create' | 'meta-template-edit';
@@ -89,16 +89,16 @@ interface MetaTemplatePage {
 }
 
 /**
- * Reads the WhatsApp Business Account's templates from Meta (record 4.1.1),
+ * Reads the WhatsApp Business Account's templates from Meta,
  * and creates and edits them (4.1.3, 4.1.4). It never deletes one.
  *
  * - A create or an edit is sent once. Whatever the answer, it is not sent
- *   again here (record 4.1 rule): no answer, a 5xx or a body without a Graph
+ *   again here: no answer, a 5xx or a body without a Graph
  *   code is `unresolved`, because Meta may have applied it.
  * - The token travels in the `Authorization` header only, never in a URL.
  * - Pages are followed with `paging.cursors.after`. `paging.next` is read only
  *   as "is there more"; it is never followed, because it is a full URL that
- *   may carry credentials (record 1.4).
+ *   may carry credentials.
  * - Every page is read before anything is returned, so a failure part-way
  *   gives the caller nothing rather than a partial list.
  * - A log line carries the HTTP status, Meta's numeric code and the page
@@ -204,7 +204,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       token,
       buildMetaEditBody(submission),
     );
-    // Akeed reads `success` only (record 4.1.4).
+    // Akeed reads `success` only.
     if (data?.success !== true) {
       throw this.writeFailure('meta-template-edit', 'unresolved', true);
     }
@@ -417,7 +417,7 @@ function toRecord(node: MetaTemplateNode): ProviderTemplateRecord | null {
   }
   const category = mapCategory(node.category);
   const rejectionReason = mapRejectionReason(node.rejected_reason);
-  // `correct_category` names a coming change (record 4.5.7); equal to the
+  // `correct_category` names a coming change; equal to the
   // current category, it announces nothing.
   const correct =
     node.correct_category === undefined || node.correct_category === null

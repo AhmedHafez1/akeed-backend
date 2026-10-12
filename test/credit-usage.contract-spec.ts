@@ -22,7 +22,7 @@ async function claim(input: Awaited<ReturnType<typeof verification>>) {
   return result.dispatch;
 }
 
-describe('US-04.5-03 PostgreSQL usage accounting', () => {
+describe('PostgreSQL usage accounting', () => {
   beforeAll(harness.setup);
   afterAll(harness.teardown);
   afterEach(() => jest.restoreAllMocks());

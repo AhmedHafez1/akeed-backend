@@ -34,7 +34,7 @@ const WRITE_THROTTLE = { default: { limit: 20, ttl: 60_000 } };
 const PROVIDER_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 /**
- * Staff template writes (US-08-06): drafts, submission, edits and the
+ * Staff template writes: drafts, submission, edits and the
  * activate, deactivate, set-default and retire actions. Every route sits
  * behind `AdminAccessGuard`, and every route that changes anything also needs
  * a named template operator. Nothing here deletes a template at the provider.

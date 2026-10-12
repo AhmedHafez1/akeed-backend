@@ -7,8 +7,8 @@ import {
 } from '../../shared/messaging/template-registry.types';
 
 /**
- * Whether the templates a store sends are healthy at the provider (US-08-04
- * criterion 6), as two boolean SQL expressions over the `integrations` row
+ * Whether the templates a store sends are healthy at the provider,
+ * as two boolean SQL expressions over the `integrations` row
  * aliased `store`.
  *
  * For each language the store can send in (both under `auto`, one when the

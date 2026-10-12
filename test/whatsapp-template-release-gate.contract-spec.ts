@@ -32,9 +32,9 @@ import {
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 
 /**
- * US-08-08 criterion 5, end to end over PostgreSQL: the send guardrail.
+ * The send guardrail, end to end over PostgreSQL.
  *
- * Meta is two in-process fakes built from the contract record. A template's
+ * Meta is two in-process fakes. A template's
  * status changes at the fake, the real sync writes it to the registry, and
  * the real send service, registry, dispatch ledger and usage accounting run
  * against it. What reaches the `messages` fake is what a customer would get.
@@ -218,7 +218,7 @@ function sentTemplates(): string[] {
   });
 }
 
-describe('US-08-08 send guardrail, end to end (PostgreSQL)', () => {
+describe('send guardrail, end to end (PostgreSQL)', () => {
   let lines: string[];
 
   beforeAll(async () => {

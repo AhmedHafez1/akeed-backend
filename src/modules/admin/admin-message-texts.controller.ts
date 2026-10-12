@@ -16,7 +16,7 @@ import { readRequestId } from './standalone-billing-operator.guard';
 import { WhatsappTemplateOperatorGuard } from './whatsapp-template-operator.guard';
 
 /**
- * The free-form texts of US-08-07: acknowledgment, nudge and name fallbacks.
+ * The free-form texts: acknowledgment, nudge and name fallbacks.
  * Staff read; a named template operator writes, with the same switch and
  * allowlist as template writes. Every change is audited.
  */

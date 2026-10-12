@@ -38,7 +38,7 @@ export type TemplateSyncResult =
 
 /**
  * Reads every template from the provider and records what it says on the
- * matching registry rows (US-08-04 criterion 2).
+ * matching registry rows.
  *
  * - The provider's list is read in full before anything is written. A read
  *   that fails, a rate limit included, records a failed run with a neutral

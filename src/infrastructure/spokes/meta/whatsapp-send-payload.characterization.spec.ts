@@ -14,8 +14,8 @@ import {
 import type { TemplateRegistryPort } from '../../../shared/ports/template-registry.port';
 
 /**
- * US-08-02 payload characterization, and the baseline US-08-03 cuts over
- * against.
+ * Characterization of the send payload: the baseline the template registry
+ * is held to.
  *
  * Every case runs the real send service and the real Meta adapter and compares
  * the request body with the one recorded from `develop` before template
@@ -321,7 +321,7 @@ describe('WhatsApp send payload characterization', () => {
 });
 
 /**
- * US-08-04 criterion 8: with the guardrail on and every template approved at
+ * With the guardrail on and every template approved at
  * the provider, nothing a customer receives changes.
  */
 describe('WhatsApp send payload characterization, guardrail on and all approved', () => {

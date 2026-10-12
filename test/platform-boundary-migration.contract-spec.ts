@@ -86,7 +86,7 @@ async function retainedCounts() {
   return counts;
 }
 
-describe('E02 expand/backfill/deploy rollback PostgreSQL rehearsal', () => {
+describe('expand/backfill/deploy rollback PostgreSQL rehearsal', () => {
   beforeAll(async () => {
     await client`CREATE SCHEMA ${client(namespace)}`;
     created = true;

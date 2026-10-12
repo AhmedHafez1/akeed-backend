@@ -3,7 +3,7 @@ import { AxiosError, type AxiosResponse } from 'axios';
 import { of, throwError } from 'rxjs';
 import { WhatsAppService } from './whatsapp.service';
 
-/** US-08-07 b and c at the Meta spoke: one text message, never retried. */
+/** Free-form text at the Meta spoke: one text message, never retried. */
 function setup(post: jest.Mock) {
   return new WhatsAppService(
     { post } as never,
@@ -30,7 +30,7 @@ function metaError(status: number, code: number) {
 
 const PARAMS = { to: '+201001112223', body: 'شكرًا لك!', verificationId: 'v1' };
 
-describe('WhatsAppService.sendFreeFormText (record 4.10.4)', () => {
+describe('WhatsAppService.sendFreeFormText', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'error').mockImplementation();

@@ -10,7 +10,7 @@ import type {
 import { WooCommerceConnectionHealthService } from './woocommerce-connection-health.service';
 
 /**
- * What the WooCommerce connection adds to setup and health (US-07-05).
+ * What the WooCommerce connection adds to setup and health.
  *
  * `describe` reads the connection row alone: it runs on every state read, so
  * it never waits on a store. The credential status is therefore the last
@@ -19,7 +19,7 @@ import { WooCommerceConnectionHealthService } from './woocommerce-connection-hea
  * calls it.
  *
  * Currency and phone country are not setup inputs here: every order carries
- * its own (contract record, finding 4.14). Both are reported as null and
+ * its own. Both are reported as null and
  * neither blocks setup.
  *
  * A 401 and a 403 are both "rejected": either way the merchant has to

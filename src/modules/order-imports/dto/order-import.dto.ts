@@ -18,8 +18,8 @@ export interface OrderImportDuplicateFileDto {
 }
 
 /**
- * `POST /api/order-imports` (US-04.6-02 AC8), with the detected mapping,
- * options, payment values and date-format check (US-04.6-03).
+ * `POST /api/order-imports`, with the detected mapping,
+ * options, payment values and date-format check.
  */
 export interface OrderImportUploadResponseDto extends OrderImportMappingSuggestionDto {
   batchId: string;
@@ -74,9 +74,9 @@ export interface OrderImportActiveListDto {
 }
 
 /**
- * `GET /api/order-imports/:id` (US-04.6-05): enough to render the wizard step
+ * `GET /api/order-imports/:id`: enough to render the wizard step
  * the batch is in after a refresh. A draft past its expiry reads as
- * `expired`. US-04.6-06..08 extend it with commit and lifecycle progress.
+ * `expired`. After commit it also carries the lifecycle progress.
  */
 export interface OrderImportBatchDetailDto
   extends OrderImportMappingStateDto, Partial<OrderImportReleaseStateDto> {

@@ -514,7 +514,7 @@ export class OrderImportsRepository {
     });
   }
 
-  /** The organization's remembered mapping for a header set (US-04.6-03). */
+  /** The organization's remembered mapping for a header set. */
   /**
    * The store's remembered classification for these normalized payment
    * values, whatever file they came from. Unknown values are absent.
@@ -1434,7 +1434,7 @@ export class OrderImportsRepository {
   }
 
   /**
-   * Retention (US-04.6-09): deletes up to `limit` drafts whose 24 h window
+   * Retention: deletes up to `limit` drafts whose 24 h window
    * lapsed; their rows go by cascade. A system job across organizations. An
    * expired draft can no longer be claimed for commit, so this cannot race one.
    */
@@ -1458,7 +1458,7 @@ export class OrderImportsRepository {
   }
 
   /**
-   * Retention (US-04.6-09): clears `raw` and `normalized` on up to `limit` rows
+   * Retention: clears `raw` and `normalized` on up to `limit` rows
    * of batches committed before `cutoff` (or that failed mid-commit before
    * it). Outcome, issues, order link and row number stay. Rows already cleared
    * are never selected again, so re-running is a no-op.

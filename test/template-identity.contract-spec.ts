@@ -46,7 +46,7 @@ import {
 import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
 
 /**
- * US-08-02 against real PostgreSQL: every send leaves the template it carried
+ * Template identity against real PostgreSQL: every send leaves the template it carried
  * on the dispatch ledger and on the verification, an outcome that is not an
  * acceptance keeps it, migration 0053 leaves an existing ledger readable, and
  * the staff metrics count sends and outcomes per template.
@@ -307,7 +307,7 @@ async function unsentVerification(
   return { order: storedOrder, verification };
 }
 
-describe('US-08-02 template identity PostgreSQL contract', () => {
+describe('template identity PostgreSQL contract', () => {
   let app: INestApplication | undefined;
 
   beforeAll(async () => {
@@ -1221,7 +1221,7 @@ describe('US-08-02 template identity PostgreSQL contract', () => {
       });
     });
 
-    it('splits one template by purpose, adding up to its row (US-08-05)', async () => {
+    it('splits one template by purpose, adding up to its row', async () => {
       const filter = { ...MARCH, includeTest: true };
       const [whole] = (await metrics.findTemplateMetrics(filter)).filter(
         (row) => row.variant_key === 'ar.egyptian',

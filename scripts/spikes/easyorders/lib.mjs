@@ -1,4 +1,4 @@
-// Shared helpers for the US-06-01 EasyOrders validation spike.
+// Shared helpers for the EasyOrders validation spike.
 //
 // Nothing here is production code. Credentials come from the environment only
 // and are never written to disk: evidence keeps a short SHA-256 fingerprint so

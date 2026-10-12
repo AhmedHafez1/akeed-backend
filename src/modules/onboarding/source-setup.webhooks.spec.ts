@@ -32,7 +32,7 @@ const SOURCE = {
 } as Source;
 
 /**
- * Webhook state in the source health (US-07-05). The source here is a
+ * Webhook state in the source health. The source here is a
  * made-up platform on purpose: the service only knows that a contributor may
  * be able to ask its store.
  */

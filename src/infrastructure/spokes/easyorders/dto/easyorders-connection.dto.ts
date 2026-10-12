@@ -27,8 +27,8 @@ export class SaveEasyOrdersWebhookSecretsDto {
 }
 
 /**
- * The two setup inputs the order payload does not carry (contract record
- * section 4). The service checks them against the supported values.
+ * The two setup inputs the order payload does not carry.
+ * The service checks them against the supported values.
  */
 export class SaveEasyOrdersOrderSettingsDto {
   @IsString()

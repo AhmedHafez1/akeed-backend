@@ -52,7 +52,7 @@ function refuse(context: ExecutionContext, retryAfterSeconds: number): never {
 }
 
 /**
- * The ceiling on requests that have not proved who they are (US-05-04).
+ * The ceiling on requests that have not proved who they are.
  *
  * The order API skips the app-wide IP throttler, because its limit would cap
  * a legitimate server and its 429 has no code. Without this guard a request
@@ -85,7 +85,7 @@ export class OrderApiIngressThrottleGuard implements CanActivate {
 }
 
 /**
- * The request limits of an authenticated integration (US-05-04).
+ * The request limits of an authenticated integration.
  *
  * It runs right after the key guard, on the app's shared throttler storage,
  * and before validation or the ingestion command, so a throttled request

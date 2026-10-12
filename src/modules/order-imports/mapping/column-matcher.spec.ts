@@ -65,7 +65,7 @@ function shopifyRow(values: Partial<Record<string, string>>): string[] {
   return SHOPIFY_HEADERS.map((header) => values[header] ?? '');
 }
 
-describe('matchColumns (US-04.6-03 AC1–AC3)', () => {
+describe('matchColumns', () => {
   it('maps a Shopify export', () => {
     const { fields } = match(SHOPIFY_HEADERS, [
       shopifyRow({ Name: '#1001', 'Billing Name': 'Ahmed Ali' }),

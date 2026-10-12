@@ -57,7 +57,7 @@ const rules = (issues: TemplateDraftIssue[]) =>
 
 const none = new Set<string>();
 
-describe('template draft validation (US-08-06 criterion 3)', () => {
+describe('template draft validation', () => {
   it('passes a complete draft with no issue at all', () => {
     expect(validateTemplateDraft(draft(), { takenIdentities: none })).toEqual({
       issues: [],
@@ -94,7 +94,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     ]);
   });
 
-  describe('name (record 4.4.1, 4.4.3, decision 1)', () => {
+  describe('name', () => {
     it('builds akeed_<purpose>_<style>_v<n> and the registry key', () => {
       expect(buildTemplateName('cod_confirmation', 'egyptian', 2)).toBe(
         'akeed_cod_confirm_egyptian_v2',
@@ -104,7 +104,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
       );
     });
 
-    it('names a reminder akeed_cod_reminder_<style>_v<n> (US-08-07a)', () => {
+    it('names a reminder akeed_cod_reminder_<style>_v<n>', () => {
       expect(buildTemplateName('cod_reminder', 'gulf', 1)).toBe(
         'akeed_cod_reminder_gulf_v1',
       );
@@ -159,7 +159,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('language code (record 4.6.10, 4.6.13)', () => {
+  describe('language code', () => {
     it.each([
       ['ar', 'ar'],
       ['ar', 'ar_EG'],
@@ -181,7 +181,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('category (record 4.5.1)', () => {
+  describe('category', () => {
     it('accepts the category the purpose is registered under', () => {
       expect(validateCategory('cod_confirmation', 'utility')).toEqual([]);
     });
@@ -193,7 +193,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('body (record 4.6.7, 4.6.8, decision 5)', () => {
+  describe('body', () => {
     it('accepts a body of exactly the limit', () => {
       const text = `Hello ${'a'.repeat(TEMPLATE_BODY_MAX_LENGTH - 6)}`;
       expect(text).toHaveLength(TEMPLATE_BODY_MAX_LENGTH);
@@ -245,7 +245,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     );
   });
 
-  describe('parameter ratio (record 4.6.14)', () => {
+  describe('parameter ratio', () => {
     it('is silent at one parameter per three words', () => {
       expect(validateParameterRatio('Hello {{customer}} and welcome')).toEqual(
         [],
@@ -275,7 +275,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('parameters and the mapping (record 4.6.2, 4.6.3)', () => {
+  describe('parameters and the mapping', () => {
     const named: TemplateDraftVariable[] = deriveDraftVariables(
       BODY,
       'named',
@@ -365,7 +365,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('samples (record 4.6.4, 4.6.12)', () => {
+  describe('samples', () => {
     const variables = deriveDraftVariables(BODY, 'named', draft().samples);
 
     it('accepts one single-line sample per parameter', () => {
@@ -406,7 +406,7 @@ describe('template draft validation (US-08-06 criterion 3)', () => {
     });
   });
 
-  describe('buttons (record 4.7.1, 4.7.2, 4.7.6, 4.7.8)', () => {
+  describe('buttons', () => {
     const labels = {
       confirmLabel: 'Confirm order',
       cancelLabel: 'Cancel order',

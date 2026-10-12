@@ -4,7 +4,7 @@ export const ORDER_API_CONFIG = 'orderApi';
 export const ORDER_API_RATE_WINDOW_MS = 60_000;
 
 /**
- * Abuse controls of the server order API (US-05-04).
+ * Abuse controls of the server order API.
  *
  * The limits count HTTP requests only. Verification usage stays with the
  * readiness gates, so a request that passes here can still be refused for

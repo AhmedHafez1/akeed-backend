@@ -13,7 +13,7 @@ import {
 import { seededRegistryTemplates } from '../src/shared/messaging/testing/seeded-template-registry';
 
 /**
- * US-08-03 against real PostgreSQL: migration 0054 creates and seeds the
+ * The template registry against real PostgreSQL: migration 0054 creates and seeds the
  * template registry, and 0055 gives each store the registry key of the style
  * it had chosen.
  *

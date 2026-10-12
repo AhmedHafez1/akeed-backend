@@ -4,7 +4,7 @@ import {
   legacyOrderTotal,
 } from './message-values';
 
-describe('formatOrderTotal (US-08-07f)', () => {
+describe('formatOrderTotal', () => {
   it.each([
     ['EGP', '1,250.00 ج.م', 'EGP 1,250.00'],
     ['SAR', '1,250.00 ر.س', 'SAR 1,250.00'],

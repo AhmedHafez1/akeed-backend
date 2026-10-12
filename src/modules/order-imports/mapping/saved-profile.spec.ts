@@ -13,7 +13,7 @@ function apply(headers: string[], saved: Record<string, unknown>) {
   return { ...result, fields: byField(result.fields) };
 }
 
-describe('applySavedProfile (US-04.6-03 AC8)', () => {
+describe('applySavedProfile', () => {
   const headers = ['Tel', 'Client', 'Sum', 'Ref', 'Remarks'];
 
   it('applies every saved field with source "saved"', () => {

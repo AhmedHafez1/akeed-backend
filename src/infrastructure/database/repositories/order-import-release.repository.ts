@@ -60,7 +60,7 @@ function appendEvent(
 }
 
 /**
- * Batch transitions for the start checkpoint and paced release (US-04.6-07).
+ * Batch transitions for the start checkpoint and paced release.
  *
  * Every transition is one conditional UPDATE guarded by the status it leaves,
  * so a double click, a retry and a racing release tick each either win or see

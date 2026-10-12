@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * Akeed's share of the EasyOrders rate limit (contract record section 8).
+ * Akeed's share of the EasyOrders rate limit.
  * EasyOrders documents 40 requests a minute and does not say what the limit
  * applies to, so it is treated as shared by everything that touches a store
  * and Akeed spends at most 30 of it per integration.

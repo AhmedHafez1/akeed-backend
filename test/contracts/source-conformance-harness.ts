@@ -74,8 +74,7 @@ import { seededTemplateRegistry } from '../../src/shared/messaging/testing/seede
  * The source conformance harness: what every connectable store source has to
  * hold, whatever its provider is.
  *
- * It was extracted from the US-06-06 EasyOrders release gate so that a second
- * source runs the same matrix (US-07-06). It has three parts:
+ * Every connected source runs the same matrix. It has three parts:
  *
  * - a world: one PostgreSQL schema, the real repositories and services, and
  *   fakes only at the edges (the messaging port and the BullMQ queues, whose

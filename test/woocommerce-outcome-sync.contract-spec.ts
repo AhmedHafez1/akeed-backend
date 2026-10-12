@@ -621,7 +621,7 @@ async function migrate(name: string) {
     await client.unsafe(statement);
 }
 
-describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', () => {
+describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
   let merchant: Merchant;
 
   beforeAll(async () => {
@@ -685,12 +685,12 @@ describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', (
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
       '0056_dispatch_template_fallback.sql',
-      // The sync table E06 added. This story reuses it unchanged.
+      // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
     ])
       await migrate(name);
-    // This story adds no migration: it runs on the US-07-02 tables as they
-    // are. Applied twice, as every suite that uses it does.
+    // Outcome sync has no migration of its own: it runs on the connection
+    // tables. Applied twice, as every suite that uses it does.
     for (let pass = 0; pass < 2; pass++)
       await migrate('0051_woocommerce_connection.sql');
     await migrate('0052_woocommerce_disconnect.sql');
@@ -1674,7 +1674,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract (US-07-04)', (
     });
   });
 
-  describe('a disconnected source (US-07-05)', () => {
+  describe('a disconnected source', () => {
     const disconnect = (target: Merchant) =>
       auth.disconnect({
         userId: randomUUID(),

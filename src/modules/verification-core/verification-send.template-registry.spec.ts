@@ -13,7 +13,7 @@ import { VerificationSendService } from './verification-send.service';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 /**
- * US-08-03: the send path takes its template from the registry. A stored
+ * The send path takes its template from the registry. A stored
  * choice that cannot be sent falls back to the language default with a logged
  * reason, and with no default the send is skipped before anything is claimed.
  */

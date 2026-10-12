@@ -203,7 +203,7 @@ describe('BillingService.readCredits', () => {
     });
   });
 
-  it('reports bulk import on only for pilot organizations while the allow-list is set (US-04.6-10)', async () => {
+  it('reports bulk import on only for pilot organizations while the allow-list is set', async () => {
     const pilotOrg = '0a0a0a0a-0000-4000-8000-00000000000a';
     const pilotConfig = (list: string) =>
       standaloneCreditBillingConfigService({

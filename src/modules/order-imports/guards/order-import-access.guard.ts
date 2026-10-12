@@ -31,7 +31,7 @@ const ORDER_IMPORT_WHEN_DISABLED = 'orderImportWhenDisabled';
 /**
  * `allow`: the route keeps working while `STANDALONE_BULK_IMPORT_ENABLED` is
  * off. Only stop uses it, so the kill switch can halt new work without
- * trapping a merchant's orders that are already releasing (AC5, US-04.6-09).
+ * trapping a merchant's orders that are already releasing.
  * Role, source and organization checks still apply.
  */
 export interface OrderImportAccessOptions {
@@ -70,7 +70,7 @@ export class OrderImportAccessGuard implements CanActivate {
       OrderImportAccessOptions['whenDisabled'] | undefined
     >(ORDER_IMPORT_WHEN_DISABLED, [context.getHandler(), context.getClass()]);
     const request = context.switchToHttp().getRequest<OrderImportRequest>();
-    // The switch and the pilot allow-list (US-04.6-10) are one decision: an
+    // The switch and the pilot allow-list are one decision: an
     // organization outside the pilot is refused exactly as if it were off.
     if (
       whenDisabled !== 'allow' &&

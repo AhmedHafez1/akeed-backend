@@ -7,7 +7,7 @@ import {
 } from '../../src/shared/messaging/testing/seeded-template-registry';
 
 /**
- * US-08-08 criterion 5 as one matrix over the selector every send path
+ * The send guardrail as one matrix over the selector every send path
  * calls. The PostgreSQL gate contract proves the same rule through the real
  * send service, ledger and usage accounting; this file walks every status
  * the registry can hold.
@@ -18,7 +18,7 @@ const EG_PHONE = '+201001112223';
 const SA_PHONE = '+966500000001';
 const GUARDRAIL = { enabled: true };
 
-/** Every status but `approved`: none of them may be sent (record 4.2.5). */
+/** Every status but `approved`: none of them may be sent. */
 const NOT_SENDABLE: TemplateReviewStatus[] = [
   'pending',
   'rejected',
@@ -64,7 +64,7 @@ function select(
   });
 }
 
-describe('US-08-08 guardrail and fallback matrix', () => {
+describe('guardrail and fallback matrix', () => {
   it('sends the selected template when it is approved and active, with no fallback', () => {
     expect(select(registry())).toEqual({
       template: expect.objectContaining({ variantKey: 'ar.egyptian' }) as never,
@@ -117,7 +117,7 @@ describe('US-08-08 guardrail and fallback matrix', () => {
     );
   });
 
-  it('a re-categorized template stays sendable: Meta keeps it approved, and it is a staff alert (record 4.5.5 and the 4.5.13 rule)', () => {
+  it('a re-categorized template stays sendable: Meta keeps it approved, and it is a staff alert', () => {
     expect(
       select(registry({ [EGYPTIAN]: { category: 'marketing' } })),
     ).toMatchObject({
@@ -166,7 +166,7 @@ describe('US-08-08 guardrail and fallback matrix', () => {
     );
   });
 
-  describe('US-08-07a reminder fallback', () => {
+  describe('reminder fallback', () => {
     const REMINDER = 'cod_reminder.ar.soft_v1';
     const reminder = (change: Partial<RegistryTemplate> = {}) =>
       reminderTemplate('ar', 'soft_v1', {
@@ -221,7 +221,7 @@ describe('US-08-08 guardrail and fallback matrix', () => {
     });
   });
 
-  describe('US-08-07d auto style fallback', () => {
+  describe('auto style fallback', () => {
     const params = {
       arAuto: true,
       switches: { arabicStyleAuto: true },

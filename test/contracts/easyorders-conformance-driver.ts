@@ -42,7 +42,7 @@ import { standaloneCreditBillingConfigService } from './standalone-credit-billin
  * EasyOrders for the source conformance harness: the spoke as the
  * application binds it, over the EasyOrders provider fake, and the driver
  * that says what only EasyOrders decides. The assertions here are the
- * provider-specific ones of the US-06-06 release gate, unchanged.
+ * provider-specific ones of the EasyOrders release gate.
  */
 
 /** The migrations the EasyOrders spoke runs on, after the shared ones. */

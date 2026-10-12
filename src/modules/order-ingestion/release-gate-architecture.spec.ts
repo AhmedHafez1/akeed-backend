@@ -27,13 +27,13 @@ function under(...prefixes: string[]) {
 }
 
 /**
- * US-04.6-10 AC3, the adapter boundary: channels only translate, the ingestion
+ * The adapter boundary: channels only translate, the ingestion
  * command owns persistence and dispatch, and the core never learns which
  * channel an order came through. `ingestion-boundary.spec.ts` pins who may
  * import the acceptance repository and who may call `dispatchById`; these
  * checks cover the rest of the release gate's architecture rules.
  */
-describe('E04.6 release gate: adapter boundary', () => {
+describe('bulk import release gate: adapter boundary', () => {
   it('builds the order envelope and fingerprint only inside the ingestion module', () => {
     const builders = files
       // Any reference, so an aliased import cannot hide a call.
@@ -123,7 +123,7 @@ describe('E04.6 release gate: adapter boundary', () => {
     expect(normalizer).not.toMatch(/'manual'|'bulk_import'|'api'/);
   });
 
-  it('mentions ingestionType in four files of the whole backend, and nowhere else (US-05-06)', () => {
+  it('mentions ingestionType in four files of the whole backend, and nowhere else', () => {
     // The envelope declares it, the ingestion service and the preview write
     // it, and the Standalone normalizer checks it is a known channel. A fifth
     // file would be a reader the three channels could start to differ in:
@@ -157,7 +157,7 @@ describe('E04.6 release gate: adapter boundary', () => {
     ).toEqual([]);
   });
 
-  it('names the API channel only where a channel is declared or chosen (E05)', () => {
+  it('names the API channel only where a channel is declared or chosen', () => {
     // `'api'` is audit metadata: appended to the channel list, the key
     // namespace and the log-action map, and passed by the API controller.
     // Nothing else may compare against it.
@@ -176,7 +176,7 @@ describe('E04.6 release gate: adapter boundary', () => {
     ]);
   });
 
-  it('keeps the order API out of the core: nothing downstream imports it or its keys (US-05-06)', () => {
+  it('keeps the order API out of the core: nothing downstream imports it or its keys', () => {
     const importers = files
       .filter(
         ({ path }) =>
