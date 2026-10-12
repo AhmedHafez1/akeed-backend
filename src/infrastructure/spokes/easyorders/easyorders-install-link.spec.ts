@@ -77,4 +77,21 @@ describe('EasyOrders install link', () => {
       'https://app.akeed.test/ar/onboarding',
     );
   });
+
+  it.each(['en', 'ur', 'es'] as const)(
+    'sends the merchant back in the language they started in (%s)',
+    (locale) => {
+      const localized = buildEasyOrdersInstallLink({
+        publicApiBaseUrl: 'https://api.akeed.test',
+        appBaseUrl: 'https://app.akeed.test',
+        callbackToken,
+        webhookToken,
+        locale,
+      });
+
+      expect(
+        new URLSearchParams(localized.split('?')[1]).get('redirect_url'),
+      ).toBe(`https://app.akeed.test/${locale}/onboarding`);
+    },
+  );
 });

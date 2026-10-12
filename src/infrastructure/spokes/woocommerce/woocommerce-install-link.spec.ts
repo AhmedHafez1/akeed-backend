@@ -43,7 +43,7 @@ describe('buildWooCommerceAuthorizeLink', () => {
     expect(query).not.toContain('://');
   });
 
-  it.each(['en', 'ur'] as const)(
+  it.each(['en', 'ur', 'es'] as const)(
     'sends the merchant back in the language they started in (%s)',
     (locale) => {
       const url = new URL(buildWooCommerceAuthorizeLink({ ...input, locale }));
