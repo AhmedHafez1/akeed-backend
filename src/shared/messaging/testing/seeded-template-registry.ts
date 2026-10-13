@@ -5,10 +5,12 @@ import {
 } from '../cod-template-catalog';
 import {
   COD_CONFIRMATION_PURPOSE,
-  TEMPLATE_LANGUAGES,
   buildCodConfirmationKey,
   type RegistryTemplate,
 } from '../template-registry.types';
+
+/** The languages migration 0054 seeded; the others have no seeded row. */
+const CATALOG_LANGUAGES = ['ar', 'en'] as const;
 
 /**
  * The registry as migration 0054 seeds it, built from the code catalog. For
@@ -17,7 +19,7 @@ import {
  */
 export function seededRegistryTemplates(): RegistryTemplate[] {
   const definitions = getAvailableCodTemplateDefinitions();
-  return TEMPLATE_LANGUAGES.flatMap((language) =>
+  return CATALOG_LANGUAGES.flatMap((language) =>
     definitions[language].map(
       (definition): RegistryTemplate => ({
         key: buildCodConfirmationKey(language, definition.variant),
@@ -46,12 +48,13 @@ export function seededRegistryTemplates(): RegistryTemplate[] {
 /** An in-memory registry port over the given rows (the seed by default). */
 export function seededTemplateRegistry(
   templates: readonly RegistryTemplate[] = seededRegistryTemplates(),
-  options: { guardrail?: boolean } = {},
+  options: { guardrail?: boolean; retiredKeys?: readonly string[] } = {},
 ): TemplateRegistryPort {
   return {
     listTemplates: () => Promise.resolve(templates),
     invalidate: () => undefined,
     sendGuardrailEnabled: () => options.guardrail === true,
+    retiredTemplateKeys: () => Promise.resolve(options.retiredKeys ?? []),
   };
 }
 
@@ -102,6 +105,46 @@ export function reminderTemplate(
     isActive: true,
     isDefault: false,
     reviewStatus: 'approved',
+    category: 'utility',
+    lastSyncedAt: null,
+    ...change,
+  };
+}
+
+/**
+ * A confirmation as staff authoring registers it once the provider confirmed
+ * the submit: versioned style, inactive, not a default, still in review.
+ */
+export function authoredTemplate(
+  language: RegistryTemplate['language'],
+  style: string,
+  change: Partial<RegistryTemplate> = {},
+): RegistryTemplate {
+  return {
+    key: buildCodConfirmationKey(language, style),
+    purpose: COD_CONFIRMATION_PURPOSE,
+    language,
+    style,
+    templateName: `akeed_cod_confirm_${style}`,
+    languageCode: language,
+    parameterFormat: 'named',
+    variables: [
+      { key: 'customer', name: 'customer' },
+      { key: 'store', name: 'store' },
+      { key: 'order', name: 'order' },
+      { key: 'total', name: 'total' },
+    ],
+    preview: {
+      greeting: '',
+      body: 'Order {{order}} from {{store}}: {{total}}',
+      totalLabel: '',
+      ending: '',
+      confirmButton: 'Confirm',
+      cancelButton: 'Cancel',
+    },
+    isActive: false,
+    isDefault: false,
+    reviewStatus: 'pending',
     category: 'utility',
     lastSyncedAt: null,
     ...change,

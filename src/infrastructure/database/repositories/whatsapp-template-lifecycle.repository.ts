@@ -37,9 +37,10 @@ import {
   type TemplateWriter,
 } from './whatsapp-template-drafts.repository';
 import {
-  STORE_AR_KEY,
-  STORE_EN_KEY,
+  storeFirstSendKeySql,
+  storeReminderKeySql,
 } from './whatsapp-template-sync.repository';
+import { STORE_TEMPLATE_FIELDS } from '../../../shared/messaging/store-template-selection';
 
 const LIFECYCLE_COLUMNS = {
   id: whatsappTemplates.id,
@@ -143,12 +144,9 @@ export type EditStart =
  * reminder has its own columns and no old variant column.
  */
 function storeKeyOf(template: Pick<LifecycleTemplate, 'purpose' | 'language'>) {
-  if (template.purpose === COD_REMINDER_PURPOSE) {
-    return template.language === 'ar'
-      ? sql<string>`${integrations.codReminderArKey}`
-      : sql<string>`${integrations.codReminderEnKey}`;
-  }
-  return template.language === 'ar' ? STORE_AR_KEY : STORE_EN_KEY;
+  return template.purpose === COD_REMINDER_PURPOSE
+    ? storeReminderKeySql(template.language)
+    : storeFirstSendKeySql(template.language);
 }
 
 /**
@@ -456,24 +454,19 @@ export class WhatsappTemplateLifecycleRepository {
     const legacy =
       from.purpose !== COD_REMINDER_PURPOSE &&
       isLegacyVariant(from.language, to.style);
-    const reminderColumn =
-      from.language === 'ar' ? 'codReminderArKey' : 'codReminderEnKey';
+    const fields = STORE_TEMPLATE_FIELDS[from.language];
     const moved = await tx
       .update(integrations)
       .set(
         from.purpose === COD_REMINDER_PURPOSE
-          ? { [reminderColumn]: to.key, updatedAt: now }
-          : from.language === 'ar'
-            ? {
-                codTemplateArKey: to.key,
-                ...(legacy ? { codTemplateArVariant: to.style } : {}),
-                updatedAt: now,
-              }
-            : {
-                codTemplateEnKey: to.key,
-                ...(legacy ? { codTemplateEnVariant: to.style } : {}),
-                updatedAt: now,
-              },
+          ? { [fields.reminderKey]: to.key, updatedAt: now }
+          : {
+              [fields.key]: to.key,
+              ...(legacy && 'legacyVariant' in fields
+                ? { [fields.legacyVariant]: to.style }
+                : {}),
+              updatedAt: now,
+            },
       )
       .where(eq(storeKeyOf(from), from.key))
       .returning({ id: integrations.id });

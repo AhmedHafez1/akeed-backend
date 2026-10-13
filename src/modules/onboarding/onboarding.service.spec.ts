@@ -122,14 +122,21 @@ describe('OnboardingService', () => {
         periodStart,
         periodEnd,
       });
-      expect(result.template.languages).toEqual(['ar', 'en']);
+      expect(result.template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+      expect(result.template.liveLanguages).toEqual(['ar', 'en']);
       expect(result.template.defaults).toEqual({
         ar: 'standard',
         en: 'friendly',
+        ur: null,
+        es: null,
+        fr: null,
       });
       expect(result.template.selected).toEqual({
         ar: 'standard',
         en: 'friendly',
+        ur: null,
+        es: null,
+        fr: null,
       });
       expect(
         result.template.variants.ar.map((variant) => variant.variant),
@@ -137,7 +144,7 @@ describe('OnboardingService', () => {
       expect(
         result.template.variants.en.map((variant) => variant.variant),
       ).toEqual(['friendly', 'professional', 'direct', 'short']);
-      expect(result.template.previews.en.confirmButton).toBe('Confirm Order');
+      expect(result.template.previews.en?.confirmButton).toBe('Confirm Order');
       expect(
         monthlyUsageRepo.getIntegrationUsageForPeriod,
       ).toHaveBeenCalledWith({

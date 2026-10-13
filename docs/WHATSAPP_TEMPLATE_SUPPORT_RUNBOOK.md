@@ -120,12 +120,13 @@ The registry is "seeded" when the 8 original keys are active, not retired, and t
 
 Prefer the admin page: **Make default** on `cod_confirm.ar.standard` and on `cod_confirm.en.friendly`. It needs them approved at Meta.
 
-If the page cannot do it (Meta does not report them approved, or template operations are off), a developer or the product owner runs this, once, in one transaction. It changes the two default flags and reactivates the original 8. It does not touch any store's choice.
+If the page cannot do it (Meta does not report them approved, or template operations are off), a developer or the product owner runs this, once, in one transaction. It changes the two default flags and reactivates the original 8. It does not touch any store's choice, and it leaves Urdu, Spanish and French alone: they were never seeded, so they have no state to go back to (section 9).
 
 ```sql
 begin;
 update whatsapp_templates set is_default = false
  where purpose = 'cod_confirmation' and is_default
+   and language in ('ar', 'en')
    and "key" not in ('cod_confirm.ar.standard', 'cod_confirm.en.friendly');
 update whatsapp_templates set is_active = true
  where "key" in (
@@ -241,5 +242,45 @@ order by created_at desc limit 50;
 - **Never copy a template ID, status or category from dev to prod.** Each environment reads its own from its own sync.
 - **Never turn the guardrail on before the environment's first successful sync has been read and compared.** A registry template that is `missing` at Meta stops being sent the moment the guardrail is on.
 - **Never run a write statement on `whatsapp_templates` or `integrations` other than the reset in section 4**, and that one only on the product owner's word.
+- **Never activate a template to "unlock" a language for a merchant.** A language opens only through section 9, after Meta's approval.
 - **Never paste an access token or app secret** into a ticket, a chat or a log. Support never needs one.
 - **Never retry a submit or an edit that answered "unresolved"** by pressing it again elsewhere. Use **Check at Meta**: the first request may have been applied.
+
+## 9. Launch Urdu, Spanish or French
+
+Arabic and English were seeded and are always on. Urdu, Spanish and French start with **no template**. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French).
+
+Before a language is live:
+
+- Merchants see it in **Settings › Message**, marked "Awaiting WhatsApp approval", and cannot choose it. Saving it anyway is refused with `SETTINGS_LANGUAGE_UNAVAILABLE`.
+- Templates you have submitted appear to merchants as locked cards. A draft you have not submitted is never shown to merchants.
+- Customers in those countries keep getting English under `auto`, exactly as before.
+
+Migration `0064` created two drafts per language (`standard` and `short`). They are a starting point, not approved wording.
+
+Operators only, one language at a time:
+
+1. Open **Admin › Templates**, section **Drafts**. Open the language's two drafts. Have a native speaker read the body and both buttons; edit and **Save draft** until the check shows no error.
+2. Press **Submit to Meta** on each. The template now exists at Meta in review, and in Akeed as an inactive template.
+3. Wait for Meta's review (up to 24 hours), then press **Sync now**. Do not continue until the template shows **Approved**. A rejected template is edited or replaced by a new draft; it cannot be activated.
+4. Press **Activate** on each approved template. Activation is refused for anything not approved.
+5. Optional: **Send test** to a staff phone on `WHATSAPP_TEMPLATE_TEST_PHONES`.
+6. Press **Make default** on the one new stores should get (normally `standard`). The language is live from this moment, within a minute (registry cache).
+7. Add the free-form texts for the language in **Admin › Message texts** (acknowledgments, the "press a button" nudge, the name fallbacks). Without them those follow-ups are skipped as `text_unavailable` for that language.
+
+To take a language back out: make sure no store is set to it, then **Deactivate** its default. With the guardrail on, a language whose default Meta paused also stops being chosen by `auto`; those customers get English again, and a store forced to that language has its sends skipped (section 2).
+
+Read-only check of what is live and who uses it:
+
+```sql
+select language, "key", is_active, is_default, review_status
+from whatsapp_templates
+where purpose = 'cod_confirmation' and language in ('ur', 'es', 'fr')
+order by language, "key";
+
+select default_language, count(*) as stores
+from integrations
+where coalesce(is_active, false)
+group by 1
+order by 2 desc;
+```

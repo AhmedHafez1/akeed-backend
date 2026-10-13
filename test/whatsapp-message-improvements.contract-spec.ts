@@ -67,6 +67,7 @@ const MIGRATIONS = [
   '0058_whatsapp_template_authoring.sql',
   '0059_whatsapp_reminder_and_auto_style.sql',
   '0060_whatsapp_service_messages.sql',
+  '0064_whatsapp_template_languages.sql',
 ];
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const SERVICE_MIGRATION = '0060_whatsapp_service_messages.sql';
@@ -144,7 +145,8 @@ describe('message improvements against PostgreSQL', () => {
         created_at timestamp with time zone DEFAULT now()
       );
       CREATE TABLE verification_message_dispatches (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        resolved_language text
       );
       CREATE TABLE verifications (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -291,7 +293,7 @@ describe('message improvements against PostgreSQL', () => {
         ['promo', 'ar', 'default', 'x', 'whatsapp_message_texts_purpose_check'],
         [
           'ack_canceled',
-          'fr',
+          'de',
           'default',
           'x',
           'whatsapp_message_texts_language_check',

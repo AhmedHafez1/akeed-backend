@@ -72,6 +72,7 @@ const MIGRATIONS = [
   // A status event also records the rejection reason, a 0058 column.
   '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys.
   '0059_whatsapp_reminder_and_auto_style.sql',
+  '0064_whatsapp_template_languages.sql',
 ];
 const SYNC_MIGRATION = '0057_whatsapp_template_sync.sql';
 
@@ -241,7 +242,8 @@ describe('WhatsApp template sync against PostgreSQL', () => {
         cod_template_en_variant text DEFAULT 'friendly' NOT NULL
       );
       CREATE TABLE verification_message_dispatches (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        resolved_language text
       );
     `);
     for (const name of MIGRATIONS) await migrate(name);

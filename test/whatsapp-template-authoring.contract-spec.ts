@@ -20,6 +20,11 @@ import { WhatsappTemplateSyncService } from '../src/modules/template-registry/wh
 import { parseWhatsappTemplateConfig } from '../src/shared/config/whatsapp-template.config';
 import { selectTemplateForSend } from '../src/shared/messaging/template-selector';
 import {
+  STARTER_DRAFT_AUTHOR_ID,
+  STARTER_TEMPLATE_DRAFTS,
+} from '../src/shared/messaging/starter-template-drafts';
+import { buildDraftKey } from '../src/shared/messaging/template-draft.validation';
+import {
   FAKE_ACCOUNT_ID,
   FAKE_TOKEN,
   FakeMetaTemplateApi,
@@ -73,8 +78,10 @@ const MIGRATIONS = [
   '0057_whatsapp_template_sync.sql',
   '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys.
   '0059_whatsapp_reminder_and_auto_style.sql',
+  '0064_whatsapp_template_languages.sql',
 ];
 const AUTHORING_MIGRATION = '0058_whatsapp_template_authoring.sql';
+const LANGUAGES_MIGRATION = '0064_whatsapp_template_languages.sql';
 
 async function migrate(name: string): Promise<void> {
   await client.begin(async (tx) => {
@@ -304,7 +311,8 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
         updated_at timestamp with time zone DEFAULT now()
       );
       CREATE TABLE verification_message_dispatches (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        resolved_language text
       );
       CREATE TABLE admin_access_audit (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -318,6 +326,10 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
       );
     `);
     for (const name of MIGRATIONS) await migrate(name);
+    // 0064 is in the list for its store columns. Its starter drafts are
+    // removed here, so the suite starts with no draft; the 0064 block below
+    // applies the migration again and checks them.
+    await client`DELETE FROM whatsapp_template_drafts`;
   });
 
   afterAll(async () => {
@@ -1084,6 +1096,141 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
         'refused',
         'started',
       ]);
+    });
+  });
+
+  describe('0064: Urdu, Spanish and French', () => {
+    const starterKeys = STARTER_TEMPLATE_DRAFTS.map((draft) =>
+      buildDraftKey(draft.purpose, draft.language, draft.style, 1),
+    );
+    const starterDrafts = () => client<
+      {
+        id: string;
+        key: string;
+        body: string;
+        state: string;
+        template_id: string | null;
+      }[]
+    >`
+      SELECT id, "key", body, state, template_id FROM whatsapp_template_drafts
+      WHERE created_by = ${STARTER_DRAFT_AUTHOR_ID} ORDER BY created_at, "key"`;
+    const newLanguageTemplates = async () => {
+      const [row] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM whatsapp_templates
+        WHERE language IN ('ur', 'es', 'fr')`;
+      return row.count;
+    };
+
+    it('gives staff two drafts per new language, and no template a send could read', async () => {
+      await migrate(LANGUAGES_MIGRATION);
+
+      const rows = await starterDrafts();
+      expect(rows.map((row) => row.key).sort()).toEqual(
+        [...starterKeys].sort(),
+      );
+      expect(
+        rows.every((row) => row.state === 'draft' && row.template_id === null),
+      ).toBe(true);
+      for (const draft of STARTER_TEMPLATE_DRAFTS) {
+        const key = buildDraftKey(
+          draft.purpose,
+          draft.language,
+          draft.style,
+          1,
+        );
+        expect(rows.find((row) => row.key === key)?.body).toBe(draft.body);
+      }
+      expect(await newLanguageTemplates()).toBe(0);
+    });
+
+    it('replays without adding a draft or overwriting one staff edited', async () => {
+      const [first] = await starterDrafts();
+      await client`
+        UPDATE whatsapp_template_drafts SET body = 'Edited by staff {{order}} today'
+        WHERE id = ${first.id}`;
+
+      await migrate(LANGUAGES_MIGRATION);
+
+      const rows = await starterDrafts();
+      expect(rows).toHaveLength(STARTER_TEMPLATE_DRAFTS.length);
+      expect(rows.find((row) => row.id === first.id)?.body).toBe(
+        'Edited by staff {{order}} today',
+      );
+    });
+
+    it('accepts the three languages and still refuses any other', async () => {
+      const insert = (language: string) => client`
+        INSERT INTO whatsapp_template_drafts
+          ("key", purpose, language, style, version, meta_template_name,
+           meta_language_code, parameter_format, category, body, confirm_label,
+           cancel_label, created_by, updated_by)
+        VALUES (${`cod_confirm.${language}.check_v1`}, 'cod_confirmation',
+          ${language}, 'check', 1, 'akeed_cod_confirm_check_v1', ${language},
+          'named', 'utility', 'x', 'a', 'b', ${OPERATOR}, ${OPERATOR})`;
+
+      await expect(insert('de')).rejects.toMatchObject({ code: '23514' });
+      await expect(insert('fr')).resolves.toBeDefined();
+      await client`
+        DELETE FROM whatsapp_template_drafts WHERE style = 'check'`;
+    });
+
+    it('a submitted starter draft is inactive and cannot go live before the provider approves it', async () => {
+      const urduKey = buildDraftKey('cod_confirmation', 'ur', 'short', 1);
+      const starter = (await starterDrafts()).find(
+        (row) => row.key === urduKey,
+      )!;
+
+      const { draft } = await drafts.submit(OPERATOR, starter.id);
+      const key = draft.template_key!;
+
+      expect(await template(key)).toMatchObject({
+        is_active: false,
+        is_default: false,
+        review_status: 'pending',
+      });
+      for (const action of ['activate', 'set_default'] as const) {
+        expect(
+          await codeOf(lifecycle.act({ userId: OPERATOR, key, action })),
+        ).toBe('WHATSAPP_TEMPLATE_NOT_APPROVED');
+      }
+      // A store forced to Urdu sends nothing; an auto store keeps English.
+      const templates = await registryRepository.findAll();
+      expect(
+        selectTemplateForSend(templates, {
+          preferredLanguage: 'ur',
+          phoneNumber: '+923001234567',
+          keys: { ur: key },
+        }),
+      ).toMatchObject({ template: null, reason: 'default_unavailable' });
+      expect(
+        selectTemplateForSend(templates, {
+          preferredLanguage: 'auto',
+          phoneNumber: '+923001234567',
+        }).template,
+      ).toMatchObject({ language: 'en' });
+    });
+
+    it('once approved and made the default, the language is sent and a store can choose it', async () => {
+      const key = buildDraftKey('cod_confirmation', 'ur', 'short', 1);
+      await setStatus(key, 'approved');
+      await lifecycle.act({ userId: OPERATOR, key, action: 'activate' });
+      await lifecycle.act({ userId: OPERATOR, key, action: 'set_default' });
+
+      expect(await defaults('ur')).toEqual([key]);
+      const [stored] = await client<{ id: string }[]>`
+        INSERT INTO integrations (default_language, cod_template_ur_key)
+        VALUES ('ur', ${key}) RETURNING id`;
+      const templates = await registryRepository.findAll();
+      expect(
+        selectTemplateForSend(templates, {
+          preferredLanguage: 'auto',
+          phoneNumber: '+923001234567',
+        }).template,
+      ).toMatchObject({ language: 'ur', languageCode: 'ur' });
+      await expect(
+        syncRepository.activeStoreCountsByKey([key]),
+      ).resolves.toEqual(new Map([[key, 1]]));
+      await client`DELETE FROM integrations WHERE id = ${stored.id}`;
     });
   });
 

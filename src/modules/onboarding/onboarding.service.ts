@@ -36,10 +36,17 @@ import {
   findDefaultTemplate,
   resolveTemplate,
   selectableTemplates,
-  storedTemplateKey,
+  templatesAwaitingLaunch,
 } from '../../shared/messaging/template-selector';
+import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
+import {
+  storeFirstSendKey,
+  storeReminderKey,
+} from '../../shared/messaging/store-template-selection';
 import {
   COD_REMINDER_PURPOSE,
+  TEMPLATE_LANGUAGE_DEFINITIONS,
+  TEMPLATE_LANGUAGES,
   type RegistryTemplate,
   type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
@@ -66,6 +73,15 @@ import type {
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** One value per message language, in the list's order. */
+function byTemplateLanguage<T>(
+  read: (language: TemplateLanguage) => T,
+): Record<TemplateLanguage, T> {
+  return Object.fromEntries(
+    TEMPLATE_LANGUAGES.map((language) => [language, read(language)]),
+  ) as Record<TemplateLanguage, T>;
+}
 
 /**
  * One selectable style as the settings response has always carried it. The
@@ -212,15 +228,26 @@ export class OnboardingService {
       this.countMessagesSentLast30Days(hydratedIntegration),
     ]);
 
+    const state = await this.buildState(user, hydratedIntegration);
+    const template = await this.getTemplateSettings(hydratedIntegration);
     return {
-      state: await this.buildState(user, hydratedIntegration),
+      state: {
+        ...state,
+        // The state alone cannot see the registry; here the language is the
+        // one a test send would resolve to.
+        testSendLanguage: resolveTemplateLanguageForPhone(
+          hydratedIntegration.defaultLanguage,
+          hydratedIntegration.merchantWhatsappPhone ?? '',
+          (language) => template.liveLanguages.includes(language),
+        ),
+      },
       billing: {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
         usage,
         messagesSentLast30Days,
       },
-      template: await this.getTemplateSettings(hydratedIntegration),
+      template,
     };
   }
 
@@ -336,48 +363,53 @@ export class OnboardingService {
     integration: IntegrationRecord,
   ): Promise<SettingsResponseDto['template']> {
     const templates = await this.templateRegistry.listTemplates();
-    const selectedTemplate = (language: TemplateLanguage) => {
-      const resolution = resolveTemplate(templates, {
-        language,
-        storedKey: storedTemplateKey({
+    const selected = byTemplateLanguage((language) =>
+      this.templateOrNone(
+        resolveTemplate(templates, {
           language,
-          key:
-            language === 'ar'
-              ? integration.codTemplateArKey
-              : integration.codTemplateEnKey,
-          legacyVariant:
-            language === 'ar'
-              ? integration.codTemplateArVariant
-              : integration.codTemplateEnVariant,
-        }),
-      });
-      return this.requireTemplate(resolution.template, language);
-    };
-    const defaultTemplate = (language: TemplateLanguage) =>
-      this.requireTemplate(findDefaultTemplate(templates, language), language);
-    const selected = { ar: selectedTemplate('ar'), en: selectedTemplate('en') };
+          storedKey: storeFirstSendKey(integration, language),
+        }).template,
+        language,
+      ),
+    );
+    const defaults = byTemplateLanguage((language) =>
+      this.templateOrNone(findDefaultTemplate(templates, language), language),
+    );
+    const isLive = (language: TemplateLanguage) => defaults[language] !== null;
+    // Asked only while some language is still waiting for its first template.
+    const retiredKeys = TEMPLATE_LANGUAGES.every(isLive)
+      ? []
+      : ((await this.templateRegistry.retiredTemplateKeys?.()) ?? []);
 
     return {
-      languages: ['ar', 'en'],
+      languages: [...TEMPLATE_LANGUAGES],
+      liveLanguages: TEMPLATE_LANGUAGES.filter(isLive),
       defaultPreviewLanguage: 'en',
-      defaults: {
-        ar: defaultTemplate('ar').style,
-        en: defaultTemplate('en').style,
-      },
-      selected: { ar: selected.ar.style, en: selected.en.style },
-      variants: {
-        ar: selectableTemplates(templates, 'ar').map((template) =>
-          toTemplateStyleDto(template, this.templateMessages),
-        ),
-        en: selectableTemplates(templates, 'en').map((template) =>
-          toTemplateStyleDto(template, this.templateMessages),
-        ),
-      },
-      previews: { ar: selected.ar.preview, en: selected.en.preview },
-      messages: {
-        ar: this.templateMessages.linesFor(selected.ar),
-        en: this.templateMessages.linesFor(selected.en),
-      },
+      defaults: byTemplateLanguage(
+        (language) => defaults[language]?.style ?? null,
+      ),
+      selected: byTemplateLanguage(
+        (language) => selected[language]?.style ?? null,
+      ),
+      variants: byTemplateLanguage((language) =>
+        isLive(language)
+          ? selectableTemplates(templates, language).map((template) =>
+              toTemplateStyleDto(template, this.templateMessages),
+            )
+          : templatesAwaitingLaunch(templates, language, retiredKeys).map(
+              ({ template, reason }) => ({
+                ...toTemplateStyleDto(template, this.templateMessages),
+                availability: reason,
+              }),
+            ),
+      ),
+      previews: byTemplateLanguage(
+        (language) => selected[language]?.preview ?? null,
+      ),
+      messages: byTemplateLanguage((language) => {
+        const template = selected[language];
+        return template ? this.templateMessages.linesFor(template) : null;
+      }),
       ...this.messageImprovementSettings(templates, integration),
     };
   }
@@ -398,28 +430,19 @@ export class OnboardingService {
     // first message"; the send then uses the reminder default or the first
     // message, and records why.
     const selectedReminder = (language: TemplateLanguage) => {
-      const key =
-        language === 'ar'
-          ? integration.codReminderArKey
-          : integration.codReminderEnKey;
+      const key = storeReminderKey(integration, language);
       return reminders(language).find((row) => row.key === key)?.style ?? null;
     };
     return {
       ...(switches.reminderTemplate
         ? {
             reminder: {
-              selected: {
-                ar: selectedReminder('ar'),
-                en: selectedReminder('en'),
-              },
-              variants: {
-                ar: reminders('ar').map((template) =>
+              selected: byTemplateLanguage(selectedReminder),
+              variants: byTemplateLanguage((language) =>
+                reminders(language).map((template) =>
                   toTemplateStyleDto(template, this.templateMessages),
                 ),
-                en: reminders('en').map((template) =>
-                  toTemplateStyleDto(template, this.templateMessages),
-                ),
-              },
+              ),
             },
           }
         : {}),
@@ -429,10 +452,17 @@ export class OnboardingService {
     };
   }
 
-  private requireTemplate(
+  /**
+   * The template, or null for a language that is not live yet. Arabic and
+   * English must always have one: without it Settings cannot be shown.
+   */
+  private templateOrNone(
     template: RegistryTemplate | null | undefined,
     language: TemplateLanguage,
-  ): RegistryTemplate {
+  ): RegistryTemplate | null {
+    if (!template && !TEMPLATE_LANGUAGE_DEFINITIONS[language].required) {
+      return null;
+    }
     if (!template) {
       throw new ServiceUnavailableException({
         statusCode: 503,

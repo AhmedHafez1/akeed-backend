@@ -44,9 +44,10 @@ import {
   validateTemplateDraft,
 } from '../../shared/messaging/template-draft.validation';
 import { EXPECTED_CATEGORY_BY_PURPOSE } from '../../shared/messaging/template-provider.types';
-import type {
-  TemplateLanguage,
-  TemplateVariableKey,
+import {
+  TEMPLATE_LANGUAGES,
+  type TemplateLanguage,
+  type TemplateVariableKey,
 } from '../../shared/messaging/template-registry.types';
 import { templateSampleValues } from '../../shared/messaging/template-rendering';
 import {
@@ -201,10 +202,12 @@ export class AdminTemplateDraftService {
         purposes: Object.keys(EXPECTED_CATEGORY_BY_PURPOSE),
         language_codes: TEMPLATE_LANGUAGE_CODES,
         variables: TEMPLATE_VARIABLE_KEYS,
-        sample_defaults: {
-          ar: templateSampleValues('ar'),
-          en: templateSampleValues('en'),
-        },
+        sample_defaults: Object.fromEntries(
+          TEMPLATE_LANGUAGES.map((language) => [
+            language,
+            templateSampleValues(language),
+          ]),
+        ) as AdminTemplateAuthoringContext['options']['sample_defaults'],
         category: EXPECTED_CATEGORY_BY_PURPOSE,
         limits: {
           body: TEMPLATE_BODY_MAX_LENGTH,

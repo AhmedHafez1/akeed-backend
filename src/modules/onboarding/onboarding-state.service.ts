@@ -16,6 +16,7 @@ import { OrganizationsRepository } from '../../infrastructure/database/repositor
 import {
   ONBOARDING_LANGUAGES,
   ONBOARDING_STATUSES,
+  SETTINGS_TEMPLATE_FIELDS,
   STORE_NAME_MAX_LENGTH,
   type AutomationTimezone,
   type OnboardingStateDto,
@@ -32,9 +33,16 @@ import {
   STORE_PLATFORM_PORT,
   type StorePlatformPort,
 } from '../../shared/ports/store-platform.port';
-import { findSelectableByStyle } from '../../shared/messaging/template-selector';
+import {
+  findSelectableByStyle,
+  isLiveLanguage,
+} from '../../shared/messaging/template-selector';
+import { STORE_TEMPLATE_FIELDS } from '../../shared/messaging/store-template-selection';
 import {
   COD_REMINDER_PURPOSE,
+  TEMPLATE_LANGUAGE_DEFINITIONS,
+  TEMPLATE_LANGUAGES,
+  isTemplateLanguage,
   type RegistryTemplate,
   type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
@@ -165,48 +173,47 @@ export class OnboardingStateService {
     if (payload.sendDelayMinutes !== undefined) {
       updates.sendDelayMinutes = payload.sendDelayMinutes;
     }
+    const choices = TEMPLATE_LANGUAGES.map((language) => ({
+      language,
+      style: payload[SETTINGS_TEMPLATE_FIELDS[language].style],
+      reminder: payload[SETTINGS_TEMPLATE_FIELDS[language].reminder],
+    }));
+    const languageChanged =
+      isTemplateLanguage(payload.defaultLanguage) &&
+      payload.defaultLanguage !== integration.defaultLanguage;
     if (
-      payload.codTemplateArVariant !== undefined ||
-      payload.codTemplateEnVariant !== undefined ||
-      payload.codReminderArVariant !== undefined ||
-      payload.codReminderEnVariant !== undefined
+      languageChanged ||
+      choices.some(
+        ({ style, reminder }) => style !== undefined || reminder !== undefined,
+      )
     ) {
       const templates = await this.templateRegistry.listTemplates();
-      if (payload.codTemplateArVariant !== undefined) {
-        const template = this.requireSelectableStyle(
-          templates,
-          'ar',
-          payload.codTemplateArVariant,
-        );
-        updates.codTemplateArKey = template.key;
-        if (isLegacyVariant('ar', template.style)) {
-          updates.codTemplateArVariant = template.style;
+      if (languageChanged) {
+        this.requireLiveLanguage(templates, payload.defaultLanguage);
+      }
+      for (const { language, style, reminder } of choices) {
+        const fields = STORE_TEMPLATE_FIELDS[language];
+        if (style !== undefined) {
+          const template = this.requireSelectableStyle(
+            templates,
+            language,
+            style,
+          );
+          updates[fields.key] = template.key;
+          if (
+            'legacyVariant' in fields &&
+            isLegacyVariant(language, template.style)
+          ) {
+            updates[fields.legacyVariant] = template.style;
+          }
         }
-      }
-      if (payload.codTemplateEnVariant !== undefined) {
-        const template = this.requireSelectableStyle(
-          templates,
-          'en',
-          payload.codTemplateEnVariant,
-        );
-        updates.codTemplateEnKey = template.key;
-        if (isLegacyVariant('en', template.style)) {
-          updates.codTemplateEnVariant = template.style;
+        if (reminder !== undefined) {
+          updates[fields.reminderKey] = this.reminderKeyFor(
+            templates,
+            language,
+            reminder,
+          );
         }
-      }
-      if (payload.codReminderArVariant !== undefined) {
-        updates.codReminderArKey = this.reminderKeyFor(
-          templates,
-          'ar',
-          payload.codReminderArVariant,
-        );
-      }
-      if (payload.codReminderEnVariant !== undefined) {
-        updates.codReminderEnKey = this.reminderKeyFor(
-          templates,
-          'en',
-          payload.codReminderEnVariant,
-        );
       }
     }
     if (payload.codTemplateArAuto !== undefined) {
@@ -317,14 +324,31 @@ export class OnboardingStateService {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
-        message:
-          language === 'ar'
-            ? 'Unsupported Arabic reminder style'
-            : 'Unsupported English reminder style',
+        message: `Unsupported ${TEMPLATE_LANGUAGE_DEFINITIONS[language].name} reminder style`,
         code: 'SETTINGS_REMINDER_STYLE_UNAVAILABLE',
       });
     }
     return template.key;
+  }
+
+  /**
+   * A store may only be set to a language that has a default template to
+   * send. Until staff make an approved template the default, the language is
+   * shown to merchants but cannot be chosen.
+   */
+  private requireLiveLanguage(
+    templates: readonly RegistryTemplate[],
+    language: string,
+  ): void {
+    if (isTemplateLanguage(language) && isLiveLanguage(templates, language)) {
+      return;
+    }
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: 'This message language is not available yet',
+      code: 'SETTINGS_LANGUAGE_UNAVAILABLE',
+    });
   }
 
   /**
@@ -341,10 +365,7 @@ export class OnboardingStateService {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
-        message:
-          language === 'ar'
-            ? 'Unsupported Arabic COD template variant'
-            : 'Unsupported English COD template variant',
+        message: `Unsupported ${TEMPLATE_LANGUAGE_DEFINITIONS[language].name} COD template variant`,
         code: 'SETTINGS_TEMPLATE_STYLE_UNAVAILABLE',
       });
     }

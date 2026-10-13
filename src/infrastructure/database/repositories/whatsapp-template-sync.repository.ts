@@ -1,5 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import { STORE_TEMPLATE_FIELDS } from '../../../shared/messaging/store-template-selection';
+import {
+  TEMPLATE_LANGUAGES,
+  type TemplateLanguage,
+} from '../../../shared/messaging/template-registry.types';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   integrations,
@@ -95,8 +110,19 @@ function stateColumns(state: ProviderState) {
  * key is read from its old variant column, which is what its sends use while
  * that column exists.
  */
-export const STORE_AR_KEY = sql<string>`COALESCE(${integrations.codTemplateArKey}, 'cod_confirm.ar.' || ${integrations.codTemplateArVariant})`;
-export const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey}, 'cod_confirm.en.' || ${integrations.codTemplateEnVariant})`;
+export function storeFirstSendKeySql(language: TemplateLanguage): SQL<string> {
+  const fields = STORE_TEMPLATE_FIELDS[language];
+  const key = integrations[fields.key];
+  if (!('legacyVariant' in fields)) return sql<string>`${key}`;
+  // The language comes from the fixed list, never from a request.
+  const prefix = sql.raw(`'cod_confirm.${language}.'`);
+  return sql<string>`COALESCE(${key}, ${prefix} || ${integrations[fields.legacyVariant]})`;
+}
+
+/** The reminder key a store chose for a language; it has no old column. */
+export function storeReminderKeySql(language: TemplateLanguage): SQL<string> {
+  return sql<string>`${integrations[STORE_TEMPLATE_FIELDS[language].reminderKey]}`;
+}
 
 /**
  * Every store column that names a template a store sends: the first send per
@@ -104,10 +130,8 @@ export const STORE_EN_KEY = sql<string>`COALESCE(${integrations.codTemplateEnKey
  * purposes never collide, so one store counts once per key.
  */
 const STORE_KEY_EXPRESSIONS = [
-  STORE_AR_KEY,
-  STORE_EN_KEY,
-  sql<string>`${integrations.codReminderArKey}`,
-  sql<string>`${integrations.codReminderEnKey}`,
+  ...TEMPLATE_LANGUAGES.map(storeFirstSendKeySql),
+  ...TEMPLATE_LANGUAGES.map(storeReminderKeySql),
 ];
 
 const EVENT_AT_FIELD = {

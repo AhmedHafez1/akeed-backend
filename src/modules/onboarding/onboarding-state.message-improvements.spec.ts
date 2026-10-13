@@ -157,13 +157,16 @@ describe('reminder style settings', () => {
     const { settings } = setup({ reminderTemplate: true });
     const { template } = await settings.getSettings(owner);
     expect(template.reminder).toEqual({
-      selected: { ar: null, en: null },
+      selected: { ar: null, en: null, ur: null, es: null, fr: null },
       variants: {
         ar: [
           expect.objectContaining({ variant: 'standard_v1' }),
           expect.objectContaining({ variant: 'gulf_v1' }),
         ],
         en: [expect.objectContaining({ variant: 'friendly_v1' })],
+        ur: [],
+        es: [],
+        fr: [],
       },
     });
   });
@@ -175,7 +178,7 @@ describe('reminder style settings', () => {
       codReminderArVariant: 'gulf_v1',
     });
     expect(current().codReminderArKey).toBe('cod_reminder.ar.gulf_v1');
-    expect(saved.template.reminder?.selected).toEqual({
+    expect(saved.template.reminder?.selected).toMatchObject({
       ar: 'gulf_v1',
       en: null,
     });
@@ -291,7 +294,7 @@ describe('message lines in the settings response', () => {
       direction: 'ltr',
       buttons: ['Confirm Order', 'Cancel Order'],
     });
-    expect(template.messages.ar.direction).toBe('rtl');
+    expect(template.messages.ar?.direction).toBe('rtl');
     for (const style of [...template.variants.ar, ...template.variants.en]) {
       expect(style.message.lines.length).toBeGreaterThan(0);
     }
@@ -316,6 +319,6 @@ describe('message lines in the settings response', () => {
       direction: 'ltr',
       source: 'provider',
     });
-    expect(template.messages.ar.source).toBe('registered');
+    expect(template.messages.ar?.source).toBe('registered');
   });
 });

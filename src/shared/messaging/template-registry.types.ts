@@ -5,12 +5,39 @@ import type {
 } from './template-provider.types';
 
 /** The languages a template is written in. */
-export type TemplateLanguage = 'ar' | 'en';
+export type TemplateLanguage = 'ar' | 'en' | 'ur' | 'es' | 'fr';
 
 export const TEMPLATE_LANGUAGES = [
   'ar',
   'en',
+  'ur',
+  'es',
+  'fr',
 ] as const satisfies readonly TemplateLanguage[];
+
+export interface TemplateLanguageDefinition {
+  /** The English name, for error messages and staff screens. */
+  name: string;
+  direction: 'rtl' | 'ltr';
+  /**
+   * A required language must always have a default template: Settings fails
+   * without one. Any other language is simply not offered until staff make a
+   * template its default.
+   */
+  required: boolean;
+}
+
+export const TEMPLATE_LANGUAGE_DEFINITIONS = {
+  ar: { name: 'Arabic', direction: 'rtl', required: true },
+  en: { name: 'English', direction: 'ltr', required: true },
+  ur: { name: 'Urdu', direction: 'rtl', required: false },
+  es: { name: 'Spanish', direction: 'ltr', required: false },
+  fr: { name: 'French', direction: 'ltr', required: false },
+} as const satisfies Record<TemplateLanguage, TemplateLanguageDefinition>;
+
+export function isTemplateLanguage(value: unknown): value is TemplateLanguage {
+  return (TEMPLATE_LANGUAGES as readonly unknown[]).includes(value);
+}
 
 /**
  * What a registry template is for. The COD confirmation is the first send and

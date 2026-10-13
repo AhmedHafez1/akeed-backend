@@ -24,6 +24,7 @@ const FIXTURE_PATH = resolve(
   '../../../test/fixtures/whatsapp-templates/settings/baseline.json',
 );
 
+const RECORDED_LANGUAGES: readonly string[] = ['ar', 'en'];
 const ARABIC_PHONE = '+201148675077';
 const NON_ARABIC_PHONE = '+14155550101';
 
@@ -179,18 +180,33 @@ function buildOnboardingTestService(
  * The block as it was recorded: the neutral-message keys (`messages`, and
  * `message` on each style) are left out, in their recorded key order, so the
  * legacy keys keep being compared byte for byte until the gate removes them.
+ *
+ * The recording holds Arabic and English, so only their part of the block is
+ * compared: `liveLanguages` and the keys of the later languages are left out.
+ * What a merchant sees in Arabic and English must not change when a language
+ * is added.
  */
 function legacyTemplateBlock(
   template: Awaited<ReturnType<OnboardingService['getSettings']>>['template'],
 ) {
   const without = <T extends object>(value: T, key: string) =>
     Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+  const recorded = <T>(byLanguage: Record<'ar' | 'en', T>) => ({
+    ar: byLanguage.ar,
+    en: byLanguage.en,
+  });
   return {
-    ...without(template, 'messages'),
+    ...without(without(template, 'messages'), 'liveLanguages'),
+    languages: template.languages.filter((language) =>
+      RECORDED_LANGUAGES.includes(language),
+    ),
+    defaults: recorded(template.defaults),
+    selected: recorded(template.selected),
     variants: {
       ar: template.variants.ar.map((style) => without(style, 'message')),
       en: template.variants.en.map((style) => without(style, 'message')),
     },
+    previews: recorded(template.previews),
   };
 }
 
@@ -216,6 +232,21 @@ describe('Settings template block characterization', () => {
 
   it('covers exactly the recorded cases', () => {
     expect(Object.keys(baseline.cases)).toEqual(CASES.map(({ name }) => name));
+  });
+
+  it('lists the later languages as not live, with nothing to choose', async () => {
+    const { template } = await buildSettingsService(CASES[0]).getSettings(
+      owner,
+    );
+    expect(template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+    expect(template.liveLanguages).toEqual(['ar', 'en']);
+    for (const language of ['ur', 'es', 'fr'] as const) {
+      expect(template.defaults[language]).toBeNull();
+      expect(template.selected[language]).toBeNull();
+      expect(template.variants[language]).toEqual([]);
+      expect(template.previews[language]).toBeNull();
+      expect(template.messages[language]).toBeNull();
+    }
   });
 
   it.each(CASES)(

@@ -1,6 +1,9 @@
 import { arabicStyleForPhone } from './arabic-style';
 import type { SelectedCodTemplate } from './cod-template-selector';
-import { resolveTemplateLanguageForPhone } from './template-language';
+import {
+  resolveTemplateLanguageForPhone,
+  type CountryTemplateLanguage,
+} from './template-language';
 import { isSendableReviewStatus } from './template-provider.types';
 import {
   COD_CONFIRMATION_PURPOSE,
@@ -113,6 +116,48 @@ export function selectableTemplates(
   );
 }
 
+/** Why a template is shown to a merchant but cannot be chosen yet. */
+export type TemplateAwaitingReason = 'in_review' | 'not_enabled';
+
+const IN_REVIEW_STATUSES: readonly (string | null)[] = [
+  null,
+  'pending',
+  'in_appeal',
+];
+
+/**
+ * The templates of a language no store can use yet, for showing merchants
+ * what is coming: those the provider is still reviewing, and those it
+ * approved that staff have not activated. A rejected or removed template is
+ * left out, and so is one named in `retiredKeys`. None of them can be chosen
+ * or sent.
+ */
+export function templatesAwaitingLaunch(
+  templates: readonly RegistryTemplate[],
+  language: TemplateLanguage,
+  retiredKeys: readonly string[] = [],
+  purpose: TemplatePurpose = COD_CONFIRMATION_PURPOSE,
+): { template: RegistryTemplate; reason: TemplateAwaitingReason }[] {
+  return templates.flatMap((template) => {
+    if (
+      template.isActive ||
+      retiredKeys.includes(template.key) ||
+      template.purpose !== purpose ||
+      template.language !== language
+    ) {
+      return [];
+    }
+    const reason: TemplateAwaitingReason | null = IN_REVIEW_STATUSES.includes(
+      template.reviewStatus,
+    )
+      ? 'in_review'
+      : isSendableReviewStatus(template.reviewStatus)
+        ? 'not_enabled'
+        : null;
+    return reason ? [{ template, reason }] : [];
+  });
+}
+
 export function findSelectableByStyle(
   templates: readonly RegistryTemplate[],
   language: TemplateLanguage,
@@ -144,6 +189,25 @@ function findSendableDefault(
   return fallback && isSendableTemplate(fallback, guardrailOn)
     ? fallback
     : undefined;
+}
+
+/**
+ * Whether a language has a default template that may be sent. Until it has,
+ * `auto` does not choose it and a store cannot be set to it.
+ */
+export function isLiveLanguage(
+  templates: readonly RegistryTemplate[],
+  language: TemplateLanguage,
+  guardrail?: TemplateSendGuardrail,
+): boolean {
+  return (
+    findSendableDefault(
+      templates,
+      language,
+      COD_CONFIRMATION_PURPOSE,
+      guardrailApplies(templates, guardrail),
+    ) !== undefined
+  );
 }
 
 /**
@@ -273,12 +337,18 @@ export function toSelectedTemplate(
  *
  * The store's forced language wins; `auto` follows the number, and a missing
  * number is read like a local number without a country code.
+ *
+ * `keys` and `reminderKeys` carry the store's choice per language. The
+ * Arabic and English parameters are the same values under their older names;
+ * a language in `keys` wins over them.
  */
 export function selectTemplateForSend(
   templates: readonly RegistryTemplate[],
   params: {
     preferredLanguage?: string | null;
     phoneNumber: string | null | undefined;
+    keys?: Partial<Record<TemplateLanguage, string | null>>;
+    reminderKeys?: Partial<Record<TemplateLanguage, string | null>>;
     arKey?: string | null;
     enKey?: string | null;
     arLegacyVariant?: string | null;
@@ -337,6 +407,8 @@ function selectStoredTemplate(
   const language = resolveTemplateLanguageForPhone(
     params.preferredLanguage,
     params.phoneNumber ?? '',
+    (candidate: CountryTemplateLanguage) =>
+      isLiveLanguage(templates, candidate, params.guardrail),
   );
   const autoStyle =
     language === 'ar' &&
@@ -355,8 +427,11 @@ function selectStoredTemplate(
 
   if (params.kind !== 'follow_up' || params.switches?.reminderTemplate !== true)
     return firstSend;
+  const namedReminderKeys: Partial<
+    Record<TemplateLanguage, string | null | undefined>
+  > = { ar: params.arReminderKey, en: params.enReminderKey };
   const reminderKey =
-    language === 'ar' ? params.arReminderKey : params.enReminderKey;
+    params.reminderKeys?.[language] ?? namedReminderKeys[language];
   // No reminder chosen: the reminder is the first-send template, as before.
   if (!reminderKey) return firstSend;
 
@@ -389,19 +464,30 @@ function selectStoredTemplate(
 function resolveStoredFirstSend(
   templates: readonly RegistryTemplate[],
   language: TemplateLanguage,
-  params: {
-    arKey?: string | null;
-    enKey?: string | null;
-    arLegacyVariant?: string | null;
-    enLegacyVariant?: string | null;
-    guardrail?: TemplateSendGuardrail;
-  },
+  params: Pick<
+    TemplateSendParams,
+    | 'keys'
+    | 'arKey'
+    | 'enKey'
+    | 'arLegacyVariant'
+    | 'enLegacyVariant'
+    | 'guardrail'
+  >,
 ): TemplateSelection {
-  const storedKey = storedTemplateKey(
-    language === 'ar'
-      ? { language, key: params.arKey, legacyVariant: params.arLegacyVariant }
-      : { language, key: params.enKey, legacyVariant: params.enLegacyVariant },
-  );
+  const named: Partial<
+    Record<
+      TemplateLanguage,
+      { key?: string | null; legacyVariant?: string | null }
+    >
+  > = {
+    ar: { key: params.arKey, legacyVariant: params.arLegacyVariant },
+    en: { key: params.enKey, legacyVariant: params.enLegacyVariant },
+  };
+  const storedKey = storedTemplateKey({
+    language,
+    key: params.keys?.[language] ?? named[language]?.key,
+    legacyVariant: named[language]?.legacyVariant,
+  });
   const resolution = resolveTemplate(templates, {
     language,
     storedKey,

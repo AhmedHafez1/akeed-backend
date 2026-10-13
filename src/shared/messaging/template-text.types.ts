@@ -1,8 +1,9 @@
 import type { TemplateButtonKind } from './template-provider.types';
-import type {
-  TemplateLanguage,
-  TemplateParameterFormat,
-  TemplateVariableKey,
+import {
+  TEMPLATE_LANGUAGE_DEFINITIONS,
+  type TemplateLanguage,
+  type TemplateParameterFormat,
+  type TemplateVariableKey,
 } from './template-registry.types';
 
 /**
@@ -35,7 +36,7 @@ export interface RenderedTemplateMessage {
 }
 
 export function templateDirection(language: TemplateLanguage): 'rtl' | 'ltr' {
-  return language === 'ar' ? 'rtl' : 'ltr';
+  return TEMPLATE_LANGUAGE_DEFINITIONS[language].direction;
 }
 
 /**

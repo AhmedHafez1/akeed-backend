@@ -1,5 +1,8 @@
 import { IsBoolean, IsOptional } from 'class-validator';
-import type { TemplatePreview } from '../../../shared/messaging/template-registry.types';
+import type {
+  TemplateLanguage,
+  TemplatePreview,
+} from '../../../shared/messaging/template-registry.types';
 import type { TemplateMessageLines } from '../../../shared/messaging/template-text.types';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 
@@ -21,7 +24,7 @@ export interface OnboardingTestAttemptDto {
 
 export interface OnboardingTestStatusDto {
   phone: string | null;
-  language: 'ar' | 'en';
+  language: TemplateLanguage;
   preview: TemplatePreview;
   /** The test's message as neutral lines. */
   message: TemplateMessageLines;

@@ -28,6 +28,15 @@ const PLAIN_DECIMAL = /^(\d+)(?:\.(\d+))?$/;
 const WORDS = {
   ar: { listSeparator: '، ', more: (count: number) => `+${count} منتجات أخرى` },
   en: { listSeparator: ', ', more: (count: number) => `+${count} more items` },
+  ur: { listSeparator: '، ', more: (count: number) => `+${count} مزید اشیاء` },
+  es: {
+    listSeparator: ', ',
+    more: (count: number) => `+${count} artículos más`,
+  },
+  fr: {
+    listSeparator: ', ',
+    more: (count: number) => `+${count} autres articles`,
+  },
 } as const satisfies Record<
   TemplateLanguage,
   { listSeparator: string; more: (count: number) => string }

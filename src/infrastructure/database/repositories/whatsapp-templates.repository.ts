@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, isNotNull } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { whatsappTemplates } from '../schema';
 import type {
@@ -154,6 +154,19 @@ export class WhatsappTemplatesRepository {
         asc(whatsappTemplates.key),
       );
     return rows.map(toRegistryTemplate);
+  }
+
+  /**
+   * The keys of the templates staff retired for good. Not part of `findAll`:
+   * it reads a column migration 0058 added, and the send path reads only
+   * what 0054 created.
+   */
+  async findRetiredKeys(): Promise<string[]> {
+    const rows = await this.db
+      .select({ key: whatsappTemplates.key })
+      .from(whatsappTemplates)
+      .where(isNotNull(whatsappTemplates.retiredAt));
+    return rows.map((row) => row.key);
   }
 
   /**

@@ -23,6 +23,7 @@ import {
   type TemplateSendPurpose,
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
+import { storeTemplateKeys } from '../../shared/messaging/store-template-selection';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
 import { MessageTextsService } from '../message-texts/message-texts.service';
 import {
@@ -297,16 +298,11 @@ export class VerificationSendService {
       {
         preferredLanguage: integration.defaultLanguage,
         phoneNumber: order.customerPhone,
-        arKey: integration.codTemplateArKey,
-        enKey: integration.codTemplateEnKey,
-        arLegacyVariant: integration.codTemplateArVariant,
-        enLegacyVariant: integration.codTemplateEnVariant,
+        ...storeTemplateKeys(integration),
         guardrail: {
           enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
         },
         kind,
-        arReminderKey: integration.codReminderArKey,
-        enReminderKey: integration.codReminderEnKey,
         arAuto: integration.codTemplateArAuto,
         switches,
         // A template that shows items or an address is sent only to an order

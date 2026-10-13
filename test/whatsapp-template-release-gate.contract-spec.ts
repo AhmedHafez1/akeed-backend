@@ -54,6 +54,7 @@ const TEMPLATE_MIGRATIONS = [
   '0057_whatsapp_template_sync.sql',
   '0058_whatsapp_template_authoring.sql',
   '0059_whatsapp_reminder_and_auto_style.sql',
+  '0064_whatsapp_template_languages.sql',
 ];
 
 const AR_EGYPTIAN = {

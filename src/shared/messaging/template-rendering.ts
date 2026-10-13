@@ -26,10 +26,16 @@ export const TEMPLATE_SAMPLE_CURRENCY = 'USD';
 export const TEMPLATE_SAMPLE_CUSTOMER_NAMES = {
   ar: 'أحمد',
   en: 'Ahmed',
+  ur: 'احمد',
+  es: 'Carlos',
+  fr: 'Camille',
 } as const satisfies Record<TemplateLanguage, string>;
 const TEMPLATE_SAMPLE_STORE_NAMES = {
   ar: 'متجر أكيد',
   en: 'Akeed Store',
+  ur: 'اکید اسٹور',
+  es: 'Tienda Akeed',
+  fr: 'Boutique Akeed',
 } as const satisfies Record<TemplateLanguage, string>;
 
 interface SampleOrderDetails {
@@ -72,6 +78,60 @@ const TEMPLATE_SAMPLE_ORDER_DETAILS: Record<
     ],
     shippingRegion: 'Cairo',
     shippingAddress: '12 Nile Street, Maadi',
+  },
+  ur: {
+    lineItems: [
+      {
+        name: 'سوتی قمیض',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'رنگ', value: 'نیلا' }],
+      },
+      {
+        name: 'کھیلوں کی جرابیں',
+        quantity: 2,
+        unitPrice: '50.00',
+        options: [],
+      },
+    ],
+    shippingRegion: 'لاہور',
+    shippingAddress: '12 مین بلیوارڈ، گلبرگ',
+  },
+  es: {
+    lineItems: [
+      {
+        name: 'Camisa de algodón',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'Color', value: 'Azul' }],
+      },
+      {
+        name: 'Calcetines deportivos',
+        quantity: 2,
+        unitPrice: '50.00',
+        options: [],
+      },
+    ],
+    shippingRegion: 'Madrid',
+    shippingAddress: 'Calle Mayor 12, Centro',
+  },
+  fr: {
+    lineItems: [
+      {
+        name: 'Chemise en coton',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'Couleur', value: 'Bleu' }],
+      },
+      {
+        name: 'Chaussettes de sport',
+        quantity: 2,
+        unitPrice: '50.00',
+        options: [],
+      },
+    ],
+    shippingRegion: 'Paris',
+    shippingAddress: '12 rue de Rivoli, 75004',
   },
 };
 

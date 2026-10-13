@@ -23,6 +23,7 @@ import type {
   TemplateVariableKey,
 } from '../../../shared/messaging/template-registry.types';
 import type { TemplateMessageLines } from '../../../shared/messaging/template-text.types';
+import type { TemplateAwaitingReason } from '../../../shared/messaging/template-selector';
 import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 import {
   CLIENT_PRODUCT_EVENT_NAMES,
@@ -30,7 +31,14 @@ import {
 } from '../../../shared/analytics/product-events';
 import { TrimString } from '../../../shared/validation/trim.transform';
 
-export const ONBOARDING_LANGUAGES = ['auto', 'en', 'ar'] as const;
+export const ONBOARDING_LANGUAGES = [
+  'auto',
+  'en',
+  'ar',
+  'ur',
+  'es',
+  'fr',
+] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
 /** The canonical order currency list; defined once in the shared rules. */
 export const ONBOARDING_SHIPPING_CURRENCIES = CANONICAL_ORDER_CURRENCIES;
@@ -195,6 +203,51 @@ export class UpdateOnboardingSettingsDto {
   @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
   codReminderEnVariant?: string | null;
 
+  /** As `codTemplateArVariant`, for Urdu. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateUrVariant?: string;
+
+  /** As `codTemplateArVariant`, for Spanish. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateEsVariant?: string;
+
+  /** As `codTemplateArVariant`, for French. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateFrVariant?: string;
+
+  /** As `codReminderArVariant`, for Urdu. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderUrVariant?: string | null;
+
+  /** As `codReminderArVariant`, for Spanish. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderEsVariant?: string | null;
+
+  /** As `codReminderArVariant`, for French. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderFrVariant?: string | null;
+
   /**
    * The Arabic style follows the customer's calling code.
    * `true` is accepted only while the switch is on.
@@ -291,7 +344,7 @@ export interface OnboardingStateDto {
   /** The Shopify billing-address phone, offered as a prefill only. */
   shopPhone: string | null;
   /** Template language the merchant's own test message would use. */
-  testSendLanguage: 'ar' | 'en';
+  testSendLanguage: TemplateLanguage;
   activation: OnboardingActivationDto;
   usage: OnboardingUsageDto | null;
   permissions: {
@@ -343,29 +396,41 @@ export interface SettingsResponseDto {
     messagesSentLast30Days: number;
   };
   template: {
-    languages: Array<'ar' | 'en'>;
-    defaultPreviewLanguage: 'ar' | 'en';
-    /** Style ids, as listed in `variants`. */
-    defaults: { ar: string; en: string };
-    selected: { ar: string; en: string };
-    variants: { ar: TemplateStyleDto[]; en: TemplateStyleDto[] };
-    previews: {
-      ar: MessageTemplatePreviewDto;
-      en: MessageTemplatePreviewDto;
-    };
+    /** Every message language, live or not, in display order. */
+    languages: TemplateLanguage[];
+    /**
+     * The languages a store can be set to: those with an active default
+     * template. Arabic and English are always here. Any other language joins
+     * once the provider approved a template and staff made it the default.
+     */
+    liveLanguages: TemplateLanguage[];
+    defaultPreviewLanguage: TemplateLanguage;
+    /**
+     * Style ids, as listed in `variants`. Null for a language that is not
+     * live, here and in `selected`, `previews` and `messages`.
+     */
+    defaults: Record<TemplateLanguage, string | null>;
+    selected: Record<TemplateLanguage, string | null>;
+    /**
+     * A live language lists the styles a merchant may choose. A language that
+     * is not live lists the templates awaiting it, each with an
+     * `availability`, and none of them can be chosen.
+     */
+    variants: Record<TemplateLanguage, TemplateStyleDto[]>;
+    previews: Record<TemplateLanguage, MessageTemplatePreviewDto | null>;
     /**
      * The selected message per language as neutral lines. The
      * four-block `previews` are still returned; the frontend does not read them.
      */
-    messages: { ar: TemplateMessageLines; en: TemplateMessageLines };
+    messages: Record<TemplateLanguage, TemplateMessageLines | null>;
     /**
      * The reminder styles a merchant may choose. Present only
      * while WHATSAPP_REMINDER_TEMPLATE_ENABLED is on. `selected` is null for
      * "same as the first message".
      */
     reminder?: {
-      selected: { ar: string | null; en: string | null };
-      variants: { ar: TemplateStyleDto[]; en: TemplateStyleDto[] };
+      selected: Record<TemplateLanguage, string | null>;
+      variants: Record<TemplateLanguage, TemplateStyleDto[]>;
     };
     /**
      * Whether the Arabic style follows the customer's calling code.
@@ -392,7 +457,30 @@ export interface TemplateStyleDto {
   preview: MessageTemplatePreviewDto;
   /** The style's message as neutral lines. */
   message: TemplateMessageLines;
+  /**
+   * Absent on a style a merchant may choose. `in_review`: the provider has
+   * not approved it yet. `not_enabled`: approved, not yet switched on.
+   */
+  availability?: TemplateAwaitingReason;
 }
+
+/**
+ * The settings fields that carry a store's style per language. A language is
+ * added to the request by adding its two fields to the DTO and to this map.
+ */
+export const SETTINGS_TEMPLATE_FIELDS = {
+  ar: { style: 'codTemplateArVariant', reminder: 'codReminderArVariant' },
+  en: { style: 'codTemplateEnVariant', reminder: 'codReminderEnVariant' },
+  ur: { style: 'codTemplateUrVariant', reminder: 'codReminderUrVariant' },
+  es: { style: 'codTemplateEsVariant', reminder: 'codReminderEsVariant' },
+  fr: { style: 'codTemplateFrVariant', reminder: 'codReminderFrVariant' },
+} as const satisfies Record<
+  TemplateLanguage,
+  {
+    style: keyof UpdateOnboardingSettingsDto;
+    reminder: keyof UpdateOnboardingSettingsDto;
+  }
+>;
 
 export class OnboardingBillingRequestDto {
   @IsString()

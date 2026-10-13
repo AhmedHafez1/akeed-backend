@@ -254,7 +254,7 @@ describe('Admin template write routes', () => {
   it.each([
     ['a body that is not text', { ...DRAFT, body: 7 }],
     ['an unknown purpose', { ...DRAFT, purpose: 'marketing_promo' }],
-    ['an unknown language', { ...DRAFT, language: 'fr' }],
+    ['an unknown language', { ...DRAFT, language: 'de' }],
     ['an unknown parameter format', { ...DRAFT, parameter_format: 'mixed' }],
     ['a body past the storage bound', { ...DRAFT, body: 'a'.repeat(4097) }],
   ])('answers 400 to a draft with %s', async (_case, body) => {

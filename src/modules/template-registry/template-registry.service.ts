@@ -71,6 +71,10 @@ export class TemplateRegistryService implements TemplateRegistryPort {
     this.cached = null;
   }
 
+  retiredTemplateKeys(): Promise<readonly string[]> {
+    return this.templatesRepo.findRetiredKeys();
+  }
+
   /** Concurrent callers share one read. */
   private load(): Promise<readonly RegistryTemplate[]> {
     this.loading ??= this.templatesRepo

@@ -15,6 +15,12 @@ export interface TemplateRegistryPort {
   /** Drops any cached copy, so the next read sees a write just made. */
   invalidate(): void;
   /**
+   * The keys of templates retired for good. Only Settings asks, to leave a
+   * retired template out of what it shows for a language that is not live.
+   * Absent: none is known to be retired.
+   */
+  retiredTemplateKeys?(): Promise<readonly string[]>;
+  /**
    * Whether a send may use only templates the provider has approved. Absent
    * means off: any active template is sent.
    */

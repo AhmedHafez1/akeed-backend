@@ -38,6 +38,9 @@ export const TEMPLATE_LANGUAGE_CODES: Record<
 > = {
   ar: ['ar', 'ar_EG', 'ar_AE', 'ar_LB', 'ar_MA', 'ar_QA'],
   en: ['en', 'en_US', 'en_GB'],
+  ur: ['ur'],
+  es: ['es', 'es_ES', 'es_MX', 'es_AR'],
+  fr: ['fr'],
 };
 
 /** How a purpose is written in a template name and in a registry key. */

@@ -61,7 +61,8 @@ function fractionFor(fraction: string, minorUnits: number): string {
 
 /**
  * The `total` value written per language and currency:
- * `1,250.00 ج.م` in Arabic, `EGP 1,250.00` in English, Western digits, the
+ * `1,250.00 ج.م` in Arabic, `EGP 1,250.00` in English, `1,250.00 EUR` in
+ * the other languages, Western digits, the
  * currency's minor units always shown. It works on the stored decimal
  * string and never rounds, so the amount cannot change. A missing currency
  * sends the number alone; a value that is not a plain decimal is sent as it
@@ -90,5 +91,6 @@ export function formatOrderTotal(
   if (language === 'ar') {
     return `${number} ${ARABIC_CURRENCY_SYMBOLS[code] ?? code}`;
   }
-  return `${code} ${number}`;
+  // Urdu, Spanish and French write the number first, then the ISO code.
+  return language === 'en' ? `${code} ${number}` : `${number} ${code}`;
 }

@@ -820,7 +820,7 @@ export class VerificationMessageDispatchesRepository {
    * dialect. NULL before any accepted send.
    */
   async findLatestAcceptedIdentity(verificationId: string): Promise<{
-    resolvedLanguage: 'ar' | 'en' | null;
+    resolvedLanguage: (typeof verificationMessageDispatches.$inferSelect)['resolvedLanguage'];
     variantKey: string | null;
   } | null> {
     const [row] = await this.db

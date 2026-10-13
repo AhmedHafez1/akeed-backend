@@ -40,9 +40,14 @@ import {
   templateSampleOrderDetails,
 } from '../../shared/messaging/template-rendering';
 import {
+  isLiveLanguage,
   resolveTemplate,
-  storedTemplateKey,
 } from '../../shared/messaging/template-selector';
+import { storeFirstSendKey } from '../../shared/messaging/store-template-selection';
+import type {
+  RegistryTemplate,
+  TemplateLanguage,
+} from '../../shared/messaging/template-registry.types';
 import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
@@ -108,10 +113,7 @@ export class OnboardingTestService {
     }
     await this.assertSendAllowed(integration.id);
 
-    const language = resolveTemplateLanguageForPhone(
-      integration.defaultLanguage,
-      phone,
-    );
+    const language = await this.testLanguage(integration, phone);
     await this.adminLifecycles.markMilestone(
       integration.id,
       'testRequestedAt',
@@ -254,15 +256,40 @@ export class OnboardingTestService {
     );
   }
 
+  /** The language a test to this number goes out in, as a send resolves it. */
+  private languageFor(
+    integration: IntegrationRecord,
+    phone: string,
+    templates: readonly RegistryTemplate[],
+  ): TemplateLanguage {
+    return resolveTemplateLanguageForPhone(
+      integration.defaultLanguage,
+      phone,
+      (language) =>
+        isLiveLanguage(templates, language, {
+          enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+        }),
+    );
+  }
+
+  private async testLanguage(
+    integration: IntegrationRecord,
+    phone: string,
+  ): Promise<TemplateLanguage> {
+    return this.languageFor(
+      integration,
+      phone,
+      await this.templateRegistry.listTemplates(),
+    );
+  }
+
   private async buildStatus(
     integration: IntegrationRecord,
     orgId: string,
   ): Promise<OnboardingTestStatusDto> {
     const phone = integration.merchantWhatsappPhone ?? null;
-    const language = resolveTemplateLanguageForPhone(
-      integration.defaultLanguage,
-      phone ?? '',
-    );
+    const templates = await this.templateRegistry.listTemplates();
+    const language = this.languageFor(integration, phone ?? '', templates);
     const lifecycle = await this.adminLifecycles.findCurrent(integration.id);
     // Rate limits span reinstalls; the displayed test does not, or a previous
     // install's confirmed test would read as this install's confirmation.
@@ -299,23 +326,10 @@ export class OnboardingTestService {
 
     // The same resolution a send uses, so the preview is the message the
     // test would carry.
-    const { template } = resolveTemplate(
-      await this.templateRegistry.listTemplates(),
-      {
-        language,
-        storedKey: storedTemplateKey({
-          language,
-          key:
-            language === 'ar'
-              ? integration.codTemplateArKey
-              : integration.codTemplateEnKey,
-          legacyVariant:
-            language === 'ar'
-              ? integration.codTemplateArVariant
-              : integration.codTemplateEnVariant,
-        }),
-      },
-    );
+    const { template } = resolveTemplate(templates, {
+      language,
+      storedKey: storeFirstSendKey(integration, language),
+    });
     if (!template) {
       throw new ServiceUnavailableException({
         statusCode: 503,

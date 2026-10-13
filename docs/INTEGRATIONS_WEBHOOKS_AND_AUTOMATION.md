@@ -203,10 +203,14 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 **Template resolution:**
 
-1. If `preferredLanguage` is `ar` or `en`, use it directly.
-2. If `auto`, detect from the customer phone number's country code.
+1. If `preferredLanguage` is a message language (`ar`, `en`, `ur`, `es`, `fr`), use it directly.
+2. If `auto`, detect from the customer phone number's country code:
+   - Pakistan (`+92`) gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France (`+33`) gets French, but only while that language is **live**: it has an active default template that may be sent.
+   - Otherwise an Arabic country code gets Arabic and everything else gets English. A number from Pakistan, Spain or France therefore keeps getting English until its language is live.
 
-Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others.
+Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others. The lists are in `src/shared/messaging/template-language.ts`. Countries with several languages (the United States, Canada, Belgium, Switzerland) are not mapped.
+
+**Message languages.** `TEMPLATE_LANGUAGES` in `src/shared/messaging/template-registry.types.ts` is the one list. Arabic and English are required: Settings fails without a default for them. Urdu, Spanish and French start with no template. Migration 0064 gives staff two drafts for each; a language becomes live when staff submit a draft, Meta approves it, and staff activate it and make it the default. Until then merchants see its submitted templates as locked, cannot set the store to it (`SETTINGS_LANGUAGE_UNAVAILABLE`), and no send resolves to it.
 
 **Templates come from the registry.** The templates are rows of
 `whatsapp_templates`, not a list in code. Migration 0054 seeded the 8 COD
@@ -472,7 +476,7 @@ Handles the actual WhatsApp send for both initial and follow-up messages.
 
 1. Load verification + order + its linked integration. Missing linkage returns `missing_linked_integration`; inconsistent order/integration ownership returns `source_identity_mismatch` before quota or messaging. No Shopify fallback lookup.
 2. Reserve billing slot → if limit reached, return `plan_limit_reached`.
-3. Resolve the template from the registry (`TEMPLATE_REGISTRY_PORT`) with the integration's stored keys (`codTemplateArKey`, `codTemplateEnKey`). An unusable key falls back to the language default; with no default the send is skipped as `template_unavailable`.
+3. Resolve the template from the registry (`TEMPLATE_REGISTRY_PORT`) with the integration's stored key for the resolved language (`codTemplateArKey`, `codTemplateEnKey`, `codTemplateUrKey`, `codTemplateEsKey`, `codTemplateFrKey`; the fields per language are listed once in `src/shared/messaging/store-template-selection.ts`). An unusable key falls back to the language default; with no default the send is skipped as `template_unavailable`.
 4. Call `MessagingPort.sendVerificationTemplate()`.
 5. Extract `waMessageId` from response.
 6. If missing or error → release billing reservation, mark verification as `failed`.
