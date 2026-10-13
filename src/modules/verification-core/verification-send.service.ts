@@ -93,10 +93,17 @@ const ACCEPTANCE_FAILURE_CODES: Record<
 export interface InitialSendOptions {
   /** Free onboarding test: honoured only for synthetic test orders. */
   billingExempt?: boolean;
+  /**
+   * The language a test message goes out in, whatever the store's language
+   * setting and the recipient's number say. Honoured only for synthetic test
+   * orders.
+   */
+  testLanguage?: TemplateLanguage;
 }
 
 interface ResolvedContext {
   billingExempt: boolean;
+  testLanguage?: TemplateLanguage;
   verification: NonNullable<
     Awaited<ReturnType<VerificationsRepository['findById']>>
   >;
@@ -170,7 +177,13 @@ export class VerificationSendService {
     if (!result.context) {
       return { status: 'skipped', reason: result.reason };
     }
-    return this.sendOnce(result.context, 'initial');
+    const { context } = result;
+    return this.sendOnce(
+      options.testLanguage && context.order.isTest === true
+        ? { ...context, testLanguage: options.testLanguage }
+        : context,
+      'initial',
+    );
   }
 
   async sendFollowUp(verificationId: string): Promise<SendOutcome> {
@@ -296,7 +309,7 @@ export class VerificationSendService {
     const selection = selectTemplateForSend(
       await this.templateRegistry.listTemplates(),
       {
-        preferredLanguage: integration.defaultLanguage,
+        preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
         phoneNumber: order.customerPhone,
         ...storeTemplateKeys(integration),
         guardrail: {

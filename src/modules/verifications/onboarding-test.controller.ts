@@ -42,7 +42,10 @@ export class OnboardingTestController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() payload: SendOnboardingTestDto,
   ): Promise<OnboardingTestStatusDto> {
-    return this.onboardingTestService.send(user, { resend: payload.resend });
+    return this.onboardingTestService.send(user, {
+      resend: payload.resend,
+      language: payload.language,
+    });
   }
 
   @Post('skip')

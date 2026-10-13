@@ -1,7 +1,8 @@
-import { IsBoolean, IsOptional } from 'class-validator';
-import type {
-  TemplateLanguage,
-  TemplatePreview,
+import { IsBoolean, IsIn, IsOptional } from 'class-validator';
+import {
+  TEMPLATE_LANGUAGES,
+  type TemplateLanguage,
+  type TemplatePreview,
 } from '../../../shared/messaging/template-registry.types';
 import type { TemplateMessageLines } from '../../../shared/messaging/template-text.types';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
@@ -10,6 +11,14 @@ export class SendOnboardingTestDto {
   @IsOptional()
   @IsBoolean()
   resend?: boolean;
+
+  /**
+   * The language to test, as Settings previews it. Without it the test goes
+   * out in the language a send to the merchant's number resolves to.
+   */
+  @IsOptional()
+  @IsIn(TEMPLATE_LANGUAGES)
+  language?: TemplateLanguage;
 }
 
 export interface OnboardingTestAttemptDto {

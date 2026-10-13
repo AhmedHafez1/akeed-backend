@@ -95,7 +95,7 @@ export class OnboardingTestService {
 
   async send(
     user: AuthenticatedUser,
-    options: { resend?: boolean } = {},
+    options: { resend?: boolean; language?: TemplateLanguage } = {},
   ): Promise<OnboardingTestStatusDto> {
     assertOrganizationWriteAllowed(user.role, {
       message: 'Owner or admin role is required to send a test message.',
@@ -113,7 +113,11 @@ export class OnboardingTestService {
     }
     await this.assertSendAllowed(integration.id);
 
-    const language = await this.testLanguage(integration, phone);
+    const language = await this.testLanguage(
+      integration,
+      phone,
+      options.language,
+    );
     await this.adminLifecycles.markMilestone(
       integration.id,
       'testRequestedAt',
@@ -143,6 +147,8 @@ export class OnboardingTestService {
       },
       integration,
       'onboarding',
+      // Only a requested language overrides what a send would resolve.
+      options.language ? { language } : {},
     );
 
     if ('skipped' in result || result.deliveryStatus !== 'sent') {
@@ -272,15 +278,29 @@ export class OnboardingTestService {
     );
   }
 
+  /**
+   * The language of a test: the one asked for, when the store can use it,
+   * else the one a send to this number resolves to.
+   */
   private async testLanguage(
     integration: IntegrationRecord,
     phone: string,
+    requested?: TemplateLanguage,
   ): Promise<TemplateLanguage> {
-    return this.languageFor(
-      integration,
-      phone,
-      await this.templateRegistry.listTemplates(),
-    );
+    const templates = await this.templateRegistry.listTemplates();
+    if (!requested) return this.languageFor(integration, phone, templates);
+    const isLive = isLiveLanguage(templates, requested, {
+      enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+    });
+    if (!isLive) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `No approved message is available in ${requested} yet.`,
+        code: 'ONBOARDING_TEST_LANGUAGE_UNAVAILABLE',
+      });
+    }
+    return requested;
   }
 
   private async buildStatus(

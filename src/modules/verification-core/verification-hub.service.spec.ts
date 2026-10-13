@@ -1141,6 +1141,35 @@ describe('VerificationHubService', () => {
       );
     });
 
+    it('passes the language of a test on to the send', async () => {
+      const {
+        service,
+        ordersRepo,
+        verificationsRepo,
+        verificationSendService,
+      } = createMocks();
+      ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
+      verificationSendService.sendInitial.mockResolvedValue({
+        status: 'sent',
+        sentAt: '2026-09-23T08:02:00.000Z',
+      });
+
+      await service.handleSyntheticTestOrder(
+        buildOrder({ externalOrderId: 'akeed-test-id' }),
+        buildIntegration({ onboardingStatus: 'pending' }),
+        'onboarding',
+        { language: 'en' },
+      );
+
+      expect(verificationSendService.sendInitial).toHaveBeenCalledWith(
+        expect.any(String),
+        { billingExempt: true, testLanguage: 'en' },
+      );
+    });
+
     it('keeps the dashboard test gated on setup', async () => {
       const { service, verificationSendService } = createMocks();
 

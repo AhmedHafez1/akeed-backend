@@ -123,6 +123,7 @@ describe('OnboardingTestService', () => {
       }),
       expect.objectContaining({ id: 'int-1' }),
       'onboarding',
+      {},
     );
     expect(lifecycles.recordEvent).toHaveBeenCalledWith(
       'int-1',
@@ -159,7 +160,37 @@ describe('OnboardingTestService', () => {
       expect.objectContaining({ customerName: 'Ahmed' }),
       expect.anything(),
       'onboarding',
+      {},
     );
+  });
+
+  it('sends the language Settings previews, whatever the number resolves to', async () => {
+    const { service, hub, lifecycles } = setup();
+
+    await service.send(owner, { resend: true, language: 'en' });
+
+    expect(hub.handleSyntheticTestOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ customerName: 'Ahmed' }),
+      expect.objectContaining({ id: 'int-1' }),
+      'onboarding',
+      { language: 'en' },
+    );
+    expect(lifecycles.recordEvent).toHaveBeenCalledWith(
+      'int-1',
+      'test_resend',
+      expect.objectContaining({ language: 'en' }),
+    );
+  });
+
+  it('refuses a language with no approved message, and sends nothing', async () => {
+    const { service, hub } = setup();
+
+    const error = await service
+      .send(owner, { language: 'ur' })
+      .catch((caught: unknown) => caught);
+
+    expectCode(error, 'ONBOARDING_TEST_LANGUAGE_UNAVAILABLE');
+    expect(hub.handleSyntheticTestOrder).not.toHaveBeenCalled();
   });
 
   it('refuses a send inside the resend cooldown with the seconds left', async () => {
@@ -393,6 +424,7 @@ describe('OnboardingTestService', () => {
           onboardingStatus: 'pending',
         }),
         'onboarding',
+        {},
       );
       expect(status.sample).toMatchObject({
         currency: 'SAR',

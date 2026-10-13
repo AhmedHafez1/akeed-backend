@@ -12,6 +12,7 @@ import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/re
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isSendFailureReason } from '../../shared/verification/verification-lifecycle';
+import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import {
   isSyntheticOrder,
   isSyntheticTestOrderId,
@@ -138,6 +139,7 @@ export class VerificationHubService {
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
     mode: SyntheticTestMode = 'dashboard',
+    options: { language?: TemplateLanguage } = {},
   ): Promise<SyntheticTestResult> {
     const billingExempt = mode === 'onboarding';
     const sourceReason = await this.validateSyntheticTestSource(
@@ -162,7 +164,10 @@ export class VerificationHubService {
     }
     const delivery = await this.verificationSendService.sendInitial(
       verification.id,
-      { billingExempt },
+      {
+        billingExempt,
+        ...(options.language ? { testLanguage: options.language } : {}),
+      },
     );
 
     await this.applyInitialSendFailure(verification.id, order.orgId, delivery);
