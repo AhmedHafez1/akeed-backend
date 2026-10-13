@@ -9,6 +9,8 @@ import { WhatsappTemplateLifecycleRepository } from '../src/infrastructure/datab
 import { WhatsappTemplateSyncRepository } from '../src/infrastructure/database/repositories/whatsapp-template-sync.repository';
 import { WhatsappTemplatesRepository } from '../src/infrastructure/database/repositories/whatsapp-templates.repository';
 import { WhatsappMessageTextsRepository } from '../src/infrastructure/database/repositories/whatsapp-message-texts.repository';
+import { STARTER_MESSAGE_TEXTS } from '../src/shared/messaging/starter-message-texts';
+import { STARTER_DRAFT_AUTHOR_ID } from '../src/shared/messaging/starter-template-drafts';
 import { AdminTemplateLifecycleService } from '../src/modules/admin/admin-template-lifecycle.service';
 
 /**
@@ -71,6 +73,7 @@ const MIGRATIONS = [
 ];
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const SERVICE_MIGRATION = '0060_whatsapp_service_messages.sql';
+const LANGUAGES_MIGRATION = '0064_whatsapp_template_languages.sql';
 const STAFF = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 
 async function migrate(name: string): Promise<void> {
@@ -155,6 +158,13 @@ describe('message improvements against PostgreSQL', () => {
       );
     `);
     for (const name of MIGRATIONS) await migrate(name);
+    // 0064 is in the list for its language checks. The drafts and texts it
+    // writes are removed here, so the suite starts empty; the 0064 block
+    // below applies the migration again and checks the texts.
+    await client`
+      DELETE FROM whatsapp_message_texts WHERE updated_by = ${STARTER_DRAFT_AUTHOR_ID}`;
+    await client`
+      DELETE FROM whatsapp_template_drafts WHERE created_by = ${STARTER_DRAFT_AUTHOR_ID}`;
   });
 
   afterAll(async () => {
@@ -541,6 +551,75 @@ describe('message improvements against PostgreSQL', () => {
         isActiveBefore: true,
         isActiveAfter: false,
         bodyChanged: true,
+      });
+    });
+  });
+
+  describe('0064: texts for Urdu, Spanish and French', () => {
+    const starterTexts = () => client<
+      {
+        purpose: string;
+        language: string;
+        style: string;
+        body: string;
+        is_active: boolean;
+      }[]
+    >`
+      SELECT purpose, language, style, body, is_active
+      FROM whatsapp_message_texts
+      WHERE updated_by = ${STARTER_DRAFT_AUTHOR_ID}`;
+    const sorted = <T extends { language: string; purpose: string }>(
+      rows: readonly T[],
+    ) =>
+      [...rows].sort((a, b) =>
+        `${a.language}.${a.purpose}`.localeCompare(
+          `${b.language}.${b.purpose}`,
+        ),
+      );
+
+    it('writes every text of the three languages, active, and none for Arabic or English', async () => {
+      await migrate(LANGUAGES_MIGRATION);
+
+      const rows = await starterTexts();
+      expect(
+        sorted(rows).map(({ purpose, language, style, body }) => ({
+          purpose,
+          language,
+          style,
+          body,
+        })),
+      ).toEqual(sorted(STARTER_MESSAGE_TEXTS.map((text) => ({ ...text }))));
+      expect(rows.every((row) => row.is_active)).toBe(true);
+      expect(
+        rows.filter((row) => ['ar', 'en'].includes(row.language)),
+      ).toHaveLength(0);
+    });
+
+    it('gives the send path the text of the customer\u2019s language', async () => {
+      const texts = await new WhatsappMessageTextsRepository(
+        database,
+      ).findAll();
+      const french = texts.find(
+        (text) => text.language === 'fr' && text.purpose === 'ack_confirmed',
+      );
+      expect(french).toMatchObject({ style: 'default', isActive: true });
+    });
+
+    it('replays without adding a text or overwriting one staff changed', async () => {
+      await client`
+        UPDATE whatsapp_message_texts SET body = 'Changed by staff', updated_by = ${STAFF}
+        WHERE language = 'es' AND purpose = 'ack_canceled'`;
+
+      await migrate(LANGUAGES_MIGRATION);
+
+      const [counts] = await client<{ texts: number; spanish: string }[]>`
+        SELECT (SELECT count(*)::int FROM whatsapp_message_texts
+                 WHERE language IN ('ur', 'es', 'fr')) AS texts,
+          (SELECT body FROM whatsapp_message_texts
+            WHERE language = 'es' AND purpose = 'ack_canceled') AS spanish`;
+      expect(counts).toEqual({
+        texts: STARTER_MESSAGE_TEXTS.length,
+        spanish: 'Changed by staff',
       });
     });
   });

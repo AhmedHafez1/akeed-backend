@@ -248,7 +248,7 @@ order by created_at desc limit 50;
 
 ## 9. Launch Urdu, Spanish or French
 
-Arabic and English were seeded and are always on. Urdu, Spanish and French start with **no template**. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French).
+Akeed sends in five languages: Arabic, English, Urdu, Spanish and French. Arabic and English were seeded and are always on. Urdu, Spanish and French start with **no approved template**, so each one is switched on here. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French).
 
 Before a language is live:
 
@@ -256,17 +256,17 @@ Before a language is live:
 - Templates you have submitted appear to merchants as locked cards. A draft you have not submitted is never shown to merchants.
 - Customers in those countries keep getting English under `auto`, exactly as before.
 
-Migration `0064` created two drafts per language (`standard` and `short`). They are a starting point, not approved wording.
+Migration `0064` created three drafts per language: a `standard` and a `short` confirmation, and a `standard` reminder. It also wrote the five free-form texts of each language (the two acknowledgments, the "press a button" nudge and the two name fallbacks), already active. A free-form text is not a Meta template and needs no approval; it is only read for a customer whose message went out in that language.
 
 Operators only, one language at a time:
 
-1. Open **Admin › Templates**, section **Drafts**. Open the language's two drafts. Have a native speaker read the body and both buttons; edit and **Save draft** until the check shows no error.
+1. Open **Admin › Templates**, section **Drafts**. Open the language's three drafts and read the body and both buttons. If you change the wording, **Save draft** until the check shows no error.
 2. Press **Submit to Meta** on each. The template now exists at Meta in review, and in Akeed as an inactive template.
 3. Wait for Meta's review (up to 24 hours), then press **Sync now**. Do not continue until the template shows **Approved**. A rejected template is edited or replaced by a new draft; it cannot be activated.
 4. Press **Activate** on each approved template. Activation is refused for anything not approved.
 5. Optional: **Send test** to a staff phone on `WHATSAPP_TEMPLATE_TEST_PHONES`.
-6. Press **Make default** on the one new stores should get (normally `standard`). The language is live from this moment, within a minute (registry cache).
-7. Add the free-form texts for the language in **Admin › Message texts** (acknowledgments, the "press a button" nudge, the name fallbacks). Without them those follow-ups are skipped as `text_unavailable` for that language.
+6. Press **Make default** on the confirmation new stores should get (normally `standard`). The language is live from this moment, within a minute (registry cache). The reminder needs no default: once it is active, a store can choose it in **Settings › Message** while `WHATSAPP_REMINDER_TEMPLATE_ENABLED` is on, and a store that chooses nothing repeats its first message.
+7. Read the free-form texts of the language in **Admin › Message texts** and change any wording you want. If one is switched off or deleted, that follow-up is skipped as `text_unavailable` for the language.
 
 To take a language back out: make sure no store is set to it, then **Deactivate** its default. With the guardrail on, a language whose default Meta paused also stops being chosen by `auto`; those customers get English again, and a store forced to that language has its sends skipped (section 2).
 

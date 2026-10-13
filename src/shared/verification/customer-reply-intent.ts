@@ -15,8 +15,9 @@ const CANCEL_ACTIONS = new Set(['cancel', 'no']);
 /**
  * Free-text answers accepted as a reply to the confirmation template.
  *
- * Arabic first — it is the default locale — then English, then the digits used
- * by customers whose keyboard makes either language awkward. Kept deliberately
+ * Arabic first — it is the default locale — then English, Urdu, Spanish and
+ * French, then the digits used by customers whose keyboard makes their
+ * language awkward. Kept deliberately
  * tight: anything ambiguous must fall through to `null` so the verification is
  * left for the no-reply escalation rather than being resolved by a guess.
  */
@@ -36,6 +37,23 @@ const CONFIRM_TEXTS = new Set([
   'confirm',
   'confirmed',
   'accept',
+  'ہاں',
+  'جی',
+  'جی ہاں',
+  'کنفرم',
+  'تصدیق',
+  'ٹھیک ہے',
+  'sí',
+  'si',
+  'confirmo',
+  'confirmar',
+  'confirmado',
+  'de acuerdo',
+  'oui',
+  'je confirme',
+  'confirmer',
+  'confirmé',
+  "d'accord",
   '1',
 ]);
 
@@ -53,19 +71,33 @@ const CANCEL_TEXTS = new Set([
   'canceled',
   'cancelled',
   'reject',
+  'نہیں',
+  'جی نہیں',
+  'منسوخ',
+  'کینسل',
+  'cancelar',
+  'cancelo',
+  'cancelado',
+  'non',
+  'annuler',
+  "j'annule",
+  'annulé',
   '2',
 ]);
 
 /**
  * Normalizes for comparison: strips Arabic diacritics and the tatweel joiner,
- * collapses whitespace, and drops the trailing punctuation people add without
- * meaning anything by it.
+ * collapses whitespace, straightens a typographic apostrophe, and drops the
+ * punctuation people add without meaning anything by it (Spanish opens an
+ * exclamation with one too).
  */
 function normalizeReplyText(value: string): string {
   return value
     .normalize('NFKC')
     .replace(/[ً-ْـ]/g, '')
-    .replace(/[!؟?.،,]+$/u, '')
+    .replace(/\u2019/g, "'")
+    .replace(/^[¡¿]+/u, '')
+    .replace(/[!؟?.،,۔]+$/u, '')
     .trim()
     .toLowerCase();
 }

@@ -210,7 +210,7 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others. The lists are in `src/shared/messaging/template-language.ts`. Countries with several languages (the United States, Canada, Belgium, Switzerland) are not mapped.
 
-**Message languages.** `TEMPLATE_LANGUAGES` in `src/shared/messaging/template-registry.types.ts` is the one list. Arabic and English are required: Settings fails without a default for them. Urdu, Spanish and French start with no template. Migration 0064 gives staff two drafts for each; a language becomes live when staff submit a draft, Meta approves it, and staff activate it and make it the default. Until then merchants see its submitted templates as locked, cannot set the store to it (`SETTINGS_LANGUAGE_UNAVAILABLE`), and no send resolves to it.
+**Message languages.** Messages go out in Arabic, English, Urdu, Spanish and French. `TEMPLATE_LANGUAGES` in `src/shared/messaging/template-registry.types.ts` is the one list. Arabic and English are required: Settings fails without a default for them. Urdu, Spanish and French start with no approved template. Migration 0064 gives staff three drafts for each (two confirmations and a reminder) and writes their free-form texts (acknowledgments, nudge and name fallbacks); a language becomes live when staff submit a draft, Meta approves it, and staff activate it and make it the default. Until then merchants see its submitted templates as locked, cannot set the store to it (`SETTINGS_LANGUAGE_UNAVAILABLE`), and no send resolves to it.
 
 **Templates come from the registry.** The templates are rows of
 `whatsapp_templates`, not a list in code. Migration 0054 seeded the 8 COD
@@ -265,8 +265,8 @@ Two buttons are attached to every template:
    so a payload with more segments did not come from an Akeed template.
 3. A customer who types instead of tapping is also handled: `message.text.body`
    is matched against the accepted yes/no answers in
-   `src/shared/verification/customer-reply-intent.ts` (Arabic, English and
-   digits), and the verification is located via `message.context.id` — the wamid
+   `src/shared/verification/customer-reply-intent.ts` (Arabic, English,
+   Urdu, Spanish, French and digits), and the verification is located via `message.context.id` — the wamid
    of the template being replied to — against `verifications.wa_message_id`.
    Anything ambiguous resolves to no intent and is logged as
    `unresolved_reply` rather than guessed at.

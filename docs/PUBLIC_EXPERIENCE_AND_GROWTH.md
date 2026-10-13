@@ -4,7 +4,7 @@ Last updated: 2026-05-28
 
 ## Purpose
 
-This document explains the public-facing pages, marketing site, localization system, SEO infrastructure, analytics, and growth surfaces in the Akeed frontend. It covers the marketing homepage, legal pages, pricing display, the i18n bilingual system (Arabic/English with RTL), structured data, the Shopify app listing configuration (for Shopify merchants), and conversion elements. The public site presents Akeed as COD confirmation infrastructure for both Shopify stores and independent stores, and merchant help articles live in `akeed-frontend/content/docs`.
+This document explains the public-facing pages, marketing site, localization system, SEO infrastructure, analytics, and growth surfaces in the Akeed frontend. It covers the marketing homepage, legal pages, pricing display, the i18n system (Arabic, English, Urdu, Spanish and French, with RTL for Arabic and Urdu), structured data, the Shopify app listing configuration (for Shopify merchants), and conversion elements. The public site presents Akeed as COD confirmation infrastructure for both Shopify stores and independent stores, and merchant help articles live in `akeed-frontend/content/docs`.
 
 For merchant-facing operational screens, see `MERCHANT_OPERATIONS.md`.
 For onboarding and billing, see `ONBOARDING_AND_BILLING.md`.
@@ -18,7 +18,7 @@ In scope:
 - Pricing: standalone credits and the Shopify plan pointer.
 - Legal pages (Terms of Service, Privacy Policy, Support).
 - SEO: sitemap, robots.txt, metadata, OpenGraph, JSON-LD structured data.
-- Localization: Arabic/English, RTL support, translation namespaces.
+- Localization: Arabic, English, Urdu, Spanish and French, RTL support, translation namespaces. Customer WhatsApp messages go out in the same five languages.
 - Analytics: Facebook Pixel, Google Analytics.
 - Navigation: Header, Footer, mobile CTA.
 - Public assets: logos, favicons, OG images.
@@ -325,7 +325,7 @@ Located at `public/messages/{locale}.json`.
 
 ### Language Switching
 
-The header includes a language toggle that switches between Arabic and English. The toggle preserves the current path and swaps the locale prefix.
+The header includes a language menu with Arabic, English, Urdu, Spanish and French. Switching preserves the current path and swaps the locale prefix.
 
 ## Analytics
 
@@ -364,7 +364,7 @@ Mobile navigation adds:
 
 Primary CTA button: "Install on Shopify" → links to Shopify App Store.
 
-Language selector: Arabic ↔ English toggle.
+Language selector: a menu of the five interface languages.
 
 ### Footer
 

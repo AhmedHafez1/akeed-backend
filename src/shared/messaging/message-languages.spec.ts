@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { formatOrderTotal } from './message-values';
 import { formatItemList } from './order-detail-values';
+import { fillMessageText, MESSAGE_TEXT_PURPOSES } from './message-texts.types';
+import { STARTER_MESSAGE_TEXTS } from './starter-message-texts';
 import {
   STARTER_DRAFT_AUTHOR_ID,
   STARTER_TEMPLATE_DRAFTS,
@@ -302,21 +304,22 @@ describe('starter template drafts', () => {
   const sqlText = (value: string) =>
     value.replaceAll("'", "''").replaceAll('\n', '\\n');
 
-  it('has two confirmations for each new language', () => {
+  it('has two confirmations and one reminder for each new language', () => {
     expect(
-      STARTER_TEMPLATE_DRAFTS.map(({ language, style }) => [language, style]),
-    ).toEqual([
-      ['ur', 'standard'],
-      ['ur', 'short'],
-      ['es', 'standard'],
-      ['es', 'short'],
-      ['fr', 'standard'],
-      ['fr', 'short'],
-    ]);
+      STARTER_TEMPLATE_DRAFTS.map(({ purpose, language, style }) =>
+        buildDraftKey(purpose, language, style, 1),
+      ),
+    ).toEqual(
+      (['ur', 'es', 'fr'] as const).flatMap((language) => [
+        `cod_confirm.${language}.standard_v1`,
+        `cod_confirm.${language}.short_v1`,
+        `cod_reminder.${language}.standard_v1`,
+      ]),
+    );
   });
 
   it.each(STARTER_TEMPLATE_DRAFTS)(
-    'passes every authoring rule: $language $style',
+    'passes every authoring rule: $purpose $language $style',
     (draft) => {
       const samples = templateSampleValues(draft.language);
       const validation = validateTemplateDraft(
@@ -335,7 +338,7 @@ describe('starter template drafts', () => {
   );
 
   it.each(STARTER_TEMPLATE_DRAFTS)(
-    'is written to the drafts table by the migration: $language $style',
+    'is written to the drafts table by the migration: $purpose $language $style',
     (draft) => {
       const row = migration
         .split('\n')
@@ -359,5 +362,50 @@ describe('starter template drafts', () => {
   it('writes drafts only: the migration adds no template a send could read', () => {
     expect(migration).toContain('INSERT INTO "whatsapp_template_drafts"');
     expect(migration).not.toContain('INSERT INTO "whatsapp_templates"');
+  });
+
+  describe('free-form texts', () => {
+    it('has every purpose once for each new language, and none for Arabic or English', () => {
+      expect(
+        STARTER_MESSAGE_TEXTS.map(({ language, purpose }) => [
+          language,
+          purpose,
+        ]),
+      ).toEqual(
+        (['ur', 'es', 'fr'] as const).flatMap((language) =>
+          MESSAGE_TEXT_PURPOSES.map((purpose) => [language, purpose]),
+        ),
+      );
+      expect(
+        STARTER_MESSAGE_TEXTS.every(({ style }) => style === 'default'),
+      ).toBe(true);
+    });
+
+    it.each(STARTER_MESSAGE_TEXTS)(
+      'uses only the values its purpose has: $language $purpose',
+      ({ purpose, body }) => {
+        const isName = purpose.startsWith('fallback_');
+        const filled = fillMessageText(body, {
+          order: '#1009',
+          store: 'Akeed',
+        });
+        // Nothing is left unfilled, and a name is a short word with no value.
+        expect(filled).not.toContain('{{');
+        if (isName) {
+          expect(filled).toBe(body);
+          expect(body.length).toBeLessThanOrEqual(60);
+        }
+        if (purpose.startsWith('ack_')) expect(filled).toContain('#1009');
+      },
+    );
+
+    it.each(STARTER_MESSAGE_TEXTS)(
+      'is written to the texts table by the migration: $language $purpose',
+      ({ purpose, language, body }) => {
+        expect(migration).toContain(
+          `('${purpose}', '${language}', 'default', '${body.replaceAll("'", "''")}', true, '${STARTER_DRAFT_AUTHOR_ID}')`,
+        );
+      },
+    );
   });
 });

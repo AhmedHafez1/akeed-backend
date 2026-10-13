@@ -5,7 +5,7 @@ This is the Urdu translation of Akeed's Shopify App Store listing, ready to past
 ## Before you add it
 
 - **Add Urdu only when the app can be used in Urdu.** Shopify allows a language in the listing's Languages section only if merchants can use the app's interface in it (App Store requirement 4.3.2). The Urdu interface is the `ur` locale of the frontend. Check it yourself in the embedded app first, and have a native Urdu speaker read it.
-- **Urdu is an interface language only.** Customers still get their WhatsApp messages in Arabic or English. The listing below says so in App details, and must keep saying so. Do not add Urdu to any text about customer messages.
+- **Customers can get their messages in Urdu too.** WhatsApp messages go out in Arabic, English, Urdu, Spanish and French, and App details below says so. Publish that sentence once the Urdu template is approved and made the default (`WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`, section 9).
 - **The English and Arabic listings stay as they are.** Nothing below changes them.
 - **Check the source text.** The Urdu fields follow the content of the live English listing. Compare each one with the English field in the Partner Dashboard before pasting, in case the English text has changed.
 
@@ -26,11 +26,11 @@ Limits are Shopify's: app name 30 characters, introduction 100, details 500, eac
 
 The English subtitle on the live listing is 89 characters. If the Partner Dashboard refuses the 96-character Urdu subtitle, use this shorter one (49 characters): شپنگ سے پہلے واٹس ایپ پر COD آرڈرز کی تصدیق کریں۔
 
-### App details (479 of 500 characters)
+### App details (467 of 500 characters)
 
-> کسٹمر ایک ٹیپ میں آرڈر کی تصدیق یا منسوخی کرتا ہے، اور Shopify آرڈر پر ٹیگ خودکار طور پر لگ جاتا ہے۔ آپ کو اپنا واٹس ایپ نمبر جوڑنے کی ضرورت نہیں: پیغامات Akeed کے آفیشل واٹس ایپ انفراسٹرکچر سے جاتے ہیں۔ ایک ہی ڈیش بورڈ میں تصدیق شدہ، منسوخ شدہ، زیرِ التوا اور بغیر جواب والے آرڈرز دیکھیں، اور بھیجنے کی تاخیر، ایک یاد دہانی، خاموش اوقات اور اسٹور کا ٹائم زون ترتیب دیں۔ ایپ کا انٹرفیس اردو، عربی اور انگریزی میں ہے؛ کسٹمرز کو واٹس ایپ پیغامات عربی یا انگریزی میں بھیجے جاتے ہیں۔
+> کسٹمر ایک ٹیپ میں آرڈر کی تصدیق یا منسوخی کرتا ہے، اور Shopify آرڈر پر ٹیگ خودکار طور پر لگ جاتا ہے۔ آپ کو اپنا واٹس ایپ نمبر جوڑنے کی ضرورت نہیں: پیغامات Akeed کے آفیشل واٹس ایپ انفراسٹرکچر سے جاتے ہیں۔ ایک ہی ڈیش بورڈ میں تصدیق شدہ، منسوخ شدہ، زیرِ التوا اور بغیر جواب والے آرڈرز دیکھیں، اور بھیجنے کی تاخیر، ایک یاد دہانی، خاموش اوقات اور اسٹور کا ٹائم زون ترتیب دیں۔ انٹرفیس اور کسٹمرز کے واٹس ایپ پیغامات اردو، عربی، انگریزی، ہسپانوی اور فرانسیسی میں دستیاب ہیں۔
 
-The last sentence says: "The app interface is in Urdu, Arabic and English; customers get WhatsApp messages in Arabic or English." Keep it.
+The last sentence says: "The interface and customers' WhatsApp messages are available in Urdu, Arabic, English, Spanish and French." Keep it.
 
 ## Pricing plans
 

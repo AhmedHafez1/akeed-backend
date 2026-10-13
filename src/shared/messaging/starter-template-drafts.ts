@@ -1,13 +1,14 @@
 import {
   COD_CONFIRMATION_PURPOSE,
+  COD_REMINDER_PURPOSE,
   type TemplateLanguage,
   type TemplatePurpose,
 } from './template-registry.types';
 
 /**
  * The drafts migration 0064 gives staff for Urdu, Spanish and French: a
- * standard and a short confirmation per language. They are drafts only. Staff
- * review the wording, submit each one to the provider and activate it once it
+ * standard and a short confirmation and one reminder per language. They are
+ * drafts only. Staff submit each one to the provider and activate it once it
  * is approved; until then no send can read them.
  *
  * The migration repeats this text, and a spec keeps the two the same.
@@ -22,7 +23,7 @@ export interface StarterTemplateDraft {
   cancelLabel: string;
 }
 
-/** The author recorded on a draft no person wrote. */
+/** The author recorded on a draft or a text no person wrote. */
 export const STARTER_DRAFT_AUTHOR_ID = '00000000-0000-0000-0000-000000000000';
 
 export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
@@ -31,7 +32,7 @@ export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
     language: 'ur',
     style: 'standard',
     languageCode: 'ur',
-    body: 'السلام علیکم {{customer}}،\n{{store}} سے آپ کا آرڈر {{order}} موصول ہو گیا ہے۔ کل رقم {{total}} ہے اور ادائیگی ڈیلیوری پر ہوگی۔\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔',
+    body: 'السلام علیکم {{customer}}،\n{{store}} پر آپ کا آرڈر {{order}} موصول ہو گیا ہے۔ کل رقم {{total}} ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔',
     confirmLabel: 'آرڈر کی تصدیق کریں',
     cancelLabel: 'آرڈر منسوخ کریں',
   },
@@ -40,16 +41,25 @@ export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
     language: 'ur',
     style: 'short',
     languageCode: 'ur',
-    body: 'آپ کا آرڈر {{order}} موصول ہو گیا ہے۔ کل رقم {{total}} ہے اور ادائیگی ڈیلیوری پر ہوگی۔ براہِ کرم تصدیق کریں۔',
+    body: 'آپ کا آرڈر {{order}} موصول ہو گیا ہے۔ کل رقم {{total}} ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔ براہِ کرم تصدیق کریں۔',
     confirmLabel: 'تصدیق کریں',
     cancelLabel: 'منسوخ کریں',
+  },
+  {
+    purpose: COD_REMINDER_PURPOSE,
+    language: 'ur',
+    style: 'standard',
+    languageCode: 'ur',
+    body: 'السلام علیکم {{customer}}،\n{{store}} پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم {{total}} ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔',
+    confirmLabel: 'آرڈر کی تصدیق کریں',
+    cancelLabel: 'آرڈر منسوخ کریں',
   },
   {
     purpose: COD_CONFIRMATION_PURPOSE,
     language: 'es',
     style: 'standard',
     languageCode: 'es',
-    body: 'Hola {{customer}}:\nHemos recibido tu pedido {{order}} en {{store}}. El total es {{total}} y se paga contra entrega.\nPor favor, confirma tu pedido.',
+    body: 'Hola, {{customer}}:\nHemos recibido tu pedido {{order}} en {{store}}. El total es de {{total}} y lo pagas al recibirlo.\nPor favor, confirma tu pedido.',
     confirmLabel: 'Confirmar pedido',
     cancelLabel: 'Cancelar pedido',
   },
@@ -58,16 +68,25 @@ export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
     language: 'es',
     style: 'short',
     languageCode: 'es',
-    body: 'Hemos recibido tu pedido {{order}}. El total es {{total}} y se paga contra entrega. Por favor, confírmalo.',
+    body: 'Hemos recibido tu pedido {{order}}. El total es de {{total}} y lo pagas al recibirlo. Por favor, confírmalo.',
     confirmLabel: 'Confirmar',
     cancelLabel: 'Cancelar',
+  },
+  {
+    purpose: COD_REMINDER_PURPOSE,
+    language: 'es',
+    style: 'standard',
+    languageCode: 'es',
+    body: 'Hola, {{customer}}:\nTu pedido {{order}} en {{store}} sigue pendiente de confirmación. El total es de {{total}} y lo pagas al recibirlo.\nConfírmalo para que podamos enviártelo.',
+    confirmLabel: 'Confirmar pedido',
+    cancelLabel: 'Cancelar pedido',
   },
   {
     purpose: COD_CONFIRMATION_PURPOSE,
     language: 'fr',
     style: 'standard',
     languageCode: 'fr',
-    body: 'Bonjour {{customer}},\nNous avons bien reçu votre commande {{order}} chez {{store}}. Le total est de {{total}}, à payer à la livraison.\nMerci de confirmer votre commande.',
+    body: 'Bonjour {{customer}},\nNous avons bien reçu votre commande {{order}} sur {{store}}. Le total est de {{total}}, à payer à la livraison.\nMerci de confirmer votre commande.',
     confirmLabel: 'Confirmer la commande',
     cancelLabel: 'Annuler la commande',
   },
@@ -79,5 +98,14 @@ export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
     body: 'Nous avons bien reçu votre commande {{order}}. Le total est de {{total}}, à payer à la livraison. Merci de la confirmer.',
     confirmLabel: 'Confirmer',
     cancelLabel: 'Annuler',
+  },
+  {
+    purpose: COD_REMINDER_PURPOSE,
+    language: 'fr',
+    style: 'standard',
+    languageCode: 'fr',
+    body: "Bonjour {{customer}},\nVotre commande {{order}} sur {{store}} attend toujours votre confirmation. Le total est de {{total}}, à payer à la livraison.\nConfirmez-la pour que nous puissions vous l'expédier.",
+    confirmLabel: 'Confirmer la commande',
+    cancelLabel: 'Annuler la commande',
   },
 ];

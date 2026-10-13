@@ -8,7 +8,7 @@ This document explains the Akeed cash-on-delivery order confirmation feature fro
 
 The feature verifies COD orders through WhatsApp before the merchant fulfills the order. Orders enter from three channels: the Shopify `orders-create` webhook, a manual order created in the Standalone dashboard (see `MANUAL_ORDER_CREATION.md`), and a CSV/XLSX bulk import (see `BULK_ORDER_IMPORT.md`). Every channel produces the same normalized order and follows the same lifecycle below. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`. For Shopify orders it also tags the Shopify order, and the merchant can cancel the order from the Akeed dashboard.
 
-Merchants can now choose branded confirmation template variants per language (Arabic and English, and Urdu, Spanish and French once each has an approved default template). The selected variants are used for both preview and actual sends.
+Merchants can now choose branded confirmation template variants per language. Messages go out in Arabic, English, Urdu, Spanish and French. The selected variants are used for both preview and actual sends.
 
 ## Scope
 
@@ -142,8 +142,8 @@ styles and tell what a customer actually received.
   rejects, still says which template it carried.
 - **From the registry.** Templates are rows of `whatsapp_templates`,
   read through `TEMPLATE_REGISTRY_PORT` (a 60-second in-memory copy). A store
-  holds the registry key of its Arabic and its English style in
-  `integrations.cod_template_ar_key` and `cod_template_en_key`, for example
+  holds the registry key of its style for each language in
+  `integrations.cod_template_{ar,en,ur,es,fr}_key`, for example
   `cod_confirm.ar.egyptian`. Only an active template is sent.
   - A stored key that is unknown, inactive or written for the other language
     falls back to the language default. The fallback is logged as

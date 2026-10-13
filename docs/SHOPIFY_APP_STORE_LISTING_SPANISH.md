@@ -5,7 +5,7 @@ This is the Spanish translation of Akeed's Shopify App Store listing, ready to p
 ## Before you add it
 
 - **Add Spanish only when the app can be used in Spanish.** Shopify allows a language in the listing's Languages section only if merchants can use the app's interface in it (App Store requirement 4.3.2). The Spanish interface is the `es` locale of the frontend. Check it yourself in the embedded app first, and have a native Spanish speaker read it.
-- **Spanish is an interface language only.** Customers still get their WhatsApp messages in Arabic or English. The listing below says so in App details, and must keep saying so. Do not add Spanish to any text about customer messages.
+- **Customers can get their messages in Spanish too.** WhatsApp messages go out in Arabic, English, Urdu, Spanish and French, and App details below says so. Publish that sentence once the Spanish template is approved and made the default (`WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`, section 9).
 - **This replaces Shopify's automatic translation.** Shopify machine-translates the English listing into Spanish, and `https://apps.shopify.com/akeed?locale=es` shows that text with the notes "Contiene texto traducido automáticamente" and "Esta aplicación no está traducida al Español". A Spanish listing you add yourself replaces it. Deleting yours brings the automatic one back.
 - **The English, Arabic and Urdu listings stay as they are.** Nothing below changes them.
 - **Check the source text.** The Spanish fields follow the content of the live English listing. Compare each one with the English field in the Partner Dashboard before pasting, in case the English text has changed.
@@ -28,11 +28,11 @@ Limits are Shopify's: app name 30 characters, introduction 100, details 500, eac
 
 The English subtitle on the live listing is 89 characters. If the Partner Dashboard refuses the 93-character Spanish subtitle, use this shorter one (61 characters): Confirma pedidos contra entrega por WhatsApp antes de enviar.
 
-### App details (497 of 500 characters)
+### App details (461 of 500 characters)
 
-> El cliente confirma o cancela con un toque y el pedido de Shopify se etiqueta solo. No necesitas conectar tu número de WhatsApp: los mensajes salen de la infraestructura oficial de WhatsApp de Akeed. Ve en un panel los pedidos confirmados, cancelados, pendientes y sin respuesta, y configura el retraso de envío, un recordatorio, el horario de silencio y la zona horaria. La interfaz de la app está en español, árabe, inglés y urdu; los clientes reciben los mensajes de WhatsApp en árabe o inglés.
+> El cliente confirma o cancela con un toque y el pedido de Shopify se etiqueta solo. No necesitas conectar tu número de WhatsApp: los mensajes salen de la infraestructura oficial de WhatsApp de Akeed. Ve en un panel los pedidos confirmados, cancelados, pendientes y sin respuesta, y configura el retraso de envío, un recordatorio, el horario de silencio y la zona horaria. Interfaz y mensajes de WhatsApp a tus clientes en español, árabe, inglés, urdu y francés.
 
-The last sentence says: "The app interface is in Spanish, Arabic, English and Urdu; customers get WhatsApp messages in Arabic or English." Keep it.
+The last sentence says: "Interface and WhatsApp messages to your customers in Spanish, Arabic, English, Urdu and French." Keep it.
 
 ## Pricing plans
 

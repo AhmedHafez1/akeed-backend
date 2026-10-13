@@ -81,6 +81,7 @@ const MIGRATIONS = [
   '0064_whatsapp_template_languages.sql',
 ];
 const AUTHORING_MIGRATION = '0058_whatsapp_template_authoring.sql';
+const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const LANGUAGES_MIGRATION = '0064_whatsapp_template_languages.sql';
 
 async function migrate(name: string): Promise<void> {
@@ -1121,7 +1122,10 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
       return row.count;
     };
 
-    it('gives staff two drafts per new language, and no template a send could read', async () => {
+    it('gives staff two confirmations and a reminder per new language, and no template a send could read', async () => {
+      // The 0058 rollback above rebuilt the drafts table without the reminder
+      // purpose; 0059 always comes before 0064.
+      await migrate(REMINDER_MIGRATION);
       await migrate(LANGUAGES_MIGRATION);
 
       const rows = await starterDrafts();

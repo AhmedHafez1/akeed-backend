@@ -5,7 +5,7 @@ This is the French translation of Akeed's Shopify App Store listing, ready to pa
 ## Before you add it
 
 - **Add French only when the app can be used in French.** Shopify allows a language in the listing's Languages section only if merchants can use the app's interface in it (App Store requirement 4.3.2). The French interface is the `fr` locale of the frontend. Check it yourself in the embedded app first, and have a native French speaker read it.
-- **French is an interface language only.** Customers still get their WhatsApp messages in Arabic or English. The listing below says so in App details, and must keep saying so. Do not add French to any text about customer messages.
+- **Customers can get their messages in French too.** WhatsApp messages go out in Arabic, English, Urdu, Spanish and French, and App details below says so. Publish that sentence once the French template is approved and made the default (`WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`, section 9).
 - **This replaces Shopify's automatic translation.** Shopify machine-translates the English listing into French, and `https://apps.shopify.com/akeed?locale=fr` shows that text with the notes "Contient du texte traduit automatiquement" and "Cette application n'est pas traduite en français". A French listing you add yourself replaces it. Deleting yours brings the automatic one back.
 - **The English, Arabic, Urdu and Spanish listings stay as they are.** Nothing below changes them. Their App details name the interface languages; add French to that sentence in each of them when you next edit them, if you want them to agree.
 - **Check the source text.** The French fields follow the content of the live English listing. Compare each one with the English field in the Partner Dashboard before pasting, in case the English text has changed.
@@ -29,11 +29,11 @@ Limits are Shopify's: app name 30 characters, app card subtitle 62, introduction
 
 The app name keeps the brand first, as the English name does. If the Partner Dashboard asks for the same name in every language, keep the English name and paste the rest.
 
-### App details (490 of 500 characters)
+### App details (468 of 500 characters)
 
-> Akeed vérifie sur WhatsApp chaque commande en paiement à la livraison avant son traitement, pour ne plus payer l’expédition de fausses commandes. Le client confirme ou annule d’un geste et la commande Shopify est balisée automatiquement. Aucun numéro WhatsApp personnel requis. Un tableau de bord suit chaque statut ; rappel, heures de silence et délai d’envoi sont réglables. Interface en français, arabe, anglais, ourdou et espagnol ; messages WhatsApp aux clients en arabe ou en anglais.
+> Akeed vérifie sur WhatsApp chaque commande en paiement à la livraison avant son traitement, pour ne plus payer l’expédition de fausses commandes. Le client confirme ou annule d’un geste et la commande Shopify est balisée automatiquement. Aucun numéro WhatsApp personnel requis. Un tableau de bord suit chaque statut ; rappel, heures de silence et délai d’envoi sont réglables. Interface et messages WhatsApp aux clients en français, arabe, anglais, ourdou et espagnol.
 
-The last sentence says: "Interface in French, Arabic, English, Urdu and Spanish; WhatsApp messages to customers in Arabic or English." Keep it.
+The last sentence says: "Interface and WhatsApp messages to customers in French, Arabic, English, Urdu and Spanish." Keep it.
 
 ## Pricing plans
 
