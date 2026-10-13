@@ -14,7 +14,13 @@ export const WOOCOMMERCE_APP_NAME = 'Akeed';
  */
 export const WOOCOMMERCE_SCOPE = 'read_write';
 
-export const WOOCOMMERCE_INSTALL_LOCALES = ['ar', 'en', 'ur', 'es'] as const;
+export const WOOCOMMERCE_INSTALL_LOCALES = [
+  'ar',
+  'en',
+  'ur',
+  'es',
+  'fr',
+] as const;
 export type WooCommerceInstallLocale =
   (typeof WOOCOMMERCE_INSTALL_LOCALES)[number];
 

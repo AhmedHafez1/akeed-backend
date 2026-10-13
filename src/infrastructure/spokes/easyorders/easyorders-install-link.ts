@@ -14,7 +14,13 @@ export const EASYORDERS_APP_NAME = 'Akeed';
 export const EASYORDERS_APP_DESCRIPTION =
   'COD order confirmation over WhatsApp';
 
-export const EASYORDERS_INSTALL_LOCALES = ['ar', 'en', 'ur', 'es'] as const;
+export const EASYORDERS_INSTALL_LOCALES = [
+  'ar',
+  'en',
+  'ur',
+  'es',
+  'fr',
+] as const;
 export type EasyOrdersInstallLocale =
   (typeof EASYORDERS_INSTALL_LOCALES)[number];
 

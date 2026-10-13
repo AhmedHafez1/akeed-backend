@@ -78,7 +78,7 @@ describe('EasyOrders install link', () => {
     );
   });
 
-  it.each(['en', 'ur', 'es'] as const)(
+  it.each(['en', 'ur', 'es', 'fr'] as const)(
     'sends the merchant back in the language they started in (%s)',
     (locale) => {
       const localized = buildEasyOrdersInstallLink({
