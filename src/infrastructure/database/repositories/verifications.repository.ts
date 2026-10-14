@@ -1048,7 +1048,9 @@ export class VerificationsRepository {
         status: 'canceled',
         canceledAt,
         merchantCanceledAt: canceledAt,
-        cancellationSource: 'merchant_no_reply',
+        // Read from the row being canceled, inside the guarded update, so the
+        // source cannot disagree with the status the merchant acted on.
+        cancellationSource: sql`CASE WHEN ${verifications.status} = 'no_whatsapp' THEN 'merchant_no_whatsapp' ELSE 'merchant_no_reply' END`,
         ...(operation
           ? {
               metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ commerceCancellation: operation })}::jsonb`,

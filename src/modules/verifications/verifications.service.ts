@@ -66,6 +66,7 @@ import {
   NEEDS_ACTION_TOP_LIMIT,
   NO_REPLY_CANCELLABLE_REASONS,
   NO_REPLY_CANCELLABLE_STATUSES,
+  isMerchantCancellationSource,
 } from '../../shared/verification/verification-needs-action';
 import {
   buildMessageFunnel,
@@ -1110,7 +1111,7 @@ export class VerificationsService {
     }
     if (
       verification.status === 'canceled' &&
-      verification.cancellationSource === 'merchant_no_reply' &&
+      isMerchantCancellationSource(verification.cancellationSource) &&
       verification.merchantCanceledAt
     ) {
       return this.cancellationResponse(
@@ -1211,7 +1212,7 @@ export class VerificationsService {
       );
       if (
         reloaded?.status === 'canceled' &&
-        reloaded.cancellationSource === 'merchant_no_reply'
+        isMerchantCancellationSource(reloaded.cancellationSource)
       ) {
         return this.cancellationResponse(
           verificationId,

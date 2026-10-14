@@ -2,6 +2,7 @@ import type {
   CommerceOutcomeAction,
   CommerceOutcomeSyncState,
 } from '../commerce/commerce-outcome';
+import { isMerchantCancellationSource } from './verification-needs-action';
 
 /** The part of a sync row the dashboard needs. */
 export interface OutcomeSyncRow {
@@ -43,7 +44,7 @@ export function outcomeActionFor(
     case 'confirmed':
       return 'customer_confirmation';
     case 'canceled':
-      return cancellationSource === 'merchant_no_reply'
+      return isMerchantCancellationSource(cancellationSource)
         ? 'merchant_no_reply_cancellation'
         : 'customer_cancellation';
     case 'no_reply':

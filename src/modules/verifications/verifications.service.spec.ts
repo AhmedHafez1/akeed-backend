@@ -435,6 +435,22 @@ describe('VerificationsService', () => {
       expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
     });
 
+    it('returns idempotent success for an order canceled after a call to a number not on WhatsApp', async () => {
+      const { service, verificationsRepo, orderAdmin } = createMocks();
+      verificationsRepo.findByIdForOrg.mockResolvedValue(
+        buildVerification({
+          status: 'canceled',
+          cancellationSource: 'merchant_no_whatsapp',
+          merchantCanceledAt: '2026-04-01T00:00:00Z',
+        }),
+      );
+
+      const result = await service.cancelNoReplyOrder(organizationOwner, 'v-1');
+
+      expect(result.alreadyCanceled).toBe(true);
+      expect(orderAdmin.cancelOrder).not.toHaveBeenCalled();
+    });
+
     it('rejects statuses that are not escalated to no reply', async () => {
       const statuses = [
         'pending',

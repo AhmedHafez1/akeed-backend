@@ -749,4 +749,25 @@ describe('number not on WhatsApp', () => {
       retry_verification: false,
     });
   });
+
+  // Runs last: it cancels the row the tests above read.
+  it('records why the merchant canceled it', async () => {
+    const canceled = await repository.markMerchantNoReplyCanceled(
+      noWhatsappId,
+      orgNoWa,
+      new Date().toISOString(),
+    );
+    expect(canceled).toMatchObject({
+      status: 'canceled',
+      cancellationSource: 'merchant_no_whatsapp',
+    });
+    expect(canceled?.merchantCanceledAt).not.toBeNull();
+    // A no-reply row keeps its own source.
+    const noReply = await repository.markMerchantNoReplyCanceled(
+      ids.readLongAgo,
+      orgA,
+      new Date().toISOString(),
+    );
+    expect(noReply?.cancellationSource).toBe('merchant_no_reply');
+  });
 });

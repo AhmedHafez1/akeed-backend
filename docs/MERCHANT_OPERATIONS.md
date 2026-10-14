@@ -194,7 +194,7 @@ Flow:
 3. On confirm, the backend:
    a. Validates verification is `no_reply` or `no_whatsapp` status (rejects other statuses).
    b. Dispatches `merchant_no_reply_cancellation` through the trusted integration registry (fail-fast on unsupported source or error).
-   c. Marks verification as `canceled` with `cancellationSource = 'merchant_no_reply'` and `merchantCanceledAt`.
+   c. Marks verification as `canceled` with `merchantCanceledAt` and `cancellationSource = 'merchant_no_reply'`, or `'merchant_no_whatsapp'` when the row was `no_whatsapp`. Both sources map to `merchant_no_reply_cancellation` for the store.
    d. Dispatches `merchant_cancellation_tagging` after the local transition; Shopify adds `Akeed: Canceled` (best-effort).
 4. The verification list and stats are refetched.
 5. If the verification was already merchant-canceled, returns success with `alreadyCanceled: true` (idempotent).

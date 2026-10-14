@@ -37,6 +37,29 @@ export const NO_REPLY_CANCELLABLE_STATUSES = [
   'no_whatsapp',
 ] as const;
 
+/**
+ * `cancellation_source` of an order the merchant canceled from Akeed: after
+ * the customer never answered, or after calling a customer whose number is not
+ * on WhatsApp. Both cancel the order in the store the same way; the source
+ * only says why.
+ */
+export const MERCHANT_CANCELLATION_SOURCES = [
+  'merchant_no_reply',
+  'merchant_no_whatsapp',
+] as const;
+
+export type MerchantCancellationSource =
+  (typeof MERCHANT_CANCELLATION_SOURCES)[number];
+
+export function isMerchantCancellationSource(
+  value: unknown,
+): value is MerchantCancellationSource {
+  return (
+    typeof value === 'string' &&
+    (MERCHANT_CANCELLATION_SOURCES as readonly string[]).includes(value)
+  );
+}
+
 export function isNeedsActionReason(
   value: unknown,
 ): value is NeedsActionReason {

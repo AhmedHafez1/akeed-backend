@@ -64,7 +64,7 @@ The follow-through is `VerificationHubService.markNoWhatsApp`. It removes the de
 
 Usage: the failed receipt returns the periodic-plan usage and reverses the prepaid credit exactly as for any undelivered message (once, never after a delivery). A synchronous 131026 resolves the dispatch as not accepted, which releases the usage or the credit hold in both accounting modes.
 
-The merchant sees the row under the `no_whatsapp` tab and in `needs_action` (reason `no_whatsapp`). Manual confirmation and merchant cancellation are offered; retry is not, because a resend fails the same way. Rows that were already `failed` with code 131026 before this status existed stay `failed`.
+The merchant sees the row under the `no_whatsapp` tab and in `needs_action` (reason `no_whatsapp`). Manual confirmation and merchant cancellation are offered; retry is not, because a resend fails the same way. A merchant cancellation of a `no_whatsapp` row records `cancellation_source = merchant_no_whatsapp` (instead of `merchant_no_reply`) and cancels the order in the store the same way. Rows that were already `failed` with code 131026 before this status existed stay `failed`.
 
 ### Held orders (bulk import)
 

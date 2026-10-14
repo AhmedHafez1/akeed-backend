@@ -108,8 +108,10 @@ describe('Merchant cancellation persistence', () => {
         },
       }),
     );
-    expect(params).toEqual(
-      expect.arrayContaining(['ver-1', 'org-1', 'merchant_no_reply']),
+    expect(params).toEqual(expect.arrayContaining(['ver-1', 'org-1']));
+    // The source follows the status being canceled, in the same statement.
+    expect(query).toContain(
+      `"cancellation_source" = CASE WHEN "verifications"."status" = 'no_whatsapp' THEN 'merchant_no_whatsapp' ELSE 'merchant_no_reply' END`,
     );
   });
 });
