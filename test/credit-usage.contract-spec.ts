@@ -329,14 +329,30 @@ describe('PostgreSQL usage accounting', () => {
         .select()
         .from(verifications)
         .where(eq(verifications.id, input.verificationId));
-      expect(row.status).toBe('failed');
-      expect(row.metadata).toMatchObject({
-        reason: 'provider_delivery_failed',
-        providerErrorCode: '131026',
-      });
+      // 131026: the number cannot receive WhatsApp.
+      expect(row.status).toBe('no_whatsapp');
+      expect(row.noWhatsappAt).not.toBeNull();
+      expect(row.deliveryErrorCode).toBe('131026');
+      expect(row.metadata).toMatchObject({ providerErrorCode: '131026' });
+      expect(row.metadata).not.toHaveProperty('reason');
       // Consumed on acceptance, reversed once by the parked failure.
       await balance(source.orgId, 2, 0);
       expect(await receiptsFor(providerMessageId)).toHaveLength(1);
+
+      // A duplicate report moves no credit and no timestamp.
+      await dispatches.recordProviderStatus(
+        dispatch.id,
+        'failed',
+        new Date(Date.now() + 120000).toISOString(),
+        { code: 131026, title: 'Message undeliverable' },
+      );
+      await balance(source.orgId, 2, 0);
+      const [again] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(again.status).toBe('no_whatsapp');
+      expect(again.noWhatsappAt).toBe(row.noWhatsappAt);
     });
 
     it('applies parked receipts to periodic-plan sends too', async () => {

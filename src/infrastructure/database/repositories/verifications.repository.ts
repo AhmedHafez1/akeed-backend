@@ -37,6 +37,10 @@ import {
 } from '../../../shared/verification/verification-needs-action';
 import type { OverviewCounts } from '../../../shared/verification/verification-metrics';
 import { needsActionReasonSql } from './verification-needs-action.sql';
+import {
+  classifyDeliveryFailure,
+  normalizeDeliveryErrorCode,
+} from '../../../shared/verification/delivery-failure.policy';
 
 /** Statuses a merchant may confirm by hand: a message went out, no answer yet. */
 export const MANUALLY_CONFIRMABLE_STATUSES: VerificationStatus[] = [
@@ -45,6 +49,8 @@ export const MANUALLY_CONFIRMABLE_STATUSES: VerificationStatus[] = [
   'read',
   'no_reply',
   'failed',
+  // The customer could not get the WhatsApp message; the merchant called them.
+  'no_whatsapp',
 ];
 
 /**
@@ -59,6 +65,37 @@ function toIsoTimestamp(epochSeconds?: string): string {
     }
   }
   return new Date().toISOString();
+}
+
+/**
+ * SET fields that move a verification to `no_whatsapp` when the provider
+ * reports its customer number undeliverable.
+ *
+ * Each field is a CASE on "nothing was delivered or read yet": a receipt that
+ * proves the customer did get a message outranks a late or out-of-order
+ * undeliverable report, so such a row keeps its status, its metadata and an
+ * empty `no_whatsapp_at`. `no_whatsapp_at` is written once and never moved.
+ * The status the row reaches is what the caller reads back to know whether
+ * this write made the transition.
+ */
+export function buildNoWhatsappPayload(
+  eventTs: string,
+  failureInfo?: { code?: number | string; title?: string },
+): Record<string, unknown> {
+  const undelivered = sql`(${verifications.deliveredAt} IS NULL AND ${verifications.readAt} IS NULL)`;
+  const code = normalizeDeliveryErrorCode(failureInfo?.code);
+  const metadataPatch: Record<string, unknown> = {
+    ...(code !== null ? { providerErrorCode: code } : {}),
+    ...(failureInfo?.title ? { providerErrorTitle: failureInfo.title } : {}),
+  };
+  return {
+    status: sql`CASE WHEN ${undelivered} THEN 'no_whatsapp'::verification_status ELSE ${verifications.status} END`,
+    noWhatsappAt: sql`CASE WHEN ${undelivered} THEN COALESCE(${verifications.noWhatsappAt}, ${eventTs}::timestamptz) ELSE ${verifications.noWhatsappAt} END`,
+    deliveryErrorCode: sql`CASE WHEN ${undelivered} THEN ${code}::text ELSE ${verifications.deliveryErrorCode} END`,
+    // A failure reason left by an earlier send attempt no longer describes
+    // the row, and would make it read as a retryable failure.
+    metadata: sql`CASE WHEN ${undelivered} THEN (COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind') || ${JSON.stringify(metadataPatch)}::jsonb ELSE ${verifications.metadata} END`,
+  };
 }
 
 /**
@@ -112,6 +149,10 @@ export function buildVerificationLifecyclePayload(
       break;
 
     case 'failed': {
+      if (classifyDeliveryFailure(failureInfo?.code) === 'no_whatsapp') {
+        Object.assign(payload, buildNoWhatsappPayload(eventTs, failureInfo));
+        break;
+      }
       // Mirrors the reason the prepaid-credit projection already writes
       // (verification-message-dispatches.repository.ts) so both accounting
       // modes land on the same, already-retryable taxonomy entry instead of
@@ -166,7 +207,7 @@ export class VerificationsRepository {
         // Rolled up here so both dashboards read one definition of "still
         // moving" and "needs me", instead of each summing statuses its own way.
         inProgress: sql<number>`count(CASE WHEN ${verifications.status} IN ('pending', 'sent', 'delivered', 'read') THEN 1 END)::int`,
-        needsAttention: sql<number>`count(CASE WHEN ${verifications.status} IN ('failed', 'expired', 'no_reply') THEN 1 END)::int`,
+        needsAttention: sql<number>`count(CASE WHEN ${verifications.status} IN ('failed', 'expired', 'no_reply', 'no_whatsapp') THEN 1 END)::int`,
         pending: sql<number>`count(CASE WHEN ${verifications.status} = 'pending' THEN 1 END)::int`,
         failed: sql<number>`count(CASE WHEN ${verifications.status} = 'failed' THEN 1 END)::int`,
         awaitingReply: sql<number>`count(CASE WHEN ${verifications.status} IN ('sent', 'delivered', 'read', 'no_reply') THEN 1 END)::int`,
@@ -451,6 +492,7 @@ export class VerificationsRepository {
         confirmed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'confirmed')::int`,
         canceled: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'canceled')::int`,
         failed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'failed')::int`,
+        noWhatsapp: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'no_whatsapp')::int`,
       })
       .from(verifications)
       .where(
@@ -470,6 +512,7 @@ export class VerificationsRepository {
       confirmed: row?.confirmed ?? 0,
       canceled: row?.canceled ?? 0,
       failed: row?.failed ?? 0,
+      no_whatsapp: row?.noWhatsapp ?? 0,
     };
   }
 
@@ -720,6 +763,7 @@ export class VerificationsRepository {
         readAt: verifications.readAt,
         followUpSentAt: verifications.followUpSentAt,
         noReplyAt: verifications.noReplyAt,
+        noWhatsappAt: verifications.noWhatsappAt,
         order: {
           orgId: orders.orgId,
           integrationId: orders.integrationId,
@@ -823,11 +867,12 @@ export class VerificationsRepository {
       Object.assign(setPayload, extraUpdates);
     }
 
-    // For confirmed/canceled (customer replies), also allow overriding no_reply
+    // For confirmed/canceled (customer replies), also allow overriding
+    // no_reply and no_whatsapp: the customer answered after all.
     const isCustomerReply = status === 'confirmed' || status === 'canceled';
     const blockedStatuses = isCustomerReply
       ? TERMINAL_STATUSES
-      : [...TERMINAL_STATUSES, 'no_reply' as VerificationStatus];
+      : WEBHOOK_PROTECTED_STATUSES;
 
     return await this.db
       .update(verifications)
@@ -944,6 +989,22 @@ export class VerificationsRepository {
       })
       .where(eq(verifications.id, id))
       .returning();
+  }
+
+  /** Remove keys from the JSONB `metadata` column, in-database. */
+  async removeMetadataKeys(id: string, keys: string[]) {
+    if (keys.length === 0) return [];
+    return await this.db
+      .update(verifications)
+      .set({
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - ARRAY[${sql.join(
+          keys.map((key) => sql`${key}`),
+          sql`, `,
+        )}]::text[]`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(verifications.id, id))
+      .returning({ id: verifications.id });
   }
 
   /** Why one verification needs the merchant right now, or null. */
@@ -1239,6 +1300,7 @@ export interface NeedsActionRow {
   readAt: string | null;
   followUpSentAt: string | null;
   noReplyAt: string | null;
+  noWhatsappAt: string | null;
   order: {
     orgId: string;
     integrationId: string;
@@ -1259,6 +1321,7 @@ function tabCondition(tab: VerificationListTab) {
     case 'confirmed':
     case 'canceled':
     case 'failed':
+    case 'no_whatsapp':
       return eq(verifications.status, tab);
     case 'all':
       return undefined;

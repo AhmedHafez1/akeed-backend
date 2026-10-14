@@ -46,8 +46,25 @@ Out of scope:
 | `confirmed` | Customer pressed the confirm button.                                               | `WhatsAppWebhookService`                            |
 | `canceled`  | Customer canceled or merchant canceled after no reply.                             | `WhatsAppWebhookService`, `VerificationsService`    |
 | `no_reply`  | Customer did not respond before the escalation job fired.                          | `VerificationAutomationProcessor`                   |
+| `no_whatsapp` | The customer number cannot receive WhatsApp (Meta error 131026). The merchant calls the customer. | `WhatsAppWebhookService`, `VerificationSendService` |
 | `failed`    | Initial send failed or plan limit blocked the initial send.                        | `VerificationSendService`, `VerificationHubService` |
 | `expired`   | Reserved enum value for lifecycle compatibility.                                   | Not actively automated in this workflow             |
+
+### Number not on WhatsApp
+
+Meta reports error `131026` when the customer number cannot receive WhatsApp messages: the number is not on WhatsApp, or its owner has not accepted the current terms or runs an outdated app. It usually arrives as a `failed` status webhook with `errors[0].code = 131026`, and sometimes as the synchronous error of the send call. `classifyDeliveryFailure` (`src/shared/verification/delivery-failure.policy.ts`) is the one place that recognizes it; every other code keeps the generic `failed` / `provider_delivery_failed` handling.
+
+On either path the verification moves to `no_whatsapp`, with `no_whatsapp_at` (first report, never overwritten) and `delivery_error_code`:
+
+- The update is guarded on `delivered_at IS NULL AND read_at IS NULL`, so a report that arrives after a delivery or read receipt leaves the row as it is.
+- `no_whatsapp` is in `WEBHOOK_PROTECTED_STATUSES`, so a duplicate or late receipt matches no row. Only the write that made the transition triggers the follow-through.
+- A report that beats the acceptance is parked in `provider_message_receipts` and applied when the acceptance is recorded; `scheduleFollowUpAndEscalation` then finds the row at `no_whatsapp` and runs the follow-through instead of scheduling.
+
+The follow-through is `VerificationHubService.markNoWhatsApp`. It removes the delayed `follow-up-1` and `no-reply` jobs (`VerificationAutomationProducer.cancelPendingReminders`, best effort; `no_whatsapp` is also in `AUTOMATION_FINAL_STATUSES`, so a job that survives does nothing), clears `metadata.follow_up_due_at`, and dispatches `automatic_no_whatsapp_tagging`. Shopify adds the tag `Akeed: No WhatsApp`; Standalone records it locally; EasyOrders and WooCommerce answer `unsupported`, as they do for no-reply tagging. It never throws.
+
+Usage: the failed receipt returns the periodic-plan usage and reverses the prepaid credit exactly as for any undelivered message (once, never after a delivery). A synchronous 131026 resolves the dispatch as not accepted, which releases the usage or the credit hold in both accounting modes.
+
+The merchant sees the row under the `no_whatsapp` tab and in `needs_action` (reason `no_whatsapp`). Manual confirmation and merchant cancellation are offered; retry is not, because a resend fails the same way. Rows that were already `failed` with code 131026 before this status existed stay `failed`.
 
 ### Held orders (bulk import)
 
@@ -103,6 +120,7 @@ Protected behavior:
 - Terminal statuses `confirmed` and `canceled` are not overwritten by later status webhooks.
 - `no_reply` is protected from late delivery/read/failed webhooks.
 - A customer reply can still override `no_reply` if the merchant has not already canceled the order.
+- `no_whatsapp` is protected the same way as `no_reply`: later delivery/read/failed webhooks and the escalation job leave it alone, and a customer reply still overrides it.
 - If `merchantCanceledAt` is set, later customer replies are ignored.
 
 Terminal protection is enforced at every writer, not only in

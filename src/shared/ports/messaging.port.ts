@@ -73,7 +73,14 @@ export type FreeFormTextOutcome =
   | { outcome: 'failed'; code: string };
 
 export class ConfirmedMessageRejection extends Error {
-  constructor(readonly code: string) {
+  /**
+   * @param providerErrorCode The provider's own error code, when it gave one
+   *   (for example `131026`: the number cannot receive WhatsApp messages).
+   */
+  constructor(
+    readonly code: string,
+    readonly providerErrorCode?: string,
+  ) {
     super('The messaging provider confirmed rejection.');
   }
 }

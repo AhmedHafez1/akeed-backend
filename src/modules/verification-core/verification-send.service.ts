@@ -23,6 +23,10 @@ import {
   type TemplateSendPurpose,
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
+import {
+  classifyDeliveryFailure,
+  NO_WHATSAPP_SEND_REASON,
+} from '../../shared/verification/delivery-failure.policy';
 import { storeTemplateKeys } from '../../shared/messaging/store-template-selection';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
 import { MessageTextsService } from '../message-texts/message-texts.service';
@@ -524,6 +528,20 @@ export class VerificationSendService {
           ...errInfo,
         }),
       );
+      // The number cannot receive WhatsApp: a refusal the provider confirmed,
+      // whatever the accounting mode, so no usage is counted for it.
+      if (
+        error instanceof ConfirmedMessageRejection &&
+        classifyDeliveryFailure(error.providerErrorCode) === 'no_whatsapp'
+      ) {
+        await this.messageDispatches.resolveNotAccepted(
+          dispatchClaim.dispatch.id,
+          undefined,
+          true,
+          error.providerErrorCode,
+        );
+        return { status: 'failed', reason: NO_WHATSAPP_SEND_REASON };
+      }
       if (
         error instanceof ConfirmedMessageRejection &&
         dispatchClaim.dispatch.accountingMode === 'prepaid_credit'

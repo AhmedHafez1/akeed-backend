@@ -22,6 +22,7 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { AUTOMATION_FINAL_STATUSES } from '../../shared/verification/verification-lifecycle';
+import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-failure.policy';
 import { CustomerReplyFollowUpService } from '../verification-replies/customer-reply-follow-up.service';
 
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
@@ -276,6 +277,15 @@ export class VerificationAutomationProcessor extends WorkerHost {
         follow_up_failed: outcome.reason ?? 'unknown',
         follow_up_failed_at: new Date().toISOString(),
       });
+      // The reminder found the number cannot receive WhatsApp. The send path
+      // moved the row to `no_whatsapp` unless an earlier message was
+      // delivered; markNoWhatsApp re-reads the row and acts only then.
+      if (outcome.reason === NO_WHATSAPP_SEND_REASON) {
+        await this.verificationHub.markNoWhatsApp(
+          verification.id,
+          'send_rejection',
+        );
+      }
     } else if (outcome.status === 'skipped') {
       await this.verificationsRepo.mergeMetadata(verification.id, {
         follow_up_skipped: outcome.reason ?? 'unknown',

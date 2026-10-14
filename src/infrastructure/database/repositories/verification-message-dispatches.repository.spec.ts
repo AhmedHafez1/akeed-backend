@@ -922,3 +922,170 @@ describe('VerificationMessageDispatchesRepository prepaid provider statuses', ()
     expect(verificationUpdates(statements)).toHaveLength(0);
   });
 });
+
+/**
+ * A number that cannot receive WhatsApp (Meta 131026) moves the verification
+ * to `no_whatsapp`. Usage follows the failed-message rules already in place:
+ * returned once, never twice, and not at all once a message was delivered.
+ */
+describe('VerificationMessageDispatchesRepository no-WhatsApp receipts', () => {
+  const periodStart = '2026-05-01';
+  const noWhatsapp = { code: 131026, title: 'Message undeliverable' };
+
+  function usageUpdates(statements: { query: string; params: unknown[] }[]) {
+    return statements.filter((statement) =>
+      statement.query.includes('update "integration_monthly_usage" set'),
+    );
+  }
+
+  it('returns the periodic-plan usage exactly once', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      usageReserved: true,
+      usagePeriodStart: periodStart,
+      providerMessageId: 'wamid-1',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+      noWhatsapp,
+    );
+
+    expect(usageUpdates(statements)).toHaveLength(1);
+    expect(usageUpdates(statements)[0].query).toContain('GREATEST');
+  });
+
+  it('returns nothing for a duplicate periodic-plan receipt', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'accepted',
+      usageReserved: false,
+      usagePeriodStart: periodStart,
+      providerMessageId: 'wamid-1',
+      failedAt: '2026-05-15T03:00:00.000Z',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:05.000Z',
+      noWhatsapp,
+    );
+
+    expect(usageUpdates(statements)).toHaveLength(0);
+  });
+
+  // The credit reversal itself is exercised against Postgres by the
+  // credit-usage contract suite; this pins the projection's SQL.
+  it('projects no_whatsapp on a prepaid row, guarded on delivery', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'outcome_unknown',
+      providerMessageId: 'wamid-1',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+      noWhatsapp,
+    );
+
+    const [update] = verificationUpdates(statements);
+    expect(update.query).toContain("'no_whatsapp'::verification_status");
+    expect(update.query).toContain(
+      '("verifications"."delivered_at" IS NULL AND "verifications"."read_at" IS NULL)',
+    );
+    expect(update.query).toContain(
+      'COALESCE("verifications"."no_whatsapp_at",',
+    );
+    expect(update.query).toMatch(/"status" not in \([^)]*\$\d+[^)]*\)/);
+    expect(update.params).toEqual(
+      expect.arrayContaining(['no_reply', 'no_whatsapp', '131026']),
+    );
+  });
+
+  it('moves no credit and no status for a duplicate prepaid receipt', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'accepted',
+      providerMessageId: 'wamid-1',
+      failedAt: '2026-05-15T03:00:00.000Z',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:05.000Z',
+      noWhatsapp,
+    );
+
+    expect(creditWrites(statements)).toHaveLength(0);
+    expect(verificationUpdates(statements)).toHaveLength(0);
+  });
+
+  it('ignores a report that arrives after the message was delivered', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'accepted',
+      providerMessageId: 'wamid-1',
+      deliveredAt: '2026-05-15T02:30:00.000Z',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+      noWhatsapp,
+    );
+
+    expect(creditWrites(statements)).toHaveLength(0);
+    expect(verificationUpdates(statements)).toHaveLength(0);
+  });
+
+  it('keeps the generic failure projection for other codes', async () => {
+    const { repository, statements } = buildPrepaidRepository({
+      state: 'outcome_unknown',
+      providerMessageId: 'wamid-1',
+    });
+
+    await repository.recordProviderStatus(
+      'dispatch-1',
+      'failed',
+      '2026-05-15T03:00:00.000Z',
+      { code: 131049, title: 'Not delivered' },
+    );
+
+    const [update] = verificationUpdates(statements);
+    expect(update.query.split(' returning ')[0]).not.toContain('no_whatsapp');
+    expect(update.params).toEqual(
+      expect.arrayContaining([
+        'failed',
+        expect.stringContaining('provider_delivery_failed'),
+      ]),
+    );
+  });
+
+  it('releases the usage of a send the provider refused with 131026', async () => {
+    const { repository, statements } = buildRepository({
+      state: 'sending',
+      usageReserved: true,
+      usagePeriodStart: periodStart,
+    });
+
+    await repository.resolveNotAccepted(
+      'dispatch-1',
+      undefined,
+      true,
+      '131026',
+    );
+
+    expect(usageUpdates(statements)).toHaveLength(1);
+    const [update] = verificationUpdates(statements);
+    expect(update.query).toContain("'no_whatsapp'::verification_status");
+    expect(update.params).toEqual(
+      expect.arrayContaining(['131026', 'no_whatsapp']),
+    );
+    expect(update.params).not.toContain(
+      JSON.stringify({ reason: 'provider_not_accepted', kind: 'initial' }),
+    );
+  });
+});

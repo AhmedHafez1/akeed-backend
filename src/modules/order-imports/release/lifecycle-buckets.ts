@@ -19,6 +19,8 @@ const BUCKET_BY_STATUS: Record<string, LifecycleBucket> = {
   canceled: 'canceled',
   no_reply: 'noReply',
   failed: 'failed',
+  // The merchant has to call the customer.
+  no_whatsapp: 'failed',
   blocked: 'failed',
   ineligible: 'failed',
   expired: 'failed',

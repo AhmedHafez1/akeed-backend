@@ -618,7 +618,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 **Order tagging:**
 
 - `addOrderTag(integration, externalOrderId, tag)` — GraphQL `tagsAdd` mutation.
-- Tags used: `Akeed: Verified`, `Akeed: Canceled`, `Akeed: No Reply`.
+- Tags used: `Akeed: Verified`, `Akeed: Canceled`, `Akeed: No Reply`, `Akeed: No WhatsApp`.
 
 **Order cancellation:**
 
@@ -835,7 +835,7 @@ Approved outcomes are written to EasyOrders as an order status, and the local re
 | `customer_confirmation` | status `confirmed` |
 | `customer_cancellation` | status `canceled` |
 | `merchant_no_reply_cancellation` | status `canceled`, only on the merchant's own action |
-| `automatic_no_reply_tagging`, `merchant_cancellation_tagging` | none: `unsupported` / `capability_not_supported`, no request |
+| `automatic_no_reply_tagging`, `automatic_no_whatsapp_tagging`, `merchant_cancellation_tagging` | none: `unsupported` / `capability_not_supported`, no request |
 
 Automatic no-reply is local only. It never becomes a cancellation and never borrows the merchant action's authority.
 
@@ -964,7 +964,7 @@ WooCommerce has no "confirmed" status: `processing` is already where a placed CO
 | --- | --- |
 | `customer_confirmation` (the customer's reply, or the merchant confirming in Akeed) | The meta entry `akeed_outcome` = `<action>:<verification id>` and one internal order note with a fixed text. No status change. |
 | `customer_cancellation`, `merchant_no_reply_cancellation` | `status: cancelled` and the marker, in one update. No note. |
-| `automatic_no_reply_tagging`, `merchant_cancellation_tagging` | None: `unsupported` / `capability_not_supported`, and no request. |
+| `automatic_no_reply_tagging`, `automatic_no_whatsapp_tagging`, `merchant_cancellation_tagging` | None: `unsupported` / `capability_not_supported`, and no request. |
 
 It never sends `processing`, `completed`, `refunded` or `set_paid`. With the switch off the adapter has no capability, so every action is `unsupported`.
 

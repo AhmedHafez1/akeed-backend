@@ -319,6 +319,58 @@ describe('VerificationSendService template identity', () => {
     expect(messageDispatches.markAccepted).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['periodic_plan', 'shopify'],
+    ['prepaid_credit', 'standalone'],
+  ])(
+    'resolves a %s send the provider refused with 131026 as no_whatsapp',
+    async (accountingMode, platformType) => {
+      const { service, messageDispatches, messagingPort } = createMocks({
+        platformType,
+      });
+      messageDispatches.claim.mockResolvedValue({
+        outcome: 'claimed',
+        dispatch: { id: 'dispatch-1', accountingMode },
+      });
+      messagingPort.sendVerificationTemplate.mockRejectedValue(
+        new ConfirmedMessageRejection('provider_rejected', '131026'),
+      );
+
+      await expect(service.sendInitial('ver-1')).resolves.toEqual({
+        status: 'failed',
+        reason: 'no_whatsapp',
+      });
+      // Not-accepted releases the usage in either mode; nothing is unknown.
+      expect(messageDispatches.resolveNotAccepted).toHaveBeenCalledWith(
+        'dispatch-1',
+        undefined,
+        true,
+        '131026',
+      );
+      expect(
+        messageDispatches.markFailedProviderOutcome,
+      ).not.toHaveBeenCalled();
+      expect(messageDispatches.markAccepted).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the current handling for a periodic-plan rejection with another code', async () => {
+    const { service, messageDispatches, messagingPort } = createMocks();
+    messageDispatches.claim.mockResolvedValue({
+      outcome: 'claimed',
+      dispatch: { id: 'dispatch-1', accountingMode: 'periodic_plan' },
+    });
+    messagingPort.sendVerificationTemplate.mockRejectedValue(
+      new ConfirmedMessageRejection('provider_rejected', '131049'),
+    );
+
+    await expect(service.sendInitial('ver-1')).resolves.toEqual({
+      status: 'outcome_unknown',
+      reason: 'provider_outcome_unknown',
+    });
+    expect(messageDispatches.resolveNotAccepted).not.toHaveBeenCalled();
+  });
+
   it('leaves the claimed identity in place when an adapter does not report one', async () => {
     const { service, messageDispatches, messagingPort } = createMocks();
     messagingPort.sendVerificationTemplate.mockResolvedValue({

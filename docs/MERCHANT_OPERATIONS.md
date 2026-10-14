@@ -130,6 +130,7 @@ Loaded from `GET /api/verifications` with cursor-based pagination.
 | `canceled`          | `canceled`                     | Customer or merchant canceled.     |
 | `failed`            | `failed`                       | Send failed or plan limit blocked. |
 | `no_reply`          | `no_reply`                     | Escalated to no-reply.             |
+| `no_whatsapp`       | `no_whatsapp`                  | Number not on WhatsApp; call the customer. |
 
 The API accepts comma-separated status values for composite filters.
 
@@ -184,14 +185,14 @@ Test orders are distinguished by their `akeed-test-` prefix. Shopify API calls (
 
 #### No-Reply Order Cancellation
 
-Available for verifications with status `no_reply`. Calls `POST /api/verifications/:id/cancel`.
+Available for verifications with status `no_reply` or `no_whatsapp` (the merchant called a customer whose number is not on WhatsApp). Calls `POST /api/verifications/:id/cancel`.
 
 Flow:
 
 1. Merchant clicks "Cancel Order" on a no-reply verification row.
 2. A confirmation dialog appears.
 3. On confirm, the backend:
-   a. Validates verification is `no_reply` status (rejects other statuses).
+   a. Validates verification is `no_reply` or `no_whatsapp` status (rejects other statuses).
    b. Dispatches `merchant_no_reply_cancellation` through the trusted integration registry (fail-fast on unsupported source or error).
    c. Marks verification as `canceled` with `cancellationSource = 'merchant_no_reply'` and `merchantCanceledAt`.
    d. Dispatches `merchant_cancellation_tagging` after the local transition; Shopify adds `Akeed: Canceled` (best-effort).
@@ -441,7 +442,7 @@ Security:
 - Date range filters use inclusive UTC day boundaries (start of selected range through end of current day).
 - Settings delay fields display in hours on the UI but transmit in minutes to the API.
 - Test orders skip Shopify API calls (cancel, tag) based on the `akeed-test-` prefix.
-- Only `no_reply` status verifications can be merchant-canceled; other statuses are rejected.
+- Only `no_reply` and `no_whatsapp` verifications can be merchant-canceled; other statuses are rejected.
 - The settings page re-syncs all state from the save response, not just the fields that were changed.
 
 ## Validation Commands
@@ -477,7 +478,7 @@ npm --prefix akeed-frontend run build
 | Test verification when plan limit reached     | Returns `skipped: true` with reason.                                               |
 | Cancel no-reply order                         | Provider cancellation accepted, verification marked merchant-canceled, list/stats refresh; asynchronous completion remains separate. |
 | Cancel already-canceled no-reply order        | Returns success with `alreadyCanceled: true`.                                      |
-| Cancel order with non-no_reply status         | Returns 400: only no_reply verifications can be canceled.                          |
+| Cancel order with another status              | Returns 400: only no_reply and no_whatsapp verifications can be canceled.          |
 | Settings: save valid settings                 | All fields saved, success banner shown, state re-synced from response.             |
 | Settings: save with empty store name          | Client-side validation error, save blocked.                                        |
 | Settings: follow-up delay >= escalation delay | Cross-field validation error on both delay fields.                                 |

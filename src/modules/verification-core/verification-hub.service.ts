@@ -12,6 +12,7 @@ import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/re
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isSendFailureReason } from '../../shared/verification/verification-lifecycle';
+import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-failure.policy';
 import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import {
   isSyntheticOrder,
@@ -191,6 +192,16 @@ export class VerificationHubService {
     integration: IntegrationRecord;
     baselineSentAt: Date;
   }): Promise<void> {
+    // An undeliverable receipt that beat the acceptance is applied while the
+    // acceptance is recorded, so the row can already be `no_whatsapp` here.
+    // Nothing is scheduled for it; the side effects run instead.
+    const current = await this.verificationsRepo.findById(
+      params.verificationId,
+    );
+    if (current?.status === 'no_whatsapp') {
+      await this.markNoWhatsApp(params.verificationId, 'parked_receipt');
+      return;
+    }
     const { integration, baselineSentAt } = params;
     const baseMs = baselineSentAt.getTime();
 
@@ -267,6 +278,86 @@ export class VerificationHubService {
           outcome: 'failure',
           orgId,
           verificationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
+  /**
+   * What follows a verification reaching `no_whatsapp`: the reminder and the
+   * no-reply escalation are removed, the dashboard's reminder hint is cleared,
+   * and the order is tagged in its store.
+   *
+   * Callers invoke it only after their own write made the transition, so a
+   * duplicate or late receipt never gets here. It re-reads the row and does
+   * nothing unless it is still `no_whatsapp` (a customer reply may have won in
+   * between). Never throws: the provider receipt that led here is already
+   * recorded, and the processor's status guard covers a reminder this misses.
+   */
+  async markNoWhatsApp(
+    verificationId: string,
+    via: 'receipt' | 'send_rejection' | 'parked_receipt',
+  ): Promise<void> {
+    try {
+      const verification =
+        await this.verificationsRepo.findById(verificationId);
+      if (!verification || verification.status !== 'no_whatsapp') {
+        this.logger.log(
+          buildBackendLog(VerificationHubService.name, {
+            action: 'verification-no-whatsapp',
+            outcome: 'skipped',
+            verificationId,
+            via,
+            reason: verification ? 'status_changed' : 'not_found',
+          }),
+        );
+        return;
+      }
+      const orgId = verification.orgId;
+      await this.automationProducer.cancelPendingReminders({
+        verificationId,
+        orgId,
+      });
+      await this.verificationsRepo.removeMetadataKeys(verificationId, [
+        'follow_up_due_at',
+      ]);
+
+      const order = await this.ordersRepo.findById(verification.orderId);
+      let tag: 'dispatched' | 'skipped' = 'skipped';
+      if (
+        order &&
+        order.orgId === orgId &&
+        order.integrationId &&
+        !isSyntheticOrder(order)
+      ) {
+        await this.commerceOutcomes.dispatch({
+          orgId,
+          integrationId: order.integrationId,
+          externalOrderId: order.externalOrderId,
+          action: 'automatic_no_whatsapp_tagging',
+          correlationId: verificationId,
+        });
+        tag = 'dispatched';
+      }
+      this.logger.log(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-no-whatsapp',
+          outcome: 'success',
+          orgId,
+          verificationId,
+          via,
+          providerErrorCode: verification.deliveryErrorCode ?? 'unknown',
+          tag,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(VerificationHubService.name, {
+          action: 'verification-no-whatsapp',
+          outcome: 'failure',
+          verificationId,
+          via,
           ...normalizeError(error),
         }),
       );
@@ -564,6 +655,14 @@ export class VerificationHubService {
     orgId: string,
     outcome: { status: string; reason?: string },
   ): Promise<void> {
+    if (
+      outcome.status === 'failed' &&
+      outcome.reason === NO_WHATSAPP_SEND_REASON
+    ) {
+      // The send path has already written `no_whatsapp`.
+      await this.markNoWhatsApp(verificationId, 'send_rejection');
+      return;
+    }
     let reason: string | undefined;
     if (outcome.status === 'plan_limit_reached') {
       // Always the canonical constant: the retry taxonomy

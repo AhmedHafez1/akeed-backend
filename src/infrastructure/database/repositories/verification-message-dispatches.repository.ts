@@ -19,7 +19,11 @@ import type {
   SentTemplateIdentity,
   TemplateSendPurpose,
 } from '../../../shared/messaging/cod-template-selector';
-import { TERMINAL_STATUSES } from '../../../shared/verification/verification-lifecycle';
+import {
+  TERMINAL_STATUSES,
+  WEBHOOK_PROTECTED_STATUSES,
+} from '../../../shared/verification/verification-lifecycle';
+import { classifyDeliveryFailure } from '../../../shared/verification/delivery-failure.policy';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
@@ -30,7 +34,10 @@ import {
   verificationMessageDispatches,
   verifications,
 } from '../schema';
-import { buildVerificationLifecyclePayload } from './verifications.repository';
+import {
+  buildNoWhatsappPayload,
+  buildVerificationLifecyclePayload,
+} from './verifications.repository';
 
 /**
  * Projects a lifecycle status onto a verification without regressing a
@@ -986,10 +993,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
-              notInArray(verifications.status, [
-                ...TERMINAL_STATUSES,
-                'no_reply',
-              ]),
+              notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
             ),
           );
       }
@@ -1076,48 +1080,54 @@ export class VerificationMessageDispatchesRepository {
       // parked without one has no verification row to address. The receipt is
       // still recorded above; there is simply nothing to project it onto.
       if (!dispatch.providerMessageId) return { verificationRows: [] };
+      const noWhatsapp =
+        status === 'failed' &&
+        classifyDeliveryFailure(failureInfo?.code) === 'no_whatsapp';
       const verificationRows = await tx
         .update(verifications)
-        .set({
-          status:
-            status === 'failed'
-              ? 'failed'
-              : status === 'read'
-                ? 'read'
-                : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
-          ...(status === 'failed'
+        .set(
+          noWhatsapp
             ? {
-                metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
-                  {
-                    reason: 'provider_delivery_failed',
-                    ...(failureInfo?.code !== undefined
-                      ? { providerErrorCode: failureInfo.code }
-                      : {}),
-                    ...(failureInfo?.title
-                      ? { providerErrorTitle: failureInfo.title }
-                      : {}),
-                  },
-                )}::jsonb`,
+                ...buildNoWhatsappPayload(occurredAt, failureInfo),
+                updatedAt: occurredAt,
               }
-            : status === 'read'
-              ? {
-                  readAt: occurredAt,
-                  deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
-                }
-              : {
-                  deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
-                }),
-          updatedAt: occurredAt,
-        })
+            : {
+                status:
+                  status === 'failed'
+                    ? 'failed'
+                    : status === 'read'
+                      ? 'read'
+                      : sql`CASE WHEN ${verifications.status} = 'read' THEN ${verifications.status} ELSE 'delivered'::verification_status END`,
+                ...(status === 'failed'
+                  ? {
+                      metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+                        {
+                          reason: 'provider_delivery_failed',
+                          ...(failureInfo?.code !== undefined
+                            ? { providerErrorCode: failureInfo.code }
+                            : {}),
+                          ...(failureInfo?.title
+                            ? { providerErrorTitle: failureInfo.title }
+                            : {}),
+                        },
+                      )}::jsonb`,
+                    }
+                  : status === 'read'
+                    ? {
+                        readAt: occurredAt,
+                        deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                      }
+                    : {
+                        deliveredAt: sql`COALESCE(${verifications.deliveredAt}, ${occurredAt})`,
+                      }),
+                updatedAt: occurredAt,
+              },
+        )
         .where(
           and(
             eq(verifications.id, dispatch.verificationId),
             eq(verifications.waMessageId, dispatch.providerMessageId),
-            notInArray(verifications.status, [
-              'confirmed',
-              'canceled',
-              'no_reply',
-            ]),
+            notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
           ),
         )
         .returning();
@@ -1196,7 +1206,10 @@ export class VerificationMessageDispatchesRepository {
     id: string,
     staffAudit?: StaffResolutionAudit,
     confirmedRejection = false,
+    providerErrorCode?: string,
   ): Promise<DispatchRecord | undefined> {
+    const noWhatsapp =
+      classifyDeliveryFailure(providerErrorCode) === 'no_whatsapp';
     const now = new Date().toISOString();
     return this.withDispatchTransaction(id, async (tx) => {
       const [dispatch] = await tx
@@ -1234,14 +1247,31 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, id))
         .returning();
-      await tx
-        .update(verifications)
-        .set({
-          status: statusUnlessTerminal('failed'),
-          metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_not_accepted', kind: dispatch.kind })}::jsonb`,
-          updatedAt: now,
-        })
-        .where(eq(verifications.id, dispatch.verificationId));
+      if (noWhatsapp) {
+        // The provider refused the message because the number cannot receive
+        // WhatsApp. Same rules as an undeliverable receipt.
+        await tx
+          .update(verifications)
+          .set({
+            ...buildNoWhatsappPayload(now, { code: providerErrorCode }),
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
+            ),
+          );
+      } else {
+        await tx
+          .update(verifications)
+          .set({
+            status: statusUnlessTerminal('failed'),
+            metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_not_accepted', kind: dispatch.kind })}::jsonb`,
+            updatedAt: now,
+          })
+          .where(eq(verifications.id, dispatch.verificationId));
+      }
       if (staffAudit)
         await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
       return updated;

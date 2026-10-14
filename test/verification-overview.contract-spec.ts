@@ -444,6 +444,7 @@ describe('tab counts and list filters', () => {
       confirmed: 2,
       canceled: 1,
       failed: 2,
+      no_whatsapp: 0,
     });
 
     for (const tab of [
@@ -639,6 +640,7 @@ describe('shop isolation', () => {
       confirmed: 0,
       canceled: 0,
       failed: 0,
+      no_whatsapp: 0,
     });
   });
 
@@ -681,6 +683,70 @@ describe('manual confirmation', () => {
       service.confirmManually(owner(orgA), ids.pending),
     ).rejects.toMatchObject({
       response: { code: 'VERIFICATION_NOT_CONFIRMABLE' },
+    });
+  });
+});
+
+describe('number not on WhatsApp', () => {
+  const orgNoWa = randomUUID();
+  const integrationNoWa = randomUUID();
+  const noWhatsappId = randomUUID();
+
+  beforeAll(async () => {
+    await db
+      .insert(tables.organizations)
+      .values({ id: orgNoWa, name: 'shop-no-wa', slug: 'shop-no-wa' });
+    await db.insert(tables.integrations).values({
+      id: integrationNoWa,
+      orgId: orgNoWa,
+      platformType: 'shopify',
+      platformStoreUrl: 'shop-no-wa.myshopify.com',
+      isActive: true,
+      timezone: 'UTC',
+    });
+    await seed({
+      orgId: orgNoWa,
+      integrationId: integrationNoWa,
+      id: noWhatsappId,
+      orderNumber: '1150',
+      phone: '+201000000050',
+      total: '75.00',
+      verification: {
+        status: 'no_whatsapp',
+        lastSentAt: sentAt,
+        noWhatsappAt: ago(HOUR),
+        deliveryErrorCode: '131026',
+        metadata: { providerErrorCode: '131026' },
+      },
+    });
+  });
+
+  it('gets its own tab and also needs action, in its own shop only', async () => {
+    const counts = await repository.countByTab(orgNoWa, period());
+    expect(counts).toMatchObject({ all: 1, needs_action: 1, no_whatsapp: 1 });
+    const rows = await repository.findNeedsActionTop(orgNoWa, period(), 50);
+    expect(rows.map((row) => [row.id, row.actionReason])).toEqual([
+      [noWhatsappId, 'no_whatsapp'],
+    ]);
+    expect((await repository.countByTab(orgA, period())).no_whatsapp).toBe(0);
+  });
+
+  it('lists the row with its code and time, offering confirm and cancel but no retry', async () => {
+    const list = await service.listByOrg(orgNoWa, { tab: 'no_whatsapp' });
+    expect(list.data).toHaveLength(1);
+    const [row] = list.data;
+    expect(row).toMatchObject({
+      status: 'no_whatsapp',
+      action_reason: 'no_whatsapp',
+      failure_code: '131026',
+    });
+    expect(row.no_whatsapp_at).not.toBeNull();
+    const supported = Object.fromEntries(
+      (row.capabilities ?? []).map((item) => [item.action, item.supported]),
+    );
+    expect(supported).toMatchObject({
+      merchant_manual_confirmation: true,
+      retry_verification: false,
     });
   });
 });

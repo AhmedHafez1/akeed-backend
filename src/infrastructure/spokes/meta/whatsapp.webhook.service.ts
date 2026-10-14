@@ -480,6 +480,12 @@ export class WhatsAppWebhookService {
               : {}),
           }),
         );
+        // Only the write that moved the row gets here with `no_whatsapp`: a
+        // duplicate or late receipt matches no row once the status is
+        // protected, and a receipt after a delivery leaves the status as is.
+        if (typedStatus === 'failed' && rows[0]?.status === 'no_whatsapp') {
+          await this.verificationHub.markNoWhatsApp(rows[0].id, 'receipt');
+        }
         if (
           (typedStatus === 'delivered' || typedStatus === 'read') &&
           rows[0]

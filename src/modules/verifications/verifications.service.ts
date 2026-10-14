@@ -134,6 +134,7 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
   'expired',
   'failed',
   'no_reply',
+  'no_whatsapp',
 ];
 
 /**
@@ -198,6 +199,7 @@ function toHeldListRow(row: HeldOrderListRow) {
     canceledAt: null,
     expiredAt: null,
     noReplyAt: null,
+    noWhatsappAt: null,
     followUpAttempts: 0,
     followUpSentAt: null,
     held: true as const,
@@ -434,6 +436,7 @@ export class VerificationsService {
         canceled_at: verification.canceledAt ?? null,
         expired_at: verification.expiredAt ?? null,
         no_reply_at: verification.noReplyAt ?? null,
+        no_whatsapp_at: verification.noWhatsappAt ?? null,
         follow_up_attempts: verification.followUpAttempts ?? 0,
         follow_up_sent_at: verification.followUpSentAt ?? null,
         external_order_id: verification.order?.externalOrderId ?? null,
@@ -444,7 +447,9 @@ export class VerificationsService {
         action_reason: isHeldRow(verification)
           ? null
           : (verification.actionReason ?? null),
-        failure_code: readProviderErrorCode(verification.metadata),
+        failure_code:
+          (isHeldRow(verification) ? null : verification.deliveryErrorCode) ??
+          readProviderErrorCode(verification.metadata),
         confirmation_source: isHeldRow(verification)
           ? null
           : readConfirmationSource(verification.confirmationSource),
@@ -747,7 +752,9 @@ export class VerificationsService {
     const since =
       type === 'read_no_reply'
         ? row.readAt
-        : (row.lastSentAt ?? row.createdAt ?? null);
+        : type === 'no_whatsapp'
+          ? (row.noWhatsappAt ?? row.lastSentAt ?? row.createdAt ?? null)
+          : (row.lastSentAt ?? row.createdAt ?? null);
     const hours = since
       ? Math.max(
           Math.floor((Date.parse(now) - Date.parse(since)) / MS_PER_HOUR),
@@ -775,13 +782,14 @@ export class VerificationsService {
         row.readAt,
         row.followUpSentAt,
         row.noReplyAt,
+        row.noWhatsappAt,
       ]),
       reason: {
         type,
         since,
         hours: Number.isFinite(hours) ? hours : null,
         failure_code:
-          type === 'delivery_failed'
+          type === 'delivery_failed' || type === 'no_whatsapp'
             ? readProviderErrorCode(row.metadata)
             : null,
       },

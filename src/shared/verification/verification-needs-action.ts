@@ -8,6 +8,7 @@
  * same vocabulary.
  */
 export const NEEDS_ACTION_REASONS = [
+  'no_whatsapp',
   'delivery_failed',
   'send_failed',
   'no_reply_after_follow_up',
@@ -18,17 +19,23 @@ export const NEEDS_ACTION_REASONS = [
 export type NeedsActionReason = (typeof NEEDS_ACTION_REASONS)[number];
 
 /**
- * Reasons the merchant may cancel for: the customer never answered. Delivery
- * and send failures are left out because the customer never saw the question.
+ * Reasons the merchant may cancel for: the customer never answered, or their
+ * number cannot receive WhatsApp and the merchant settled it by phone. Other
+ * delivery and send failures are left out because the customer never saw the
+ * question.
  */
 export const NO_REPLY_CANCELLABLE_REASONS = [
+  'no_whatsapp',
   'no_reply_after_follow_up',
   'read_no_reply',
   'no_reply',
 ] as const satisfies readonly NeedsActionReason[];
 
-/** The only status a no-reply reason is assigned to: escalated to no-reply. */
-export const NO_REPLY_CANCELLABLE_STATUSES = ['no_reply'] as const;
+/** The statuses those reasons are assigned to. */
+export const NO_REPLY_CANCELLABLE_STATUSES = [
+  'no_reply',
+  'no_whatsapp',
+] as const;
 
 export function isNeedsActionReason(
   value: unknown,
@@ -46,6 +53,7 @@ export const VERIFICATION_LIST_TABS = [
   'confirmed',
   'canceled',
   'failed',
+  'no_whatsapp',
 ] as const;
 
 export type VerificationListTab = (typeof VERIFICATION_LIST_TABS)[number];

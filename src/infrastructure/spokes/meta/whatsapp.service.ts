@@ -202,7 +202,10 @@ export class WhatsAppService {
         [400, 401, 403, 404, 422].includes(error.response?.status ?? 0) &&
         Number.isInteger(error.response?.data?.error?.code)
       ) {
-        throw new ConfirmedMessageRejection('provider_rejected');
+        throw new ConfirmedMessageRejection(
+          'provider_rejected',
+          String(error.response?.data?.error?.code),
+        );
       }
       throw new Error(`WhatsApp send failed: ${context}`);
     }

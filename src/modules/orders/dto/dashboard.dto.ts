@@ -138,6 +138,8 @@ export interface VerificationListItemDto {
   canceled_at: string | null;
   expired_at: string | null;
   no_reply_at: string | null;
+  /** When WhatsApp reported the customer number undeliverable. */
+  no_whatsapp_at: string | null;
   follow_up_attempts: number;
   follow_up_sent_at: string | null;
   /** The order's id on its platform, for linking to it in the store admin. */
@@ -145,7 +147,7 @@ export interface VerificationListItemDto {
   platform: string | null;
   /** Why the merchant should act on this row; null when nothing is needed. */
   action_reason: NeedsActionReason | null;
-  /** WhatsApp's error code when delivery failed (e.g. 131026). */
+  /** WhatsApp's error code when delivery failed (e.g. 131026, `no_whatsapp`). */
   failure_code: string | null;
   /** `merchant_manual` when the merchant confirmed by hand. */
   confirmation_source: 'customer' | 'merchant_manual' | null;
@@ -198,6 +200,7 @@ export const RETRY_GUARD_STATUSES = [
   'expired',
   'failed',
   'no_reply',
+  'no_whatsapp',
   'review_required',
 ] as const;
 

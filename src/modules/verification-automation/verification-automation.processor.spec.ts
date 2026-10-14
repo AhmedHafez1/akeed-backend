@@ -31,6 +31,7 @@ function createMocks() {
   const verificationHub = {
     scheduleFollowUpAndEscalation: jest.fn(),
     recordFollowUpDueAt: jest.fn(),
+    markNoWhatsApp: jest.fn(),
   };
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
@@ -153,26 +154,30 @@ describe('VerificationAutomationProcessor', () => {
       expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
     });
 
-    it.each(['confirmed', 'canceled', 'failed', 'expired', 'no_reply'])(
-      'blocks follow-up and escalation for %s',
-      async (status) => {
-        const {
-          processor,
-          verificationSendService,
-          verificationsRepo,
-          orderTaggingPort,
-        } = setup(status);
-        await processor.process(
-          buildJob(VerificationAutomationJobType.FOLLOW_UP),
-        );
-        await processor.process(
-          buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
-        );
-        expect(verificationSendService.sendFollowUp).not.toHaveBeenCalled();
-        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
-        expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
-      },
-    );
+    it.each([
+      'confirmed',
+      'canceled',
+      'failed',
+      'expired',
+      'no_reply',
+      'no_whatsapp',
+    ])('blocks follow-up and escalation for %s', async (status) => {
+      const {
+        processor,
+        verificationSendService,
+        verificationsRepo,
+        orderTaggingPort,
+      } = setup(status);
+      await processor.process(
+        buildJob(VerificationAutomationJobType.FOLLOW_UP),
+      );
+      await processor.process(
+        buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+      );
+      expect(verificationSendService.sendFollowUp).not.toHaveBeenCalled();
+      expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
 
     it.each([
       VerificationAutomationJobType.INITIAL_SEND,
@@ -544,6 +549,49 @@ describe('VerificationAutomationProcessor', () => {
         expect.objectContaining({ follow_up_skipped: 'plan_limit_reached' }),
       );
       expect(verificationsRepo.markFollowUpSent).not.toHaveBeenCalled();
+    });
+
+    it('follows through when the reminder finds the number is not on WhatsApp', async () => {
+      const {
+        processor,
+        verificationsRepo,
+        ordersRepo,
+        verificationSendService,
+        verificationHub,
+      } = createMocks();
+
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'sent',
+        followUpAttempts: 0,
+        merchantCanceledAt: null,
+      });
+      ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
+        id: 'order-1',
+        externalOrderId: 'ext-1',
+        integration: baseIntegration,
+      });
+      verificationSendService.sendFollowUp.mockResolvedValue({
+        status: 'failed',
+        reason: 'no_whatsapp',
+      });
+
+      await processor.process(
+        buildJob(VerificationAutomationJobType.FOLLOW_UP),
+      );
+
+      expect(verificationsRepo.mergeMetadata).toHaveBeenCalledWith(
+        'ver-1',
+        expect.objectContaining({ follow_up_failed: 'no_whatsapp' }),
+      );
+      expect(verificationHub.markNoWhatsApp).toHaveBeenCalledWith(
+        'ver-1',
+        'send_rejection',
+      );
     });
 
     it('records follow-up sent on success', async () => {

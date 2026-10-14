@@ -448,6 +448,7 @@ describe('source setup and health HTTP boundary', () => {
         { action: 'merchant_no_reply_cancellation', supported: false },
         { action: 'merchant_cancellation_tagging', supported: false },
         { action: 'automatic_no_reply_tagging', supported: false },
+        { action: 'automatic_no_whatsapp_tagging', supported: false },
       ]);
 
       supported = [
@@ -462,6 +463,7 @@ describe('source setup and health HTTP boundary', () => {
       ).toEqual([
         'merchant_cancellation_tagging',
         'automatic_no_reply_tagging',
+        'automatic_no_whatsapp_tagging',
       ]);
     });
   });

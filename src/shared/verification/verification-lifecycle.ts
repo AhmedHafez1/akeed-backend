@@ -19,14 +19,23 @@ export const TERMINAL_STATUSES: VerificationStatus[] = [
 ];
 
 /**
+ * Statuses a customer's confirm or cancel reply may still override: the
+ * customer answered after all, so their answer wins.
+ */
+export const CUSTOMER_REPLY_OVERRIDABLE_STATUSES: VerificationStatus[] = [
+  'no_reply',
+  'no_whatsapp',
+];
+
+/**
  * Statuses that webhook delivery/read/failed events must not overwrite.
  * A superset of {@link TERMINAL_STATUSES} that additionally stops a late
- * provider webhook from reverting a `no_reply` escalation. Customer button
- * replies may still override `no_reply`.
+ * provider webhook from reverting a `no_reply` escalation or a `no_whatsapp`
+ * classification. Customer button replies may still override both.
  */
 export const WEBHOOK_PROTECTED_STATUSES: VerificationStatus[] = [
   ...TERMINAL_STATUSES,
-  'no_reply',
+  ...CUSTOMER_REPLY_OVERRIDABLE_STATUSES,
 ];
 
 /**
@@ -109,6 +118,9 @@ export const AUTOMATION_FINAL_STATUSES: VerificationStatus[] = [
   'failed',
   'expired',
   'no_reply',
+  // The customer number cannot receive WhatsApp messages, so a reminder or
+  // escalation would only fail again.
+  'no_whatsapp',
 ];
 
 export function isTerminalStatus(

@@ -47,6 +47,7 @@ export const verificationStatus = pgEnum('verification_status', [
   'expired',
   'failed',
   'no_reply',
+  'no_whatsapp',
 ]);
 
 export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
@@ -1027,6 +1028,13 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     followUpAttempts: integer('follow_up_attempts').default(0).notNull(),
+    // When the provider first reported the customer number undeliverable
+    // (status `no_whatsapp`), and the provider's error code for that report.
+    noWhatsappAt: timestamp('no_whatsapp_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    deliveryErrorCode: text('delivery_error_code'),
     merchantCanceledAt: timestamp('merchant_canceled_at', {
       withTimezone: true,
       mode: 'string',
@@ -3260,7 +3268,7 @@ export const commerceOutcomeSyncs = pgTable(
     ),
     check(
       'commerce_outcome_syncs_action_check',
-      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text])`,
+      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text])`,
     ),
     check(
       'commerce_outcome_syncs_state_check',

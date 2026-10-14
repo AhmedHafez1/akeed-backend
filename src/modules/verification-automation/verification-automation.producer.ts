@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -8,6 +11,16 @@ import {
   VerificationAutomationJobType,
 } from './verification-automation.constants';
 import { DEFAULT_QUEUE_JOB_OPTIONS } from '../../shared/queue/job-options';
+
+/** Job id suffixes of the reminder and the no-reply escalation. */
+const REMINDER_JOB_SUFFIXES = ['follow-up-1', 'no-reply'] as const;
+
+/** Job states in which a job has not started and can be removed. */
+const CANCELLABLE_JOB_STATES = new Set<string>([
+  'delayed',
+  'waiting',
+  'prioritized',
+]);
 
 interface ScheduleParams {
   verificationId: string;
@@ -62,6 +75,53 @@ export class VerificationAutomationProducer {
       VerificationAutomationJobType.ESCALATE_NO_REPLY,
       'no-reply',
     );
+  }
+
+  /**
+   * Removes the reminder and the no-reply escalation of one verification while
+   * they are still waiting to run, and returns how many were removed.
+   *
+   * Best effort: a job already running or finished is left alone, and a queue
+   * error is logged and swallowed. The processor re-checks the verification's
+   * status before acting, so a job that survives here still does nothing.
+   */
+  async cancelPendingReminders(params: {
+    verificationId: string;
+    orgId: string;
+  }): Promise<number> {
+    let removed = 0;
+    for (const suffix of REMINDER_JOB_SUFFIXES) {
+      const jobId = `verification-${params.verificationId}-${suffix}`;
+      try {
+        const job = await this.queue.getJob(jobId);
+        if (!job) continue;
+        const state = await job.getState();
+        if (!CANCELLABLE_JOB_STATES.has(state)) continue;
+        await job.remove();
+        removed += 1;
+      } catch (error) {
+        this.logger.warn(
+          buildBackendLog('VerificationAutomationProducer', {
+            action: 'cancel-reminder',
+            outcome: 'failure',
+            orgId: params.orgId,
+            verificationId: params.verificationId,
+            jobId,
+            ...normalizeError(error),
+          }),
+        );
+      }
+    }
+    this.logger.log(
+      buildBackendLog('VerificationAutomationProducer', {
+        action: 'cancel-reminder',
+        outcome: 'success',
+        orgId: params.orgId,
+        verificationId: params.verificationId,
+        removed,
+      }),
+    );
+    return removed;
   }
 
   /**

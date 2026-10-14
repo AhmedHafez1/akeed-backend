@@ -48,6 +48,8 @@ export function outcomeActionFor(
         : 'customer_cancellation';
     case 'no_reply':
       return 'automatic_no_reply_tagging';
+    case 'no_whatsapp':
+      return 'automatic_no_whatsapp_tagging';
     default:
       return null;
   }

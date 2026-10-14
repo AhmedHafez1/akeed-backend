@@ -87,6 +87,7 @@ defineCommerceOutcomeAdapterContract({
     merchant_no_reply_cancellation: 'pending_provider_operation',
     merchant_cancellation_tagging: 'applied',
     automatic_no_reply_tagging: 'applied',
+    automatic_no_whatsapp_tagging: 'applied',
   },
   createFixture: (action) => {
     const { api, order } = setup();
@@ -110,6 +111,7 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
     ['customer_cancellation', 'Akeed: Canceled'],
     ['merchant_cancellation_tagging', 'Akeed: Canceled'],
     ['automatic_no_reply_tagging', 'Akeed: No Reply'],
+    ['automatic_no_whatsapp_tagging', 'Akeed: No WhatsApp'],
   ] as const)('%s only adds its existing tag', async (action, tag) => {
     const { post, dispatch } = setup();
     await expect(dispatch(action)).resolves.toMatchObject({

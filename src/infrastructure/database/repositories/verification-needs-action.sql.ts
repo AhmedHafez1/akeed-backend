@@ -6,6 +6,7 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  * The one definition of "this order needs the merchant".
  *
  * Returns the reason for the first rule that matches, or NULL:
+ * 0. `no_whatsapp`: the customer number cannot receive WhatsApp; call them.
  * 1. `delivery_failed`: WhatsApp reported the message undeliverable.
  * 2. `send_failed`: any other failure: the message never went out (no
  *    credits, plan limit, source inactive, provider error).
@@ -29,6 +30,7 @@ export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
       WHERE test_order.id = ${verifications.orderId}
         AND (test_order.is_test = true OR test_order.external_order_id LIKE 'akeed-test-%')
     ) THEN NULL
+    WHEN ${verifications.status} = 'no_whatsapp' THEN 'no_whatsapp'
     WHEN ${verifications.status} = 'failed'
       AND ${verifications.metadata}->>'reason' = 'provider_delivery_failed'
       THEN 'delivery_failed'

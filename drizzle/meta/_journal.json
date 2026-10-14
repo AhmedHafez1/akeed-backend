@@ -456,6 +456,13 @@
       "when": 1792454400000,
       "tag": "0064_whatsapp_template_languages",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0065_verification_no_whatsapp",
+      "breakpoints": true
     }
   ]
 }
