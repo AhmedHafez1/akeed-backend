@@ -273,6 +273,8 @@ describe('order imports PostgreSQL contract', () => {
         '0052_woocommerce_disconnect.sql',
         // Detailed confirmation: three nullable order columns; proves 0063 re-runs.
         '0063_order_message_details.sql',
+        // Logo header: four store columns and a URL check; proves 0067 re-runs.
+        '0067_integration_logo_header.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

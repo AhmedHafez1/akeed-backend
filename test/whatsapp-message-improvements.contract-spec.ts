@@ -70,6 +70,7 @@ const MIGRATIONS = [
   '0059_whatsapp_reminder_and_auto_style.sql',
   '0060_whatsapp_service_messages.sql',
   '0064_whatsapp_template_languages.sql',
+  '0066_whatsapp_template_image_header.sql',
 ];
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const SERVICE_MIGRATION = '0060_whatsapp_service_messages.sql';

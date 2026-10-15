@@ -66,6 +66,7 @@ import {
   canWriteOrganization,
 } from '../auth/organization-role';
 import { SourceSetupService } from './source-setup.service';
+import { toMerchantBrandingDto } from '../merchant-branding/merchant-branding.types';
 import type {
   SourceHealthDto,
   SourceSetupDto,
@@ -248,6 +249,7 @@ export class OnboardingService {
         messagesSentLast30Days,
       },
       template,
+      branding: toMerchantBrandingDto(hydratedIntegration),
     };
   }
 

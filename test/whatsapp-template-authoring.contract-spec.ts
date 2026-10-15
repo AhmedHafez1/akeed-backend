@@ -79,6 +79,7 @@ const MIGRATIONS = [
   '0058_whatsapp_template_authoring.sql', // Store template counts also read the reminder keys.
   '0059_whatsapp_reminder_and_auto_style.sql',
   '0064_whatsapp_template_languages.sql',
+  '0066_whatsapp_template_image_header.sql',
 ];
 const AUTHORING_MIGRATION = '0058_whatsapp_template_authoring.sql';
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';

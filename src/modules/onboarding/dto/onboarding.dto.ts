@@ -23,6 +23,7 @@ import type {
   TemplateVariableKey,
 } from '../../../shared/messaging/template-registry.types';
 import type { TemplateMessageLines } from '../../../shared/messaging/template-text.types';
+import type { MerchantBrandingDto } from '../../merchant-branding/merchant-branding.types';
 import type { TemplateAwaitingReason } from '../../../shared/messaging/template-selector';
 import { CANONICAL_ORDER_CURRENCIES } from '../../../shared/commerce/canonical-order.rules';
 import {
@@ -383,6 +384,8 @@ export interface OnboardingBillingPlansResponseDto {
 
 export interface SettingsResponseDto {
   state: OnboardingStateDto;
+  /** The store's logo and banner, and whether the banner is sent. */
+  branding: MerchantBrandingDto;
   billing: {
     plans: OnboardingBillingPlanDto[];
     isFreePlanClaimed: boolean;

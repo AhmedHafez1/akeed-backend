@@ -13,6 +13,7 @@ Each environment (dev, prod) has its own Meta app, its own templates and its own
 | Stop reading Meta | Set `WHATSAPP_TEMPLATE_SYNC_ENABLED=false` and restart | [6](#6-stop-the-sync) |
 | Replace a template Meta paused or rejected | Activate an approved one, then retire the old one with it as the replacement | [3](#3-choose-and-activate-a-replacement) |
 | Find out why a customer got a different style | Read the dispatch's fallback reason | [7](#7-logs-alert-codes-and-queries) |
+| Send a store's logo on its messages | Register an image twin, then switch the store's logo header on | [10](#10-image-header-twins-for-the-logo-header) |
 
 Switches are environment variables ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)). A change takes effect when the service restarts. Turning a switch off deletes nothing.
 
@@ -178,6 +179,7 @@ A sync that fails changes nothing and is not retried; the next scheduled run is 
 | `sendOnce.templateSelection` with `reason: template_unavailable` | A send was skipped: no template could be sent in that language. |
 | `whatsapp-template-operator-check` | A template write was refused, with `errorCode`. |
 | `whatsapp-text-send`, `customer-reply-follow-up` | An acknowledgment or a nudge: sent, skipped (`window_closed`, `outside_window`, `text_unavailable`) or failed. |
+| `whatsapp-template-send-image-fallback` | Meta refused an image-header send with a media or template code (`providerErrorCode`), and the text template was sent once instead. Repeated lines for one twin mean the twin needs attention (section 10). |
 
 `permission_denied` and `auth_failed` are a token problem, not a template problem: the token needs `whatsapp_business_management`.
 
@@ -241,7 +243,7 @@ order by created_at desc limit 50;
 - **Never change a template's variables or parameter format** in WhatsApp Manager.
 - **Never copy a template ID, status or category from dev to prod.** Each environment reads its own from its own sync.
 - **Never turn the guardrail on before the environment's first successful sync has been read and compared.** A registry template that is `missing` at Meta stops being sent the moment the guardrail is on.
-- **Never run a write statement on `whatsapp_templates` or `integrations` other than the reset in section 4**, and that one only on the product owner's word.
+- **Never run a write statement on `whatsapp_templates` or `integrations` other than the reset in section 4 and the twin registration in section 10**, and those only on the product owner's word.
 - **Never activate a template to "unlock" a language for a merchant.** A language opens only through section 9, after Meta's approval.
 - **Never paste an access token or app secret** into a ticket, a chat or a log. Support never needs one.
 - **Never retry a submit or an edit that answered "unresolved"** by pressing it again elsewhere. Use **Check at Meta**: the first request may have been applied.
@@ -283,4 +285,47 @@ from integrations
 where coalesce(is_active, false)
 group by 1
 order by 2 desc;
+```
+
+## 10. Image-header twins for the logo header
+
+A store with the logo header on sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in **Admin › Templates**.
+
+If Meta refuses the image send with a media or template error (`131052`, `131053`, `132000`, `132001`, `132012`, `132015`, `132016`), the text template is sent once instead and `whatsapp-template-send-image-fallback` is logged. Any other failure is handled as for a text send; nothing is sent twice. If Meta accepts the image and reports a media failure later, in the status webhook, the message is not resent.
+
+Operators only, one template at a time. Start with the pilot store's template:
+
+1. Find the store's template: its first-send and reminder keys are on the store, or the language default when the key is empty.
+2. In WhatsApp Manager, create a new template with a new name (for example the parent's name plus `_logo`), the same language and category, an **Image** header with any sample banner, and the parent's body and buttons copied exactly. Wait for **Approved**.
+3. Register it as the parent's twin, inactive, copying everything else from the parent:
+
+   ```sql
+   insert into whatsapp_templates
+     ("key", purpose, language, style, meta_template_name, meta_language_code,
+      parameter_format, variable_mapping, preview, is_active, is_default,
+      sort_order, header_format, image_twin_of_key)
+   select p."key" || '_logo', p.purpose, p.language, p.style || '_logo',
+          '<twin name at Meta>', p.meta_language_code, p.parameter_format,
+          p.variable_mapping, p.preview, false, false, p.sort_order,
+          'image', p."key"
+   from whatsapp_templates p
+   where p."key" = '<parent key>' and p.header_format = 'none';
+   ```
+
+4. Press **Sync now** in **Admin › Templates**. Check the twin reads `approved` (the query below). The sync reads twins like any template.
+5. Activate it: `update whatsapp_templates set is_active = true where "key" = '<parent key>_logo' and header_format = 'image';`. Sends pick it up within a minute (registry cache).
+6. In **Admin › Stores**, open the store and switch **Logo header** on. The store detail lists every twin and its review status. The merchant then sees the logo card in **Settings** and uploads a logo.
+
+To stop: switch the store's logo header off (its messages go back to text at once), or deactivate the twin for every store. Removing the logo in Settings also stops it for that store.
+
+```sql
+select t."key", t.image_twin_of_key, t.meta_template_name, t.is_active, t.review_status
+from whatsapp_templates t
+where t.header_format = 'image'
+order by t."key";
+
+select id, store_name, logo_header_enabled, logo_banner_url is not null as has_banner
+from integrations
+where logo_header_enabled
+order by store_name;
 ```

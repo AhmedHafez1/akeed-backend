@@ -1,8 +1,14 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import type { ImageTwinTemplate } from '../../shared/messaging/template-registry.types';
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { maskPhone } from '../../shared/utils/mask-phone.util';
@@ -161,10 +167,14 @@ export interface AdminStoreVerificationView {
 
 @Injectable()
 export class AdminStoresService {
+  private readonly logger = new Logger(AdminStoresService.name);
+
   constructor(
     private readonly repository: AdminQueryRepository,
     private readonly healthRules: AdminHealthRuleService,
     private readonly config: ConfigService,
+    @Optional() private readonly integrations?: IntegrationsRepository,
+    @Optional() private readonly templates?: WhatsappTemplatesRepository,
   ) {}
 
   async getStores(query: AdminStoresQueryDto) {
@@ -221,7 +231,58 @@ export class AdminStoresService {
       await this.repository.findStoreVerificationTotals(integrationId);
     return {
       store: this.toDetailView(row, totals),
+      logo_header: await this.logoHeaderView(integrationId),
       evaluated_at: new Date().toISOString(),
+    };
+  }
+
+  /** Switches the store's logo header and returns the new view. */
+  async setLogoHeaderEnabled(
+    userId: string,
+    integrationId: string,
+    enabled: boolean,
+  ) {
+    const found = await this.integrations?.setLogoHeaderEnabled(
+      integrationId,
+      enabled,
+      { userId },
+    );
+    if (!found) throw new NotFoundException('Store not found.');
+    this.logger.log(
+      buildBackendLog(AdminStoresService.name, {
+        action: 'admin-store-logo-header-set',
+        outcome: 'success',
+        integrationId,
+        enabled,
+      }),
+    );
+    return { logo_header: await this.logoHeaderView(integrationId) };
+  }
+
+  /**
+   * The store's logo, its switch and every image twin staff registered, so
+   * staff can see whether the store's templates have one before switching on.
+   */
+  private async logoHeaderView(integrationId: string) {
+    const [state, twins] = await Promise.all([
+      this.integrations?.findLogoState(integrationId),
+      this.templates
+        ? this.templates.findImageTwins()
+        : Promise.resolve<ImageTwinTemplate[]>([]),
+    ]);
+    return {
+      enabled: state?.logoHeaderEnabled ?? false,
+      logo_url: state?.logoUrl ?? null,
+      banner_url: state?.logoBannerUrl ?? null,
+      updated_at: state?.logoUpdatedAt ?? null,
+      image_twins: twins.map((twin) => ({
+        twin_of_key: twin.imageTwinOfKey,
+        twin_of_template_name: twin.twinOf.templateName,
+        template_name: twin.templateName,
+        language_code: twin.languageCode,
+        is_active: twin.isActive,
+        review_status: twin.reviewStatus,
+      })),
     };
   }
 

@@ -50,6 +50,8 @@ export type TemplateButtonKind = 'quick_reply' | 'url' | 'phone' | 'other';
 export type TemplateComponentsSnapshot =
   | {
       header?: string;
+      /** The header is an image, filled with a link at send time. */
+      headerImage?: true;
       body: string;
       footer?: string;
       buttons: { kind: TemplateButtonKind; text: string }[];

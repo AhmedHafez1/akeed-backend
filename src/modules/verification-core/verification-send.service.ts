@@ -19,10 +19,12 @@ import { CreditEligibilityService } from './credit-eligibility.service';
 import {
   resolveTemplateSendPurpose,
   toSentTemplateIdentity,
+  type SelectedCodTemplate,
   type SentTemplateIdentity,
   type TemplateSendPurpose,
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
+import { applyLogoHeader } from '../../shared/messaging/logo-header.policy';
 import {
   classifyDeliveryFailure,
   NO_WHATSAPP_SEND_REASON,
@@ -345,7 +347,9 @@ export class VerificationSendService {
       );
       return { status: 'skipped', reason: 'template_unavailable' };
     }
-    const template = selection.template;
+    // A store with the logo header on sends the image twin of the same
+    // template when one exists; the text template stays the recorded identity.
+    const template = await this.withLogoHeader(selection.template, integration);
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
     const recordedFallback =
@@ -716,6 +720,23 @@ export class VerificationSendService {
   }
 
   /** Which template a send carried, for logs: identifiers only, no text. */
+  private async withLogoHeader(
+    template: SelectedCodTemplate,
+    integration: ResolvedContext['integration'],
+  ): Promise<SelectedCodTemplate> {
+    if (!integration.logoHeaderEnabled || !integration.logoBannerUrl) {
+      return template;
+    }
+    return applyLogoHeader(template, {
+      enabled: true,
+      bannerUrl: integration.logoBannerUrl,
+      twins: (await this.templateRegistry.listImageTwins?.()) ?? [],
+      guardrail: {
+        enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+      },
+    });
+  }
+
   private templateLogFields(
     template: SentTemplateIdentity,
     purpose: TemplateSendPurpose,

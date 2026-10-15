@@ -117,13 +117,31 @@ describe('Meta template mapping', () => {
       });
     });
 
+    it('reads an image header as a flag, keeping the body and buttons', () => {
+      expect(
+        mapComponents([
+          {
+            type: 'HEADER',
+            format: 'IMAGE',
+            example: { header_handle: ['h'] },
+          },
+          { type: 'BODY', text: 'Hi {{customer}}' },
+          { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] },
+        ]),
+      ).toEqual({
+        headerImage: true,
+        body: 'Hi {{customer}}',
+        buttons: [{ kind: 'quick_reply', text: 'Yes' }],
+      });
+    });
+
     it.each([
       ['not a list', { body: 'x' }],
       ['no body', [{ type: 'FOOTER', text: 'x' }]],
       [
-        'a media header',
+        'a video header',
         [
-          { type: 'HEADER', format: 'IMAGE' },
+          { type: 'HEADER', format: 'VIDEO' },
           { type: 'BODY', text: 'x' },
         ],
       ],

@@ -77,6 +77,24 @@ export const TEMPLATE_DETAIL_VARIABLE_KEYS = [
 
 export type TemplateParameterFormat = 'named' | 'positional';
 
+/** `image` marks the image-header twin of a text template. */
+export type TemplateHeaderFormat = 'none' | 'image';
+
+/**
+ * The image-header twin of one text template: the same body, buttons and
+ * parameters, sent with the store's banner in place of the text template.
+ */
+export interface ImageTwinTemplate {
+  /** The key of the text template it repeats. */
+  imageTwinOfKey: string;
+  /** That text template's provider name and language code. */
+  twinOf: { templateName: string; languageCode: string };
+  templateName: string;
+  languageCode: string;
+  isActive: boolean;
+  reviewStatus: RegistryTemplate['reviewStatus'];
+}
+
 /**
  * One variable of a template, in the order the provider receives it. `name`
  * is the provider's parameter name and is present for a named template only.

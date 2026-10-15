@@ -4,7 +4,11 @@ import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
-import { adminStoreLifecycles, integrations } from '../schema';
+import {
+  adminAccessAudit,
+  adminStoreLifecycles,
+  integrations,
+} from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 @Injectable()
@@ -176,6 +180,109 @@ export class IntegrationsRepository {
       .returning();
 
     return result;
+  }
+
+  /**
+   * Saves (or, with null, clears) the store's logo and banner URLs and
+   * returns the ones they replaced, read under a row lock so two saves never
+   * both see the same previous files. Undefined: no such store in the org.
+   */
+  async replaceLogo(
+    integrationId: string,
+    orgId: string,
+    next: { logoUrl: string; logoBannerUrl: string } | null,
+  ): Promise<
+    { logoUrl: string | null; logoBannerUrl: string | null } | undefined
+  > {
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          logoUrl: integrations.logoUrl,
+          logoBannerUrl: integrations.logoBannerUrl,
+        })
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.id, integrationId),
+            eq(integrations.orgId, orgId),
+          ),
+        )
+        .for('update');
+      if (!current) return undefined;
+      const now = new Date().toISOString();
+      await tx
+        .update(integrations)
+        .set({
+          logoUrl: next?.logoUrl ?? null,
+          logoBannerUrl: next?.logoBannerUrl ?? null,
+          logoUpdatedAt: next ? now : null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(integrations.id, integrationId),
+            eq(integrations.orgId, orgId),
+          ),
+        );
+      return current;
+    });
+  }
+
+  /**
+   * Staff switch the logo header for one store. The change and its audit row
+   * are written together. False: no such store.
+   */
+  async setLogoHeaderEnabled(
+    integrationId: string,
+    enabled: boolean,
+    audit: { userId: string; requestId?: string },
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          orgId: integrations.orgId,
+          enabled: integrations.logoHeaderEnabled,
+        })
+        .from(integrations)
+        .where(eq(integrations.id, integrationId))
+        .for('update');
+      if (!current) return false;
+      await tx
+        .update(integrations)
+        .set({
+          logoHeaderEnabled: enabled,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(integrations.id, integrationId));
+      await tx.insert(adminAccessAudit).values({
+        userId: audit.userId,
+        action: 'store.logo-header.set',
+        outcome: 'allowed',
+        requestId: audit.requestId,
+        targetIntegrationId: integrationId,
+        metadata: {
+          orgId: current.orgId,
+          previous: current.enabled,
+          enabled,
+        },
+      });
+      return true;
+    });
+  }
+
+  /** The logo columns of one store, for staff. */
+  async findLogoState(integrationId: string) {
+    const [row] = await this.db
+      .select({
+        logoUrl: integrations.logoUrl,
+        logoBannerUrl: integrations.logoBannerUrl,
+        logoUpdatedAt: integrations.logoUpdatedAt,
+        logoHeaderEnabled: integrations.logoHeaderEnabled,
+      })
+      .from(integrations)
+      .where(eq(integrations.id, integrationId))
+      .limit(1);
+    return row;
   }
 
   async markShopifyUninstalled(

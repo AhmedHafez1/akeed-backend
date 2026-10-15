@@ -6,7 +6,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
-import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
+import type {
+  ImageTwinTemplate,
+  RegistryTemplate,
+} from '../../shared/messaging/template-registry.types';
 import type { TemplateRegistryPort } from '../../shared/ports/template-registry.port';
 
 /** How long a loaded copy of the registry is served before it is read again. */
@@ -29,6 +32,10 @@ export class TemplateRegistryService implements TemplateRegistryPort {
     loadedAt: number;
   } | null = null;
   private loading: Promise<readonly RegistryTemplate[]> | null = null;
+  private cachedTwins: {
+    twins: readonly ImageTwinTemplate[];
+    loadedAt: number;
+  } | null = null;
 
   constructor(
     private readonly templatesRepo: WhatsappTemplatesRepository,
@@ -69,6 +76,36 @@ export class TemplateRegistryService implements TemplateRegistryPort {
 
   invalidate(): void {
     this.cached = null;
+    this.cachedTwins = null;
+  }
+
+  /**
+   * Cached like the registry. A failed read serves the last copy, or none:
+   * without a twin the text template is sent, so a send never stops for it.
+   */
+  async listImageTwins(): Promise<readonly ImageTwinTemplate[]> {
+    const cached = this.cachedTwins;
+    if (
+      cached &&
+      Date.now() - cached.loadedAt < TEMPLATE_REGISTRY_CACHE_TTL_MS
+    ) {
+      return cached.twins;
+    }
+    try {
+      const twins = await this.templatesRepo.findImageTwins();
+      this.cachedTwins = { twins, loadedAt: Date.now() };
+      return twins;
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(TemplateRegistryService.name, {
+          action: 'template-registry-image-twins-refresh',
+          outcome: 'failure',
+          servedStale: cached !== null,
+          ...normalizeError(error),
+        }),
+      );
+      return cached?.twins ?? [];
+    }
   }
 
   retiredTemplateKeys(): Promise<readonly string[]> {

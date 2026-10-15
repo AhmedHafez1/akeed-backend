@@ -9,6 +9,16 @@ import { MESSAGE_TEXT_MAX_LENGTH } from '../../../shared/messaging/message-texts
 const WINDOW_CLOSED_ERROR_CODE = 131047;
 /** Sent for an order detail the caller gave no value for. */
 const MISSING_DETAIL = '-';
+/**
+ * Refusals of an image-header send that the text template can still carry:
+ * the image could not be fetched or read (131052, 131053), or the twin's
+ * parameters, name or state do not match what was sent (132000, 132001,
+ * 132012, 132015, 132016). The message was not sent, so one text send follows.
+ */
+const IMAGE_HEADER_FALLBACK_ERROR_CODES: ReadonlySet<number> = new Set([
+  131052, 131053, 132000, 132001, 132012, 132015, 132016,
+]);
+const CONFIRMED_REJECTION_STATUSES = [400, 401, 403, 404, 422];
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -122,16 +132,28 @@ export class WhatsAppService {
       };
     });
 
-    const payload = {
+    const buildPayload = (
+      name: string,
+      languageCode: string,
+      imageUrl?: string,
+    ) => ({
       messaging_product: 'whatsapp',
       to: params.to,
       type: 'template',
       template: {
-        name: template.templateName,
+        name,
         language: {
-          code: template.languageCode,
+          code: languageCode,
         },
         components: [
+          ...(imageUrl
+            ? [
+                {
+                  type: 'header',
+                  parameters: [{ type: 'image', image: { link: imageUrl } }],
+                },
+              ]
+            : []),
           {
             type: 'body',
             parameters: bodyParameters,
@@ -160,55 +182,111 @@ export class WhatsAppService {
           },
         ],
       },
-    };
+    });
+
+    const image = template.imageHeader;
+    if (image) {
+      const sent: SentTemplateIdentity = {
+        ...toSentTemplateIdentity(template),
+        templateName: image.templateName,
+        languageCode: image.languageCode,
+      };
+      try {
+        const response = await this.postMessage(
+          buildPayload(image.templateName, image.languageCode, image.imageUrl),
+        );
+        return { ...(response.data as WhatsAppResponse), template: sent };
+      } catch (error) {
+        const code = this.confirmedRejectionCode(error);
+        if (
+          code === undefined ||
+          !IMAGE_HEADER_FALLBACK_ERROR_CODES.has(code)
+        ) {
+          this.failSend(error, params, sent);
+        }
+        this.logger.warn(
+          buildBackendLog(WhatsAppService.name, {
+            action: 'whatsapp-template-send-image-fallback',
+            outcome: 'retry',
+            verificationId: params.verificationId,
+            variantKey: template.variantKey,
+            templateName: image.templateName,
+            fallbackTemplateName: template.templateName,
+            providerErrorCode: code,
+            ...this.safeError(error),
+          }),
+        );
+      }
+    }
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(this.apiUrl, payload, {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }),
+      const response = await this.postMessage(
+        buildPayload(template.templateName, template.languageCode),
       );
       return {
         ...(response.data as WhatsAppResponse),
         template: toSentTemplateIdentity(template),
       };
     } catch (error) {
-      const context = this.withoutToken(
-        this.buildSafeErrorContext(error, {
-          verificationId: params.verificationId,
-          resolvedLanguage: template.language,
-          templateName: template.templateName,
-        }),
-      );
-      this.logger.error(
-        buildBackendLog(WhatsAppService.name, {
-          action: 'whatsapp-template-send',
-          outcome: 'failure',
-          verificationId: params.verificationId,
-          to: params.to,
-          resolvedLanguage: template.language,
-          variantKey: template.variantKey,
-          templateName: template.templateName,
-          languageCode: template.languageCode,
-          context,
-          ...this.safeError(error),
-        }),
-      );
-      if (
-        isAxiosError<{ error?: { code?: number } }>(error) &&
-        [400, 401, 403, 404, 422].includes(error.response?.status ?? 0) &&
-        Number.isInteger(error.response?.data?.error?.code)
-      ) {
-        throw new ConfirmedMessageRejection(
-          'provider_rejected',
-          String(error.response?.data?.error?.code),
-        );
-      }
-      throw new Error(`WhatsApp send failed: ${context}`);
+      this.failSend(error, params, template);
     }
+  }
+
+  private postMessage(payload: Record<string, unknown>) {
+    return firstValueFrom(
+      this.httpService.post(this.apiUrl, payload, {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+  }
+
+  /** The provider's error code for a refusal it confirmed, else undefined. */
+  private confirmedRejectionCode(error: unknown): number | undefined {
+    if (
+      isAxiosError<{ error?: { code?: number } }>(error) &&
+      CONFIRMED_REJECTION_STATUSES.includes(error.response?.status ?? 0) &&
+      Number.isInteger(error.response?.data?.error?.code)
+    ) {
+      return error.response?.data?.error?.code;
+    }
+    return undefined;
+  }
+
+  /** Logs a failed template send and throws what the caller classifies. */
+  private failSend(
+    error: unknown,
+    params: { verificationId: string; to: string },
+    template: SentTemplateIdentity,
+  ): never {
+    const context = this.withoutToken(
+      this.buildSafeErrorContext(error, {
+        verificationId: params.verificationId,
+        resolvedLanguage: template.language,
+        templateName: template.templateName,
+      }),
+    );
+    this.logger.error(
+      buildBackendLog(WhatsAppService.name, {
+        action: 'whatsapp-template-send',
+        outcome: 'failure',
+        verificationId: params.verificationId,
+        to: params.to,
+        resolvedLanguage: template.language,
+        variantKey: template.variantKey,
+        templateName: template.templateName,
+        languageCode: template.languageCode,
+        context,
+        ...this.safeError(error),
+      }),
+    );
+    const code = this.confirmedRejectionCode(error);
+    if (code !== undefined) {
+      throw new ConfirmedMessageRejection('provider_rejected', String(code));
+    }
+    throw new Error(`WhatsApp send failed: ${context}`);
   }
 
   /**
@@ -253,7 +331,7 @@ export class WhatsAppService {
         metaCode === WINDOW_CLOSED_ERROR_CODE
           ? { outcome: 'window_closed' }
           : Number.isInteger(metaCode) &&
-              [400, 401, 403, 404, 422].includes(status ?? 0)
+              CONFIRMED_REJECTION_STATUSES.includes(status ?? 0)
             ? { outcome: 'rejected', code: 'provider_rejected' }
             : { outcome: 'failed', code: 'provider_error' };
       const fields = {

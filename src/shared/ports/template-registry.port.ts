@@ -1,4 +1,7 @@
-import type { RegistryTemplate } from '../messaging/template-registry.types';
+import type {
+  ImageTwinTemplate,
+  RegistryTemplate,
+} from '../messaging/template-registry.types';
 
 export const TEMPLATE_REGISTRY_PORT = Symbol('TEMPLATE_REGISTRY_PORT');
 
@@ -25,4 +28,9 @@ export interface TemplateRegistryPort {
    * means off: any active template is sent.
    */
   sendGuardrailEnabled?(): boolean;
+  /**
+   * The image-header twins, inactive ones included. Read only for a store
+   * with the logo header on. Absent: no twin exists and text is sent.
+   */
+  listImageTwins?(): Promise<readonly ImageTwinTemplate[]>;
 }

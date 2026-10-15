@@ -5,6 +5,7 @@ import {
   Header,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -28,6 +29,7 @@ import {
   AdminTemplateMetricsQueryDto,
 } from './dto/admin-query.dto';
 import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
+import { AdminLogoHeaderDto } from './dto/admin-logo-header.dto';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 
 @Controller('api/admin')
@@ -70,6 +72,21 @@ export class AdminController {
   @Header('Cache-Control', 'private, no-store')
   getStore(@Param('integrationId', new ParseUUIDPipe()) integrationId: string) {
     return this.storesService.getStore(integrationId);
+  }
+
+  /** Whether the store's messages carry its banner as the image header. */
+  @Patch('stores/:integrationId/logo-header')
+  @Header('Cache-Control', 'private, no-store')
+  setStoreLogoHeader(
+    @Req() request: RequestWithAdmin,
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+    @Body() body: AdminLogoHeaderDto,
+  ) {
+    return this.storesService.setLogoHeaderEnabled(
+      request.admin.userId,
+      integrationId,
+      body.enabled,
+    );
   }
 
   @Get('stores/:integrationId/verifications')

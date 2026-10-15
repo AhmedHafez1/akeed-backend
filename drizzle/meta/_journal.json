@@ -463,6 +463,20 @@
       "when": 1792540800000,
       "tag": "0065_verification_no_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0066_whatsapp_template_image_header",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0067_integration_logo_header",
+      "breakpoints": true
     }
   ]
 }

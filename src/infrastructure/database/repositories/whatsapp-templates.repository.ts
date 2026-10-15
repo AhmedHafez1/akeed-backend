@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { asc, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { whatsappTemplates } from '../schema';
 import type {
+  ImageTwinTemplate,
   RegistryTemplate,
   TemplateVariable,
 } from '../../../shared/messaging/template-registry.types';
@@ -14,8 +16,8 @@ import type {
 } from '../../../shared/messaging/template-provider.types';
 
 /**
- * The columns a registry read needs. They all exist since migration 0054, so
- * the reader does not depend on a later migration having run.
+ * The columns a registry read needs. Reads filter on `header_format`
+ * (migration 0066) so that image-header twins never reach selection.
  */
 const REGISTRY_COLUMNS = {
   key: whatsappTemplates.key,
@@ -34,6 +36,9 @@ const REGISTRY_COLUMNS = {
   lastSyncedAt: whatsappTemplates.lastSyncedAt,
   componentsSnapshot: whatsappTemplates.componentsSnapshot,
 };
+
+/** Rows a store can choose and send as they are: not image twins. */
+const TEXT_TEMPLATES = eq(whatsappTemplates.headerFormat, 'none');
 
 type WhatsappTemplateRow = Pick<
   typeof whatsappTemplates.$inferSelect,
@@ -142,11 +147,15 @@ export class WhatsappTemplatesRepository {
     private readonly db: DrizzleDB,
   ) {}
 
-  /** Every template, inactive ones included, in display order. */
+  /**
+   * Every text template, inactive ones included, in display order. Image
+   * twins are read only by `findImageTwins`.
+   */
   async findAll(): Promise<RegistryTemplate[]> {
     const rows = await this.db
       .select(REGISTRY_COLUMNS)
       .from(whatsappTemplates)
+      .where(TEXT_TEMPLATES)
       .orderBy(
         asc(whatsappTemplates.purpose),
         asc(whatsappTemplates.language),
@@ -177,6 +186,7 @@ export class WhatsappTemplatesRepository {
     const rows = await this.db
       .select(INSPECTION_COLUMNS)
       .from(whatsappTemplates)
+      .where(TEXT_TEMPLATES)
       .orderBy(
         asc(whatsappTemplates.purpose),
         asc(whatsappTemplates.language),
@@ -193,5 +203,43 @@ export class WhatsappTemplatesRepository {
       .where(eq(whatsappTemplates.key, key))
       .limit(1);
     return row ? toInspectedTemplate(row) : undefined;
+  }
+
+  /**
+   * The image-header twins, inactive ones included. Sent only in place of
+   * their text template, never chosen on their own.
+   */
+  async findImageTwins(): Promise<ImageTwinTemplate[]> {
+    const parent = alias(whatsappTemplates, 'parent');
+    const rows = await this.db
+      .select({
+        imageTwinOfKey: parent.key,
+        parentTemplateName: parent.metaTemplateName,
+        parentLanguageCode: parent.metaLanguageCode,
+        templateName: whatsappTemplates.metaTemplateName,
+        languageCode: whatsappTemplates.metaLanguageCode,
+        isActive: whatsappTemplates.isActive,
+        reviewStatus: whatsappTemplates.reviewStatus,
+      })
+      .from(whatsappTemplates)
+      .innerJoin(parent, eq(parent.key, whatsappTemplates.imageTwinOfKey))
+      .where(
+        and(
+          eq(whatsappTemplates.headerFormat, 'image'),
+          eq(parent.headerFormat, 'none'),
+        ),
+      )
+      .orderBy(asc(whatsappTemplates.key));
+    return rows.map((row) => ({
+      imageTwinOfKey: row.imageTwinOfKey,
+      twinOf: {
+        templateName: row.parentTemplateName,
+        languageCode: row.parentLanguageCode,
+      },
+      templateName: row.templateName,
+      languageCode: row.languageCode,
+      isActive: row.isActive,
+      reviewStatus: row.reviewStatus as TemplateReviewStatus | null,
+    }));
   }
 }

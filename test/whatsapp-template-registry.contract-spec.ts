@@ -56,6 +56,8 @@ let created = false;
 
 const REGISTRY_MIGRATION = '0054_whatsapp_templates_registry.sql';
 const STORE_KEYS_MIGRATION = '0055_integration_template_keys.sql';
+// `findAll` reads only text templates, a column 0066 adds.
+const IMAGE_HEADER_MIGRATION = '0066_whatsapp_template_image_header.sql';
 
 async function migrate(name: string): Promise<void> {
   await client.begin(async (tx) => {
@@ -119,6 +121,7 @@ describe('WhatsApp template registry migrations', () => {
       );
     `);
     await migrate(REGISTRY_MIGRATION);
+    await migrate(IMAGE_HEADER_MIGRATION);
   });
 
   afterAll(async () => {
@@ -441,6 +444,7 @@ describe('WhatsApp template registry migrations', () => {
 
       await migrate(REGISTRY_MIGRATION);
       await migrate(STORE_KEYS_MIGRATION);
+      await migrate(IMAGE_HEADER_MIGRATION);
 
       const [after] = await client<{ stores: number; keyed: number }[]>`
         SELECT count(*)::int AS stores, count(cod_template_en_key)::int AS keyed

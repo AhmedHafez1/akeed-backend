@@ -122,14 +122,15 @@ function buttonKind(type: unknown): TemplateButtonKind {
 
 /**
  * Reads `components` in the creation syntax the record documents (S2, 4.7.5):
- * `BODY`, optional text `HEADER` and `FOOTER`, and a `BUTTONS` component of
- * `{ type, text }`. Anything else, including a header that is not text, makes
- * the whole snapshot `unknown` rather than a partial guess.
+ * `BODY`, optional text or image `HEADER` and `FOOTER`, and a `BUTTONS`
+ * component of `{ type, text }`. Anything else, including a video or document
+ * header, makes the whole snapshot `unknown` rather than a partial guess.
  */
 export function mapComponents(value: unknown): TemplateComponentsSnapshot {
   const unknown = { unknown: true } as const;
   if (!Array.isArray(value)) return unknown;
   let header: string | undefined;
+  let headerImage = false;
   let body: string | undefined;
   let footer: string | undefined;
   const buttons: { kind: TemplateButtonKind; text: string }[] = [];
@@ -146,6 +147,14 @@ export function mapComponents(value: unknown): TemplateComponentsSnapshot {
       }
       continue;
     }
+    if (
+      type === 'HEADER' &&
+      typeof component.format === 'string' &&
+      component.format.toUpperCase() === 'IMAGE'
+    ) {
+      headerImage = true;
+      continue;
+    }
     if (typeof component.text !== 'string') return unknown;
     if (type === 'BODY') body = component.text;
     else if (type === 'HEADER') header = component.text;
@@ -155,6 +164,7 @@ export function mapComponents(value: unknown): TemplateComponentsSnapshot {
   if (body === undefined) return unknown;
   return {
     ...(header !== undefined ? { header } : {}),
+    ...(headerImage ? { headerImage: true as const } : {}),
     body,
     ...(footer !== undefined ? { footer } : {}),
     buttons,

@@ -424,6 +424,16 @@ customer service window, or when Meta answers `131047`, it is a recorded skip
 the template operators under `/api/admin/message-texts` (same
 `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
 
+## Merchant Logo Header
+
+A merchant uploads a logo in **Settings**. Akeed stores it with a 1200x628 banner built from it, in a public Supabase Storage bucket, and records both URLs on the store. While staff have switched the logo header on for the store (`PATCH /api/admin/stores/:integrationId/logo-header`, audited as `store.logo-header.set`), each message whose template has an approved image twin is sent with the banner as its header. Without a twin, or with the switch off, the text template goes out as before. Registering a twin is in the [WhatsApp template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md#10-image-header-twins-for-the-logo-header).
+
+| Variable | Notes |
+| --- | --- |
+| `MERCHANT_LOGO_BUCKET` | Supabase Storage bucket id (default `merchant-logos`). Create it once per environment as a **public** bucket: Meta downloads the banner from its URL. The backend writes to it with `SUPABASE_SERVICE_ROLE_KEY` and never creates or reconfigures it. A malformed id fails startup. |
+
+Each saved logo gets new file names (`<integrationId>/<hash>-logo.png` and `-banner.jpg`), so Meta never serves a cached old banner. The replaced files are removed after the store points at the new ones; a failed removal is logged as `merchant-logo-cleanup` and leaves an unused file behind.
+
 ## Redis (Job Queue)
 
 The webhook processing job queue uses BullMQ backed by Redis.

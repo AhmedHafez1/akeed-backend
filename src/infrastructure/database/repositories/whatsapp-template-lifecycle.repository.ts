@@ -415,6 +415,9 @@ export class WhatsappTemplateLifecycleRepository {
         and(
           eq(whatsappTemplates.purpose, target.purpose),
           eq(whatsappTemplates.language, target.language),
+          // An image twin is never chosen or a default, so it takes no part
+          // in the rules a lifecycle action checks.
+          eq(whatsappTemplates.headerFormat, 'none'),
         ),
       )
       .orderBy(asc(whatsappTemplates.key));

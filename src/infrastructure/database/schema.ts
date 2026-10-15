@@ -24,6 +24,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { OrderLineItem } from '../../shared/interfaces/order.interface';
 import type {
+  TemplateHeaderFormat,
   TemplateLanguage,
   TemplateParameterFormat,
   TemplatePreview,
@@ -256,6 +257,13 @@ export const whatsappTemplates = pgTable(
     }),
     retiredAt: timestamp('retired_at', { withTimezone: true, mode: 'string' }),
     rejectionReason: text('rejection_reason'),
+    // 'image' marks a twin of the text template `imageTwinOfKey` names: the
+    // same body and buttons with an image header. Selection reads only 'none'.
+    headerFormat: text('header_format')
+      .$type<TemplateHeaderFormat>()
+      .default('none')
+      .notNull(),
+    imageTwinOfKey: text('image_twin_of_key'),
   },
   (table) => [
     unique('whatsapp_templates_key_key').on(table.key),
@@ -283,6 +291,20 @@ export const whatsappTemplates = pgTable(
       'whatsapp_templates_default_is_active_check',
       sql`NOT ${table.isDefault} OR ${table.isActive}`,
     ),
+    check(
+      'whatsapp_templates_header_format_check',
+      sql`(${table.headerFormat} = 'none' AND ${table.imageTwinOfKey} IS NULL) OR (${table.headerFormat} = 'image' AND ${table.imageTwinOfKey} IS NOT NULL AND ${table.isDefault} = false)`,
+    ),
+    foreignKey({
+      columns: [table.imageTwinOfKey],
+      foreignColumns: [table.key],
+      name: 'whatsapp_templates_image_twin_of_key_fkey',
+    })
+      .onUpdate('cascade')
+      .onDelete('cascade'),
+    uniqueIndex('whatsapp_templates_one_image_twin_idx')
+      .on(table.imageTwinOfKey)
+      .where(sql`${table.imageTwinOfKey} IS NOT NULL`),
     pgPolicy('Service role manages whatsapp templates', {
       as: 'permissive',
       for: 'all',
@@ -640,6 +662,16 @@ export const integrations = pgTable(
     shopTimezone: text('shop_timezone'),
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
     shopPhone: text('shop_phone'),
+    // The merchant's logo and the 1200x628 banner built from it, both public
+    // https URLs. The banner is the image header only while staff have
+    // switched `logoHeaderEnabled` on.
+    logoUrl: text('logo_url'),
+    logoBannerUrl: text('logo_banner_url'),
+    logoUpdatedAt: timestamp('logo_updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    logoHeaderEnabled: boolean('logo_header_enabled').default(false).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
