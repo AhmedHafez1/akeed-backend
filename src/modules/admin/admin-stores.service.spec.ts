@@ -305,9 +305,11 @@ describe('AdminStoresService', () => {
     const service = createService({
       findStoreById: jest.fn().mockResolvedValue(detailRow(standaloneRow())),
       findStoreVerificationTotals: jest.fn().mockResolvedValue([
-        { status: 'confirmed', is_test: false, count: 4 },
-        { status: 'canceled', is_test: false, count: 1 },
-        { status: 'confirmed', is_test: true, count: 2 },
+        { status: 'confirmed', is_test: false, count: 4, sent: 4 },
+        { status: 'canceled', is_test: false, count: 1, sent: 1 },
+        { status: 'sent', is_test: false, count: 3, sent: 3 },
+        { status: 'failed', is_test: false, count: 2, sent: 0 },
+        { status: 'confirmed', is_test: true, count: 2, sent: 2 },
       ]),
     });
 
@@ -317,9 +319,10 @@ describe('AdminStoresService', () => {
     expect(store.merchant_whatsapp_phone).toBe('+966500000001');
     expect(store.settings.follow_up_enabled).toBe(false);
     expect(store.verification_totals).toMatchObject({
-      total: 5,
+      total: 10,
       test: 2,
-      by_status: { confirmed: 4, canceled: 1 },
+      sent: 8,
+      by_status: { confirmed: 4, canceled: 1, sent: 3, failed: 2 },
     });
     expect(
       store.milestones.find((item) => item.key === 'first_real_cod_resolved'),

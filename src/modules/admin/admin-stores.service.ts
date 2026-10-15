@@ -120,6 +120,8 @@ export interface AdminStoreDetailView extends AdminStoreView {
   verification_totals: {
     total: number;
     test: number;
+    /** Non-test verifications whose message was sent: the confirmation-rate denominator. */
+    sent: number;
     by_status: Record<string, number>;
     failed_24h: number;
     total_24h: number;
@@ -273,6 +275,7 @@ export class AdminStoresService {
     const byStatus: Record<string, number> = {};
     let total = 0;
     let test = 0;
+    let sent = 0;
     for (const entry of totals) {
       const count = Number(entry.count ?? 0);
       if (entry.is_test) {
@@ -280,6 +283,7 @@ export class AdminStoresService {
         continue;
       }
       total += count;
+      sent += Number(entry.sent ?? 0);
       byStatus[entry.status] = (byStatus[entry.status] ?? 0) + count;
     }
 
@@ -349,6 +353,7 @@ export class AdminStoresService {
       verification_totals: {
         total,
         test,
+        sent,
         by_status: byStatus,
         failed_24h: Number(row.failed_24h ?? 0),
         total_24h: Number(row.total_24h ?? 0),

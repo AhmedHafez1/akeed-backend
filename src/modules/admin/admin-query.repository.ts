@@ -89,6 +89,7 @@ export interface AdminStoreVerificationTotalsRow {
   status: string;
   is_test: boolean;
   count: number | string;
+  sent: number | string;
 }
 
 export interface AdminStoreVerificationRow {
@@ -401,7 +402,11 @@ export class AdminQueryRepository {
     integrationId: string,
   ): Promise<AdminStoreVerificationTotalsRow[]> {
     const result = await this.db.execute<AdminStoreVerificationTotalsRow>(sql`
-      SELECT v.status::text AS status, ord.is_test, COUNT(*)::int AS count
+      SELECT
+        v.status::text AS status,
+        ord.is_test,
+        COUNT(*)::int AS count,
+        COUNT(v.last_sent_at)::int AS sent
       FROM orders ord
       INNER JOIN verifications v ON v.order_id = ord.id
       WHERE ord.integration_id = ${integrationId}
