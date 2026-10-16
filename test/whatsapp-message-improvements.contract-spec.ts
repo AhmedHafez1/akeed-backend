@@ -71,10 +71,12 @@ const MIGRATIONS = [
   '0060_whatsapp_service_messages.sql',
   '0064_whatsapp_template_languages.sql',
   '0066_whatsapp_template_image_header.sql',
+  '0068_whatsapp_template_turkish.sql',
 ];
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const SERVICE_MIGRATION = '0060_whatsapp_service_messages.sql';
 const LANGUAGES_MIGRATION = '0064_whatsapp_template_languages.sql';
+const TURKISH_MIGRATION = '0068_whatsapp_template_turkish.sql';
 const STAFF = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 
 async function migrate(name: string): Promise<void> {
@@ -159,9 +161,9 @@ describe('message improvements against PostgreSQL', () => {
       );
     `);
     for (const name of MIGRATIONS) await migrate(name);
-    // 0064 is in the list for its language checks. The drafts and texts it
-    // writes are removed here, so the suite starts empty; the 0064 block
-    // below applies the migration again and checks the texts.
+    // 0064 and 0068 are in the list for their language checks. The drafts and
+    // texts they write are removed here, so the suite starts empty; the
+    // starter-texts block below applies them again and checks the texts.
     await client`
       DELETE FROM whatsapp_message_texts WHERE updated_by = ${STARTER_DRAFT_AUTHOR_ID}`;
     await client`
@@ -556,7 +558,11 @@ describe('message improvements against PostgreSQL', () => {
     });
   });
 
-  describe('0064: texts for Urdu, Spanish and French', () => {
+  describe('0064 and 0068: texts for Urdu, Spanish, French and Turkish', () => {
+    const textsOf = (fromTurkish: boolean) =>
+      STARTER_MESSAGE_TEXTS.filter(
+        ({ language }) => (language === 'tr') === fromTurkish,
+      ).map((text) => ({ ...text }));
     const starterTexts = () => client<
       {
         purpose: string;
@@ -589,7 +595,7 @@ describe('message improvements against PostgreSQL', () => {
           style,
           body,
         })),
-      ).toEqual(sorted(STARTER_MESSAGE_TEXTS.map((text) => ({ ...text }))));
+      ).toEqual(sorted(textsOf(false)));
       expect(rows.every((row) => row.is_active)).toBe(true);
       expect(
         rows.filter((row) => ['ar', 'en'].includes(row.language)),
@@ -619,8 +625,52 @@ describe('message improvements against PostgreSQL', () => {
           (SELECT body FROM whatsapp_message_texts
             WHERE language = 'es' AND purpose = 'ack_canceled') AS spanish`;
       expect(counts).toEqual({
-        texts: STARTER_MESSAGE_TEXTS.length,
+        texts: textsOf(false).length,
         spanish: 'Changed by staff',
+      });
+    });
+
+    it('0068 adds the Turkish texts, active, and touches no other language', async () => {
+      const before = sorted(await starterTexts()).filter(
+        ({ language }) => language !== 'tr',
+      );
+
+      await migrate(TURKISH_MIGRATION);
+
+      const rows = sorted(await starterTexts());
+      expect(rows.filter(({ language }) => language !== 'tr')).toEqual(before);
+      expect(
+        rows
+          .filter(({ language }) => language === 'tr')
+          .map(({ purpose, language, style, body }) => ({
+            purpose,
+            language,
+            style,
+            body,
+          })),
+      ).toEqual(sorted(textsOf(true)));
+      expect(
+        rows
+          .filter(({ language }) => language === 'tr')
+          .every((row) => row.is_active),
+      ).toBe(true);
+    });
+
+    it('0068 replays without adding a text or overwriting one staff changed', async () => {
+      await client`
+        UPDATE whatsapp_message_texts SET body = 'Changed by staff', updated_by = ${STAFF}
+        WHERE language = 'tr' AND purpose = 'ack_canceled'`;
+
+      await migrate(TURKISH_MIGRATION);
+
+      const [counts] = await client<{ texts: number; turkish: string }[]>`
+        SELECT (SELECT count(*)::int FROM whatsapp_message_texts
+                 WHERE language IN ('ur', 'es', 'fr', 'tr')) AS texts,
+          (SELECT body FROM whatsapp_message_texts
+            WHERE language = 'tr' AND purpose = 'ack_canceled') AS turkish`;
+      expect(counts).toEqual({
+        texts: STARTER_MESSAGE_TEXTS.length,
+        turkish: 'Changed by staff',
       });
     });
   });

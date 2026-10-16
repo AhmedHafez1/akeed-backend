@@ -39,6 +39,7 @@ export const ONBOARDING_LANGUAGES = [
   'ur',
   'es',
   'fr',
+  'tr',
 ] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
 /** The canonical order currency list; defined once in the shared rules. */
@@ -225,6 +226,13 @@ export class UpdateOnboardingSettingsDto {
   @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
   codTemplateFrVariant?: string;
 
+  /** As `codTemplateArVariant`, for Turkish. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codTemplateTrVariant?: string;
+
   /** As `codReminderArVariant`, for Urdu. */
   @IsOptional()
   @ValidateIf((_, value) => value !== null)
@@ -248,6 +256,14 @@ export class UpdateOnboardingSettingsDto {
   @IsNotEmpty()
   @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
   codReminderFrVariant?: string | null;
+
+  /** As `codReminderArVariant`, for Turkish. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(TEMPLATE_STYLE_MAX_LENGTH)
+  codReminderTrVariant?: string | null;
 
   /**
    * The Arabic style follows the customer's calling code.
@@ -477,6 +493,7 @@ export const SETTINGS_TEMPLATE_FIELDS = {
   ur: { style: 'codTemplateUrVariant', reminder: 'codReminderUrVariant' },
   es: { style: 'codTemplateEsVariant', reminder: 'codReminderEsVariant' },
   fr: { style: 'codTemplateFrVariant', reminder: 'codReminderFrVariant' },
+  tr: { style: 'codTemplateTrVariant', reminder: 'codReminderTrVariant' },
 } as const satisfies Record<
   TemplateLanguage,
   {

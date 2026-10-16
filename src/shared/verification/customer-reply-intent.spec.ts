@@ -46,10 +46,32 @@ describe('resolveReplyText', () => {
     expect(resolveReplyText(text)).toBe(intent);
   });
 
-  it.each(['', 'quizás', 'peut-être', 'کل بتاؤں گا', 'sí pero mañana'])(
-    'leaves the unclear answer "%s" unresolved',
-    (text) => {
-      expect(resolveReplyText(text)).toBeNull();
-    },
-  );
+  it.each([
+    ['EVET', 'confirmed'],
+    ['Evet.', 'confirmed'],
+    ['Onaylıyorum', 'confirmed'],
+    ['ONAYLIYORUM', 'confirmed'],
+    ['Tamam', 'confirmed'],
+    ['HAYIR', 'canceled'],
+    ['Hayır', 'canceled'],
+    ['İPTAL', 'canceled'],
+    ['İptal et', 'canceled'],
+    ['iptal', 'canceled'],
+    ['Vazgeçtim', 'canceled'],
+    ['İstemiyorum', 'canceled'],
+  ] as const)('reads the Turkish answer %s', (text, intent) => {
+    expect(resolveReplyText(text)).toBe(intent);
+  });
+
+  it.each([
+    '',
+    'quizás',
+    'peut-être',
+    'کل بتاؤں گا',
+    'sí pero mañana',
+    'belki',
+    'evet ama yarın',
+  ])('leaves the unclear answer "%s" unresolved', (text) => {
+    expect(resolveReplyText(text)).toBeNull();
+  });
 });

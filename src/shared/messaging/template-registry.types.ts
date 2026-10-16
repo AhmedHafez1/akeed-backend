@@ -5,7 +5,7 @@ import type {
 } from './template-provider.types';
 
 /** The languages a template is written in. */
-export type TemplateLanguage = 'ar' | 'en' | 'ur' | 'es' | 'fr';
+export type TemplateLanguage = 'ar' | 'en' | 'ur' | 'es' | 'fr' | 'tr';
 
 export const TEMPLATE_LANGUAGES = [
   'ar',
@@ -13,6 +13,7 @@ export const TEMPLATE_LANGUAGES = [
   'ur',
   'es',
   'fr',
+  'tr',
 ] as const satisfies readonly TemplateLanguage[];
 
 export interface TemplateLanguageDefinition {
@@ -33,6 +34,7 @@ export const TEMPLATE_LANGUAGE_DEFINITIONS = {
   ur: { name: 'Urdu', direction: 'rtl', required: false },
   es: { name: 'Spanish', direction: 'ltr', required: false },
   fr: { name: 'French', direction: 'ltr', required: false },
+  tr: { name: 'Turkish', direction: 'ltr', required: false },
 } as const satisfies Record<TemplateLanguage, TemplateLanguageDefinition>;
 
 export function isTemplateLanguage(value: unknown): value is TemplateLanguage {

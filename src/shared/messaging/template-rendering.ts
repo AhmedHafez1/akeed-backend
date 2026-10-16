@@ -29,6 +29,7 @@ export const TEMPLATE_SAMPLE_CUSTOMER_NAMES = {
   ur: 'احمد',
   es: 'Carlos',
   fr: 'Camille',
+  tr: 'Ayşe',
 } as const satisfies Record<TemplateLanguage, string>;
 const TEMPLATE_SAMPLE_STORE_NAMES = {
   ar: 'متجر أكيد',
@@ -36,6 +37,7 @@ const TEMPLATE_SAMPLE_STORE_NAMES = {
   ur: 'اکید اسٹور',
   es: 'Tienda Akeed',
   fr: 'Boutique Akeed',
+  tr: 'Akeed Mağazası',
 } as const satisfies Record<TemplateLanguage, string>;
 
 interface SampleOrderDetails {
@@ -132,6 +134,19 @@ const TEMPLATE_SAMPLE_ORDER_DETAILS: Record<
     ],
     shippingRegion: 'Paris',
     shippingAddress: '12 rue de Rivoli, 75004',
+  },
+  tr: {
+    lineItems: [
+      {
+        name: 'Pamuklu gömlek',
+        quantity: 1,
+        unitPrice: '150.00',
+        options: [{ name: 'Renk', value: 'Mavi' }],
+      },
+      { name: 'Spor çorap', quantity: 2, unitPrice: '50.00', options: [] },
+    ],
+    shippingRegion: 'İstanbul',
+    shippingAddress: 'Bağdat Caddesi No: 12, Kadıköy',
   },
 };
 

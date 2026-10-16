@@ -8,7 +8,7 @@ This document explains the Akeed cash-on-delivery order confirmation feature fro
 
 The feature verifies COD orders through WhatsApp before the merchant fulfills the order. Orders enter from three channels: the Shopify `orders-create` webhook, a manual order created in the Standalone dashboard (see `MANUAL_ORDER_CREATION.md`), and a CSV/XLSX bulk import (see `BULK_ORDER_IMPORT.md`). Every channel produces the same normalized order and follows the same lifecycle below. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`. For Shopify orders it also tags the Shopify order, and the merchant can cancel the order from the Akeed dashboard.
 
-Merchants can now choose branded confirmation template variants per language. Messages go out in Arabic, English, Urdu, Spanish and French. The selected variants are used for both preview and actual sends.
+Merchants can now choose branded confirmation template variants per language. Messages go out in Arabic, English, Urdu, Spanish and French; Turkish is in the language list too, with drafts awaiting Meta approval, so it sends nothing until staff launch it. The selected variants are used for both preview and actual sends.
 
 ## Scope
 
@@ -301,7 +301,7 @@ Controls are edited from the Settings page and persisted on the `integrations` t
 | `quietHoursStart`        | UI default `21:00` | `HH:mm`, required when quiet hours enabled    | Start of quiet-hours window in the configured timezone.                                                               |
 | `quietHoursEnd`          | UI default `09:00` | `HH:mm`, required when quiet hours enabled    | End of quiet-hours window in the configured timezone.                                                                 |
 | `timezone`               |      `Asia/Riyadh` | Allowlist in `AUTOMATION_TIMEZONES`           | Timezone used for quiet-hours calculations.                                                                           |
-| `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`, `ur`, `es`, `fr` | WhatsApp template language. `auto` follows the phone's country: Urdu, Spanish or French where that language is live, else Arabic for Arabic-region prefixes and English otherwise. A language that is not live cannot be saved. |
+| `defaultLanguage`        |             `auto` | `auto`, `en`, `ar`, `ur`, `es`, `fr`, `tr` | WhatsApp template language. `auto` follows the phone's country: Urdu, Spanish, French or Turkish where that language is live, else Arabic for Arabic-region prefixes and English otherwise. A language that is not live cannot be saved. |
 | `codTemplateArVariant`   |         `standard` | Style of an active Arabic registry template   | Selected Arabic template style for send and preview. Seeded: `standard`, `egyptian`, `gulf`, `short`. Any other value answers `400 SETTINGS_TEMPLATE_STYLE_UNAVAILABLE`. |
 | `codTemplateEnVariant`   |         `friendly` | Style of an active English registry template  | Selected English template style for send and preview. Seeded: `friendly`, `professional`, `direct`, `short`. Same rejection. |
 | `shippingCurrency`       |              `USD` | Allowlist                                     | Used for dashboard savings display, not verification routing.                                                         |

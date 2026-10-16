@@ -203,14 +203,14 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 **Template resolution:**
 
-1. If `preferredLanguage` is a message language (`ar`, `en`, `ur`, `es`, `fr`), use it directly.
+1. If `preferredLanguage` is a message language (`ar`, `en`, `ur`, `es`, `fr`, `tr`), use it directly.
 2. If `auto`, detect from the customer phone number's country code:
-   - Pakistan (`+92`) gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France (`+33`) gets French, but only while that language is **live**: it has an active default template that may be sent.
-   - Otherwise an Arabic country code gets Arabic and everything else gets English. A number from Pakistan, Spain or France therefore keeps getting English until its language is live.
+   - Pakistan (`+92`) gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France (`+33`) gets French, Türkiye (`+90`) gets Turkish, but only while that language is **live**: it has an active default template that may be sent.
+   - Otherwise an Arabic country code gets Arabic and everything else gets English. A number from Pakistan, Spain, France or Türkiye therefore keeps getting English until its language is live.
 
 Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others. The lists are in `src/shared/messaging/template-language.ts`. Countries with several languages (the United States, Canada, Belgium, Switzerland) are not mapped.
 
-**Message languages.** Messages go out in Arabic, English, Urdu, Spanish and French. `TEMPLATE_LANGUAGES` in `src/shared/messaging/template-registry.types.ts` is the one list. Arabic and English are required: Settings fails without a default for them. Urdu, Spanish and French start with no approved template. Migration 0064 gives staff three drafts for each (two confirmations and a reminder) and writes their free-form texts (acknowledgments, nudge and name fallbacks); a language becomes live when staff submit a draft, Meta approves it, and staff activate it and make it the default. Until then merchants see its submitted templates as locked, cannot set the store to it (`SETTINGS_LANGUAGE_UNAVAILABLE`), and no send resolves to it.
+**Message languages.** The message languages are Arabic, English, Urdu, Spanish, French and Turkish. `TEMPLATE_LANGUAGES` in `src/shared/messaging/template-registry.types.ts` is the one list. Arabic and English are required: Settings fails without a default for them. Urdu, Spanish, French and Turkish start with no approved template. Migration 0064 gives staff three drafts for each of Urdu, Spanish and French, and migration 0068 three for Turkish (two confirmations and a reminder); both write the language's free-form texts (acknowledgments, nudge and name fallbacks). Turkish has drafts only, awaiting submission and Meta approval; a language becomes live when staff submit a draft, Meta approves it, and staff activate it and make it the default. Until then merchants see its submitted templates as locked, cannot set the store to it (`SETTINGS_LANGUAGE_UNAVAILABLE`), and no send resolves to it.
 
 **Templates come from the registry.** The templates are rows of
 `whatsapp_templates`, not a list in code. Migration 0054 seeded the 8 COD
@@ -266,7 +266,7 @@ Two buttons are attached to every template:
 3. A customer who types instead of tapping is also handled: `message.text.body`
    is matched against the accepted yes/no answers in
    `src/shared/verification/customer-reply-intent.ts` (Arabic, English,
-   Urdu, Spanish, French and digits), and the verification is located via `message.context.id` — the wamid
+   Urdu, Spanish, French, Turkish and digits), and the verification is located via `message.context.id` — the wamid
    of the template being replied to — against `verifications.wa_message_id`.
    Anything ambiguous resolves to no intent and is logged as
    `unresolved_reply` rather than guessed at.

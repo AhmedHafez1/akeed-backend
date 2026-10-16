@@ -80,10 +80,12 @@ const MIGRATIONS = [
   '0059_whatsapp_reminder_and_auto_style.sql',
   '0064_whatsapp_template_languages.sql',
   '0066_whatsapp_template_image_header.sql',
+  '0068_whatsapp_template_turkish.sql',
 ];
 const AUTHORING_MIGRATION = '0058_whatsapp_template_authoring.sql';
 const REMINDER_MIGRATION = '0059_whatsapp_reminder_and_auto_style.sql';
 const LANGUAGES_MIGRATION = '0064_whatsapp_template_languages.sql';
+const TURKISH_MIGRATION = '0068_whatsapp_template_turkish.sql';
 
 async function migrate(name: string): Promise<void> {
   await client.begin(async (tx) => {
@@ -328,9 +330,9 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
       );
     `);
     for (const name of MIGRATIONS) await migrate(name);
-    // 0064 is in the list for its store columns. Its starter drafts are
-    // removed here, so the suite starts with no draft; the 0064 block below
-    // applies the migration again and checks them.
+    // 0064 and 0068 are in the list for their store columns. Their starter
+    // drafts are removed here, so the suite starts with no draft; the
+    // starter-drafts block below applies them again and checks them.
     await client`DELETE FROM whatsapp_template_drafts`;
   });
 
@@ -1101,10 +1103,14 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
     });
   });
 
-  describe('0064: Urdu, Spanish and French', () => {
-    const starterKeys = STARTER_TEMPLATE_DRAFTS.map((draft) =>
-      buildDraftKey(draft.purpose, draft.language, draft.style, 1),
-    );
+  describe('0064 and 0068: Urdu, Spanish, French and Turkish', () => {
+    const keyOf = (draft: (typeof STARTER_TEMPLATE_DRAFTS)[number]) =>
+      buildDraftKey(draft.purpose, draft.language, draft.style, 1);
+    const draftsOf = (fromTurkish: boolean) =>
+      STARTER_TEMPLATE_DRAFTS.filter(
+        ({ language }) => (language === 'tr') === fromTurkish,
+      );
+    const starterKeys = draftsOf(false).map(keyOf);
     const starterDrafts = () => client<
       {
         id: string;
@@ -1119,7 +1125,7 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
     const newLanguageTemplates = async () => {
       const [row] = await client<{ count: number }[]>`
         SELECT count(*)::int AS count FROM whatsapp_templates
-        WHERE language IN ('ur', 'es', 'fr')`;
+        WHERE language IN ('ur', 'es', 'fr', 'tr')`;
       return row.count;
     };
 
@@ -1136,19 +1142,16 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
       expect(
         rows.every((row) => row.state === 'draft' && row.template_id === null),
       ).toBe(true);
-      for (const draft of STARTER_TEMPLATE_DRAFTS) {
-        const key = buildDraftKey(
-          draft.purpose,
-          draft.language,
-          draft.style,
-          1,
+      for (const draft of draftsOf(false)) {
+        expect(rows.find((row) => row.key === keyOf(draft))?.body).toBe(
+          draft.body,
         );
-        expect(rows.find((row) => row.key === key)?.body).toBe(draft.body);
       }
       expect(await newLanguageTemplates()).toBe(0);
     });
 
     it('replays without adding a draft or overwriting one staff edited', async () => {
+      // Replayed before 0068: its CHECKs do not name Turkish.
       const [first] = await starterDrafts();
       await client`
         UPDATE whatsapp_template_drafts SET body = 'Edited by staff {{order}} today'
@@ -1157,13 +1160,55 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
       await migrate(LANGUAGES_MIGRATION);
 
       const rows = await starterDrafts();
-      expect(rows).toHaveLength(STARTER_TEMPLATE_DRAFTS.length);
+      expect(rows).toHaveLength(draftsOf(false).length);
       expect(rows.find((row) => row.id === first.id)?.body).toBe(
         'Edited by staff {{order}} today',
       );
     });
 
-    it('accepts the three languages and still refuses any other', async () => {
+    it('0068 gives staff the Turkish drafts only, and no template a send could read', async () => {
+      const before = await starterDrafts();
+
+      await migrate(TURKISH_MIGRATION);
+
+      const rows = await starterDrafts();
+      expect(rows.filter((row) => !row.key.includes('.tr.'))).toEqual(before);
+      const turkish = rows.filter((row) => row.key.includes('.tr.'));
+      expect(turkish.map((row) => row.key).sort()).toEqual(
+        draftsOf(true).map(keyOf).sort(),
+      );
+      expect(
+        turkish.every(
+          (row) => row.state === 'draft' && row.template_id === null,
+        ),
+      ).toBe(true);
+      for (const draft of draftsOf(true)) {
+        expect(rows.find((row) => row.key === keyOf(draft))?.body).toBe(
+          draft.body,
+        );
+      }
+      expect(await newLanguageTemplates()).toBe(0);
+    });
+
+    it('0068 replays without adding a draft or overwriting one staff edited', async () => {
+      const turkishKey = buildDraftKey('cod_confirmation', 'tr', 'standard', 1);
+      const edited = (await starterDrafts()).find(
+        (row) => row.key === turkishKey,
+      )!;
+      await client`
+        UPDATE whatsapp_template_drafts SET body = 'Edited by staff {{order}} today'
+        WHERE id = ${edited.id}`;
+
+      await migrate(TURKISH_MIGRATION);
+
+      const rows = await starterDrafts();
+      expect(rows).toHaveLength(STARTER_TEMPLATE_DRAFTS.length);
+      expect(rows.find((row) => row.id === edited.id)?.body).toBe(
+        'Edited by staff {{order}} today',
+      );
+    });
+
+    it('accepts the new languages and still refuses any other', async () => {
       const insert = (language: string) => client`
         INSERT INTO whatsapp_template_drafts
           ("key", purpose, language, style, version, meta_template_name,
@@ -1175,6 +1220,7 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
 
       await expect(insert('de')).rejects.toMatchObject({ code: '23514' });
       await expect(insert('fr')).resolves.toBeDefined();
+      await expect(insert('tr')).resolves.toBeDefined();
       await client`
         DELETE FROM whatsapp_template_drafts WHERE style = 'check'`;
     });

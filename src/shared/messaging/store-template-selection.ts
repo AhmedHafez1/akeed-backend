@@ -24,6 +24,7 @@ export const STORE_TEMPLATE_FIELDS = {
   ur: { key: 'codTemplateUrKey', reminderKey: 'codReminderUrKey' },
   es: { key: 'codTemplateEsKey', reminderKey: 'codReminderEsKey' },
   fr: { key: 'codTemplateFrKey', reminderKey: 'codReminderFrKey' },
+  tr: { key: 'codTemplateTrKey', reminderKey: 'codReminderTrKey' },
 } as const satisfies Record<
   TemplateLanguage,
   { key: string; reminderKey: string; legacyVariant?: string }

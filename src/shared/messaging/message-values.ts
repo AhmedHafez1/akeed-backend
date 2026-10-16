@@ -91,6 +91,7 @@ export function formatOrderTotal(
   if (language === 'ar') {
     return `${number} ${ARABIC_CURRENCY_SYMBOLS[code] ?? code}`;
   }
-  // Urdu, Spanish and French write the number first, then the ISO code.
+  // Urdu, Spanish, French and Turkish write the number first, then the ISO
+  // code.
   return language === 'en' ? `${code} ${number}` : `${number} ${code}`;
 }

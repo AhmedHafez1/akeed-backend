@@ -17,8 +17,8 @@ import { OnboardingStateService } from './onboarding-state.service';
 import { OnboardingService } from './onboarding.service';
 
 /**
- * Urdu, Spanish and French in Settings: what a merchant sees and may save
- * before and after a language has an approved default template.
+ * Urdu, Spanish, French and Turkish in Settings: what a merchant sees and may
+ * save before and after a language has an approved default template.
  */
 const owner: AuthenticatedUser = {
   userId: 'user-1',
@@ -152,7 +152,7 @@ describe('a language awaiting approval, in Settings', () => {
   it('lists its templates as locked and leaves out the rejected one', async () => {
     const { template } = await setup(AWAITING).settings.getSettings(owner);
 
-    expect(template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+    expect(template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr', 'tr']);
     expect(template.liveLanguages).toEqual(['ar', 'en']);
     expect(
       template.variants.ur.map(({ variant, language, availability }) => ({
@@ -306,6 +306,99 @@ describe('a live language, in Settings', () => {
   });
 });
 
+describe('Turkish, in Settings', () => {
+  const TURKISH_LIVE = [
+    ...seededRegistryTemplates(),
+    authoredTemplate('tr', 'standard_v1', {
+      isActive: true,
+      isDefault: true,
+      reviewStatus: 'approved',
+    }),
+    authoredTemplate('tr', 'short_v1', {
+      isActive: true,
+      reviewStatus: 'approved',
+    }),
+  ];
+
+  it('is not live while it has drafts only, and offers nothing to choose', async () => {
+    // The migration writes drafts only, so the registry holds no Turkish row.
+    const { template } = await setup(
+      seededRegistryTemplates(),
+    ).settings.getSettings(owner);
+    expect(template.liveLanguages).not.toContain('tr');
+    expect(template.variants.tr).toEqual([]);
+    expect(template.defaults.tr).toBeNull();
+    expect(template.selected.tr).toBeNull();
+    expect(template.messages.tr).toBeNull();
+  });
+
+  it('refuses to set the store to it while it has drafts only', async () => {
+    const { settings, integrationsRepo } = setup(seededRegistryTemplates());
+    expect(
+      await rejection(
+        settings.updateSettingsResponse(owner, {
+          ...FORM,
+          defaultLanguage: 'tr',
+        }),
+      ),
+    ).toMatchObject({ code: 'SETTINGS_LANGUAGE_UNAVAILABLE' });
+    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+  });
+
+  it('lists a submitted template awaiting review as locked', async () => {
+    const { template } = await setup([
+      ...seededRegistryTemplates(),
+      authoredTemplate('tr', 'standard_v1'),
+    ]).settings.getSettings(owner);
+    expect(template.liveLanguages).not.toContain('tr');
+    expect(
+      template.variants.tr.map(({ variant, availability }) => ({
+        variant,
+        availability,
+      })),
+    ).toEqual([{ variant: 'standard_v1', availability: 'in_review' }]);
+  });
+
+  it('is live with two approved active templates and a default', async () => {
+    const { template } = await setup(TURKISH_LIVE).settings.getSettings(owner);
+    expect(template.liveLanguages).toEqual(['ar', 'en', 'tr']);
+    expect(template.variants.tr.map(({ variant }) => variant)).toEqual([
+      'standard_v1',
+      'short_v1',
+    ]);
+    for (const style of template.variants.tr) {
+      expect(style).not.toHaveProperty('availability');
+    }
+    expect(template.defaults.tr).toBe('standard_v1');
+    expect(template.messages.tr?.direction).toBe('ltr');
+  });
+
+  it('saves the store language and the style under the Turkish key', async () => {
+    const { settings, current } = setup(TURKISH_LIVE);
+    await settings.updateSettingsResponse(owner, {
+      ...FORM,
+      defaultLanguage: 'tr',
+      codTemplateTrVariant: 'short_v1',
+    });
+    expect(current()).toMatchObject({
+      defaultLanguage: 'tr',
+      codTemplateTrKey: 'cod_confirm.tr.short_v1',
+    });
+  });
+
+  it('reads the test language of an auto store with a +90 number', async () => {
+    const live = await setup(TURKISH_LIVE, {
+      merchantWhatsappPhone: '+905321234567',
+    }).settings.getSettings(owner);
+    expect(live.state.testSendLanguage).toBe('tr');
+
+    const draftsOnly = await setup(seededRegistryTemplates(), {
+      merchantWhatsappPhone: '+905321234567',
+    }).settings.getSettings(owner);
+    expect(draftsOnly.state.testSendLanguage).toBe('en');
+  });
+});
+
 describe('UpdateOnboardingSettingsDto', () => {
   it('accepts the new languages and their style fields', async () => {
     const dto = plainToInstance(UpdateOnboardingSettingsDto, {
@@ -317,6 +410,8 @@ describe('UpdateOnboardingSettingsDto', () => {
       codReminderUrVariant: null,
       codReminderEsVariant: 'standard_v1',
       codReminderFrVariant: null,
+      codTemplateTrVariant: 'short_v1',
+      codReminderTrVariant: 'standard_v1',
     });
     expect(await validate(dto)).toEqual([]);
   });

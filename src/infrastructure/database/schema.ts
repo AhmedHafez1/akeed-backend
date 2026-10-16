@@ -67,7 +67,7 @@ export const verificationDispatchState = pgEnum('verification_dispatch_state', [
 
 export const integrationDefaultLanguage = pgEnum(
   'integration_default_language',
-  ['en', 'ar', 'auto', 'ur', 'es', 'fr'],
+  ['en', 'ar', 'auto', 'ur', 'es', 'fr', 'tr'],
 );
 
 export const integrationOnboardingStatus = pgEnum(
@@ -281,7 +281,7 @@ export const whatsappTemplates = pgTable(
     ),
     check(
       'whatsapp_templates_language_check',
-      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr')`,
+      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     check(
       'whatsapp_templates_parameter_format_check',
@@ -381,7 +381,7 @@ export const whatsappTemplateDrafts = pgTable(
     ),
     check(
       'whatsapp_template_drafts_language_check',
-      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr')`,
+      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     check('whatsapp_template_drafts_version_check', sql`${table.version} >= 1`),
     check(
@@ -602,14 +602,16 @@ export const integrations = pgTable(
     // template, as before. Read only with WHATSAPP_REMINDER_TEMPLATE_ENABLED.
     codReminderArKey: text('cod_reminder_ar_key'),
     codReminderEnKey: text('cod_reminder_en_key'),
-    // Urdu, Spanish and French: the first message and the reminder. They have
-    // no old variant column.
+    // Urdu, Spanish, French and Turkish: the first message and the reminder.
+    // They have no old variant column.
     codTemplateUrKey: text('cod_template_ur_key'),
     codTemplateEsKey: text('cod_template_es_key'),
     codTemplateFrKey: text('cod_template_fr_key'),
+    codTemplateTrKey: text('cod_template_tr_key'),
     codReminderUrKey: text('cod_reminder_ur_key'),
     codReminderEsKey: text('cod_reminder_es_key'),
     codReminderFrKey: text('cod_reminder_fr_key'),
+    codReminderTrKey: text('cod_reminder_tr_key'),
     // The store chose `auto` as its Arabic style.
     codTemplateArAuto: boolean('cod_template_ar_auto').default(false).notNull(),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
@@ -748,6 +750,11 @@ export const integrations = pgTable(
       name: 'integrations_cod_template_fr_key_fkey',
     }).onUpdate('cascade'),
     foreignKey({
+      columns: [table.codTemplateTrKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_template_tr_key_fkey',
+    }).onUpdate('cascade'),
+    foreignKey({
       columns: [table.codReminderUrKey],
       foreignColumns: [whatsappTemplates.key],
       name: 'integrations_cod_reminder_ur_key_fkey',
@@ -761,6 +768,11 @@ export const integrations = pgTable(
       columns: [table.codReminderFrKey],
       foreignColumns: [whatsappTemplates.key],
       name: 'integrations_cod_reminder_fr_key_fkey',
+    }).onUpdate('cascade'),
+    foreignKey({
+      columns: [table.codReminderTrKey],
+      foreignColumns: [whatsappTemplates.key],
+      name: 'integrations_cod_reminder_tr_key_fkey',
     }).onUpdate('cascade'),
     pgPolicy('Multi-tenant integrations', {
       as: 'permissive',
@@ -1217,7 +1229,7 @@ export const verificationMessageDispatches = pgTable(
     ),
     check(
       'dispatch_resolved_language_check',
-      sql`resolved_language IS NULL OR resolved_language IN ('ar', 'en', 'ur', 'es', 'fr')`,
+      sql`resolved_language IS NULL OR resolved_language IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     index('idx_verification_message_dispatches_accepted_at')
       .on(table.acceptedAt)
@@ -3364,7 +3376,7 @@ export const whatsappMessageTexts = pgTable(
     ),
     check(
       'whatsapp_message_texts_language_check',
-      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr')`,
+      sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     check(
       'whatsapp_message_texts_style_check',
@@ -3479,7 +3491,7 @@ export const verificationServiceMessages = pgTable(
     ),
     check(
       'verification_service_messages_language_check',
-      sql`${table.language} IS NULL OR ${table.language} IN ('ar', 'en', 'ur', 'es', 'fr')`,
+      sql`${table.language} IS NULL OR ${table.language} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     check(
       'verification_service_messages_sent_has_id_check',

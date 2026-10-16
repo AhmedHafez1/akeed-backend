@@ -20,6 +20,7 @@ export const WOOCOMMERCE_INSTALL_LOCALES = [
   'ur',
   'es',
   'fr',
+  'tr',
 ] as const;
 export type WooCommerceInstallLocale =
   (typeof WOOCOMMERCE_INSTALL_LOCALES)[number];

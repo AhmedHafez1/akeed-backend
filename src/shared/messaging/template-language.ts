@@ -63,7 +63,7 @@ export function isArabicPhoneNumber(phoneNumber: string): boolean {
 }
 
 /**
- * The calling codes `auto` reads as Urdu, Spanish or French. Only countries
+ * The calling codes `auto` reads as Urdu, Spanish, French or Turkish. Only countries
  * where that language is the plain choice are listed: a country with several
  * languages (Canada, Belgium, Switzerland, the United States) and every
  * Arabic country keep the language they always had.
@@ -91,12 +91,15 @@ const COUNTRY_LANGUAGE_CALLING_CODES = {
     '598', // Uruguay
   ],
   fr: ['33'], // France
+  tr: ['90'], // Türkiye
 } as const satisfies Partial<Record<TemplateLanguage, readonly string[]>>;
 
 export type CountryTemplateLanguage =
   keyof typeof COUNTRY_LANGUAGE_CALLING_CODES;
 
-/** The Urdu, Spanish or French country a number belongs to, or NULL. */
+/**
+ * The Urdu, Spanish, French or Turkish country a number belongs to, or NULL.
+ */
 export function matchCountryLanguage(
   phoneNumber: string,
 ): CountryTemplateLanguage | null {

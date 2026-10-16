@@ -37,6 +37,7 @@ const WORDS = {
     listSeparator: ', ',
     more: (count: number) => `+${count} autres articles`,
   },
+  tr: { listSeparator: ', ', more: (count: number) => `+${count} ürün daha` },
 } as const satisfies Record<
   TemplateLanguage,
   { listSeparator: string; more: (count: number) => string }

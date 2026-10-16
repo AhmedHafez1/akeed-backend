@@ -157,7 +157,7 @@ describe('reminder style settings', () => {
     const { settings } = setup({ reminderTemplate: true });
     const { template } = await settings.getSettings(owner);
     expect(template.reminder).toEqual({
-      selected: { ar: null, en: null, ur: null, es: null, fr: null },
+      selected: { ar: null, en: null, ur: null, es: null, fr: null, tr: null },
       variants: {
         ar: [
           expect.objectContaining({ variant: 'standard_v1' }),
@@ -167,6 +167,7 @@ describe('reminder style settings', () => {
         ur: [],
         es: [],
         fr: [],
+        tr: [],
       },
     });
   });

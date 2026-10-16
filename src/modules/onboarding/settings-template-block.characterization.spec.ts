@@ -238,9 +238,9 @@ describe('Settings template block characterization', () => {
     const { template } = await buildSettingsService(CASES[0]).getSettings(
       owner,
     );
-    expect(template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+    expect(template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr', 'tr']);
     expect(template.liveLanguages).toEqual(['ar', 'en']);
-    for (const language of ['ur', 'es', 'fr'] as const) {
+    for (const language of ['ur', 'es', 'fr', 'tr'] as const) {
       expect(template.defaults[language]).toBeNull();
       expect(template.selected[language]).toBeNull();
       expect(template.variants[language]).toEqual([]);

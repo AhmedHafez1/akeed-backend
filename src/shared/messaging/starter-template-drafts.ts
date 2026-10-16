@@ -6,12 +6,13 @@ import {
 } from './template-registry.types';
 
 /**
- * The drafts migration 0064 gives staff for Urdu, Spanish and French: a
- * standard and a short confirmation and one reminder per language. They are
- * drafts only. Staff submit each one to the provider and activate it once it
- * is approved; until then no send can read them.
+ * The drafts migration 0064 gives staff for Urdu, Spanish and French, and
+ * migration 0068 for Turkish: a standard and a short confirmation and one
+ * reminder per language. They are drafts only. Staff submit each one to the
+ * provider and activate it once it is approved; until then no send can read
+ * them.
  *
- * The migration repeats this text, and a spec keeps the two the same.
+ * The migrations repeat this text, and a spec keeps them the same.
  */
 export interface StarterTemplateDraft {
   purpose: TemplatePurpose;
@@ -107,5 +108,32 @@ export const STARTER_TEMPLATE_DRAFTS: readonly StarterTemplateDraft[] = [
     body: "Bonjour {{customer}},\nVotre commande {{order}} sur {{store}} attend toujours votre confirmation. Le total est de {{total}}, à payer à la livraison.\nConfirmez-la pour que nous puissions vous l'expédier.",
     confirmLabel: 'Confirmer la commande',
     cancelLabel: 'Annuler la commande',
+  },
+  {
+    purpose: COD_CONFIRMATION_PURPOSE,
+    language: 'tr',
+    style: 'standard',
+    languageCode: 'tr',
+    body: 'Merhaba {{customer}},\n{{store}} üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. Toplam tutar {{total}}; ödeme kapıda yapılacaktır.\nLütfen siparişinizi onaylayın.',
+    confirmLabel: 'Siparişi onayla',
+    cancelLabel: 'Siparişi iptal et',
+  },
+  {
+    purpose: COD_CONFIRMATION_PURPOSE,
+    language: 'tr',
+    style: 'short',
+    languageCode: 'tr',
+    body: 'Merhaba, {{order}} numaralı siparişiniz alındı. Toplam tutar {{total}}; ödeme kapıda yapılacaktır. Lütfen onaylayın.',
+    confirmLabel: 'Onayla',
+    cancelLabel: 'İptal et',
+  },
+  {
+    purpose: COD_REMINDER_PURPOSE,
+    language: 'tr',
+    style: 'standard',
+    languageCode: 'tr',
+    body: 'Merhaba {{customer}},\n{{store}} üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor. Toplam tutar {{total}}; ödeme kapıda yapılacaktır.\nSiparişinizi gönderebilmemiz için lütfen onaylayın.',
+    confirmLabel: 'Siparişi onayla',
+    cancelLabel: 'Siparişi iptal et',
   },
 ];

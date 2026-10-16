@@ -121,7 +121,7 @@ The registry is "seeded" when the 8 original keys are active, not retired, and t
 
 Prefer the admin page: **Make default** on `cod_confirm.ar.standard` and on `cod_confirm.en.friendly`. It needs them approved at Meta.
 
-If the page cannot do it (Meta does not report them approved, or template operations are off), a developer or the product owner runs this, once, in one transaction. It changes the two default flags and reactivates the original 8. It does not touch any store's choice, and it leaves Urdu, Spanish and French alone: they were never seeded, so they have no state to go back to (section 9).
+If the page cannot do it (Meta does not report them approved, or template operations are off), a developer or the product owner runs this, once, in one transaction. It changes the two default flags and reactivates the original 8. It does not touch any store's choice, and it leaves Urdu, Spanish, French and Turkish alone: they were never seeded, so they have no state to go back to (section 9).
 
 ```sql
 begin;
@@ -248,9 +248,9 @@ order by created_at desc limit 50;
 - **Never paste an access token or app secret** into a ticket, a chat or a log. Support never needs one.
 - **Never retry a submit or an edit that answered "unresolved"** by pressing it again elsewhere. Use **Check at Meta**: the first request may have been applied.
 
-## 9. Launch Urdu, Spanish or French
+## 9. Launch Urdu, Spanish, French or Turkish
 
-Akeed sends in five languages: Arabic, English, Urdu, Spanish and French. Arabic and English were seeded and are always on. Urdu, Spanish and French start with **no approved template**, so each one is switched on here. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French).
+Akeed has six message languages: Arabic, English, Urdu, Spanish, French and Turkish. Arabic and English were seeded and are always on. Urdu, Spanish, French and Turkish start with **no approved template**, so each one is switched on here. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French, Türkiye gets Turkish).
 
 Before a language is live:
 
@@ -258,7 +258,7 @@ Before a language is live:
 - Templates you have submitted appear to merchants as locked cards. A draft you have not submitted is never shown to merchants.
 - Customers in those countries keep getting English under `auto`, exactly as before.
 
-Migration `0064` created three drafts per language: a `standard` and a `short` confirmation, and a `standard` reminder. It also wrote the five free-form texts of each language (the two acknowledgments, the "press a button" nudge and the two name fallbacks), already active. A free-form text is not a Meta template and needs no approval; it is only read for a customer whose message went out in that language.
+Migration `0064` created three drafts per language for Urdu, Spanish and French, and migration `0068` the same three for Turkish: a `standard` and a `short` confirmation, and a `standard` reminder. It also wrote the five free-form texts of each language (the two acknowledgments, the "press a button" nudge and the two name fallbacks), already active. A free-form text is not a Meta template and needs no approval; it is only read for a customer whose message went out in that language.
 
 Operators only, one language at a time:
 
@@ -277,7 +277,7 @@ Read-only check of what is live and who uses it:
 ```sql
 select language, "key", is_active, is_default, review_status
 from whatsapp_templates
-where purpose = 'cod_confirmation' and language in ('ur', 'es', 'fr')
+where purpose = 'cod_confirmation' and language in ('ur', 'es', 'fr', 'tr')
 order by language, "key";
 
 select default_language, count(*) as stores

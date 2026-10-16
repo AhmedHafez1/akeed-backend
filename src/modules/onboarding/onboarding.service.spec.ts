@@ -122,7 +122,14 @@ describe('OnboardingService', () => {
         periodStart,
         periodEnd,
       });
-      expect(result.template.languages).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+      expect(result.template.languages).toEqual([
+        'ar',
+        'en',
+        'ur',
+        'es',
+        'fr',
+        'tr',
+      ]);
       expect(result.template.liveLanguages).toEqual(['ar', 'en']);
       expect(result.template.defaults).toEqual({
         ar: 'standard',
@@ -130,6 +137,7 @@ describe('OnboardingService', () => {
         ur: null,
         es: null,
         fr: null,
+        tr: null,
       });
       expect(result.template.selected).toEqual({
         ar: 'standard',
@@ -137,6 +145,7 @@ describe('OnboardingService', () => {
         ur: null,
         es: null,
         fr: null,
+        tr: null,
       });
       expect(
         result.template.variants.ar.map((variant) => variant.variant),

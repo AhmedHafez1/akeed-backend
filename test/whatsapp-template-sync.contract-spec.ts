@@ -74,6 +74,7 @@ const MIGRATIONS = [
   '0059_whatsapp_reminder_and_auto_style.sql',
   '0064_whatsapp_template_languages.sql',
   '0066_whatsapp_template_image_header.sql',
+  '0068_whatsapp_template_turkish.sql',
 ];
 const SYNC_MIGRATION = '0057_whatsapp_template_sync.sql';
 

@@ -15,9 +15,10 @@ const CANCEL_ACTIONS = new Set(['cancel', 'no']);
 /**
  * Free-text answers accepted as a reply to the confirmation template.
  *
- * Arabic first — it is the default locale — then English, Urdu, Spanish and
- * French, then the digits used by customers whose keyboard makes their
- * language awkward. Kept deliberately
+ * Arabic first — it is the default locale — then English, Urdu, Spanish,
+ * French and Turkish, then the digits used by customers whose keyboard makes
+ * their language awkward. Turkish words are also listed as typed without
+ * Turkish letters. Kept deliberately
  * tight: anything ambiguous must fall through to `null` so the verification is
  * left for the no-reply escalation rather than being resolved by a guess.
  */
@@ -54,6 +55,13 @@ const CONFIRM_TEXTS = new Set([
   'confirmer',
   'confirmé',
   "d'accord",
+  'evet',
+  'onaylıyorum',
+  'onayliyorum',
+  'onaylarım',
+  'onaylarim',
+  'onay',
+  'tamam',
   '1',
 ]);
 
@@ -82,14 +90,26 @@ const CANCEL_TEXTS = new Set([
   'annuler',
   "j'annule",
   'annulé',
+  'hayır',
+  'hayir',
+  'iptal',
+  'iptal et',
+  'vazgeçtim',
+  'vazgectim',
+  'istemiyorum',
   '2',
 ]);
+
+/** U+0307, written as a code point so the source holds no invisible character. */
+const COMBINING_DOT_ABOVE = String.fromCharCode(0x307);
 
 /**
  * Normalizes for comparison: strips Arabic diacritics and the tatweel joiner,
  * collapses whitespace, straightens a typographic apostrophe, and drops the
  * punctuation people add without meaning anything by it (Spanish opens an
- * exclamation with one too).
+ * exclamation with one too). Lowercasing a Turkish dotted capital İ leaves
+ * "i" plus a combining dot above, so the dot is dropped and "İPTAL" reads
+ * as "iptal".
  */
 function normalizeReplyText(value: string): string {
   return value
@@ -99,7 +119,8 @@ function normalizeReplyText(value: string): string {
     .replace(/^[¡¿]+/u, '')
     .replace(/[!؟?.،,۔]+$/u, '')
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replaceAll(COMBINING_DOT_ABOVE, '');
 }
 
 /**

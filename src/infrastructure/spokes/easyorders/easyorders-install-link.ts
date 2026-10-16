@@ -20,6 +20,7 @@ export const EASYORDERS_INSTALL_LOCALES = [
   'ur',
   'es',
   'fr',
+  'tr',
 ] as const;
 export type EasyOrdersInstallLocale =
   (typeof EASYORDERS_INSTALL_LOCALES)[number];

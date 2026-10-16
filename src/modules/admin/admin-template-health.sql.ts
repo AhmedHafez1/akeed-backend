@@ -16,8 +16,8 @@ import {
  * For each language the store can send in (Arabic and English under `auto`,
  * one when the language is forced), its template is the one it selected
  * (stored key, else its old variant column where the language has one) when
- * that row is active, else the language default. Under `auto` Urdu, Spanish
- * and French are not counted: a number of theirs gets English when their
+ * that row is active, else the language default. Under `auto` Urdu, Spanish,
+ * French and Turkish are not counted: a number of theirs gets English when their
  * language cannot be sent, so the store loses no message.
  *
  * - `unavailable`: for some language neither the selection nor the default

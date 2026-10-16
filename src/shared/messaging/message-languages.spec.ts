@@ -43,6 +43,7 @@ const PAKISTAN_PHONE = '+923001234567';
 const SPAIN_PHONE = '+34612345678';
 const MEXICO_PHONE = '+525512345678';
 const FRANCE_PHONE = '+33612345678';
+const TURKEY_PHONE = '+905321234567';
 const EGYPT_PHONE = '+201001112223';
 const US_PHONE = '+14155550101';
 
@@ -55,8 +56,8 @@ const live = (language: TemplateLanguage, style = 'standard_v1') =>
   });
 
 describe('message languages', () => {
-  it('lists Arabic and English first, then Urdu, Spanish and French', () => {
-    expect(TEMPLATE_LANGUAGES).toEqual(['ar', 'en', 'ur', 'es', 'fr']);
+  it('lists Arabic and English first, then Urdu, Spanish, French and Turkish', () => {
+    expect(TEMPLATE_LANGUAGES).toEqual(['ar', 'en', 'ur', 'es', 'fr', 'tr']);
   });
 
   it('writes Arabic and Urdu right to left, the others left to right', () => {
@@ -64,6 +65,7 @@ describe('message languages', () => {
       'rtl',
       'ltr',
       'rtl',
+      'ltr',
       'ltr',
       'ltr',
     ]);
@@ -75,6 +77,7 @@ describe('message languages', () => {
     expect(formatOrderTotal('1250', 'PKR', 'ur')).toBe('1,250.00 PKR');
     expect(formatOrderTotal('1250', 'EUR', 'es')).toBe('1,250.00 EUR');
     expect(formatOrderTotal('1250', 'EUR', 'fr')).toBe('1,250.00 EUR');
+    expect(formatOrderTotal('1250', 'TRY', 'tr')).toBe('1,250.00 TRY');
   });
 
   it('has sample values and item wording for every language', () => {
@@ -111,6 +114,7 @@ describe('resolveTemplateLanguageForPhone', () => {
     expect(matchCountryLanguage(SPAIN_PHONE)).toBe('es');
     expect(matchCountryLanguage(MEXICO_PHONE)).toBe('es');
     expect(matchCountryLanguage('0033612345678')).toBe('fr');
+    expect(matchCountryLanguage(TURKEY_PHONE)).toBe('tr');
     expect(matchCountryLanguage(EGYPT_PHONE)).toBeNull();
     expect(matchCountryLanguage(US_PHONE)).toBeNull();
   });
@@ -121,12 +125,35 @@ describe('resolveTemplateLanguageForPhone', () => {
     expect(resolve(PAKISTAN_PHONE)).toBe('ur');
     expect(resolve(SPAIN_PHONE)).toBe('es');
     expect(resolve(FRANCE_PHONE)).toBe('fr');
+    expect(resolve(TURKEY_PHONE)).toBe('tr');
     expect(resolve(EGYPT_PHONE)).toBe('ar');
     expect(resolve(US_PHONE)).toBe('en');
   });
 
+  it('under auto, sends +90 in Turkish only while Turkish is live', () => {
+    expect(
+      resolveTemplateLanguageForPhone(
+        'auto',
+        TURKEY_PHONE,
+        (language) => language === 'tr',
+      ),
+    ).toBe('tr');
+    expect(
+      resolveTemplateLanguageForPhone(
+        'auto',
+        TURKEY_PHONE,
+        (language) => language !== 'tr',
+      ),
+    ).toBe('en');
+  });
+
   it('under auto, keeps English for a country whose language is not live', () => {
-    for (const phone of [PAKISTAN_PHONE, SPAIN_PHONE, FRANCE_PHONE]) {
+    for (const phone of [
+      PAKISTAN_PHONE,
+      SPAIN_PHONE,
+      FRANCE_PHONE,
+      TURKEY_PHONE,
+    ]) {
       expect(resolveTemplateLanguageForPhone('auto', phone)).toBe('en');
       expect(
         resolveTemplateLanguageForPhone('auto', phone, noLanguageLive),
@@ -196,13 +223,21 @@ describe('a live language', () => {
     isActive: true,
     reviewStatus: 'approved',
   });
-  const templates = [...seeded, urdu, urduShort, live('es'), live('fr')];
+  const templates = [
+    ...seeded,
+    urdu,
+    urduShort,
+    live('es'),
+    live('fr'),
+    live('tr'),
+  ];
 
   it('is sent to its country under auto', () => {
     for (const [phone, language] of [
       [PAKISTAN_PHONE, 'ur'],
       [MEXICO_PHONE, 'es'],
       [FRANCE_PHONE, 'fr'],
+      [TURKEY_PHONE, 'tr'],
       [EGYPT_PHONE, 'ar'],
       [US_PHONE, 'en'],
     ] as const) {
@@ -268,6 +303,8 @@ describe('storeTemplateKeys', () => {
         codTemplateEnVariant: 'friendly',
         codTemplateUrKey: 'cod_confirm.ur.short_v1',
         codReminderFrKey: 'cod_reminder.fr.standard_v1',
+        codTemplateTrKey: 'cod_confirm.tr.short_v1',
+        codReminderTrKey: 'cod_reminder.tr.standard_v1',
       }),
     ).toEqual({
       keys: {
@@ -276,6 +313,7 @@ describe('storeTemplateKeys', () => {
         ur: 'cod_confirm.ur.short_v1',
         es: null,
         fr: null,
+        tr: 'cod_confirm.tr.short_v1',
       },
       reminderKeys: {
         ar: null,
@@ -283,6 +321,7 @@ describe('storeTemplateKeys', () => {
         ur: null,
         es: null,
         fr: 'cod_reminder.fr.standard_v1',
+        tr: 'cod_reminder.tr.standard_v1',
       },
     });
   });
@@ -297,10 +336,15 @@ describe('storeTemplateKeys', () => {
 });
 
 describe('starter template drafts', () => {
-  const migration = readFileSync(
-    resolve(__dirname, '../../../drizzle/0064_whatsapp_template_languages.sql'),
-    'utf8',
+  const readMigration = (file: string) =>
+    readFileSync(resolve(__dirname, '../../../drizzle', file), 'utf8');
+  const languagesMigration = readMigration(
+    '0064_whatsapp_template_languages.sql',
   );
+  const turkishMigration = readMigration('0068_whatsapp_template_turkish.sql');
+  /** The migration that writes a language's drafts and texts. */
+  const migrationOf = (language: TemplateLanguage) =>
+    language === 'tr' ? turkishMigration : languagesMigration;
   const sqlText = (value: string) =>
     value.replaceAll("'", "''").replaceAll('\n', '\\n');
 
@@ -310,7 +354,7 @@ describe('starter template drafts', () => {
         buildDraftKey(purpose, language, style, 1),
       ),
     ).toEqual(
-      (['ur', 'es', 'fr'] as const).flatMap((language) => [
+      (['ur', 'es', 'fr', 'tr'] as const).flatMap((language) => [
         `cod_confirm.${language}.standard_v1`,
         `cod_confirm.${language}.short_v1`,
         `cod_reminder.${language}.standard_v1`,
@@ -340,7 +384,7 @@ describe('starter template drafts', () => {
   it.each(STARTER_TEMPLATE_DRAFTS)(
     'is written to the drafts table by the migration: $purpose $language $style',
     (draft) => {
-      const row = migration
+      const row = migrationOf(draft.language)
         .split('\n')
         .find((line) =>
           line.includes(
@@ -359,9 +403,21 @@ describe('starter template drafts', () => {
     },
   );
 
-  it('writes drafts only: the migration adds no template a send could read', () => {
-    expect(migration).toContain('INSERT INTO "whatsapp_template_drafts"');
-    expect(migration).not.toContain('INSERT INTO "whatsapp_templates"');
+  it.each([
+    ['0064', languagesMigration],
+    ['0068', turkishMigration],
+  ])(
+    'writes drafts only: migration %s adds no template a send could read',
+    (_, migration) => {
+      expect(migration).toContain('INSERT INTO "whatsapp_template_drafts"');
+      expect(migration).not.toContain('INSERT INTO "whatsapp_templates"');
+    },
+  );
+
+  it('writes Turkish in 0068 only, and nothing else there', () => {
+    expect(languagesMigration).not.toContain('.tr.');
+    expect(turkishMigration).not.toMatch(/\.(ur|es|fr)\./);
+    expect(turkishMigration).not.toMatch(/, '(ar|en|ur|es|fr)', 'default'/);
   });
 
   describe('free-form texts', () => {
@@ -372,7 +428,7 @@ describe('starter template drafts', () => {
           purpose,
         ]),
       ).toEqual(
-        (['ur', 'es', 'fr'] as const).flatMap((language) =>
+        (['ur', 'es', 'fr', 'tr'] as const).flatMap((language) =>
           MESSAGE_TEXT_PURPOSES.map((purpose) => [language, purpose]),
         ),
       );
@@ -402,10 +458,38 @@ describe('starter template drafts', () => {
     it.each(STARTER_MESSAGE_TEXTS)(
       'is written to the texts table by the migration: $language $purpose',
       ({ purpose, language, body }) => {
-        expect(migration).toContain(
+        expect(migrationOf(language)).toContain(
           `('${purpose}', '${language}', 'default', '${body.replaceAll("'", "''")}', true, '${STARTER_DRAFT_AUTHOR_ID}')`,
         );
       },
     );
+
+    it('reads correctly in Turkish when the store or customer name is missing', () => {
+      const turkish = (purpose: string) =>
+        STARTER_MESSAGE_TEXTS.find(
+          (text) => text.language === 'tr' && text.purpose === purpose,
+        )?.body ?? '';
+      const values = {
+        customer: turkish('fallback_customer_name'),
+        store: turkish('fallback_store_name'),
+        order: '#1009',
+        total: '250.00 TRY',
+      };
+      const bodies = [
+        ...STARTER_TEMPLATE_DRAFTS.filter(
+          ({ language }) => language === 'tr',
+        ).map(({ body }) => body),
+        turkish('ack_confirmed'),
+        turkish('ack_canceled'),
+      ];
+      for (const body of bodies) {
+        const filled = fillMessageText(body, values);
+        expect(filled).not.toContain('{{');
+        expect(filled).not.toMatch(/mağazamız mağaza/i);
+      }
+      expect(fillMessageText(turkish('ack_canceled'), values)).toContain(
+        'mağazamız adına',
+      );
+    });
   });
 });
