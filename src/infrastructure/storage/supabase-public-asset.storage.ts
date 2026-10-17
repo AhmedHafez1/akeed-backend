@@ -35,7 +35,7 @@ export class SupabasePublicAssetStorage implements PublicAssetStoragePort {
         cacheControl: '31536000',
       }),
     );
-    if (error) throw new PublicAssetStorageError('upload_failed');
+    if (error) throw storageFailure('upload_failed', error);
     const { data } = storage.getPublicUrl(path);
     if (!data.publicUrl.startsWith('https://')) {
       throw new PublicAssetStorageError('public_url_not_https');
@@ -50,7 +50,7 @@ export class SupabasePublicAssetStorage implements PublicAssetStoragePort {
       .map((url) => decodeURIComponent(url.slice(prefix.length)));
     if (paths.length === 0) return;
     const { error } = await withTimeout(this.bucket().remove(paths));
-    if (error) throw new PublicAssetStorageError('remove_failed');
+    if (error) throw storageFailure('remove_failed', error);
   }
 
   /** The URL every public file of the bucket starts with. */
@@ -69,6 +69,38 @@ export class SupabasePublicAssetStorage implements PublicAssetStoragePort {
         ?.bucket ?? DEFAULT_MERCHANT_LOGO_BUCKET;
     return this.client.storage.from(bucket);
   }
+}
+
+/**
+ * Keeps Supabase's own status and message for the logs. A missing bucket
+ * gets its own reason because it is a setup step, not an outage.
+ */
+export function storageFailure(
+  fallback: string,
+  error: unknown,
+): PublicAssetStorageError {
+  const fields = (error ?? {}) as {
+    message?: unknown;
+    statusCode?: unknown;
+    status?: unknown;
+  };
+  const providerMessage =
+    typeof fields.message === 'string'
+      ? fields.message.slice(0, 200)
+      : undefined;
+  const rawStatus = fields.statusCode ?? fields.status;
+  const providerStatus =
+    typeof rawStatus === 'string' || typeof rawStatus === 'number'
+      ? String(rawStatus)
+      : undefined;
+  const reason =
+    providerMessage && /bucket not found/i.test(providerMessage)
+      ? 'bucket_missing'
+      : fallback;
+  return new PublicAssetStorageError(reason, {
+    providerStatus,
+    providerMessage,
+  });
 }
 
 async function withTimeout<T>(work: Promise<T>): Promise<T> {

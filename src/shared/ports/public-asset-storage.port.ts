@@ -14,9 +14,18 @@ export interface PublicAssetStoragePort {
   removeByUrls(urls: readonly string[]): Promise<void>;
 }
 
+/** What the storage provider said when it refused, for the logs only. */
+export interface PublicAssetStorageErrorDetail {
+  providerStatus?: string;
+  providerMessage?: string;
+}
+
 /** The storage could not be reached or refused the write. */
 export class PublicAssetStorageError extends Error {
-  constructor(readonly reason: string) {
+  constructor(
+    readonly reason: string,
+    readonly detail: PublicAssetStorageErrorDetail = {},
+  ) {
     super('Public asset storage is unavailable.');
   }
 }

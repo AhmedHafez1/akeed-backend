@@ -7,6 +7,7 @@ import {
 } from '../../shared/logging/backend-log.util';
 import {
   PUBLIC_ASSET_STORAGE_PORT,
+  PublicAssetStorageError,
   type PublicAssetStoragePort,
 } from '../../shared/ports/public-asset-storage.port';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
@@ -92,6 +93,7 @@ export class MerchantBrandingService {
           orgId: user.orgId,
           integrationId: integration.id,
           errorCode: 'storage_unavailable',
+          ...storageFailureFields(error),
           ...normalizeError(error),
         }),
       );
@@ -177,6 +179,7 @@ export class MerchantBrandingService {
           outcome: 'failure',
           orgId,
           integrationId,
+          ...storageFailureFields(error),
           ...normalizeError(error),
         }),
       );
@@ -187,4 +190,15 @@ export class MerchantBrandingService {
     if (!canWriteOrganization(user.role))
       throw logoError('LOGO_WRITE_FORBIDDEN');
   }
+}
+
+/** Why the storage refused, when it said. */
+function storageFailureFields(error: unknown): Record<string, string> {
+  if (!(error instanceof PublicAssetStorageError)) return {};
+  const fields: Record<string, string> = { storageReason: error.reason };
+  if (error.detail.providerStatus)
+    fields.storageStatus = error.detail.providerStatus;
+  if (error.detail.providerMessage)
+    fields.storageMessage = error.detail.providerMessage;
+  return fields;
 }
