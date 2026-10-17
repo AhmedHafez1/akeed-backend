@@ -109,6 +109,20 @@ async function errorCode(work: Promise<unknown>): Promise<string> {
   return 'no error';
 }
 
+async function errorBody(
+  work: Promise<unknown>,
+): Promise<Record<string, unknown>> {
+  try {
+    await work;
+  } catch (error) {
+    if (error instanceof HttpException) {
+      return error.getResponse() as Record<string, unknown>;
+    }
+    throw error;
+  }
+  return {};
+}
+
 const run = { userId: STAFF, requestId: 'req-1' };
 
 describe('AdminImageTwinsService', () => {
@@ -288,15 +302,34 @@ describe('AdminImageTwinsService', () => {
     expect(catalog.listTemplates).not.toHaveBeenCalled();
   });
 
-  it('stops when the sample upload fails, creating nothing', async () => {
+  it('stops when the sample upload fails, creating nothing, and says why', async () => {
     const { service, catalog } = setup();
     catalog.uploadSampleImage.mockRejectedValue(
       new TemplateSubmissionError('permission_denied', false, 200),
     );
-    expect(await errorCode(service.createMissing(run))).toBe(
-      'WHATSAPP_TEMPLATE_IMAGE_TWIN_UPLOAD_FAILED',
-    );
+    expect(await errorBody(service.createMissing(run))).toMatchObject({
+      code: 'WHATSAPP_TEMPLATE_IMAGE_TWIN_UPLOAD_FAILED',
+      reason: 'permission_denied',
+      provider_code: 200,
+    });
     expect(catalog.createImageTwin).not.toHaveBeenCalled();
+  });
+
+  it("reports the adapter's own reason when Meta did not refuse", async () => {
+    const { service, catalog } = setup();
+    catalog.uploadSampleImage.mockRejectedValue(
+      new TemplateSubmissionError(
+        'unresolved',
+        false,
+        undefined,
+        undefined,
+        'upload_session_unreadable',
+      ),
+    );
+    expect(await errorBody(service.createMissing(run))).toMatchObject({
+      reason: 'upload_session_unreadable',
+      provider_code: null,
+    });
   });
 
   it('activates only the approved twins and reports the rest', async () => {

@@ -72,8 +72,23 @@ type MetaWriteAction =
   | 'meta-template-edit'
   | 'meta-template-image-upload';
 
-/** An upload session id (`upload:...`) goes into a URL path. */
-const UPLOAD_SESSION_ID = /^upload:[A-Za-z0-9_=+/-]{1,512}$/;
+/**
+ * An upload session as Meta answers it: `upload:<id>`, usually followed by
+ * `?sig=<signature>`. The id goes into a URL path and the signature into a
+ * query parameter, so each is held to a strict alphabet.
+ */
+const UPLOAD_SESSION =
+  /^(upload:[A-Za-z0-9_=+/-]{1,1024})(?:\?sig=([A-Za-z0-9_-]{1,256}))?$/;
+
+/** The session's path and signature, or null for anything else. */
+export function parseUploadSession(
+  value: unknown,
+): { path: string; sig?: string } | null {
+  if (typeof value !== 'string') return null;
+  const match = UPLOAD_SESSION.exec(value);
+  if (!match || match[1].includes('..')) return null;
+  return match[2] ? { path: match[1], sig: match[2] } : { path: match[1] };
+}
 
 /** Page size and page cap: 60 pages of 100 covers 6,000 templates (4.9.2). */
 export const META_TEMPLATE_PAGE_SIZE = 100;
@@ -185,7 +200,9 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
           `${META_TEMPLATE_GRAPH_BASE_URL}/${appId}/uploads`,
           null,
           {
-            headers: { Authorization: `Bearer ${token}` },
+            // Meta's upload guide uses the `OAuth` scheme; the token never
+            // goes into the URL.
+            headers: { Authorization: `OAuth ${token}` },
             params: {
               file_name: 'akeed-logo-sample.jpg',
               file_length: bytes.byteLength,
@@ -199,18 +216,27 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     } catch (error) {
       throw this.classifyWrite(action, error);
     }
-    if (typeof session !== 'string' || !UPLOAD_SESSION_ID.test(session)) {
-      throw this.writeFailure(action, 'unresolved', false);
+    const parsed = parseUploadSession(session);
+    if (!parsed) {
+      throw this.writeFailure(
+        action,
+        'unresolved',
+        false,
+        undefined,
+        undefined,
+        undefined,
+        'upload_session_unreadable',
+      );
     }
 
     let handle: unknown;
     try {
       const response = await firstValueFrom(
         this.httpService.post<{ h?: unknown }>(
-          `${META_TEMPLATE_GRAPH_BASE_URL}/${session}`,
+          `${META_TEMPLATE_GRAPH_BASE_URL}/${parsed.path}`,
           bytes,
           {
-            // The upload API takes the token as `OAuth`, not `Bearer`.
+            ...(parsed.sig ? { params: { sig: parsed.sig } } : {}),
             headers: {
               Authorization: `OAuth ${token}`,
               file_offset: '0',
@@ -225,7 +251,15 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       throw this.classifyWrite(action, error);
     }
     if (typeof handle !== 'string' || handle.length === 0) {
-      throw this.writeFailure(action, 'unresolved', false);
+      throw this.writeFailure(
+        action,
+        'unresolved',
+        false,
+        undefined,
+        undefined,
+        undefined,
+        'upload_handle_missing',
+      );
     }
     this.logger.log(
       buildBackendLog(MetaTemplateCatalogAdapter.name, {
@@ -393,12 +427,14 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     providerCode?: number,
     httpStatus?: number,
     providerReference?: string,
+    detail?: string,
   ): TemplateSubmissionError {
     this.logger.warn(
       buildBackendLog(MetaTemplateCatalogAdapter.name, {
         action,
         outcome: 'failure',
         errorCode: code,
+        ...(detail ? { reason: detail } : {}),
         ambiguous,
         ...(providerCode !== undefined ? { providerCode } : {}),
         ...(httpStatus !== undefined ? { httpStatus } : {}),
@@ -410,6 +446,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       ambiguous,
       providerCode,
       providerReference,
+      detail,
     );
   }
 

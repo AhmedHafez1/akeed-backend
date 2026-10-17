@@ -4,7 +4,10 @@ import { of, throwError } from 'rxjs';
 import { parseWhatsappTemplateConfig } from '../../../shared/config/whatsapp-template.config';
 import type { ImageTwinSubmission } from '../../../shared/messaging/template-draft.types';
 import { TemplateSubmissionError } from '../../../shared/ports/template-catalog.port';
-import { MetaTemplateCatalogAdapter } from './meta-template-catalog.adapter';
+import {
+  MetaTemplateCatalogAdapter,
+  parseUploadSession,
+} from './meta-template-catalog.adapter';
 import { buildMetaImageTwinBody } from './meta-template-components.builder';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
@@ -71,6 +74,17 @@ async function failure(work: Promise<unknown>) {
   }
   throw new Error('expected a failure');
 }
+
+describe('parseUploadSession', () => {
+  it('splits a signed session into its path and signature', () => {
+    expect(parseUploadSession('upload:QUJD?sig=ARZ-1_x')).toEqual({
+      path: 'upload:QUJD',
+      sig: 'ARZ-1_x',
+    });
+    expect(parseUploadSession('upload:QUJD')).toEqual({ path: 'upload:QUJD' });
+    expect(parseUploadSession(42)).toBeNull();
+  });
+});
 
 describe('buildMetaImageTwinBody', () => {
   it('writes an IMAGE header, the body with examples, the footer and the quick replies', () => {
@@ -166,7 +180,7 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
     const [openUrl, openBody, openOptions] = httpService.post.mock.calls[0];
     expect(openUrl).toBe(`https://graph.facebook.com/v24.0/${APP}/uploads`);
     expect(openBody).toBeNull();
-    expect(openOptions.headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
+    expect(openOptions.headers).toEqual({ Authorization: `OAuth ${TOKEN}` });
     expect(openOptions.params).toEqual({
       file_name: 'akeed-logo-sample.jpg',
       file_length: bytes.byteLength,
@@ -196,14 +210,70 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
     expect(httpService.post).not.toHaveBeenCalled();
   });
 
-  it('refuses a session id it cannot put in a path, and does not retry', async () => {
+  it('sends a signed session to its path, with the signature as a parameter', async () => {
     const { adapter, httpService } = setup();
-    httpService.post.mockReturnValueOnce(of({ data: { id: '../../me' } }));
+    httpService.post
+      .mockReturnValueOnce(
+        of({
+          data: {
+            id: 'upload:MTphdHRhY2htZW50OjZiNTQ1MmQ0LTJl/YW1l=?sig=ARZqkGCA_uQMxC8nHKI',
+          },
+        }),
+      )
+      .mockReturnValueOnce(of({ data: { h: '4::handle' } }));
+
+    await expect(
+      adapter.uploadSampleImage(Buffer.from('x'), 'image/jpeg'),
+    ).resolves.toBe('4::handle');
+
+    const [sendUrl, , sendOptions] = httpService.post.mock.calls[1];
+    expect(sendUrl).toBe(
+      'https://graph.facebook.com/v24.0/upload:MTphdHRhY2htZW50OjZiNTQ1MmQ0LTJl/YW1l=',
+    );
+    expect(sendOptions.params).toEqual({ sig: 'ARZqkGCA_uQMxC8nHKI' });
+    expect(sendOptions.headers.Authorization).toBe(`OAuth ${TOKEN}`);
+  });
+
+  it.each([
+    '../../me',
+    'upload:abc/../../me',
+    'upload:abc#fragment',
+    'upload:abc def',
+    'upload:abc?sig=one?sig=two',
+    'upload:abc?other=1',
+    'upload:',
+    'me',
+  ])('refuses the session %s before sending the file', async (id) => {
+    const { adapter, httpService } = setup();
+    httpService.post.mockReturnValueOnce(of({ data: { id } }));
     const error = await failure(
       adapter.uploadSampleImage(Buffer.from('x'), 'image/jpeg'),
     );
     expect(error.code).toBe('unresolved');
+    expect(error.detail).toBe('upload_session_unreadable');
     expect(httpService.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('names an answer without a handle', async () => {
+    const { adapter, httpService } = setup();
+    httpService.post
+      .mockReturnValueOnce(of({ data: { id: 'upload:abc' } }))
+      .mockReturnValueOnce(of({ data: {} }));
+    const error = await failure(
+      adapter.uploadSampleImage(Buffer.from('x'), 'image/jpeg'),
+    );
+    expect(error.detail).toBe('upload_handle_missing');
+    expect(httpService.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs the named reason with the failure', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const { adapter, httpService } = setup();
+    httpService.post.mockReturnValueOnce(of({ data: { id: 'nope' } }));
+    await failure(adapter.uploadSampleImage(Buffer.from('x'), 'image/jpeg'));
+    expect(String(warn.mock.calls.at(-1)?.[0])).toContain(
+      '"reason":"upload_session_unreadable"',
+    );
   });
 
   it('classifies a refused upload like any write', async () => {

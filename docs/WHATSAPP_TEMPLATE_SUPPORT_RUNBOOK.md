@@ -312,6 +312,15 @@ Needs `META_APP_ID` ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)) and a 
 
 A second run only fills the gaps. Running it costs nothing when every template already has a twin.
 
+If the run answers **The sample image could not be uploaded to Meta**, nothing was submitted. The dialog shows the reason, also logged on `meta-template-image-upload`:
+
+| Reason | Meaning |
+| --- | --- |
+| `auth_failed`, `permission_denied` | Meta refused the token. `WA_ACCESS_TOKEN` must be issued for the same Meta app as `META_APP_ID` and have `whatsapp_business_management`. |
+| `invalid_parameter`, `provider_error` | Meta refused the request, usually a `META_APP_ID` that is not that app's numeric ID. |
+| `upload_session_unreadable`, `upload_handle_missing` | Meta answered, but not in the form Akeed expects. Try again; if it repeats, a developer reads the log line. |
+| `not_configured` | `META_APP_ID` or `WA_ACCESS_TOKEN` is missing. |
+
 ### One twin by hand (fallback)
 
 Operators only, one template at a time:

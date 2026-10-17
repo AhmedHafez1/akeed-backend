@@ -134,6 +134,11 @@ export class TemplateSubmissionError extends Error {
     readonly providerCode?: number,
     /** The provider's trace reference for the request, when it gave one. */
     readonly providerReference?: string,
+    /**
+     * The adapter's own reason when it stopped without the provider refusing,
+     * for example an answer it could not read. Neutral; never provider text.
+     */
+    readonly detail?: string,
   ) {
     super(`Template submission failed: ${code}`);
     this.name = 'TemplateSubmissionError';

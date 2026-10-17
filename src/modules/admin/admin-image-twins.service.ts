@@ -85,9 +85,14 @@ export interface ImageTwinOverview {
   }[];
 }
 
-function imageTwinError(status: HttpStatus, code: string, message: string) {
+function imageTwinError(
+  status: HttpStatus,
+  code: string,
+  message: string,
+  extra: Record<string, unknown> = {},
+) {
   return new HttpException(
-    { statusCode: status, error: HttpStatus[status], message, code },
+    { statusCode: status, error: HttpStatus[status], message, code, ...extra },
     status,
   );
 }
@@ -387,10 +392,20 @@ export class AdminImageTwinsService {
           ...normalizeError(error),
         }),
       );
+      // Why, in neutral terms, so staff can tell a wrong app or token from
+      // an answer Akeed could not read. Never the provider's own text.
+      const submission =
+        error instanceof TemplateSubmissionError ? error : undefined;
       throw imageTwinError(
         HttpStatus.BAD_GATEWAY,
         WHATSAPP_TEMPLATE_ERROR_CODES.imageTwinUploadFailed,
         'The sample image could not be uploaded to the provider.',
+        {
+          reason: submission
+            ? (submission.detail ?? submission.code)
+            : 'sample_render_failed',
+          provider_code: submission?.providerCode ?? null,
+        },
       );
     }
   }
