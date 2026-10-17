@@ -24,6 +24,7 @@ import { AdminTemplateAuthoringController } from './admin-template-authoring.con
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateInspectionService } from './admin-template-inspection.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
+import { AdminImageTwinsService } from './admin-image-twins.service';
 import { AdminTemplateMetricsService } from './admin-template-metrics.service';
 import { AdminTemplateTestSendService } from './admin-template-test-send.service';
 import { AdminTemplatesController } from './admin-templates.controller';
@@ -67,6 +68,8 @@ const WRITES: [string, 'post' | 'patch' | 'delete', string, object?][] = [
   ['deactivate', 'post', `/${KEY}/deactivate`, {}],
   ['set the default', 'post', `/${KEY}/set-default`],
   ['retire', 'post', `/${KEY}/retire`, {}],
+  ['create image twins', 'post', '/image-twins'],
+  ['activate image twins', 'post', '/image-twins/activate'],
 ];
 
 describe('Admin template write routes', () => {
@@ -89,12 +92,18 @@ describe('Admin template write routes', () => {
     act: jest.fn().mockResolvedValue({ key: KEY }),
     edit: jest.fn().mockResolvedValue({ key: KEY, review_status: 'pending' }),
   };
+  const imageTwins = {
+    overview: jest.fn().mockResolvedValue({ parents: [] }),
+    createMissing: jest.fn().mockResolvedValue({ results: [] }),
+    activateApproved: jest.fn().mockResolvedValue({ activated: [] }),
+  };
   const inspection = { list: jest.fn(), detail: jest.fn() };
   const calls = () =>
-    [...Object.values(drafts), ...Object.values(lifecycle)].reduce(
-      (total, mock) => total + mock.mock.calls.length,
-      0,
-    );
+    [
+      ...Object.values(drafts),
+      ...Object.values(lifecycle),
+      ...Object.values(imageTwins),
+    ].reduce((total, mock) => total + mock.mock.calls.length, 0);
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
   const send = (
@@ -133,6 +142,7 @@ describe('Admin template write routes', () => {
         WhatsappTemplateOperatorGuard,
         { provide: AdminTemplateDraftService, useValue: drafts },
         { provide: AdminTemplateLifecycleService, useValue: lifecycle },
+        { provide: AdminImageTwinsService, useValue: imageTwins },
         { provide: AdminTemplatesService, useValue: {} },
         { provide: AdminTemplateInspectionService, useValue: inspection },
         { provide: AdminTemplateTestSendService, useValue: {} },
@@ -270,6 +280,17 @@ describe('Admin template write routes', () => {
     expect(calls()).toBe(0);
   });
 
+  it('routes image twins to their service, not to a template named image-twins', async () => {
+    await send('operator', 'post', '/image-twins/activate').expect(200);
+    expect(imageTwins.activateApproved).toHaveBeenCalledWith({
+      userId: operatorId,
+      requestId: 'req-9',
+    });
+    expect(lifecycle.act).not.toHaveBeenCalled();
+    await send('staff', 'get', '/image-twins').expect(200);
+    expect(imageTwins.overview).toHaveBeenCalled();
+  });
+
   it('tells the session whether the user is a template operator', async () => {
     const session = (token: string) =>
       http().get('/api/admin/session').set('Authorization', `Bearer ${token}`);
@@ -309,6 +330,7 @@ describe('Admin template write routes', () => {
       'GET :key/impact',
       'GET drafts',
       'GET drafts/:id',
+      'GET image-twins',
       'PATCH drafts/:id',
       'POST :key/activate',
       'POST :key/deactivate',
@@ -319,6 +341,8 @@ describe('Admin template write routes', () => {
       'POST drafts/:id/reconcile',
       'POST drafts/:id/submit',
       'POST drafts/validate',
+      'POST image-twins',
+      'POST image-twins/activate',
     ]);
   });
 });

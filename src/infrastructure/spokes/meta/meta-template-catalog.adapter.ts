@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/messaging/template-provider.types';
 import type { TemplateTextModel } from '../../../shared/messaging/template-text.types';
 import type {
+  ImageTwinSubmission,
   TemplateEditSubmission,
   TemplateSubmission,
   TemplateSubmissionResult,
@@ -37,6 +38,7 @@ import {
 import {
   buildMetaCreateBody,
   buildMetaEditBody,
+  buildMetaImageTwinBody,
 } from './meta-template-components.builder';
 import { describeMetaComponents } from './meta-template-text';
 
@@ -65,7 +67,13 @@ const TRACE_REFERENCE = /^[A-Za-z0-9_-]{1,64}$/;
 /** A template node ID is digits; it goes into a URL path. */
 const TEMPLATE_NODE_ID = /^\d{1,32}$/;
 
-type MetaWriteAction = 'meta-template-create' | 'meta-template-edit';
+type MetaWriteAction =
+  | 'meta-template-create'
+  | 'meta-template-edit'
+  | 'meta-template-image-upload';
+
+/** An upload session id (`upload:...`) goes into a URL path. */
+const UPLOAD_SESSION_ID = /^upload:[A-Za-z0-9_=+/-]{1,512}$/;
 
 /** Page size and page cap: 60 pages of 100 covers 6,000 templates (4.9.2). */
 export const META_TEMPLATE_PAGE_SIZE = 100;
@@ -146,8 +154,94 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
   async createTemplate(
     submission: TemplateSubmission,
   ): Promise<TemplateSubmissionResult> {
+    return this.create(buildMetaCreateBody(submission));
+  }
+
+  async createImageTwin(
+    submission: ImageTwinSubmission,
+  ): Promise<TemplateSubmissionResult> {
+    return this.create(buildMetaImageTwinBody(submission));
+  }
+
+  /**
+   * Meta's resumable upload, in its two calls: open a session for the file,
+   * then send the bytes from offset 0. The answer's `h` is the handle a
+   * template's image header is reviewed with. Neither call is retried; a
+   * failed upload creates nothing a template refers to.
+   */
+  async uploadSampleImage(
+    bytes: Buffer,
+    contentType: 'image/jpeg',
+  ): Promise<string> {
+    const action = 'meta-template-image-upload';
+    const { token } = this.writeCredentials(action);
+    const appId = readWhatsappTemplateConfig(this.config).metaAppId;
+    if (!appId) throw this.writeFailure(action, 'not_configured', false);
+
+    let session: unknown;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ id?: unknown }>(
+          `${META_TEMPLATE_GRAPH_BASE_URL}/${appId}/uploads`,
+          null,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: {
+              file_name: 'akeed-logo-sample.jpg',
+              file_length: bytes.byteLength,
+              file_type: contentType,
+            },
+            timeout: META_TEMPLATE_WRITE_TIMEOUT_MS,
+          },
+        ),
+      );
+      session = response.data?.id;
+    } catch (error) {
+      throw this.classifyWrite(action, error);
+    }
+    if (typeof session !== 'string' || !UPLOAD_SESSION_ID.test(session)) {
+      throw this.writeFailure(action, 'unresolved', false);
+    }
+
+    let handle: unknown;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ h?: unknown }>(
+          `${META_TEMPLATE_GRAPH_BASE_URL}/${session}`,
+          bytes,
+          {
+            // The upload API takes the token as `OAuth`, not `Bearer`.
+            headers: {
+              Authorization: `OAuth ${token}`,
+              file_offset: '0',
+              'Content-Type': contentType,
+            },
+            timeout: META_TEMPLATE_WRITE_TIMEOUT_MS,
+          },
+        ),
+      );
+      handle = response.data?.h;
+    } catch (error) {
+      throw this.classifyWrite(action, error);
+    }
+    if (typeof handle !== 'string' || handle.length === 0) {
+      throw this.writeFailure(action, 'unresolved', false);
+    }
+    this.logger.log(
+      buildBackendLog(MetaTemplateCatalogAdapter.name, {
+        action,
+        outcome: 'success',
+        bytes: bytes.byteLength,
+      }),
+    );
+    return handle;
+  }
+
+  /** One create request, for a template or an image twin. */
+  private async create(
+    body: Record<string, unknown> | null,
+  ): Promise<TemplateSubmissionResult> {
     const { accountId, token } = this.writeCredentials('meta-template-create');
-    const body = buildMetaCreateBody(submission);
     if (!body) {
       throw this.writeFailure(
         'meta-template-create',

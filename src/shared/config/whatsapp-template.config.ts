@@ -26,6 +26,11 @@ export interface WhatsappTemplateConfig {
   businessAccountId: string | null;
   /** In international format with a leading `+`. */
   testPhones: ReadonlySet<string>;
+  /**
+   * The Meta app's ID, needed only to upload the sample image an
+   * image-header template is reviewed with. Absent when not set.
+   */
+  metaAppId?: string;
   messageImprovements: MessageImprovementSwitchState;
 }
 
@@ -108,6 +113,7 @@ export function parseWhatsappTemplateConfig(
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
   const businessAccountId = read('WA_BUSINESS_ACCOUNT_ID');
+  const metaAppId = read('META_APP_ID');
   const messageImprovements = Object.fromEntries(
     Object.entries(MESSAGE_IMPROVEMENT_ENV).map(([name, key]) => [
       name,
@@ -134,6 +140,8 @@ export function parseWhatsappTemplateConfig(
     );
   if (businessAccountId && !/^\d{1,32}$/.test(businessAccountId))
     errors.push('WA_BUSINESS_ACCOUNT_ID must be the numeric account ID.');
+  if (metaAppId && !/^\d{1,32}$/.test(metaAppId))
+    errors.push('META_APP_ID must be the numeric Meta app ID.');
   if (errors.length)
     throw new Error(
       `Invalid environment configuration:\n - ${errors.join('\n - ')}`,
@@ -148,6 +156,7 @@ export function parseWhatsappTemplateConfig(
       testPhones.filter((phone): phone is string => phone !== null),
     ),
     messageImprovements: Object.freeze(messageImprovements),
+    ...(metaAppId ? { metaAppId } : {}),
   };
 }
 

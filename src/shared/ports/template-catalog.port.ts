@@ -4,6 +4,7 @@ import type {
 } from '../messaging/template-provider.types';
 import type { TemplateTextModel } from '../messaging/template-text.types';
 import type {
+  ImageTwinSubmission,
   TemplateEditSubmission,
   TemplateSubmission,
   TemplateSubmissionResult,
@@ -49,6 +50,19 @@ export interface TemplateCatalogPort {
     providerTemplateId: string,
     submission: TemplateEditSubmission,
   ): Promise<void>;
+  /**
+   * Uploads the sample image an image-header template is reviewed with and
+   * returns the provider's opaque handle for it. Sent once, never retried.
+   * Optional: an adapter without it cannot create image twins.
+   */
+  uploadSampleImage?(bytes: Buffer, contentType: 'image/jpeg'): Promise<string>;
+  /**
+   * Creates the image-header twin of a template. Sent once and never retried,
+   * with the same `TemplateSubmissionError` rules as `createTemplate`.
+   */
+  createImageTwin?(
+    submission: ImageTwinSubmission,
+  ): Promise<TemplateSubmissionResult>;
 }
 
 /**

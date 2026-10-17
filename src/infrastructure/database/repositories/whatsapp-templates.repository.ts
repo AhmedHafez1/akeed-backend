@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, not } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { whatsappTemplates } from '../schema';
@@ -14,6 +14,8 @@ import type {
   TemplateQuality,
   TemplateReviewStatus,
 } from '../../../shared/messaging/template-provider.types';
+
+import { IMAGE_TWIN_SUFFIX } from '../../../shared/messaging/image-twin.policy';
 
 /**
  * The columns a registry read needs. Reads filter on `header_format`
@@ -241,5 +243,79 @@ export class WhatsappTemplatesRepository {
       isActive: row.isActive,
       reviewStatus: row.reviewStatus as TemplateReviewStatus | null,
     }));
+  }
+
+  /**
+   * Registers the provider's twin of a text template, inactive. Everything
+   * but the name, the provider's ID, status and category is copied from the
+   * parent, so the twin fills exactly as the parent does. A parent that
+   * already has a twin keeps it.
+   */
+  async registerImageTwin(
+    parentKey: string,
+    twin: {
+      templateName: string;
+      providerTemplateId: string | null;
+      reviewStatus: TemplateReviewStatus | null;
+      category: TemplateCategory | null;
+    },
+  ): Promise<'registered' | 'already_registered' | 'parent_missing'> {
+    return this.db.transaction(async (tx) => {
+      const [parent] = await tx
+        .select()
+        .from(whatsappTemplates)
+        .where(
+          and(
+            eq(whatsappTemplates.key, parentKey),
+            eq(whatsappTemplates.headerFormat, 'none'),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!parent) return 'parent_missing';
+      const inserted = await tx
+        .insert(whatsappTemplates)
+        .values({
+          key: `${parent.key}${IMAGE_TWIN_SUFFIX}`,
+          purpose: parent.purpose,
+          language: parent.language,
+          style: `${parent.style}${IMAGE_TWIN_SUFFIX}`,
+          metaTemplateName: twin.templateName,
+          metaLanguageCode: parent.metaLanguageCode,
+          parameterFormat: parent.parameterFormat,
+          variableMapping: parent.variableMapping,
+          preview: parent.preview,
+          metaTemplateId: twin.providerTemplateId,
+          reviewStatus: twin.reviewStatus,
+          category: twin.category,
+          isActive: false,
+          isDefault: false,
+          sortOrder: parent.sortOrder,
+          headerFormat: 'image',
+          imageTwinOfKey: parent.key,
+        })
+        .onConflictDoNothing()
+        .returning({ id: whatsappTemplates.id });
+      return inserted.length > 0 ? 'registered' : 'already_registered';
+    });
+  }
+
+  /**
+   * Switches on every inactive twin the provider has approved, as the last
+   * sync or template webhook recorded it. Returns the keys switched on.
+   */
+  async activateApprovedImageTwins(): Promise<string[]> {
+    const rows = await this.db
+      .update(whatsappTemplates)
+      .set({ isActive: true, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(whatsappTemplates.headerFormat, 'image'),
+          eq(whatsappTemplates.reviewStatus, 'approved'),
+          not(whatsappTemplates.isActive),
+        ),
+      )
+      .returning({ key: whatsappTemplates.key });
+    return rows.map((row) => row.key).sort();
   }
 }

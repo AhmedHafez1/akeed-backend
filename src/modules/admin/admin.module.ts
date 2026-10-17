@@ -32,6 +32,8 @@ import { AdminMessageTextsController } from './admin-message-texts.controller';
 import { AdminMessageTextsService } from './admin-message-texts.service';
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
+import { AdminImageTwinsService } from './admin-image-twins.service';
+import { LogoImageService } from '../merchant-branding/logo-image.service';
 import { AdminTemplatesService } from './admin-templates.service';
 import { AdminTemplateInspectionService } from './admin-template-inspection.service';
 import { AdminTemplateTestSendService } from './admin-template-test-send.service';
@@ -92,6 +94,8 @@ export class AdminModule {
         AdminTemplateTestSendService,
         AdminTemplateDraftService,
         AdminTemplateLifecycleService,
+        AdminImageTwinsService,
+        LogoImageService,
         WhatsappTemplateOperatorGuard,
         AdminMessageTextsService,
       ],

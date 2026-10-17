@@ -13,7 +13,7 @@ Each environment (dev, prod) has its own Meta app, its own templates and its own
 | Stop reading Meta | Set `WHATSAPP_TEMPLATE_SYNC_ENABLED=false` and restart | [6](#6-stop-the-sync) |
 | Replace a template Meta paused or rejected | Activate an approved one, then retire the old one with it as the replacement | [3](#3-choose-and-activate-a-replacement) |
 | Find out why a customer got a different style | Read the dispatch's fallback reason | [7](#7-logs-alert-codes-and-queries) |
-| Send a store's logo on its messages | Register an image twin, then switch the store's logo header on | [10](#10-image-header-twins-for-the-logo-header) |
+| Send a store's logo on its messages | **Create missing twins**, then activate the approved ones and switch the store's logo header on | [10](#10-image-header-twins-for-the-logo-header) |
 
 Switches are environment variables ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)). A change takes effect when the service restarts. Turning a switch off deletes nothing.
 
@@ -179,6 +179,8 @@ A sync that fails changes nothing and is not retried; the next scheduled run is 
 | `sendOnce.templateSelection` with `reason: template_unavailable` | A send was skipped: no template could be sent in that language. |
 | `whatsapp-template-operator-check` | A template write was refused, with `errorCode`. |
 | `whatsapp-text-send`, `customer-reply-follow-up` | An acknowledgment or a nudge: sent, skipped (`window_closed`, `outside_window`, `text_unavailable`) or failed. |
+| `whatsapp-template-image-twin` | One template in a **Create missing twins** run: `twinOutcome` (`created`, `adopted`, `failed`, `unresolved`, `not_attempted`), with `reason` and Meta's `providerCode` when refused. The run's counts are on the audit row `whatsapp-templates.image-twins.create`. |
+| `meta-template-image-upload` | The sample image upload for a run, with Meta's code when refused. |
 | `whatsapp-template-send-image-fallback` | Meta refused an image-header send with a media or template code (`providerErrorCode`), and the text template was sent once instead. Repeated lines for one twin mean the twin needs attention (section 10). |
 
 `permission_denied` and `auth_failed` are a token problem, not a template problem: the token needs `whatsapp_business_management`.
@@ -289,11 +291,30 @@ order by 2 desc;
 
 ## 10. Image-header twins for the logo header
 
-A store with the logo header on sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in **Admin › Templates**.
+A store with the logo header on sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in the **Admin › Templates** list; the **Image twins** panel on that page shows them.
 
 If Meta refuses the image send with a media or template error (`131052`, `131053`, `132000`, `132001`, `132012`, `132015`, `132016`), the text template is sent once instead and `whatsapp-template-send-image-fallback` is logged. Any other failure is handled as for a text send; nothing is sent twice. If Meta accepts the image and reports a media failure later, in the status webhook, the message is not resent.
 
-Operators only, one template at a time. Start with the pilot store's template:
+### Create the twins of every template (operators)
+
+Needs `META_APP_ID` ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)) and a synced registry.
+
+1. In **Admin › Templates**, the **Image twins** panel counts the templates, their twins, and how many are approved, active and missing.
+2. Press **Create missing twins** and confirm. Akeed uploads one neutral sample banner, then submits, one at a time, a twin named `<template name>_logo` for every template that has none: the same language, category, body, footer and quick replies, plus an IMAGE header. Each twin is registered inactive at once. The result lists every template:
+   - **Submitted**: created at Meta, waiting for review.
+   - **Found at Meta**: Meta already had `<name>_logo` (an earlier run, or an answer Akeed could not read); registered without sending it again.
+   - **Skipped**: `has_twin`, `retired`, `not_synced` (sync first), `unreadable`, `text_header` (a template with a text header cannot take an image), `non_quick_reply_button`, `format_mismatch` or `unknown_category`.
+   - **Refused**: Meta's reason and code. Fix the cause, then run again.
+   - **Unknown**: no usable answer. Run again: Akeed checks Meta's list first, so nothing is sent twice.
+   - **Not tried**: the run stopped at a rate limit or a token problem. Run again later.
+3. Wait for Meta's review (up to 24 hours), press **Sync now**, then **Activate approved twins**. Only twins Meta approved are switched on; the rest are listed as waiting.
+4. Switch the logo header on per store (step 6 below).
+
+A second run only fills the gaps. Running it costs nothing when every template already has a twin.
+
+### One twin by hand (fallback)
+
+Operators only, one template at a time:
 
 1. Find the store's template: its first-send and reminder keys are on the store, or the language default when the key is empty.
 2. In WhatsApp Manager, create a new template with a new name (for example the parent's name plus `_logo`), the same language and category, an **Image** header with any sample banner, and the parent's body and buttons copied exactly. Wait for **Approved**.

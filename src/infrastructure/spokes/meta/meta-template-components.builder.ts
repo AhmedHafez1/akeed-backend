@@ -1,7 +1,9 @@
 import type {
+  ImageTwinSubmission,
   TemplateEditSubmission,
   TemplateSubmission,
 } from '../../../shared/messaging/template-draft.types';
+import type { TemplateTextSegment } from '../../../shared/messaging/template-text.types';
 import type { TemplateCategory } from '../../../shared/messaging/template-provider.types';
 
 /**
@@ -31,11 +33,33 @@ const META_PARAMETER_FORMAT = {
 export function buildMetaComponents(
   submission: TemplateEditSubmission,
 ): unknown[] {
-  const text = submission.body
+  return [
+    buildBodyComponent(submission),
+    {
+      type: 'BUTTONS',
+      buttons: submission.buttons.map((button) => ({
+        type: 'QUICK_REPLY',
+        text: button.text,
+      })),
+    },
+  ];
+}
+
+/** Meta's placeholder syntax back into text: `{{name}}` or `{{1}}`. */
+function toMetaText(segments: readonly TemplateTextSegment[]): string {
+  return segments
     .map((segment) =>
       'text' in segment ? segment.text : `{{${segment.parameter}}}`,
     )
     .join('');
+}
+
+/** `BODY` with its example values; a body without parameters has none. */
+function buildBodyComponent(submission: {
+  body: readonly TemplateTextSegment[];
+  samples: readonly { parameter: string; sample: string }[];
+  parameterFormat: string;
+}): Record<string, unknown> {
   const example =
     submission.samples.length === 0
       ? undefined
@@ -49,16 +73,52 @@ export function buildMetaComponents(
             ),
           }
         : { body_text: [submission.samples.map(({ sample }) => sample)] };
-  return [
-    { type: 'BODY', text, ...(example ? { example } : {}) },
-    {
-      type: 'BUTTONS',
-      buttons: submission.buttons.map((button) => ({
-        type: 'QUICK_REPLY',
-        text: button.text,
-      })),
-    },
-  ];
+  return {
+    type: 'BODY',
+    text: toMetaText(submission.body),
+    ...(example ? { example } : {}),
+  };
+}
+
+/**
+ * The create request body of an image twin: an `IMAGE` header reviewed with
+ * the uploaded sample, then the parent's body, footer and quick replies as
+ * they are. A named template keeps `parameter_format`; one without
+ * parameters sends none.
+ */
+export function buildMetaImageTwinBody(
+  submission: ImageTwinSubmission,
+): Record<string, unknown> | null {
+  const category = META_CATEGORY[submission.category];
+  if (!category) return null;
+  return {
+    name: submission.templateName,
+    language: submission.languageCode,
+    category,
+    ...(submission.parameterFormat === 'none'
+      ? {}
+      : {
+          parameter_format: META_PARAMETER_FORMAT[submission.parameterFormat],
+        }),
+    components: [
+      {
+        type: 'HEADER',
+        format: 'IMAGE',
+        example: { header_handle: [submission.headerHandle] },
+      },
+      buildBodyComponent(submission),
+      ...(submission.footer && submission.footer.length > 0
+        ? [{ type: 'FOOTER', text: toMetaText(submission.footer) }]
+        : []),
+      {
+        type: 'BUTTONS',
+        buttons: submission.buttons.map((button) => ({
+          type: 'QUICK_REPLY',
+          text: button.text,
+        })),
+      },
+    ],
+  };
 }
 
 /** The create request body. No time-to-live is set. */

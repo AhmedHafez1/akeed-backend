@@ -108,6 +108,24 @@ export type TemplateEditSubmission = Pick<
   'parameterFormat' | 'body' | 'samples' | 'buttons'
 >;
 
+/**
+ * The image-header twin of a template, as the provider is asked to create it:
+ * the parent's text and buttons unchanged, with an image header reviewed
+ * against the sample image `headerHandle` stands for.
+ */
+export interface ImageTwinSubmission {
+  templateName: string;
+  languageCode: string;
+  category: TemplateCategory;
+  parameterFormat: TemplateParameterFormat | 'none';
+  body: TemplateTextSegment[];
+  footer?: TemplateTextSegment[];
+  samples: { parameter: string; sample: string }[];
+  buttons: { kind: 'quick_reply'; text: string }[];
+  /** The provider's opaque handle for the uploaded sample image. */
+  headerHandle: string;
+}
+
 export interface TemplateSubmissionResult {
   providerTemplateId: string;
   status: TemplateReviewStatus;

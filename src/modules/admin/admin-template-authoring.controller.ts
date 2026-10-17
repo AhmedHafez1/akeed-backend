@@ -16,6 +16,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { TemplateLifecycleAction } from '../../shared/messaging/template-lifecycle.policy';
 import { AdminAccessGuard } from './admin-access.guard';
+import { AdminImageTwinsService } from './admin-image-twins.service';
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
 import type { RequestWithAdmin } from './admin.types';
@@ -40,7 +41,8 @@ const PROVIDER_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
  * a named template operator. Nothing here deletes a template at the provider.
  *
  * This controller is registered before `AdminTemplatesController`, so the
- * literal `drafts` routes are matched before its `:key` routes.
+ * literal `drafts` and `image-twins` routes are matched before its `:key`
+ * routes; within this controller they are declared before the `:key` ones.
  */
 @Controller('api/admin/templates')
 @UseGuards(AdminAccessGuard)
@@ -48,7 +50,42 @@ export class AdminTemplateAuthoringController {
   constructor(
     private readonly drafts: AdminTemplateDraftService,
     private readonly lifecycle: AdminTemplateLifecycleService,
+    private readonly imageTwins: AdminImageTwinsService,
   ) {}
+
+  /** Each text template and its image-header twin, if it has one. */
+  @Get('image-twins')
+  @Header('Cache-Control', 'private, no-store')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  listImageTwins() {
+    return this.imageTwins.overview();
+  }
+
+  /** Submits a twin for every template that has none. Calls the provider. */
+  @Post('image-twins')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(WhatsappTemplateOperatorGuard)
+  @Throttle({ default: { limit: 2, ttl: 60_000 } })
+  createImageTwins(@Req() request: RequestWithAdmin) {
+    return this.imageTwins.createMissing({
+      userId: request.admin.userId,
+      requestId: readRequestId(request),
+    });
+  }
+
+  /** Switches on the twins the provider has approved. */
+  @Post('image-twins/activate')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(WhatsappTemplateOperatorGuard)
+  @Throttle(WRITE_THROTTLE)
+  activateImageTwins(@Req() request: RequestWithAdmin) {
+    return this.imageTwins.activateApproved({
+      userId: request.admin.userId,
+      requestId: readRequestId(request),
+    });
+  }
 
   @Get('drafts')
   @Header('Cache-Control', 'private, no-store')

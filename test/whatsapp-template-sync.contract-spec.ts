@@ -647,6 +647,94 @@ describe('WhatsApp template sync against PostgreSQL', () => {
     });
   });
 
+  describe('image twins', () => {
+    it('registers a twin as an inactive copy of its parent, once', async () => {
+      const [parent] = await registryRepository.findAll();
+      const twin = {
+        templateName: `${parent.templateName}_logo`,
+        providerTemplateId: '555',
+        reviewStatus: 'pending' as const,
+        category: 'utility' as const,
+      };
+
+      await expect(
+        registryRepository.registerImageTwin(parent.key, twin),
+      ).resolves.toBe('registered');
+      await expect(
+        registryRepository.registerImageTwin(parent.key, twin),
+      ).resolves.toBe('already_registered');
+      await expect(
+        registryRepository.registerImageTwin('cod_confirm.en.nope', twin),
+      ).resolves.toBe('parent_missing');
+
+      const [row] = await client<
+        {
+          key: string;
+          style: string;
+          header_format: string;
+          image_twin_of_key: string;
+          is_active: boolean;
+          is_default: boolean;
+          same_mapping: boolean;
+          meta_language_code: string;
+        }[]
+      >`
+        SELECT t.key, t.style, t.header_format, t.image_twin_of_key,
+               t.is_active, t.is_default, t.meta_language_code,
+               t.variable_mapping = p.variable_mapping AS same_mapping
+        FROM whatsapp_templates t
+        JOIN whatsapp_templates p ON p.key = t.image_twin_of_key
+        WHERE t.image_twin_of_key = ${parent.key}`;
+      expect(row).toEqual({
+        key: `${parent.key}_logo`,
+        style: `${parent.style}_logo`,
+        header_format: 'image',
+        image_twin_of_key: parent.key,
+        is_active: false,
+        is_default: false,
+        meta_language_code: parent.languageCode,
+        same_mapping: true,
+      });
+      // Selection never sees it.
+      expect(await registryRepository.findAll()).toHaveLength(8);
+      expect(await registryRepository.findImageTwins()).toEqual([
+        {
+          imageTwinOfKey: parent.key,
+          twinOf: {
+            templateName: parent.templateName,
+            languageCode: parent.languageCode,
+          },
+          templateName: twin.templateName,
+          languageCode: parent.languageCode,
+          isActive: false,
+          reviewStatus: 'pending',
+        },
+      ]);
+    });
+
+    it('activates only twins the provider approved', async () => {
+      const [parent] = await registryRepository.findAll();
+      await expect(
+        registryRepository.activateApprovedImageTwins(),
+      ).resolves.toEqual([]);
+
+      await client`
+        UPDATE whatsapp_templates SET review_status = 'approved'
+        WHERE image_twin_of_key = ${parent.key}`;
+      await expect(
+        registryRepository.activateApprovedImageTwins(),
+      ).resolves.toEqual([`${parent.key}_logo`]);
+      await expect(
+        registryRepository.activateApprovedImageTwins(),
+      ).resolves.toEqual([]);
+      const [twin] = await registryRepository.findImageTwins();
+      expect(twin.isActive).toBe(true);
+
+      await client`
+        DELETE FROM whatsapp_templates WHERE image_twin_of_key = ${parent.key}`;
+    });
+  });
+
   describe('rollback', () => {
     it('runs the statements in the 0057 header and reapplies cleanly', async () => {
       await client.unsafe(rollbackStatements());
