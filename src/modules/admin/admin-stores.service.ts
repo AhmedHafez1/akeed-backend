@@ -36,6 +36,7 @@ import type {
   AdminStoreVerificationsQueryDto,
   AdminStoresQueryDto,
 } from './dto/admin-query.dto';
+import { includesLogoHeader } from '../../shared/billing/plan-features';
 import type { AdminHealthStatus, AdminLifecycleStatus } from './admin.types';
 import type { BalanceState } from './standalone-billing-operations.types';
 
@@ -260,8 +261,9 @@ export class AdminStoresService {
   }
 
   /**
-   * The store's logo, its switch and every image twin staff registered, so
-   * staff can see whether the store's templates have one before switching on.
+   * The store's logo, its switch, whether its plan includes the logo header,
+   * and every image twin staff registered, so staff can see why a store's
+   * messages carry no banner.
    */
   private async logoHeaderView(integrationId: string) {
     const [state, twins] = await Promise.all([
@@ -272,6 +274,7 @@ export class AdminStoresService {
     ]);
     return {
       enabled: state?.logoHeaderEnabled ?? false,
+      plan_included: state ? includesLogoHeader(state) : false,
       logo_url: state?.logoUrl ?? null,
       banner_url: state?.logoBannerUrl ?? null,
       updated_at: state?.logoUpdatedAt ?? null,

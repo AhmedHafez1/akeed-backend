@@ -22,9 +22,12 @@ function user(role: AuthenticatedUser['role'] = 'owner'): AuthenticatedUser {
 function setup() {
   const calls: string[] = [];
   const onboardingState = {
-    resolveCurrentIntegration: jest
-      .fn()
-      .mockResolvedValue({ id: 'int-1', logoHeaderEnabled: true }),
+    resolveCurrentIntegration: jest.fn().mockResolvedValue({
+      id: 'int-1',
+      platformType: 'shopify',
+      billingPlanId: 'pro',
+      logoHeaderEnabled: true,
+    }),
   };
   const integrationsRepo = {
     replaceLogo: jest.fn(() => {
@@ -98,6 +101,7 @@ describe('MerchantBrandingService', () => {
       OLD.logoBannerUrl,
     ]);
     expect(result.logoHeaderAvailable).toBe(true);
+    expect(result.logoHeaderIncluded).toBe(true);
   });
 
   it('refuses a viewer before reading anything', async () => {
@@ -165,6 +169,29 @@ describe('MerchantBrandingService', () => {
       bannerUrl: null,
       updatedAt: null,
       logoHeaderAvailable: true,
+      logoHeaderIncluded: true,
     });
+  });
+
+  it('refuses an upload below the Pro plan but still removes', async () => {
+    const { service, onboardingState, images, integrationsRepo } = setup();
+    onboardingState.resolveCurrentIntegration.mockResolvedValue({
+      id: 'int-1',
+      platformType: 'shopify',
+      billingPlanId: 'basic',
+      logoHeaderEnabled: true,
+    });
+    expect(await errorCode(service.uploadLogo(user(), file))).toBe(
+      'LOGO_PLAN_REQUIRED',
+    );
+    expect(images.render).not.toHaveBeenCalled();
+
+    const result = await service.removeLogo(user());
+    expect(integrationsRepo.replaceLogo).toHaveBeenCalledWith(
+      'int-1',
+      ORG,
+      null,
+    );
+    expect(result.logoHeaderIncluded).toBe(false);
   });
 });

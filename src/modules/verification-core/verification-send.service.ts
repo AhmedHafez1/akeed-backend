@@ -25,6 +25,7 @@ import {
 } from '../../shared/messaging/cod-template-selector';
 import { selectTemplateForSend } from '../../shared/messaging/template-selector';
 import { applyLogoHeader } from '../../shared/messaging/logo-header.policy';
+import { includesLogoHeader } from '../../shared/billing/plan-features';
 import {
   classifyDeliveryFailure,
   NO_WHATSAPP_SEND_REASON,
@@ -724,7 +725,11 @@ export class VerificationSendService {
     template: SelectedCodTemplate,
     integration: ResolvedContext['integration'],
   ): Promise<SelectedCodTemplate> {
-    if (!integration.logoHeaderEnabled || !integration.logoBannerUrl) {
+    if (
+      !integration.logoHeaderEnabled ||
+      !integration.logoBannerUrl ||
+      !includesLogoHeader(integration)
+    ) {
       return template;
     }
     return applyLogoHeader(template, {

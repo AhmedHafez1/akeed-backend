@@ -30,6 +30,10 @@ const LOGO_ERRORS = {
     status: HttpStatus.FORBIDDEN,
     message: 'Owner or admin role is required to change the logo.',
   },
+  LOGO_PLAN_REQUIRED: {
+    status: HttpStatus.FORBIDDEN,
+    message: 'The store logo is included on the Pro plan and up.',
+  },
   LOGO_RATE_LIMITED: {
     status: HttpStatus.TOO_MANY_REQUESTS,
     message: 'Too many logo uploads. Try again in a minute.',
