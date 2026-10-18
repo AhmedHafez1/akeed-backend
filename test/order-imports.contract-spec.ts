@@ -275,6 +275,8 @@ describe('order imports PostgreSQL contract', () => {
         '0063_order_message_details.sql',
         // Logo header: four store columns and a URL check; proves 0067 re-runs.
         '0067_integration_logo_header.sql',
+        // Logo header on by default and for every store; proves 0069 re-runs.
+        '0069_logo_header_default_on.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

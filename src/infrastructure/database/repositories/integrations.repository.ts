@@ -229,7 +229,7 @@ export class IntegrationsRepository {
   }
 
   /**
-   * Staff switch the logo header for one store. The change and its audit row
+   * Staff switch the logo header for one store (on by default). The change and its audit row
    * are written together. False: no such store.
    */
   async setLogoHeaderEnabled(

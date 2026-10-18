@@ -5,7 +5,7 @@ import type { TemplateSendGuardrail } from './template-selector';
 
 /** What decides whether a store's message carries its banner. */
 export interface LogoHeaderContext {
-  /** Staff switched the logo header on for the store. */
+  /** The store's logo header is on: on by default, staff may switch it off. */
   enabled: boolean;
   /** The store's banner, a public https URL, or null when none is saved. */
   bannerUrl: string | null | undefined;

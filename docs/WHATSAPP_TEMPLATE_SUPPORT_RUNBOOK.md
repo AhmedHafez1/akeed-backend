@@ -13,7 +13,7 @@ Each environment (dev, prod) has its own Meta app, its own templates and its own
 | Stop reading Meta | Set `WHATSAPP_TEMPLATE_SYNC_ENABLED=false` and restart | [6](#6-stop-the-sync) |
 | Replace a template Meta paused or rejected | Activate an approved one, then retire the old one with it as the replacement | [3](#3-choose-and-activate-a-replacement) |
 | Find out why a customer got a different style | Read the dispatch's fallback reason | [7](#7-logs-alert-codes-and-queries) |
-| Send a store's logo on its messages | **Create missing twins**, then activate the approved ones and switch the store's logo header on | [10](#10-image-header-twins-for-the-logo-header) |
+| Send a store's logo on its messages | **Create missing twins**, then activate the approved ones; every store's logo header is on unless staff switched it off | [10](#10-image-header-twins-for-the-logo-header) |
 
 Switches are environment variables ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)). A change takes effect when the service restarts. Turning a switch off deletes nothing.
 
@@ -291,7 +291,7 @@ order by 2 desc;
 
 ## 10. Image-header twins for the logo header
 
-A store with the logo header on sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in the **Admin › Templates** list; the **Image twins** panel on that page shows them.
+Every store's logo header is on unless staff switch it off. A store with a saved logo sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in the **Admin › Templates** list; the **Image twins** panel on that page shows them.
 
 If Meta refuses the image send with a media or template error (`131052`, `131053`, `132000`, `132001`, `132012`, `132015`, `132016`), the text template is sent once instead and `whatsapp-template-send-image-fallback` is logged. Any other failure is handled as for a text send; nothing is sent twice. If Meta accepts the image and reports a media failure later, in the status webhook, the message is not resent.
 
@@ -308,7 +308,7 @@ Needs `META_APP_ID` ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)) and a 
    - **Unknown**: no usable answer. Run again: Akeed checks Meta's list first, so nothing is sent twice.
    - **Not tried**: the run stopped at a rate limit or a token problem. Run again later.
 3. Wait for Meta's review (up to 24 hours), press **Sync now**, then **Activate approved twins**. Only twins Meta approved are switched on; the rest are listed as waiting.
-4. Switch the logo header on per store (step 6 below).
+4. Nothing to switch per store: every store with a saved logo sends its banner. To stop one store, see below.
 
 A second run only fills the gaps. Running it costs nothing when every template already has a twin.
 
@@ -344,9 +344,9 @@ Operators only, one template at a time:
 
 4. Press **Sync now** in **Admin › Templates**. Check the twin reads `approved` (the query below). The sync reads twins like any template.
 5. Activate it: `update whatsapp_templates set is_active = true where "key" = '<parent key>_logo' and header_format = 'image';`. Sends pick it up within a minute (registry cache).
-6. In **Admin › Stores**, open the store and switch **Logo header** on. The store detail lists every twin and its review status. The merchant then sees the logo card in **Settings** and uploads a logo.
+6. Nothing to switch per store: the merchant uploads a logo in **Settings**. In **Admin › Stores**, the store detail shows its logo, its **Logo header** switch and every twin with its review status.
 
-To stop: switch the store's logo header off (its messages go back to text at once), or deactivate the twin for every store. Removing the logo in Settings also stops it for that store.
+To stop: in **Admin › Stores**, switch the store's **Logo header** off (its messages go back to text at once and the merchant no longer sees the logo card), or deactivate the twin for every store. Removing the logo in Settings also stops it for that store.
 
 ```sql
 select t."key", t.image_twin_of_key, t.meta_template_name, t.is_active, t.review_status
@@ -356,6 +356,6 @@ order by t."key";
 
 select id, store_name, logo_header_enabled, logo_banner_url is not null as has_banner
 from integrations
-where logo_header_enabled
+where not logo_header_enabled -- stores staff switched off
 order by store_name;
 ```

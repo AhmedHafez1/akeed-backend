@@ -244,7 +244,7 @@ describe('standalone source provisioning PostgreSQL contract', () => {
         logo_url text,
         logo_banner_url text,
         logo_updated_at timestamptz,
-        logo_header_enabled boolean DEFAULT false NOT NULL,
+        logo_header_enabled boolean DEFAULT true NOT NULL,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE (platform_type, platform_store_url),

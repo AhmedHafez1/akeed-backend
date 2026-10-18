@@ -427,7 +427,7 @@ the template operators under `/api/admin/message-texts` (same
 
 ## Merchant Logo Header
 
-A merchant uploads a logo in **Settings**. Akeed stores it with a 1200x628 banner built from it, in a public Supabase Storage bucket, and records both URLs on the store. While staff have switched the logo header on for the store (`PATCH /api/admin/stores/:integrationId/logo-header`, audited as `store.logo-header.set`), each message whose template has an approved image twin is sent with the banner as its header. Without a twin, or with the switch off, the text template goes out as before. Registering a twin is in the [WhatsApp template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md#10-image-header-twins-for-the-logo-header).
+A merchant uploads a logo in **Settings**. Akeed stores it with a 1200x628 banner built from it, in a public Supabase Storage bucket, and records both URLs on the store. Each message whose template has an approved image twin is sent with the banner as its header. This is on for every store; staff can switch one store off (`PATCH /api/admin/stores/:integrationId/logo-header`, audited as `store.logo-header.set`). Without a saved logo or a twin, or with the switch off, the text template goes out as before. Registering a twin is in the [WhatsApp template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md#10-image-header-twins-for-the-logo-header).
 
 | Variable | Notes |
 | --- | --- |

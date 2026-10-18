@@ -3,7 +3,7 @@ export interface MerchantBrandingDto {
   logoUrl: string | null;
   bannerUrl: string | null;
   updatedAt: string | null;
-  /** Staff switched the logo header on, so the banner is sent. */
+  /** The store's logo header is on (staff have not switched it off). */
   logoHeaderAvailable: boolean;
 }
 

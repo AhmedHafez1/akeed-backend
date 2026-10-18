@@ -665,15 +665,15 @@ export const integrations = pgTable(
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
     shopPhone: text('shop_phone'),
     // The merchant's logo and the 1200x628 banner built from it, both public
-    // https URLs. The banner is the image header only while staff have
-    // switched `logoHeaderEnabled` on.
+    // https URLs. The banner is the image header unless staff switched
+    // `logoHeaderEnabled` off for the store.
     logoUrl: text('logo_url'),
     logoBannerUrl: text('logo_banner_url'),
     logoUpdatedAt: timestamp('logo_updated_at', {
       withTimezone: true,
       mode: 'string',
     }),
-    logoHeaderEnabled: boolean('logo_header_enabled').default(false).notNull(),
+    logoHeaderEnabled: boolean('logo_header_enabled').default(true).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
