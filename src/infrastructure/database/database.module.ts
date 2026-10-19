@@ -33,6 +33,7 @@ import { VerificationServiceMessagesRepository } from './repositories/verificati
 import { WhatsappTemplateSyncRepository } from './repositories/whatsapp-template-sync.repository';
 import { WhatsappTemplateDraftsRepository } from './repositories/whatsapp-template-drafts.repository';
 import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-template-lifecycle.repository';
+import { ReviewPromptsRepository } from './repositories/review-prompts.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -69,6 +70,7 @@ import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-tem
     WhatsappTemplateSyncRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
+    ReviewPromptsRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -103,6 +105,7 @@ import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-tem
     WhatsappTemplateSyncRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
+    ReviewPromptsRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {

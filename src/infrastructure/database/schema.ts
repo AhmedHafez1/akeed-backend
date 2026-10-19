@@ -37,6 +37,12 @@ import type {
   ServiceMessageSkipReason,
   ServiceMessageState,
 } from '../../shared/messaging/message-texts.types';
+import type {
+  ReviewPromptActorType,
+  ReviewPromptClosedAction,
+  ReviewPromptEvent,
+  ReviewPromptRequestStatus,
+} from '../../shared/review-prompt/review-prompt.types';
 
 export const verificationStatus = pgEnum('verification_status', [
   'pending',
@@ -1702,6 +1708,121 @@ export const adminAccessAudit = pgTable(
     }),
   ],
 );
+
+/**
+ * One row per time staff switch the App Store review prompt on for a store.
+ * The 'pending' row is the switch (one per store); the first merchant answer
+ * or a staff switch-off closes it. A request closed with 'dont_ask_again' is
+ * the store's permanent opt-out.
+ */
+export const reviewPromptRequests = pgTable(
+  'review_prompt_requests',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    status: text('status')
+      .$type<ReviewPromptRequestStatus>()
+      .default('pending')
+      .notNull(),
+    enabledBy: uuid('enabled_by').notNull(),
+    enabledAt: timestamp('enabled_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true, mode: 'string' }),
+    closedAction: text('closed_action').$type<ReviewPromptClosedAction>(),
+    closedBy: text('closed_by'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'review_prompt_requests_integration_id_fkey',
+    }).onDelete('cascade'),
+    uniqueIndex('review_prompt_requests_one_pending_idx')
+      .on(table.integrationId)
+      .where(sql`${table.status} = 'pending'`),
+    index('review_prompt_requests_opted_out_idx')
+      .on(table.integrationId)
+      .where(sql`${table.closedAction} = 'dont_ask_again'`),
+    index('idx_review_prompt_requests_org').on(table.orgId),
+    check(
+      'review_prompt_requests_status_check',
+      sql`${table.status} IN ('pending', 'answered', 'admin_disabled')`,
+    ),
+    pgPolicy('Service role manages review prompt requests', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * The review prompt's history: switch on and off, the first impression and
+ * the merchant's one answer per request. 'review_clicked' means the App Store
+ * page was opened, not that a review was written.
+ */
+export const reviewPromptEvents = pgTable(
+  'review_prompt_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => reviewPromptRequests.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    event: text('event').$type<ReviewPromptEvent>().notNull(),
+    actorType: text('actor_type').$type<ReviewPromptActorType>().notNull(),
+    actorId: text('actor_id'),
+    httpRequestId: text('http_request_id'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'review_prompt_events_integration_id_fkey',
+    }).onDelete('cascade'),
+    uniqueIndex('review_prompt_events_one_shown_idx')
+      .on(table.requestId)
+      .where(sql`${table.event} = 'shown'`),
+    uniqueIndex('review_prompt_events_one_answer_idx')
+      .on(table.requestId)
+      .where(
+        sql`${table.event} IN ('review_clicked', 'snoozed', 'dismissed', 'dont_ask_again')`,
+      ),
+    index('idx_review_prompt_events_integration_created').on(
+      table.integrationId,
+      table.createdAt,
+    ),
+    check(
+      'review_prompt_events_event_check',
+      sql`${table.event} IN ('enabled', 'shown', 'review_clicked', 'snoozed', 'dismissed', 'dont_ask_again', 'admin_disabled')`,
+    ),
+    check(
+      'review_prompt_events_actor_type_check',
+      sql`${table.actorType} IN ('admin', 'merchant')`,
+    ),
+    pgPolicy('Service role manages review prompt events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
 
 export const adminFunnelMonthly = pgTable(
   'admin_funnel_monthly',

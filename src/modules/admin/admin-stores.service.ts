@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import type { ImageTwinTemplate } from '../../shared/messaging/template-registry.types';
@@ -41,6 +43,11 @@ import type { AdminHealthStatus, AdminLifecycleStatus } from './admin.types';
 import type { BalanceState } from './standalone-billing-operations.types';
 
 const PLAN_IDS = ['starter', 'basic', 'pro', 'business'] as const;
+
+export const REVIEW_PROMPT_ADMIN_ERROR_CODES = {
+  optedOut: 'REVIEW_PROMPT_OPTED_OUT',
+  unsupportedStore: 'REVIEW_PROMPT_UNSUPPORTED_STORE',
+} as const;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -176,6 +183,7 @@ export class AdminStoresService {
     private readonly config: ConfigService,
     @Optional() private readonly integrations?: IntegrationsRepository,
     @Optional() private readonly templates?: WhatsappTemplatesRepository,
+    @Optional() private readonly reviewPrompts?: ReviewPromptsRepository,
   ) {}
 
   async getStores(query: AdminStoresQueryDto) {
@@ -233,7 +241,82 @@ export class AdminStoresService {
     return {
       store: this.toDetailView(row, totals),
       logo_header: await this.logoHeaderView(integrationId),
+      review_prompt: await this.reviewPromptView(integrationId),
       evaluated_at: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Opens or closes the store's App Store review request and returns the new
+   * view. Switching on an already pending store, or off a store with nothing
+   * pending, changes nothing.
+   */
+  async setReviewPromptEnabled(
+    audit: { userId: string; requestId?: string },
+    integrationId: string,
+    enabled: boolean,
+  ) {
+    const repository = this.reviewPrompts;
+    if (!repository) throw new NotFoundException('Store not found.');
+    const { outcome } = enabled
+      ? await repository.enable(integrationId, audit)
+      : await repository.disable(integrationId, audit);
+    if (outcome === 'not_found')
+      throw new NotFoundException('Store not found.');
+    if (outcome === 'opted_out') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'The merchant asked not to be asked for a review again.',
+        code: REVIEW_PROMPT_ADMIN_ERROR_CODES.optedOut,
+      });
+    }
+    if (outcome === 'unsupported_platform') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Only Shopify stores can be asked for a review.',
+        code: REVIEW_PROMPT_ADMIN_ERROR_CODES.unsupportedStore,
+      });
+    }
+    this.logger.log(
+      buildBackendLog(AdminStoresService.name, {
+        action: 'admin-store-review-prompt-set',
+        outcome: 'success',
+        result: outcome,
+        integrationId,
+        enabled,
+      }),
+    );
+    return { review_prompt: await this.reviewPromptView(integrationId) };
+  }
+
+  /**
+   * The review switch, the merchant's last answer and the opt-out, for
+   * Shopify stores only. Undefined for other stores.
+   */
+  private async reviewPromptView(integrationId: string) {
+    const state = await this.reviewPrompts?.findAdminState(integrationId);
+    if (!state || state.platformType !== 'shopify') return undefined;
+    const last = state.events[0];
+    return {
+      enabled: state.pending !== null,
+      request_id: state.pending?.id ?? null,
+      enabled_at: state.pending?.enabledAt ?? null,
+      enabled_by: state.pending?.enabledBy ?? null,
+      opted_out: state.optedOutAt !== null,
+      opted_out_at: state.optedOutAt,
+      last_event: last
+        ? { event: last.event, actor_type: last.actorType, at: last.createdAt }
+        : null,
+      events: state.events.map((event) => ({
+        id: event.id,
+        request_id: event.requestId,
+        event: event.event,
+        actor_type: event.actorType,
+        actor_id: event.actorId,
+        at: event.createdAt,
+      })),
     };
   }
 

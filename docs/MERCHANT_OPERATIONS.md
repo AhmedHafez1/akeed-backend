@@ -206,6 +206,18 @@ When no verifications exist:
 - The dashboard shows an empty state with a test verification panel.
 - The test panel allows the merchant to send a test WhatsApp message to validate their setup.
 
+### App Store review prompt
+
+Staff can ask one Shopify store for an App Store review. The embedded dashboard then shows a neutral, non-blocking banner at the top of the main page (both tabs). The banner is hidden while the first-run activation section shows.
+
+- **Switch.** On the admin store page, staff turn on "Review Prompt Enabled" (`PATCH /api/admin/stores/:integrationId/review-prompt`). Switching it on opens one pending request (`review_prompt_requests`, at most one pending row per store). Switching it off before the merchant answers closes the request as `admin_disabled`. Every switch writes a `review_prompt_events` row and an `admin_access_audit` row with the staff member.
+- **Banner.** The banner offers "Write a review", "Not now", "Don't ask again" and close. "Write a review" opens `https://apps.shopify.com/akeed#modal-show=WriteReviewModal` in a new tab. Akeed does not call Shopify's Reviews API. The first time the banner renders, Akeed records `shown`, once per request.
+- **Answers.** Each button records one event (`review_clicked`, `snoozed`, `dont_ask_again`, `dismissed` for close) and closes the request in the same transaction, which turns the switch off. A repeated answer is a replay. A different answer to a closed request is refused (`REVIEW_PROMPT_NOT_PENDING`). If the write fails, nothing is committed: the request stays pending and the banner can retry.
+- **No answer.** A request the merchant does not answer stays pending, and the banner shows again on the next visit.
+- **Asking again.** After "Not now", close or "Write a review", only a new staff switch-on asks again. `review_clicked` means the merchant opened the App Store page, not that a review was written.
+- **Opt-out.** "Don't ask again" is permanent. Staff cannot switch the prompt on for that store again (`REVIEW_PROMPT_OPTED_OUT`), and there is no reset.
+- **Who sees it.** Only an owner or admin in a Shopify session for the store's own shop sees the banner and can answer it. Requests are looked up by org, store and request id together, so an id from another store is not found.
+
 ## Settings Page
 
 ### Page Structure
@@ -321,6 +333,9 @@ The standalone page also reads `?section=` for older links; `billing` and `plan`
 | Onboarding state service  | `modules/onboarding/onboarding-state.service.ts`     | Settings updates, cross-field validation, store name prefill.                    |
 | Dashboard DTO             | `modules/orders/dto/dashboard.dto.ts`                | Query/response DTOs for stats, verifications list, and orders list.              |
 | Pagination helpers        | `modules/orders/services/pagination.helpers.ts`      | Cursor encode/decode for keyset pagination.                                      |
+| Review prompt service     | `modules/review-prompt/review-prompt.service.ts`     | Banner state, impression and merchant answer for the session's Shopify store.    |
+| Review prompt rules       | `shared/review-prompt/review-prompt.policy.ts`       | Which answers record, replay or conflict; when staff can switch the prompt on.   |
+| Review prompts repository | `infrastructure/database/repositories/review-prompts.repository.ts` | Atomic request, event and audit writes.                         |
 
 ## Frontend Code Map
 
@@ -358,6 +373,9 @@ The standalone page also reads `?section=` for older links; `billing` and `plan`
 | `GET`   | `/api/orders`                   | `DualAuthGuard` | Paginated order list with verification status.        |
 | `GET`   | `/api/settings`                 | `DualAuthGuard` | Load full settings (state + billing + templates).     |
 | `PATCH` | `/api/settings`                 | `DualAuthGuard` | Update merchant settings.                             |
+| `GET`   | `/api/review-prompt`            | `DualAuthGuard` | The store's pending review request, or null.          |
+| `POST`  | `/api/review-prompt/:id/impressions` | `DualAuthGuard` | Records the banner's first impression.           |
+| `POST`  | `/api/review-prompt/:id/actions` | `DualAuthGuard` | Records the merchant's answer and closes the request. |
 
 ### Query Parameters
 

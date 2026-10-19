@@ -30,6 +30,8 @@ import {
 } from './dto/admin-query.dto';
 import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
 import { AdminLogoHeaderDto } from './dto/admin-logo-header.dto';
+import { AdminReviewPromptDto } from './dto/admin-review-prompt.dto';
+import { readRequestId } from './standalone-billing-operator.guard';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 
 @Controller('api/admin')
@@ -84,6 +86,21 @@ export class AdminController {
   ) {
     return this.storesService.setLogoHeaderEnabled(
       request.admin.userId,
+      integrationId,
+      body.enabled,
+    );
+  }
+
+  /** Staff ask the store once for an App Store review, or withdraw the ask. */
+  @Patch('stores/:integrationId/review-prompt')
+  @Header('Cache-Control', 'private, no-store')
+  setStoreReviewPrompt(
+    @Req() request: RequestWithAdmin,
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+    @Body() body: AdminReviewPromptDto,
+  ) {
+    return this.storesService.setReviewPromptEnabled(
+      { userId: request.admin.userId, requestId: readRequestId(request) },
       integrationId,
       body.enabled,
     );
