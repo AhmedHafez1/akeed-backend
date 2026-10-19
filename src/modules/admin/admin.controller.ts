@@ -91,7 +91,7 @@ export class AdminController {
     );
   }
 
-  /** Staff ask the store once for an App Store review, or withdraw the ask. */
+  /** Staff switch the store's App Store review prompt on or off. */
   @Patch('stores/:integrationId/review-prompt')
   @Header('Cache-Control', 'private, no-store')
   setStoreReviewPrompt(
@@ -103,6 +103,19 @@ export class AdminController {
       { userId: request.admin.userId, requestId: readRequestId(request) },
       integrationId,
       body.enabled,
+    );
+  }
+
+  /** Staff make a snoozed, declined or answered review prompt eligible again. */
+  @Post('stores/:integrationId/review-prompt/reset')
+  @Header('Cache-Control', 'private, no-store')
+  resetStoreReviewPrompt(
+    @Req() request: RequestWithAdmin,
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+  ) {
+    return this.storesService.resetReviewPrompt(
+      { userId: request.admin.userId, requestId: readRequestId(request) },
+      integrationId,
     );
   }
 

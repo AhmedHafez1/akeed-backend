@@ -5,8 +5,6 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  Param,
-  ParseUUIDPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -32,28 +30,18 @@ export class ReviewPromptController {
     return this.reviewPrompt.getState(user);
   }
 
-  @Post(':requestId/impressions')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  recordShown(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Headers('x-request-id') httpRequestId?: string,
-  ): Promise<void> {
-    return this.reviewPrompt.recordShown(user, requestId, httpRequestId);
-  }
-
-  @Post(':requestId/actions')
+  /** The card's impression, CTA click, Reviews API result or "Not now". */
+  @Post('actions')
   @HttpCode(HttpStatus.OK)
   recordAction(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() payload: ReviewPromptActionDto,
     @Headers('x-request-id') httpRequestId?: string,
   ): Promise<ReviewPromptActionResponseDto> {
     return this.reviewPrompt.recordAction(
       user,
-      requestId,
       payload.action,
+      payload.code,
       httpRequestId,
     );
   }

@@ -1,25 +1,32 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import {
   databaseErrorCode,
   withSerializableRetry,
 } from '../../../shared/database/serializable-retry';
 import {
   decideAdminEnable,
-  decideMerchantAction,
+  decideMerchantEvent,
+  type ReviewPromptChange,
 } from '../../../shared/review-prompt/review-prompt.policy';
-import type { ReviewPromptMerchantAction } from '../../../shared/review-prompt/review-prompt.types';
+import type {
+  ReviewPromptMerchantAction,
+  ReviewRequestCode,
+} from '../../../shared/review-prompt/review-prompt.types';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
   integrations,
   reviewPromptEvents,
   reviewPromptRequests,
+  reviewPromptStates,
 } from '../schema';
 
 type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 export type ReviewPromptEventRecord = typeof reviewPromptEvents.$inferSelect;
+export type ReviewPromptStateRecord = typeof reviewPromptStates.$inferSelect;
 
 export interface ReviewPromptStaffAudit {
   userId: string;
@@ -29,7 +36,6 @@ export interface ReviewPromptStaffAudit {
 export interface ReviewPromptMerchantScope {
   orgId: string;
   integrationId: string;
-  requestId: string;
   actorId: string;
   httpRequestId?: string;
 }
@@ -42,28 +48,38 @@ export type ReviewPromptDisableResult = {
   outcome: 'not_found' | 'not_pending' | 'disabled';
 };
 
-export type ReviewPromptMerchantResult = {
-  outcome: 'not_found' | 'conflict' | 'recorded' | 'replayed';
+export type ReviewPromptResetResult = {
+  outcome: 'not_found' | 'unsupported_platform' | 'reset';
 };
 
-export type ReviewPromptShownResult = {
-  outcome: 'not_found' | 'not_pending' | 'recorded' | 'replayed';
-};
+export type ReviewPromptMerchantResult = { outcome: 'recorded' | 'replayed' };
+
+export interface ReviewPromptMerchantView {
+  switchedOn: boolean;
+  state: ReviewPromptStateRecord | undefined;
+}
+
+/** The store's customer outcomes since its current installation started. */
+export interface ReviewPromptStoreResults {
+  confirmed: number;
+  canceled: number;
+  since: string;
+}
 
 export interface ReviewPromptAdminState {
+  orgId: string;
   platformType: string;
   pending: { id: string; enabledAt: string; enabledBy: string } | null;
-  optedOutAt: string | null;
+  state: ReviewPromptStateRecord | undefined;
   events: ReviewPromptEventRecord[];
 }
 
 const ADMIN_EVENT_LIMIT = 20;
 
 /**
- * The review prompt's requests and history. Every write is one transaction:
- * the request row and its event (and, for staff, the audit row) are written
- * together or not at all, so a failed write leaves the request pending for a
- * retry.
+ * The review prompt's switch, per-store state and history. Every write is one
+ * transaction: the state row and its event (and, for staff, the audit row)
+ * are written together or not at all.
  */
 @Injectable()
 export class ReviewPromptsRepository {
@@ -73,8 +89,9 @@ export class ReviewPromptsRepository {
   ) {}
 
   /**
-   * Staff open a request for one store. The store row is locked so two staff
-   * switching it on at once produce one request.
+   * Staff switch the prompt on for one store. The store row is locked so two
+   * staff switching it on at once produce one request. A store that declined
+   * stays off until staff reset it.
    */
   enable(
     integrationId: string,
@@ -92,9 +109,10 @@ export class ReviewPromptsRepository {
       if (!store) return { outcome: 'not_found' };
 
       const pending = await this.findPendingRow(tx, integrationId);
+      const state = await this.findStateRow(tx, integrationId);
       const decision = decideAdminEnable({
         platformType: store.platformType,
-        optedOut: Boolean(await this.findOptOutAt(tx, integrationId)),
+        optedOut: state?.state === 'declined',
         hasPending: Boolean(pending),
       });
       if (decision === 'opted_out' || decision === 'unsupported_platform') {
@@ -121,7 +139,7 @@ export class ReviewPromptsRepository {
     });
   }
 
-  /** Staff close the store's pending request before the merchant answers. */
+  /** Staff switch the prompt off. The merchant's state is left as it is. */
   disable(
     integrationId: string,
     audit: ReviewPromptStaffAudit,
@@ -160,104 +178,217 @@ export class ReviewPromptsRepository {
   }
 
   /**
-   * Records the merchant's answer and closes the request in one transaction.
-   * The request is found only within the caller's org and store, so an id
-   * from another store is not found.
+   * Staff make a snoozed, declined, clicked or reviewed prompt eligible again.
+   * The switch is not touched: a prompt that is on shows on the next visit.
    */
-  recordMerchantAction(
-    scope: ReviewPromptMerchantScope,
-    action: ReviewPromptMerchantAction,
-  ): Promise<ReviewPromptMerchantResult> {
+  reset(
+    integrationId: string,
+    audit: ReviewPromptStaffAudit,
+  ): Promise<ReviewPromptResetResult> {
     return this.atomically(async (tx) => {
-      const request = await this.lockScopedRequest(tx, scope);
-      if (!request) return { outcome: 'not_found' };
-
-      const decision = decideMerchantAction(request, action);
-      if (decision === 'replay') return { outcome: 'replayed' };
-      if (decision === 'conflict') return { outcome: 'conflict' };
+      const [store] = await tx
+        .select({
+          orgId: integrations.orgId,
+          platformType: integrations.platformType,
+        })
+        .from(integrations)
+        .where(eq(integrations.id, integrationId))
+        .for('update');
+      if (!store) return { outcome: 'not_found' };
+      if (store.platformType !== 'shopify') {
+        return { outcome: 'unsupported_platform' };
+      }
 
       const now = new Date().toISOString();
+      await tx
+        .insert(reviewPromptStates)
+        .values({ integrationId, orgId: store.orgId })
+        .onConflictDoUpdate({
+          target: reviewPromptStates.integrationId,
+          set: {
+            state: 'eligible',
+            snoozedUntil: null,
+            snoozeCount: 0,
+            updatedAt: now,
+          },
+        });
+      const pending = await this.findPendingRow(tx, integrationId);
+      await this.insertStaffRecords(tx, {
+        event: 'reset',
+        requestId: pending?.id ?? null,
+        orgId: store.orgId,
+        integrationId,
+        audit,
+      });
+      return { outcome: 'reset' };
+    });
+  }
+
+  /**
+   * Applies one merchant report to the store's state and logs it, in one
+   * transaction. The state row is created on first use and locked, so two
+   * tabs reporting at once apply one after the other and the later one wins.
+   */
+  recordMerchantEvent(
+    scope: ReviewPromptMerchantScope,
+    action: ReviewPromptMerchantAction,
+    code?: ReviewRequestCode,
+  ): Promise<ReviewPromptMerchantResult> {
+    return this.atomically(async (tx) => {
+      await tx
+        .insert(reviewPromptStates)
+        .values({ integrationId: scope.integrationId, orgId: scope.orgId })
+        .onConflictDoNothing();
+      const [row] = await tx
+        .select()
+        .from(reviewPromptStates)
+        .where(
+          and(
+            eq(reviewPromptStates.integrationId, scope.integrationId),
+            eq(reviewPromptStates.orgId, scope.orgId),
+          ),
+        )
+        .for('update');
+
+      const decision = decideMerchantEvent(row, action, new Date(), code);
+      if (decision.kind === 'replay') return { outcome: 'replayed' };
+
+      const now = new Date().toISOString();
+      await tx
+        .update(reviewPromptStates)
+        .set({ ...this.stateUpdate(decision.change, now), updatedAt: now })
+        .where(
+          and(
+            eq(reviewPromptStates.integrationId, scope.integrationId),
+            eq(reviewPromptStates.orgId, scope.orgId),
+          ),
+        );
+      const pending = await this.findPendingRow(tx, scope.integrationId);
       await tx.insert(reviewPromptEvents).values({
-        requestId: request.id,
+        requestId: pending?.id ?? null,
         orgId: scope.orgId,
         integrationId: scope.integrationId,
-        event: action,
+        event: decision.change.event,
         actorType: 'merchant',
         actorId: scope.actorId,
         httpRequestId: scope.httpRequestId,
+        resultCode: decision.change.lastResultCode ?? null,
       });
-      await tx
-        .update(reviewPromptRequests)
-        .set({
-          status: 'answered',
-          closedAction: action,
-          closedAt: now,
-          closedBy: scope.actorId,
-          updatedAt: now,
-        })
-        .where(eq(reviewPromptRequests.id, request.id));
       return { outcome: 'recorded' };
     });
   }
 
-  /** Records the banner's first impression for a pending request, once. */
-  recordShown(
-    scope: ReviewPromptMerchantScope,
-  ): Promise<ReviewPromptShownResult> {
-    return this.atomically(async (tx) => {
-      const request = await this.lockScopedRequest(tx, scope);
-      if (!request) return { outcome: 'not_found' };
-      if (request.status !== 'pending') return { outcome: 'not_pending' };
-
-      const inserted = await tx
-        .insert(reviewPromptEvents)
-        .values({
-          requestId: request.id,
-          orgId: scope.orgId,
-          integrationId: scope.integrationId,
-          event: 'shown',
-          actorType: 'merchant',
-          actorId: scope.actorId,
-          httpRequestId: scope.httpRequestId,
-        })
-        .onConflictDoNothing()
-        .returning({ id: reviewPromptEvents.id });
-      return { outcome: inserted.length > 0 ? 'recorded' : 'replayed' };
-    });
-  }
-
-  /** The store's open request, scoped to the merchant's org. */
-  async findPending(
+  /** The switch and the state of one store, scoped to the merchant's org. */
+  async findMerchantView(
     orgId: string,
     integrationId: string,
-  ): Promise<{ id: string } | undefined> {
-    const [row] = await this.db
-      .select({ id: reviewPromptRequests.id })
-      .from(reviewPromptRequests)
-      .where(
-        and(
-          eq(reviewPromptRequests.orgId, orgId),
-          eq(reviewPromptRequests.integrationId, integrationId),
-          eq(reviewPromptRequests.status, 'pending'),
-        ),
-      )
-      .limit(1);
-    return row;
+  ): Promise<ReviewPromptMerchantView> {
+    const [pending, state] = await Promise.all([
+      this.db
+        .select({ id: reviewPromptRequests.id })
+        .from(reviewPromptRequests)
+        .where(
+          and(
+            eq(reviewPromptRequests.orgId, orgId),
+            eq(reviewPromptRequests.integrationId, integrationId),
+            eq(reviewPromptRequests.status, 'pending'),
+          ),
+        )
+        .limit(1),
+      this.db
+        .select()
+        .from(reviewPromptStates)
+        .where(
+          and(
+            eq(reviewPromptStates.orgId, orgId),
+            eq(reviewPromptStates.integrationId, integrationId),
+          ),
+        )
+        .limit(1),
+    ]);
+    return { switchedOn: pending.length > 0, state: state[0] };
   }
 
-  /** The switch, the opt-out and the latest events of one store, for staff. */
+  /**
+   * Customer-confirmed and customer-canceled orders of one store since its
+   * current installation started (its open lifecycle, else its latest one,
+   * else the store row's creation). Test and onboarding orders, merchant
+   * confirmations and cancellations, and no-reply outcomes are not counted.
+   * Undefined when the store is not in the org.
+   */
+  async countStoreResults(
+    orgId: string,
+    integrationId: string,
+  ): Promise<ReviewPromptStoreResults | undefined> {
+    const result = await this.db.execute<{
+      since: string | Date;
+      confirmed: number;
+      canceled: number;
+    }>(sql`
+      WITH store AS (
+        SELECT
+          i.id,
+          i.org_id,
+          COALESCE(
+            (
+              SELECT l.installed_at
+              FROM admin_store_lifecycles l
+              WHERE l.integration_id = i.id
+              ORDER BY (l.uninstalled_at IS NULL) DESC, l.installed_at DESC
+              LIMIT 1
+            ),
+            i.created_at
+          ) AS since
+        FROM integrations i
+        WHERE i.id = ${integrationId} AND i.org_id = ${orgId}
+      )
+      SELECT
+        store.since,
+        COUNT(v.id) FILTER (
+          WHERE v.confirmed_at IS NOT NULL
+            AND v.confirmation_source IS DISTINCT FROM 'merchant_manual'
+        )::int AS confirmed,
+        COUNT(v.id) FILTER (
+          WHERE v.canceled_at IS NOT NULL
+            AND (v.cancellation_source IS NULL OR v.cancellation_source = 'customer')
+        )::int AS canceled
+      FROM store
+      LEFT JOIN orders ord
+        ON ord.integration_id = store.id
+        AND ord.org_id = store.org_id
+        AND NOT ord.is_test
+        AND ord.external_order_id NOT LIKE 'akeed-test-%'
+      LEFT JOIN verifications v
+        ON v.order_id = ord.id
+        AND v.org_id = store.org_id
+        AND v.created_at >= store.since
+      GROUP BY store.since
+    `);
+    const [row] = Array.from(result);
+    if (!row) return undefined;
+    return {
+      confirmed: row.confirmed,
+      canceled: row.canceled,
+      since: new Date(row.since).toISOString(),
+    };
+  }
+
+  /** The switch, the state and the latest events of one store, for staff. */
   async findAdminState(
     integrationId: string,
   ): Promise<ReviewPromptAdminState | undefined> {
     const [store] = await this.db
-      .select({ platformType: integrations.platformType })
+      .select({
+        orgId: integrations.orgId,
+        platformType: integrations.platformType,
+      })
       .from(integrations)
       .where(eq(integrations.id, integrationId));
     if (!store) return undefined;
 
-    const [pending, optedOutAt, events] = await Promise.all([
+    const [pending, state, events] = await Promise.all([
       this.findPendingRow(this.db, integrationId),
-      this.findOptOutAt(this.db, integrationId),
+      this.findStateRow(this.db, integrationId),
       this.db
         .select()
         .from(reviewPromptEvents)
@@ -269,10 +400,33 @@ export class ReviewPromptsRepository {
         .limit(ADMIN_EVENT_LIMIT),
     ]);
     return {
+      orgId: store.orgId,
       platformType: store.platformType,
       pending: pending ?? null,
-      optedOutAt,
+      state,
       events,
+    };
+  }
+
+  private stateUpdate(
+    change: ReviewPromptChange,
+    now: string,
+  ): PgUpdateSetSource<typeof reviewPromptStates> {
+    return {
+      ...(change.state !== undefined && { state: change.state }),
+      ...(change.snoozedUntil !== undefined && {
+        snoozedUntil: change.snoozedUntil,
+      }),
+      ...(change.snoozeCount !== undefined && {
+        snoozeCount: change.snoozeCount,
+      }),
+      ...(change.lastResultCode !== undefined && {
+        lastResultCode: change.lastResultCode,
+      }),
+      ...(change.shown && {
+        shownCount: sql`${reviewPromptStates.shownCount} + 1`,
+        lastShownAt: now,
+      }),
     };
   }
 
@@ -291,28 +445,6 @@ export class ReviewPromptsRepository {
       if (databaseErrorCode(error) !== '23505') throw error;
       return run();
     }
-  }
-
-  private async lockScopedRequest(
-    tx: Transaction,
-    scope: ReviewPromptMerchantScope,
-  ) {
-    const [request] = await tx
-      .select({
-        id: reviewPromptRequests.id,
-        status: reviewPromptRequests.status,
-        closedAction: reviewPromptRequests.closedAction,
-      })
-      .from(reviewPromptRequests)
-      .where(
-        and(
-          eq(reviewPromptRequests.id, scope.requestId),
-          eq(reviewPromptRequests.orgId, scope.orgId),
-          eq(reviewPromptRequests.integrationId, scope.integrationId),
-        ),
-      )
-      .for('update');
-    return request;
   }
 
   private async findPendingRow(
@@ -336,29 +468,23 @@ export class ReviewPromptsRepository {
     return row;
   }
 
-  private async findOptOutAt(
+  private async findStateRow(
     executor: Transaction | DrizzleDB,
     integrationId: string,
-  ): Promise<string | null> {
+  ) {
     const [row] = await executor
-      .select({ closedAt: reviewPromptRequests.closedAt })
-      .from(reviewPromptRequests)
-      .where(
-        and(
-          eq(reviewPromptRequests.integrationId, integrationId),
-          eq(reviewPromptRequests.closedAction, 'dont_ask_again'),
-        ),
-      )
-      .orderBy(desc(reviewPromptRequests.closedAt))
+      .select()
+      .from(reviewPromptStates)
+      .where(eq(reviewPromptStates.integrationId, integrationId))
       .limit(1);
-    return row?.closedAt ?? null;
+    return row;
   }
 
   private async insertStaffRecords(
     tx: Transaction,
     params: {
-      event: 'enabled' | 'admin_disabled';
-      requestId: string;
+      event: 'enabled' | 'admin_disabled' | 'reset';
+      requestId: string | null;
       orgId: string;
       integrationId: string;
       audit: ReviewPromptStaffAudit;
@@ -375,10 +501,7 @@ export class ReviewPromptsRepository {
     });
     await tx.insert(adminAccessAudit).values({
       userId: params.audit.userId,
-      action:
-        params.event === 'enabled'
-          ? 'store.review-prompt.enable'
-          : 'store.review-prompt.disable',
+      action: STAFF_AUDIT_ACTIONS[params.event],
       outcome: 'allowed',
       requestId: params.audit.requestId,
       targetIntegrationId: params.integrationId,
@@ -386,3 +509,9 @@ export class ReviewPromptsRepository {
     });
   }
 }
+
+const STAFF_AUDIT_ACTIONS = {
+  enabled: 'store.review-prompt.enable',
+  admin_disabled: 'store.review-prompt.disable',
+  reset: 'store.review-prompt.reset',
+} as const;

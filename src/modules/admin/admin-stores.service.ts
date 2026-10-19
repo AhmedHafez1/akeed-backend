@@ -10,6 +10,10 @@ import { IntegrationsRepository } from '../../infrastructure/database/repositori
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import {
+  effectiveReviewPromptState,
+  reviewPromptVariantFor,
+} from '../../shared/review-prompt/review-prompt.policy';
 import type { ImageTwinTemplate } from '../../shared/messaging/template-registry.types';
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
@@ -292,20 +296,73 @@ export class AdminStoresService {
   }
 
   /**
-   * The review switch, the merchant's last answer and the opt-out, for
-   * Shopify stores only. Undefined for other stores.
+   * Makes the store's review prompt eligible again after a snooze, decline,
+   * click or review, and returns the new view. The switch is left as it is.
+   */
+  async resetReviewPrompt(
+    audit: { userId: string; requestId?: string },
+    integrationId: string,
+  ) {
+    const repository = this.reviewPrompts;
+    if (!repository) throw new NotFoundException('Store not found.');
+    const { outcome } = await repository.reset(integrationId, audit);
+    if (outcome === 'not_found')
+      throw new NotFoundException('Store not found.');
+    if (outcome === 'unsupported_platform') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Only Shopify stores can be asked for a review.',
+        code: REVIEW_PROMPT_ADMIN_ERROR_CODES.unsupportedStore,
+      });
+    }
+    this.logger.log(
+      buildBackendLog(AdminStoresService.name, {
+        action: 'admin-store-review-prompt-reset',
+        outcome: 'success',
+        integrationId,
+      }),
+    );
+    return { review_prompt: await this.reviewPromptView(integrationId) };
+  }
+
+  /**
+   * The review switch, where the merchant stands, what the card would show
+   * now and the latest events, for Shopify stores only. Undefined for other
+   * stores.
    */
   private async reviewPromptView(integrationId: string) {
-    const state = await this.reviewPrompts?.findAdminState(integrationId);
-    if (!state || state.platformType !== 'shopify') return undefined;
+    const repository = this.reviewPrompts;
+    const state = await repository?.findAdminState(integrationId);
+    if (!repository || !state || state.platformType !== 'shopify') {
+      return undefined;
+    }
+    const results = await repository
+      .countStoreResults(state.orgId, integrationId)
+      .catch(() => undefined);
+    const row = state.state;
+    const effective = effectiveReviewPromptState(row, new Date());
     const last = state.events[0];
     return {
       enabled: state.pending !== null,
       request_id: state.pending?.id ?? null,
       enabled_at: state.pending?.enabledAt ?? null,
       enabled_by: state.pending?.enabledBy ?? null,
-      opted_out: state.optedOutAt !== null,
-      opted_out_at: state.optedOutAt,
+      opted_out: effective === 'declined',
+      opted_out_at: effective === 'declined' ? (row?.updatedAt ?? null) : null,
+      state: effective,
+      snoozed_until:
+        effective === 'snoozed' ? (row?.snoozedUntil ?? null) : null,
+      snooze_count: row?.snoozeCount ?? 0,
+      shown_count: row?.shownCount ?? 0,
+      last_shown_at: row?.lastShownAt ?? null,
+      last_result_code: row?.lastResultCode ?? null,
+      preview: {
+        variant: reviewPromptVariantFor(results?.confirmed ?? null),
+        confirmed: results?.confirmed ?? null,
+        canceled: results?.canceled ?? null,
+        since: results?.since ?? null,
+      },
       last_event: last
         ? { event: last.event, actor_type: last.actorType, at: last.createdAt }
         : null,
@@ -315,6 +372,7 @@ export class AdminStoresService {
         event: event.event,
         actor_type: event.actorType,
         actor_id: event.actorId,
+        result_code: event.resultCode,
         at: event.createdAt,
       })),
     };

@@ -1,5 +1,4 @@
 import {
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -9,13 +8,21 @@ import { IntegrationsRepository } from '../../infrastructure/database/repositori
 import {
   ReviewPromptsRepository,
   type ReviewPromptMerchantScope,
+  type ReviewPromptStoreResults,
 } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { resolveShopifyLinkedIntegration } from '../../shared/commerce/current-integration-resolver';
 import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
-import type { ReviewPromptMerchantAction } from '../../shared/review-prompt/review-prompt.types';
+import {
+  effectiveReviewPromptState,
+  reviewPromptVariantFor,
+} from '../../shared/review-prompt/review-prompt.policy';
+import type {
+  ReviewPromptMerchantAction,
+  ReviewRequestCode,
+} from '../../shared/review-prompt/review-prompt.types';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import {
   assertOrganizationWriteAllowed,
@@ -33,10 +40,21 @@ export const REVIEW_PROMPT_ERROR_CODES = {
   unavailable: 'REVIEW_PROMPT_UNAVAILABLE',
 } as const;
 
+/** Past this, the card shows its plain variant rather than wait for counts. */
+export const REVIEW_PROMPT_RESULTS_DEADLINE_MS = 3_000;
+
+const HIDDEN: ReviewPromptStateResponseDto = {
+  visible: false,
+  variant: 'fallback',
+  confirmed: null,
+  canceled: null,
+  since: null,
+};
+
 /**
  * The merchant side of the App Store review prompt: whether the embedded
- * dashboard shows the banner, its first impression and the merchant's one
- * answer. Only a Shopify session for the store's own shop reaches a request.
+ * card shows and with which numbers, and what the merchant did with it. Only
+ * an owner or admin in a Shopify session for the store's own shop is asked.
  */
 @Injectable()
 export class ReviewPromptService {
@@ -47,62 +65,115 @@ export class ReviewPromptService {
     private readonly integrations: IntegrationsRepository,
   ) {}
 
-  /** The store's pending request, or null when the banner should not show. */
+  /**
+   * The card shows while staff have the prompt on and the store's state is
+   * eligible. Its results are read live, within a deadline; slow or failed
+   * counts give the plain variant rather than hold the page.
+   */
   async getState(
     user: AuthenticatedUser,
   ): Promise<ReviewPromptStateResponseDto> {
-    if (user.source !== 'shopify' || !user.shop) return { prompt: null };
-    if (!canWriteOrganization(user.role)) return { prompt: null };
+    if (user.source !== 'shopify' || !user.shop) return HIDDEN;
+    if (!canWriteOrganization(user.role)) return HIDDEN;
 
     const integration = await this.findStore(user, user.shop);
-    if (!integration?.isActive) return { prompt: null };
+    if (!integration?.isActive) return HIDDEN;
 
-    const pending = await this.guard('review-prompt-state', user, () =>
-      this.reviewPrompts.findPending(user.orgId, integration.id),
+    const view = await this.guard('review-prompt-state', user, () =>
+      this.reviewPrompts.findMerchantView(user.orgId, integration.id),
     );
-    return { prompt: pending ? { id: pending.id } : null };
-  }
+    if (!view.switchedOn) return HIDDEN;
+    if (effectiveReviewPromptState(view.state, new Date()) !== 'eligible') {
+      return HIDDEN;
+    }
 
-  async recordShown(
-    user: AuthenticatedUser,
-    requestId: string,
-    httpRequestId?: string,
-  ): Promise<void> {
-    const scope = await this.requireScope(user, requestId, httpRequestId);
-    const result = await this.guard('review-prompt-shown', user, () =>
-      this.reviewPrompts.recordShown(scope),
-    );
-    if (result.outcome === 'not_found') throw this.notFound();
-    this.logOutcome('review-prompt-shown', scope, result.outcome);
+    const results = await this.readResults(user.orgId, integration.id);
+    return {
+      visible: true,
+      variant: reviewPromptVariantFor(results?.confirmed ?? null),
+      confirmed: results?.confirmed ?? null,
+      canceled: results?.canceled ?? null,
+      since: results?.since ?? null,
+    };
   }
 
   async recordAction(
     user: AuthenticatedUser,
-    requestId: string,
     action: ReviewPromptMerchantAction,
+    code: ReviewRequestCode | undefined,
     httpRequestId?: string,
   ): Promise<ReviewPromptActionResponseDto> {
-    const scope = await this.requireScope(user, requestId, httpRequestId);
+    const scope = await this.requireScope(user, httpRequestId);
     const result = await this.guard('review-prompt-action', user, () =>
-      this.reviewPrompts.recordMerchantAction(scope, action),
+      this.reviewPrompts.recordMerchantEvent(
+        scope,
+        action,
+        action === 'result' ? code : undefined,
+      ),
     );
-    if (result.outcome === 'not_found') throw this.notFound();
-    if (result.outcome === 'conflict') {
-      this.logOutcome('review-prompt-action', scope, 'conflict', action);
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: 'This review request was already answered or closed.',
-        code: REVIEW_PROMPT_ERROR_CODES.notPending,
-      });
-    }
-    this.logOutcome('review-prompt-action', scope, result.outcome, action);
+    this.logger.log(
+      buildBackendLog(ReviewPromptService.name, {
+        action: 'review-prompt-action',
+        outcome: result.outcome === 'recorded' ? 'success' : 'skipped',
+        result: result.outcome,
+        orgId: scope.orgId,
+        integrationId: scope.integrationId,
+        merchantAction: action,
+        resultCode: action === 'result' ? code : undefined,
+      }),
+    );
     return { outcome: result.outcome };
+  }
+
+  /**
+   * The store's results, or undefined when they could not be read in time.
+   * Never throws: the card still shows, with its plain variant.
+   */
+  private async readResults(
+    orgId: string,
+    integrationId: string,
+  ): Promise<ReviewPromptStoreResults | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(
+        () => resolve('timeout'),
+        REVIEW_PROMPT_RESULTS_DEADLINE_MS,
+      );
+    });
+    try {
+      const outcome = await Promise.race([
+        this.reviewPrompts.countStoreResults(orgId, integrationId),
+        deadline,
+      ]);
+      if (outcome !== 'timeout') return outcome;
+      this.logger.warn(
+        buildBackendLog(ReviewPromptService.name, {
+          action: 'review-prompt-results',
+          outcome: 'skipped',
+          reason: 'deadline',
+          orgId,
+          integrationId,
+        }),
+      );
+      return undefined;
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(ReviewPromptService.name, {
+          action: 'review-prompt-results',
+          outcome: 'failure',
+          orgId,
+          integrationId,
+          ...normalizeError(error),
+        }),
+      );
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async requireScope(
     user: AuthenticatedUser,
-    requestId: string,
     httpRequestId?: string,
   ): Promise<ReviewPromptMerchantScope> {
     assertOrganizationWriteAllowed(user.role, {
@@ -115,7 +186,6 @@ export class ReviewPromptService {
     return {
       orgId: user.orgId,
       integrationId: integration.id,
-      requestId,
       actorId: user.userId,
       httpRequestId: httpRequestId?.slice(0, 128),
     };
@@ -137,7 +207,7 @@ export class ReviewPromptService {
 
   /**
    * A database failure becomes a coded 503. Nothing was committed, so the
-   * request is still pending and the banner can retry.
+   * card can report again.
    */
   private async guard<T>(
     action: string,
@@ -171,24 +241,5 @@ export class ReviewPromptService {
       message: 'Review request not found.',
       code: REVIEW_PROMPT_ERROR_CODES.notFound,
     });
-  }
-
-  private logOutcome(
-    action: string,
-    scope: ReviewPromptMerchantScope,
-    outcome: string,
-    merchantAction?: ReviewPromptMerchantAction,
-  ): void {
-    this.logger.log(
-      buildBackendLog(ReviewPromptService.name, {
-        action,
-        outcome: outcome === 'recorded' ? 'success' : 'skipped',
-        result: outcome,
-        orgId: scope.orgId,
-        integrationId: scope.integrationId,
-        reviewPromptId: scope.requestId,
-        merchantAction,
-      }),
-    );
   }
 }

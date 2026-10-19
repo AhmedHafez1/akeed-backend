@@ -42,6 +42,8 @@ import type {
   ReviewPromptClosedAction,
   ReviewPromptEvent,
   ReviewPromptRequestStatus,
+  ReviewPromptState,
+  ReviewRequestCode,
 } from '../../shared/review-prompt/review-prompt.types';
 
 export const verificationStatus = pgEnum('verification_status', [
@@ -1711,9 +1713,9 @@ export const adminAccessAudit = pgTable(
 
 /**
  * One row per time staff switch the App Store review prompt on for a store.
- * The 'pending' row is the switch (one per store); the first merchant answer
- * or a staff switch-off closes it. A request closed with 'dont_ask_again' is
- * the store's permanent opt-out.
+ * The 'pending' row is the switch (one per store); a staff switch-off closes
+ * it. Merchant answers live in `reviewPromptStates`; 'answered' rows are
+ * requests closed by a merchant answer before that table existed.
  */
 export const reviewPromptRequests = pgTable(
   'review_prompt_requests',
@@ -1767,23 +1769,24 @@ export const reviewPromptRequests = pgTable(
 ).enableRLS();
 
 /**
- * The review prompt's history: switch on and off, the first impression and
- * the merchant's one answer per request. 'review_clicked' means the App Store
- * page was opened, not that a review was written.
+ * The review prompt's history: staff switch on, off and reset; merchant
+ * impressions, clicks, the Reviews API result ("result_code") and "Not now".
+ * "request_id" is the switch that was on at the time, or null when none was.
  */
 export const reviewPromptEvents = pgTable(
   'review_prompt_events',
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
-    requestId: uuid('request_id')
-      .notNull()
-      .references(() => reviewPromptRequests.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id').references(() => reviewPromptRequests.id, {
+      onDelete: 'cascade',
+    }),
     orgId: uuid('org_id').notNull(),
     integrationId: uuid('integration_id').notNull(),
     event: text('event').$type<ReviewPromptEvent>().notNull(),
     actorType: text('actor_type').$type<ReviewPromptActorType>().notNull(),
     actorId: text('actor_id'),
     httpRequestId: text('http_request_id'),
+    resultCode: text('result_code').$type<ReviewRequestCode>(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -1794,27 +1797,81 @@ export const reviewPromptEvents = pgTable(
       foreignColumns: [integrations.id, integrations.orgId],
       name: 'review_prompt_events_integration_id_fkey',
     }).onDelete('cascade'),
-    uniqueIndex('review_prompt_events_one_shown_idx')
-      .on(table.requestId)
-      .where(sql`${table.event} = 'shown'`),
-    uniqueIndex('review_prompt_events_one_answer_idx')
-      .on(table.requestId)
-      .where(
-        sql`${table.event} IN ('review_clicked', 'snoozed', 'dismissed', 'dont_ask_again')`,
-      ),
     index('idx_review_prompt_events_integration_created').on(
       table.integrationId,
       table.createdAt,
     ),
     check(
       'review_prompt_events_event_check',
-      sql`${table.event} IN ('enabled', 'shown', 'review_clicked', 'snoozed', 'dismissed', 'dont_ask_again', 'admin_disabled')`,
+      sql`${table.event} IN ('enabled', 'shown', 'review_clicked', 'snoozed', 'dismissed', 'dont_ask_again', 'admin_disabled', 'clicked', 'result', 'declined', 'reset')`,
     ),
     check(
       'review_prompt_events_actor_type_check',
       sql`${table.actorType} IN ('admin', 'merchant')`,
     ),
     pgPolicy('Service role manages review prompt events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Where one store stands with the review prompt. Written only by the
+ * merchant's answers and a staff reset, never by the switch, so switching the
+ * prompt off and on again does not re-show a snoozed, declined or reviewed
+ * prompt. A 'snoozed' row whose "snoozed_until" has passed is eligible again.
+ */
+export const reviewPromptStates = pgTable(
+  'review_prompt_states',
+  {
+    integrationId: uuid('integration_id').primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    state: text('state')
+      .$type<ReviewPromptState>()
+      .default('eligible')
+      .notNull(),
+    snoozedUntil: timestamp('snoozed_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    snoozeCount: integer('snooze_count').default(0).notNull(),
+    shownCount: integer('shown_count').default(0).notNull(),
+    lastShownAt: timestamp('last_shown_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastResultCode: text('last_result_code').$type<ReviewRequestCode>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'review_prompt_states_integration_id_fkey',
+    }).onDelete('cascade'),
+    index('idx_review_prompt_states_org').on(table.orgId),
+    check(
+      'review_prompt_states_state_check',
+      sql`${table.state} IN ('eligible', 'snoozed', 'declined', 'clicked', 'reviewed_prompted', 'reviewed', 'ineligible')`,
+    ),
+    check(
+      'review_prompt_states_snooze_check',
+      sql`${table.state} <> 'snoozed' OR ${table.snoozedUntil} IS NOT NULL`,
+    ),
+    check(
+      'review_prompt_states_counts_check',
+      sql`${table.snoozeCount} >= 0 AND ${table.shownCount} >= 0`,
+    ),
+    pgPolicy('Service role manages review prompt states', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

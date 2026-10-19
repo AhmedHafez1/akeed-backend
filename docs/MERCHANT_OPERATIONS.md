@@ -208,15 +208,18 @@ When no verifications exist:
 
 ### App Store review prompt
 
-Staff can ask one Shopify store for an App Store review. The embedded dashboard then shows a neutral, non-blocking banner at the top of the main page (both tabs). The banner is hidden while the first-run activation section shows.
+Staff can ask one Shopify store for an App Store review. The embedded Dashboard and Confirmations views then show a Polaris card under the page header, above the filters. The card is hidden while the first-run activation section shows.
 
-- **Switch.** On the admin store page, staff turn on "Review Prompt Enabled" (`PATCH /api/admin/stores/:integrationId/review-prompt`). Switching it on opens one pending request (`review_prompt_requests`, at most one pending row per store). Switching it off before the merchant answers closes the request as `admin_disabled`. Every switch writes a `review_prompt_events` row and an `admin_access_audit` row with the staff member.
-- **Banner.** The banner offers "Write a review", "Not now", "Don't ask again" and close. "Write a review" opens `https://apps.shopify.com/akeed#modal-show=WriteReviewModal` in a new tab. Akeed does not call Shopify's Reviews API. The first time the banner renders, Akeed records `shown`, once per request.
-- **Answers.** Each button records one event (`review_clicked`, `snoozed`, `dont_ask_again`, `dismissed` for close) and closes the request in the same transaction, which turns the switch off. A repeated answer is a replay. A different answer to a closed request is refused (`REVIEW_PROMPT_NOT_PENDING`). If the write fails, nothing is committed: the request stays pending and the banner can retry.
-- **No answer.** A request the merchant does not answer stays pending, and the banner shows again on the next visit.
-- **Asking again.** After "Not now", close or "Write a review", only a new staff switch-on asks again. `review_clicked` means the merchant opened the App Store page, not that a review was written.
-- **Opt-out.** "Don't ask again" is permanent. Staff cannot switch the prompt on for that store again (`REVIEW_PROMPT_OPTED_OUT`), and there is no reset.
-- **Who sees it.** Only an owner or admin in a Shopify session for the store's own shop sees the banner and can answer it. Requests are looked up by org, store and request id together, so an id from another store is not found.
+- **Switch.** On the admin store page, staff turn on "Review Prompt Enabled" (`PATCH /api/admin/stores/:integrationId/review-prompt`). Switching it on opens one pending request (`review_prompt_requests`, at most one pending row per store); switching it off closes it as `admin_disabled`. Every switch writes a `review_prompt_events` row and an `admin_access_audit` row with the staff member. The switch never changes what the merchant answered.
+- **Merchant state.** `review_prompt_states` holds one row per store: `eligible`, `snoozed` (until `snoozed_until`), `declined`, `clicked`, `reviewed_prompted`, `reviewed` or `ineligible`, plus the snooze count, times shown, last shown and the last Reviews API code. The card shows only while the switch is on and the state is `eligible`; a snooze that has run out counts as eligible. Switching off and on again does not re-show a snoozed, declined or answered prompt.
+- **Card.** It leads with the store's customer-confirmed and customer-canceled orders since the current installation started (`admin_store_lifecycles.installed_at`, else the store's creation). Test and onboarding orders, merchant confirmations and cancellations, and no-reply outcomes are not counted. From 10 confirmations it shows the results; below that, or when the counts are not read within 3 seconds, it shows a plain ask. The counts are read live on each `GET /api/review-prompt`, never stored.
+- **Rate Akeed on Shopify.** The button records `clicked`, calls App Bridge `shopify.reviews.request()` and records the `result` with Shopify's code. `success` opens Shopify's review modal (state `reviewed_prompted`); `already-reviewed` sets `reviewed`; `merchant-ineligible` hides the card (`ineligible`); `cancelled` keeps the card but sets `clicked`. `cooldown-period`, `annual-limit-reached`, `mobile-app`, `recently-installed` and a missing or failing API (`unavailable`) open `https://apps.shopify.com/akeed#modal-show=WriteReviewModal` in a new tab and set `clicked`. `already-open` and `open-in-progress` change nothing. Shopify shows its modal at most once per 60 days and three times per 365 days, never in the mobile app or in the first 24 hours after install; development stores always show it and their reviews are not published.
+- **Not now.** The first "Not now" snoozes the prompt for 14 days. A second one, after the snooze, declines it. A repeat while the snooze is running is a replay, so a double click does not decline.
+- **Impressions.** The card records `shown` once per page session while it is eligible.
+- **Writes.** Every merchant report updates the locked state row and logs one event in the same transaction; the later of two concurrent reports wins. An answer given after staff switched the prompt off is still logged, with no request id.
+- **Declined stores.** Staff cannot switch the prompt on for a declined store (`REVIEW_PROMPT_OPTED_OUT`) until they reset it.
+- **Reset.** "Reset prompt" on the admin store page (`POST /api/admin/stores/:integrationId/review-prompt/reset`) sets the state back to `eligible` and clears the snooze. It does not touch the switch. It writes a `reset` event and an `admin_access_audit` row (`store.review-prompt.reset`). The admin store page also shows the state, times shown, last shown, last result and what the card would show now.
+- **Who sees it.** Only an owner or admin in a Shopify session for the store's own shop sees the card and can answer it. The store comes from the session, never from the request body.
 
 ## Settings Page
 
@@ -333,9 +336,9 @@ The standalone page also reads `?section=` for older links; `billing` and `plan`
 | Onboarding state service  | `modules/onboarding/onboarding-state.service.ts`     | Settings updates, cross-field validation, store name prefill.                    |
 | Dashboard DTO             | `modules/orders/dto/dashboard.dto.ts`                | Query/response DTOs for stats, verifications list, and orders list.              |
 | Pagination helpers        | `modules/orders/services/pagination.helpers.ts`      | Cursor encode/decode for keyset pagination.                                      |
-| Review prompt service     | `modules/review-prompt/review-prompt.service.ts`     | Banner state, impression and merchant answer for the session's Shopify store.    |
-| Review prompt rules       | `shared/review-prompt/review-prompt.policy.ts`       | Which answers record, replay or conflict; when staff can switch the prompt on.   |
-| Review prompts repository | `infrastructure/database/repositories/review-prompts.repository.ts` | Atomic request, event and audit writes.                         |
+| Review prompt service     | `modules/review-prompt/review-prompt.service.ts`     | Card visibility and live results, and merchant reports for the session's store.  |
+| Review prompt rules       | `shared/review-prompt/review-prompt.policy.ts`       | State transitions, snooze expiry, results threshold, when staff can switch on.   |
+| Review prompts repository | `infrastructure/database/repositories/review-prompts.repository.ts` | Atomic switch, state, event and audit writes; store result counts. |
 
 ## Frontend Code Map
 
@@ -373,9 +376,8 @@ The standalone page also reads `?section=` for older links; `billing` and `plan`
 | `GET`   | `/api/orders`                   | `DualAuthGuard` | Paginated order list with verification status.        |
 | `GET`   | `/api/settings`                 | `DualAuthGuard` | Load full settings (state + billing + templates).     |
 | `PATCH` | `/api/settings`                 | `DualAuthGuard` | Update merchant settings.                             |
-| `GET`   | `/api/review-prompt`            | `DualAuthGuard` | The store's pending review request, or null.          |
-| `POST`  | `/api/review-prompt/:id/impressions` | `DualAuthGuard` | Records the banner's first impression.           |
-| `POST`  | `/api/review-prompt/:id/actions` | `DualAuthGuard` | Records the merchant's answer and closes the request. |
+| `GET`   | `/api/review-prompt`            | `DualAuthGuard` | Whether the review card shows, its variant and live counts. |
+| `POST`  | `/api/review-prompt/actions`    | `DualAuthGuard` | Records `shown`, `clicked`, `result` (with `code`) or `not_now`. |
 
 ### Query Parameters
 
