@@ -13,10 +13,28 @@ import {
   isCapacityBlockReason,
 } from '../../shared/verification/capacity-block';
 import { readUsageAlertsConfig } from '../../shared/config/usage-alerts.config';
-import { buildBackendLog } from '../../shared/logging/backend-log.util';
-import { CAPACITY_RECOVERY_BATCH } from './capacity-recovery.constants';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
+import {
+  CAPACITY_RECOVERY_BATCH,
+  CAPACITY_RECOVERY_PAGES_PER_RUN,
+  CAPACITY_RESUME_GRACE_MS,
+  type CapacityRecoveryCursor,
+} from './capacity-recovery.constants';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
+type Candidate = Awaited<
+  ReturnType<VerificationsRepository['listCapacityRecoveryCandidates']>
+>[number];
+type CandidateOutcome =
+  | 'resumed'
+  | 'stale'
+  | 'waiting'
+  | 'raced'
+  | 'unchanged'
+  | 'exhausted';
 
 export interface CapacityRecoveryResult {
   /** Handed to the send path (sent now, or scheduled for quiet hours). */
@@ -27,10 +45,14 @@ export interface CapacityRecoveryResult {
   waiting: number;
   /** Another worker reopened it first. */
   raced: number;
+  /** Earlier handoffs that never reached the send path, blocked again. */
+  returned: number;
   /** Capacity ran out during the run. */
   exhausted: boolean;
-  /** The batch was full and capacity remains: run again. */
+  /** The page budget ran out with capacity left: run again from `cursor`. */
   more: boolean;
+  /** The last order looked at, where a follow-up run starts. */
+  cursor: CapacityRecoveryCursor | null;
 }
 
 /**
@@ -43,6 +65,14 @@ export interface CapacityRecoveryResult {
  * and the dispatch ledger, which claims usage or a credit hold once per
  * message. Running this twice at once, or again after a retry, can therefore
  * neither send an order twice nor charge it twice.
+ *
+ * The reopen marks the order as handed over. If the send or the enqueue then
+ * throws, the order is blocked again at once; if the process dies in between,
+ * the next run blocks it again once the grace period has passed. Either way
+ * it is not left pending with nothing to send it.
+ *
+ * Orders are read a page at a time past a cursor, so orders that must wait
+ * (their source is paused) never hide newer ones that can be sent.
  */
 @Injectable()
 export class CapacityRecoveryService {
@@ -60,6 +90,7 @@ export class CapacityRecoveryService {
   async recover(
     orgId: string,
     now = new Date(),
+    after?: CapacityRecoveryCursor,
   ): Promise<CapacityRecoveryResult> {
     const { blockedOrderMaxAgeHours } = readUsageAlertsConfig(this.config);
     const result: CapacityRecoveryResult = {
@@ -67,102 +98,181 @@ export class CapacityRecoveryService {
       stale: 0,
       waiting: 0,
       raced: 0,
+      returned: 0,
       exhausted: false,
       more: false,
+      cursor: after ?? null,
     };
-    const candidates =
-      await this.verificationsRepo.listCapacityRecoveryCandidates({
+    result.returned =
+      await this.verificationsRepo.returnStrandedCapacityResumes({
         orgId,
-        reasons: CAPACITY_BLOCK_REASONS,
-        legacyFailedSince: new Date(
-          now.getTime() - blockedOrderMaxAgeHours * 3_600_000,
+        olderThan: new Date(
+          now.getTime() - CAPACITY_RESUME_GRACE_MS,
         ).toISOString(),
-        limit: CAPACITY_RECOVERY_BATCH,
       });
+    const legacyFailedSince = new Date(
+      now.getTime() - blockedOrderMaxAgeHours * 3_600_000,
+    ).toISOString();
     const sources = new Map(
       (await this.integrationsRepo.findActiveByOrg(orgId)).map(
         (source) => [source.id, source] as const,
       ),
     );
 
-    for (const candidate of candidates) {
-      if (
-        isBlockedOrderStale(
-          candidate.orderCreatedAt,
+    let candidates = 0;
+    pages: for (let page = 0; page < CAPACITY_RECOVERY_PAGES_PER_RUN; page++) {
+      const batch = await this.verificationsRepo.listCapacityRecoveryCandidates(
+        {
+          orgId,
+          reasons: CAPACITY_BLOCK_REASONS,
+          legacyFailedSince,
+          limit: CAPACITY_RECOVERY_BATCH,
+          ...(result.cursor ? { after: result.cursor } : {}),
+        },
+      );
+      candidates += batch.length;
+      for (const candidate of batch) {
+        // A row without a creation time sorts last and cannot be paged past;
+        // the cursor stays on the last row that has one.
+        if (candidate.createdAt) {
+          result.cursor = {
+            createdAt: candidate.createdAt,
+            id: candidate.verificationId,
+          };
+        }
+        const outcome = await this.recoverOne(
+          candidate,
+          orgId,
+          sources,
           blockedOrderMaxAgeHours,
           now,
-        )
-      ) {
-        const moved = await this.verificationsRepo.markCapacityBlockUnsent({
-          verificationId: candidate.verificationId,
-          orgId,
-          reason: CAPACITY_BLOCK_STALE_REASON,
-          blockedReason: candidate.reason,
-        });
-        if (moved) result.stale += 1;
-        continue;
-      }
-
-      const source = candidate.integrationId
-        ? sources.get(candidate.integrationId)
-        : undefined;
-      if (!source || !this.sourceCanSend(source)) {
-        result.waiting += 1;
-        continue;
-      }
-
-      const slot = await this.entitlements.hasAvailableSlot(source);
-      if (!slot.available) {
-        if (isCapacityBlockReason(slot.reason ?? 'plan_limit_reached')) {
-          result.exhausted = true;
-          break;
-        }
-        result.waiting += 1;
-        continue;
-      }
-
-      const reopened =
-        await this.verificationsRepo.reopenRetryableInitialFailure(
-          candidate.verificationId,
-          orgId,
         );
-      if (!reopened) {
-        result.raced += 1;
-        continue;
+        if (outcome === 'exhausted') {
+          result.exhausted = true;
+          break pages;
+        }
+        if (outcome !== 'unchanged') result[outcome] += 1;
       }
-
-      await this.hub.resumeInitialSend(
-        candidate.verificationId,
-        { id: candidate.orderId, orgId },
-        source,
-      );
-      result.resumed += 1;
-
-      // The ledger is the last word on capacity: if the send was refused
-      // anyway, the order is blocked again and so is every one after it.
-      const after = await this.verificationsRepo.findById(
-        candidate.verificationId,
-      );
-      if (after?.status === 'blocked') {
-        result.resumed -= 1;
-        result.exhausted = true;
-        break;
-      }
+      if (batch.length < CAPACITY_RECOVERY_BATCH) break;
+      if (page === CAPACITY_RECOVERY_PAGES_PER_RUN - 1) result.more = true;
     }
 
-    result.more =
-      !result.exhausted && candidates.length === CAPACITY_RECOVERY_BATCH;
     this.logger.log(
       buildBackendLog(CapacityRecoveryService.name, {
         action: 'capacity-recovery-run',
         outcome: 'success',
         orgId,
-        candidates: candidates.length,
-        ...result,
+        candidates,
+        resumed: result.resumed,
+        stale: result.stale,
+        waiting: result.waiting,
+        raced: result.raced,
+        returned: result.returned,
+        exhausted: result.exhausted,
+        more: result.more,
       }),
     );
     await this.usageAlerts.evaluateOrg(orgId);
     return result;
+  }
+
+  private async recoverOne(
+    candidate: Candidate,
+    orgId: string,
+    sources: Map<string, IntegrationRecord>,
+    blockedOrderMaxAgeHours: number,
+    now: Date,
+  ): Promise<CandidateOutcome> {
+    if (
+      isBlockedOrderStale(
+        candidate.orderCreatedAt,
+        blockedOrderMaxAgeHours,
+        now,
+      )
+    ) {
+      const moved = await this.verificationsRepo.markCapacityBlockUnsent({
+        verificationId: candidate.verificationId,
+        orgId,
+        reason: CAPACITY_BLOCK_STALE_REASON,
+        blockedReason: candidate.reason,
+      });
+      return moved ? 'stale' : 'unchanged';
+    }
+
+    const source = candidate.integrationId
+      ? sources.get(candidate.integrationId)
+      : undefined;
+    if (!source || !this.sourceCanSend(source)) return 'waiting';
+
+    const slot = await this.entitlements.hasAvailableSlot(source);
+    if (!slot.available) {
+      return isCapacityBlockReason(slot.reason ?? 'plan_limit_reached')
+        ? 'exhausted'
+        : 'waiting';
+    }
+
+    const reopened = await this.verificationsRepo.reopenRetryableInitialFailure(
+      candidate.verificationId,
+      orgId,
+      { capacityResume: true },
+    );
+    if (!reopened) return 'raced';
+
+    try {
+      await this.hub.resumeInitialSend(
+        candidate.verificationId,
+        { id: candidate.orderId, orgId },
+        source,
+      );
+    } catch (error) {
+      await this.returnAfterFailedHandoff(candidate.verificationId, orgId);
+      this.logger.warn(
+        buildBackendLog(CapacityRecoveryService.name, {
+          action: 'capacity-recovery-handoff',
+          outcome: 'failure',
+          orgId,
+          verificationId: candidate.verificationId,
+          ...normalizeError(error),
+        }),
+      );
+      // The job is retried; the order is blocked again and waits for it.
+      throw error;
+    }
+
+    // The ledger is the last word on capacity: if the send was refused
+    // anyway, the order is blocked again and so is every one after it.
+    const after = await this.verificationsRepo.findById(
+      candidate.verificationId,
+    );
+    return after?.status === 'blocked' ? 'exhausted' : 'resumed';
+  }
+
+  /**
+   * Blocks the order again right away. A send scheduled before the failure
+   * (its time set after now) is left alone: its job will send it.
+   */
+  private async returnAfterFailedHandoff(
+    verificationId: string,
+    orgId: string,
+  ): Promise<void> {
+    try {
+      await this.verificationsRepo.returnStrandedCapacityResumes({
+        orgId,
+        verificationId,
+        olderThan: new Date(Date.now() + 1_000).toISOString(),
+      });
+    } catch (error) {
+      // The next run past the grace period blocks it again.
+      this.logger.warn(
+        buildBackendLog(CapacityRecoveryService.name, {
+          action: 'capacity-recovery-return',
+          outcome: 'failure',
+          orgId,
+          verificationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
   }
 
   /**

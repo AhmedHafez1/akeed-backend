@@ -4,12 +4,14 @@ import { VerificationAutomationProducer } from './verification-automation.produc
 describe('VerificationAutomationProducer', () => {
   const queue = {
     add: jest.fn(),
+    getJob: jest.fn(),
   };
 
   let producer: VerificationAutomationProducer;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    queue.getJob.mockResolvedValue(undefined);
     producer = new VerificationAutomationProducer(queue as never);
   });
 
@@ -96,4 +98,63 @@ describe('VerificationAutomationProducer', () => {
       expect(options).not.toHaveProperty('delay');
     },
   );
+
+  describe('enqueueInitialSend after an earlier send ran', () => {
+    const params = {
+      verificationId: 'ver-1',
+      orgId: 'org-1',
+      dueAt: new Date(Date.now() + 60_000),
+    };
+
+    it.each(['completed', 'failed'])(
+      'replaces a %s job so the reopened send runs',
+      async (state) => {
+        const job = {
+          getState: jest.fn().mockResolvedValue(state),
+          remove: jest.fn().mockResolvedValue(undefined),
+        };
+        queue.getJob.mockResolvedValue(job);
+
+        await producer.enqueueInitialSend(params);
+
+        expect(queue.getJob).toHaveBeenCalledWith('verification-ver-1-initial');
+        expect(job.remove).toHaveBeenCalledTimes(1);
+        expect(queue.add).toHaveBeenCalledWith(
+          VerificationAutomationJobType.INITIAL_SEND,
+          expect.anything(),
+          expect.objectContaining({ jobId: 'verification-ver-1-initial' }),
+        );
+      },
+    );
+
+    it.each(['delayed', 'waiting', 'active'])(
+      'keeps a %s job, so a repeated request is a no-op',
+      async (state) => {
+        const job = {
+          getState: jest.fn().mockResolvedValue(state),
+          remove: jest.fn(),
+        };
+        queue.getJob.mockResolvedValue(job);
+
+        await producer.enqueueInitialSend(params);
+
+        expect(job.remove).not.toHaveBeenCalled();
+        expect(queue.add).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('still adds the job when the lookup fails', async () => {
+      queue.getJob.mockRejectedValue(new Error('redis down'));
+
+      await producer.enqueueInitialSend(params);
+
+      expect(queue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('never touches a finished reminder', async () => {
+      await producer.enqueueFollowUp(params);
+
+      expect(queue.getJob).not.toHaveBeenCalled();
+    });
+  });
 });

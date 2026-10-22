@@ -6,7 +6,10 @@ import { USAGE_ALERTS_CONFIG } from '../../shared/config/usage-alerts.config';
 import type { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import type { UsageAlertService } from '../verification-core/usage-alert.service';
 import type { VerificationHubService } from '../verification-core/verification-hub.service';
-import { CAPACITY_RECOVERY_BATCH } from './capacity-recovery.constants';
+import {
+  CAPACITY_RECOVERY_BATCH,
+  CAPACITY_RECOVERY_PAGES_PER_RUN,
+} from './capacity-recovery.constants';
 import { CapacityRecoveryService } from './capacity-recovery.service';
 
 const NOW = new Date('2026-10-22T12:00:00.000Z');
@@ -22,6 +25,10 @@ const SOURCE = {
 function candidate(index: number, hoursOld = 1) {
   return {
     verificationId: `ver-${index}`,
+    // Candidates are listed in creation order; the index stands for it.
+    createdAt: new Date(
+      NOW.getTime() - 48 * 3_600_000 + index * 1_000,
+    ).toISOString(),
     orderId: `ord-${index}`,
     integrationId: 'int-1',
     reason: 'INSUFFICIENT_CREDITS',
@@ -37,7 +44,18 @@ function setup(candidates: ReturnType<typeof candidate>[]) {
   );
   let slots = Number.POSITIVE_INFINITY;
   const verificationsRepo = {
-    listCapacityRecoveryCandidates: jest.fn(async () => candidates),
+    // Pages past the cursor the way the query does.
+    listCapacityRecoveryCandidates: jest.fn(
+      async (params: { limit: number; after?: { id: string } }) => {
+        const start = params.after
+          ? candidates.findIndex(
+              (row) => row.verificationId === params.after?.id,
+            ) + 1
+          : 0;
+        return candidates.slice(start, start + params.limit);
+      },
+    ),
+    returnStrandedCapacityResumes: jest.fn(async () => 0),
     markCapacityBlockUnsent: jest.fn(
       async ({ verificationId }: { verificationId: string }) => {
         statuses.set(verificationId, 'failed');
@@ -228,9 +246,31 @@ describe('CapacityRecoveryService', () => {
     expect(hub.resumeInitialSend).not.toHaveBeenCalled();
   });
 
-  it('asks for another run when the batch was full', async () => {
+  it('reads page after page and asks for another run when pages run out', async () => {
+    const total = CAPACITY_RECOVERY_BATCH * CAPACITY_RECOVERY_PAGES_PER_RUN;
+    const rows = Array.from({ length: total + 1 }, (_, index) =>
+      candidate(index),
+    );
+    const { service, verificationsRepo } = setup(rows);
+
+    const result = await service.recover('org-1', NOW);
+
+    expect(result).toMatchObject({ resumed: total, more: true });
+    expect(result.cursor).toEqual({
+      createdAt: rows[total - 1].createdAt,
+      id: rows[total - 1].verificationId,
+    });
+    expect(
+      verificationsRepo.listCapacityRecoveryCandidates,
+    ).toHaveBeenCalledTimes(CAPACITY_RECOVERY_PAGES_PER_RUN);
+
+    const next = await service.recover('org-1', NOW, result.cursor!);
+    expect(next).toMatchObject({ resumed: 1, more: false });
+  });
+
+  it('does not ask for another run once the last page is short', async () => {
     const { service } = setup(
-      Array.from({ length: CAPACITY_RECOVERY_BATCH }, (_, index) =>
+      Array.from({ length: CAPACITY_RECOVERY_BATCH + 3 }, (_, index) =>
         candidate(index),
       ),
     );
@@ -238,9 +278,82 @@ describe('CapacityRecoveryService', () => {
     const result = await service.recover('org-1', NOW);
 
     expect(result).toMatchObject({
-      resumed: CAPACITY_RECOVERY_BATCH,
-      more: true,
+      resumed: CAPACITY_RECOVERY_BATCH + 3,
+      more: false,
     });
+  });
+
+  it('pages past orders that must wait to reach ones that can be sent', async () => {
+    const waiting = Array.from(
+      { length: CAPACITY_RECOVERY_BATCH },
+      (_, index) => ({
+        ...candidate(index),
+        integrationId: 'int-paused',
+      }),
+    );
+    const sendable = candidate(CAPACITY_RECOVERY_BATCH);
+    const { service, hub } = setup([...waiting, sendable]);
+
+    const result = await service.recover('org-1', NOW);
+
+    expect(result).toMatchObject({
+      waiting: CAPACITY_RECOVERY_BATCH,
+      resumed: 1,
+      more: false,
+    });
+    expect(hub.resumeInitialSend.mock.calls.map(([id]) => id)).toEqual([
+      sendable.verificationId,
+    ]);
+  });
+
+  it('blocks interrupted handoffs again before reading candidates', async () => {
+    const { service, verificationsRepo } = setup([candidate(1)]);
+    verificationsRepo.returnStrandedCapacityResumes.mockResolvedValueOnce(2);
+
+    const result = await service.recover('org-1', NOW);
+
+    expect(result.returned).toBe(2);
+    expect(
+      verificationsRepo.returnStrandedCapacityResumes,
+    ).toHaveBeenCalledWith({
+      orgId: 'org-1',
+      olderThan: '2026-10-22T11:45:00.000Z',
+    });
+    expect(
+      verificationsRepo.returnStrandedCapacityResumes.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      verificationsRepo.listCapacityRecoveryCandidates.mock
+        .invocationCallOrder[0],
+    );
+  });
+
+  it('marks each reopen as a capacity handoff', async () => {
+    const { service, verificationsRepo } = setup([candidate(1)]);
+
+    await service.recover('org-1', NOW);
+
+    expect(
+      verificationsRepo.reopenRetryableInitialFailure,
+    ).toHaveBeenCalledWith('ver-1', 'org-1', { capacityResume: true });
+  });
+
+  it('blocks the order again and fails the job when the handoff throws', async () => {
+    const { service, hub, verificationsRepo, usageAlerts } = setup([
+      candidate(1),
+      candidate(2),
+    ]);
+    hub.resumeInitialSend.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(service.recover('org-1', NOW)).rejects.toThrow('redis down');
+
+    expect(
+      verificationsRepo.returnStrandedCapacityResumes,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({ orgId: 'org-1', verificationId: 'ver-1' }),
+    );
+    expect(hub.resumeInitialSend).toHaveBeenCalledTimes(1);
+    expect(usageAlerts.evaluateOrg).not.toHaveBeenCalled();
   });
 
   it('never sends an order twice when two runs overlap', async () => {

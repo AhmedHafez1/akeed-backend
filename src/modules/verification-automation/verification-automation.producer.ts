@@ -15,6 +15,9 @@ import { DEFAULT_QUEUE_JOB_OPTIONS } from '../../shared/queue/job-options';
 /** Job id suffixes of the reminder and the no-reply escalation. */
 const REMINDER_JOB_SUFFIXES = ['follow-up-1', 'no-reply'] as const;
 
+/** Job states of a job that has run and will not run again. */
+const FINISHED_JOB_STATES = new Set<string>(['completed', 'failed']);
+
 /** Job states in which a job has not started and can be removed. */
 const CANCELLABLE_JOB_STATES = new Set<string>([
   'delayed',
@@ -53,7 +56,15 @@ export class VerificationAutomationProducer {
     private readonly queue: Queue<VerificationAutomationJobPayload>,
   ) {}
 
+  /**
+   * A verification reopened after its delayed send already ran (a capacity
+   * block that recovery resumes, a merchant retry) needs a new job, but the
+   * finished one keeps its id for days and BullMQ would ignore the add. The
+   * finished job is removed first; a job still waiting or running is kept, so
+   * a repeated request stays a no-op.
+   */
   async enqueueInitialSend(params: ScheduleParams): Promise<void> {
+    await this.removeFinishedJob(params, 'initial');
     await this.enqueue(
       params,
       VerificationAutomationJobType.INITIAL_SEND,
@@ -75,6 +86,43 @@ export class VerificationAutomationProducer {
       VerificationAutomationJobType.ESCALATE_NO_REPLY,
       'no-reply',
     );
+  }
+
+  private async removeFinishedJob(
+    params: { verificationId: string; orgId: string },
+    suffix: string,
+  ): Promise<void> {
+    const jobId = `verification-${params.verificationId}-${suffix}`;
+    try {
+      const job = await this.queue.getJob(jobId);
+      if (!job) return;
+      const state = await job.getState();
+      if (!FINISHED_JOB_STATES.has(state)) return;
+      await job.remove();
+      this.logger.log(
+        buildBackendLog('VerificationAutomationProducer', {
+          action: 'replace-finished-job',
+          outcome: 'success',
+          orgId: params.orgId,
+          verificationId: params.verificationId,
+          jobId,
+          state,
+        }),
+      );
+    } catch (error) {
+      // The add still runs; if the old job is still there it is ignored and
+      // the capacity recovery sweep finds the row again.
+      this.logger.warn(
+        buildBackendLog('VerificationAutomationProducer', {
+          action: 'replace-finished-job',
+          outcome: 'failure',
+          orgId: params.orgId,
+          verificationId: params.verificationId,
+          jobId,
+          ...normalizeError(error),
+        }),
+      );
+    }
   }
 
   /**

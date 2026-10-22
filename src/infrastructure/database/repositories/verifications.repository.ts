@@ -178,6 +178,28 @@ export function buildVerificationLifecyclePayload(
   return payload;
 }
 
+/**
+ * A capacity-recovery handoff that never reached the send path: reopened
+ * (`capacity_resumed_at`) before `olderThan`, still pending and unsent, no
+ * send scheduled after `olderThan`, and no live initial dispatch (the same
+ * states as the `dispatch_one_active_generation` index).
+ */
+function strandedCapacityResume(olderThan: string) {
+  return sql`${verifications.status} = 'pending'
+    AND ${verifications.lastSentAt} IS NULL
+    AND ${verifications.merchantCanceledAt} IS NULL
+    AND (${verifications.metadata}->>'capacity_resumed_at')::timestamptz < ${olderThan}::timestamptz
+    AND (${verifications.nextRetryAt} IS NULL OR ${verifications.nextRetryAt} < ${olderThan}::timestamptz)
+    AND NOT EXISTS (
+      SELECT 1 FROM ${verificationMessageDispatches} AS dispatch
+      WHERE dispatch.verification_id = ${verifications.id}
+        AND dispatch.org_id = ${verifications.orgId}
+        AND dispatch.kind = 'initial'
+        AND (dispatch.state IN ('ready', 'sending', 'outcome_unknown')
+          OR (dispatch.state = 'accepted' AND dispatch.failed_at IS NULL))
+    )`;
+}
+
 @Injectable()
 export class VerificationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
@@ -298,16 +320,28 @@ export class VerificationsRepository {
     return { verification: existing, created: false };
   }
 
+  /**
+   * With `capacityResume`, the row is marked as handed over by capacity
+   * recovery (`capacity_resumed_at`, and the reason it waited for in
+   * `blocked_reason`), so a handoff interrupted before the send or the job
+   * existed can be found and blocked again (`returnStrandedCapacityResumes`).
+   * Any other reopen clears that mark.
+   */
   async reopenRetryableInitialFailure(
     id: string,
     orgId: string,
+    options: { capacityResume?: boolean } = {},
   ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const cleared = sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind' - 'capacity_resumed_at' - 'blocked_reason'`;
     const rows = await this.db
       .update(verifications)
       .set({
         status: 'pending',
-        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) - 'reason' - 'kind'`,
-        updatedAt: new Date().toISOString(),
+        metadata: options.capacityResume
+          ? sql`(${cleared}) || jsonb_build_object('capacity_resumed_at', ${now}::text, 'blocked_reason', ${verifications.metadata}->>'reason')`
+          : cleared,
+        updatedAt: now,
       })
       .where(
         sql`${verifications.id} = ${id}
@@ -1145,14 +1179,60 @@ export class VerificationsRepository {
     return row?.count ?? 0;
   }
 
-  /** Orgs that have at least one blocked order, for the recovery sweep. */
-  async listOrgsWithBlocked(limit: number): Promise<string[]> {
+  /**
+   * Orgs with at least one blocked order, or a capacity handoff stranded
+   * since before `strandedBefore`, for the recovery sweep.
+   */
+  async listOrgsWithBlocked(
+    limit: number,
+    strandedBefore?: string,
+  ): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ orgId: verifications.orgId })
       .from(verifications)
-      .where(eq(verifications.status, 'blocked'))
+      .where(
+        strandedBefore
+          ? or(
+              eq(verifications.status, 'blocked'),
+              strandedCapacityResume(strandedBefore),
+            )
+          : eq(verifications.status, 'blocked'),
+      )
       .limit(limit);
     return rows.map((row) => row.orgId);
+  }
+
+  /**
+   * Blocks again the orders capacity recovery reopened but never handed to
+   * the send path: still `pending` and unsent, with no live initial dispatch
+   * and no send scheduled after `olderThan`, and reopened before it. That is
+   * a run that crashed or threw between the reopen and the send or enqueue.
+   * Recovery then treats them like any other blocked order. With
+   * `verificationId`, only that order. Returns how many were blocked.
+   */
+  async returnStrandedCapacityResumes(params: {
+    orgId: string;
+    olderThan: string;
+    verificationId?: string;
+  }): Promise<number> {
+    const rows = await this.db
+      .update(verifications)
+      .set({
+        status: 'blocked',
+        metadata: sql`(COALESCE(${verifications.metadata}, '{}'::jsonb) - 'capacity_resumed_at' - 'blocked_reason') || jsonb_build_object('reason', COALESCE(${verifications.metadata}->>'blocked_reason', 'plan_limit_reached'), 'kind', 'initial')`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(verifications.orgId, params.orgId),
+          params.verificationId
+            ? eq(verifications.id, params.verificationId)
+            : undefined,
+          strandedCapacityResume(params.olderThan),
+        ),
+      )
+      .returning({ id: verifications.id });
+    return rows.length;
   }
 
   /**
@@ -1166,6 +1246,8 @@ export class VerificationsRepository {
     reasons: readonly string[];
     legacyFailedSince: string;
     limit: number;
+    /** Only rows after this one, in the same order. */
+    after?: { createdAt: string; id: string };
   }) {
     const reasonList = sql.join(
       params.reasons.map((reason) => sql`${reason}`),
@@ -1175,6 +1257,7 @@ export class VerificationsRepository {
       .select({
         verificationId: verifications.id,
         orgId: verifications.orgId,
+        createdAt: verifications.createdAt,
         status: verifications.status,
         reason: sql<string | null>`${verifications.metadata}->>'reason'`,
         orderId: orders.id,
@@ -1194,6 +1277,9 @@ export class VerificationsRepository {
           eq(verifications.orgId, params.orgId),
           eq(orders.isTest, false),
           sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+          params.after
+            ? sql`(${verifications.createdAt}, ${verifications.id}) > (${params.after.createdAt}::timestamptz, ${params.after.id}::uuid)`
+            : undefined,
           or(
             eq(verifications.status, 'blocked'),
             and(

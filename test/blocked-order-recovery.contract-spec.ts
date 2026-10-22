@@ -89,7 +89,11 @@ async function statusOf(verificationId: string) {
  * what decides duplicates and charges: the dispatch ledger's claim, then the
  * status the hub would project.
  */
-async function recoveryFor(source: Source) {
+async function recoveryFor(
+  source: Source,
+  options: { failFirstHandoff?: boolean } = {},
+) {
+  let failed = false;
   const [record] = await db
     .select()
     .from(integrations)
@@ -102,6 +106,11 @@ async function recoveryFor(source: Source) {
   const claims: string[] = [];
   const hub = {
     resumeInitialSend: async (verificationId: string) => {
+      // An enqueue that throws after the reopen committed.
+      if (options.failFirstHandoff && !failed) {
+        failed = true;
+        throw new Error('enqueue failed');
+      }
       const result = await dispatches.claim({
         ...source,
         verificationId,
@@ -150,6 +159,29 @@ async function recoveryFor(source: Source) {
   );
   return { service, claims };
 }
+
+/** Reopens a blocked order as recovery does, handed over `minutesAgo`. */
+async function reopenedAt(
+  input: { verificationId: string; orgId: string },
+  minutesAgo: number,
+) {
+  expect(
+    await verificationsRepo.reopenRetryableInitialFailure(
+      input.verificationId,
+      input.orgId,
+      { capacityResume: true },
+    ),
+  ).toBe(true);
+  const resumedAt = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  await db
+    .update(verifications)
+    .set({
+      metadata: sql`${verifications.metadata} || jsonb_build_object('capacity_resumed_at', ${resumedAt}::text)`,
+    })
+    .where(eq(verifications.id, input.verificationId));
+}
+
+const strandedBefore = () => new Date(Date.now() - 15 * 60_000).toISOString();
 
 describe('PostgreSQL blocked-order recovery', () => {
   beforeAll(async () => {
@@ -331,5 +363,115 @@ describe('PostgreSQL blocked-order recovery', () => {
 
     expect(await alerts.resolveOpenCreditAlerts(source.orgId, ['low'])).toBe(1);
     expect(await claim()).not.toBeNull();
+  });
+  it('blocks again a handoff that never reached the send path', async () => {
+    const source = await merchant(5);
+    const stranded = await orderAt(source, 'blocked');
+    await reopenedAt(stranded, 20);
+    expect((await statusOf(stranded.verificationId)).metadata).toMatchObject({
+      blocked_reason: 'INSUFFICIENT_CREDITS',
+    });
+    expect(
+      await verificationsRepo.listOrgsWithBlocked(500, strandedBefore()),
+    ).toContain(source.orgId);
+
+    expect(
+      await verificationsRepo.returnStrandedCapacityResumes({
+        orgId: source.orgId,
+        olderThan: strandedBefore(),
+      }),
+    ).toBe(1);
+
+    const row = await statusOf(stranded.verificationId);
+    expect(row.status).toBe('blocked');
+    expect(row.metadata).toMatchObject({
+      reason: 'INSUFFICIENT_CREDITS',
+      kind: 'initial',
+    });
+    expect(row.metadata).not.toHaveProperty('capacity_resumed_at');
+  });
+
+  it('leaves a recent, dispatched or scheduled handoff alone', async () => {
+    const source = await merchant(5);
+    const recent = await orderAt(source, 'blocked');
+    await reopenedAt(recent, 2);
+    const dispatched = await orderAt(source, 'blocked');
+    await reopenedAt(dispatched, 20);
+    const claim = await dispatches.claim({
+      ...source,
+      verificationId: dispatched.verificationId,
+      kind: 'initial',
+      templateName: 'cod_verification',
+      languageCode: 'en',
+      leaseUntil: new Date(Date.now() + 600_000).toISOString(),
+    });
+    expect(claim.outcome).toBe('claimed');
+    const scheduled = await orderAt(source, 'blocked');
+    await reopenedAt(scheduled, 20);
+    await db
+      .update(verifications)
+      .set({ nextRetryAt: new Date(Date.now() + 3_600_000).toISOString() })
+      .where(eq(verifications.id, scheduled.verificationId));
+    // A merchant retry is not a capacity handoff.
+    const retried = await orderAt(source, 'blocked');
+    await verificationsRepo.reopenRetryableInitialFailure(
+      retried.verificationId,
+      source.orgId,
+    );
+
+    expect(
+      await verificationsRepo.returnStrandedCapacityResumes({
+        orgId: source.orgId,
+        olderThan: strandedBefore(),
+      }),
+    ).toBe(0);
+    for (const input of [recent, dispatched, scheduled, retried]) {
+      expect((await statusOf(input.verificationId)).status).toBe('pending');
+    }
+  });
+
+  it('sends an interrupted handoff exactly once on the next run', async () => {
+    const source = await merchant(5);
+    const blocked = await orderAt(source, 'blocked');
+    const run = await recoveryFor(source, { failFirstHandoff: true });
+
+    await expect(run.service.recover(source.orgId)).rejects.toThrow(
+      'enqueue failed',
+    );
+    expect((await statusOf(blocked.verificationId)).status).toBe('blocked');
+
+    await run.service.recover(source.orgId);
+    await run.service.recover(source.orgId);
+
+    expect(run.claims).toEqual([blocked.verificationId]);
+    await balance(source.orgId, 5, 1);
+  });
+
+  it('pages candidates past a cursor', async () => {
+    const source = await merchant(5);
+    const rows = [
+      await orderAt(source, 'blocked', { hoursOld: 3 }),
+      await orderAt(source, 'blocked', { hoursOld: 2 }),
+      await orderAt(source, 'blocked', { hoursOld: 1 }),
+    ];
+    const page = (after?: { createdAt: string; id: string }) =>
+      verificationsRepo.listCapacityRecoveryCandidates({
+        orgId: source.orgId,
+        reasons: CAPACITY_BLOCK_REASONS,
+        legacyFailedSince: new Date(Date.now() - 24 * HOUR).toISOString(),
+        limit: 2,
+        ...(after ? { after } : {}),
+      });
+
+    const first = await page();
+    const last = first[first.length - 1];
+    const second = await page({
+      createdAt: last.createdAt!,
+      id: last.verificationId,
+    });
+
+    expect([...first, ...second].map((row) => row.verificationId)).toEqual(
+      rows.map((row) => row.verificationId),
+    );
   });
 });

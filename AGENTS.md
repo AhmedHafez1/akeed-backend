@@ -2,6 +2,12 @@
 
 Guidelines for AI coding agents operating in this repository.
 
+## Shared workspace skills
+
+Read the parent [AGENTS.md](../AGENTS.md) and [CLAUDE.md](../CLAUDE.md) for shared product context and constraints. Before backend edits, load [backend-dev](../.agents/skills/backend-dev/SKILL.md); its maintained implementation is shared with Claude. Load the database, localization, or design skills from that parent guide when relevant. If this repository is checked out alone, report missing shared resources rather than inventing their contents.
+
+Preserve CRLF and existing user edits. Format only touched files, with `--end-of-line crlf`; do not reformat hand-written Markdown docs. Inspect the current branch; commit only when requested and never on `main`.
+
 This file includes Copilot instructions from `.github/copilot-instructions.md`.
 
 ## Build / Lint / Format / Test / Dev
@@ -10,8 +16,8 @@ This file includes Copilot instructions from `.github/copilot-instructions.md`.
 npm run start:dev      # Start NestJS dev server (watch mode)
 npm run build          # Build (nest build)
 npm run start:prod     # Run production server (dist/main)
-npm run lint           # ESLint (fixes by default)
-npm run format         # Prettier write on src/ and test/
+npx eslint <files>     # Check touched files; npm run lint fixes the whole tree
+npx prettier --check --end-of-line crlf <files> # Check touched code only
 npm run test           # Jest unit tests
 npm run test:watch     # Jest watch mode
 npm run test:cov       # Jest with coverage
@@ -22,7 +28,7 @@ npm run test:e2e       # Jest e2e (test/jest-e2e.json)
 ### Running a Single Test
 
 ```bash
-npm run test -- src/core/services/verification-hub.service.spec.ts
+npx jest src/modules/verification-automation/verification-automation.producer.spec.ts
 npm run test -- -t "test name"
 npm run test:e2e -- -t "test name"
 ```
@@ -31,9 +37,8 @@ npm run test:e2e -- -t "test name"
 
 ```bash
 npm run db:pull         # Introspect DB into schema
-npm run db:push         # Push schema changes to DB
-npm run db:generate     # Generate migrations
-npm run db:migrate      # Apply migrations
+# db:push and db:generate are unusable here (see below).
+# Do not run db:migrate against a shared database.
 npm run db:studio       # Open Drizzle Studio
 ```
 
@@ -67,7 +72,7 @@ boot via `runMigrations()` in `main.ts`.
 - Keep changes minimal and focused; avoid unrelated refactors
 - Match existing style and naming; use descriptive variables
 - Do not add license/copyright headers unless explicitly requested
-- Avoid inline comments unless requested
+- Comment non-obvious constraints or decisions; avoid narrating the code
 - Avoid one-letter variable names unless explicitly requested
 - Do not change filenames or public APIs unless required by the task
 - Update documentation when behavior or interfaces change
@@ -85,7 +90,7 @@ boot via `runMigrations()` in `main.ts`.
 
 ### Error Handling
 
-- Handle errors gracefully; log context (e.g., topic + shop for Shopify)
+- Use stable coded HTTP errors and structured redacted `buildBackendLog` context; run `npm run log:check`
 - Production-grade error handling
 
 ### Dependencies

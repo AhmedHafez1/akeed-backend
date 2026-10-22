@@ -11,7 +11,9 @@ import { readUsageAlertsConfig } from '../../shared/config/usage-alerts.config';
 import {
   CAPACITY_RECOVERY_QUEUE,
   CAPACITY_RECOVERY_RECOVER_JOB,
+  capacityRecoveryContinuationDedupeId,
   capacityRecoveryDedupeId,
+  type CapacityRecoveryCursor,
   type CapacityRecoveryJobPayload,
   type CapacityRecoveryTrigger,
 } from './capacity-recovery.constants';
@@ -31,23 +33,41 @@ export class CapacityRecoveryProducer {
     private readonly config: ConfigService,
   ) {}
 
+  /**
+   * While a run for the org is waiting or running, another request is
+   * dropped: a running run re-reads capacity for every order it sends, and
+   * the sweep catches anything granted after it ends.
+   */
   async request(
     orgId: string,
     trigger: CapacityRecoveryTrigger,
   ): Promise<void> {
+    await this.add({ orgId, trigger }, capacityRecoveryDedupeId(orgId));
+  }
+
+  /** The next run of a run that ran out of pages, from where it stopped. */
+  async continueAfter(
+    orgId: string,
+    jobId: string,
+    after: CapacityRecoveryCursor,
+  ): Promise<void> {
+    await this.add(
+      { orgId, trigger: 'continuation', after },
+      capacityRecoveryContinuationDedupeId(orgId, jobId),
+    );
+  }
+
+  private async add(
+    payload: CapacityRecoveryJobPayload,
+    deduplicationId: string,
+  ): Promise<void> {
+    const { orgId, trigger } = payload;
     if (!readUsageAlertsConfig(this.config).recoveryEnabled) return;
     try {
-      // While a run for the org is waiting, another request joins it. A run
-      // already in progress re-reads capacity for every order it sends, and
-      // the sweep catches anything granted after it ends.
-      await this.queue.add(
-        CAPACITY_RECOVERY_RECOVER_JOB,
-        { orgId, trigger },
-        {
-          ...DEFAULT_QUEUE_JOB_OPTIONS,
-          deduplication: { id: capacityRecoveryDedupeId(orgId) },
-        },
-      );
+      await this.queue.add(CAPACITY_RECOVERY_RECOVER_JOB, payload, {
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
+        deduplication: { id: deduplicationId },
+      });
     } catch (error) {
       this.logger.warn(
         buildBackendLog(CapacityRecoveryProducer.name, {

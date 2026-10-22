@@ -10,6 +10,7 @@ import {
   CAPACITY_RECOVERY_RECOVER_JOB,
   CAPACITY_RECOVERY_SWEEP_JOB,
   CAPACITY_RECOVERY_SWEEP_ORGS,
+  CAPACITY_RESUME_GRACE_MS,
   type CapacityRecoveryJobPayload,
 } from './capacity-recovery.constants';
 import { CapacityRecoveryProducer } from './capacity-recovery.producer';
@@ -41,9 +42,15 @@ export class CapacityRecoveryProcessor extends WorkerHost {
         await this.sweep();
         return;
       case CAPACITY_RECOVERY_RECOVER_JOB: {
-        const { orgId } = job.data as CapacityRecoveryJobPayload;
-        const result = await this.recovery.recover(orgId);
-        if (result.more) await this.producer.request(orgId, 'continuation');
+        const { orgId, after } = job.data as CapacityRecoveryJobPayload;
+        const result = await this.recovery.recover(orgId, new Date(), after);
+        if (result.more && result.cursor) {
+          await this.producer.continueAfter(
+            orgId,
+            String(job.id),
+            result.cursor,
+          );
+        }
         return;
       }
       default:
@@ -62,6 +69,7 @@ export class CapacityRecoveryProcessor extends WorkerHost {
   private async sweep(): Promise<void> {
     const orgIds = await this.verificationsRepo.listOrgsWithBlocked(
       CAPACITY_RECOVERY_SWEEP_ORGS,
+      new Date(Date.now() - CAPACITY_RESUME_GRACE_MS).toISOString(),
     );
     for (const orgId of orgIds) await this.producer.request(orgId, 'sweep');
     this.logger.log(
