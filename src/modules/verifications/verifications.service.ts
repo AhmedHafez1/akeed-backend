@@ -336,46 +336,50 @@ export class VerificationsService {
       (!statuses || statuses.includes(HELD_STATUS)) && !tab && !searchDigits;
     const importBatchId = query.importBatchId;
     const refinement = { tab, searchDigits, withActionReason: true };
+    const reuseTabCount = !statuses && !searchDigits;
 
-    const [verifications, totalCount, heldRows, heldCount, usage, tabCounts] =
-      await Promise.all([
-        wantsVerifications
-          ? this.verificationsRepo.findByOrg(
-              orgId,
-              verificationStatuses,
-              filterPeriod,
-              {
-                cursor,
-                limit: limit + 1,
-                importBatchId,
-                ...refinement,
-              },
-            )
-          : [],
-        wantsVerifications
-          ? this.verificationsRepo.countByOrg(
-              orgId,
-              verificationStatuses,
-              filterPeriod,
-              importBatchId,
-              refinement,
-            )
-          : 0,
-        wantsHeld
-          ? this.verificationsRepo.findHeldByOrg(orgId, filterPeriod, {
+    const [
+      verifications,
+      filteredCount,
+      heldRows,
+      heldCount,
+      usage,
+      tabCounts,
+    ] = await Promise.all([
+      wantsVerifications
+        ? this.verificationsRepo.findByOrg(
+            orgId,
+            verificationStatuses,
+            filterPeriod,
+            {
               cursor,
               limit: limit + 1,
               importBatchId,
-            })
-          : [],
-        this.verificationsRepo.countHeldByOrg(
-          orgId,
-          filterPeriod,
-          importBatchId,
-        ),
-        this.resolvePageUsage(activeIntegrations),
-        this.verificationsRepo.countByTab(orgId, filterPeriod, importBatchId),
-      ]);
+              ...refinement,
+            },
+          )
+        : [],
+      wantsVerifications && !reuseTabCount
+        ? this.verificationsRepo.countByOrg(
+            orgId,
+            verificationStatuses,
+            filterPeriod,
+            importBatchId,
+            refinement,
+          )
+        : 0,
+      wantsHeld
+        ? this.verificationsRepo.findHeldByOrg(orgId, filterPeriod, {
+            cursor,
+            limit: limit + 1,
+            importBatchId,
+          })
+        : [],
+      this.verificationsRepo.countHeldByOrg(orgId, filterPeriod, importBatchId),
+      this.resolvePageUsage(activeIntegrations),
+      this.verificationsRepo.countByTab(orgId, filterPeriod, importBatchId),
+    ]);
+    const totalCount = reuseTabCount ? tabCounts[tab ?? 'all'] : filteredCount;
 
     const merged = mergeByRecency(
       verifications,
@@ -392,13 +396,13 @@ export class VerificationsService {
 
     // One query for the page. Sources that do not track synchronization
     // have no rows, and their items report null.
-    const syncRows =
-      (await this.outcomeSyncs?.findByCorrelationIds(
+    const [syncRows, historyOf] = await Promise.all([
+      this.outcomeSyncs?.findByCorrelationIds(
         orgId,
         items.filter((item) => !isHeldRow(item)).map((item) => item.id),
-      )) ?? [];
-
-    const historyOf = await this.loadCustomerHistory(orgId, items);
+      ) ?? [],
+      this.loadCustomerHistory(orgId, items),
+    ]);
 
     const now = new Date();
     const sourceOf = (integrationId: string | null | undefined) =>

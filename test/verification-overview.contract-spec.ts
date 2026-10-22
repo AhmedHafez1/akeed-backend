@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
+import { dirname } from 'node:path';
 import { resolve } from 'node:path';
 import { NotFoundException } from '@nestjs/common';
 import { SQL } from 'drizzle-orm';
@@ -47,7 +50,15 @@ const client = postgres(isolatedDatabaseUrl(), {
   onnotice: () => undefined,
   connection: { search_path: `${namespace},public` },
 });
-const db = drizzle(client, { schema });
+let capturedStatements: { query: string; params: unknown[] }[] | null = null;
+const db = drizzle(client, {
+  schema,
+  logger: {
+    logQuery(query, params) {
+      capturedStatements?.push({ query, params });
+    },
+  },
+});
 
 async function scaffold(table: PgTable) {
   const definition = getTableConfig(table);
@@ -182,6 +193,8 @@ beforeAll(async () => {
     tables.orders,
     tables.verifications,
     tables.webhookEvents,
+    tables.orderImportBatches,
+    tables.orderImportRows,
   ])
     await scaffold(table);
   await client.unsafe(
@@ -782,3 +795,257 @@ describe('number not on WhatsApp', () => {
     expect(noReply?.cancellationSource).toBe('merchant_no_reply');
   });
 });
+
+describe('list count reuse over PostgreSQL', () => {
+  it.each([
+    'all',
+    'confirmed',
+    'canceled',
+    'failed',
+    'no_whatsapp',
+    'needs_action',
+  ] as const)(
+    'keeps the total equal to the repository aggregate for %s',
+    async (tab) => {
+      const count = jest.spyOn(repository, 'countByOrg');
+      try {
+        const counts = await repository.countByTab(orgA, period());
+        const response = await service.listByOrg(orgA, { tab });
+        const held =
+          tab === 'all' ? await repository.countHeldByOrg(orgA, period()) : 0;
+        expect(response.total_count).toBe(counts[tab] + held);
+        expect(count).not.toHaveBeenCalled();
+      } finally {
+        count.mockRestore();
+      }
+    },
+  );
+
+  it('keeps an explicit status and search narrower than the tab counts', async () => {
+    const count = jest.spyOn(repository, 'countByOrg');
+    try {
+      const response = await service.listByOrg(orgA, {
+        status: 'confirmed',
+        q: '1130',
+      });
+      expect(response.total_count).toBe(response.data.length);
+      expect(count).toHaveBeenCalledTimes(1);
+    } finally {
+      count.mockRestore();
+    }
+  });
+
+  it('scopes reused import totals and rows to both the batch and organization', async () => {
+    const batch = randomUUID();
+    const [order] = await client<
+      { id: string }[]
+    >`SELECT order_id AS id FROM verifications WHERE id = ${ids.planFailed}`;
+    await db.insert(tables.orderImportBatches).values({
+      id: batch,
+      orgId: orgA,
+      integrationId: integrationA,
+      createdBy: randomUUID(),
+      status: 'completed',
+      fileName: 'synthetic.csv',
+      fileSha256: '0'.repeat(64),
+      fileSize: 10,
+      fileFormat: 'csv',
+      headers: [],
+      rowCount: 1,
+      expiresAt: ago(-DAY),
+      shortCode: 'synthetic-batch',
+    });
+    await db.insert(tables.orderImportRows).values({
+      batchId: batch,
+      orgId: orgA,
+      rowNumber: 1,
+      orderId: order.id,
+    });
+    const matching = await service.listByOrg(orgA, { importBatchId: batch });
+    expect(matching.total_count).toBe(1);
+    expect(matching.data.map((row) => row.id)).toEqual([ids.planFailed]);
+    const otherShop = await service.listByOrg(orgB, { importBatchId: batch });
+    expect(otherShop).toMatchObject({ data: [], total_count: 0 });
+    expect(otherShop.page_context?.tab_counts?.all).toBe(0);
+  });
+});
+
+const sqlBenchmark = process.env.PERFORMANCE_AUDIT_SQL_OUTPUT ? it : it.skip;
+sqlBenchmark(
+  'benchmarks only disposable PostgreSQL with synthetic tenants',
+  async () => {
+    const tenants = Array.from({ length: 14 }, (_, index) => ({
+      orgId: randomUUID(),
+      integrationId: randomUUID(),
+      slug: `perf-${index}`,
+    }));
+    await db.insert(tables.organizations).values(
+      tenants.map((tenant) => ({
+        id: tenant.orgId,
+        name: tenant.slug,
+        slug: tenant.slug,
+      })),
+    );
+    await db.insert(tables.integrations).values(
+      tenants.map((tenant) => ({
+        id: tenant.integrationId,
+        orgId: tenant.orgId,
+        platformType: 'shopify',
+        platformStoreUrl: `${tenant.slug}.myshopify.com`,
+        isActive: true,
+        timezone: 'UTC',
+      })),
+    );
+    await client`
+    WITH tenants AS (
+      SELECT unnest(${tenants.map((tenant) => tenant.orgId)}::uuid[]) AS org_id,
+             unnest(${tenants.map((tenant) => tenant.integrationId)}::uuid[]) AS integration_id
+    ), inserted AS (
+      INSERT INTO orders (org_id, integration_id, external_order_id, order_number, customer_phone, created_at)
+      SELECT org_id, integration_id, 'perf-' || row_number, row_number::text,
+             '+201' || lpad(row_number::text, 9, '0'), NOW() - row_number * INTERVAL '1 minute'
+      FROM tenants CROSS JOIN generate_series(1, 500) row_number
+      RETURNING id, org_id, created_at
+    )
+    INSERT INTO verifications (org_id, order_id, status, created_at, last_sent_at, confirmed_at)
+    SELECT org_id, id, 'confirmed', created_at, created_at, created_at + INTERVAL '5 minutes'
+    FROM inserted`;
+    await client.unsafe(`
+    CREATE INDEX IF NOT EXISTS idx_verifications_org_created_id ON verifications (org_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_verifications_org_created_status ON verifications (org_id, created_at, status);
+    CREATE INDEX IF NOT EXISTS idx_orders_org_created_id ON orders (org_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders (customer_phone);
+    ANALYZE orders; ANALYZE verifications; ANALYZE integrations; ANALYZE webhook_events;`);
+    const baselinePath = process.env.PERFORMANCE_AUDIT_BASELINE_SOURCE;
+    if (!baselinePath)
+      throw new Error('PERFORMANCE_AUDIT_BASELINE_SOURCE is required.');
+    const nativeRequire = createRequire(__filename);
+    const { createSourceLoader } = nativeRequire(
+      '../scripts/perf/load-audit-source.cjs',
+    ) as {
+      createSourceLoader: (
+        source: string,
+        entry: string,
+      ) => () => { VerificationsService: typeof VerificationsService };
+    };
+    const BaselineService = createSourceLoader(
+      readFileSync(baselinePath, 'utf8'),
+      resolve(
+        __dirname,
+        '../src/modules/verifications/verifications.service.ts',
+      ),
+    )().VerificationsService;
+    const buildService = (Service: typeof VerificationsService) =>
+      new Service(
+        repository,
+        {
+          readEntitlement: () =>
+            Promise.resolve({
+              consumedCount: 27,
+              includedLimit: 30,
+              periodEnd: null,
+            }),
+        } as never,
+        new IntegrationsRepository(
+          db as never,
+          { get: () => undefined } as never,
+        ),
+        {} as never,
+        { supports: () => false } as never,
+        {} as never,
+      );
+    const baseline = buildService(BaselineService);
+    const optimized = buildService(VerificationsService);
+    expect(await optimized.listByOrg(tenants[0].orgId, {})).toEqual(
+      await baseline.listByOrg(tenants[0].orgId, {}),
+    );
+    const results: Record<string, unknown>[] = [];
+    let planStatements: NonNullable<typeof capturedStatements> = [];
+    for (const concurrency of [1, 4, 8]) {
+      for (const [label, instance] of [
+        ['before', baseline],
+        ['after', optimized],
+      ] as const) {
+        const samples: number[] = [];
+        let queryCount = 0;
+        const histogram = monitorEventLoopDelay({ resolution: 1 });
+        histogram.enable();
+        const startMemory = process.memoryUsage();
+        let peakHeap = startMemory.heapUsed;
+        let peakRss = startMemory.rss;
+        for (let batch = 0; batch < 25; batch++) {
+          capturedStatements = [];
+          const timings = await Promise.all(
+            Array.from({ length: concurrency }, async (_, index) => {
+              const started = performance.now();
+              const response = await instance.listByOrg(
+                tenants[index].orgId,
+                {},
+              );
+              expect(response.total_count).toBe(500);
+              return performance.now() - started;
+            }),
+          );
+          if (batch === 4) histogram.reset();
+          if (batch >= 5) {
+            samples.push(...timings);
+            queryCount += capturedStatements.length;
+            const memory = process.memoryUsage();
+            peakHeap = Math.max(peakHeap, memory.heapUsed);
+            peakRss = Math.max(peakRss, memory.rss);
+          }
+          if (label === 'after') planStatements = capturedStatements;
+        }
+        histogram.disable();
+        samples.sort((left, right) => left - right);
+        results.push({
+          label,
+          concurrency,
+          requests: samples.length,
+          queriesPerRequest: queryCount / samples.length,
+          p50Ms: samples[Math.ceil(samples.length * 0.5) - 1],
+          p95Ms: samples[Math.ceil(samples.length * 0.95) - 1],
+          eventLoopP95Ms: histogram.percentile(95) / 1e6,
+          startHeapBytes: startMemory.heapUsed,
+          peakObservedHeapBytes: peakHeap,
+          peakObservedRssBytes: peakRss,
+        });
+      }
+    }
+    capturedStatements = null;
+    const plans: { query: string; plan: unknown }[] = [];
+    for (const statement of [
+      ...new Map(
+        planStatements.map((statement) => [statement.query, statement]),
+      ).values(),
+    ]) {
+      const plan = await client.unsafe(
+        `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${statement.query}`,
+        statement.params as never[],
+      );
+      plans.push({ query: statement.query, plan });
+    }
+    const output = process.env.PERFORMANCE_AUDIT_SQL_OUTPUT!;
+    mkdirSync(dirname(output), { recursive: true });
+    writeFileSync(
+      output,
+      JSON.stringify(
+        {
+          node: process.version,
+          postgres: '17',
+          tenants: 14,
+          rowsPerTenant: 500,
+          poolMax: 4,
+          warmupBatches: 5,
+          measuredBatches: 20,
+          externalRequests: 0,
+          results,
+          plans,
+        },
+        null,
+        2,
+      ),
+    );
+  },
+  120_000,
+);

@@ -1002,6 +1002,7 @@ describe('Listing fetch size', () => {
     const repo = {
       findByOrg: jest.fn().mockResolvedValue(rows),
       countByOrg: jest.fn().mockResolvedValue(40),
+      countByTab: jest.fn().mockResolvedValue({ all: 40 }),
     };
 
     const result = await buildService(repo).listByOrg('org-1', { limit: 20 });
@@ -1132,6 +1133,7 @@ describe('Held orders on the verifications listing', () => {
         .fn()
         .mockResolvedValue([heldOrder('order-1', '2026-09-19T10:00:00.000Z')]),
       countHeldByOrg: jest.fn().mockResolvedValue(1),
+      countByTab: jest.fn().mockResolvedValue({ all: 2 }),
     }).listByOrg('org-1', {});
 
     expect(result.data.map((row) => row.id)).toEqual([
@@ -1146,6 +1148,7 @@ describe('Held orders on the verifications listing', () => {
     const result = await service({
       findByOrg: jest.fn().mockResolvedValue([]),
       countByOrg: jest.fn().mockResolvedValue(12),
+      countByTab: jest.fn().mockResolvedValue({ all: 12 }),
       findHeldByOrg: jest.fn().mockResolvedValue([]),
       countHeldByOrg: jest.fn().mockResolvedValue(30),
     }).listByOrg('org-1', {});
@@ -1192,6 +1195,7 @@ describe('Held orders on the verifications listing', () => {
       countByOrg: jest.fn().mockResolvedValue(0),
       findHeldByOrg: jest.fn().mockResolvedValue([]),
       countHeldByOrg: jest.fn().mockResolvedValue(0),
+      countByTab: jest.fn().mockResolvedValue({ all: 0 }),
     };
     const importBatchId = '5f1c6f7e-6d7a-4a53-9c6e-0d9b1c2e3f40';
 
@@ -1209,13 +1213,12 @@ describe('Held orders on the verifications listing', () => {
       expect.objectContaining({ importBatchId }),
     );
     // The total has to describe the same filtered set as the rows.
-    expect(repo.countByOrg).toHaveBeenCalledWith(
+    expect(repo.countByTab).toHaveBeenCalledWith(
       'org-1',
-      undefined,
       expect.anything(),
       importBatchId,
-      expect.anything(),
     );
+    expect(repo.countByOrg).not.toHaveBeenCalled();
     expect(repo.countHeldByOrg).toHaveBeenCalledWith(
       'org-1',
       expect.anything(),
