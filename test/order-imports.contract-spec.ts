@@ -36,6 +36,10 @@ import {
   parseBulkImportConfig,
 } from '../src/shared/config/bulk-import.config';
 import { PhoneService } from '../src/shared/services/phone.service';
+import { sql } from 'drizzle-orm';
+import { OrdersRepository } from '../src/infrastructure/database/repositories/orders.repository';
+import { customerCountriesSql } from '../src/modules/admin/admin-customer-countries.sql';
+import { backfillOrderCustomerCountry } from '../scripts/backfill-order-customer-country';
 import { generateShortCode } from '../src/modules/order-imports/short-code';
 import { dateInTimezone } from '../src/modules/order-imports/validation/date';
 import {
@@ -277,6 +281,8 @@ describe('order imports PostgreSQL contract', () => {
         '0067_integration_logo_header.sql',
         // Logo header on by default and for every store; proves 0069 re-runs.
         '0069_logo_header_default_on.sql',
+        // Customer country: one nullable order column; proves 0072 re-runs.
+        '0072_order_customer_country.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -2585,6 +2591,89 @@ describe('order imports PostgreSQL contract', () => {
           WHERE batch_id = ${expired.batchId}`;
         expect(orphans.count).toBe(0);
         expect(await rowsOf(live.batchId)).toHaveLength(2);
+      });
+    });
+  });
+  describe('customer country', () => {
+    it('is set at ingest, backfilled once and counted per store', async () => {
+      const source = await createSource();
+      const created = await new OrdersRepository(database).create({
+        orgId: source.orgId,
+        integrationId: source.integrationId,
+        externalOrderId: `cc-${randomUUID()}`,
+        customerPhone: '+50230000745',
+      });
+      expect(created.customerCountry).toBe('GT');
+
+      // Orders stored before 0072, plus a redacted one and a test order.
+      await client`
+        INSERT INTO orders (org_id, integration_id, external_order_id, customer_phone, is_test)
+        VALUES
+          (${source.orgId}, ${source.integrationId}, 'cc-old-gt', '+50240000547', false),
+          (${source.orgId}, ${source.integrationId}, 'cc-old-sa', '+966512345123', false),
+          (${source.orgId}, ${source.integrationId}, 'cc-redacted', '', false),
+          (${source.orgId}, ${source.integrationId}, 'cc-test', '+12025550123', true)`;
+
+      const first = await backfillOrderCustomerCountry(client, {
+        batchSize: 2,
+      });
+      expect(first.updated).toBeGreaterThanOrEqual(3);
+      const stored = await client<
+        { external_order_id: string; customer_country: string | null }[]
+      >`
+        SELECT external_order_id, customer_country FROM orders
+        WHERE integration_id = ${source.integrationId} AND external_order_id LIKE 'cc-%'
+        ORDER BY external_order_id`;
+      expect(
+        Object.fromEntries(
+          stored
+            .filter(
+              (row) =>
+                row.external_order_id.startsWith('cc-old') ||
+                row.external_order_id.startsWith('cc-re') ||
+                row.external_order_id === 'cc-test',
+            )
+            .map((row) => [row.external_order_id, row.customer_country]),
+        ),
+      ).toEqual({
+        'cc-old-gt': 'GT',
+        'cc-old-sa': 'SA',
+        'cc-redacted': null,
+        'cc-test': 'US',
+      });
+
+      const second = await backfillOrderCustomerCountry(client);
+      expect(second.updated).toBe(0);
+
+      await expect(
+        client`
+          INSERT INTO orders (org_id, integration_id, external_order_id, customer_phone, customer_country)
+          VALUES (${source.orgId}, ${source.integrationId}, 'cc-lower', '+50230000745', 'gt')`,
+      ).rejects.toThrow(/orders_customer_country_check/);
+
+      const empty = await createSource();
+      const countries = async (integrationId: string) => {
+        const [row] = await database.execute<{
+          top_customer_country: string | null;
+          top_customer_country_share: number | null;
+          customer_country_count: number;
+        }>(sql`
+          SELECT store_countries.*
+          FROM integrations i
+          LEFT JOIN LATERAL (${customerCountriesSql(sql`i.id`)}) store_countries ON true
+          WHERE i.id = ${integrationId}`);
+        return row;
+      };
+      // GT twice and SA once; the US test order is not counted.
+      expect(await countries(source.integrationId)).toEqual({
+        top_customer_country: 'GT',
+        top_customer_country_share: 67,
+        customer_country_count: 2,
+      });
+      expect(await countries(empty.integrationId)).toEqual({
+        top_customer_country: null,
+        top_customer_country_share: null,
+        customer_country_count: 0,
       });
     });
   });

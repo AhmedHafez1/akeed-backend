@@ -146,6 +146,7 @@ describe('manual order ingestion PostgreSQL contract', () => {
         line_items jsonb,
         shipping_region text,
         shipping_address text,
+        customer_country varchar(2),
         is_test boolean DEFAULT false NOT NULL,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),

@@ -1,5 +1,5 @@
 import { InvalidPhoneNumberError } from '../errors/invalid-phone-number.error';
-import { PhoneService } from './phone.service';
+import { PhoneService, phoneRegion } from './phone.service';
 
 describe('PhoneService', () => {
   const phones = new PhoneService();
@@ -73,5 +73,28 @@ describe('PhoneService', () => {
         code: 'PHONE_INVALID',
       });
     });
+  });
+});
+describe('phoneRegion', () => {
+  it('reads the country from the calling code', () => {
+    expect(phoneRegion('+50230000745')).toBe('GT');
+    expect(phoneRegion('+966512345123')).toBe('SA');
+    expect(phoneRegion('+201012345678')).toBe('EG');
+  });
+
+  it('resolves shared calling codes by number range', () => {
+    expect(phoneRegion('+12025550123')).toBe('US');
+    expect(phoneRegion('+14165550123')).toBe('CA');
+  });
+
+  it('returns null for empty, local or unparseable values', () => {
+    expect(phoneRegion('')).toBeNull();
+    expect(phoneRegion(null)).toBeNull();
+    expect(phoneRegion('0512345678')).toBeNull();
+    expect(phoneRegion('+abc')).toBeNull();
+  });
+
+  it('returns null for non-geographic numbers', () => {
+    expect(phoneRegion('+80012345678')).toBeNull();
   });
 });

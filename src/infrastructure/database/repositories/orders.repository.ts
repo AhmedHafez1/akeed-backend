@@ -15,6 +15,7 @@ import {
   BLOCKED_EVENT_REASONS as blockedEventReasons,
   RETRYABLE_VERIFICATION_REASONS as retryableVerificationReasons,
 } from '../../../shared/verification/verification-lifecycle';
+import { phoneRegion } from '../../../shared/services/phone.service';
 
 const dispatchCount = sql<number>`(
   SELECT count(*)::int
@@ -106,7 +107,14 @@ export class OrdersRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
   async create(data: typeof orders.$inferInsert) {
-    const [result] = await this.db.insert(orders).values(data).returning();
+    const [result] = await this.db
+      .insert(orders)
+      .values({
+        ...data,
+        customerCountry:
+          data.customerCountry ?? phoneRegion(data.customerPhone),
+      })
+      .returning();
     return result;
   }
 
@@ -313,6 +321,7 @@ export class OrdersRepository {
       .update(orders)
       .set({
         customerPhone: '',
+        customerCountry: null,
         customerName: null,
         customerEmail: null,
         rawPayload: {},

@@ -5,6 +5,7 @@ import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
 import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibility';
 import type { AdminHealthColumns } from './admin-health-rule.service';
+import { customerCountriesSql } from './admin-customer-countries.sql';
 import { templateHealthSql } from './admin-template-health.sql';
 
 export interface AdminStoreQueryRow {
@@ -14,6 +15,11 @@ export interface AdminStoreQueryRow {
   store_name: string | null;
   shop_domain: string;
   country_code: string | null;
+  /** The most common customer phone country over the store's real orders. */
+  top_customer_country: string | null;
+  /** Its share (0-100) of the real orders whose country is known. */
+  top_customer_country_share: number | null;
+  customer_country_count: number;
   timezone: string | null;
   is_active: boolean;
   onboarding_status: string;
@@ -102,6 +108,7 @@ export interface AdminStoreVerificationRow {
   is_test: boolean;
   customer_name: string | null;
   customer_phone: string;
+  customer_country: string | null;
   total_price: string | null;
   currency: string | null;
   attempts: number | null;
@@ -210,6 +217,7 @@ export interface AdminStoreListFilter {
   onboardingStatus?: string;
   healthStatus?: string;
   country?: string;
+  customerCountry?: string;
   installedFrom?: string;
   installedTo?: string;
   lastActivityFrom?: string;
@@ -446,6 +454,7 @@ export class AdminQueryRepository {
           ord.is_test,
           ord.customer_name,
           ord.customer_phone,
+          ord.customer_country,
           ord.total_price::text AS total_price,
           ord.currency,
           v.attempts,
@@ -620,6 +629,10 @@ export class AdminQueryRepository {
       conditions.push(
         sql`upper(COALESCE(country_code, '')) = ${filter.country.toUpperCase()}`,
       );
+    if (filter.customerCountry)
+      conditions.push(
+        sql`top_customer_country = ${filter.customerCountry.toUpperCase()}`,
+      );
     if (filter.installedFrom)
       conditions.push(
         sql`installed_at >= ${filter.installedFrom}::timestamptz`,
@@ -752,6 +765,9 @@ export class AdminQueryRepository {
         i.store_name,
         i.platform_store_url AS shop_domain,
         i.country_code,
+        customer_countries.top_customer_country,
+        customer_countries.top_customer_country_share,
+        COALESCE(customer_countries.customer_country_count, 0) AS customer_country_count,
         COALESCE(i.shop_timezone, i.timezone) AS timezone,
         COALESCE(i.is_active, false) AS is_active,
         i.onboarding_status::text AS onboarding_status,
@@ -836,6 +852,7 @@ export class AdminQueryRepository {
         FROM webhook_events w
         WHERE w.integration_id = i.id
       ) webhook_metrics ON true
+      LEFT JOIN LATERAL (${customerCountriesSql(sql`i.id`)}) customer_countries ON true
       ${where}
     `;
   }

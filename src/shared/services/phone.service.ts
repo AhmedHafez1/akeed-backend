@@ -38,9 +38,31 @@ const PHONE_PUNCTUATION = /[\s\-.()/]+/g;
 /** An Egyptian mobile whose leading zero Excel removed: `1012345678`. */
 const EG_MOBILE_WITHOUT_ZERO = /^1\d{9}$/;
 
+const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
+const REGION_CODE = /^[A-Z]{2}$/;
+
+/**
+ * The country a stored E.164 phone belongs to (`GT` for `+502…`), or null.
+ *
+ * Shared calling codes (`+1`, `+7`, `+44`) are resolved by number range. It
+ * says where the number is registered, not where the customer lives.
+ * Non-geographic codes (`001`) and unparseable values give null. A plain
+ * function so the orders repositories and the backfill script can use it.
+ */
+export function phoneRegion(phone: string | null | undefined): string | null {
+  const raw = (phone ?? '').trim();
+  if (!raw.startsWith('+')) return null;
+  try {
+    const region = phoneUtil.getRegionCodeForNumber(phoneUtil.parse(raw));
+    return region && REGION_CODE.test(region) ? region : null;
+  } catch {
+    return null;
+  }
+}
+
 @Injectable()
 export class PhoneService {
-  private readonly phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
+  private readonly phoneUtil = phoneUtil;
 
   /** The one libphonenumber path every phone rule in the app goes through. */
   parse(phone: string, countryCode?: string): PhoneParseResult {

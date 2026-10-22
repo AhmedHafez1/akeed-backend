@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import { orders, webhookEvents } from '../schema';
+import { phoneRegion } from '../../../shared/services/phone.service';
 
 type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -378,7 +379,11 @@ export class ManualOrderIngestionRepository {
 
     const [createdOrder] = await tx
       .insert(orders)
-      .values(input.order)
+      .values({
+        ...input.order,
+        customerCountry:
+          input.order.customerCountry ?? phoneRegion(input.order.customerPhone),
+      })
       .onConflictDoNothing({
         target: [orders.integrationId, orders.externalOrderId],
       })

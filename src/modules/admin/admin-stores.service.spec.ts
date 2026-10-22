@@ -28,6 +28,9 @@ function shopifyRow(
     store_name: 'Shopify Store',
     shop_domain: 'example.myshopify.com',
     country_code: 'SA',
+    top_customer_country: 'SA',
+    top_customer_country_share: 100,
+    customer_country_count: 1,
     timezone: 'Asia/Riyadh',
     is_active: true,
     onboarding_status: 'completed',
@@ -171,6 +174,11 @@ describe('AdminStoresService', () => {
       usage: { used: 30, limit: 100, remaining: 70, percent: 30 },
     });
     expect(shopify.shop_domain).toBe('example.myshopify.com');
+    expect(shopify.customer_countries).toEqual({
+      top: 'SA',
+      share: 100,
+      count: 1,
+    });
     expect(standalone).toMatchObject({
       platform: 'standalone',
       store_name: 'Standalone Org',
@@ -221,6 +229,7 @@ describe('AdminStoresService', () => {
       search: 'shop',
       platform: 'standalone',
       health_status: 'critical',
+      customer_country: 'gt',
       installed_from: '2026-09-01',
       installed_to: '2026-09-10',
       sort: 'health',
@@ -237,6 +246,7 @@ describe('AdminStoresService', () => {
       search: 'shop',
       platform: 'standalone',
       healthStatus: 'critical',
+      customerCountry: 'gt',
       installedFrom: '2026-09-01T00:00:00.000Z',
       installedTo: '2026-09-10T23:59:59.999Z',
     });
@@ -352,6 +362,7 @@ describe('AdminStoresService', () => {
       is_test: false,
       customer_name: 'Customer',
       customer_phone: '+966512345123',
+      customer_country: 'SA',
       total_price: '120.00',
       currency: 'SAR',
       attempts: 1,
@@ -397,6 +408,7 @@ describe('AdminStoresService', () => {
     expect(result.total_count).toBe(7);
     expect(result.next_cursor).not.toBeNull();
     expect(result.data[0].customer_phone_masked).toBe('+9665•••••123');
+    expect(result.data[0].customer_country).toBe('SA');
     expect(JSON.stringify(result)).not.toContain('+966512345123');
   });
 

@@ -80,6 +80,11 @@ export class AdminStoresQueryDto {
   @IsString()
   country?: string;
 
+  /** Stores whose customers' phones are mostly from this country. */
+  @IsOptional()
+  @Matches(/^[A-Za-z]{2}$/)
+  customer_country?: string;
+
   @IsOptional()
   @IsDateString()
   installed_from?: string;

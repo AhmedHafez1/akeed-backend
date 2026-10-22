@@ -80,6 +80,15 @@ export type AdminStoreBilling =
       balance_state: BalanceState;
     };
 
+export interface AdminCustomerCountries {
+  /** The most common country, or null before any order has one. */
+  top: string | null;
+  /** Its share (0-100) of the orders whose country is known. */
+  share: number | null;
+  /** How many countries the orders come from. */
+  count: number;
+}
+
 export interface AdminStoreView {
   integration_id: string;
   org_id: string;
@@ -89,6 +98,8 @@ export interface AdminStoreView {
   shop_domain: string | null;
   source_identity: string;
   country_code: string | null;
+  /** Where the store's customers' phones are from, over its real orders. */
+  customer_countries: AdminCustomerCountries;
   timezone: string | null;
   installed_at: string;
   lifecycle_status: AdminLifecycleStatus;
@@ -158,6 +169,8 @@ export interface AdminStoreVerificationView {
   is_test: boolean;
   customer_name: string | null;
   customer_phone_masked: string;
+  /** The country of the customer's phone, or null when it is unknown. */
+  customer_country: string | null;
   total_price: string | null;
   currency: string | null;
   attempts: number;
@@ -203,6 +216,7 @@ export class AdminStoresService {
         onboardingStatus: query.onboarding_status,
         healthStatus: query.health_status,
         country: query.country,
+        customerCountry: query.customer_country,
         installedFrom: this.rangeStart(query.installed_from),
         installedTo: this.rangeEnd(query.installed_to),
         lastActivityFrom: this.rangeStart(query.last_activity_from),
@@ -593,6 +607,7 @@ export class AdminStoresService {
       is_test: row.is_test,
       customer_name: row.customer_name,
       customer_phone_masked: maskPhone(row.customer_phone),
+      customer_country: row.customer_country,
       total_price: row.total_price,
       currency: row.currency,
       attempts: Number(row.attempts ?? 0),
@@ -696,6 +711,14 @@ export class AdminStoresService {
       shop_domain: row.platform_type === 'standalone' ? null : row.shop_domain,
       source_identity: row.shop_domain,
       country_code: row.country_code,
+      customer_countries: {
+        top: row.top_customer_country,
+        share:
+          row.top_customer_country_share === null
+            ? null
+            : Number(row.top_customer_country_share),
+        count: Number(row.customer_country_count ?? 0),
+      },
       timezone: row.timezone,
       installed_at: row.installed_at,
       lifecycle_status: row.lifecycle_status as AdminLifecycleStatus,

@@ -969,6 +969,8 @@ export const orders = pgTable(
     lineItems: jsonb('line_items').$type<OrderLineItem[]>(),
     shippingRegion: text('shipping_region'),
     shippingAddress: text('shipping_address'),
+    // The country of the customer's phone (migration 0072), set at ingest.
+    customerCountry: varchar('customer_country', { length: 2 }),
     isTest: boolean('is_test').default(false).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -998,6 +1000,17 @@ export const orders = pgTable(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
       table.orderNumber.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_orders_integration_customer_country')
+      .using(
+        'btree',
+        table.integrationId.asc().nullsLast().op('uuid_ops'),
+        table.customerCountry.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`(is_test = false)`),
+    check(
+      'orders_customer_country_check',
+      sql`customer_country ~ '^[A-Z]{2}$'`,
     ),
     foreignKey({
       columns: [table.integrationId, table.orgId],
