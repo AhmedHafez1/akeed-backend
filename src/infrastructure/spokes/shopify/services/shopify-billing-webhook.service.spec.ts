@@ -33,13 +33,21 @@ function createMocks() {
       .fn()
       .mockResolvedValue({ orders: 2, verifications: 2, webhookEvents: 1 }),
   };
+  const capacityRecovery = { request: jest.fn() };
   const service = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     webhookEventsRepo as any,
     ordersRepo as any,
+    capacityRecovery as any,
   );
 
-  return { service, integrationsRepo, webhookEventsRepo, ordersRepo };
+  return {
+    service,
+    integrationsRepo,
+    webhookEventsRepo,
+    ordersRepo,
+    capacityRecovery,
+  };
 }
 
 describe('ShopifyBillingWebhookService', () => {
@@ -319,3 +327,33 @@ describe('ShopifyBillingWebhookService', () => {
 });
 
 /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
+
+describe('ShopifyBillingWebhookService capacity recovery', () => {
+  it.each([
+    ['ACTIVE', 1],
+    ['CANCELLED', 0],
+  ])(
+    'resumes blocked orders only for an active subscription (%s)',
+    async (status, calls) => {
+      const { service, integrationsRepo, capacityRecovery } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
+      );
+
+      await service.handleAppSubscriptionUpdate(
+        { id: 'gid://shopify/AppSubscription/CURRENT', status },
+        'test.myshopify.com',
+        'webhook-recovery',
+        'app_subscriptions/update',
+      );
+
+      expect(capacityRecovery.request).toHaveBeenCalledTimes(calls);
+      if (calls) {
+        expect(capacityRecovery.request).toHaveBeenCalledWith(
+          'org-1',
+          'subscription_active',
+        );
+      }
+    },
+  );
+});

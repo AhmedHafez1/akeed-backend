@@ -114,6 +114,11 @@ const REDACTED_KEYS = new Set([
   'email',
   'customer_email',
   'customeremail',
+  // Where usage alerts are emailed, and the email provider's key.
+  'notification_email',
+  'notificationemail',
+  'recipient',
+  'resend_api_key',
   // What a customer ordered and where it ships (detailed confirmation). A
   // bare `address` is not listed: network errors log the host they reached
   // under that name.

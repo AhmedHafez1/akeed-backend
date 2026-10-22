@@ -312,7 +312,7 @@ export class VerificationsRepository {
       .where(
         sql`${verifications.id} = ${id}
           AND ${verifications.orgId} = ${orgId}
-          AND ${verifications.status} = 'failed'
+          AND ${verifications.status} IN ('failed', 'blocked')
           AND (${verifications.lastSentAt} IS NULL OR EXISTS (
             SELECT 1 FROM ${verificationMessageDispatches} AS dispatch
             JOIN ${creditReservations} AS reservation ON reservation.dispatch_id = dispatch.id AND reservation.org_id = dispatch.org_id
@@ -1123,6 +1123,130 @@ export class VerificationsRepository {
    * who already confirmed or canceled cannot be walked backwards by a late
    * send-failure projection. Metadata-only updates are unaffected.
    */
+  /** The org's orders waiting for sending capacity, test orders excluded. */
+  async countBlocked(orgId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.status, 'blocked'),
+          eq(verifications.orgId, orgId),
+          eq(orders.isTest, false),
+        ),
+      );
+    return row?.count ?? 0;
+  }
+
+  /** Orgs that have at least one blocked order, for the recovery sweep. */
+  async listOrgsWithBlocked(limit: number): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ orgId: verifications.orgId })
+      .from(verifications)
+      .where(eq(verifications.status, 'blocked'))
+      .limit(limit);
+    return rows.map((row) => row.orgId);
+  }
+
+  /**
+   * The org's orders recovery may send, oldest first: every `blocked` row, and
+   * the `failed` rows from before that status existed whose reason is a
+   * capacity one and that never reached the provider. Test orders are never
+   * resent.
+   */
+  async listCapacityRecoveryCandidates(params: {
+    orgId: string;
+    reasons: readonly string[];
+    legacyFailedSince: string;
+    limit: number;
+  }) {
+    const reasonList = sql.join(
+      params.reasons.map((reason) => sql`${reason}`),
+      sql`, `,
+    );
+    return this.db
+      .select({
+        verificationId: verifications.id,
+        orgId: verifications.orgId,
+        status: verifications.status,
+        reason: sql<string | null>`${verifications.metadata}->>'reason'`,
+        orderId: orders.id,
+        integrationId: orders.integrationId,
+        orderCreatedAt: orders.createdAt,
+      })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.orgId, params.orgId),
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+          or(
+            eq(verifications.status, 'blocked'),
+            and(
+              eq(verifications.status, 'failed'),
+              sql`${verifications.lastSentAt} IS NULL`,
+              sql`${verifications.metadata}->>'reason' IN (${reasonList})`,
+              gte(verifications.createdAt, params.legacyFailedSince),
+            ),
+          ),
+        ),
+      )
+      .orderBy(verifications.createdAt, verifications.id)
+      .limit(params.limit);
+  }
+
+  /**
+   * Moves a blocked order that recovery will not send to `failed`, keeping
+   * the capacity reason it waited for. Guarded on the row still being
+   * unsent and blocked (or a legacy capacity failure), so a concurrent send
+   * or a merchant's own answer is never overwritten.
+   */
+  async markCapacityBlockUnsent(params: {
+    verificationId: string;
+    orgId: string;
+    reason: string;
+    blockedReason: string | null;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(verifications)
+      .set({
+        status: 'failed',
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+          {
+            reason: params.reason,
+            kind: 'initial',
+            blocked_reason: params.blockedReason,
+          },
+        )}::jsonb`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(verifications.id, params.verificationId),
+          eq(verifications.orgId, params.orgId),
+          inArray(verifications.status, ['blocked', 'failed']),
+          sql`${verifications.lastSentAt} IS NULL`,
+          sql`${verifications.merchantCanceledAt} IS NULL`,
+        ),
+      )
+      .returning({ id: verifications.id });
+    return rows.length === 1;
+  }
+
   async updateByIdForOrg(
     verificationId: string,
     orgId: string,

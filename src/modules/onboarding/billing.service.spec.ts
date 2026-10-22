@@ -69,15 +69,20 @@ function createMocks() {
     getApiSecret: jest.fn().mockReturnValue('secret'),
   };
 
+  const capacityRecovery = { request: jest.fn() };
+
   const service = new BillingService(
     integrationsRepo as any,
     freePlanClaimsRepo as any,
     monthlyUsageRepo as any,
     storePlatform as any,
     billingConfig as any,
+    undefined,
+    capacityRecovery as any,
   );
 
   return {
+    capacityRecovery,
     service,
     integrationsRepo,
     freePlanClaimsRepo,
@@ -543,3 +548,55 @@ describe('BillingService', () => {
 });
 
 /* eslint-enable @typescript-eslint/no-unsafe-argument */
+
+describe('BillingService capacity recovery', () => {
+  it('resumes blocked orders once a new plan is active', async () => {
+    const { service, integrationsRepo, storePlatform, capacityRecovery } =
+      createMocks();
+    integrationsRepo.findByPlatformDomain.mockResolvedValue(
+      makeIntegration({
+        billingPlanId: 'starter',
+        pendingBillingPlanId: 'pro',
+        billingStatus: 'active',
+        shopifySubscriptionId: 'gid://shopify/AppSubscription/OLD',
+      }),
+    );
+    storePlatform.getAppSubscriptionStatus.mockResolvedValue({
+      id: 'gid://shopify/AppSubscription/NEW',
+      status: 'ACTIVE',
+    });
+
+    await service.handleBillingCallback({
+      shop: 'test.myshopify.com',
+      chargeId: 'gid://shopify/AppSubscription/NEW',
+    });
+
+    expect(capacityRecovery.request).toHaveBeenCalledWith(
+      'org-1',
+      'plan_activated',
+    );
+  });
+
+  it('resumes nothing when the merchant declines the plan', async () => {
+    const { service, integrationsRepo, storePlatform, capacityRecovery } =
+      createMocks();
+    integrationsRepo.findByPlatformDomain.mockResolvedValue(
+      makeIntegration({
+        billingPlanId: 'starter',
+        pendingBillingPlanId: 'pro',
+        billingStatus: 'active',
+      }),
+    );
+    storePlatform.getAppSubscriptionStatus.mockResolvedValue({
+      id: 'gid://shopify/AppSubscription/NEW',
+      status: 'DECLINED',
+    });
+
+    await service.handleBillingCallback({
+      shop: 'test.myshopify.com',
+      chargeId: 'gid://shopify/AppSubscription/NEW',
+    });
+
+    expect(capacityRecovery.request).not.toHaveBeenCalled();
+  });
+});

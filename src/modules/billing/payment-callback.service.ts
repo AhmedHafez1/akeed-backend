@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { CapacityRecoveryProducer } from '../capacity-recovery/capacity-recovery.producer';
 import { ConfigService } from '@nestjs/config';
 import {
   buildBackendLog,
@@ -172,6 +173,8 @@ export interface IngestResult {
   outcome: IngestOutcome;
   resultCode: EventResultCode;
   errorCode?: EventErrorCode;
+  /** The org credited, when the outcome is `granted`. */
+  orgId?: string;
 }
 
 /**
@@ -196,6 +199,8 @@ export class PaymentCallbackService {
     private readonly config: ConfigService,
     private readonly credits: CreditAccountingRepository,
     private readonly purchases: PaymentPurchasesRepository,
+    @Optional()
+    private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
 
   async ingest(event: NormalizedProviderEvent): Promise<IngestResult> {
@@ -217,6 +222,10 @@ export class PaymentCallbackService {
       );
       if (result.resultCode === 'duplicate_event')
         this.alert('duplicate_grant_attempt', 'attention', event);
+      // Orders blocked for credits can go now. Asked only after commit, so a
+      // rolled-back grant never resumes anything.
+      if (result.outcome === 'granted' && result.orgId)
+        await this.capacityRecovery?.request(result.orgId, 'credit_purchase');
       // Raised only after commit, so a rolled-back quarantine does not page.
       if (result.outcome === 'quarantined')
         this.alert('trusted_data_mismatch', 'critical', event, {
@@ -336,7 +345,11 @@ export class PaymentCallbackService {
 
     if (decision.grant) {
       await this.grant(tx, purchase, decision.grant.quantity, event.reference);
-      return { outcome: 'granted', resultCode: 'granted' };
+      return {
+        outcome: 'granted',
+        resultCode: 'granted',
+        orgId: purchase.orgId,
+      };
     }
     if (decision.reversal) await this.reverse(tx, purchase, decision.reversal);
     return { outcome: 'transitioned', resultCode };

@@ -253,6 +253,11 @@ describe('order imports PostgreSQL contract', () => {
     `);
     // Layer the real migration on the hand-written base, twice, to prove it is
     // re-runnable and ships exactly the constraints the repository relies on.
+    // 0073 also adds a verification status and an alerts table, which need
+    // the status enum this base leaves out; only its store column applies.
+    const appliesToBase = (migration: string, statement: string) =>
+      !migration.startsWith('0073_') ||
+      statement.includes('ADD COLUMN IF NOT EXISTS "notification_email"');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -283,12 +288,15 @@ describe('order imports PostgreSQL contract', () => {
         '0069_logo_header_default_on.sql',
         // Customer country: one nullable order column; proves 0072 re-runs.
         '0072_order_customer_country.sql',
+        // Usage alerts: the store's notification email; proves 0073 re-runs.
+        '0073_usage_alerts_and_blocked_orders.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
           'utf8',
         ).split('--> statement-breakpoint')) {
-          if (statement.trim()) await client.unsafe(statement);
+          if (statement.trim() && appliesToBase(migration, statement))
+            await client.unsafe(statement);
         }
       }
     }

@@ -24,6 +24,11 @@ import {
 import { sql } from 'drizzle-orm';
 import type { OrderLineItem } from '../../shared/interfaces/order.interface';
 import type {
+  UsageAlertEmailStatus,
+  UsageAlertKind,
+  UsageAlertLevel,
+} from '../../shared/billing/usage-alert.policy';
+import type {
   TemplateHeaderFormat,
   TemplateLanguage,
   TemplateParameterFormat,
@@ -57,6 +62,7 @@ export const verificationStatus = pgEnum('verification_status', [
   'failed',
   'no_reply',
   'no_whatsapp',
+  'blocked',
 ]);
 
 export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
@@ -672,6 +678,9 @@ export const integrations = pgTable(
     shopTimezone: text('shop_timezone'),
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
     shopPhone: text('shop_phone'),
+    // The shop's email read from Shopify, where usage alerts go for an
+    // embedded store. NULL until the shop profile is read again.
+    notificationEmail: text('notification_email'),
     // The merchant's logo and the 1200x628 banner built from it, both public
     // https URLs. The banner is the image header unless staff switched
     // `logoHeaderEnabled` off for the store.
@@ -1137,6 +1146,14 @@ export const verifications = pgTable(
     index('idx_verifications_wa_id').using(
       'btree',
       table.waMessageId.asc().nullsLast().op('text_ops'),
+    ),
+    // Finds the `blocked` rows of an org (and the orgs that have any) for the
+    // dashboard count and capacity recovery.
+    index('idx_verifications_status_org_created').using(
+      'btree',
+      table.status.asc().nullsLast().op('enum_ops'),
+      table.orgId.asc().nullsLast().op('uuid_ops'),
+      table.createdAt.asc().nullsLast().op('timestamptz_ops'),
     ),
     foreignKey({
       columns: [table.orderId, table.orgId],
@@ -1885,6 +1902,67 @@ export const reviewPromptStates = pgTable(
       sql`${table.snoozeCount} >= 0 AND ${table.shownCount} >= 0`,
     ),
     pgPolicy('Service role manages review prompt states', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const usageAlerts = pgTable(
+  'usage_alerts',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    kind: text('kind').$type<UsageAlertKind>().notNull(),
+    level: text('level').$type<UsageAlertLevel>().notNull(),
+    // The billing period start for a plan alert; 'incident' for a credit
+    // alert, whose open row is the dedupe key until it is resolved.
+    cycleKey: text('cycle_key').notNull(),
+    emailStatus: text('email_status')
+      .$type<UsageAlertEmailStatus>()
+      .default('pending')
+      .notNull(),
+    emailError: text('email_error'),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'usage_alerts_integration_id_fkey',
+    }).onDelete('cascade'),
+    uniqueIndex('usage_alerts_plan_cycle_idx')
+      .on(table.integrationId, table.kind, table.level, table.cycleKey)
+      .where(sql`${table.kind} = 'plan_usage'`),
+    uniqueIndex('usage_alerts_open_credit_idx')
+      .on(table.orgId, table.kind, table.level)
+      .where(
+        sql`${table.kind} = 'credit_balance' AND ${table.resolvedAt} IS NULL`,
+      ),
+    index('idx_usage_alerts_org').on(table.orgId),
+    check(
+      'usage_alerts_kind_level_check',
+      sql`(${table.kind} = 'plan_usage' AND ${table.level} IN ('80', '95', '100')) OR (${table.kind} = 'credit_balance' AND ${table.level} IN ('low', 'depleted'))`,
+    ),
+    check(
+      'usage_alerts_email_status_check',
+      sql`${table.emailStatus} IN ('pending', 'sent', 'skipped', 'failed')`,
+    ),
+    pgPolicy('Service role manages usage alerts', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

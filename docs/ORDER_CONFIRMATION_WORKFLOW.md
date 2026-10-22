@@ -47,7 +47,8 @@ Out of scope:
 | `canceled`  | Customer canceled or merchant canceled after no reply.                             | `WhatsAppWebhookService`, `VerificationsService`    |
 | `no_reply`  | Customer did not respond before the escalation job fired.                          | `VerificationAutomationProcessor`                   |
 | `no_whatsapp` | The customer number cannot receive WhatsApp (Meta error 131026). The merchant calls the customer. | `WhatsAppWebhookService`, `VerificationSendService` |
-| `failed`    | Initial send failed or plan limit blocked the initial send.                        | `VerificationSendService`, `VerificationHubService` |
+| `blocked`   | The order arrived after the plan allowance or the prepaid credits ran out. Nothing was sent or charged; recovery sends it once capacity is back. | `VerificationHubService` |
+| `failed`    | Initial send failed, or a blocked order waited longer than the age limit.          | `VerificationSendService`, `VerificationHubService`, `CapacityRecoveryService` |
 | `expired`   | Reserved enum value for lifecycle compatibility.                                   | Not actively automated in this workflow             |
 
 ### Number not on WhatsApp
@@ -65,6 +66,30 @@ The follow-through is `VerificationHubService.markNoWhatsApp`. It removes the de
 Usage: the failed receipt returns the periodic-plan usage and reverses the prepaid credit exactly as for any undelivered message (once, never after a delivery). A synchronous 131026 resolves the dispatch as not accepted, which releases the usage or the credit hold in both accounting modes.
 
 The merchant sees the row under the `no_whatsapp` tab and in `needs_action` (reason `no_whatsapp`). Manual confirmation and merchant cancellation are offered; retry is not, because a resend fails the same way. A merchant cancellation of a `no_whatsapp` row records `cancellation_source = merchant_no_whatsapp` (instead of `merchant_no_reply`) and cancels the order in the store the same way. Rows that were already `failed` with code 131026 before this status existed stay `failed`.
+
+### Orders blocked by capacity
+
+An eligible order that arrives after the plan allowance or the prepaid credits ran out is still created. Its verification is `blocked`, with `metadata.reason` set to `plan_limit_reached`, `INSUFFICIENT_CREDITS` or `CREDIT_DEBT_OUTSTANDING`. The same happens when the slot check or the dispatch ledger's claim refuses an initial send for capacity. Nothing is sent and no usage or credit is taken. No reminder or no-reply escalation is scheduled (`blocked` is in `AUTOMATION_FINAL_STATUSES`), so a blocked order is never treated as unanswered. A refusal for any other reason (suspended account, inactive subscription, auto-verify off) still skips the order. The onboarding test message is never blocked.
+
+Recovery (`modules/capacity-recovery`) sends an organization's blocked orders, oldest first, once capacity is back. It is a job on the `capacity-recovery` queue, deduplicated per organization, requested:
+
+- after a credit purchase is granted, once its transaction has committed;
+- after a Shopify plan is activated, or an `app_subscriptions/update` reports the subscription active;
+- by a sweep every 10 minutes for each organization with blocked orders. The sweep covers the allowance reset (a period has no reset event), staff credit adjustments and lost triggers.
+
+`CapacityRecoveryService` checks each order again just before sending it:
+
+1. **Age.** An order older than `BLOCKED_ORDER_MAX_AGE_HOURS` (default 24, counted from the order's creation) moves to `failed` with reason `capacity_block_stale` and the original reason in `metadata.blocked_reason`. It is not sent. It shows in needs-action as `send_failed`, where the merchant can retry, confirm or cancel it.
+2. **Source.** A source that is gone, paused, not onboarded or refused by its entitlement keeps its orders blocked.
+3. **Capacity.** When `hasAvailableSlot` says no, the run stops.
+4. **Reopen.** `reopenRetryableInitialFailure` is a single status-guarded update. Only one worker wins it; the other skips the order.
+5. **Send.** `VerificationHubService.resumeInitialSend` takes the ordinary initial-send path (send delay, quiet hours) and the dispatch ledger, which claims usage or a credit hold once per message. If the send is refused for capacity anyway, the order is blocked again and the run stops.
+
+A run handles up to 50 orders and asks for another when the batch was full. Two runs at once can neither send an order twice nor charge it twice. Rows that failed for capacity before `blocked` existed (`failed`, a capacity reason, never sent) are picked up the same way while they are within the age limit. The merchant can also retry a blocked order from the table; it goes through the same reopen.
+
+The dashboard overview returns `capacity`: `blocked_count`, `mode` (`plan` or `credits`), `remaining`, `action` (`upgrade`, `recharge` or `wait_reset`) and `reset_at`. The dashboard shows a banner while `blocked_count` is above zero. Alert emails are described in [ONBOARDING_AND_BILLING.md](ONBOARDING_AND_BILLING.md#usage-alerts).
+
+**Limitation:** Akeed does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short.
 
 ### Held orders (bulk import)
 
@@ -384,6 +409,7 @@ Primary tables:
 | `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive` (installation state), `storeName`, `defaultLanguage`, `codTemplateArKey`, `codTemplateEnKey`, `codTemplateUrKey`, `codTemplateEsKey`, `codTemplateFrKey` (with the old `codTemplateArVariant`, `codTemplateEnVariant` kept in step), `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus` (entitlement state), `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
 | `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`; source identity/deduplication is `(orgId, integrationId, externalOrderId)` and the database verifies integration ownership                                                                                                                                                                                               |
 | `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                                                                                                                    |
+| `usage_alerts`   | `orgId`, `integrationId`, `kind` (`plan_usage`, `credit_balance`), `level`, `cycleKey`, `emailStatus`, `emailError`, `sentAt`, `resolvedAt`; one row per alert, deduplicated by a unique index per billing period (plans) or per open incident (credits) |
 | `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                                                                                                          |
 
 Important constraints and indexes:
@@ -392,6 +418,7 @@ Important constraints and indexes:
 - `idx_verifications_org_created_id` supports dashboard pagination.
 - `idx_verifications_org_created_status` supports dashboard status/date filtering.
 - `idx_verifications_wa_id` supports Meta status webhook lookup by `waMessageId`.
+- `idx_verifications_status_org_created` supports the blocked-order count, the recovery sweep and its oldest-first scan.
 - `webhook_events` has unique idempotency per platform webhook id.
 
 ## Billing And Usage Rules
@@ -416,7 +443,7 @@ Usage principles:
 - Acknowledgments and nudges are free at Meta: they reserve no usage, write no credit or dispatch row, and are
   recorded only in `verification_service_messages`.
 - Dashboard usage shows consumed count and included limit for the current billing period.
-- Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade.
+- Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade. New orders wait at `blocked` and are sent automatically when capacity returns (see [Orders blocked by capacity](#orders-blocked-by-capacity)).
 
 ## Reliability And Safety
 

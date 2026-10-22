@@ -68,6 +68,7 @@ try {
     Invoke-ContractStep 'US-04.5-01 migration, RLS, immutability and concurrency' 'test:contract:credit-foundation'
     Invoke-ContractStep 'US-04.5-09 signup auto-activation, backfill and one-time grant' 'test:contract:standalone-provisioning'
     Invoke-ContractStep 'US-04.5-03 usage accounting and recovery' 'test:contract:credit-usage'
+    Invoke-ContractStep 'Blocked-order recovery and usage alert dedupe' 'test:contract:blocked-order-recovery'
     Invoke-ContractStep 'US-04.5-04 Paymob checkout, callback and inquiry' 'test:contract:paymob-checkout'
     Invoke-ContractStep 'US-04.5-06 staff operations, debt and repair' 'test:contract:billing-operations'
     Invoke-ContractStep 'US-04.5-07 reconciliation, monitoring and finance metrics' 'test:contract:billing-observability'

@@ -512,6 +512,13 @@
       "when": 1793145600000,
       "tag": "0072_order_customer_country",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793232000000,
+      "tag": "0073_usage_alerts_and_blocked_orders",
+      "breakpoints": true
     }
   ]
 }

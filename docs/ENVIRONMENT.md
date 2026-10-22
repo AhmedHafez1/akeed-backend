@@ -435,6 +435,21 @@ A merchant uploads a logo in **Settings**. Akeed stores it with a 1200x628 banne
 
 Each saved logo gets new file names (`<integrationId>/<hash>-logo.png` and `-banner.jpg`), so Meta never serves a cached old banner. The replaced files are removed after the store points at the new ones; a failed removal is logged as `merchant-logo-cleanup` and leaves an unused file behind.
 
+## Usage Alerts and Blocked Orders
+
+When a store's plan allowance or prepaid credits run out, new orders are kept at status `blocked` instead of being sent. Akeed emails the merchant at 80%, 95% and 100% of a plan allowance (once per billing period), and when credits fall to `STANDALONE_LOW_BALANCE_THRESHOLD` or run out (once per incident, until the balance recovers). Blocked orders are resumed after a credit purchase, a plan change, an active Shopify subscription, or the allowance reset, which a sweep on the `capacity-recovery` queue checks every 10 minutes. The workflow is in [ORDER_CONFIRMATION_WORKFLOW.md](ORDER_CONFIRMATION_WORKFLOW.md#orders-blocked-by-capacity).
+
+| Variable | Notes |
+| --- | --- |
+| `EMAIL_ALERTS_ENABLED` | `true` sends alert emails through Resend. Default `false`: alerts are still recorded and the dashboard banner still shows, and each email is logged as skipped. |
+| `RESEND_API_KEY` | Server-only Resend API key. Required when email alerts are on; the logger redacts it. |
+| `EMAIL_FROM` | Sender address on a domain verified in Resend, for example `Akeed <alerts@example.com>`. Required when email alerts are on. |
+| `FRONTEND_DASHBOARD_URL` | The dashboard link in each email. Optional: without it the email has no link. |
+| `BLOCKED_ORDER_RECOVERY_ENABLED` | Default `true`. `false` stops the triggers and the sweep; blocked orders then wait for the merchant to retry them. |
+| `BLOCKED_ORDER_MAX_AGE_HOURS` | Default `24`, from 1 to 720. A blocked order older than this, counted from when the order was created, is not sent automatically: it moves to the merchant's needs-action list. |
+
+Startup fails when `EMAIL_ALERTS_ENABLED=true` is set without `RESEND_API_KEY` and `EMAIL_FROM`, or when the age is out of range. Alerts go to the store's own email when the platform reports one (Shopify's shop email, read at install and on each token exchange) and otherwise to the organization owner's sign-in email.
+
 ## Redis (Job Queue)
 
 The webhook processing job queue uses BullMQ backed by Redis.

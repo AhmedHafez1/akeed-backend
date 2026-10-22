@@ -24,6 +24,9 @@ import { VerificationsModule } from './modules/verifications/verifications.modul
 import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module';
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
+import { CapacityRecoveryModule } from './modules/capacity-recovery/capacity-recovery.module';
+import { EMAIL_PORT } from './shared/ports/email.port';
+import { ResendEmailAdapter } from './infrastructure/spokes/resend/resend-email.adapter';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
 import { TEMPLATE_REGISTRY_PORT } from './shared/ports/template-registry.port';
 import { TemplateRegistryService } from './modules/template-registry/template-registry.service';
@@ -110,6 +113,8 @@ const billingModule = BillingModule.register({
           ) => [shopify, standalone, easyOrders, wooCommerce],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
+        ResendEmailAdapter,
+        { provide: EMAIL_PORT, useExisting: ResendEmailAdapter },
         TemplateRegistryService,
         {
           provide: TEMPLATE_REGISTRY_PORT,
@@ -135,6 +140,7 @@ const billingModule = BillingModule.register({
     VerificationsModule,
     WebhookQueueModule,
     VerificationAutomationModule,
+    CapacityRecoveryModule,
     DatabaseModule,
     // Staff billing operations drive the same payment services, so they
     // receive this one billing module instance instead of registering another.

@@ -222,7 +222,7 @@ Rules:
 - Failed initial and follow-up sends release the usage reservation. Duplicate failure callbacks do not release it twice.
 - An unknown provider outcome is refunded while it is shown as failed; if staff later proves acceptance, the original-period usage is restored.
 - Follow-up messages consume from included monthly confirmations.
-- When the limit is reached, new sends are blocked until the period renews or the merchant upgrades.
+- When the limit is reached, new orders are kept at verification status `blocked` until the period renews or the merchant upgrades, then sent automatically (see [Orders blocked by capacity](ORDER_CONFIRMATION_WORKFLOW.md#orders-blocked-by-capacity)).
 - Plan changes reset usage counters to start a fresh period.
 
 ### Entitlement Enforcement
@@ -233,8 +233,21 @@ Rules:
 2. Compute the current billing period start.
 3. Attempt to reserve a slot via `reserveMonthlyVerificationSlot`.
 4. If the reservation succeeds, the send proceeds.
-5. If the limit is reached, the send is blocked with status `plan_limit_reached`.
+5. If the limit is reached, the send is refused with reason `plan_limit_reached` and the verification is set to `blocked`.
 6. If the send fails after reservation, the slot is released.
+
+## Usage Alerts
+
+`UsageAlertService` (`modules/verification-core`) tells the merchant when sending capacity is running out. It runs after an accepted send, when an order is blocked and at the end of each recovery run. It never runs from a page load.
+
+| Accounting | Levels | Sent once per |
+| --- | --- | --- |
+| Plan allowance (Shopify) | `80`, `95`, `100` percent of `includedLimit` | Billing period (`cycle_key` is the period start; `one_time:<start>` for Starter) |
+| Prepaid credits (standalone and connected stores) | `low` at or under `STANDALONE_LOW_BALANCE_THRESHOLD`, `depleted` under one credit | Incident: the open row blocks a repeat until the balance is back above the level and the row is resolved |
+
+Each alert is a `usage_alerts` row, and its unique index is the dedupe: only the caller whose insert wins sends the email, so retries, duplicate events and parallel workers send nothing more. A jump past several levels records them all and emails only the highest. The email, in the store's message language (`auto` falls back to Arabic), gives the usage or credits left, the blocked-order count, the action (upgrade, buy credits, or the reset date) and a dashboard link. It goes through `EMAIL_PORT` (`ResendEmailAdapter`), once and without retry, with the alert id as the idempotency key. The result is stored in `email_status`: `sent`, `skipped` (email switched off, no recipient, or a lower level superseded) or `failed`. Alerts go to the store's own email when the platform reports one (Shopify's `shop.email`, saved as `integrations.notification_email`), otherwise to the organization owner's sign-in email. Configuration is in [ENVIRONMENT.md](ENVIRONMENT.md#usage-alerts-and-blocked-orders).
+
+Capacity recovery is requested when a credit purchase is granted, when a new plan is activated (`BillingService.activateNewSubscription`), when a Shopify subscription update is active, and by the 10-minute sweep, which also notices an allowance reset.
 
 ## Subscription Webhook Sync
 
@@ -246,6 +259,7 @@ Shopify sends `app_subscriptions/update` webhooks when subscription status chang
 - `isActive` represents whether the Shopify app is installed. Only install and uninstall flows may change it; billing entitlement is controlled by `billingStatus`.
 - Subscription updates for an uninstalled integration are acknowledged without mutating local installation or billing state.
 - Non-current subscription webhooks with blocked status are ignored to prevent a declined upgrade from disabling the merchant's existing active plan.
+- An update that leaves the subscription active requests capacity recovery for the organization, so its blocked orders are sent.
 
 ## Backend Code Map
 

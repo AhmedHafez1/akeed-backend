@@ -41,6 +41,7 @@ export const VERIFICATION_STATUSES = [
   'failed',
   'no_reply',
   'no_whatsapp',
+  'blocked',
 ] as const;
 const SORTS = [
   'installed_at',

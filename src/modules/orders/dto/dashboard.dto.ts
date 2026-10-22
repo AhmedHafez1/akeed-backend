@@ -1,4 +1,5 @@
 import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
+import type { CapacityAction } from '../../../shared/billing/usage-alert.policy';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { RemoteSyncDto } from '../../../shared/verification/outcome-sync';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
@@ -353,6 +354,17 @@ export interface NeedsActionItemDto {
   customer_history?: CustomerHistory | null;
 }
 
+export interface CapacitySummaryDto {
+  blocked_count: number;
+  /** `credits`: prepaid credits; `plan`: a plan allowance. */
+  mode: 'plan' | 'credits';
+  /** Confirmations (plan) or credits left to send with. */
+  remaining: number;
+  action: CapacityAction;
+  /** When the allowance renews (YYYY-MM-DD); null for credits and one-time plans. */
+  reset_at: string | null;
+}
+
 /** Everything the embedded dashboard shows, from one request. */
 export interface VerificationOverviewDto {
   date_range: DashboardDateRange;
@@ -366,6 +378,12 @@ export interface VerificationOverviewDto {
     percent: number;
     state: UsageState;
   } | null;
+  /**
+   * Orders waiting for sending capacity and what unblocks them. Null when
+   * there is no single active source. The dashboard warns while
+   * `blocked_count` is above zero.
+   */
+  capacity: CapacitySummaryDto | null;
   kpis: {
     confirmed: {
       count: number;

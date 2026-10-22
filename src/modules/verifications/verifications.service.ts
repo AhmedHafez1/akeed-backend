@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { capacityAction } from '../../shared/billing/usage-alert.policy';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
@@ -94,6 +95,7 @@ import type {
   GetVerificationOverviewQueryDto,
   NeedsActionItemDto,
   VerificationOverviewDto,
+  CapacitySummaryDto,
 } from '../orders/dto/dashboard.dto';
 
 /** What POST /api/verifications/:id/confirm answers. */
@@ -136,6 +138,7 @@ const ALLOWED_STATUSES: VerificationStatus[] = [
   'failed',
   'no_reply',
   'no_whatsapp',
+  'blocked',
 ];
 
 /**
@@ -527,18 +530,25 @@ export class VerificationsService {
     const now = new Date().toISOString();
     const source = activeIntegrations[0];
 
-    const [counts, confirmedValue, replyTiming, topRows, entitlement] =
-      await Promise.all([
-        this.verificationsRepo.getOverviewCounts(orgId, period),
-        this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
-        this.verificationsRepo.getReplyTiming(orgId, period),
-        this.verificationsRepo.findNeedsActionTop(
-          orgId,
-          period,
-          NEEDS_ACTION_TOP_LIMIT,
-        ),
-        source ? this.billingEntitlements.readEntitlement(source) : null,
-      ]);
+    const [
+      counts,
+      confirmedValue,
+      replyTiming,
+      topRows,
+      entitlement,
+      blockedCount,
+    ] = await Promise.all([
+      this.verificationsRepo.getOverviewCounts(orgId, period),
+      this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
+      this.verificationsRepo.getReplyTiming(orgId, period),
+      this.verificationsRepo.findNeedsActionTop(
+        orgId,
+        period,
+        NEEDS_ACTION_TOP_LIMIT,
+      ),
+      source ? this.billingEntitlements.readEntitlement(source) : null,
+      this.verificationsRepo.countBlocked(orgId),
+    ]);
     const historyOf = await this.loadCustomerHistory(orgId, topRows);
 
     return {
@@ -549,6 +559,10 @@ export class VerificationsService {
       usage: entitlement
         ? resolveUsage(entitlement.consumedCount, entitlement.includedLimit)
         : null,
+      capacity:
+        source && entitlement
+          ? this.resolveCapacity(source, entitlement, blockedCount)
+          : null,
       kpis: {
         confirmed: { count: counts.confirmed, value: confirmedValue },
         canceled_before_shipping: { count: counts.customerCanceled },
@@ -579,6 +593,35 @@ export class VerificationsService {
           customer_history: historyOf(row),
         })),
       },
+    };
+  }
+
+  private resolveCapacity(
+    source: Parameters<BillingEntitlementService['accountingModeFor']>[0],
+    entitlement: Awaited<
+      ReturnType<BillingEntitlementService['readEntitlement']>
+    >,
+    blockedCount: number,
+  ): CapacitySummaryDto {
+    const mode =
+      this.billingEntitlements.accountingModeFor(source) === 'prepaid_credit'
+        ? 'credits'
+        : 'plan';
+    const remaining =
+      mode === 'credits'
+        ? Math.max(
+            ('credits' in entitlement
+              ? entitlement.credits?.availableCredits
+              : 0) ?? 0,
+            0,
+          )
+        : Math.max(entitlement.includedLimit - entitlement.consumedCount, 0);
+    return {
+      blocked_count: blockedCount,
+      mode,
+      remaining,
+      action: capacityAction({ mode, planId: entitlement.planId }),
+      reset_at: mode === 'plan' ? entitlement.periodEnd : null,
     };
   }
 

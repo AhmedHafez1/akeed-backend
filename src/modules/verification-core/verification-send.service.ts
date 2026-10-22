@@ -15,6 +15,7 @@ import {
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
 import { BillingEntitlementService } from './billing-entitlement.service';
+import { UsageAlertService } from './usage-alert.service';
 import { CreditEligibilityService } from './credit-eligibility.service';
 import {
   resolveTemplateSendPurpose,
@@ -165,6 +166,8 @@ export class VerificationSendService {
     private readonly improvementSwitches?: MessageImprovementSwitches,
     @Optional()
     private readonly messageTexts?: MessageTextsService,
+    @Optional()
+    private readonly usageAlerts?: UsageAlertService,
   ) {}
 
   private switches() {
@@ -474,6 +477,12 @@ export class VerificationSendService {
       hasCrossedCreditsWarning(dispatchClaim.usage)
     ) {
       await this.recordCreditsWarning(integration.id, dispatchClaim.usage);
+    }
+    if (dispatchClaim.outcome === 'claimed' && !ctx.billingExempt) {
+      // The claim has just taken usage or a credit hold. Checked in the
+      // background: the alert may email, and the customer's message must not
+      // wait for it. It never throws.
+      void this.usageAlerts?.evaluateOrg(order.orgId);
     }
     if (dispatchClaim.outcome === 'busy') {
       return { status: 'skipped', reason: 'dispatch_in_progress' };

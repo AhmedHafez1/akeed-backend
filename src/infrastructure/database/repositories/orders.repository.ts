@@ -43,7 +43,7 @@ const retryGuardStatus = sql<string>`CASE
     WHEN ${hasUnknownDispatch}
       OR (${dispatchCount} = 0 AND ${verificationReason} = 'provider_outcome_unknown')
       THEN 'review_required'
-    WHEN ${verifications.status} = 'failed'
+    WHEN ${verifications.status} IN ('failed', 'blocked')
       AND ${verificationReason} IN (${sql.join(
         retryableVerificationReasons.map((reason) => sql`${reason}`),
         sql`, `,
@@ -86,7 +86,7 @@ END`;
 
 const retryGuardRetryable = sql<boolean>`CASE
   WHEN ${verifications.id} IS NOT NULL THEN
-    ${verifications.status} = 'failed'
+    ${verifications.status} IN ('failed', 'blocked')
     AND NOT ${hasUnknownDispatch}
     AND ${verificationReason} IN (${sql.join(
       retryableVerificationReasons.map((reason) => sql`${reason}`),

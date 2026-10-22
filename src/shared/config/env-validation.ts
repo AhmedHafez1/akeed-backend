@@ -28,6 +28,10 @@ import {
   MERCHANT_BRANDING_CONFIG,
   parseMerchantBrandingConfig,
 } from './merchant-branding.config';
+import {
+  parseUsageAlertsConfig,
+  USAGE_ALERTS_CONFIG,
+} from './usage-alerts.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -126,5 +130,6 @@ export function validateEnv(
     [WOOCOMMERCE_CONFIG]: parseWooCommerceConfig(config),
     [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig(config),
     [MERCHANT_BRANDING_CONFIG]: parseMerchantBrandingConfig(config),
+    [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig(config),
   };
 }

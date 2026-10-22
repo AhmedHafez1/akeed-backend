@@ -16,6 +16,8 @@ import { VerificationAutomationQueueModule } from '../verification-automation/ve
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
 import { MessageTextsService } from '../message-texts/message-texts.service';
 import { TemplateMessageService } from '../template-registry/template-message.service';
+import { UsageAlertService } from './usage-alert.service';
+import { CapacityRecoveryQueueModule } from '../capacity-recovery/capacity-recovery-queue.module';
 
 function extractProviderToken(provider: Provider): InjectionToken {
   if (typeof provider === 'function') {
@@ -36,6 +38,7 @@ export class VerificationCoreModule {
       imports: [
         DatabaseModule,
         VerificationAutomationQueueModule,
+        CapacityRecoveryQueueModule,
         ...config.imports,
       ],
       providers: [
@@ -47,6 +50,7 @@ export class VerificationCoreModule {
         MessageImprovementSwitches,
         MessageTextsService,
         TemplateMessageService,
+        UsageAlertService,
         ...config.ports,
       ],
       exports: [
@@ -58,6 +62,10 @@ export class VerificationCoreModule {
         MessageImprovementSwitches,
         MessageTextsService,
         TemplateMessageService,
+        UsageAlertService,
+        // Global through this module, so billing, onboarding and the Shopify
+        // spoke can ask for recovery without importing the queue themselves.
+        CapacityRecoveryQueueModule,
         ...config.ports.map(extractProviderToken),
       ],
     };

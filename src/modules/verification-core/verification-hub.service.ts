@@ -12,6 +12,8 @@ import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/re
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 import { adjustForQuietHours } from '../../shared/utils/quiet-hours.util';
 import { isSendFailureReason } from '../../shared/verification/verification-lifecycle';
+import { isCapacityBlockReason } from '../../shared/verification/capacity-block';
+import { UsageAlertService } from './usage-alert.service';
 import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-failure.policy';
 import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import {
@@ -56,6 +58,8 @@ type PreparedVerification = {
     lastSentAt?: string | null;
   };
   existing: boolean;
+  /** This call created the verification at `blocked`. */
+  blocked?: boolean;
 };
 
 @Injectable()
@@ -73,18 +77,23 @@ export class VerificationHubService {
     private readonly automationProducer: VerificationAutomationProducer,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly usageAlerts?: UsageAlertService,
   ) {}
 
   async handleNewOrder(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
   ): Promise<HandleNewOrderResult> {
-    const skipReason = await this.validateIntegrationCanVerify(
+    const denial = await this.validateIntegrationCanVerify(
       orderData,
       integration,
     );
-    if (skipReason) {
-      return { skipped: true, reason: skipReason };
+    // Out of plan allowance or credits: the order is still kept, at
+    // `blocked`, so it is not lost and recovery can send it later.
+    const capacityDenial = isCapacityBlockReason(denial) ? denial : null;
+    if (denial && !capacityDenial) {
+      return { skipped: true, reason: denial };
     }
 
     const isTestOrder = isSyntheticTestOrderId(orderData.externalOrderId);
@@ -108,10 +117,22 @@ export class VerificationHubService {
       }),
     );
 
-    const prepared = await this.prepareVerification(orderData, integration);
+    const prepared = await this.prepareVerification(orderData, integration, {
+      capacityDenial,
+      blockOnCapacity: true,
+    });
     if ('skipped' in prepared) return prepared;
     const { order, verification } = prepared;
+    if (prepared.blocked) {
+      await this.usageAlerts?.evaluateOrg(order.orgId);
+      return { orderId: order.id, verificationId: verification.id };
+    }
     if (prepared.existing) {
+      // Still out of capacity: a redelivery leaves the order where it is
+      // rather than reopening it only to block it again.
+      if (capacityDenial) {
+        return { orderId: order.id, verificationId: verification.id };
+      }
       // A re-delivered or merchant-retried ingestion event may resume a
       // verification that never actually sent. Both guards below are status
       // based, and the dispatch ledger keys one logical send per verification,
@@ -171,7 +192,10 @@ export class VerificationHubService {
       },
     );
 
-    await this.applyInitialSendFailure(verification.id, order.orgId, delivery);
+    // A test order is never kept for recovery: it reports its result now.
+    await this.applyInitialSendFailure(verification.id, order.orgId, delivery, {
+      blockOnCapacity: false,
+    });
 
     return {
       orderId: order.id,
@@ -503,7 +527,13 @@ export class VerificationHubService {
   private async prepareVerification(
     orderData: NormalizedOrder,
     integration: IntegrationRecord,
-    options: { skipSlotCheck?: boolean } = {},
+    options: {
+      skipSlotCheck?: boolean;
+      /** A capacity refusal already known before the slot check. */
+      capacityDenial?: string | null;
+      /** Keep a capacity-refused order at `blocked` instead of skipping. */
+      blockOnCapacity?: boolean;
+    } = {},
   ): Promise<SkippedResult | PreparedVerification> {
     const order = await this.findOrCreateOrder(orderData);
     const existingVerification = await this.verificationsRepo.findByOrderId(
@@ -528,10 +558,16 @@ export class VerificationHubService {
       };
     }
 
-    const slotCheck = options.skipSlotCheck
-      ? { available: true as const }
-      : await this.billingEntitlementService.hasAvailableSlot(integration);
+    const slotCheck = options.capacityDenial
+      ? { available: false as const, reason: options.capacityDenial }
+      : options.skipSlotCheck
+        ? { available: true as const }
+        : await this.billingEntitlementService.hasAvailableSlot(integration);
     if (!slotCheck.available) {
+      const reason = slotCheck.reason ?? 'plan_limit_reached';
+      if (options.blockOnCapacity && isCapacityBlockReason(reason)) {
+        return this.createBlockedVerification(order, integration, reason);
+      }
       this.logger.warn(
         buildBackendLog(VerificationHubService.name, {
           action: 'verification-create-for-order',
@@ -540,14 +576,16 @@ export class VerificationHubService {
           shopDomain: integration.platformStoreUrl,
           integrationId: integration.id,
           orderId: order.id,
-          consumedCount: slotCheck.consumedCount,
-          includedLimit: slotCheck.includedLimit,
-          reason: slotCheck.reason ?? 'plan_limit_reached',
+          consumedCount:
+            'consumedCount' in slotCheck ? slotCheck.consumedCount : undefined,
+          includedLimit:
+            'includedLimit' in slotCheck ? slotCheck.includedLimit : undefined,
+          reason,
         }),
       );
       return {
         skipped: true,
-        reason: slotCheck.reason ?? 'plan_limit_reached',
+        reason,
         orderId: order.id,
       };
     }
@@ -562,6 +600,58 @@ export class VerificationHubService {
       verification: created.verification,
       existing: !created.created,
     };
+  }
+
+  /**
+   * Keeps an order that arrived without sending capacity. Nothing is sent and
+   * no usage or credit is taken; capacity recovery sends it once the merchant
+   * recharges, upgrades or the allowance resets.
+   */
+  private async createBlockedVerification(
+    order: PreparedVerification['order'],
+    integration: IntegrationRecord,
+    reason: string,
+  ): Promise<PreparedVerification> {
+    const created = await this.verificationsRepo.createForOrderIfAbsent({
+      orgId: order.orgId,
+      orderId: order.id,
+      status: 'blocked',
+      metadata: {
+        reason,
+        kind: 'initial',
+        blocked_at: new Date().toISOString(),
+      },
+    });
+    this.logger.warn(
+      buildBackendLog(VerificationHubService.name, {
+        action: 'verification-capacity-block',
+        outcome: 'skipped',
+        orgId: integration.orgId,
+        integrationId: integration.id,
+        orderId: order.id,
+        verificationId: created.verification.id,
+        reason,
+      }),
+    );
+    return {
+      order,
+      verification: created.verification,
+      existing: !created.created,
+      blocked: created.created,
+    };
+  }
+
+  /**
+   * Sends a verification that capacity recovery has just reopened, through
+   * the same path as a new order: the send delay and quiet hours apply, and
+   * the dispatch ledger keeps it to one message.
+   */
+  async resumeInitialSend(
+    verificationId: string,
+    order: { id: string; orgId: string },
+    integration: IntegrationRecord,
+  ): Promise<void> {
+    await this.dispatchInitialSend({ id: verificationId }, order, integration);
   }
 
   /**
@@ -654,6 +744,7 @@ export class VerificationHubService {
     verificationId: string,
     orgId: string,
     outcome: { status: string; reason?: string },
+    options: { blockOnCapacity?: boolean } = {},
   ): Promise<void> {
     if (
       outcome.status === 'failed' &&
@@ -692,6 +783,21 @@ export class VerificationHubService {
           reason: outcome.reason ?? 'unspecified',
         }),
       );
+      return;
+    }
+
+    if ((options.blockOnCapacity ?? true) && isCapacityBlockReason(reason)) {
+      // Out of capacity at send time: nothing was sent or charged, so the
+      // order waits at `blocked` for recovery instead of reading as failed.
+      await this.verificationsRepo.updateByIdForOrg(verificationId, orgId, {
+        status: 'blocked',
+        metadata: {
+          reason,
+          kind: 'initial',
+          blocked_at: new Date().toISOString(),
+        },
+      });
+      await this.usageAlerts?.evaluateOrg(orgId);
       return;
     }
 

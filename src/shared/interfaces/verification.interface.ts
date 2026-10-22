@@ -8,4 +8,5 @@ export type VerificationStatus =
   | 'expired'
   | 'failed'
   | 'no_reply'
-  | 'no_whatsapp';
+  | 'no_whatsapp'
+  | 'blocked';

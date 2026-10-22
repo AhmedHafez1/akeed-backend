@@ -138,14 +138,28 @@ function setup(
       overrides.recordEvent ?? jest.fn().mockResolvedValue({ id: 'event-1' }),
     updatePurchase: jest.fn().mockResolvedValue(purchase),
   };
-  const db = { transaction: (work: (tx: unknown) => unknown) => work({}) };
+  const commits: string[] = [];
+  const db = {
+    transaction: async (work: (tx: unknown) => unknown) => {
+      const result = await work({});
+      commits.push('commit');
+      return result;
+    },
+  };
+  const capacityRecovery = {
+    request: jest.fn(() => {
+      commits.push('recovery');
+      return Promise.resolve();
+    }),
+  };
   const service = new PaymentCallbackService(
     db as never,
     config,
     repository as never,
     purchases as never,
+    capacityRecovery as never,
   );
-  return { service, credits, purchases };
+  return { service, credits, purchases, capacityRecovery, commits };
 }
 
 describe('PaymentCallbackService.ingest', () => {
@@ -851,5 +865,37 @@ describe('PaymentCallbackService.recordStaffEvidence', () => {
         jest.fn().mockRejectedValue(new Error('audit down')),
       ),
     ).rejects.toThrow('audit down');
+  });
+});
+
+describe('PaymentCallbackService capacity recovery', () => {
+  it('resumes blocked orders only after a grant has committed', async () => {
+    const { service, capacityRecovery, commits } = setup();
+
+    await service.ingest(event());
+
+    expect(capacityRecovery.request).toHaveBeenCalledWith(
+      'org-1',
+      'credit_purchase',
+    );
+    expect(commits).toEqual(['commit', 'recovery']);
+  });
+
+  it('resumes nothing on a redelivered event', async () => {
+    const { service, capacityRecovery } = setup({
+      recordEvent: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await service.ingest(event());
+
+    expect(capacityRecovery.request).not.toHaveBeenCalled();
+  });
+
+  it('resumes nothing when no credits were granted', async () => {
+    const { service, capacityRecovery } = setup({ purchase: null });
+
+    await service.ingest(event());
+
+    expect(capacityRecovery.request).not.toHaveBeenCalled();
   });
 });

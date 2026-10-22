@@ -168,6 +168,11 @@ function createMocks() {
     enqueueNoReplyEscalation: jest.fn(),
   };
 
+  const creditEligibility = {
+    resolveDenial: jest.fn().mockResolvedValue(null),
+  };
+  const usageAlerts = { evaluateOrg: jest.fn().mockResolvedValue(undefined) };
+
   const service = new VerificationHubService(
     ordersRepo as any,
     verificationsRepo as any,
@@ -181,8 +186,10 @@ function createMocks() {
     orderEligibilityService as any,
     verificationSendService as any,
     billingEntitlementService as any,
-    { resolveDenial: jest.fn().mockResolvedValue(null) } as any,
+    creditEligibility as any,
     automationProducer as any,
+    undefined,
+    usageAlerts as any,
   );
 
   return {
@@ -194,6 +201,8 @@ function createMocks() {
     verificationSendService,
     billingEntitlementService,
     automationProducer,
+    creditEligibility,
+    usageAlerts,
   };
 }
 
@@ -524,13 +533,14 @@ describe('VerificationHubService', () => {
       },
     );
 
-    it('skips verification creation when plan limit is reached', async () => {
+    it('keeps the order blocked, unsent, when the plan limit is reached', async () => {
       const {
         service,
         ordersRepo,
         verificationsRepo,
         orderEligibilityService,
         billingEntitlementService,
+        verificationSendService,
       } = createMocks();
 
       orderEligibilityService.evaluateOrderForVerification.mockReturnValue({
@@ -544,6 +554,10 @@ describe('VerificationHubService', () => {
         externalOrderId: 'ext-order-1',
       });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
+      verificationsRepo.create.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+      });
       billingEntitlementService.hasAvailableSlot.mockResolvedValue({
         available: false,
         consumedCount: 1000,
@@ -555,14 +569,21 @@ describe('VerificationHubService', () => {
         buildIntegration(),
       );
 
-      // The order id rides along so the ingestion worker can still link the
-      // durable event to it — a plan-limited order must remain retryable.
+      // The order is kept at `blocked` so capacity recovery can send it; it
+      // is neither skipped (lost) nor sent (charged).
       expect(result).toEqual({
-        skipped: true,
-        reason: 'plan_limit_reached',
         orderId: 'order-db-1',
+        verificationId: 'ver-1',
       });
-      expect(verificationsRepo.create).not.toHaveBeenCalled();
+      expect(verificationsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'blocked',
+          metadata: expect.objectContaining({
+            reason: 'plan_limit_reached',
+          }) as Record<string, unknown>,
+        }),
+      );
+      expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
     });
   });
 
@@ -767,7 +788,7 @@ describe('VerificationHubService', () => {
       }
     });
 
-    it('marks failed with plan_limit_reached metadata when send service reports plan limit', async () => {
+    it('marks blocked with plan_limit_reached metadata when send service reports plan limit', async () => {
       const {
         service,
         ordersRepo,
@@ -804,13 +825,16 @@ describe('VerificationHubService', () => {
         'ver-1',
         'org-1',
         expect.objectContaining({
-          status: 'failed',
+          status: 'blocked',
           metadata: expect.objectContaining({
             reason: 'plan_limit_reached',
           }) as Record<string, unknown>,
         }),
       );
       expect(automationProducer.enqueueFollowUp).not.toHaveBeenCalled();
+      expect(
+        automationProducer.enqueueNoReplyEscalation,
+      ).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1526,6 +1550,138 @@ describe('VerificationHubService', () => {
       await service.finalizeVerification('ver-1', 'confirmed');
 
       expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+  });
+  describe('handleNewOrder — capacity blocks', () => {
+    function eligibleNewOrder(mocks: ReturnType<typeof createMocks>) {
+      mocks.orderEligibilityService.evaluateOrderForVerification.mockReturnValue(
+        { eligible: true, reason: 'cod_match' },
+      );
+      mocks.ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      mocks.ordersRepo.create.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      mocks.verificationsRepo.findByOrderId.mockResolvedValue(null);
+      mocks.verificationsRepo.create.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+      });
+    }
+
+    it('keeps an order blocked, unsent and uncharged, when credits run out', async () => {
+      const mocks = createMocks();
+      eligibleNewOrder(mocks);
+      mocks.creditEligibility.resolveDenial.mockResolvedValue(
+        'INSUFFICIENT_CREDITS',
+      );
+
+      const result = await mocks.service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
+
+      expect(result).toEqual({
+        orderId: 'order-db-1',
+        verificationId: 'ver-1',
+      });
+      expect(mocks.verificationsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'blocked',
+          metadata: expect.objectContaining({
+            reason: 'INSUFFICIENT_CREDITS',
+            kind: 'initial',
+          }) as Record<string, unknown>,
+        }),
+      );
+      expect(mocks.verificationSendService.sendInitial).not.toHaveBeenCalled();
+      expect(
+        mocks.automationProducer.enqueueInitialSend,
+      ).not.toHaveBeenCalled();
+      expect(mocks.usageAlerts.evaluateOrg).toHaveBeenCalledWith('org-1');
+    });
+
+    it('still skips an order refused for a reason other than capacity', async () => {
+      const mocks = createMocks();
+      eligibleNewOrder(mocks);
+      mocks.creditEligibility.resolveDenial.mockResolvedValue(
+        'CREDIT_ACCOUNT_SUSPENDED',
+      );
+
+      const result = await mocks.service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'CREDIT_ACCOUNT_SUSPENDED',
+      });
+      expect(mocks.ordersRepo.create).not.toHaveBeenCalled();
+      expect(mocks.verificationsRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves a redelivered blocked order alone while capacity is still out', async () => {
+      const mocks = createMocks();
+      eligibleNewOrder(mocks);
+      mocks.ordersRepo.findBySourceExternalId.mockResolvedValue({
+        id: 'order-db-1',
+        orgId: 'org-1',
+        externalOrderId: 'ext-order-1',
+      });
+      mocks.verificationsRepo.findByOrderId.mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+        status: 'blocked',
+        lastSentAt: null,
+      });
+      mocks.creditEligibility.resolveDenial.mockResolvedValue(
+        'INSUFFICIENT_CREDITS',
+      );
+
+      const result = await mocks.service.handleNewOrder(
+        buildOrder(),
+        buildIntegration(),
+      );
+
+      expect(result).toEqual({
+        orderId: 'order-db-1',
+        verificationId: 'ver-1',
+      });
+      expect(
+        mocks.verificationsRepo.reopenRetryableInitialFailure,
+      ).not.toHaveBeenCalled();
+      expect(mocks.verificationSendService.sendInitial).not.toHaveBeenCalled();
+    });
+
+    it('never blocks the onboarding test message', async () => {
+      const mocks = createMocks();
+      mocks.ordersRepo.findBySourceExternalId.mockResolvedValue(null);
+      mocks.ordersRepo.create.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+      });
+      mocks.verificationsRepo.findByOrderId.mockResolvedValue(null);
+      mocks.verificationsRepo.create.mockResolvedValue({
+        id: 'ver-test',
+        orgId: 'org-1',
+      });
+      mocks.verificationSendService.sendInitial.mockResolvedValue({
+        status: 'plan_limit_reached',
+        reason: 'plan_limit:1000/1000',
+      });
+
+      await mocks.service.handleSyntheticTestOrder(
+        buildOrder({ externalOrderId: 'akeed-test-id' }),
+        buildIntegration(),
+      );
+
+      const statuses = mocks.verificationsRepo.updateByIdForOrg.mock.calls.map(
+        (call: unknown[]) => (call[2] as { status?: string }).status,
+      );
+      expect(statuses).not.toContain('blocked');
+      expect(mocks.usageAlerts.evaluateOrg).not.toHaveBeenCalled();
     });
   });
 });

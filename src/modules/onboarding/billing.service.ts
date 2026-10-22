@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { CapacityRecoveryProducer } from '../capacity-recovery/capacity-recovery.producer';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingFreePlanClaimsRepository } from '../../infrastructure/database/repositories/billing-free-plan-claims.repository';
 import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
@@ -73,6 +74,8 @@ export class BillingService {
     private readonly billingConfig: BillingConfigService,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
+    @Optional()
+    private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
 
   async getBillingPlans(
@@ -486,6 +489,8 @@ export class BillingService {
       integration.id,
       activatedPlan?.includedVerifications,
     );
+    // A new plan is a fresh allowance: orders blocked on the old one can go.
+    await this.capacityRecovery?.request(integration.orgId, 'plan_activated');
 
     const missingPrerequisites =
       this.getMissingBillingPrerequisites(integration);

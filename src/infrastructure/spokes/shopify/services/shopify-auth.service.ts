@@ -262,6 +262,7 @@ export class ShopifyAuthService {
           data?: {
             shop?: {
               name?: string;
+              email?: string;
               billingAddress?: { countryCodeV2?: string; phone?: string };
               ianaTimezone?: string;
             };
@@ -272,6 +273,7 @@ export class ShopifyAuthService {
             query: `query AkeedAdminShopProfile {
               shop {
                 name
+                email
                 ianaTimezone
                 billingAddress { countryCodeV2 phone }
               }
@@ -296,6 +298,10 @@ export class ShopifyAuthService {
             profile.billingAddress?.phone,
             profile.billingAddress?.countryCodeV2,
           ) ?? integration.shopPhone,
+        // Where usage alerts go: the store's own user has a placeholder address.
+        notificationEmail:
+          this.normalizeShopEmail(profile.email) ??
+          integration.notificationEmail,
       });
     } catch (error) {
       this.logger.warn(
@@ -307,6 +313,11 @@ export class ShopifyAuthService {
         }),
       );
     }
+  }
+
+  private normalizeShopEmail(email: string | undefined): string | null {
+    const value = email?.trim() ?? '';
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;
   }
 
   /**

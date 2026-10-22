@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { CapacityRecoveryProducer } from '../../../../modules/capacity-recovery/capacity-recovery.producer';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrdersRepository } from '../../../database/repositories/orders.repository';
@@ -21,6 +22,8 @@ export class ShopifyBillingWebhookService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
     private readonly ordersRepo: OrdersRepository,
+    @Optional()
+    private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
 
   async handleAppUninstalled(
@@ -190,6 +193,14 @@ export class ShopifyBillingWebhookService {
       billingActivatedAt: isActiveStatus ? now : integration.billingActivatedAt,
       billingCanceledAt: isBlockedStatus ? now : null,
     });
+
+    // An active subscription starts a new allowance period.
+    if (isActiveStatus) {
+      await this.capacityRecovery?.request(
+        integration.orgId,
+        'subscription_active',
+      );
+    }
 
     if (isBlockedStatus) {
       this.logger.warn(

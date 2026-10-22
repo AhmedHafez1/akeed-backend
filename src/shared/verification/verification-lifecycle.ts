@@ -70,6 +70,9 @@ export const RETRYABLE_VERIFICATION_REASONS = [
   // selected one and the language default were both unavailable. Nothing was
   // sent and no usage was taken, so a retry once a template is back is safe.
   'template_unavailable',
+  // A blocked order that waited too long for capacity, so recovery left it to
+  // the merchant. Nothing was sent.
+  'capacity_block_stale',
 ] as const;
 
 /**
@@ -121,6 +124,9 @@ export const AUTOMATION_FINAL_STATUSES: VerificationStatus[] = [
   // The customer number cannot receive WhatsApp messages, so a reminder or
   // escalation would only fail again.
   'no_whatsapp',
+  // Nothing was sent: there is no message to remind about or escalate, and a
+  // blocked order must never run out to no-reply. Recovery sends it later.
+  'blocked',
 ];
 
 export function isTerminalStatus(

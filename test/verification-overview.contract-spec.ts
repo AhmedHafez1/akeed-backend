@@ -374,9 +374,13 @@ beforeAll(async () => {
   service = new VerificationsService(
     repository,
     {
-      readEntitlement: jest
-        .fn()
-        .mockResolvedValue({ consumedCount: 27, includedLimit: 30 }),
+      readEntitlement: jest.fn().mockResolvedValue({
+        consumedCount: 27,
+        includedLimit: 30,
+        planId: 'pro',
+        periodEnd: '2026-11-01T00:00:00.000Z',
+      }),
+      accountingModeFor: () => 'periodic_plan',
     } as never,
     new IntegrationsRepository(db as never, { get: () => undefined } as never),
     {} as never,
@@ -524,6 +528,13 @@ describe('overview aggregate', () => {
       limit: 30,
       percent: 90,
       state: 'warning',
+    });
+    expect(overview.capacity).toEqual({
+      blocked_count: 0,
+      mode: 'plan',
+      remaining: 3,
+      action: 'upgrade',
+      reset_at: '2026-11-01T00:00:00.000Z',
     });
     // Two customer replies are too few to call a typical time.
     expect(overview.reply_time).toEqual({ median_seconds: null, replies: 2 });
