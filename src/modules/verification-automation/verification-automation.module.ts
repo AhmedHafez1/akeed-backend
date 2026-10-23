@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationAutomationQueueModule } from './verification-automation-queue.module';
 import { VerificationAutomationProcessor } from './verification-automation.processor';
 import { VerificationRepliesModule } from '../verification-replies/verification-replies.module';
+import { AutoCancellationModule } from '../auto-cancellation/auto-cancellation.module';
 
 /**
  * Module that hosts the verification-automation BullMQ queue.
@@ -17,6 +18,7 @@ import { VerificationRepliesModule } from '../verification-replies/verification-
     DatabaseModule,
     VerificationAutomationQueueModule,
     VerificationRepliesModule,
+    AutoCancellationModule,
   ],
   providers: [VerificationAutomationProcessor],
 })

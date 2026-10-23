@@ -110,6 +110,8 @@ A merchant who deletes and recreates the Akeed webhooks in EasyOrders gets new s
 
 Do not promise the merchant that a reconnect is instant or that missed orders will be recovered. Neither is true.
 
+**Automatic cancellation.** A store that switched on **Cancel unanswered orders automatically** has orders canceled in the store when they reach no reply and every message was delivered. Staff checks: `verification_auto_cancellations` for the verification (`status`, `reason`, `attempts`, `late_reply_at`), its `verification_auto_cancellation_events`, and the `commerce_outcome_syncs` row for `automatic_no_reply_cancellation`. A row `skipped` with `status_not_writable` means the merchant had already moved the order on in the store.
+
 Requests that need staff and have no self-service path:
 
 - Connecting a different EasyOrders store to an account that already had one.

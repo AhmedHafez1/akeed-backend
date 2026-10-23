@@ -526,6 +526,13 @@
       "when": 1793318400000,
       "tag": "0074_new_store_timing_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793404800000,
+      "tag": "0075_auto_cancel_unanswered",
+      "breakpoints": true
     }
   ]
 }

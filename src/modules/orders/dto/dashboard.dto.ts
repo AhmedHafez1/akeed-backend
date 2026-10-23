@@ -3,6 +3,7 @@ import type { CapacityAction } from '../../../shared/billing/usage-alert.policy'
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { RemoteSyncDto } from '../../../shared/verification/outcome-sync';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
+import type { AutoCancelView } from '../../verifications/verification-schedule.policy';
 import {
   VERIFICATION_LIST_TABS,
   type NeedsActionReason,
@@ -171,6 +172,12 @@ export interface VerificationListItemDto {
    * test rows, which describe no customer.
    */
   customer_history: CustomerHistory | null;
+  /**
+   * The row's automatic cancellation: decided, or projected from its
+   * escalation while the customer can still answer. Null when the store does
+   * not cancel unanswered orders automatically and nothing was decided.
+   */
+  auto_cancel: AutoCancelView | null;
 }
 
 /**

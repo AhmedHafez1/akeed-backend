@@ -3,6 +3,8 @@ import { OrdersRepository } from '../../infrastructure/database/repositories/ord
 import {
   COMMERCE_OUTCOME_ADAPTERS,
   type CommerceOutcomeAction,
+  type CommerceCancellationInspection,
+  type CommerceOperationResolution,
   type CommerceOutcomeAdapter,
   type CommerceOutcomeDispatchCommand,
   type CommerceOutcomeDispatchResult,
@@ -14,6 +16,10 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
 import { CommerceOutcomeSyncTracker } from './commerce-outcome-sync-tracker.service';
+
+type OutcomeOrder = NonNullable<
+  Awaited<ReturnType<OrdersRepository['findForOutcomeDispatch']>>
+>;
 
 @Injectable()
 export class CommerceOutcomeRegistryService {
@@ -138,6 +144,131 @@ export class CommerceOutcomeRegistryService {
       await tracker?.settle(sync, command, failed);
       return this.complete(command, failed);
     }
+  }
+
+  /**
+   * The store's view of the order before (and after) an automatic
+   * cancellation, through the same identity and connection checks as
+   * `dispatch`. A test order is always cancellable.
+   */
+  async inspectForCancellation(
+    command: CommerceOutcomeDispatchCommand,
+  ): Promise<CommerceCancellationInspection> {
+    const target = await this.loadInspectionTarget(command);
+    if ('inspection' in target) return target.inspection;
+    const { adapter, order } = target;
+    if (isSyntheticOrder(order)) return { state: 'cancellable' };
+    if (!adapter.inspectForCancellation) {
+      return { state: 'unsupported', reason: 'inspection_not_supported' };
+    }
+    try {
+      return await adapter.inspectForCancellation({
+        ...command,
+        connection: order.integration,
+      });
+    } catch (error: unknown) {
+      this.logger.error(
+        buildBackendLog(CommerceOutcomeRegistryService.name, {
+          action: 'commerce-outcome-inspect',
+          outcome: 'failure',
+          orgId: command.orgId,
+          integrationId: command.integrationId,
+          correlationId: command.correlationId,
+          platformType: order.integration.platformType,
+          ...normalizeError(error),
+        }),
+      );
+      return {
+        state: 'retryable_failure',
+        errorCode: 'adapter_inspect_failed',
+      };
+    }
+  }
+
+  /** Whether an asynchronous store operation the adapter started finished. */
+  async resolveOperation(
+    command: CommerceOutcomeDispatchCommand,
+    providerOperationId: string,
+  ): Promise<CommerceOperationResolution> {
+    const target = await this.loadInspectionTarget(command);
+    if ('inspection' in target) {
+      return target.inspection.state === 'permanent_failure'
+        ? { state: 'failed', errorCode: target.inspection.errorCode }
+        : { state: 'unsupported' };
+    }
+    const { adapter, order } = target;
+    if (isSyntheticOrder(order)) return { state: 'done' };
+    if (!adapter.resolveOperation) return { state: 'unsupported' };
+    try {
+      return await adapter.resolveOperation(
+        { ...command, connection: order.integration },
+        providerOperationId,
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        buildBackendLog(CommerceOutcomeRegistryService.name, {
+          action: 'commerce-outcome-resolve-operation',
+          outcome: 'failure',
+          orgId: command.orgId,
+          integrationId: command.integrationId,
+          correlationId: command.correlationId,
+          providerOperationId,
+          ...normalizeError(error),
+        }),
+      );
+      return { state: 'running' };
+    }
+  }
+
+  private async loadInspectionTarget(
+    command: CommerceOutcomeDispatchCommand,
+  ): Promise<
+    | { inspection: CommerceCancellationInspection }
+    | {
+        adapter: CommerceOutcomeAdapter;
+        order: OutcomeOrder & {
+          integration: NonNullable<OutcomeOrder['integration']>;
+        };
+      }
+  > {
+    const order = await this.ordersRepository.findForOutcomeDispatch(command);
+    if (
+      !order ||
+      order.orgId !== command.orgId ||
+      order.integrationId !== command.integrationId ||
+      order.externalOrderId !== command.externalOrderId ||
+      !order.integration ||
+      order.integration.id !== command.integrationId ||
+      order.integration.orgId !== command.orgId
+    ) {
+      return {
+        inspection: {
+          state: 'permanent_failure',
+          errorCode: 'source_identity_mismatch',
+        },
+      };
+    }
+    const adapter = this.adaptersByPlatform.get(order.integration.platformType);
+    if (
+      order.integration.isActive !== true &&
+      (adapter?.requiresActiveConnection ?? true)
+    ) {
+      return {
+        inspection: {
+          state: 'permanent_failure',
+          errorCode: 'integration_inactive',
+        },
+      };
+    }
+    if (!adapter || !adapter.capabilities.has(command.action)) {
+      return {
+        inspection: {
+          state: 'unsupported',
+          reason: 'capability_not_supported',
+        },
+      };
+    }
+    return { adapter, order: { ...order, integration: order.integration } };
   }
 
   private complete(

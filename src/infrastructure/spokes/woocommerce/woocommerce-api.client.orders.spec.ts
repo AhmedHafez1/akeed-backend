@@ -87,6 +87,22 @@ describe('WooCommerceApiClient order calls', () => {
       expect(requests[0].url).not.toMatch(/ck_|cs_|consumer/);
     });
 
+    it('marks an order the store recorded a payment for', async () => {
+      const { client } = clientAnswering(() =>
+        answer(
+          200,
+          order({ status: 'processing', date_paid: '2026-10-01T10:00:00' }),
+        ),
+      );
+
+      await expect(
+        client.getOrder(STORE, credentials, ORDER_ID),
+      ).resolves.toEqual({
+        kind: 'found',
+        order: { status: 'processing', markers: [], paid: true },
+      });
+    });
+
     it('reads a status that is not a status name as none', async () => {
       const { client } = clientAnswering(() =>
         answer(200, order({ status: 'on its way' })),

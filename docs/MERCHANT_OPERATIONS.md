@@ -198,6 +198,11 @@ Flow:
    d. Dispatches `merchant_cancellation_tagging` after the local transition; Shopify adds `Akeed: Canceled` (best-effort).
 4. The verification list and stats are refetched.
 5. If the verification was already merchant-canceled, returns success with `alreadyCanceled: true` (idempotent).
+6. While an automatic cancellation of the order has reached the store, the request answers `409 AUTO_CANCEL_ALREADY_IN_PROGRESS`.
+
+#### Automatic cancellation
+
+With **Cancel unanswered orders automatically** on (Timing tab), Akeed cancels an order that reached no reply once every safety rule holds; see [Automatic cancellation of unanswered orders](ORDER_CONFIRMATION_WORKFLOW.md#automatic-cancellation-of-unanswered-orders). Each row shows a calendar marker whose tooltip gives the time, or why it is paused; the row menu offers **Don’t auto-cancel** / **Allow auto-cancel**; the details view tells how it ended. An automatically canceled order reads "No response after confirmation attempts".
 
 ### Empty States
 

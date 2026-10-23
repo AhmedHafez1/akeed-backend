@@ -8,6 +8,7 @@ import {
   WOOCOMMERCE_OUTCOME_ACTIONS,
   WOOCOMMERCE_WRITABLE_FROM_STATUSES,
   wooCommerceEffectFor,
+  classifyWooCommerceCancellation,
 } from './woocommerce-outcome.mapping';
 
 describe('WooCommerce outcome mapping', () => {
@@ -37,8 +38,9 @@ describe('WooCommerce outcome mapping', () => {
     expect(wooCommerceEffectFor(action)).toBeUndefined();
   });
 
-  it('offers exactly the three approved actions', () => {
+  it('offers exactly the four approved actions', () => {
     expect([...WOOCOMMERCE_OUTCOME_ACTIONS].sort()).toEqual([
+      'automatic_no_reply_cancellation',
       'customer_cancellation',
       'customer_confirmation',
       'merchant_no_reply_cancellation',
@@ -144,5 +146,28 @@ describe('WooCommerce outcome mapping', () => {
     ])('%s and %s: %s', (action, status, expected) => {
       expect(isStatusLeftByWooCommerceOutcome(action, status)).toBe(expected);
     });
+  });
+});
+
+describe('classifyWooCommerceCancellation', () => {
+  it.each([
+    [{ status: 'processing' }, 'cancellable'],
+    [{ status: 'on-hold' }, 'cancellable'],
+    [{ status: 'cancelled' }, 'already_canceled'],
+    [{ status: 'processing', paid: true }, 'not_cancellable'],
+    [{ status: 'completed' }, 'not_cancellable'],
+    [{ status: 'refunded' }, 'not_cancellable'],
+    [{ status: null }, 'not_cancellable'],
+  ])('reads %j as %s', (order, state) => {
+    expect(classifyWooCommerceCancellation(order).state).toBe(state);
+  });
+
+  it('names why a paid or completed order is left', () => {
+    expect(
+      classifyWooCommerceCancellation({ status: 'processing', paid: true }),
+    ).toMatchObject({ reason: 'paid' });
+    expect(
+      classifyWooCommerceCancellation({ status: 'completed' }),
+    ).toMatchObject({ reason: 'fulfilled' });
   });
 });

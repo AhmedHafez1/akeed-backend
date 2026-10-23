@@ -1,4 +1,7 @@
-import type { CommerceOutcomeAction } from '../../../shared/commerce/commerce-outcome';
+import type {
+  CommerceCancellationInspection,
+  CommerceOutcomeAction,
+} from '../../../shared/commerce/commerce-outcome';
 import { isRecord, WOOCOMMERCE_OUTCOME_META_KEY } from './woocommerce-delivery';
 
 /**
@@ -7,10 +10,12 @@ import { isRecord, WOOCOMMERCE_OUTCOME_META_KEY } from './woocommerce-delivery';
  *
  * A confirmation writes the Akeed marker and one internal note and changes no
  * status: WooCommerce has no "confirmed", `processing` is where a placed COD
- * order already sits and `completed` means fulfilled. The two cancellations
- * write `cancelled` with the marker. Automatic no-reply and the tagging
- * actions have no entry: an unanswered message is never authority to cancel a
- * store order, and WooCommerce orders have no tags.
+ * order already sits and `completed` means fulfilled. The cancellations
+ * write `cancelled` with the marker. The automatic one is requested only for
+ * a store that switched automatic cancellation on, after Akeed proved the
+ * customer received every message and never answered. The tagging actions
+ * have no entry: WooCommerce orders have no tags. WooCommerce restores stock
+ * and emails the customer on `cancelled` as the store is set up to.
  */
 export const WOOCOMMERCE_CANCELLED_STATUS = 'cancelled';
 
@@ -27,6 +32,10 @@ const EFFECT_BY_ACTION: Partial<
   customer_confirmation: { note: true },
   customer_cancellation: { status: WOOCOMMERCE_CANCELLED_STATUS, note: false },
   merchant_no_reply_cancellation: {
+    status: WOOCOMMERCE_CANCELLED_STATUS,
+    note: false,
+  },
+  automatic_no_reply_cancellation: {
     status: WOOCOMMERCE_CANCELLED_STATUS,
     note: false,
   },
@@ -118,4 +127,32 @@ export function isStatusLeftByWooCommerceOutcome(
   return effect.status
     ? status === effect.status
     : WOOCOMMERCE_WRITABLE_FROM_STATUSES.has(status);
+}
+
+/**
+ * Whether an automatic cancellation may write `cancelled`: only from the
+ * statuses Akeed writes from, and only while no payment is recorded.
+ * `completed` is fulfilled; any other status is a step the merchant took.
+ */
+export function classifyWooCommerceCancellation(order: {
+  status: string | null;
+  paid?: boolean;
+}): CommerceCancellationInspection {
+  const providerStatus = order.status ?? undefined;
+  if (order.status === WOOCOMMERCE_CANCELLED_STATUS)
+    return { state: 'already_canceled', providerStatus };
+  if (order.paid)
+    return { state: 'not_cancellable', reason: 'paid', providerStatus };
+  if (order.status === 'completed')
+    return { state: 'not_cancellable', reason: 'fulfilled', providerStatus };
+  if (
+    order.status === null ||
+    !WOOCOMMERCE_WRITABLE_FROM_STATUSES.has(order.status)
+  )
+    return {
+      state: 'not_cancellable',
+      reason: 'status_not_writable',
+      providerStatus,
+    };
+  return { state: 'cancellable', providerStatus };
 }

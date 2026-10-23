@@ -556,6 +556,7 @@ Fallback: 1st of the current UTC calendar month if no activation date.
 2. **Deferred follow-up check:** if follow-up is still pending (no `follow_up_sent_at` and follow-up enabled), reschedule escalation +60 seconds to allow follow-up to complete first.
 3. Mark verification status as `no_reply`.
 4. Dispatch `automatic_no_reply_tagging`; Shopify adds `Akeed: No Reply`. The registry suppresses external work for persisted `isTest` orders and `akeed-test-` IDs after validating source and capability.
+5. When that write made the order `no_reply`, decide its automatic cancellation (`AutoCancellationService.scheduleAfterNoReply`; see [Automatic cancellation of unanswered orders](ORDER_CONFIRMATION_WORKFLOW.md#automatic-cancellation-of-unanswered-orders)).
 
 ### Acknowledgment and Nudge Handler
 
@@ -835,9 +836,10 @@ Approved outcomes are written to EasyOrders as an order status, and the local re
 | `customer_confirmation` | status `confirmed` |
 | `customer_cancellation` | status `canceled` |
 | `merchant_no_reply_cancellation` | status `canceled`, only on the merchant's own action |
+| `automatic_no_reply_cancellation` | status `canceled`, only for a store that switched automatic cancellation on, from `pending` |
 | `automatic_no_reply_tagging`, `automatic_no_whatsapp_tagging`, `merchant_cancellation_tagging` | none: `unsupported` / `capability_not_supported`, no request |
 
-Automatic no-reply is local only. It never becomes a cancellation and never borrows the merchant action's authority.
+The no-reply escalation itself is local. Only a store that switched automatic cancellation on gets `automatic_no_reply_cancellation`, after Akeed proved every message was delivered and the customer never wrote; `inspectForCancellation` reads the status first.
 
 **Adapter (`EasyOrdersOutcomeAdapter`), per outcome.**
 
@@ -963,7 +965,7 @@ WooCommerce has no "confirmed" status: `processing` is already where a placed CO
 | Akeed action | Store effect |
 | --- | --- |
 | `customer_confirmation` (the customer's reply, or the merchant confirming in Akeed) | The meta entry `akeed_outcome` = `<action>:<verification id>` and one internal order note with a fixed text. No status change. |
-| `customer_cancellation`, `merchant_no_reply_cancellation` | `status: cancelled` and the marker, in one update. No note. |
+| `customer_cancellation`, `merchant_no_reply_cancellation`, `automatic_no_reply_cancellation` | `status: cancelled` and the marker, in one update. No note. The automatic one only for a store that switched it on, and only while `date_paid` is empty. |
 | `automatic_no_reply_tagging`, `automatic_no_whatsapp_tagging`, `merchant_cancellation_tagging` | None: `unsupported` / `capability_not_supported`, and no request. |
 
 It never sends `processing`, `completed`, `refunded` or `set_paid`. With the switch off the adapter has no capability, so every action is `unsupported`.
@@ -1159,7 +1161,7 @@ The `metadata` column on verifications stores operational notes:
 - The `WEBHOOK_ORDER_NORMALIZERS` multi-token pattern lets a platform be added (EasyOrders and WooCommerce today) without modifying the queue processor.
 - A connected store has exactly one source. There is no source switching: a different store, or another platform, needs staff.
 - Orders placed while a store was disconnected, or while its webhook was disabled, are not imported later. There is no polling and no backfill.
-- An automatic no-reply stays local on EasyOrders and WooCommerce. It never cancels an order in the store; only the customer's reply or the merchant's own action does.
+- An automatic no-reply stays local on EasyOrders and WooCommerce unless the store switched automatic cancellation on. Then an order that reached no reply with every message delivered and no word from the customer is canceled in the store; nothing else cancels it but the customer's reply or the merchant's own action.
 - WooCommerce is connected through application authentication only, with no manual key entry and no WordPress plugin, and only stores inside the support boundary are connected.
 - A WooCommerce confirmation writes an order note and an Akeed marker and changes no status; a cancellation writes `cancelled`.
 - Akeed never revokes a store's API key, because neither platform offers a call for it. The merchant deletes it, and the app shows where.

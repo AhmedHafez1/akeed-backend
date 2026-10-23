@@ -95,6 +95,11 @@ export interface WooCommerceOrderState {
   status: string | null;
   /** The values of the order's `akeed_outcome` meta entries. */
   markers: string[];
+  /**
+   * The store recorded a payment (`date_paid`). A COD order keeps it empty
+   * until the merchant marks it paid or completes it.
+   */
+  paid?: boolean;
 }
 
 /**
@@ -245,6 +250,10 @@ function readOrderOf(
   return {
     status: readWooCommerceStatus(body.status),
     markers: readWooCommerceOutcomeMarkers(body.meta_data),
+    ...((typeof body.date_paid === 'string' && body.date_paid.length > 0) ||
+    (typeof body.date_paid_gmt === 'string' && body.date_paid_gmt.length > 0)
+      ? { paid: true }
+      : {}),
   };
 }
 

@@ -13,7 +13,8 @@ import type { VerificationStatus } from '../interfaces/verification.interface';
 export type VerificationRowAction =
   | Extract<CommerceOutcomeAction, 'merchant_no_reply_cancellation'>
   | 'retry_verification'
-  | 'merchant_manual_confirmation';
+  | 'merchant_manual_confirmation'
+  | 'auto_cancel_exclusion';
 
 export interface VerificationRowCapability {
   action: VerificationRowAction;

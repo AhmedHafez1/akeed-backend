@@ -91,9 +91,14 @@ describe('Merchant cancellation persistence', () => {
     const [query, params] = execute.mock.calls[0];
     expect(query).toContain('COALESCE("verifications"."metadata",');
     expect(query).toContain('||');
-    expect(query).toMatch(/CASE[^]*END in \(\$\d+, \$\d+, \$\d+, \$\d+\)/);
+    expect(query).toContain('"verifications"."status" in ($8, $9)');
+    expect(query).toMatch(
+      /CASE[^]*END in \(\$\d+, \$\d+, \$\d+, \$\d+, \$\d+, \$\d+\)/,
+    );
     expect(params).toEqual(
       expect.arrayContaining([
+        'customer_replied',
+        'auto_cancel_failed',
         'no_whatsapp',
         'no_reply_after_follow_up',
         'read_no_reply',

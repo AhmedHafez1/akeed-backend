@@ -34,6 +34,7 @@ import {
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
 import { canWriteOrganization } from '../auth/organization-role';
+import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 
 @Controller('api/verifications')
 @UseGuards(DualAuthGuard)
@@ -47,6 +48,7 @@ export class VerificationsController {
   constructor(
     private readonly verificationsService: VerificationsService,
     private readonly testVerificationService: TestVerificationService,
+    private readonly autoCancellation: AutoCancellationService,
   ) {}
 
   @Get('stats')
@@ -159,6 +161,24 @@ export class VerificationsController {
     @Param('id', new ParseUUIDPipe()) verificationId: string,
   ): Promise<OutcomeSyncRetryResponse> {
     return this.verificationsService.retryOutcomeSync(user, verificationId);
+  }
+
+  @Post(':id/auto-cancel/exclude')
+  @HttpCode(200)
+  async excludeFromAutoCancel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) verificationId: string,
+  ): Promise<{ verificationId: string; excluded: boolean }> {
+    return this.autoCancellation.exclude(user, verificationId);
+  }
+
+  @Post(':id/auto-cancel/include')
+  @HttpCode(200)
+  async includeInAutoCancel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) verificationId: string,
+  ): Promise<{ verificationId: string; excluded: boolean }> {
+    return this.autoCancellation.include(user, verificationId);
   }
 
   @Post(':id/cancel')

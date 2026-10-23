@@ -1,4 +1,7 @@
-import type { CommerceOutcomeConnection } from '../../../../shared/commerce/commerce-outcome';
+import type {
+  CommerceCancellationOptions,
+  CommerceOutcomeConnection,
+} from '../../../../shared/commerce/commerce-outcome';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -27,8 +30,13 @@ import {
   type GraphQLErrorItem,
   type GraphQLUserError,
   GET_SHOP_NAME_QUERY,
+  JOB_STATUS_QUERY,
+  type JobStatusResponse,
   ORDER_CANCEL_MUTATION,
+  ORDER_CANCELLATION_STATE_QUERY,
+  type OrderCancellationStateResponse,
   type OrderCancelResponse,
+  type ShopifyOrderCancellationState,
   type ShopNameResponse,
   TAGS_ADD_MUTATION,
   type TagsAddResponse,
@@ -184,6 +192,10 @@ export class ShopifyApiService {
     integration: CommerceOutcomeConnection,
     externalOrderId: string,
     reason: string,
+    options: CommerceCancellationOptions = {
+      restock: true,
+      notifyCustomer: false,
+    },
   ): Promise<{ jobId?: string }> {
     const orderGid = toOrderGid(externalOrderId);
 
@@ -193,10 +205,12 @@ export class ShopifyApiService {
       {
         orderId: orderGid,
         reason,
-        notifyCustomer: false,
+        notifyCustomer: options.notifyCustomer,
         refund: false,
-        restock: true,
-        staffNote: 'Canceled by Akeed after no reply to COD verification.',
+        restock: options.restock,
+        staffNote:
+          options.staffNote ??
+          'Canceled by Akeed after no reply to COD verification.',
       },
     );
 
@@ -222,6 +236,34 @@ export class ShopifyApiService {
     );
 
     return { jobId: jobId ?? undefined };
+  }
+
+  /** The order's cancel, payment and fulfillment state. Null when Shopify has no such order. */
+  async getOrderCancellationState(
+    integration: CommerceOutcomeConnection,
+    externalOrderId: string,
+  ): Promise<ShopifyOrderCancellationState | null> {
+    const response = await this.executeGraphql<OrderCancellationStateResponse>(
+      integration,
+      ORDER_CANCELLATION_STATE_QUERY,
+      { id: toOrderGid(externalOrderId) },
+    );
+    throwIfGraphQLErrors(response.data.errors, 'Shopify order read errors');
+    return response.data.data?.order ?? null;
+  }
+
+  /** Whether an asynchronous job, such as an order cancellation, finished. */
+  async isJobDone(
+    integration: CommerceOutcomeConnection,
+    jobId: string,
+  ): Promise<boolean> {
+    const response = await this.executeGraphql<JobStatusResponse>(
+      integration,
+      JOB_STATUS_QUERY,
+      { id: jobId },
+    );
+    throwIfGraphQLErrors(response.data.errors, 'Shopify job read errors');
+    return response.data.data?.job?.done === true;
   }
 
   async getShopName(integration: CommerceOutcomeConnection): Promise<string> {

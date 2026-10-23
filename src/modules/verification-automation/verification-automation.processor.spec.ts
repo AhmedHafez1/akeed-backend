@@ -13,7 +13,7 @@ import {
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
-function createMocks() {
+function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
   const verificationsRepo = {
     findById: jest.fn(),
     updateStatus: jest.fn(),
@@ -62,6 +62,8 @@ function createMocks() {
       } as never,
       usageAccountingFixture(),
     ),
+    undefined,
+    autoCancellation as never,
   );
 
   return {
@@ -715,6 +717,43 @@ describe('VerificationAutomationProcessor', () => {
         'ext-1',
         'Akeed: No Reply',
       );
+    });
+
+    it('decides the automatic cancellation only after its own no_reply write', async () => {
+      const autoCancellation = { scheduleAfterNoReply: jest.fn() };
+      const { processor, verificationsRepo, ordersRepo } =
+        createMocks(autoCancellation);
+      verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'sent',
+        followUpAttempts: 1,
+        merchantCanceledAt: null,
+      });
+      ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
+        id: 'order-1',
+        externalOrderId: 'ext-1',
+        integration: baseIntegration,
+      });
+
+      verificationsRepo.updateStatus.mockResolvedValueOnce([{ id: 'ver-1' }]);
+      await processor.process(
+        buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+      );
+      expect(autoCancellation.scheduleAfterNoReply).toHaveBeenCalledWith(
+        'ver-1',
+      );
+
+      // A reply or a late receipt won the row first: nothing to decide.
+      autoCancellation.scheduleAfterNoReply.mockClear();
+      verificationsRepo.updateStatus.mockResolvedValueOnce([]);
+      await processor.process(
+        buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+      );
+      expect(autoCancellation.scheduleAfterNoReply).not.toHaveBeenCalled();
     });
 
     it('skips when status already terminal', async () => {

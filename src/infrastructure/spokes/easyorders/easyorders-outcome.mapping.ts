@@ -4,9 +4,10 @@ import type { CommerceOutcomeAction } from '../../../shared/commerce/commerce-ou
  * The outcome mapping approved for building.
  * EasyOrders status names stay in this spoke.
  *
- * Automatic no-reply and the two tagging actions have no entry: EasyOrders has
- * no tag concept, and an unanswered message is never authority to cancel a
- * store order. Only the merchant's own action maps to `canceled`.
+ * The tagging actions have no entry: EasyOrders has no tag concept. The
+ * automatic cancellation maps to `canceled` and is requested only for a store
+ * that switched it on, after Akeed proved the customer received every message
+ * and never answered. EasyOrders handles stock and customer notice itself.
  */
 const STATUS_BY_ACTION: Partial<
   Record<CommerceOutcomeAction, 'confirmed' | 'canceled'>
@@ -14,6 +15,7 @@ const STATUS_BY_ACTION: Partial<
   customer_confirmation: 'confirmed',
   customer_cancellation: 'canceled',
   merchant_no_reply_cancellation: 'canceled',
+  automatic_no_reply_cancellation: 'canceled',
 };
 
 export const EASYORDERS_OUTCOME_ACTIONS = Object.keys(

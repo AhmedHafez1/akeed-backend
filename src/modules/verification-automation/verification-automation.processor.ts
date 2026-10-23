@@ -24,6 +24,7 @@ import { BillingEntitlementService } from '../verification-core/billing-entitlem
 import { AUTOMATION_FINAL_STATUSES } from '../../shared/verification/verification-lifecycle';
 import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-failure.policy';
 import { CustomerReplyFollowUpService } from '../verification-replies/customer-reply-follow-up.service';
+import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
 
@@ -41,6 +42,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly billingEntitlements: BillingEntitlementService,
     @Optional()
     private readonly replyFollowUps?: CustomerReplyFollowUpService,
+    @Optional()
+    private readonly autoCancellation?: AutoCancellationService,
   ) {
     super();
   }
@@ -370,7 +373,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
       throw new DelayedError();
     }
 
-    await this.verificationsRepo.updateStatus(
+    const escalated = await this.verificationsRepo.updateStatus(
       verification.id,
       'no_reply',
       undefined,
@@ -395,6 +398,12 @@ export class VerificationAutomationProcessor extends WorkerHost {
           ...normalizeError(error),
         }),
       );
+    }
+
+    // Only the write that made the order `no_reply` decides its automatic
+    // cancellation; a retried or late job finds no row to change.
+    if (this.autoCancellation && escalated.length > 0) {
+      await this.autoCancellation.scheduleAfterNoReply(verification.id);
     }
   }
 

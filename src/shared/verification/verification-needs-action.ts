@@ -8,9 +8,12 @@
  * same vocabulary.
  */
 export const NEEDS_ACTION_REASONS = [
+  'late_reply_after_auto_cancel',
   'no_whatsapp',
   'delivery_failed',
   'send_failed',
+  'customer_replied',
+  'auto_cancel_failed',
   'no_reply_after_follow_up',
   'read_no_reply',
   'no_reply',
@@ -20,12 +23,16 @@ export type NeedsActionReason = (typeof NEEDS_ACTION_REASONS)[number];
 
 /**
  * Reasons the merchant may cancel for: the customer never answered, or their
- * number cannot receive WhatsApp and the merchant settled it by phone. Other
- * delivery and send failures are left out because the customer never saw the
- * question.
+ * number cannot receive WhatsApp and the merchant settled it by phone. A
+ * `no_reply` order the customer wrote about without answering, or whose
+ * automatic cancellation failed at the store, is still the merchant's to
+ * cancel. Other delivery and send failures are left out because the customer
+ * never saw the question.
  */
 export const NO_REPLY_CANCELLABLE_REASONS = [
   'no_whatsapp',
+  'customer_replied',
+  'auto_cancel_failed',
   'no_reply_after_follow_up',
   'read_no_reply',
   'no_reply',

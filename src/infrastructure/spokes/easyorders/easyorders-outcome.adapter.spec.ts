@@ -96,10 +96,11 @@ function setup(
 
 describe('EasyOrdersOutcomeAdapter', () => {
   describe('capabilities', () => {
-    it('offers only the three approved actions, and tracks synchronization', () => {
+    it('offers only the four approved actions, and tracks synchronization', () => {
       const { adapter } = setup();
 
       expect([...adapter.capabilities].sort()).toEqual([
+        'automatic_no_reply_cancellation',
         'customer_cancellation',
         'customer_confirmation',
         'merchant_no_reply_cancellation',
@@ -177,6 +178,52 @@ describe('EasyOrdersOutcomeAdapter', () => {
           body: JSON.stringify({ status }),
         },
       ]);
+    });
+  });
+
+  describe('inspection for an automatic cancellation', () => {
+    const inspect = (adapter: EasyOrdersOutcomeAdapter) =>
+      adapter.inspectForCancellation({
+        orgId: 'org-1',
+        integrationId: 'integration-1',
+        externalOrderId: ORDER_ID,
+        action: 'automatic_no_reply_cancellation',
+        correlationId: 'verification-1',
+        connection: {} as CommerceOutcomeAdapterRequest['connection'],
+      });
+
+    it.each([
+      ['pending', 'cancellable'],
+      ['canceled', 'already_canceled'],
+      ['confirmed', 'not_cancellable'],
+      ['in_delivery', 'not_cancellable'],
+      ['delivered', 'not_cancellable'],
+    ])('reads %s as %s with one read and no write', async (status, state) => {
+      const { adapter, requests } = setup({ steps: [() => order(status)] });
+
+      await expect(inspect(adapter)).resolves.toMatchObject({
+        state,
+        providerStatus: status,
+      });
+      expect(requests.map((request) => request.method)).toEqual(['GET']);
+    });
+
+    it('asks for a retry when EasyOrders cannot be reached', async () => {
+      const { adapter } = setup({ steps: [timeout] });
+
+      await expect(inspect(adapter)).resolves.toMatchObject({
+        state: 'retryable_failure',
+      });
+    });
+
+    it('reports a store with remote writes off as unsupported', async () => {
+      const { adapter, requests } = setup({ enabled: false });
+
+      await expect(inspect(adapter)).resolves.toEqual({
+        state: 'unsupported',
+        reason: 'capability_not_supported',
+      });
+      expect(requests).toHaveLength(0);
     });
   });
 

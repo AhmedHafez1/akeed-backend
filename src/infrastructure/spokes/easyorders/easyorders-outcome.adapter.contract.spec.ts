@@ -113,6 +113,7 @@ defineCommerceOutcomeAdapterContract({
     customer_confirmation: 'applied',
     customer_cancellation: 'applied',
     merchant_no_reply_cancellation: 'applied',
+    automatic_no_reply_cancellation: 'applied',
   },
   createFixture: (action) => {
     const { adapter, request } = setup();

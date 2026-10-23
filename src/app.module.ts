@@ -25,6 +25,7 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { CapacityRecoveryModule } from './modules/capacity-recovery/capacity-recovery.module';
+import { AutoCancellationModule } from './modules/auto-cancellation/auto-cancellation.module';
 import { EMAIL_PORT } from './shared/ports/email.port';
 import { ResendEmailAdapter } from './infrastructure/spokes/resend/resend-email.adapter';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
@@ -141,6 +142,7 @@ const billingModule = BillingModule.register({
     WebhookQueueModule,
     VerificationAutomationModule,
     CapacityRecoveryModule,
+    AutoCancellationModule,
     DatabaseModule,
     // Staff billing operations drive the same payment services, so they
     // receive this one billing module instance instead of registering another.

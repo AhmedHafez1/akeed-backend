@@ -192,6 +192,7 @@ beforeAll(async () => {
     tables.integrations,
     tables.orders,
     tables.verifications,
+    tables.verificationAutoCancellations,
     tables.webhookEvents,
     tables.orderImportBatches,
     tables.orderImportRows,

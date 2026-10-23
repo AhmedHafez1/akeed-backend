@@ -63,6 +63,7 @@ import {
   resolveShopifyLinkedIntegration,
 } from '../../shared/commerce/current-integration-resolver';
 import { SourceSetupService } from './source-setup.service';
+import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_AVG_SHIPPING_COST = 3;
@@ -94,6 +95,8 @@ export class OnboardingStateService {
     private readonly sourceSetup?: SourceSetupService,
     @Optional()
     private readonly improvementSwitches?: MessageImprovementSwitches,
+    @Optional()
+    private readonly autoCancellations?: VerificationAutoCancellationsRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -146,6 +149,15 @@ export class OnboardingStateService {
     }
     if (payload.escalationDelayMinutes !== undefined) {
       updates.escalationDelayMinutes = payload.escalationDelayMinutes;
+    }
+    if (payload.autoCancelEnabled !== undefined) {
+      updates.autoCancelEnabled = payload.autoCancelEnabled;
+    }
+    if (payload.autoCancelRestock !== undefined) {
+      updates.autoCancelRestock = payload.autoCancelRestock;
+    }
+    if (payload.autoCancelNotifyCustomer !== undefined) {
+      updates.autoCancelNotifyCustomer = payload.autoCancelNotifyCustomer;
     }
     if (payload.quietHoursEnabled !== undefined) {
       updates.quietHoursEnabled = payload.quietHoursEnabled;
@@ -248,6 +260,19 @@ export class OnboardingStateService {
       );
     }
 
+    // Automatic cancellation runs when an order reaches no reply, so it needs
+    // the escalation that gets it there.
+    const resolvedAutoCancelEnabled =
+      updates.autoCancelEnabled ?? integration.autoCancelEnabled;
+    if (resolvedAutoCancelEnabled && !resolvedEscalationEnabled) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'autoCancelEnabled requires escalationEnabled',
+        code: 'SETTINGS_AUTO_CANCEL_REQUIRES_ESCALATION',
+      });
+    }
+
     // Cross-field validation: quiet hours require both start and end
     const resolvedQuietHoursEnabled =
       updates.quietHoursEnabled ?? integration.quietHoursEnabled;
@@ -288,6 +313,17 @@ export class OnboardingStateService {
 
     if (!updated) {
       throw new NotFoundException('Integration not found');
+    }
+
+    // Switching it off stops every automatic cancellation that has not
+    // reached the store; switching it back on does not bring them back.
+    if (integration.autoCancelEnabled && !updated.autoCancelEnabled) {
+      await this.autoCancellations?.stopPendingForIntegration(
+        integration.orgId,
+        integration.id,
+        'feature_disabled',
+        user.userId ?? null,
+      );
     }
 
     await this.adminLifecycles?.markMilestone(
@@ -555,6 +591,9 @@ export class OnboardingStateService {
         integration.escalationEnabled ?? DEFAULT_ESCALATION_ENABLED,
       escalationDelayMinutes:
         integration.escalationDelayMinutes ?? DEFAULT_ESCALATION_DELAY_MINUTES,
+      autoCancelEnabled: integration.autoCancelEnabled === true,
+      autoCancelRestock: integration.autoCancelRestock !== false,
+      autoCancelNotifyCustomer: integration.autoCancelNotifyCustomer === true,
       quietHoursEnabled:
         integration.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
       quietHoursStart: integration.quietHoursStart ?? null,

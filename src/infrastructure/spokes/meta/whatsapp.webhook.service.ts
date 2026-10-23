@@ -23,6 +23,7 @@ import { MessageImprovementSwitches } from '../../../shared/config/message-impro
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../../shared/config/whatsapp-template.config';
 import { VerificationServiceMessagesRepository } from '../../database/repositories/verification-service-messages.repository';
 import { VerificationAutomationProducer } from '../../../modules/verification-automation/verification-automation.producer';
+import { VerificationAutoCancellationsRepository } from '../../database/repositories/verification-auto-cancellations.repository';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -40,7 +41,51 @@ export class WhatsAppWebhookService {
     private readonly serviceMessages?: VerificationServiceMessagesRepository,
     @Optional()
     private readonly automation?: VerificationAutomationProducer,
+    @Optional()
+    private readonly autoCancellations?: VerificationAutoCancellationsRepository,
   ) {}
+
+  /**
+   * Any message from the customer's number stops the automatic cancellation
+   * of the orders it can belong to: the one its button or quote names, and
+   * the recent orders sent to that number. Returns the orders whose
+   * cancellation already reached the store; their status is left alone and
+   * the merchant is asked to review the reply. Never throws.
+   */
+  private async recordCustomerMessage(
+    message: WhatsAppMessageDto,
+  ): Promise<string[]> {
+    if (!this.autoCancellations) return [];
+    try {
+      const buttonPayload =
+        message.button?.payload ?? message.interactive?.button_reply?.id;
+      const fromButton = buttonPayload
+        ? resolveButtonPayload(buttonPayload)?.verificationId
+        : undefined;
+      const quoted = message.context?.id
+        ? await this.findRepliedVerification(message.context.id)
+        : undefined;
+      const from = message.from?.replace(/\D/g, '') ?? '';
+      const { committed } = await this.autoCancellations.recordCustomerMessage({
+        phoneE164: from.length >= 7 ? `+${from}` : null,
+        verificationIds: [fromButton, quoted?.id].filter((id): id is string =>
+          Boolean(id),
+        ),
+        receivedAt: this.messageTime(message),
+      });
+      return committed;
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-record-customer-message',
+          outcome: 'failure',
+          messageType: message.type,
+          ...normalizeError(error),
+        }),
+      );
+      return [];
+    }
+  }
 
   private switches() {
     return (
@@ -254,6 +299,7 @@ export class WhatsAppWebhookService {
 
   private async handleMessages(messages: WhatsAppMessageDto[]) {
     for (const message of messages) {
+      const committedCancellations = await this.recordCustomerMessage(message);
       const resolved = await this.resolveReply(message);
       if (!resolved) {
         this.logger.warn(
@@ -286,6 +332,20 @@ export class WhatsAppWebhookService {
             outcome: 'skipped',
             verificationId,
             reason: 'merchant_already_canceled',
+          }),
+        );
+        continue;
+      }
+
+      // The store is canceling, or canceled, this order on Akeed's request.
+      // The reply was recorded for the merchant to review instead.
+      if (committedCancellations.includes(verificationId)) {
+        this.logger.log(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            verificationId,
+            reason: 'auto_cancel_committed',
           }),
         );
         continue;

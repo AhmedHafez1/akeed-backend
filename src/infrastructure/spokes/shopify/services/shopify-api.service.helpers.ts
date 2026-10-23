@@ -304,6 +304,42 @@ export type OrderCancelResponse = GraphQLResponse<{
   };
 }>;
 
+/** What an automatic cancellation reads about the order first. */
+export interface ShopifyOrderCancellationState {
+  cancelledAt: string | null;
+  closed: boolean;
+  displayFinancialStatus: string | null;
+  displayFulfillmentStatus: string | null;
+}
+
+export type OrderCancellationStateResponse = GraphQLResponse<{
+  order?: ShopifyOrderCancellationState | null;
+}>;
+
+export const ORDER_CANCELLATION_STATE_QUERY = `
+  query orderCancellationState($id: ID!) {
+    order(id: $id) {
+      cancelledAt
+      closed
+      displayFinancialStatus
+      displayFulfillmentStatus
+    }
+  }
+`;
+
+export type JobStatusResponse = GraphQLResponse<{
+  job?: { id: string; done: boolean } | null;
+}>;
+
+export const JOB_STATUS_QUERY = `
+  query jobStatus($id: ID!) {
+    job(id: $id) {
+      id
+      done
+    }
+  }
+`;
+
 export interface TestCodOrder {
   id: string;
   name: string;

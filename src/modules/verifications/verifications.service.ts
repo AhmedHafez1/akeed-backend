@@ -41,6 +41,7 @@ import {
 } from '../orders/services/pagination.helpers';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { CommerceOutcomeSyncsRepository } from '../../infrastructure/database/repositories/commerce-outcome-syncs.repository';
+import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
 import {
   selectOutcomeSync,
   toRemoteSync,
@@ -78,6 +79,8 @@ import {
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import {
   resolveFollowUpScheduledFor,
+  resolveAutoCancelView,
+  type AutoCancelView,
   resolveHeldScheduledFor,
   resolveScheduledFor,
 } from './verification-schedule.policy';
@@ -296,6 +299,8 @@ export class VerificationsService {
     private readonly verificationHub: VerificationHubService,
     @Optional()
     private readonly outcomeSyncs?: CommerceOutcomeSyncsRepository,
+    @Optional()
+    private readonly autoCancellations?: VerificationAutoCancellationsRepository,
   ) {}
 
   async listByOrg(
@@ -396,96 +401,111 @@ export class VerificationsService {
 
     // One query for the page. Sources that do not track synchronization
     // have no rows, and their items report null.
-    const [syncRows, historyOf] = await Promise.all([
-      this.outcomeSyncs?.findByCorrelationIds(
-        orgId,
-        items.filter((item) => !isHeldRow(item)).map((item) => item.id),
-      ) ?? [],
+    const verificationIds = items
+      .filter((item) => !isHeldRow(item))
+      .map((item) => item.id);
+    const [syncRows, historyOf, autoCancelRows] = await Promise.all([
+      this.outcomeSyncs?.findByCorrelationIds(orgId, verificationIds) ?? [],
       this.loadCustomerHistory(orgId, items),
+      this.autoCancellations?.findByVerificationIds(orgId, verificationIds) ??
+        [],
     ]);
+    const autoCancelOf = (verificationId: string) =>
+      autoCancelRows.find((row) => row.verificationId === verificationId);
 
     const now = new Date();
     const sourceOf = (integrationId: string | null | undefined) =>
       integrations.find((integration) => integration.id === integrationId);
 
     return {
-      data: items.map((verification) => ({
-        // A held order offers nothing to cancel or retry: nothing has been
-        // sent, and only POST /start may move it. The single-order read
-        // already reports it non-retryable, so the list agrees with it.
-        capabilities: isHeldRow(verification)
-          ? []
-          : this.resolveRowCapabilities(
-              verification,
-              orgId,
-              activeIntegrations,
-            ),
-        cancellation_operation: this.readCancellationOperation(
-          verification.metadata,
-        ),
-        remote_sync: this.readRemoteSync(verification, syncRows),
-        id: verification.id,
-        status: verification.status as VerificationStatus,
-        reason: readVerificationReason(verification.metadata),
-        order_id: verification.orderId,
-        order_number: verification.order?.orderNumber ?? null,
-        is_test: isSyntheticOrder(verification.order),
-        customer_name: verification.order?.customerName ?? null,
-        customer_phone: verification.order?.customerPhone ?? null,
-        total_price: verification.order?.totalPrice
-          ? verification.order.totalPrice.toString()
-          : null,
-        currency: verification.order?.currency ?? null,
-        created_at: verification.createdAt ?? null,
-        last_sent_at: verification.lastSentAt ?? null,
-        delivered_at: verification.deliveredAt ?? null,
-        read_at: verification.readAt ?? null,
-        confirmed_at: verification.confirmedAt ?? null,
-        canceled_at: verification.canceledAt ?? null,
-        expired_at: verification.expiredAt ?? null,
-        no_reply_at: verification.noReplyAt ?? null,
-        no_whatsapp_at: verification.noWhatsappAt ?? null,
-        follow_up_attempts: verification.followUpAttempts ?? 0,
-        follow_up_sent_at: verification.followUpSentAt ?? null,
-        external_order_id: verification.order?.externalOrderId ?? null,
-        platform: this.resolvePlatform(
-          verification.order?.integrationId,
-          integrations,
-        ),
-        action_reason: isHeldRow(verification)
-          ? null
-          : (verification.actionReason ?? null),
-        failure_code:
-          (isHeldRow(verification) ? null : verification.deliveryErrorCode) ??
-          readProviderErrorCode(verification.metadata),
-        confirmation_source: isHeldRow(verification)
-          ? null
-          : readConfirmationSource(verification.confirmationSource),
-        cancellation_source: isHeldRow(verification)
-          ? null
-          : (verification.cancellationSource ?? null),
-        canceled_in_store:
-          verification.status === 'canceled' &&
-          this.readCancellationOperation(verification.metadata) !== undefined,
-        updated_at: isHeldRow(verification)
-          ? verification.createdAt
-          : (verification.updatedAt ?? verification.createdAt ?? null),
-        scheduled_for: isHeldRow(verification)
-          ? resolveHeldScheduledFor(
-              verification.status,
-              sourceOf(verification.order?.integrationId),
-              now,
-            )
-          : resolveScheduledFor(verification, now),
-        follow_up_scheduled_for: isHeldRow(verification)
-          ? null
-          : resolveFollowUpScheduledFor(
-              verification,
-              sourceOf(verification.order?.integrationId),
-              now,
-            ),
-        customer_history: historyOf(verification),
-      })),
+      data: items
+        .map((verification) => ({
+          // A held order offers nothing to cancel or retry: nothing has been
+          // sent, and only POST /start may move it. The single-order read
+          // already reports it non-retryable, so the list agrees with it.
+          capabilities: isHeldRow(verification)
+            ? []
+            : this.resolveRowCapabilities(
+                verification,
+                orgId,
+                activeIntegrations,
+              ),
+          cancellation_operation: this.readCancellationOperation(
+            verification.metadata,
+          ),
+          remote_sync: this.readRemoteSync(verification, syncRows),
+          id: verification.id,
+          status: verification.status as VerificationStatus,
+          reason: readVerificationReason(verification.metadata),
+          order_id: verification.orderId,
+          order_number: verification.order?.orderNumber ?? null,
+          is_test: isSyntheticOrder(verification.order),
+          customer_name: verification.order?.customerName ?? null,
+          customer_phone: verification.order?.customerPhone ?? null,
+          total_price: verification.order?.totalPrice
+            ? verification.order.totalPrice.toString()
+            : null,
+          currency: verification.order?.currency ?? null,
+          created_at: verification.createdAt ?? null,
+          last_sent_at: verification.lastSentAt ?? null,
+          delivered_at: verification.deliveredAt ?? null,
+          read_at: verification.readAt ?? null,
+          confirmed_at: verification.confirmedAt ?? null,
+          canceled_at: verification.canceledAt ?? null,
+          expired_at: verification.expiredAt ?? null,
+          no_reply_at: verification.noReplyAt ?? null,
+          no_whatsapp_at: verification.noWhatsappAt ?? null,
+          follow_up_attempts: verification.followUpAttempts ?? 0,
+          follow_up_sent_at: verification.followUpSentAt ?? null,
+          external_order_id: verification.order?.externalOrderId ?? null,
+          platform: this.resolvePlatform(
+            verification.order?.integrationId,
+            integrations,
+          ),
+          action_reason: isHeldRow(verification)
+            ? null
+            : (verification.actionReason ?? null),
+          failure_code:
+            (isHeldRow(verification) ? null : verification.deliveryErrorCode) ??
+            readProviderErrorCode(verification.metadata),
+          confirmation_source: isHeldRow(verification)
+            ? null
+            : readConfirmationSource(verification.confirmationSource),
+          cancellation_source: isHeldRow(verification)
+            ? null
+            : (verification.cancellationSource ?? null),
+          canceled_in_store:
+            verification.status === 'canceled' &&
+            this.readCancellationOperation(verification.metadata) !== undefined,
+          updated_at: isHeldRow(verification)
+            ? verification.createdAt
+            : (verification.updatedAt ?? verification.createdAt ?? null),
+          scheduled_for: isHeldRow(verification)
+            ? resolveHeldScheduledFor(
+                verification.status,
+                sourceOf(verification.order?.integrationId),
+                now,
+              )
+            : resolveScheduledFor(verification, now),
+          follow_up_scheduled_for: isHeldRow(verification)
+            ? null
+            : resolveFollowUpScheduledFor(
+                verification,
+                sourceOf(verification.order?.integrationId),
+                now,
+              ),
+          customer_history: historyOf(verification),
+          auto_cancel: isHeldRow(verification)
+            ? null
+            : resolveAutoCancelView(
+                verification,
+                sourceOf(verification.order?.integrationId),
+                autoCancelOf(verification.id),
+                isSyntheticOrder(verification.order),
+                now,
+              ),
+        }))
+        .map((item) => this.withAutoCancelCapability(item)),
       next_cursor: nextCursor,
       total_count: totalCount + (wantsHeld ? heldCount : 0),
       page_context: {
@@ -977,6 +997,35 @@ export class VerificationsService {
     ];
   }
 
+  /**
+   * The merchant may keep an order out of the automatic cancellation, or let
+   * it back in, while the store uses it and the cancellation has not reached
+   * the store.
+   */
+  private withAutoCancelCapability<
+    T extends {
+      capabilities: VerificationRowCapability[];
+      auto_cancel: AutoCancelView | null;
+      status: string;
+    },
+  >(item: T): T {
+    const view = item.auto_cancel;
+    if (view === null) return item;
+    const supported =
+      item.status !== 'confirmed' &&
+      item.status !== 'canceled' &&
+      !VerificationAutoCancellationsRepository.isCommitted(
+        view.state === 'projected' ? null : view.state,
+      );
+    return {
+      ...item,
+      capabilities: [
+        ...item.capabilities,
+        { action: 'auto_cancel_exclusion', supported },
+      ],
+    };
+  }
+
   private resolveReportingTimezone(integrations: IntegrationRecord[]): string {
     const source =
       integrations.find((integration) => integration.isActive === true) ??
@@ -1215,6 +1264,22 @@ export class VerificationsService {
       throw new BadRequestException(
         'Cannot cancel: order has no external order ID',
       );
+    // Akeed is already canceling the order in its store; a second request
+    // would cancel, and notify, twice.
+    const autoCancel = await this.autoCancellations?.findByVerification(
+      verificationId,
+      orgId,
+    );
+    if (
+      VerificationAutoCancellationsRepository.isCommitted(autoCancel?.status)
+    ) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'The store is already canceling this order.',
+        code: 'AUTO_CANCEL_ALREADY_IN_PROGRESS',
+      });
+    }
     // Checked before the store is touched: the atomic write re-checks it, but
     // by then the order would already be canceled in the store.
     const reason = await this.verificationsRepo.findNeedsActionReason(

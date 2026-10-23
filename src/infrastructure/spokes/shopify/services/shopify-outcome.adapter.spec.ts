@@ -88,6 +88,7 @@ defineCommerceOutcomeAdapterContract({
     merchant_cancellation_tagging: 'applied',
     automatic_no_reply_tagging: 'applied',
     automatic_no_whatsapp_tagging: 'applied',
+    automatic_no_reply_cancellation: 'pending_provider_operation',
   },
   createFixture: (action) => {
     const { api, order } = setup();

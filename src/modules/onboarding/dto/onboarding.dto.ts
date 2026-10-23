@@ -140,6 +140,21 @@ export class UpdateOnboardingSettingsDto {
   @Max(10080)
   escalationDelayMinutes?: number;
 
+  /** Cancel an order in its store once it reaches no reply. Needs escalation. */
+  @IsOptional()
+  @IsBoolean()
+  autoCancelEnabled?: boolean;
+
+  /** Restock the items of an automatically canceled order (Shopify). */
+  @IsOptional()
+  @IsBoolean()
+  autoCancelRestock?: boolean;
+
+  /** Let the store tell the customer about the cancellation (Shopify). */
+  @IsOptional()
+  @IsBoolean()
+  autoCancelNotifyCustomer?: boolean;
+
   @IsOptional()
   @IsBoolean()
   quietHoursEnabled?: boolean;
@@ -349,6 +364,9 @@ export interface OnboardingStateDto {
   followUpDelayMinutes: number;
   escalationEnabled: boolean;
   escalationDelayMinutes: number;
+  autoCancelEnabled: boolean;
+  autoCancelRestock: boolean;
+  autoCancelNotifyCustomer: boolean;
   quietHoursEnabled: boolean;
   quietHoursStart: string | null;
   quietHoursEnd: string | null;

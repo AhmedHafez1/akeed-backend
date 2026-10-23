@@ -37,6 +37,10 @@ import type {
   TemplateVariableKey,
 } from '../../shared/messaging/template-registry.types';
 import type {
+  AutoCancelEvent,
+  AutoCancelStatus,
+} from '../../shared/verification/auto-cancel.policy';
+import type {
   MessageTextPurpose,
   ServiceMessageKind,
   ServiceMessageSkipReason,
@@ -674,6 +678,14 @@ export const integrations = pgTable(
     quietHoursEnd: text('quiet_hours_end').default('09:00'),
     timezone: text('timezone').default('Asia/Riyadh').notNull(),
     sendDelayMinutes: integer('send_delay_minutes').default(0).notNull(),
+    // Cancel an order in its store when it reaches `no_reply` and every
+    // safety rule holds. Restock and customer notice apply where the store
+    // lets Akeed choose them (Shopify).
+    autoCancelEnabled: boolean('auto_cancel_enabled').default(false).notNull(),
+    autoCancelRestock: boolean('auto_cancel_restock').default(true).notNull(),
+    autoCancelNotifyCustomer: boolean('auto_cancel_notify_customer')
+      .default(false)
+      .notNull(),
     countryCode: varchar('country_code', { length: 2 }),
     shopTimezone: text('shop_timezone'),
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
@@ -1115,6 +1127,18 @@ export const verifications = pgTable(
     }),
     cancellationSource: text('cancellation_source'),
     confirmationSource: text('confirmation_source'),
+    // The latest message received from the customer's number for this
+    // order, whatever it said. Any message stops the automatic cancellation.
+    customerLastMessageAt: timestamp('customer_last_message_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // The merchant kept this order out of the automatic cancellation.
+    autoCancelExcludedAt: timestamp('auto_cancel_excluded_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    autoCancelExcludedBy: uuid('auto_cancel_excluded_by'),
     metadata: jsonb().default({}),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -3581,7 +3605,7 @@ export const commerceOutcomeSyncs = pgTable(
     ),
     check(
       'commerce_outcome_syncs_action_check',
-      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text])`,
+      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text, 'automatic_no_reply_cancellation'::text])`,
     ),
     check(
       'commerce_outcome_syncs_state_check',
@@ -3819,6 +3843,139 @@ export const verificationReplyEvents = pgTable(
       sql`${table.kind} IN ('unresolved_reply')`,
     ),
     pgPolicy('Service role manages verification reply events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * The automatic cancellation of one unanswered order. One row per
+ * verification: the unique key is what stops a second attempt, and the
+ * status is claimed under a row lock before the store is asked.
+ */
+export const verificationAutoCancellations = pgTable(
+  'verification_auto_cancellations',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    orderId: uuid('order_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    status: text('status').$type<AutoCancelStatus>().notNull(),
+    reason: text('reason'),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'string' }),
+    attempts: integer().default(0).notNull(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerOperationId: text('provider_operation_id'),
+    restock: boolean('restock'),
+    notifyCustomer: boolean('notify_customer'),
+    dispatchedAt: timestamp('dispatched_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    completedAt: timestamp('completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lateReplyAt: timestamp('late_reply_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('verification_auto_cancellations_verification_key').on(
+      table.verificationId,
+    ),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_auto_cancellations_verification_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.orderId, table.orgId],
+      foreignColumns: [orders.id, orders.orgId],
+      name: 'verification_auto_cancellations_order_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'verification_auto_cancellations_integration_fkey',
+    }).onDelete('cascade'),
+    index('idx_verification_auto_cancellations_status_due').on(
+      table.status,
+      table.dueAt,
+    ),
+    index('idx_verification_auto_cancellations_org').on(
+      table.orgId,
+      table.verificationId,
+    ),
+    check(
+      'verification_auto_cancellations_status_check',
+      sql`${table.status} IN ('scheduled', 'paused', 'in_progress', 'awaiting_platform', 'succeeded', 'failed', 'skipped', 'stopped')`,
+    ),
+    check(
+      'verification_auto_cancellations_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'verification_auto_cancellations_reason_check',
+      sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 64`,
+    ),
+    pgPolicy('Service role manages verification auto cancellations', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Append-only audit trail of automatic cancellations: what was decided, by
+ * whom (`actor_user_id` NULL is Akeed itself) and what the store answered.
+ */
+export const verificationAutoCancellationEvents = pgTable(
+  'verification_auto_cancellation_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    event: text('event').$type<AutoCancelEvent>().notNull(),
+    actorUserId: uuid('actor_user_id'),
+    detail: jsonb('detail').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_auto_cancellation_events_verification_fkey',
+    }).onDelete('cascade'),
+    index('idx_verification_auto_cancellation_events_verification').on(
+      table.verificationId,
+      table.createdAt,
+    ),
+    check(
+      'verification_auto_cancellation_events_event_check',
+      sql`${table.event} IN ('scheduled', 'paused', 'resumed', 'excluded', 'included', 'stopped', 'platform_checked', 'dispatch_started', 'platform_pending', 'retry_scheduled', 'succeeded', 'failed', 'skipped', 'late_reply')`,
+    ),
+    pgPolicy('Service role manages verification auto cancellation events', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

@@ -18,6 +18,7 @@ describe('Cancellation response compatibility bridge', () => {
     const controller = new VerificationsController(
       service as never,
       {} as never,
+      {} as never,
     );
     const user = { orgId: 'org-1', role: 'owner' } as never;
     await expect(controller.cancelNoReplyOrder(user, 'ver-1')).resolves.toEqual(
@@ -38,6 +39,7 @@ describe('Cancellation response compatibility bridge', () => {
     };
     const controller = new VerificationsController(
       { cancelNoReplyOrder: jest.fn().mockResolvedValue(response) } as never,
+      {} as never,
       {} as never,
     );
     await expect(
@@ -63,6 +65,7 @@ describe('Cancellation response compatibility bridge', () => {
     const controller = new VerificationsController(
       service as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -87,6 +90,7 @@ describe('Dashboard overview and manual confirmation routes', () => {
     const controller = new VerificationsController(
       service as never,
       {} as never,
+      {} as never,
     );
     const query = { date_range: 'last_7_days' as const };
 
@@ -110,6 +114,7 @@ describe('Dashboard overview and manual confirmation routes', () => {
     const service = { confirmManually: jest.fn().mockResolvedValue(response) };
     const controller = new VerificationsController(
       service as never,
+      {} as never,
       {} as never,
     );
     const user = { orgId: 'org-1', role: 'owner' } as never;

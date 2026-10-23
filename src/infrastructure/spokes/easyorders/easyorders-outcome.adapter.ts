@@ -5,6 +5,7 @@ import {
   type EasyOrdersConnection,
 } from '../../database/repositories/easyorders-connections.repository';
 import type {
+  CommerceCancellationInspection,
   CommerceOutcomeAction,
   CommerceOutcomeAdapter,
   CommerceOutcomeAdapterRequest,
@@ -35,6 +36,30 @@ const NO_CAPABILITIES: ReadonlySet<CommerceOutcomeAction> = new Set();
 const CAPABILITIES: ReadonlySet<CommerceOutcomeAction> = new Set(
   EASYORDERS_OUTCOME_ACTIONS,
 );
+
+/** A refusal or failure from the shared checks, as an inspection answer. */
+function inspectionOf(
+  result: CommerceOutcomeOperationResult,
+): CommerceCancellationInspection {
+  switch (result.status) {
+    case 'retryable_failure':
+      return {
+        state: 'retryable_failure',
+        errorCode: result.errorCode,
+        ...(result.retryAfterMs === undefined
+          ? {}
+          : { retryAfterMs: result.retryAfterMs }),
+      };
+    case 'permanent_failure':
+      return result.errorCode === 'order_not_found'
+        ? { state: 'not_cancellable', reason: 'order_not_found' }
+        : { state: 'permanent_failure', errorCode: result.errorCode };
+    case 'unsupported':
+      return { state: 'unsupported', reason: result.reason };
+    default:
+      return { state: 'permanent_failure', errorCode: 'unexpected_result' };
+  }
+}
 
 type Failure = Extract<
   CommerceOutcomeOperationResult,
@@ -105,30 +130,9 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
   private async synchronize(
     request: CommerceOutcomeAdapterRequest,
   ): Promise<CommerceOutcomeOperationResult> {
-    const target = easyOrdersStatusFor(request.action);
-    if (!target || !this.capabilities.has(request.action))
-      return { status: 'unsupported', reason: 'capability_not_supported' };
-
-    // The order's own integration, never one the request could name freely:
-    // the registry has already matched it to the order and the organization.
-    const connection = await this.connections.findByIntegration(
-      request.integrationId,
-      request.orgId,
-    );
-    if (!connection)
-      return { status: 'permanent_failure', errorCode: 'connection_missing' };
-    // The registry refuses an inactive source before calling; this covers a
-    // disconnect landing between its check and this read.
-    if (connection.disconnectedAt)
-      return { status: 'permanent_failure', errorCode: 'integration_inactive' };
-
-    const apiKey = this.readApiKey(connection);
-    if (!apiKey)
-      return {
-        status: 'permanent_failure',
-        errorCode: 'credentials_unreadable',
-        requiresAssistance: true,
-      };
+    const resolved = await this.resolveConnection(request);
+    if ('result' in resolved) return resolved.result;
+    const { target, connection, apiKey } = resolved;
 
     const before = await this.readStatus(
       connection,
@@ -173,6 +177,86 @@ export class EasyOrdersOutcomeAdapter implements CommerceOutcomeAdapter {
           target,
         );
     }
+  }
+
+  /**
+   * The order's status as EasyOrders reports it, for an automatic
+   * cancellation: only `pending` may be canceled, the status Akeed writes
+   * from. Any later status means the merchant already took the order on.
+   */
+  async inspectForCancellation(
+    request: CommerceOutcomeAdapterRequest,
+  ): Promise<CommerceCancellationInspection> {
+    const resolved = await this.resolveConnection(request);
+    if ('result' in resolved) return inspectionOf(resolved.result);
+    const { connection, apiKey } = resolved;
+    const read = await this.readStatus(
+      connection,
+      apiKey,
+      request.externalOrderId,
+    );
+    if ('failure' in read) return inspectionOf(read.failure);
+    if (read.status === 'canceled')
+      return { state: 'already_canceled', providerStatus: read.status };
+    if (read.status !== EASYORDERS_WRITABLE_FROM_STATUS)
+      return {
+        state: 'not_cancellable',
+        reason: 'status_not_writable',
+        providerStatus: read.status,
+      };
+    return { state: 'cancellable', providerStatus: read.status };
+  }
+
+  /** The store and key an outcome goes to, or why there are none. */
+  private async resolveConnection(
+    request: CommerceOutcomeAdapterRequest,
+  ): Promise<
+    | {
+        target: 'confirmed' | 'canceled';
+        connection: EasyOrdersConnection;
+        apiKey: string;
+      }
+    | { result: CommerceOutcomeOperationResult }
+  > {
+    const target = easyOrdersStatusFor(request.action);
+    if (!target || !this.capabilities.has(request.action))
+      return {
+        result: { status: 'unsupported', reason: 'capability_not_supported' },
+      };
+
+    // The order's own integration, never one the request could name freely:
+    // the registry has already matched it to the order and the organization.
+    const connection = await this.connections.findByIntegration(
+      request.integrationId,
+      request.orgId,
+    );
+    if (!connection)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'connection_missing',
+        },
+      };
+    // The registry refuses an inactive source before calling; this covers a
+    // disconnect landing between its check and this read.
+    if (connection.disconnectedAt)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'integration_inactive',
+        },
+      };
+
+    const apiKey = this.readApiKey(connection);
+    if (!apiKey)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'credentials_unreadable',
+          requiresAssistance: true,
+        },
+      };
+    return { target, connection, apiKey };
   }
 
   /** Null for a stored value that is not a key Akeed can use. */

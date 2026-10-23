@@ -164,6 +164,8 @@ A disconnect made by mistake is undone by reconnecting the same store. The integ
 
 Do not promise the merchant that a reconnect or a re-enable brings back missed orders. It does not.
 
+**Automatic cancellation.** A store that switched on **Cancel unanswered orders automatically** has orders canceled in the store when they reach no reply and every message was delivered. Staff checks: `verification_auto_cancellations` for the verification (`status`, `reason`, `attempts`, `late_reply_at`), its `verification_auto_cancellation_events`, and the `commerce_outcome_syncs` row for `automatic_no_reply_cancellation`. A row `skipped` with `paid` or `status_not_writable` means the store showed a payment or the merchant had already moved the order on.
+
 Requests that need staff and have no self-service path:
 
 - Connecting a different store, or the same store at a new address, to an account that already had one.

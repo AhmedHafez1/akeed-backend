@@ -5,6 +5,7 @@ import {
   type WooCommerceConnection,
 } from '../../database/repositories/woocommerce-connections.repository';
 import type {
+  CommerceCancellationInspection,
   CommerceOutcomeAction,
   CommerceOutcomeAdapter,
   CommerceOutcomeAdapterRequest,
@@ -24,6 +25,7 @@ import {
 import { readWooCommerceCredentials } from './woocommerce-credentials';
 import {
   buildWooCommerceOutcomeMarker,
+  classifyWooCommerceCancellation,
   WOOCOMMERCE_CONFIRMATION_NOTE,
   WOOCOMMERCE_OUTCOME_ACTIONS,
   WOOCOMMERCE_WRITABLE_FROM_STATUSES,
@@ -41,6 +43,30 @@ type Failure = Extract<
   CommerceOutcomeOperationResult,
   { status: 'retryable_failure' | 'permanent_failure' }
 >;
+
+/** A refusal or failure from the shared checks, as an inspection answer. */
+function inspectionOf(
+  result: CommerceOutcomeOperationResult,
+): CommerceCancellationInspection {
+  switch (result.status) {
+    case 'retryable_failure':
+      return {
+        state: 'retryable_failure',
+        errorCode: result.errorCode,
+        ...(result.retryAfterMs === undefined
+          ? {}
+          : { retryAfterMs: result.retryAfterMs }),
+      };
+    case 'permanent_failure':
+      return result.errorCode === 'order_not_found'
+        ? { state: 'not_cancellable', reason: 'order_not_found' }
+        : { state: 'permanent_failure', errorCode: result.errorCode };
+    case 'unsupported':
+      return { state: 'unsupported', reason: result.reason };
+    default:
+      return { state: 'permanent_failure', errorCode: 'unexpected_result' };
+  }
+}
 
 /** One outcome on its way to one order of one store. */
 interface Target {
@@ -119,44 +145,27 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
     return result;
   }
 
+  /**
+   * The order as the store sees it, for an automatic cancellation: read with
+   * the same connection, keys and store proof as a write.
+   */
+  async inspectForCancellation(
+    request: CommerceOutcomeAdapterRequest,
+  ): Promise<CommerceCancellationInspection> {
+    const resolved = await this.resolveTarget(request);
+    if ('result' in resolved) return inspectionOf(resolved.result);
+    const read = await this.readOrder(resolved.target);
+    if ('failure' in read) return inspectionOf(read.failure);
+    return classifyWooCommerceCancellation(read.order);
+  }
+
   private async synchronize(
     request: CommerceOutcomeAdapterRequest,
   ): Promise<CommerceOutcomeOperationResult> {
-    const effect = wooCommerceEffectFor(request.action);
-    if (!effect || !this.capabilities.has(request.action))
-      return { status: 'unsupported', reason: 'capability_not_supported' };
-
-    // The order's own integration, never one the request could name freely:
-    // the registry has already matched it to the order and the organization.
-    const connection = await this.connections.findByIntegration(
-      request.integrationId,
-      request.orgId,
-    );
-    if (!connection)
-      return { status: 'permanent_failure', errorCode: 'connection_missing' };
-    // The registry refuses an inactive source before calling; this covers a
-    // disconnect landing between its check and this read.
-    if (connection.disconnectedAt)
-      return { status: 'permanent_failure', errorCode: 'integration_inactive' };
-
-    const credentials = this.readCredentials(connection);
-    if (!credentials)
-      return {
-        status: 'permanent_failure',
-        errorCode: 'credentials_unreadable',
-        requiresAssistance: true,
-      };
-
-    const target: Target = {
-      connection,
-      credentials,
-      orderId: request.externalOrderId,
-      effect,
-      marker: buildWooCommerceOutcomeMarker(
-        request.action,
-        request.correlationId,
-      ),
-    };
+    const resolved = await this.resolveTarget(request);
+    if ('result' in resolved) return resolved.result;
+    const { target } = resolved;
+    const { connection, credentials, effect } = target;
 
     const before = await this.readOrder(target);
     if ('failure' in before) return before.failure;
@@ -191,6 +200,63 @@ export class WooCommerceOutcomeAdapter implements CommerceOutcomeAdapter {
       default:
         return this.failed(connection, write);
     }
+  }
+
+  /** The store, keys and order an outcome goes to, or why there are none. */
+  private async resolveTarget(
+    request: CommerceOutcomeAdapterRequest,
+  ): Promise<{ target: Target } | { result: CommerceOutcomeOperationResult }> {
+    const effect = wooCommerceEffectFor(request.action);
+    if (!effect || !this.capabilities.has(request.action))
+      return {
+        result: { status: 'unsupported', reason: 'capability_not_supported' },
+      };
+
+    // The order's own integration, never one the request could name freely:
+    // the registry has already matched it to the order and the organization.
+    const connection = await this.connections.findByIntegration(
+      request.integrationId,
+      request.orgId,
+    );
+    if (!connection)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'connection_missing',
+        },
+      };
+    // The registry refuses an inactive source before calling; this covers a
+    // disconnect landing between its check and this read.
+    if (connection.disconnectedAt)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'integration_inactive',
+        },
+      };
+
+    const credentials = this.readCredentials(connection);
+    if (!credentials)
+      return {
+        result: {
+          status: 'permanent_failure',
+          errorCode: 'credentials_unreadable',
+          requiresAssistance: true,
+        },
+      };
+
+    return {
+      target: {
+        connection,
+        credentials,
+        orderId: request.externalOrderId,
+        effect,
+        marker: buildWooCommerceOutcomeMarker(
+          request.action,
+          request.correlationId,
+        ),
+      },
+    };
   }
 
   /** Null for a stored value that is not a key Akeed can use. */

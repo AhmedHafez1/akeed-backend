@@ -1,4 +1,5 @@
 import {
+  resolveAutoCancelView,
   resolveFollowUpScheduledFor,
   resolveHeldScheduledFor,
   resolveScheduledFor,
@@ -105,5 +106,97 @@ describe('resolveFollowUpScheduledFor', () => {
       ),
     ).toBeNull();
     expect(resolveFollowUpScheduledFor(awaiting, undefined, NOW)).toBeNull();
+  });
+});
+
+describe('resolveAutoCancelView', () => {
+  const autoCancelSource = {
+    ...source,
+    followUpEnabled: false,
+    autoCancelEnabled: true,
+    escalationEnabled: true,
+    escalationDelayMinutes: 2880,
+  };
+  const awaiting = {
+    status: 'delivered',
+    lastSentAt: '2026-05-01T00:00:00.000Z',
+    deliveredAt: '2026-05-01T00:01:00.000Z',
+  };
+
+  it('shows nothing for a store that does not cancel automatically', () => {
+    expect(
+      resolveAutoCancelView(awaiting, source, undefined, false, NOW),
+    ).toBeNull();
+  });
+
+  it('projects the escalation time for an order still awaiting a reply', () => {
+    expect(
+      resolveAutoCancelView(awaiting, autoCancelSource, undefined, false, NOW),
+    ).toEqual({
+      state: 'projected',
+      scheduled_for: '2026-05-03T00:00:00.000Z',
+      reason: null,
+      excluded: false,
+      late_reply: false,
+    });
+  });
+
+  it('projects nothing for an excluded order or one the customer wrote about', () => {
+    expect(
+      resolveAutoCancelView(
+        { ...awaiting, autoCancelExcludedAt: EARLIER },
+        autoCancelSource,
+        undefined,
+        false,
+        NOW,
+      ),
+    ).toMatchObject({ scheduled_for: null, excluded: true });
+    expect(
+      resolveAutoCancelView(
+        { ...awaiting, customerLastMessageAt: EARLIER },
+        autoCancelSource,
+        undefined,
+        false,
+        NOW,
+      ),
+    ).toMatchObject({ scheduled_for: null });
+  });
+
+  it('reports a decided row as it is, with its late-reply flag', () => {
+    expect(
+      resolveAutoCancelView(
+        { status: 'canceled' },
+        autoCancelSource,
+        {
+          status: 'succeeded',
+          dueAt: null,
+          reason: null,
+          lateReplyAt: LATER,
+        },
+        false,
+        NOW,
+      ),
+    ).toEqual({
+      state: 'succeeded',
+      scheduled_for: null,
+      reason: null,
+      excluded: false,
+      late_reply: true,
+    });
+    expect(
+      resolveAutoCancelView(
+        { status: 'no_reply' },
+        autoCancelSource,
+        { status: 'scheduled', dueAt: LATER, reason: null, lateReplyAt: null },
+        false,
+        NOW,
+      ),
+    ).toMatchObject({ state: 'scheduled', scheduled_for: LATER });
+  });
+
+  it('shows nothing for a test order', () => {
+    expect(
+      resolveAutoCancelView(awaiting, autoCancelSource, undefined, true, NOW),
+    ).toBeNull();
   });
 });

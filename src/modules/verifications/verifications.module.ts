@@ -7,9 +7,10 @@ import { AuthModule } from '../auth/auth.module';
 import { PhoneService } from '../../shared/services/phone.service';
 import { OnboardingTestController } from './onboarding-test.controller';
 import { OnboardingTestService } from './onboarding-test.service';
+import { AutoCancellationModule } from '../auto-cancellation/auto-cancellation.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule, AuthModule, AutoCancellationModule],
   controllers: [VerificationsController, OnboardingTestController],
   providers: [
     VerificationsService,

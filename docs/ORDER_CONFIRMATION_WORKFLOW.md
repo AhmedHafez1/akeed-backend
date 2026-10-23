@@ -44,7 +44,7 @@ Out of scope:
 | `delivered` | Meta reported delivery for the current WhatsApp message id.                        | `WhatsAppWebhookService`                            |
 | `read`      | Meta reported the message was read.                                                | `WhatsAppWebhookService`                            |
 | `confirmed` | Customer pressed the confirm button.                                               | `WhatsAppWebhookService`                            |
-| `canceled`  | Customer canceled or merchant canceled after no reply.                             | `WhatsAppWebhookService`, `VerificationsService`    |
+| `canceled`  | Customer canceled, merchant canceled after no reply, or Akeed canceled it automatically (`automatic_no_reply`). | `WhatsAppWebhookService`, `VerificationsService`, `AutoCancellationService` |
 | `no_reply`  | Customer did not respond before the escalation job fired.                          | `VerificationAutomationProcessor`                   |
 | `no_whatsapp` | The customer number cannot receive WhatsApp (Meta error 131026). The merchant calls the customer. | `WhatsAppWebhookService`, `VerificationSendService` |
 | `blocked`   | The order arrived after the plan allowance or the prepaid credits ran out. Nothing was sent or charged; recovery sends it once capacity is back. | `VerificationHubService` |
@@ -92,6 +92,39 @@ A run reads candidates 50 at a time past a cursor (creation time, then id), up t
 The dashboard overview returns `capacity`: `blocked_count`, `mode` (`plan` or `credits`), `remaining`, `action` (`upgrade`, `recharge` or `wait_reset`) and `reset_at`. The dashboard shows a banner while `blocked_count` is above zero. Alert emails are described in [ONBOARDING_AND_BILLING.md](ONBOARDING_AND_BILLING.md#usage-alerts).
 
 **Limitation:** Akeed does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short.
+
+### Automatic cancellation of unanswered orders
+
+A store may switch on `autoCancelEnabled` (off by default). An order that then reaches `no_reply` is canceled in its store, but only when the customer demonstrably had the chance to answer. The reason recorded is "No response after confirmation attempts" (`cancellation_source = automatic_no_reply`). The escalation delay is the deadline; the settings offer 48 hours when the switch goes on, and the switch needs `escalationEnabled`.
+
+**Decision.** `VerificationAutomationProcessor.handleEscalateNoReply` calls `AutoCancellationService.scheduleAfterNoReply` only after its own `no_reply` write returned a row. The pure `evaluateAutoCancel` (`src/shared/verification/auto-cancel.policy.ts`) answers:
+
+| Answer | When |
+| --- | --- |
+| `schedule` | The first dispatch has a delivery or read receipt; a reminder that was attempted has one too; no message ever came from the customer; the merchant did not exclude the order. Due at the later of now and 12 hours after the last delivered message, moved out of quiet hours. |
+| `pause` | `initial_not_delivered`, `reminder_blocked` (`follow_up_skipped` / `follow_up_failed`: plan limit, credits, template, send failure), `reminder_not_delivered`. A paused row is re-checked by the sweep for 7 days, so a receipt that arrives late resumes it. Capacity is never a reason to cancel. |
+| `skip` | The setting is off, a test order, excluded, already answered or settled, or the customer wrote. A disabled store or a test order gets no row at all. |
+
+**State.** One `verification_auto_cancellations` row per verification (unique `verification_id`): `scheduled | paused | in_progress | awaiting_platform | succeeded | failed | skipped | stopped`, with `reason`, `due_at`, `attempts`, `lease_until`, `provider_operation_id`, the restock and notify choices snapshotted at dispatch, `dispatched_at`, `completed_at` and `late_reply_at`. Every decision appends to `verification_auto_cancellation_events` (`actor_user_id` NULL is Akeed).
+
+**Execution** (`auto-cancellation` queue, `AutoCancellationService.execute`). Every step runs under `withLockedVerification`: the verification row is locked first and the cancellation row second, on every path.
+
+1. Claim: a due `scheduled` row, or an `in_progress` one whose 5-minute lease ran out. The rules are evaluated again; a rule that no longer holds stops or pauses the row, and quiet hours move it. The claim sets `in_progress`, the lease and `attempts + 1`. A duplicate job finds the row claimed and exits.
+2. Read the store: `CommerceOutcomeRegistryService.inspectForCancellation`. `already_canceled` counts as success with no second cancel. `not_cancellable` (`paid`, `fulfilled`, `fulfillment_in_progress`, `status_not_writable`, `order_not_found`) skips the row.
+3. Mark the dispatch under the lock after one more check of the customer, the exclusion and the setting. After this mark nothing the customer or the merchant does changes the order.
+4. Dispatch `automatic_no_reply_cancellation` with `cancellation: { restock, notifyCustomer, staffNote }`.
+5. `applied` (WooCommerce and EasyOrders confirm by reading the order back; Standalone is local) finishes at once. Shopify's `orderCancel` returns a job: the row waits in `awaiting_platform` and the confirm job polls `job { done }`, then reads the order, and fails with `platform_confirmation_timeout` after 30 minutes. A retryable failure backs off 30s, 2m, 8m, 30m and fails after the fifth attempt; a permanent one fails at once.
+6. Finish: one update guarded on `status = 'no_reply'` moves the verification to `canceled` with the automatic source and the operation in `metadata.commerceCancellation`; the row becomes `succeeded`; `merchant_cancellation_tagging` runs best effort. Nothing is marked canceled before the store shows it.
+
+The sweep (every 5 minutes) enqueues due rows whose job was lost, resumes expired leases, polls `awaiting_platform` rows and re-checks paused ones.
+
+**Customer messages.** `WhatsAppWebhookService` records every inbound message before it reads it (`VerificationAutoCancellationsRepository.recordCustomerMessage`): the order its button or quote names, and the open orders sent to that number in the last 7 days, in any store, get `customer_last_message_at`. A `scheduled` or `paused` row stops (`customer_reply`); an `in_progress`, `awaiting_platform` or `succeeded` row gets `late_reply_at`, and the reply does not change that order's status.
+
+**Needs action.** `customer_replied` (an open order the customer wrote about without a clear answer, whatever the setting), `auto_cancel_failed` and `late_reply_after_auto_cancel`. The merchant may still cancel a `no_reply` order with `customer_replied` or `auto_cancel_failed` by hand; the manual cancel answers `409 AUTO_CANCEL_ALREADY_IN_PROGRESS` while the automatic one is committed.
+
+**Merchant controls.** `POST /api/verifications/:id/auto-cancel/exclude` and `/include` (owner or admin, idempotent, audited; `AUTO_CANCEL_ALREADY_IN_PROGRESS`, `AUTO_CANCEL_EXCLUDE_NOT_ALLOWED`). Switching the setting off stops every `scheduled` and `paused` row of the store (`feature_disabled`); switching it on again applies to orders that reach `no_reply` afterwards. The list item carries `auto_cancel: { state, scheduled_for, reason, excluded, late_reply }`, `projected` while the order is still waiting for the customer, and the capability `auto_cancel_exclusion`.
+
+**Stores.** Shopify reads `cancelledAt`, `displayFinancialStatus` (only `PENDING`), `displayFulfillmentStatus` (only `UNFULFILLED`) and `closed`, and applies the restock and notify choices. WooCommerce cancels from `processing` or `on-hold` with no `date_paid`; EasyOrders from `pending`. Both follow the store's own stock and email settings and need their outcome-sync switch. Standalone records it in Akeed.
 
 ### Held orders (bulk import)
 
@@ -324,6 +357,9 @@ Controls are edited from the Settings page and persisted on the `integrations` t
 | `followUpEnabled`        |             `true` | Boolean                                       | Enables one follow-up message when the customer has not replied.                                                      |
 | `followUpDelayMinutes`   |              `360` | `0..10080`                                    | Follow-up delay from the initial successful send time. Must be lower than escalation delay when follow-up is enabled. |
 | `escalationDelayMinutes` |             `1800` | `0..10080`                                    | No-reply escalation delay from the initial successful send time. `0` disables escalation scheduling.                  |
+| `autoCancelEnabled`      |            `false` | Boolean; needs `escalationEnabled`            | Cancel an order in its store when it reaches `no_reply` and every safety rule holds. Switching it off stops pending cancellations. |
+| `autoCancelRestock`      |             `true` | Boolean                                       | Restock the items of an automatically canceled order (Shopify).                                                       |
+| `autoCancelNotifyCustomer` |          `false` | Boolean                                       | Let Shopify tell the customer about an automatic cancellation.                                                        |
 | `quietHoursEnabled`      |             `true` | Boolean                                       | When enabled, delayed automation jobs are moved outside quiet hours.                                                  |
 | `quietHoursStart`        |            `22:00` | `HH:mm`, required when quiet hours enabled    | Start of quiet-hours window in the configured timezone.                                                               |
 | `quietHoursEnd`          |            `09:00` | `HH:mm`, required when quiet hours enabled    | End of quiet-hours window in the configured timezone.                                                                 |
@@ -391,6 +427,8 @@ Cross-field rules:
 | `GET`   | `/api/verifications/stats`        | `DualAuthGuard`      | Load dashboard KPIs.                                 |
 | `POST`  | `/api/verifications/test`         | `DualAuthGuard`      | Send a test verification message.                    |
 | `POST`  | `/api/verifications/:id/cancel`   | `DualAuthGuard`      | Merchant cancellation for `no_reply` verifications.  |
+| `POST`  | `/api/verifications/:id/auto-cancel/exclude` | `DualAuthGuard` | Keep one order out of the automatic cancellation. |
+| `POST`  | `/api/verifications/:id/auto-cancel/include` | `DualAuthGuard` | Let the automatic cancellation decide the order again. |
 | `POST`  | `/api/orders`                     | `DualAuthGuard`      | Create a manual (Standalone) order for verification. |
 | `POST`  | `/api/orders/:id/verification/retry` | `DualAuthGuard`   | Re-send a retryable failed verification.             |
 
@@ -477,6 +515,7 @@ Operational behavior:
 - Disabling auto verification skips new verification creation entirely.
 - Customer cancel does not automatically cancel the Shopify order; it marks and tags the order for merchant awareness.
 - Merchant order cancellation is available only after `no_reply` escalation.
+- Automatic cancellation is opt-in per store and runs only at `no_reply`, only for orders whose every message was delivered and whose customer never wrote; anything Akeed cannot prove pauses it.
 - Shopify cancellation is called before local state is changed.
 - Branded template defaults are `friendly` for English and `standard` for Arabic.
 - Legacy short template variants stay available and keep their existing two-body-parameter shape.

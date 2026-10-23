@@ -125,10 +125,11 @@ function setup(
 
 describe('WooCommerceOutcomeAdapter', () => {
   describe('capabilities', () => {
-    it('offers only the three approved actions, and tracks synchronization', () => {
+    it('offers only the four approved actions, and tracks synchronization', () => {
       const { adapter } = setup();
 
       expect([...adapter.capabilities].sort()).toEqual([
+        'automatic_no_reply_cancellation',
         'customer_cancellation',
         'customer_confirmation',
         'merchant_no_reply_cancellation',

@@ -9,6 +9,7 @@ import { PaymentPurchasesRepository } from './repositories/payment-purchases.rep
 
 import { OrdersRepository } from './repositories/orders.repository';
 import { VerificationsRepository } from './repositories/verifications.repository';
+import { VerificationAutoCancellationsRepository } from './repositories/verification-auto-cancellations.repository';
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
 import { MembershipsRepository } from './repositories/memberships.repository';
@@ -47,6 +48,7 @@ import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
     drizzleProvider,
     OrdersRepository,
     VerificationsRepository,
+    VerificationAutoCancellationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
@@ -83,6 +85,7 @@ import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
     drizzleProvider,
     OrdersRepository,
     VerificationsRepository,
+    VerificationAutoCancellationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,

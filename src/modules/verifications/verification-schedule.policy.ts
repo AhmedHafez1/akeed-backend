@@ -2,6 +2,10 @@ import {
   adjustForQuietHours,
   quietHoursConfigOf,
 } from '../../shared/utils/quiet-hours.util';
+import {
+  projectAutoCancelAt,
+  type AutoCancelStatus,
+} from '../../shared/verification/auto-cancel.policy';
 
 /**
  * When a list row's next message is due, for the dashboard's "Scheduled" and
@@ -85,4 +89,132 @@ export function resolveFollowUpScheduledFor(
   if (metadata.follow_up_skipped || metadata.follow_up_failed) return null;
   const dueAt = metadata.follow_up_due_at;
   return futureOrNull(typeof dueAt === 'string' ? dueAt : null, now);
+}
+
+/** The automatic-cancellation settings a row's projection reads. */
+export interface AutoCancelScheduleSource extends ScheduleSource {
+  autoCancelEnabled?: boolean | null;
+  escalationEnabled?: boolean | null;
+  escalationDelayMinutes?: number | null;
+}
+
+/** The row's automatic cancellation, as the confirmations list shows it. */
+export interface AutoCancelView {
+  /** `projected` while the order has not reached `no_reply` yet. */
+  state: 'projected' | AutoCancelStatus;
+  /** When it is due; null when it is not going to run on its own. */
+  scheduled_for: string | null;
+  reason: string | null;
+  excluded: boolean;
+  late_reply: boolean;
+}
+
+/**
+ * What the merchant is told about a row's automatic cancellation. A decided
+ * row reports its own state; an order still waiting for the customer reports
+ * the time its escalation would lead to, by the same rules, for display.
+ * Null when the store does not use automatic cancellation and nothing was
+ * decided for the row.
+ */
+export function resolveAutoCancelView(
+  verification: {
+    status: string;
+    lastSentAt?: string | null;
+    deliveredAt?: string | null;
+    readAt?: string | null;
+    followUpAttempts?: number | null;
+    followUpSentAt?: string | null;
+    customerLastMessageAt?: string | null;
+    autoCancelExcludedAt?: string | null;
+    metadata?: unknown;
+  },
+  source: AutoCancelScheduleSource | undefined,
+  row:
+    | {
+        status: AutoCancelStatus;
+        dueAt: string | null;
+        reason: string | null;
+        lateReplyAt: string | null;
+      }
+    | undefined,
+  isTest: boolean,
+  now = new Date(),
+): AutoCancelView | null {
+  const excluded = Boolean(verification.autoCancelExcludedAt);
+  if (row) {
+    return {
+      state: row.status,
+      scheduled_for:
+        row.status === 'scheduled' ? futureOrNull(row.dueAt, now) : null,
+      reason: row.reason,
+      excluded,
+      late_reply: Boolean(row.lateReplyAt),
+    };
+  }
+  if (source?.autoCancelEnabled !== true || isTest) return null;
+  if (!AWAITING_REPLY_STATUSES.has(verification.status)) return null;
+  const view: AutoCancelView = {
+    state: 'projected',
+    scheduled_for: null,
+    reason: null,
+    excluded,
+    late_reply: false,
+  };
+  if (excluded || verification.customerLastMessageAt) return view;
+
+  const sentAt = verification.lastSentAt
+    ? new Date(verification.lastSentAt).getTime()
+    : NaN;
+  const escalationMinutes = source.escalationDelayMinutes ?? 0;
+  if (
+    !Number.isFinite(sentAt) ||
+    source.escalationEnabled !== true ||
+    escalationMinutes <= 0
+  )
+    return view;
+
+  const quietHours = quietHoursConfigOf(source);
+  const pendingFollowUp = resolveFollowUpScheduledFor(
+    verification,
+    source,
+    now,
+  );
+  let escalationDueAt = adjustForQuietHours(
+    new Date(sentAt + escalationMinutes * 60_000),
+    quietHours,
+  );
+  if (
+    pendingFollowUp &&
+    escalationDueAt.getTime() <= new Date(pendingFollowUp).getTime()
+  ) {
+    escalationDueAt = new Date(new Date(pendingFollowUp).getTime() + 60_000);
+  }
+  const metadata =
+    verification.metadata && typeof verification.metadata === 'object'
+      ? (verification.metadata as Record<string, unknown>)
+      : {};
+  const blocked = metadata.follow_up_skipped ?? metadata.follow_up_failed;
+  const projected = projectAutoCancelAt(
+    {
+      enabled: true,
+      isTestOrder: false,
+      initialDeliveredAt: verification.deliveredAt ?? verification.readAt,
+      followUpAttempted:
+        Boolean(pendingFollowUp) ||
+        (verification.followUpAttempts ?? 0) > 0 ||
+        Boolean(verification.followUpSentAt),
+      followUpBlockedReason: typeof blocked === 'string' ? blocked : null,
+      // Display only: a reminder still to go out, or one that went out, is
+      // counted as delivered when it is due or was sent.
+      followUpDeliveredAt: pendingFollowUp ?? verification.followUpSentAt,
+      quietHours,
+    },
+    escalationDueAt,
+  );
+  return {
+    ...view,
+    scheduled_for: projected
+      ? futureOrNull(projected.toISOString(), now)
+      : null,
+  };
 }

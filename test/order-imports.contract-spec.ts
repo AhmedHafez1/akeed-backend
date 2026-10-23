@@ -262,8 +262,11 @@ describe('order imports PostgreSQL contract', () => {
     // 0073 also adds a verification status and an alerts table, which need
     // the status enum this base leaves out; only its store column applies.
     const appliesToBase = (migration: string, statement: string) =>
-      !migration.startsWith('0073_') ||
-      statement.includes('ADD COLUMN IF NOT EXISTS "notification_email"');
+      migration.startsWith('0073_')
+        ? statement.includes('ADD COLUMN IF NOT EXISTS "notification_email"')
+        : // The cancellation tables reference columns the base does not have.
+          !migration.startsWith('0075_') ||
+          !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -298,6 +301,8 @@ describe('order imports PostgreSQL contract', () => {
         '0073_usage_alerts_and_blocked_orders.sql',
         // New store timing defaults; proves 0074 re-runs.
         '0074_new_store_timing_defaults.sql',
+        // Automatic cancellation: store and order columns; proves 0075 re-runs.
+        '0075_auto_cancel_unanswered.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

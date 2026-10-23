@@ -33,6 +33,7 @@ import { StandaloneSourceResolver } from '../order-ingestion/standalone-source-r
 import { OrderEligibilityService } from '../verification-core/order-eligibility.service';
 import { TestVerificationService } from '../verifications/test-verification.service';
 import { VerificationsController } from '../verifications/verifications.controller';
+import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 import { VerificationsService } from '../verifications/verifications.service';
 import { OrderImportAccessGuard } from './guards/order-import-access.guard';
 import { OrderImportUploadThrottleGuard } from './guards/order-import-upload-throttle.guard';
@@ -611,6 +612,7 @@ describe('order-import authorization matrix', () => {
         },
         { provide: VerificationsService, useValue: verifications },
         { provide: TestVerificationService, useValue: {} },
+        { provide: AutoCancellationService, useValue: {} },
       ],
     }).compile();
     app = moduleRef.createNestApplication();

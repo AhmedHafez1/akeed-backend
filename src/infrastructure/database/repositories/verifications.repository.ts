@@ -32,6 +32,7 @@ import {
 } from '../../../shared/verification/verification-lifecycle';
 import {
   NO_REPLY_CANCELLABLE_REASONS,
+  NO_REPLY_CANCELLABLE_STATUSES,
   type NeedsActionReason,
   type VerificationListTab,
 } from '../../../shared/verification/verification-needs-action';
@@ -1096,6 +1097,7 @@ export class VerificationsRepository {
         and(
           eq(verifications.id, verificationId),
           eq(verifications.orgId, orgId),
+          inArray(verifications.status, [...NO_REPLY_CANCELLABLE_STATUSES]),
           inArray(needsActionReasonSql(), [...NO_REPLY_CANCELLABLE_REASONS]),
         ),
       )
