@@ -663,15 +663,15 @@ export const integrations = pgTable(
     }),
     followUpEnabled: boolean('follow_up_enabled').default(true).notNull(),
     followUpDelayMinutes: integer('follow_up_delay_minutes')
-      .default(120)
+      .default(360)
       .notNull(),
     escalationEnabled: boolean('escalation_enabled').default(true).notNull(),
     escalationDelayMinutes: integer('escalation_delay_minutes')
-      .default(360)
+      .default(1800)
       .notNull(),
-    quietHoursEnabled: boolean('quiet_hours_enabled').default(false).notNull(),
-    quietHoursStart: text('quiet_hours_start'),
-    quietHoursEnd: text('quiet_hours_end'),
+    quietHoursEnabled: boolean('quiet_hours_enabled').default(true).notNull(),
+    quietHoursStart: text('quiet_hours_start').default('22:00'),
+    quietHoursEnd: text('quiet_hours_end').default('09:00'),
     timezone: text('timezone').default('Asia/Riyadh').notNull(),
     sendDelayMinutes: integer('send_delay_minutes').default(0).notNull(),
     countryCode: varchar('country_code', { length: 2 }),

@@ -67,10 +67,10 @@ import { SourceSetupService } from './source-setup.service';
 type IntegrationRecord = typeof integrations.$inferSelect;
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_FOLLOW_UP_ENABLED = true;
-const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
+const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 360;
 const DEFAULT_ESCALATION_ENABLED = true;
-const DEFAULT_ESCALATION_DELAY_MINUTES = 360;
-const DEFAULT_QUIET_HOURS_ENABLED = false;
+const DEFAULT_ESCALATION_DELAY_MINUTES = 1800;
+const DEFAULT_QUIET_HOURS_ENABLED = true;
 const DEFAULT_TIMEZONE: AutomationTimezone = 'Asia/Riyadh';
 const DEFAULT_SEND_DELAY_MINUTES = 0;
 

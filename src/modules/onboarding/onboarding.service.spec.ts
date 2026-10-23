@@ -298,8 +298,11 @@ describe('OnboardingService', () => {
         shippingCurrency: 'EGP',
         timezone: 'Africa/Cairo',
         followUpEnabled: true,
-        followUpDelayMinutes: 120,
-        escalationDelayMinutes: 360,
+        followUpDelayMinutes: 360,
+        escalationDelayMinutes: 1800,
+        quietHoursEnabled: true,
+        quietHoursStart: '22:00',
+        quietHoursEnd: '09:00',
         sendDelayMinutes: 0,
         standaloneSetup: { canComplete: true, blockedReasons: [] },
       });

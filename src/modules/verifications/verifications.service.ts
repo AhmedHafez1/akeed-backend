@@ -112,7 +112,7 @@ export interface ManualConfirmationResponse {
   alreadyConfirmed?: boolean;
 }
 
-const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
+const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 360;
 const MS_PER_HOUR = 3_600_000;
 
 /** Digits of a search term, or undefined when nothing searchable remains. */
@@ -264,7 +264,7 @@ const DEFAULT_VERIFICATIONS_PAGE_SIZE = 20;
 const DEFAULT_REPORTING_TIMEZONE = 'UTC';
 const DEFAULT_AVG_SHIPPING_COST = 3;
 const DEFAULT_SHIPPING_CURRENCY = 'USD';
-const DEFAULT_QUIET_HOURS_ENABLED = false;
+const DEFAULT_QUIET_HOURS_ENABLED = true;
 type IntegrationRecord = typeof integrations.$inferSelect;
 
 interface VerificationStatusCounts {

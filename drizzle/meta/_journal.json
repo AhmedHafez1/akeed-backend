@@ -519,6 +519,13 @@
       "when": 1793232000000,
       "tag": "0073_usage_alerts_and_blocked_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793318400000,
+      "tag": "0074_new_store_timing_defaults",
+      "breakpoints": true
     }
   ]
 }

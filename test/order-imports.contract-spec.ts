@@ -167,6 +167,12 @@ describe('order imports PostgreSQL contract', () => {
         platform_type text NOT NULL,
         platform_store_url text NOT NULL,
         timezone text NOT NULL DEFAULT 'Asia/Riyadh',
+        -- The timing columns as 0016 created them; 0074 changes their defaults.
+        follow_up_delay_minutes integer NOT NULL DEFAULT 120,
+        escalation_delay_minutes integer NOT NULL DEFAULT 360,
+        quiet_hours_enabled boolean NOT NULL DEFAULT false,
+        quiet_hours_start text,
+        quiet_hours_end text,
         UNIQUE (platform_type, platform_store_url),
         UNIQUE (id, org_id)
       );
@@ -290,6 +296,8 @@ describe('order imports PostgreSQL contract', () => {
         '0072_order_customer_country.sql',
         // Usage alerts: the store's notification email; proves 0073 re-runs.
         '0073_usage_alerts_and_blocked_orders.sql',
+        // New store timing defaults; proves 0074 re-runs.
+        '0074_new_store_timing_defaults.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -312,6 +320,29 @@ describe('order imports PostgreSQL contract', () => {
     } finally {
       await client.end({ timeout: 5 });
     }
+  });
+
+  it('gives a new store the 0074 timing defaults', async () => {
+    const { integrationId } = await createSource();
+    const [store] = await client<
+      {
+        follow_up_delay_minutes: number;
+        escalation_delay_minutes: number;
+        quiet_hours_enabled: boolean;
+        quiet_hours_start: string | null;
+        quiet_hours_end: string | null;
+      }[]
+    >`
+      SELECT follow_up_delay_minutes, escalation_delay_minutes,
+        quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+      FROM integrations WHERE id = ${integrationId}`;
+    expect(store).toEqual({
+      follow_up_delay_minutes: 360,
+      escalation_delay_minutes: 1800,
+      quiet_hours_enabled: true,
+      quiet_hours_start: '22:00',
+      quiet_hours_end: '09:00',
+    });
   });
 
   it('stores a 5,000-row draft and its rows in one transaction', async () => {
