@@ -391,6 +391,7 @@ export function createConformanceBase(options: {
   };
 
   const automationJobs: AutomationJob[] = [];
+  const ranFollowUps = new Set<string>();
   const record =
     (kind: AutomationJob['kind']) => (params: Omit<AutomationJob, 'kind'>) => {
       automationJobs.push({ kind, ...params });
@@ -400,6 +401,17 @@ export function createConformanceBase(options: {
     enqueueInitialSend: record('initial'),
     enqueueFollowUp: record('follow_up'),
     enqueueNoReplyEscalation: record('no_reply'),
+    /** A recorded reminder is still due until the test runs it. */
+    readFollowUpJob: (params: { verificationId: string }) =>
+      Promise.resolve(
+        automationJobs.some(
+          (job) =>
+            job.kind === 'follow_up' &&
+            job.verificationId === params.verificationId,
+        ) && !ranFollowUps.has(params.verificationId)
+          ? 'pending'
+          : 'will_not_run',
+      ),
   };
 
   /**
@@ -515,6 +527,7 @@ export function createConformanceBase(options: {
     sends,
     messaging,
     automationJobs,
+    ranFollowUps,
     automation,
     retryQueue,
     retryProducer,
@@ -556,6 +569,7 @@ export function assembleConformanceWorld(
     logs,
     sends,
     automationJobs,
+    ranFollowUps,
     retryQueue,
     queued,
     events,
@@ -641,6 +655,7 @@ export function assembleConformanceWorld(
     hub,
     registry,
     billing,
+    base.automation as never,
   );
   const whatsapp = new WhatsAppWebhookService(
     verificationsRepo,
@@ -738,6 +753,7 @@ export function assembleConformanceWorld(
         scheduledAt: job.dueAt.toISOString(),
       },
     } as Parameters<typeof automationProcessor.process>[0]);
+    if (kind === 'follow_up') ranFollowUps.add(verificationId);
   }
 
   /** A customer tapping a quick-reply button, as Meta posts it. */

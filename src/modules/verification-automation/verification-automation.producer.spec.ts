@@ -157,4 +157,39 @@ describe('VerificationAutomationProducer', () => {
       expect(queue.getJob).not.toHaveBeenCalled();
     });
   });
+
+  describe('readFollowUpJob', () => {
+    const params = { verificationId: 'v1', orgId: 'org-1' };
+
+    it.each([
+      ['delayed', 'pending'],
+      ['waiting', 'pending'],
+      ['prioritized', 'pending'],
+      ['active', 'pending'],
+      ['completed', 'will_not_run'],
+      ['failed', 'will_not_run'],
+      ['unknown', 'will_not_run'],
+    ])('reads a %s reminder as %s', async (state, expected) => {
+      queue.getJob.mockResolvedValue({
+        getState: jest.fn().mockResolvedValue(state),
+      });
+
+      await expect(producer.readFollowUpJob(params)).resolves.toBe(expected);
+      expect(queue.getJob).toHaveBeenCalledWith('verification-v1-follow-up-1');
+    });
+
+    it('reads a reminder that was never scheduled as one that will not run', async () => {
+      await expect(producer.readFollowUpJob(params)).resolves.toBe(
+        'will_not_run',
+      );
+    });
+
+    it('reports a queue error instead of throwing', async () => {
+      queue.getJob.mockRejectedValue(new Error('redis down'));
+
+      await expect(producer.readFollowUpJob(params)).resolves.toBe(
+        'lookup_failed',
+      );
+    });
+  });
 });

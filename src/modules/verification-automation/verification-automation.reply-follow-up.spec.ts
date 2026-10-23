@@ -15,6 +15,7 @@ function setup(handle: jest.Mock) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     { handle } as never,
   );
   return processor;

@@ -167,6 +167,7 @@ export function releaseGateHarness(
   };
 
   const automationJobs: RecordedAutomationJob[] = [];
+  const ranFollowUps = new Set<string>();
   const automation = {
     enqueueInitialSend: (params: {
       verificationId: string;
@@ -192,6 +193,17 @@ export function releaseGateHarness(
       automationJobs.push({ kind: 'no_reply', ...params });
       return Promise.resolve();
     },
+    /** A recorded reminder is still due until the test runs it. */
+    readFollowUpJob: (params: { verificationId: string }) =>
+      Promise.resolve(
+        automationJobs.some(
+          (job) =>
+            job.kind === 'follow_up' &&
+            job.verificationId === params.verificationId,
+        ) && !ranFollowUps.has(params.verificationId)
+          ? 'pending'
+          : 'will_not_run',
+      ),
   };
 
   const credits = new CreditAccountingRepository(db);
@@ -252,6 +264,7 @@ export function releaseGateHarness(
     hub,
     outcomes,
     billing,
+    automation as never,
   );
   const whatsapp = new WhatsAppWebhookService(
     verificationsRepo,
@@ -605,6 +618,7 @@ export function releaseGateHarness(
         scheduledAt: job.dueAt.toISOString(),
       },
     } as Parameters<typeof automationProcessor.process>[0]);
+    if (job.kind === 'follow_up') ranFollowUps.add(job.verificationId);
   }
 
   return {

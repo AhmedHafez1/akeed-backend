@@ -36,6 +36,9 @@ function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
   const orderTaggingPort = {
     addOrderTag: jest.fn(),
   };
+  const automationProducer = {
+    readFollowUpJob: jest.fn().mockResolvedValue('will_not_run'),
+  };
 
   const processor = new VerificationAutomationProcessor(
     verificationsRepo as any,
@@ -62,6 +65,7 @@ function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
       } as never,
       usageAccountingFixture(),
     ),
+    automationProducer as never,
     undefined,
     autoCancellation as never,
   );
@@ -73,6 +77,7 @@ function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
     verificationSendService,
     verificationHub,
     orderTaggingPort,
+    automationProducer,
   };
 }
 
@@ -807,6 +812,163 @@ describe('VerificationAutomationProcessor', () => {
 
       expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
       expect(orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+    });
+
+    describe('after a reminder that never went out', () => {
+      function setupUnsentReminder(metadata: Record<string, unknown>) {
+        const mocks = createMocks();
+        mocks.verificationsRepo.findById.mockResolvedValue({
+          id: 'ver-1',
+          orderId: 'order-1',
+          orgId: 'org-1',
+          status: 'sent',
+          followUpAttempts: 0,
+          merchantCanceledAt: null,
+          metadata,
+        });
+        mocks.ordersRepo.findById.mockResolvedValue({
+          integrationId: 'int-1',
+          orgId: 'org-1',
+          id: 'order-1',
+          externalOrderId: 'ext-1',
+          integration: baseIntegration,
+        });
+        return mocks;
+      }
+
+      it.each([
+        { follow_up_skipped: 'plan_limit_reached' },
+        { follow_up_skipped: 'INSUFFICIENT_CREDITS' },
+        { follow_up_skipped: 'template_unavailable' },
+        { follow_up_failed: 'provider_outcome_unknown' },
+      ])('reaches no_reply after the reminder recorded %o', async (blocked) => {
+        const { processor, verificationsRepo } = setupUnsentReminder({
+          ...blocked,
+          follow_up_due_at: '2026-10-23T08:00:00.000Z',
+        });
+        const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+        await processor.process(job, 'token');
+
+        expect(job.moveToDelayed).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+          'ver-1',
+          'no_reply',
+          undefined,
+          undefined,
+        );
+      });
+
+      it('reaches no_reply when the reminder job will never run', async () => {
+        // Finished without sending, retries used up, or never scheduled
+        // (follow-ups on with no delay): nothing is recorded on the row.
+        const { processor, verificationsRepo, automationProducer } =
+          setupUnsentReminder({});
+        automationProducer.readFollowUpJob.mockResolvedValue('will_not_run');
+        const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+        await processor.process(job, 'token');
+
+        expect(automationProducer.readFollowUpJob).toHaveBeenCalledWith({
+          verificationId: 'ver-1',
+          orgId: 'org-1',
+        });
+        expect(job.moveToDelayed).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+          'ver-1',
+          'no_reply',
+          undefined,
+          undefined,
+        );
+      });
+
+      it('still waits for a reminder that is due', async () => {
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2026-10-23T10:00:00.000Z'));
+        try {
+          const { processor, verificationsRepo, automationProducer } =
+            setupUnsentReminder({
+              follow_up_due_at: '2026-10-23T10:05:00.000Z',
+            });
+          automationProducer.readFollowUpJob.mockResolvedValue('pending');
+          const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+          await expect(processor.process(job, 'token')).rejects.toBeInstanceOf(
+            DelayedError,
+          );
+
+          expect(job.moveToDelayed).toHaveBeenCalledWith(
+            new Date('2026-10-23T10:01:00.000Z').getTime(),
+            'token',
+          );
+          expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('waits for a due reminder even if an older refusal is on the row', async () => {
+        const { processor, verificationsRepo, automationProducer } =
+          setupUnsentReminder({ follow_up_skipped: 'plan_limit_reached' });
+        automationProducer.readFollowUpJob.mockResolvedValue('pending');
+        const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+        await expect(processor.process(job, 'token')).rejects.toBeInstanceOf(
+          DelayedError,
+        );
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      });
+
+      it('waits and looks again when the queue cannot be read', async () => {
+        const { processor, verificationsRepo, automationProducer } =
+          setupUnsentReminder({});
+        automationProducer.readFollowUpJob.mockResolvedValue('lookup_failed');
+        const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+        await expect(processor.process(job, 'token')).rejects.toBeInstanceOf(
+          DelayedError,
+        );
+        expect(job.moveToDelayed).toHaveBeenCalledTimes(1);
+        expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      });
+
+      it('lets a recorded refusal through when the queue cannot be read', async () => {
+        const { processor, verificationsRepo, automationProducer } =
+          setupUnsentReminder({ follow_up_failed: 'provider_not_accepted' });
+        automationProducer.readFollowUpJob.mockResolvedValue('lookup_failed');
+        const job = buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY);
+
+        await processor.process(job, 'token');
+
+        expect(job.moveToDelayed).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+          'ver-1',
+          'no_reply',
+          undefined,
+          undefined,
+        );
+      });
+
+      it('does not look at the queue once the reminder went out or follow-ups are off', async () => {
+        const { processor, verificationsRepo, ordersRepo, automationProducer } =
+          setupUnsentReminder({});
+        ordersRepo.findById.mockResolvedValue({
+          integrationId: 'int-1',
+          orgId: 'org-1',
+          id: 'order-1',
+          externalOrderId: 'ext-1',
+          integration: { ...baseIntegration, followUpEnabled: false },
+        });
+
+        await processor.process(
+          buildJob(VerificationAutomationJobType.ESCALATE_NO_REPLY),
+          'token',
+        );
+
+        expect(automationProducer.readFollowUpJob).not.toHaveBeenCalled();
+        expect(verificationsRepo.updateStatus).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

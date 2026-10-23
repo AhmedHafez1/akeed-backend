@@ -25,6 +25,7 @@ import { AUTOMATION_FINAL_STATUSES } from '../../shared/verification/verificatio
 import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-failure.policy';
 import { CustomerReplyFollowUpService } from '../verification-replies/customer-reply-follow-up.service';
 import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
+import { VerificationAutomationProducer } from './verification-automation.producer';
 
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
 
@@ -40,6 +41,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly verificationHub: VerificationHubService,
     private readonly commerceOutcomes: CommerceOutcomeRegistryService,
     private readonly billingEntitlements: BillingEntitlementService,
+    private readonly automationProducer: VerificationAutomationProducer,
     @Optional()
     private readonly replyFollowUps?: CustomerReplyFollowUpService,
     @Optional()
@@ -341,11 +343,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
 
     if (await this.delayIfQuietHours(job, integration, token)) return;
 
-    // If follow-up is still pending, push escalation behind it.
-    if (
-      integration.followUpEnabled &&
-      (verification.followUpAttempts ?? 0) === 0
-    ) {
+    // A reminder that may still go out keeps the escalation behind it.
+    if (await this.isReminderStillDue(verification, integration)) {
       const reschedule = new Date(Date.now() + 60_000);
       this.logger.log(
         buildBackendLog(VerificationAutomationProcessor.name, {
@@ -515,6 +514,36 @@ export class VerificationAutomationProcessor extends WorkerHost {
       [timestampKey]: skippedAt,
     });
     return true;
+  }
+
+  /**
+   * Whether the reminder may still go out. A refused or failed reminder leaves
+   * `followUpAttempts` at 0 and records `follow_up_skipped` / `follow_up_failed`
+   * instead, and a reminder that was never scheduled leaves nothing, so the
+   * queue decides: only a reminder job still waiting, retrying or running
+   * holds the escalation. When the queue cannot be read, a recorded refusal
+   * or failure still lets it through; otherwise it waits and looks again.
+   */
+  private async isReminderStillDue(
+    verification: NonNullable<
+      Awaited<ReturnType<VerificationsRepository['findById']>>
+    >,
+    integration: typeof integrations.$inferSelect,
+  ): Promise<boolean> {
+    if (!integration.followUpEnabled) return false;
+    if ((verification.followUpAttempts ?? 0) > 0) return false;
+
+    const reminder = await this.automationProducer.readFollowUpJob({
+      verificationId: verification.id,
+      orgId: verification.orgId,
+    });
+    if (reminder !== 'lookup_failed') return reminder === 'pending';
+
+    const metadata =
+      verification.metadata && typeof verification.metadata === 'object'
+        ? (verification.metadata as Record<string, unknown>)
+        : {};
+    return !(metadata.follow_up_skipped || metadata.follow_up_failed);
   }
 
   private async loadContext(

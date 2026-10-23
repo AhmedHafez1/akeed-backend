@@ -88,6 +88,39 @@ export class VerificationAutomationProducer {
     );
   }
 
+  /**
+   * Whether the verification's reminder job may still run: `pending` while it
+   * waits, is retried or is running; `will_not_run` when it finished or was
+   * never scheduled (follow-ups on with no delay, or long since removed);
+   * `lookup_failed` when the queue could not be read.
+   */
+  async readFollowUpJob(params: {
+    verificationId: string;
+    orgId: string;
+  }): Promise<'pending' | 'will_not_run' | 'lookup_failed'> {
+    const jobId = `verification-${params.verificationId}-follow-up-1`;
+    try {
+      const job = await this.queue.getJob(jobId);
+      if (!job) return 'will_not_run';
+      const state = await job.getState();
+      return FINISHED_JOB_STATES.has(state) || state === 'unknown'
+        ? 'will_not_run'
+        : 'pending';
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog('VerificationAutomationProducer', {
+          action: 'read-follow-up-job',
+          outcome: 'failure',
+          orgId: params.orgId,
+          verificationId: params.verificationId,
+          jobId,
+          ...normalizeError(error),
+        }),
+      );
+      return 'lookup_failed';
+    }
+  }
+
   private async removeFinishedJob(
     params: { verificationId: string; orgId: string },
     suffix: string,
