@@ -173,7 +173,6 @@ export function resolveAutoCancelView(
   )
     return view;
 
-  const quietHours = quietHoursConfigOf(source);
   const pendingFollowUp = resolveFollowUpScheduledFor(
     verification,
     source,
@@ -181,7 +180,7 @@ export function resolveAutoCancelView(
   );
   let escalationDueAt = adjustForQuietHours(
     new Date(sentAt + escalationMinutes * 60_000),
-    quietHours,
+    quietHoursConfigOf(source),
   );
   if (
     pendingFollowUp &&
@@ -207,7 +206,6 @@ export function resolveAutoCancelView(
       // Display only: a reminder still to go out, or one that went out, is
       // counted as delivered when it is due or was sent.
       followUpDeliveredAt: pendingFollowUp ?? verification.followUpSentAt,
-      quietHours,
     },
     escalationDueAt,
   );

@@ -21,7 +21,6 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
-import { quietHoursConfigOf } from '../../shared/utils/quiet-hours.util';
 import {
   AUTO_CANCEL_CONFIRMATION_TIMEOUT_MS,
   AUTO_CANCEL_LEASE_MS,
@@ -72,7 +71,6 @@ export function factsOf(snapshot: AutoCancelSnapshot): AutoCancelFacts {
       Boolean(verification.followUpSentAt),
     followUpBlockedReason: typeof blocked === 'string' ? blocked : null,
     followUpDeliveredAt: snapshot.followUpDeliveredAt,
-    quietHours: quietHoursConfigOf(integration),
   };
 }
 

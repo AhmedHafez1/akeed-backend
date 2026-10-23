@@ -95,13 +95,13 @@ The dashboard overview returns `capacity`: `blocked_count`, `mode` (`plan` or `c
 
 ### Automatic cancellation of unanswered orders
 
-A store may switch on `autoCancelEnabled` (off by default). An order that then reaches `no_reply` is canceled in its store, but only when the customer demonstrably had the chance to answer. The reason recorded is "No response after confirmation attempts" (`cancellation_source = automatic_no_reply`). The escalation delay is the deadline; the settings offer 48 hours when the switch goes on, and the switch needs `escalationEnabled`.
+A store may switch on `autoCancelEnabled` (off by default). An order that then reaches `no_reply` is canceled in its store, but only when the customer demonstrably had the chance to answer. The reason recorded is "No response after confirmation attempts" (`cancellation_source = automatic_no_reply`). It runs at the moment the order reaches `no_reply`, so the escalation delay is the deadline and there is no timing rule of its own; the escalation already waits for quiet hours to end. The switch needs `escalationEnabled`, and switching the escalation off switches it off too.
 
 **Decision.** `VerificationAutomationProcessor.handleEscalateNoReply` calls `AutoCancellationService.scheduleAfterNoReply` only after its own `no_reply` write returned a row. The pure `evaluateAutoCancel` (`src/shared/verification/auto-cancel.policy.ts`) answers:
 
 | Answer | When |
 | --- | --- |
-| `schedule` | The first dispatch has a delivery or read receipt; a reminder that was attempted has one too; no message ever came from the customer; the merchant did not exclude the order. Due at the later of now and 12 hours after the last delivered message, moved out of quiet hours. |
+| `schedule` | The first dispatch has a delivery or read receipt; a reminder that was attempted has one too; no message ever came from the customer; the merchant did not exclude the order. Due at once. |
 | `pause` | `initial_not_delivered`, `reminder_blocked` (`follow_up_skipped` / `follow_up_failed`: plan limit, credits, template, send failure), `reminder_not_delivered`. A paused row is re-checked by the sweep for 7 days, so a receipt that arrives late resumes it. Capacity is never a reason to cancel. |
 | `skip` | The setting is off, a test order, excluded, already answered or settled, or the customer wrote. A disabled store or a test order gets no row at all. |
 
@@ -109,7 +109,7 @@ A store may switch on `autoCancelEnabled` (off by default). An order that then r
 
 **Execution** (`auto-cancellation` queue, `AutoCancellationService.execute`). Every step runs under `withLockedVerification`: the verification row is locked first and the cancellation row second, on every path.
 
-1. Claim: a due `scheduled` row, or an `in_progress` one whose 5-minute lease ran out. The rules are evaluated again; a rule that no longer holds stops or pauses the row, and quiet hours move it. The claim sets `in_progress`, the lease and `attempts + 1`. A duplicate job finds the row claimed and exits.
+1. Claim: a due `scheduled` row, or an `in_progress` one whose 5-minute lease ran out. The rules are evaluated again; a rule that no longer holds stops or pauses the row. The claim sets `in_progress`, the lease and `attempts + 1`. A duplicate job finds the row claimed and exits.
 2. Read the store: `CommerceOutcomeRegistryService.inspectForCancellation`. `already_canceled` counts as success with no second cancel. `not_cancellable` (`paid`, `fulfilled`, `fulfillment_in_progress`, `status_not_writable`, `order_not_found`) skips the row.
 3. Mark the dispatch under the lock after one more check of the customer, the exclusion and the setting. After this mark nothing the customer or the merchant does changes the order.
 4. Dispatch `automatic_no_reply_cancellation` with `cancellation: { restock, notifyCustomer, staffNote }`.

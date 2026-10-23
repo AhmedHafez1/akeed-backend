@@ -1,13 +1,10 @@
-import {
-  adjustForQuietHours,
-  type QuietHoursConfig,
-} from '../utils/quiet-hours.util';
-
 /**
  * Automatic cancellation of unanswered COD orders.
  *
- * When a store has it switched on, an order that reaches `no_reply` is
- * canceled in its store, but only when the customer demonstrably had the
+ * When a store has it switched on, an order is canceled in its store when it
+ * reaches `no_reply`, at the no-reply delay the merchant set. The escalation
+ * already waits for quiet hours to end, so the cancellation needs no timing
+ * rule of its own. It runs only when the customer demonstrably had the
  * chance to answer: every message of the sequence was delivered, nothing came
  * back from their number, and the merchant did not keep the order. Anything
  * Akeed could not prove (an undelivered or blocked reminder, a delivery that
@@ -21,9 +18,6 @@ export const AUTOMATIC_CANCELLATION_SOURCE = 'automatic_no_reply';
 /** Shown to the merchant and written to the store's staff note. */
 export const AUTO_CANCEL_REASON_TEXT =
   'No response after confirmation attempts';
-
-/** Time the customer keeps after the last delivered message. */
-export const AUTO_CANCEL_RESPONSE_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 export const AUTO_CANCEL_STATUSES = [
   'scheduled',
@@ -117,7 +111,6 @@ export interface AutoCancelFacts {
   followUpBlockedReason?: string | null;
   /** First delivery or read receipt of the reminder. */
   followUpDeliveredAt?: string | null;
-  quietHours: QuietHoursConfig;
 }
 
 function timeOf(iso: string | null | undefined): number | null {
@@ -127,9 +120,8 @@ function timeOf(iso: string | null | undefined): number | null {
 }
 
 /**
- * Whether, and when, this order may be canceled automatically. The time is
- * the later of `now` and the response window after the last delivered
- * message, moved out of quiet hours.
+ * Whether this order may be canceled automatically. When it may, it is due
+ * `now`: the moment it reached no reply.
  */
 export function evaluateAutoCancel(
   facts: AutoCancelFacts,
@@ -148,37 +140,22 @@ export function evaluateAutoCancel(
     return { kind: 'skip', reason: 'customer_replied' };
   }
 
-  const initialDelivered = timeOf(facts.initialDeliveredAt);
-  if (initialDelivered === null) {
+  if (timeOf(facts.initialDeliveredAt) === null) {
     return { kind: 'pause', reason: 'initial_not_delivered' };
   }
-
-  let lastDelivered = initialDelivered;
   if (facts.followUpBlockedReason) {
     return { kind: 'pause', reason: 'reminder_blocked' };
   }
-  if (facts.followUpAttempted) {
-    const followUpDelivered = timeOf(facts.followUpDeliveredAt);
-    if (followUpDelivered === null) {
-      return { kind: 'pause', reason: 'reminder_not_delivered' };
-    }
-    lastDelivered = Math.max(lastDelivered, followUpDelivered);
+  if (facts.followUpAttempted && timeOf(facts.followUpDeliveredAt) === null) {
+    return { kind: 'pause', reason: 'reminder_not_delivered' };
   }
-
-  const earliest = Math.max(
-    now.getTime(),
-    lastDelivered + AUTO_CANCEL_RESPONSE_WINDOW_MS,
-  );
-  return {
-    kind: 'schedule',
-    dueAt: adjustForQuietHours(new Date(earliest), facts.quietHours),
-  };
+  return { kind: 'schedule', dueAt: now };
 }
 
 /**
  * The cancellation time shown on an order that has not reached `no_reply`
- * yet: its escalation time run through the same rules. Display only; the
- * decision is taken again when the escalation fires.
+ * yet: its escalation time, when the same rules would let it run. Display
+ * only; the decision is taken again when the escalation fires.
  */
 export function projectAutoCancelAt(
   facts: Omit<AutoCancelFacts, 'status'>,

@@ -1,6 +1,5 @@
 import {
   AUTO_CANCEL_MAX_ATTEMPTS,
-  AUTO_CANCEL_RESPONSE_WINDOW_MS,
   autoCancelRetryDelayMs,
   evaluateAutoCancel,
   projectAutoCancelAt,
@@ -17,64 +16,29 @@ function facts(overrides: Partial<AutoCancelFacts> = {}): AutoCancelFacts {
     status: 'no_reply',
     initialDeliveredAt: '2026-10-18T10:00:00.000Z',
     followUpAttempted: false,
-    quietHours: { enabled: false },
     ...overrides,
   };
 }
 
 describe('evaluateAutoCancel', () => {
-  it('schedules now when every message was delivered long enough ago', () => {
+  it('cancels at the moment the order reached no reply', () => {
     expect(evaluateAutoCancel(facts(), NOW)).toEqual({
       kind: 'schedule',
       dueAt: NOW,
     });
   });
 
-  it('treats the confirmation as the final message when no reminder went out', () => {
-    const delivered = new Date(NOW.getTime() - 2 * HOUR).toISOString();
+  it('adds no wait after a reminder delivered shortly before', () => {
+    const reminderDelivered = new Date(NOW.getTime() - HOUR).toISOString();
     expect(
-      evaluateAutoCancel(facts({ initialDeliveredAt: delivered }), NOW),
-    ).toEqual({
-      kind: 'schedule',
-      dueAt: new Date(
-        new Date(delivered).getTime() + AUTO_CANCEL_RESPONSE_WINDOW_MS,
+      evaluateAutoCancel(
+        facts({
+          followUpAttempted: true,
+          followUpDeliveredAt: reminderDelivered,
+        }),
+        NOW,
       ),
-    });
-  });
-
-  it('waits the response window after the final delivered reminder', () => {
-    const reminderDelivered = new Date(NOW.getTime() - 3 * HOUR).toISOString();
-    const decision = evaluateAutoCancel(
-      facts({
-        followUpAttempted: true,
-        followUpDeliveredAt: reminderDelivered,
-      }),
-      NOW,
-    );
-    expect(decision).toEqual({
-      kind: 'schedule',
-      dueAt: new Date(NOW.getTime() + 9 * HOUR),
-    });
-  });
-
-  it('moves a due time inside quiet hours to their end, across midnight', () => {
-    // 23:00 in Riyadh (UTC+3) is inside 22:00-09:00; it ends at 09:00 local.
-    const lateEvening = new Date('2026-10-20T20:00:00.000Z');
-    const decision = evaluateAutoCancel(
-      facts({
-        quietHours: {
-          enabled: true,
-          start: '22:00',
-          end: '09:00',
-          timezone: 'Asia/Riyadh',
-        },
-      }),
-      lateEvening,
-    );
-    expect(decision).toEqual({
-      kind: 'schedule',
-      dueAt: new Date('2026-10-21T06:00:00.000Z'),
-    });
+    ).toEqual({ kind: 'schedule', dueAt: NOW });
   });
 
   it.each([
