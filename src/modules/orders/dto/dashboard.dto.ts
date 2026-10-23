@@ -268,6 +268,8 @@ export interface PaginatedResponse<T> {
       can_retry_verifications?: boolean;
     };
     usage?: DashboardUsageBudgetDto;
+    /** Orders waiting for capacity; the list shows the same warning. */
+    capacity?: CapacitySummaryDto;
     /** Rows per confirmations tab for the period, search ignored. */
     tab_counts?: Record<VerificationListTab, number>;
   };

@@ -12,6 +12,7 @@ function withHeldDefaults(repo: Record<string, unknown>) {
   return {
     findHeldByOrg: jest.fn().mockResolvedValue([]),
     countHeldByOrg: jest.fn().mockResolvedValue(0),
+    countBlocked: jest.fn().mockResolvedValue(0),
     getCustomerHistoryByPhones: jest.fn().mockResolvedValue([]),
     countByTab: jest.fn().mockResolvedValue({
       all: 0,
@@ -934,6 +935,14 @@ describe('Dashboard cancellation capabilities', () => {
           limit: 30,
           remaining: 30,
           period_end: null,
+        });
+        // The list carries the dashboard's blocked-orders summary too.
+        expect(result.page_context?.capacity).toEqual({
+          blocked_count: 0,
+          mode: 'plan',
+          remaining: 30,
+          action: 'upgrade',
+          reset_at: null,
         });
       }
       expect(JSON.stringify(result)).not.toContain('accessToken');

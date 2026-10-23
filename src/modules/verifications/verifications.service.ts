@@ -343,7 +343,7 @@ export class VerificationsService {
       filteredCount,
       heldRows,
       heldCount,
-      usage,
+      budget,
       tabCounts,
     ] = await Promise.all([
       wantsVerifications
@@ -376,7 +376,7 @@ export class VerificationsService {
           })
         : [],
       this.verificationsRepo.countHeldByOrg(orgId, filterPeriod, importBatchId),
-      this.resolvePageUsage(activeIntegrations),
+      this.resolvePageBudget(orgId, activeIntegrations),
       this.verificationsRepo.countByTab(orgId, filterPeriod, importBatchId),
     ]);
     const totalCount = reuseTabCount ? tabCounts[tab ?? 'all'] : filteredCount;
@@ -497,7 +497,8 @@ export class VerificationsService {
           activeIntegrations.length === 1
             ? this.resolveSettingsSummary(activeIntegrations[0])
             : undefined,
-        usage,
+        usage: budget.usage,
+        capacity: budget.capacity,
         tab_counts: {
           ...tabCounts,
           all: tabCounts.all + heldCount,
@@ -565,7 +566,7 @@ export class VerificationsService {
         : null,
       capacity:
         source && entitlement
-          ? this.resolveCapacity(source, entitlement, blockedCount)
+          ? this.resolveCapacity(entitlement, blockedCount)
           : null,
       kpis: {
         confirmed: { count: counts.confirmed, value: confirmedValue },
@@ -600,17 +601,17 @@ export class VerificationsService {
     };
   }
 
+  /**
+   * Orders waiting for capacity and what unblocks them. Only a prepaid-credit
+   * entitlement carries `credits`, so that is what decides the mode.
+   */
   private resolveCapacity(
-    source: Parameters<BillingEntitlementService['accountingModeFor']>[0],
     entitlement: Awaited<
       ReturnType<BillingEntitlementService['readEntitlement']>
     >,
     blockedCount: number,
   ): CapacitySummaryDto {
-    const mode =
-      this.billingEntitlements.accountingModeFor(source) === 'prepaid_credit'
-        ? 'credits'
-        : 'plan';
+    const mode = 'credits' in entitlement ? 'credits' : 'plan';
     const remaining =
       mode === 'credits'
         ? Math.max(
@@ -869,13 +870,33 @@ export class VerificationsService {
    * already surfaced through `source`, and inventing a zero budget here would
    * read as "limit reached".
    */
-  private async resolvePageUsage(
+  private async resolvePageBudget(
+    orgId: string,
     activeIntegrations: (typeof integrations.$inferSelect)[],
-  ): Promise<DashboardUsageBudgetDto | undefined> {
+  ): Promise<{
+    usage?: DashboardUsageBudgetDto;
+    capacity?: CapacitySummaryDto;
+  }> {
     const source =
       activeIntegrations.length === 1 ? activeIntegrations[0] : null;
-    if (!source) return undefined;
-    const entitlement = await this.billingEntitlements.readEntitlement(source);
+    if (!source) return {};
+    const [entitlement, blockedCount] = await Promise.all([
+      this.billingEntitlements.readEntitlement(source),
+      this.verificationsRepo.countBlocked(orgId),
+    ]);
+    // The confirmations list shows the same blocked-orders warning as the
+    // dashboard, so it carries the same capacity summary.
+    return {
+      usage: this.toUsageBudget(entitlement),
+      capacity: this.resolveCapacity(entitlement, blockedCount),
+    };
+  }
+
+  private toUsageBudget(
+    entitlement: Awaited<
+      ReturnType<BillingEntitlementService['readEntitlement']>
+    >,
+  ): DashboardUsageBudgetDto {
     return {
       used: entitlement.consumedCount,
       limit: entitlement.includedLimit,
