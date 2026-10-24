@@ -493,6 +493,7 @@ describe('AutoCancellationService', () => {
     it('stops a scheduled cancellation and audits who excluded it', async () => {
       const harness = setup();
       await scheduledAndDue(harness);
+      harness.state.snapshot.verification.status = 'delivered';
       await expect(harness.service.exclude(owner, 'ver-1')).resolves.toEqual({
         verificationId: 'ver-1',
         excluded: true,
@@ -507,29 +508,70 @@ describe('AutoCancellationService', () => {
       );
     });
 
-    it('lets an included order be scheduled again', async () => {
+    it('allows an earlier-stage order back in and schedules it when it reaches no reply', async () => {
       const harness = setup();
-      await scheduledAndDue(harness);
+      harness.state.snapshot.verification.status = 'delivered';
       await harness.service.exclude(owner, 'ver-1');
       await harness.service.include(owner, 'ver-1');
+      expect(
+        harness.state.snapshot.verification.autoCancelExcludedAt,
+      ).toBeNull();
+      harness.state.snapshot.verification.status = 'no_reply';
+      await scheduledAndDue(harness);
       expect(harness.state.snapshot.row?.status).toBe('scheduled');
     });
 
-    it('refuses once the store is already canceling the order', async () => {
-      const harness = setup({
-        dispatch: () => ({
-          status: 'pending_provider_operation',
-          providerOperationId: 'job-1',
-        }),
-      });
-      await scheduledAndDue(harness);
-      await harness.service.execute('row-1');
-      await expect(
-        harness.service.exclude(owner, 'ver-1'),
-      ).rejects.toMatchObject({
-        response: { code: 'AUTO_CANCEL_ALREADY_IN_PROGRESS' },
-      });
-    });
+    it.each([
+      ['include', false],
+      ['include', true],
+      ['exclude', false],
+      ['exclude', true],
+    ] as const)(
+      'refuses %s at no reply (already excluded=%s) without side effects',
+      async (action, excluded) => {
+        const harness = setup();
+        await scheduledAndDue(harness);
+        harness.state.snapshot.verification.autoCancelExcludedAt = excluded
+          ? DELIVERED
+          : null;
+        const before = structuredClone(harness.state.snapshot);
+        harness.repo.appendEvent.mockClear();
+        harness.repo.update.mockClear();
+        const reevaluate = jest.spyOn(harness.service, 'reevaluate');
+        await expect(
+          harness.service[action](owner, 'ver-1'),
+        ).rejects.toMatchObject({
+          response: {
+            code: 'AUTO_CANCEL_EXCLUDE_NOT_ALLOWED',
+            statusCode: 400,
+          },
+        });
+        expect(harness.state.snapshot).toEqual(before);
+        expect(harness.repo.setExclusion).not.toHaveBeenCalled();
+        expect(harness.repo.appendEvent).not.toHaveBeenCalled();
+        expect(harness.repo.update).not.toHaveBeenCalled();
+        expect(reevaluate).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['include', 'exclude'] as const)(
+      'refuses %s once the store is already canceling the order',
+      async (action) => {
+        const harness = setup({
+          dispatch: () => ({
+            status: 'pending_provider_operation',
+            providerOperationId: 'job-1',
+          }),
+        });
+        await scheduledAndDue(harness);
+        await harness.service.execute('row-1');
+        await expect(
+          harness.service[action](owner, 'ver-1'),
+        ).rejects.toMatchObject({
+          response: { code: 'AUTO_CANCEL_ALREADY_IN_PROGRESS' },
+        });
+      },
+    );
 
     it('is refused to a viewer', async () => {
       const harness = setup();

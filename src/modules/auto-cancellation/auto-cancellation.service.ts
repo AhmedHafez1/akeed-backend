@@ -430,6 +430,7 @@ export class AutoCancellationService {
         )
           return 'in_progress' as const;
         if (
+          verification.status === 'no_reply' ||
           verification.status === 'confirmed' ||
           verification.status === 'canceled'
         )
@@ -470,7 +471,8 @@ export class AutoCancellationService {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
-        message: 'A confirmed or canceled order cannot change auto-cancel.',
+        message:
+          'An order marked no reply, confirmed, or canceled cannot change auto-cancel.',
         code: 'AUTO_CANCEL_EXCLUDE_NOT_ALLOWED',
       });
     if (!excluded && outcome.changed && outcome.rowId)

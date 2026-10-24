@@ -999,8 +999,8 @@ export class VerificationsService {
 
   /**
    * The merchant may keep an order out of the automatic cancellation, or let
-   * it back in, while the store uses it and the cancellation has not reached
-   * the store.
+   * it back in, before the verification reaches no reply or is settled,
+   * while the store uses it and cancellation has not reached the store.
    */
   private withAutoCancelCapability<
     T extends {
@@ -1012,6 +1012,7 @@ export class VerificationsService {
     const view = item.auto_cancel;
     if (view === null) return item;
     const supported =
+      item.status !== 'no_reply' &&
       item.status !== 'confirmed' &&
       item.status !== 'canceled' &&
       !VerificationAutoCancellationsRepository.isCommitted(

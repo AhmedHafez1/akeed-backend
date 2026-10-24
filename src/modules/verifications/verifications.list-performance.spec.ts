@@ -33,6 +33,9 @@ function fixture(withSync = true) {
     getCustomerHistoryByPhones: jest.fn().mockResolvedValue([]),
   };
   const syncs = { findByCorrelationIds: jest.fn().mockResolvedValue([]) };
+  const autoCancellations = {
+    findByVerificationIds: jest.fn().mockResolvedValue([]),
+  };
   const service = new VerificationsService(
     repo as never,
     {} as never,
@@ -41,8 +44,9 @@ function fixture(withSync = true) {
     { supports: () => false } as never,
     {} as never,
     withSync ? (syncs as never) : undefined,
+    autoCancellations as never,
   );
-  return { service, repo, syncs, counts };
+  return { service, repo, syncs, counts, autoCancellations };
 }
 
 function verification(id: string) {
@@ -61,6 +65,29 @@ function verification(id: string) {
 }
 
 describe('Verification list read efficiency', () => {
+  it.each(['no_reply', 'delivered'])(
+    'reports auto-cancel toggle capability for %s',
+    async (status) => {
+      const { service, repo, autoCancellations } = fixture();
+      repo.findByOrg.mockResolvedValue([{ ...verification('v1'), status }]);
+      autoCancellations.findByVerificationIds.mockResolvedValue([
+        {
+          verificationId: 'v1',
+          status: 'paused',
+          dueAt: null,
+          reason: 'reminder_not_delivered',
+          lateReplyAt: null,
+        },
+      ]);
+      const response = await service.listByOrg('org-a', {});
+      expect(response.data[0].capabilities).toContainEqual({
+        action: 'auto_cancel_exclusion',
+        supported: status !== 'no_reply',
+      });
+      expect(response.data[0].auto_cancel?.state).toBe('paused');
+    },
+  );
+
   it.each(VERIFICATION_LIST_TABS)(
     'reuses the aggregate for tab %s',
     async (tab) => {
