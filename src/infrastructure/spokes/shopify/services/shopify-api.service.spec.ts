@@ -148,7 +148,7 @@ describe('ShopifyApiService cancellation contract', () => {
             financialStatus: 'PENDING',
             email: 'akeed-cod-test@example.com',
             phone: '+201001234567',
-            tags: ['akeed-test', 'akeed-cod-test'],
+            tags: ['Akeed: Test'],
             lineItems: [
               {
                 title: 'Akeed COD Test',
