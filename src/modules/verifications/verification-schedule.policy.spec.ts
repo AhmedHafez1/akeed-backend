@@ -141,7 +141,7 @@ describe('resolveAutoCancelView', () => {
     });
   });
 
-  it('projects nothing for an excluded order or one the customer wrote about', () => {
+  it('projects nothing for an excluded order', () => {
     expect(
       resolveAutoCancelView(
         { ...awaiting, autoCancelExcludedAt: EARLIER },
@@ -151,15 +151,6 @@ describe('resolveAutoCancelView', () => {
         NOW,
       ),
     ).toMatchObject({ scheduled_for: null, excluded: true });
-    expect(
-      resolveAutoCancelView(
-        { ...awaiting, customerLastMessageAt: EARLIER },
-        autoCancelSource,
-        undefined,
-        false,
-        NOW,
-      ),
-    ).toMatchObject({ scheduled_for: null });
   });
 
   it('reports a decided row as it is, with its late-reply flag', () => {

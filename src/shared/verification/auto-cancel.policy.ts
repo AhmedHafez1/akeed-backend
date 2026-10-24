@@ -73,8 +73,7 @@ export type AutoCancelSkipReason =
   | 'test_order'
   | 'excluded'
   | 'not_no_reply'
-  | 'already_resolved'
-  | 'customer_replied';
+  | 'already_resolved';
 
 export type AutoCancelPauseReason =
   | 'initial_not_delivered'
@@ -102,7 +101,6 @@ export interface AutoCancelFacts {
   canceledAt?: string | null;
   merchantCanceledAt?: string | null;
   excludedAt?: string | null;
-  customerLastMessageAt?: string | null;
   /** First delivery or read receipt of the confirmation message. */
   initialDeliveredAt?: string | null;
   /** A reminder was sent, or its send was refused or failed. */
@@ -135,9 +133,6 @@ export function evaluateAutoCancel(
   }
   if (facts.status !== 'no_reply') {
     return { kind: 'skip', reason: 'not_no_reply' };
-  }
-  if (facts.customerLastMessageAt) {
-    return { kind: 'skip', reason: 'customer_replied' };
   }
 
   if (timeOf(facts.initialDeliveredAt) === null) {

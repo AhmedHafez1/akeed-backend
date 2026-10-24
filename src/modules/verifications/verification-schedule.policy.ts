@@ -124,7 +124,6 @@ export function resolveAutoCancelView(
     readAt?: string | null;
     followUpAttempts?: number | null;
     followUpSentAt?: string | null;
-    customerLastMessageAt?: string | null;
     autoCancelExcludedAt?: string | null;
     metadata?: unknown;
   },
@@ -160,7 +159,7 @@ export function resolveAutoCancelView(
     excluded,
     late_reply: false,
   };
-  if (excluded || verification.customerLastMessageAt) return view;
+  if (excluded) return view;
 
   const sentAt = verification.lastSentAt
     ? new Date(verification.lastSentAt).getTime()

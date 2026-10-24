@@ -22,7 +22,7 @@ function message(fields: Record<string, unknown>): WhatsAppWebhookPayloadDto {
   } as WhatsAppWebhookPayloadDto;
 }
 
-function setup(committed: string[] = []) {
+function setup(committed = false) {
   const verificationsRepo = {
     findById: jest
       .fn()
@@ -37,9 +37,7 @@ function setup(committed: string[] = []) {
     findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
   };
   const autoCancellations = {
-    recordCustomerMessage: jest
-      .fn()
-      .mockResolvedValue({ matched: ['v1'], committed }),
+    recordCustomerAnswer: jest.fn().mockResolvedValue({ committed }),
   };
   const service = new WhatsAppWebhookService(
     verificationsRepo as any,
@@ -55,37 +53,88 @@ function setup(committed: string[] = []) {
 }
 
 describe('WhatsAppWebhookService and automatic cancellation', () => {
-  it('records a plain message that quotes nothing by the sender number', async () => {
+  it('ignores a message it cannot read as an answer', async () => {
     const { service, autoCancellations, verificationsRepo } = setup();
 
     await service.processIncoming(
-      message({ type: 'text', text: { body: 'Can I change the address?' } }),
+      message({
+        type: 'text',
+        text: { body: 'Can I change the address?' },
+        context: { id: 'wamid-1' },
+      }),
     );
+    await service.processIncoming(message({ type: 'image' }));
 
-    expect(autoCancellations.recordCustomerMessage).toHaveBeenCalledWith({
-      phoneE164: '+201012345678',
-      verificationIds: [],
-      receivedAt: new Date(1700000000 * 1000).toISOString(),
-    });
+    expect(autoCancellations.recordCustomerAnswer).not.toHaveBeenCalled();
     expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
   });
 
-  it('records media and button messages too, with the order they name', async () => {
+  it('records a button answer against the order it names', async () => {
     const { service, autoCancellations } = setup();
 
-    await service.processIncoming(message({ type: 'image' }));
     await service.processIncoming(
       message({ type: 'button', button: { payload: 'confirm_v1' } }),
     );
 
-    expect(autoCancellations.recordCustomerMessage).toHaveBeenCalledTimes(2);
-    expect(autoCancellations.recordCustomerMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ verificationIds: ['v1'] }),
+    expect(autoCancellations.recordCustomerAnswer).toHaveBeenCalledWith({
+      verificationId: 'v1',
+      intent: 'confirmed',
+      receivedAt: new Date(1700000000 * 1000).toISOString(),
+    });
+  });
+
+  it('matches a typed answer that quotes the first message after a reminder replaced its id', async () => {
+    const { service, verificationsRepo, autoCancellations } = setup();
+    verificationsRepo.findByWaMessageId.mockResolvedValue(undefined);
+    const messageDispatches = (
+      service as unknown as {
+        messageDispatches: { findByProviderMessageId: jest.Mock };
+      }
+    ).messageDispatches;
+    messageDispatches.findByProviderMessageId.mockResolvedValue({
+      verificationId: 'v1',
+    });
+
+    await service.processIncoming(
+      message({
+        type: 'text',
+        text: { body: 'yes' },
+        context: { id: 'wamid-first' },
+      }),
+    );
+
+    expect(messageDispatches.findByProviderMessageId).toHaveBeenCalledWith(
+      'wamid-first',
+    );
+    expect(autoCancellations.recordCustomerAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ verificationId: 'v1', intent: 'confirmed' }),
+    );
+    expect(verificationsRepo.updateStatus).toHaveBeenCalledWith(
+      'v1',
+      'confirmed',
+      undefined,
+      '1700000000',
+      { confirmationSource: 'customer' },
     );
   });
 
+  it('records nothing for an order the merchant already canceled', async () => {
+    const { service, verificationsRepo, autoCancellations } = setup(true);
+    verificationsRepo.findById.mockResolvedValue({
+      id: 'v1',
+      merchantCanceledAt: '2026-10-01T00:00:00.000Z',
+    });
+
+    await service.processIncoming(
+      message({ type: 'button', button: { payload: 'confirm_v1' } }),
+    );
+
+    expect(autoCancellations.recordCustomerAnswer).not.toHaveBeenCalled();
+    expect(verificationsRepo.updateStatus).not.toHaveBeenCalled();
+  });
+
   it('still confirms an order whose cancellation has not reached the store', async () => {
-    const { service, verificationsRepo } = setup([]);
+    const { service, verificationsRepo } = setup(false);
 
     await service.processIncoming(
       message({ type: 'button', button: { payload: 'confirm_v1' } }),
@@ -101,7 +150,7 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
   });
 
   it('leaves the status of an order the store is already canceling', async () => {
-    const { service, verificationsRepo, verificationHub } = setup(['v1']);
+    const { service, verificationsRepo, verificationHub } = setup(true);
 
     await service.processIncoming(
       message({ type: 'button', button: { payload: 'confirm_v1' } }),
@@ -111,9 +160,9 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
     expect(verificationHub.finalizeVerification).not.toHaveBeenCalled();
   });
 
-  it('handles the reply as before when recording fails', async () => {
+  it('handles the answer as before when recording fails', async () => {
     const { service, verificationsRepo, autoCancellations } = setup();
-    autoCancellations.recordCustomerMessage.mockRejectedValue(
+    autoCancellations.recordCustomerAnswer.mockRejectedValue(
       new Error('database unavailable'),
     );
 

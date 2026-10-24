@@ -8,14 +8,11 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  *
  * Returns the reason for the first rule that matches, or NULL:
  * -. `late_reply_after_auto_cancel`: Akeed canceled the order in its store
- *    and the customer wrote afterwards; contact them (Akeed does not store
- *    the message text).
+ *    and the customer confirmed afterwards; contact them.
  * 0. `no_whatsapp`: the customer number cannot receive WhatsApp; call them.
  * 1. `delivery_failed`: WhatsApp reported the message undeliverable.
  * 2. `send_failed`: any other failure: the message never went out (no
  *    credits, plan limit, source inactive, provider error).
- * -. `customer_replied`: the customer wrote without a clear confirm or
- *    cancel; contact them. It also stops the automatic cancellation.
  * -. `auto_cancel_failed`: the automatic cancellation failed at the store;
  *    the order is still open there.
  * 3. `no_reply_after_follow_up`: escalated to no-reply after the reminder went out.
@@ -54,9 +51,6 @@ export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
       AND ${verifications.metadata}->>'reason' = 'provider_delivery_failed'
       THEN 'delivery_failed'
     WHEN ${verifications.status} = 'failed' THEN 'send_failed'
-    WHEN ${verifications.status} IN ('sent', 'delivered', 'read', 'no_reply')
-      AND ${verifications.customerLastMessageAt} IS NOT NULL
-      THEN 'customer_replied'
     WHEN ${verifications.status} = 'no_reply'
       AND ${verifications.id} IN (
         SELECT failed_auto_cancel.verification_id

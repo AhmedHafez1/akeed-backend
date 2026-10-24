@@ -46,44 +46,34 @@ export class WhatsAppWebhookService {
   ) {}
 
   /**
-   * Any message from the customer's number stops the automatic cancellation
-   * of the orders it can belong to: the one its button or quote names, or,
-   * when it names none, the recent orders sent to that number. Returns the
-   * orders whose cancellation already reached the store; their status is
-   * left alone and the merchant is asked to review the reply. Never throws.
+   * Record a confirm or cancel against the order's automatic cancellation.
+   * Returns true when that cancellation already reached the store: the order's
+   * status is then left alone, and a Confirm is flagged for the merchant.
+   * A message Akeed cannot read as an answer never gets here. Never throws.
    */
-  private async recordCustomerMessage(
+  private async recordCustomerAnswer(
+    verificationId: string,
+    intent: CustomerReplyIntent,
     message: WhatsAppMessageDto,
-  ): Promise<string[]> {
-    if (!this.autoCancellations) return [];
+  ): Promise<boolean> {
+    if (!this.autoCancellations) return false;
     try {
-      const buttonPayload =
-        message.button?.payload ?? message.interactive?.button_reply?.id;
-      const fromButton = buttonPayload
-        ? resolveButtonPayload(buttonPayload)?.verificationId
-        : undefined;
-      const quoted = message.context?.id
-        ? await this.findRepliedVerification(message.context.id)
-        : undefined;
-      const from = message.from?.replace(/\D/g, '') ?? '';
-      const { committed } = await this.autoCancellations.recordCustomerMessage({
-        phoneE164: from.length >= 7 ? `+${from}` : null,
-        verificationIds: [fromButton, quoted?.id].filter((id): id is string =>
-          Boolean(id),
-        ),
+      const { committed } = await this.autoCancellations.recordCustomerAnswer({
+        verificationId,
+        intent,
         receivedAt: this.messageTime(message),
       });
       return committed;
     } catch (error) {
       this.logger.error(
         buildBackendLog(WhatsAppWebhookService.name, {
-          action: 'whatsapp-webhook-record-customer-message',
+          action: 'whatsapp-webhook-record-customer-answer',
           outcome: 'failure',
-          messageType: message.type,
+          verificationId,
           ...normalizeError(error),
         }),
       );
-      return [];
+      return false;
     }
   }
 
@@ -260,7 +250,8 @@ export class WhatsAppWebhookService {
    * Two routes, in order of trustworthiness:
    *  - a quick-reply button carries the verification id in its own payload;
    *  - a free-text answer carries nothing, so it is matched by `context.id`,
-   *    the wamid of the template the customer replied to.
+   *    the wamid of the message it quotes: the confirmation, or a reminder
+   *    sent later, which replaces the verification's own wamid.
    *
    * Anything that resolves to neither is returned as `null` and logged by the
    * caller, so an unhandled reply shape stops being invisible.
@@ -290,8 +281,7 @@ export class WhatsAppWebhookService {
     const intent = resolveReplyText(body);
     if (!intent) return null;
 
-    const verification =
-      await this.verificationsRepo.findByWaMessageId(contextWamid);
+    const verification = await this.findRepliedVerification(contextWamid);
     if (!verification) return null;
 
     return { verificationId: verification.id, intent, via: 'text' };
@@ -299,7 +289,6 @@ export class WhatsAppWebhookService {
 
   private async handleMessages(messages: WhatsAppMessageDto[]) {
     for (const message of messages) {
-      const committedCancellations = await this.recordCustomerMessage(message);
       const resolved = await this.resolveReply(message);
       if (!resolved) {
         this.logger.warn(
@@ -337,9 +326,15 @@ export class WhatsAppWebhookService {
         continue;
       }
 
+      const cancellationCommitted = await this.recordCustomerAnswer(
+        verificationId,
+        newStatus,
+        message,
+      );
+
       // The store is canceling, or canceled, this order on Akeed's request.
-      // The reply was recorded for the merchant to review instead.
-      if (committedCancellations.includes(verificationId)) {
+      // A Confirm was flagged for the merchant to review instead.
+      if (cancellationCommitted) {
         this.logger.log(
           buildBackendLog(WhatsAppWebhookService.name, {
             action: 'whatsapp-webhook-handle-message',

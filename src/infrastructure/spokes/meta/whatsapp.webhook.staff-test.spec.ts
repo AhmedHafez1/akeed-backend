@@ -24,6 +24,7 @@ function setup() {
       .fn()
       .mockResolvedValue({ outcome: 'verification' }),
     recordProviderStatus: jest.fn(),
+    findByProviderMessageId: jest.fn().mockResolvedValue(undefined),
   };
   const service = new WhatsAppWebhookService(
     verificationsRepo as never,

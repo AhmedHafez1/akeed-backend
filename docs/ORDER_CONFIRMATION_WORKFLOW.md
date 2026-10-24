@@ -103,7 +103,7 @@ A store may switch on `autoCancelEnabled` (off by default). An order that then r
 | --- | --- |
 | `schedule` | The first dispatch has a delivery or read receipt; a reminder that was attempted has one too; no message ever came from the customer; the merchant did not exclude the order. Due at once. |
 | `pause` | `initial_not_delivered`, `reminder_blocked` (`follow_up_skipped` / `follow_up_failed`: plan limit, credits, template, send failure), `reminder_not_delivered`. A paused row is re-checked by the sweep for 7 days, so a receipt that arrives late resumes it. Capacity is never a reason to cancel. |
-| `skip` | The setting is off, a test order, excluded, already answered or settled, or the customer wrote. A disabled store or a test order gets no row at all. |
+| `skip` | The setting is off, a test order, excluded, or already answered or settled. A disabled store or a test order gets no row at all. |
 
 **State.** One `verification_auto_cancellations` row per verification (unique `verification_id`): `scheduled | paused | in_progress | awaiting_platform | succeeded | failed | skipped | stopped`, with `reason`, `due_at`, `attempts`, `lease_until`, `provider_operation_id`, the restock and notify choices snapshotted at dispatch, `dispatched_at`, `completed_at` and `late_reply_at`. Every decision appends to `verification_auto_cancellation_events` (`actor_user_id` NULL is Akeed).
 
@@ -118,9 +118,9 @@ A store may switch on `autoCancelEnabled` (off by default). An order that then r
 
 The sweep (every 5 minutes) enqueues due rows whose job was lost, resumes expired leases, polls `awaiting_platform` rows and re-checks paused ones.
 
-**Customer messages.** `WhatsAppWebhookService` records every inbound message before it reads it (`VerificationAutoCancellationsRepository.recordCustomerMessage`): the order its button or quote names gets `customer_last_message_at`, and only that order. A message that names no order (plain text, media, or a quote Akeed cannot match) is recorded on every open order sent to that number in the last 7 days, in any store. A `scheduled` or `paused` row stops (`customer_reply`); an `in_progress`, `awaiting_platform` or `succeeded` row gets `late_reply_at`, and the reply does not change that order's status.
+**Customer messages.** Only an answer counts: a button tap, or typed text Akeed reads as a confirm or a cancel. Any other message (free text, media, a quote Akeed cannot match) is ignored: it neither flags the order nor stops its automatic cancellation. `WhatsAppWebhookService` records each answer against the order it names (`VerificationAutoCancellationsRepository.recordCustomerAnswer`). A `scheduled` or `paused` row stops (`customer_reply`) and the answer applies. On an `in_progress`, `awaiting_platform` or `succeeded` row the answer does not change the order's status; a confirm sets `late_reply_at`, a cancel changes nothing.
 
-**Needs action.** `customer_replied` (an open order the customer wrote about without a clear answer, whatever the setting), `auto_cancel_failed` and `late_reply_after_auto_cancel`. The merchant may still cancel a `no_reply` order with `customer_replied` or `auto_cancel_failed` by hand; the manual cancel answers `409 AUTO_CANCEL_ALREADY_IN_PROGRESS` while the automatic one is committed.
+**Needs action.** `auto_cancel_failed`, and `late_reply_after_auto_cancel` (the customer confirmed after Akeed canceled the order). The merchant may still cancel a `no_reply` order with `auto_cancel_failed` by hand; the manual cancel answers `409 AUTO_CANCEL_ALREADY_IN_PROGRESS` while the automatic one is committed.
 
 **Merchant controls.** `POST /api/verifications/:id/auto-cancel/exclude` and `/include` (owner or admin, idempotent, audited; unavailable once the verification is `no_reply`, confirmed, or canceled; `AUTO_CANCEL_ALREADY_IN_PROGRESS`, `AUTO_CANCEL_EXCLUDE_NOT_ALLOWED`). Switching the setting off stops every `scheduled` and `paused` row of the store (`feature_disabled`); switching it on again applies to orders that reach `no_reply` afterwards. The list item carries `auto_cancel: { state, scheduled_for, reason, excluded, late_reply }`, `projected` while the order is still waiting for the customer, and the capability `auto_cancel_exclusion`.
 
@@ -515,7 +515,7 @@ Operational behavior:
 - Disabling auto verification skips new verification creation entirely.
 - Customer cancel does not automatically cancel the Shopify order; it marks and tags the order for merchant awareness.
 - Merchant order cancellation is available only after `no_reply` escalation.
-- Automatic cancellation is opt-in per store and runs only at `no_reply`, only for orders whose every message was delivered and whose customer never wrote; anything Akeed cannot prove pauses it.
+- Automatic cancellation is opt-in per store and runs only at `no_reply`, only for orders whose every message was delivered and whose customer never answered; anything Akeed cannot prove pauses it.
 - Shopify cancellation is called before local state is changed.
 - Branded template defaults are `friendly` for English and `standard` for Arabic.
 - Legacy short template variants stay available and keep their existing two-body-parameter shape.

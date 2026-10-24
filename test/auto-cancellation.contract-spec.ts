@@ -330,10 +330,9 @@ describe('auto-cancellation against PostgreSQL', () => {
     expect(row.status).toBe('confirmed');
   });
 
-  it('stops a scheduled cancellation on any message from the number, and flags one already sent', async () => {
-    const phone = '+201000009999';
-    const scheduledId = await seedNoReply({ phone });
-    const committedId = await seedNoReply({ phone });
+  it('stops a scheduled cancellation on an answer, and flags a confirm on one already sent', async () => {
+    const scheduledId = await seedNoReply();
+    const committedId = await seedNoReply();
     const { service: worker } = service({
       dispatch: () =>
         Promise.resolve({
@@ -349,51 +348,93 @@ describe('auto-cancellation against PostgreSQL', () => {
       'awaiting_platform',
     );
 
-    const result = await repo.recordCustomerMessage({
-      phoneE164: phone,
-      verificationIds: [],
-      receivedAt: new Date().toISOString(),
-    });
-    expect(new Set(result.matched)).toEqual(
-      new Set([scheduledId, committedId]),
-    );
-    expect(result.committed).toEqual([committedId]);
-
+    expect(
+      await repo.recordCustomerAnswer({
+        verificationId: scheduledId,
+        intent: 'confirmed',
+        receivedAt: new Date().toISOString(),
+      }),
+    ).toEqual({ committed: false });
     expect(await repo.findByVerification(scheduledId, orgId)).toMatchObject({
       status: 'stopped',
       reason: 'customer_reply',
     });
+
+    expect(
+      await repo.recordCustomerAnswer({
+        verificationId: committedId,
+        intent: 'confirmed',
+        receivedAt: new Date().toISOString(),
+      }),
+    ).toEqual({ committed: true });
     expect(
       (await repo.findByVerification(committedId, orgId))?.lateReplyAt,
     ).not.toBeNull();
-    expect(
-      await verificationsRepo.findNeedsActionReason(scheduledId, orgId),
-    ).toBe('customer_replied');
   });
 
-  it('records a message that names an order on that order alone', async () => {
-    const phone = '+201000007777';
-    const answeredId = await seedNoReply({ phone });
-    const siblingId = await seedNoReply({ phone });
+  it('stops a scheduled cancellation on a cancel answer without flagging it', async () => {
+    const verificationId = await seedNoReply();
     const { service: worker } = service({});
-    await worker.scheduleAfterNoReply(answeredId);
-    await worker.scheduleAfterNoReply(siblingId);
-    const siblingStatus = (await repo.findByVerification(siblingId, orgId))
-      ?.status;
+    await worker.scheduleAfterNoReply(verificationId);
 
-    const result = await repo.recordCustomerMessage({
-      phoneE164: phone,
-      verificationIds: [answeredId],
+    expect(
+      await repo.recordCustomerAnswer({
+        verificationId,
+        intent: 'canceled',
+        receivedAt: new Date().toISOString(),
+      }),
+    ).toEqual({ committed: false });
+    expect(await repo.findByVerification(verificationId, orgId)).toMatchObject({
+      status: 'stopped',
+      reason: 'customer_reply',
+      lateReplyAt: null,
+    });
+  });
+
+  it('takes an order the customer confirmed in time out of Needs action', async () => {
+    const verificationId = await seedNoReply();
+    const { service: worker } = service({});
+    await worker.scheduleAfterNoReply(verificationId);
+    expect(
+      await verificationsRepo.findNeedsActionReason(verificationId, orgId),
+    ).toBe('no_reply_after_follow_up');
+
+    await repo.recordCustomerAnswer({
+      verificationId,
+      intent: 'confirmed',
       receivedAt: new Date().toISOString(),
     });
-    expect(result.matched).toEqual([answeredId]);
+    await verificationsRepo.updateStatus(verificationId, 'confirmed');
 
-    expect((await repo.findByVerification(siblingId, orgId))?.status).toBe(
-      siblingStatus,
-    );
     expect(
-      await verificationsRepo.findNeedsActionReason(siblingId, orgId),
-    ).toBe('no_reply_after_follow_up');
+      await verificationsRepo.findNeedsActionReason(verificationId, orgId),
+    ).toBeNull();
+  });
+
+  it('leaves a cancel on an order already being canceled unflagged', async () => {
+    const verificationId = await seedNoReply();
+    const { service: worker } = service({
+      dispatch: () =>
+        Promise.resolve({
+          status: 'pending_provider_operation',
+          providerOperationId: 'job-1',
+        }),
+    });
+    await worker.scheduleAfterNoReply(verificationId);
+    await worker.execute(
+      (await repo.findByVerification(verificationId, orgId))!.id,
+    );
+
+    expect(
+      await repo.recordCustomerAnswer({
+        verificationId,
+        intent: 'canceled',
+        receivedAt: new Date().toISOString(),
+      }),
+    ).toEqual({ committed: true });
+    expect(
+      (await repo.findByVerification(verificationId, orgId))?.lateReplyAt,
+    ).toBeNull();
   });
 
   it('names a failed cancellation and a late reply for the merchant', async () => {
@@ -411,15 +452,15 @@ describe('auto-cancellation against PostgreSQL', () => {
       'auto_cancel_failed',
     );
 
-    const canceledId = await seedNoReply({ phone: '+201000008888' });
+    const canceledId = await seedNoReply();
     const { service: worker } = service({});
     await worker.scheduleAfterNoReply(canceledId);
     await worker.execute(
       (await repo.findByVerification(canceledId, orgId))!.id,
     );
-    await repo.recordCustomerMessage({
-      phoneE164: '+201000008888',
-      verificationIds: [],
+    await repo.recordCustomerAnswer({
+      verificationId: canceledId,
+      intent: 'confirmed',
       receivedAt: new Date().toISOString(),
     });
     expect(

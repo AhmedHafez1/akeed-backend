@@ -1,15 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  and,
-  asc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   integrations,
@@ -28,6 +18,7 @@ import {
   type AutoCancelStatus,
   type AutoCancelStopReason,
 } from '../../../shared/verification/auto-cancel.policy';
+import type { CustomerReplyIntent } from '../../../shared/verification/customer-reply-intent';
 
 type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 type Writer = DrizzleDB | Transaction;
@@ -52,7 +43,6 @@ export interface AutoCancelSnapshot {
     | 'confirmedAt'
     | 'canceledAt'
     | 'merchantCanceledAt'
-    | 'customerLastMessageAt'
     | 'autoCancelExcludedAt'
     | 'followUpAttempts'
     | 'followUpSentAt'
@@ -92,18 +82,6 @@ export interface AutoCancelEventInput {
   actorUserId?: string | null;
   detail?: Record<string, unknown>;
 }
-
-/** Statuses of an order still waiting for the customer's answer. */
-const OPEN_VERIFICATION_STATUSES = [
-  'sent',
-  'delivered',
-  'read',
-  'no_reply',
-  'no_whatsapp',
-] as const;
-
-/** How far back a message from a number is matched to its orders. */
-const CUSTOMER_MESSAGE_MATCH_MS = 7 * 24 * 60 * 60_000;
 
 /**
  * Automatic cancellations and their audit trail.
@@ -363,120 +341,72 @@ export class VerificationAutoCancellationsRepository {
   }
 
   /**
-   * A message came from a customer's number. A message whose button or quote
-   * names an order records it on that order alone: a Confirm on one order
-   * says nothing about the others. A message that names none is recorded on
-   * every recent open order sent to that number in any store, because the
-   * shared sender cannot tell which one it is about. A cancellation that had
-   * not reached the store stops; one that has is flagged for the merchant.
+   * The customer answered an order with a confirm or a cancel. A cancellation
+   * that had not reached the store stops: the answer settles the order. One
+   * that has is left alone, and so is the order's status; a Confirm is
+   * flagged for the merchant, since the customer still wants the order.
    *
-   * Returns the verifications whose cancellation is committed, so the caller
-   * leaves their status alone.
+   * Returns whether the cancellation is committed, so the caller leaves the
+   * order's status alone.
    */
-  async recordCustomerMessage(input: {
-    phoneE164: string | null;
-    verificationIds: readonly string[];
+  async recordCustomerAnswer(input: {
+    verificationId: string;
+    intent: CustomerReplyIntent;
     receivedAt: string;
-  }): Promise<{ matched: string[]; committed: string[] }> {
-    const since = new Date(
-      new Date(input.receivedAt).getTime() - CUSTOMER_MESSAGE_MATCH_MS,
-    ).toISOString();
-    const named =
-      input.verificationIds.length > 0
-        ? inArray(verifications.id, [...input.verificationIds])
-        : input.phoneE164
-          ? and(
-              eq(orders.customerPhone, input.phoneE164),
-              gte(verifications.lastSentAt, since),
-            )
-          : undefined;
-    if (!named) return { matched: [], committed: [] };
+  }): Promise<{ committed: boolean }> {
+    return this.db.transaction(async (tx) => {
+      // The verification first, in the same order as the cancellation job.
+      const [locked] = await tx
+        .select({ id: verifications.id, orgId: verifications.orgId })
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId))
+        .for('update');
+      if (!locked) return { committed: false };
 
-    const candidates = await this.db
-      .select({ id: verifications.id })
-      .from(verifications)
-      .innerJoin(orders, eq(orders.id, verifications.orderId))
-      .leftJoin(
-        verificationAutoCancellations,
-        eq(verificationAutoCancellations.verificationId, verifications.id),
-      )
-      .where(
-        and(
-          named,
-          or(
-            inArray(verifications.status, [...OPEN_VERIFICATION_STATUSES]),
-            inArray(verificationAutoCancellations.status, [
-              ...AUTO_CANCEL_COMMITTED_STATUSES,
-            ]),
-          ),
-        ),
-      )
-      .orderBy(asc(verifications.id))
-      .limit(20);
-
-    const matched: string[] = [];
-    const committed: string[] = [];
-    for (const { id } of candidates) {
-      await this.db.transaction(async (tx) => {
-        const [locked] = await tx
-          .select({
-            id: verifications.id,
-            orgId: verifications.orgId,
-            status: verifications.status,
-          })
-          .from(verifications)
-          .where(eq(verifications.id, id))
-          .for('update');
-        if (!locked) return;
-        await tx
-          .update(verifications)
-          .set({
-            customerLastMessageAt: sql`GREATEST(COALESCE(${verifications.customerLastMessageAt}, ${input.receivedAt}::timestamptz), ${input.receivedAt}::timestamptz)`,
-          })
-          .where(eq(verifications.id, id));
-        matched.push(id);
-
-        const [row] = await tx
-          .select()
-          .from(verificationAutoCancellations)
-          .where(eq(verificationAutoCancellations.verificationId, id))
-          .for('update');
-        if (!row) return;
-        if (
-          (AUTO_CANCEL_STOPPABLE_STATUSES as readonly string[]).includes(
-            row.status,
-          )
-        ) {
-          await this.update(tx, row.id, {
-            status: 'stopped',
-            reason: 'customer_reply',
-            dueAt: null,
-          });
-          await this.appendEvent(tx, {
-            orgId: locked.orgId,
-            verificationId: id,
-            event: 'stopped',
-            detail: { reason: 'customer_reply' },
-          });
-        } else if (
-          (AUTO_CANCEL_COMMITTED_STATUSES as readonly string[]).includes(
-            row.status,
-          )
-        ) {
-          committed.push(id);
-          if (!row.lateReplyAt) {
-            await this.update(tx, row.id, { lateReplyAt: input.receivedAt });
-          }
-          await this.appendEvent(tx, {
-            orgId: locked.orgId,
-            verificationId: id,
-            event: 'late_reply',
-            detail: { status: row.status },
-          });
+      const [row] = await tx
+        .select()
+        .from(verificationAutoCancellations)
+        .where(eq(verificationAutoCancellations.verificationId, locked.id))
+        .for('update');
+      if (!row) return { committed: false };
+      if (
+        (AUTO_CANCEL_STOPPABLE_STATUSES as readonly string[]).includes(
+          row.status,
+        )
+      ) {
+        await this.update(tx, row.id, {
+          status: 'stopped',
+          reason: 'customer_reply',
+          dueAt: null,
+        });
+        await this.appendEvent(tx, {
+          orgId: locked.orgId,
+          verificationId: locked.id,
+          event: 'stopped',
+          detail: { reason: 'customer_reply' },
+        });
+        return { committed: false };
+      }
+      if (
+        !(AUTO_CANCEL_COMMITTED_STATUSES as readonly string[]).includes(
+          row.status,
+        )
+      ) {
+        return { committed: false };
+      }
+      if (input.intent === 'confirmed') {
+        if (!row.lateReplyAt) {
+          await this.update(tx, row.id, { lateReplyAt: input.receivedAt });
         }
-      });
-    }
-    return { matched, committed };
+        await this.appendEvent(tx, {
+          orgId: locked.orgId,
+          verificationId: locked.id,
+          event: 'late_reply',
+          detail: { status: row.status },
+        });
+      }
+      return { committed: true };
+    });
   }
 
   private listWhere(
@@ -505,7 +435,6 @@ export class VerificationAutoCancellationsRepository {
         confirmedAt: verifications.confirmedAt,
         canceledAt: verifications.canceledAt,
         merchantCanceledAt: verifications.merchantCanceledAt,
-        customerLastMessageAt: verifications.customerLastMessageAt,
         autoCancelExcludedAt: verifications.autoCancelExcludedAt,
         followUpAttempts: verifications.followUpAttempts,
         followUpSentAt: verifications.followUpSentAt,

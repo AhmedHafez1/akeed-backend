@@ -64,7 +64,6 @@ export function factsOf(snapshot: AutoCancelSnapshot): AutoCancelFacts {
     canceledAt: verification.canceledAt,
     merchantCanceledAt: verification.merchantCanceledAt,
     excludedAt: verification.autoCancelExcludedAt,
-    customerLastMessageAt: verification.customerLastMessageAt,
     initialDeliveredAt: snapshot.initialDeliveredAt,
     followUpAttempted:
       (verification.followUpAttempts ?? 0) > 0 ||
@@ -79,8 +78,6 @@ function stopReasonOf(reason: AutoCancelSkipReason): AutoCancelStopReason {
   switch (reason) {
     case 'disabled':
       return 'feature_disabled';
-    case 'customer_replied':
-      return 'customer_reply';
     case 'excluded':
       return 'excluded';
     default:

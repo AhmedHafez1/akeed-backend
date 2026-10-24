@@ -21,7 +21,6 @@ function baseSnapshot(): AutoCancelSnapshot {
       confirmedAt: null,
       canceledAt: null,
       merchantCanceledAt: null,
-      customerLastMessageAt: null,
       autoCancelExcludedAt: null,
       followUpAttempts: 1,
       followUpSentAt: '2026-10-01T14:00:00.000Z',
@@ -290,10 +289,11 @@ describe('AutoCancellationService', () => {
       expect(harness.state.snapshot.row?.status).toBe('succeeded');
     });
 
-    it('stops without calling the store when the customer replies between the claim and the dispatch', async () => {
+    it('stops without calling the store when the customer confirms between the claim and the dispatch', async () => {
       const harness = setup({
         inspect: () => {
-          harness.state.snapshot.verification.customerLastMessageAt =
+          harness.state.snapshot.verification.status = 'confirmed';
+          harness.state.snapshot.verification.confirmedAt =
             new Date().toISOString();
           return { state: 'cancellable' };
         },
@@ -304,9 +304,9 @@ describe('AutoCancellationService', () => {
       expect(harness.cancelCalls()).toHaveLength(0);
       expect(harness.state.snapshot.row).toMatchObject({
         status: 'stopped',
-        reason: 'customer_reply',
+        reason: 'status_changed',
       });
-      expect(harness.state.snapshot.verification.status).toBe('no_reply');
+      expect(harness.state.snapshot.verification.status).toBe('confirmed');
     });
 
     it('stops when the merchant switched it off before the job ran', async () => {
@@ -440,14 +440,14 @@ describe('AutoCancellationService', () => {
       expect(harness.state.snapshot.verification.status).toBe('canceled');
     });
 
-    it('completes the cancel the store accepted even if the customer replies meanwhile', async () => {
+    it('completes the cancel the store accepted even if the customer confirms meanwhile', async () => {
       const harness = setup({
         inspect: (calls) =>
           calls === 1
             ? { state: 'cancellable' }
             : { state: 'already_canceled' },
         dispatch: () => {
-          harness.state.snapshot.verification.customerLastMessageAt =
+          harness.state.snapshot.verification.confirmedAt =
             new Date().toISOString();
           return {
             status: 'pending_provider_operation',

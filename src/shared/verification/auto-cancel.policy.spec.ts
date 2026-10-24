@@ -96,11 +96,6 @@ describe('evaluateAutoCancel', () => {
       'already_resolved',
     ],
     ['the order is not at no_reply', facts({ status: 'read' }), 'not_no_reply'],
-    [
-      'the customer wrote anything',
-      facts({ customerLastMessageAt: NOW.toISOString() }),
-      'customer_replied',
-    ],
   ])('skips when %s', (_label, input, reason) => {
     expect(evaluateAutoCancel(input, NOW)).toEqual({ kind: 'skip', reason });
   });
