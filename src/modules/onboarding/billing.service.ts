@@ -83,7 +83,12 @@ export class BillingService {
   ): Promise<OnboardingBillingPlansResponseDto> {
     const billingManagement = getBillingManagement(integration);
     if (billingManagement.mode === 'manual')
-      return { plans: [], isFreePlanClaimed: false, billingManagement };
+      return {
+        plans: [],
+        isFreePlanClaimed: false,
+        currentPlanId: null,
+        billingManagement,
+      };
     const plans = this.billingConfig.resolveAllPlans();
 
     // A store with free messages left can still pick Starter: that resumes
@@ -104,6 +109,9 @@ export class BillingService {
         includedVerifications: plan.includedVerifications,
       })),
       isFreePlanClaimed,
+      currentPlanId: isBillingStatusActive(integration.billingStatus)
+        ? integration.billingPlanId
+        : null,
     };
   }
 
@@ -111,6 +119,7 @@ export class BillingService {
     integration: IntegrationRecord,
     planId: OnboardingBillingPlanId,
     host?: string,
+    options: { renew?: boolean } = {},
   ): Promise<OnboardingBillingResponseDto> {
     if (!getBillingManagement(integration).canManageBilling) {
       throw new ForbiddenException(
@@ -125,11 +134,17 @@ export class BillingService {
       { plan_selected: 'captured_exact' },
     );
 
-    // Same-plan guard: skip if already active on the requested plan.
-    if (
+    // Same-plan guard: skip if already active on the requested plan, unless
+    // the merchant asked to buy their recurring paid plan again (a renewal).
+    const isSamePlan =
       planId === integration.billingPlanId &&
-      isBillingStatusActive(integration.billingStatus)
-    ) {
+      isBillingStatusActive(integration.billingStatus);
+    const isRenewal =
+      isSamePlan &&
+      options.renew === true &&
+      billingPlan.amount > 0 &&
+      !isOneTimeBillingPlan(billingPlan.id);
+    if (isSamePlan && !isRenewal) {
       return {
         confirmationUrl: this.createPostBillingRedirectUrl({
           shop: integration.platformStoreUrl,
@@ -147,13 +162,16 @@ export class BillingService {
       return await this.initiateWithoutPaying(integration, billingPlan, host);
     }
 
-    return await this.initiatePaidPlan(integration, billingPlan, host);
+    return await this.initiatePaidPlan(integration, billingPlan, host, {
+      replaceImmediately: isRenewal,
+    });
   }
 
   private async initiatePaidPlan(
     integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
     host: string | undefined,
+    options: { replaceImmediately: boolean },
   ) {
     // Create the new subscription on Shopify BEFORE modifying local state.
     // The old subscription stays active until the merchant confirms the new one.
@@ -161,6 +179,7 @@ export class BillingService {
       integration,
       billingPlan,
       host,
+      options.replaceImmediately,
     );
 
     // Only store the pending plan — keep the current billingPlanId and
@@ -599,6 +618,7 @@ export class BillingService {
     integration: IntegrationRecord;
     plan: BillingPlanConfig;
     host?: string;
+    replaceImmediately: boolean;
   }): CreateSubscriptionInput {
     return {
       name: params.plan.name,
@@ -610,18 +630,21 @@ export class BillingService {
         params.host,
       ),
       test: params.plan.testMode,
+      replaceImmediately: params.replaceImmediately,
     };
   }
 
   private async createPaidPlanConfirmationUrl(
     integration: IntegrationRecord,
     plan: BillingPlanConfig,
-    host?: string,
+    host: string | undefined,
+    replaceImmediately: boolean,
   ): Promise<string> {
     const payload = this.buildRecurringChargePayload({
       integration,
       plan,
       host,
+      replaceImmediately,
     });
 
     try {

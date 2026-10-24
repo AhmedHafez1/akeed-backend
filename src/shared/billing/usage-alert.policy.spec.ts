@@ -5,6 +5,7 @@ import {
   planUsageAlertLevels,
   planUsageCycleKey,
   recoveredCreditLevels,
+  renewablePlanId,
 } from './usage-alert.policy';
 
 describe('planUsageAlertLevels', () => {
@@ -84,6 +85,21 @@ describe('capacityAction', () => {
     expect(capacityAction({ mode: 'plan', planId: 'business' })).toBe(
       'wait_reset',
     );
+  });
+});
+
+describe('renewablePlanId', () => {
+  it('renews a recurring paid plan, the top one included', () => {
+    expect(renewablePlanId({ mode: 'plan', planId: 'basic' })).toBe('basic');
+    expect(renewablePlanId({ mode: 'plan', planId: 'business' })).toBe(
+      'business',
+    );
+  });
+
+  it('never renews the one-time plan, credits or an unknown plan', () => {
+    expect(renewablePlanId({ mode: 'plan', planId: 'starter' })).toBeNull();
+    expect(renewablePlanId({ mode: 'credits', planId: 'basic' })).toBeNull();
+    expect(renewablePlanId({ mode: 'plan', planId: null })).toBeNull();
   });
 });
 

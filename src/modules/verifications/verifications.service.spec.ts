@@ -942,6 +942,7 @@ describe('Dashboard cancellation capabilities', () => {
           mode: 'plan',
           remaining: 30,
           action: 'upgrade',
+          renew_plan_id: null,
           reset_at: null,
         });
       }

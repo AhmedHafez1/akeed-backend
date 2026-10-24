@@ -7,7 +7,10 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { capacityAction } from '../../shared/billing/usage-alert.policy';
+import {
+  capacityAction,
+  renewablePlanId,
+} from '../../shared/billing/usage-alert.policy';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
@@ -646,6 +649,7 @@ export class VerificationsService {
       mode,
       remaining,
       action: capacityAction({ mode, planId: entitlement.planId }),
+      renew_plan_id: renewablePlanId({ mode, planId: entitlement.planId }),
       reset_at: mode === 'plan' ? entitlement.periodEnd : null,
     };
   }

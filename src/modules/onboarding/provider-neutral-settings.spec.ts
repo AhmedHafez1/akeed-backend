@@ -170,6 +170,7 @@ describe('manual entitlement HTTP boundary', () => {
       .expect(200, {
         plans: [],
         isFreePlanClaimed: false,
+        currentPlanId: null,
         billingManagement: { mode: 'manual', canManageBilling: false },
       });
     for (const call of [

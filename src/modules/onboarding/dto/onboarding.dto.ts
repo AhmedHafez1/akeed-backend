@@ -414,6 +414,8 @@ export interface OnboardingBillingPlansResponseDto {
   billingManagement: BillingManagement;
   plans: OnboardingBillingPlanDto[];
   isFreePlanClaimed: boolean;
+  /** The plan the store pays for now; null while no plan is active. */
+  currentPlanId: OnboardingBillingPlanId | null;
 }
 
 export interface SettingsResponseDto {
@@ -529,4 +531,9 @@ export class OnboardingBillingRequestDto {
   @IsString()
   @MaxLength(1024)
   host?: string;
+
+  /** Buy the active paid plan again to start a fresh period now. */
+  @IsOptional()
+  @IsBoolean()
+  renew?: boolean;
 }

@@ -1,4 +1,5 @@
 import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
+import type { BillingPlanId } from '../../../shared/billing/billing-plan';
 import type { CapacityAction } from '../../../shared/billing/usage-alert.policy';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { RemoteSyncDto } from '../../../shared/verification/outcome-sync';
@@ -370,6 +371,8 @@ export interface CapacitySummaryDto {
   /** Confirmations (plan) or credits left to send with. */
   remaining: number;
   action: CapacityAction;
+  /** The recurring paid plan that can be bought again to start a fresh period now. */
+  renew_plan_id: BillingPlanId | null;
   /** When the allowance renews (YYYY-MM-DD); null for credits and one-time plans. */
   reset_at: string | null;
 }

@@ -11,6 +11,11 @@ export interface CreateSubscriptionInput {
   usageTerms?: string;
   returnUrl: string;
   test: boolean;
+  /**
+   * Replace the current subscription as soon as the merchant approves, even
+   * when the new one is identical (a renewal), instead of at the next cycle.
+   */
+  replaceImmediately?: boolean;
 }
 
 export interface SubscriptionStatusResult {

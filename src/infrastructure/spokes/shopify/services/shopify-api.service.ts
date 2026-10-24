@@ -56,6 +56,7 @@ interface CreateRecurringApplicationChargeInput {
   usageTerms?: string;
   returnUrl: string;
   test: boolean;
+  replaceImmediately?: boolean;
 }
 
 interface AppSubscriptionStatusResult {
@@ -297,6 +298,10 @@ export class ShopifyApiService {
         returnUrl: payload.returnUrl,
         test: payload.test,
         lineItems,
+        // Shopify's default defers an identical subscription to the next cycle.
+        replacementBehavior: payload.replaceImmediately
+          ? 'APPLY_IMMEDIATELY'
+          : 'STANDARD',
       },
     );
 

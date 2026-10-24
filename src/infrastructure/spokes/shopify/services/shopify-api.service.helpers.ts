@@ -132,12 +132,14 @@ export const CREATE_APP_SUBSCRIPTION_MUTATION = `
     $lineItems: [AppSubscriptionLineItemInput!]!
     $returnUrl: URL!
     $test: Boolean
+    $replacementBehavior: AppSubscriptionReplacementBehavior
   ) {
     appSubscriptionCreate(
       name: $name
       lineItems: $lineItems
       returnUrl: $returnUrl
       test: $test
+      replacementBehavior: $replacementBehavior
     ) {
       confirmationUrl
       userErrors {

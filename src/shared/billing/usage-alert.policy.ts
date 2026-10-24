@@ -108,3 +108,16 @@ export function capacityAction(params: {
   if (params.planId === TOP_BILLING_PLAN_ID) return 'wait_reset';
   return 'upgrade';
 }
+
+/**
+ * The plan the merchant can buy again to start a fresh period now, beside the
+ * action above. Only a recurring paid plan renews: credits are recharged, and
+ * a one-time allowance cannot be claimed twice.
+ */
+export function renewablePlanId(params: {
+  mode: 'plan' | 'credits';
+  planId: BillingPlanId | null;
+}): BillingPlanId | null {
+  if (params.mode !== 'plan' || !params.planId) return null;
+  return isOneTimeBillingPlan(params.planId) ? null : params.planId;
+}

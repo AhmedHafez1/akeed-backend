@@ -351,6 +351,91 @@ describe('BillingService', () => {
 
       expect(storePlatform.createRecurringApplicationCharge).toHaveBeenCalled();
     });
+
+    it('renews the active paid plan, replacing it immediately', async () => {
+      const { service, storePlatform, integrationsRepo } = createMocks();
+      const integration = makeIntegration({
+        billingPlanId: 'pro',
+        billingStatus: 'active',
+      });
+
+      const result = await service.initiateBilling(
+        integration as any,
+        'pro',
+        undefined,
+        { renew: true },
+      );
+
+      expect(result.confirmationUrl).toBe('https://shopify.com/confirm');
+      expect(
+        storePlatform.createRecurringApplicationCharge,
+      ).toHaveBeenCalledWith(
+        integration,
+        expect.objectContaining({ replaceImmediately: true }),
+      );
+      expect(integrationsRepo.updateById).toHaveBeenCalledWith(
+        'int-1',
+        expect.objectContaining({ pendingBillingPlanId: 'pro' }),
+      );
+    });
+
+    it('never renews the one-time Starter allowance', async () => {
+      const { service, storePlatform } = createMocks();
+
+      await service.initiateBilling(
+        makeIntegration({ billingPlanId: 'starter' }) as any,
+        'starter',
+        undefined,
+        { renew: true },
+      );
+
+      expect(
+        storePlatform.createRecurringApplicationCharge,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('keeps the default replacement for a plan change', async () => {
+      const { service, storePlatform } = createMocks();
+
+      await service.initiateBilling(
+        makeIntegration({ billingPlanId: 'basic' }) as any,
+        'pro',
+        undefined,
+        { renew: true },
+      );
+
+      expect(
+        storePlatform.createRecurringApplicationCharge,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ replaceImmediately: false }),
+      );
+    });
+  });
+
+  describe('getBillingPlans — current plan', () => {
+    it('names the active plan', async () => {
+      const { service } = createMocks();
+
+      await expect(
+        service.getBillingPlans(
+          makeIntegration({ billingPlanId: 'basic' }) as any,
+        ),
+      ).resolves.toMatchObject({ currentPlanId: 'basic' });
+    });
+
+    it('names no plan once the subscription is canceled', async () => {
+      const { service } = createMocks();
+
+      await expect(
+        service.getBillingPlans(
+          makeIntegration({
+            billingPlanId: 'basic',
+            billingStatus: 'cancelled',
+          }) as any,
+        ),
+      ).resolves.toMatchObject({ currentPlanId: null });
+    });
   });
 
   describe('initiatePaidPlan — does not overwrite active billing state', () => {

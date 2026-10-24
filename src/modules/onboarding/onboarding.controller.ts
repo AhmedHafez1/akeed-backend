@@ -80,6 +80,7 @@ export class OnboardingController {
         user,
         payload.planId,
         payload.host,
+        { renew: payload.renew === true },
       );
     return billingResponse;
   }

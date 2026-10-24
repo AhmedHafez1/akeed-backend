@@ -182,7 +182,7 @@ Only `active` and `not_required` allow verification sends. This is enforced by `
 
 Plan changes from the Settings billing tab follow the same paid-plan flow:
 
-1. Same-plan guard: if the merchant selects their current active plan, return immediately.
+1. Same-plan guard: if the merchant selects their current active plan, return immediately. The exception is a renewal (`renew: true` on `POST /onboarding/billing`): buying the active recurring paid plan again goes through, with Shopify's `APPLY_IMMEDIATELY` replacement, so a new period starts on approval. Starter never renews.
 2. New subscription is created on Shopify before modifying local state.
 3. On callback approval, the old subscription is canceled and the new one is activated.
 4. Usage counters are reset for the new billing period.

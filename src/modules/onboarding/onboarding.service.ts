@@ -308,6 +308,7 @@ export class OnboardingService {
     user: AuthenticatedUser,
     planId: OnboardingBillingPlanId,
     host?: string,
+    options: { renew?: boolean } = {},
   ): Promise<OnboardingBillingResponseDto> {
     this.assertCanUpdateConfiguration(user);
     const integration =
@@ -324,6 +325,7 @@ export class OnboardingService {
       hydratedIntegration,
       planId,
       host,
+      options,
     );
   }
 
