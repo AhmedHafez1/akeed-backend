@@ -10,6 +10,7 @@ export const PRODUCT_EVENT_NAMES = [
   'first_reply',
   'credits_80',
   'plan_upgraded',
+  'plan_renewed',
   'onboarding_exited',
 ] as const;
 

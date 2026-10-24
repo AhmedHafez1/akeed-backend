@@ -1,6 +1,7 @@
 import { of, throwError } from 'rxjs';
 import { ShopifyApiService } from './shopify-api.service';
 import {
+  CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_TEST_COD_ORDER_MUTATION,
   ORDER_CANCEL_MUTATION,
 } from './shopify-api.service.helpers';
@@ -180,4 +181,76 @@ describe('ShopifyApiService cancellation contract', () => {
       },
     );
   });
+});
+
+describe('ShopifyApiService subscription replacement', () => {
+  const encryptionKey = 'a'.repeat(64);
+  const integration = {
+    platformStoreUrl: 'synthetic.myshopify.com',
+    accessToken: encryptToken('synthetic-shop-token', encryptionKey),
+  } as typeof integrations.$inferSelect;
+  const charge = {
+    name: 'Akeed Basic',
+    amount: 9.99,
+    currencyCode: 'USD',
+    returnUrl: 'https://app.akeed.co/billing/return',
+    test: true,
+  };
+
+  function setup() {
+    const post = jest.fn().mockReturnValue(
+      of({
+        data: {
+          data: {
+            appSubscriptionCreate: {
+              confirmationUrl: 'https://shopify.com/confirm',
+              userErrors: [],
+            },
+          },
+        },
+        headers: {},
+      }),
+    );
+    const config = {
+      get: (key: string) =>
+        key === 'SHOPIFY_TOKEN_ENCRYPTION_KEY' ? encryptionKey : undefined,
+    };
+    return {
+      post,
+      service: new ShopifyApiService({ post } as never, config as never),
+    };
+  }
+
+  it('declares the replacement behaviour on the mutation', () => {
+    expect(CREATE_APP_SUBSCRIPTION_MUTATION).toContain(
+      '$replacementBehavior: AppSubscriptionReplacementBehavior',
+    );
+    expect(CREATE_APP_SUBSCRIPTION_MUTATION).toContain(
+      'replacementBehavior: $replacementBehavior',
+    );
+  });
+
+  it.each([
+    [true, 'APPLY_IMMEDIATELY'],
+    [false, 'STANDARD'],
+    [undefined, 'STANDARD'],
+  ])(
+    'sends replaceImmediately %s as %s',
+    async (replaceImmediately, replacementBehavior) => {
+      const { service, post } = setup();
+
+      await expect(
+        service.createRecurringApplicationCharge(integration, {
+          ...charge,
+          replaceImmediately,
+        }),
+      ).resolves.toBe('https://shopify.com/confirm');
+      const [, body] = post.mock.calls[0] as [
+        string,
+        { query: string; variables: Record<string, unknown> },
+      ];
+      expect(body.query).toBe(CREATE_APP_SUBSCRIPTION_MUTATION);
+      expect(body.variables.replacementBehavior).toBe(replacementBehavior);
+    },
+  );
 });

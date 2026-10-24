@@ -394,6 +394,27 @@ describe('BillingService', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('subscribes again, not renews, once the plan is canceled', async () => {
+      const { service, storePlatform } = createMocks();
+
+      await service.initiateBilling(
+        makeIntegration({
+          billingPlanId: 'pro',
+          billingStatus: 'cancelled',
+        }) as any,
+        'pro',
+        undefined,
+        { renew: true },
+      );
+
+      expect(
+        storePlatform.createRecurringApplicationCharge,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ replaceImmediately: false }),
+      );
+    });
+
     it('keeps the default replacement for a plan change', async () => {
       const { service, storePlatform } = createMocks();
 
@@ -506,6 +527,47 @@ describe('BillingService', () => {
       // Should reset usage
       expect(monthlyUsageRepo.resetCountersForPeriod).toHaveBeenCalled();
     });
+
+    it.each([
+      ['starter', 'pro', 'plan_upgraded'],
+      ['pro', 'pro', 'plan_renewed'],
+    ])(
+      'records %s → %s as %s',
+      async (billingPlanId, pendingBillingPlanId, event) => {
+        const mocks = createMocks();
+        const adminLifecycles = {
+          markMilestone: jest.fn(),
+          recordEvent: jest.fn(),
+        };
+        const service = new BillingService(
+          mocks.integrationsRepo as any,
+          mocks.freePlanClaimsRepo as any,
+          mocks.monthlyUsageRepo as any,
+          mocks.storePlatform as any,
+          mocks.billingConfig as any,
+          adminLifecycles as any,
+          mocks.capacityRecovery as any,
+        );
+        mocks.integrationsRepo.findByPlatformDomain.mockResolvedValue(
+          makeIntegration({ billingPlanId, pendingBillingPlanId }),
+        );
+        mocks.storePlatform.getAppSubscriptionStatus.mockResolvedValue({
+          id: 'gid://shopify/AppSubscription/NEW',
+          status: 'ACTIVE',
+        });
+
+        await service.handleBillingCallback({
+          shop: 'test.myshopify.com',
+          chargeId: 'gid://shopify/AppSubscription/NEW',
+        });
+
+        expect(adminLifecycles.recordEvent).toHaveBeenCalledWith(
+          'int-1',
+          event,
+          { planId: pendingBillingPlanId },
+        );
+      },
+    );
   });
 
   describe('handleBillingCallback — declined with existing active plan', () => {

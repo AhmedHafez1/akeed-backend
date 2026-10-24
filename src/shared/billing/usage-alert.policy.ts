@@ -1,5 +1,6 @@
 import type { BillingPlanId } from './billing-plan';
 import { isOneTimeBillingPlan } from './billing-plan';
+import { isBillingStatusActive } from '../utils/billing.util';
 
 /**
  * When a merchant is told that sending capacity is running out, and what they
@@ -120,4 +121,18 @@ export function renewablePlanId(params: {
 }): BillingPlanId | null {
   if (params.mode !== 'plan' || !params.planId) return null;
   return isOneTimeBillingPlan(params.planId) ? null : params.planId;
+}
+
+/**
+ * The plan a store can renew right now: its recurring paid plan, while that
+ * subscription is live. A canceled, frozen or declined plan is subscribed to
+ * again, not renewed. The banner offer, the plan list and the billing
+ * endpoint all read this one rule.
+ */
+export function renewableSubscriptionPlanId(params: {
+  planId: BillingPlanId | null;
+  billingStatus: string | null | undefined;
+}): BillingPlanId | null {
+  if (!isBillingStatusActive(params.billingStatus)) return null;
+  return renewablePlanId({ mode: 'plan', planId: params.planId });
 }

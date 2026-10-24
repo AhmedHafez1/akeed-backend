@@ -34,6 +34,7 @@ import {
 } from './onboarding.service.helpers';
 import { BillingConfigService } from './billing-config.service';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import { renewableSubscriptionPlanId } from '../../shared/billing/usage-alert.policy';
 import { isOneTimeBillingPlan } from '../../shared/billing/billing-plan';
 import { getOneTimePeriodStart } from '../../shared/billing/billing-period';
 import {
@@ -140,10 +141,11 @@ export class BillingService {
       planId === integration.billingPlanId &&
       isBillingStatusActive(integration.billingStatus);
     const isRenewal =
-      isSamePlan &&
       options.renew === true &&
-      billingPlan.amount > 0 &&
-      !isOneTimeBillingPlan(billingPlan.id);
+      renewableSubscriptionPlanId({
+        planId: integration.billingPlanId,
+        billingStatus: integration.billingStatus,
+      }) === planId;
     if (isSamePlan && !isRenewal) {
       return {
         confirmationUrl: this.createPostBillingRedirectUrl({
@@ -498,9 +500,17 @@ export class BillingService {
         undefined,
         { paid_subscription_activated: 'captured_exact' },
       );
-      await this.adminLifecycles?.recordEvent(integration.id, 'plan_upgraded', {
-        planId: activatedPlan.id,
-      });
+      // Buying the live plan again is a renewal, not an upgrade.
+      const isRenewal =
+        renewableSubscriptionPlanId({
+          planId: integration.billingPlanId,
+          billingStatus: integration.billingStatus,
+        }) === activatedPlan.id;
+      await this.adminLifecycles?.recordEvent(
+        integration.id,
+        isRenewal ? 'plan_renewed' : 'plan_upgraded',
+        { planId: activatedPlan.id },
+      );
     }
 
     // Reset usage counters so the new plan starts with a clean slate.

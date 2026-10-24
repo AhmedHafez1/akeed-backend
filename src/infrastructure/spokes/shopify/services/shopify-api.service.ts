@@ -298,7 +298,8 @@ export class ShopifyApiService {
         returnUrl: payload.returnUrl,
         test: payload.test,
         lineItems,
-        // Shopify's default defers an identical subscription to the next cycle.
+        // Shopify may defer a replacement that matches the current
+        // subscription to the next cycle; a renewal must start now.
         replacementBehavior: payload.replaceImmediately
           ? 'APPLY_IMMEDIATELY'
           : 'STANDARD',

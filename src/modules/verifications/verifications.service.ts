@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   capacityAction,
-  renewablePlanId,
+  renewableSubscriptionPlanId,
 } from '../../shared/billing/usage-alert.policy';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
@@ -589,7 +589,11 @@ export class VerificationsService {
         : null,
       capacity:
         source && entitlement
-          ? this.resolveCapacity(entitlement, blockedCount)
+          ? this.resolveCapacity(
+              entitlement,
+              blockedCount,
+              source.billingStatus,
+            )
           : null,
       kpis: {
         confirmed: { count: counts.confirmed, value: confirmedValue },
@@ -633,6 +637,7 @@ export class VerificationsService {
       ReturnType<BillingEntitlementService['readEntitlement']>
     >,
     blockedCount: number,
+    billingStatus: string | null | undefined,
   ): CapacitySummaryDto {
     const mode = 'credits' in entitlement ? 'credits' : 'plan';
     const remaining =
@@ -649,7 +654,13 @@ export class VerificationsService {
       mode,
       remaining,
       action: capacityAction({ mode, planId: entitlement.planId }),
-      renew_plan_id: renewablePlanId({ mode, planId: entitlement.planId }),
+      renew_plan_id:
+        mode === 'plan'
+          ? renewableSubscriptionPlanId({
+              planId: entitlement.planId,
+              billingStatus,
+            })
+          : null,
       reset_at: mode === 'plan' ? entitlement.periodEnd : null,
     };
   }
@@ -912,7 +923,11 @@ export class VerificationsService {
     // dashboard, so it carries the same capacity summary.
     return {
       usage: this.toUsageBudget(entitlement),
-      capacity: this.resolveCapacity(entitlement, blockedCount),
+      capacity: this.resolveCapacity(
+        entitlement,
+        blockedCount,
+        source.billingStatus,
+      ),
     };
   }
 

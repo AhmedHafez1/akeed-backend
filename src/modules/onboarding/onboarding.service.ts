@@ -245,6 +245,7 @@ export class OnboardingService {
       billing: {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
+        currentPlanId: billingPlans.currentPlanId,
         usage,
         messagesSentLast30Days,
       },

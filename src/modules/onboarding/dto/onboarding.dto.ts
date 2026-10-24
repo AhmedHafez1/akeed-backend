@@ -425,6 +425,8 @@ export interface SettingsResponseDto {
   billing: {
     plans: OnboardingBillingPlanDto[];
     isFreePlanClaimed: boolean;
+    /** The plan the store pays for now; null while no plan is active. */
+    currentPlanId: OnboardingBillingPlanId | null;
     usage: {
       used: number;
       limit: number;

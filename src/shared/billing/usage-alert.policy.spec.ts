@@ -6,6 +6,7 @@ import {
   planUsageCycleKey,
   recoveredCreditLevels,
   renewablePlanId,
+  renewableSubscriptionPlanId,
 } from './usage-alert.policy';
 
 describe('planUsageAlertLevels', () => {
@@ -100,6 +101,32 @@ describe('renewablePlanId', () => {
     expect(renewablePlanId({ mode: 'plan', planId: 'starter' })).toBeNull();
     expect(renewablePlanId({ mode: 'credits', planId: 'basic' })).toBeNull();
     expect(renewablePlanId({ mode: 'plan', planId: null })).toBeNull();
+  });
+});
+
+describe('renewableSubscriptionPlanId', () => {
+  it('renews a live recurring paid plan', () => {
+    expect(
+      renewableSubscriptionPlanId({ planId: 'pro', billingStatus: 'active' }),
+    ).toBe('pro');
+  });
+
+  it.each(['cancelled', 'frozen', 'declined', null])(
+    'never renews a %s subscription',
+    (billingStatus) => {
+      expect(
+        renewableSubscriptionPlanId({ planId: 'basic', billingStatus }),
+      ).toBeNull();
+    },
+  );
+
+  it('never renews Starter, even while active', () => {
+    expect(
+      renewableSubscriptionPlanId({
+        planId: 'starter',
+        billingStatus: 'active',
+      }),
+    ).toBeNull();
   });
 });
 

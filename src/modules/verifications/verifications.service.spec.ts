@@ -951,6 +951,55 @@ describe('Dashboard cancellation capabilities', () => {
   );
 });
 
+describe('Capacity renewal offer', () => {
+  it.each([
+    ['active', 'basic'],
+    ['cancelled', null],
+    ['frozen', null],
+  ])(
+    'offers renewing a %s Shopify subscription: %s',
+    async (billingStatus, renewPlanId) => {
+      const repo = {
+        findByOrg: jest.fn().mockResolvedValue([]),
+        countByOrg: jest.fn().mockResolvedValue(0),
+      };
+      const integrations = {
+        findByOrg: jest.fn().mockResolvedValue([
+          {
+            id: 'int-1',
+            orgId: 'org-1',
+            isActive: true,
+            platformType: 'shopify',
+            billingStatus,
+          },
+        ]),
+      };
+      const service = new VerificationsService(
+        withHeldDefaults(repo) as never,
+        {
+          readEntitlement: jest.fn().mockResolvedValue({
+            planId: 'basic',
+            consumedCount: 300,
+            includedLimit: 300,
+            periodEnd: '2026-11-01',
+          }),
+        } as never,
+        integrations as never,
+        {} as never,
+        new CommerceOutcomeRegistryService({} as never, []),
+        { finalizeVerification: jest.fn() } as never,
+      );
+
+      const result = await service.listByOrg('org-1', {});
+
+      expect(result.page_context?.capacity).toMatchObject({
+        action: 'upgrade',
+        renew_plan_id: renewPlanId,
+      });
+    },
+  );
+});
+
 describe('Listing fetch size', () => {
   function buildService(repo: { findByOrg: jest.Mock; countByOrg: jest.Mock }) {
     return new VerificationsService(
