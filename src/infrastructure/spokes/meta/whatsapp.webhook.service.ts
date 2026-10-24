@@ -47,10 +47,10 @@ export class WhatsAppWebhookService {
 
   /**
    * Any message from the customer's number stops the automatic cancellation
-   * of the orders it can belong to: the one its button or quote names, and
-   * the recent orders sent to that number. Returns the orders whose
-   * cancellation already reached the store; their status is left alone and
-   * the merchant is asked to review the reply. Never throws.
+   * of the orders it can belong to: the one its button or quote names, or,
+   * when it names none, the recent orders sent to that number. Returns the
+   * orders whose cancellation already reached the store; their status is
+   * left alone and the merchant is asked to review the reply. Never throws.
    */
   private async recordCustomerMessage(
     message: WhatsAppMessageDto,

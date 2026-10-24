@@ -371,6 +371,31 @@ describe('auto-cancellation against PostgreSQL', () => {
     ).toBe('customer_replied');
   });
 
+  it('records a message that names an order on that order alone', async () => {
+    const phone = '+201000007777';
+    const answeredId = await seedNoReply({ phone });
+    const siblingId = await seedNoReply({ phone });
+    const { service: worker } = service({});
+    await worker.scheduleAfterNoReply(answeredId);
+    await worker.scheduleAfterNoReply(siblingId);
+    const siblingStatus = (await repo.findByVerification(siblingId, orgId))
+      ?.status;
+
+    const result = await repo.recordCustomerMessage({
+      phoneE164: phone,
+      verificationIds: [answeredId],
+      receivedAt: new Date().toISOString(),
+    });
+    expect(result.matched).toEqual([answeredId]);
+
+    expect((await repo.findByVerification(siblingId, orgId))?.status).toBe(
+      siblingStatus,
+    );
+    expect(
+      await verificationsRepo.findNeedsActionReason(siblingId, orgId),
+    ).toBe('no_reply_after_follow_up');
+  });
+
   it('names a failed cancellation and a late reply for the merchant', async () => {
     const failedId = await seedNoReply();
     const { service: failing } = service({

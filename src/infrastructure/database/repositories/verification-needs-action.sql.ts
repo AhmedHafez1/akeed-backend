@@ -8,13 +8,14 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  *
  * Returns the reason for the first rule that matches, or NULL:
  * -. `late_reply_after_auto_cancel`: Akeed canceled the order in its store
- *    and the customer wrote afterwards; read what they said.
+ *    and the customer wrote afterwards; contact them (Akeed does not store
+ *    the message text).
  * 0. `no_whatsapp`: the customer number cannot receive WhatsApp; call them.
  * 1. `delivery_failed`: WhatsApp reported the message undeliverable.
  * 2. `send_failed`: any other failure: the message never went out (no
  *    credits, plan limit, source inactive, provider error).
  * -. `customer_replied`: the customer wrote without a clear confirm or
- *    cancel; read what they said. It also stops the automatic cancellation.
+ *    cancel; contact them. It also stops the automatic cancellation.
  * -. `auto_cancel_failed`: the automatic cancellation failed at the store;
  *    the order is still open there.
  * 3. `no_reply_after_follow_up`: escalated to no-reply after the reminder went out.

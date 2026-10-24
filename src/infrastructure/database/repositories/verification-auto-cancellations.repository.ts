@@ -363,11 +363,12 @@ export class VerificationAutoCancellationsRepository {
   }
 
   /**
-   * A message came from a customer's number. Every open order it can belong
-   * to records it: the one its button or quote names, and the recent orders
-   * sent to that number in any store, because the shared sender cannot tell
-   * which one a plain message is about. A cancellation that had not reached
-   * the store stops; one that has is flagged for the merchant.
+   * A message came from a customer's number. A message whose button or quote
+   * names an order records it on that order alone: a Confirm on one order
+   * says nothing about the others. A message that names none is recorded on
+   * every recent open order sent to that number in any store, because the
+   * shared sender cannot tell which one it is about. A cancellation that had
+   * not reached the store stops; one that has is flagged for the merchant.
    *
    * Returns the verifications whose cancellation is committed, so the caller
    * leaves their status alone.
@@ -380,20 +381,16 @@ export class VerificationAutoCancellationsRepository {
     const since = new Date(
       new Date(input.receivedAt).getTime() - CUSTOMER_MESSAGE_MATCH_MS,
     ).toISOString();
-    const named = [
-      ...(input.verificationIds.length > 0
-        ? [inArray(verifications.id, [...input.verificationIds])]
-        : []),
-      ...(input.phoneE164
-        ? [
-            and(
+    const named =
+      input.verificationIds.length > 0
+        ? inArray(verifications.id, [...input.verificationIds])
+        : input.phoneE164
+          ? and(
               eq(orders.customerPhone, input.phoneE164),
               gte(verifications.lastSentAt, since),
-            ),
-          ]
-        : []),
-    ];
-    if (named.length === 0) return { matched: [], committed: [] };
+            )
+          : undefined;
+    if (!named) return { matched: [], committed: [] };
 
     const candidates = await this.db
       .select({ id: verifications.id })
@@ -405,7 +402,7 @@ export class VerificationAutoCancellationsRepository {
       )
       .where(
         and(
-          or(...named),
+          named,
           or(
             inArray(verifications.status, [...OPEN_VERIFICATION_STATUSES]),
             inArray(verificationAutoCancellations.status, [

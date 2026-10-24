@@ -118,7 +118,7 @@ A store may switch on `autoCancelEnabled` (off by default). An order that then r
 
 The sweep (every 5 minutes) enqueues due rows whose job was lost, resumes expired leases, polls `awaiting_platform` rows and re-checks paused ones.
 
-**Customer messages.** `WhatsAppWebhookService` records every inbound message before it reads it (`VerificationAutoCancellationsRepository.recordCustomerMessage`): the order its button or quote names, and the open orders sent to that number in the last 7 days, in any store, get `customer_last_message_at`. A `scheduled` or `paused` row stops (`customer_reply`); an `in_progress`, `awaiting_platform` or `succeeded` row gets `late_reply_at`, and the reply does not change that order's status.
+**Customer messages.** `WhatsAppWebhookService` records every inbound message before it reads it (`VerificationAutoCancellationsRepository.recordCustomerMessage`): the order its button or quote names gets `customer_last_message_at`, and only that order. A message that names no order (plain text, media, or a quote Akeed cannot match) is recorded on every open order sent to that number in the last 7 days, in any store. A `scheduled` or `paused` row stops (`customer_reply`); an `in_progress`, `awaiting_platform` or `succeeded` row gets `late_reply_at`, and the reply does not change that order's status.
 
 **Needs action.** `customer_replied` (an open order the customer wrote about without a clear answer, whatever the setting), `auto_cancel_failed` and `late_reply_after_auto_cancel`. The merchant may still cancel a `no_reply` order with `customer_replied` or `auto_cancel_failed` by hand; the manual cancel answers `409 AUTO_CANCEL_ALREADY_IN_PROGRESS` while the automatic one is committed.
 
