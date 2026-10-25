@@ -54,6 +54,13 @@ import type {
   ReviewPromptState,
   ReviewRequestCode,
 } from '../../shared/review-prompt/review-prompt.types';
+import type { InterfaceLocale } from '../../shared/i18n/interface-locales';
+import type {
+  TipsAudienceFilters,
+  TipsCampaignStatus,
+  TipsCampaignType,
+  TipsTargetingMode,
+} from '../../shared/tips-campaigns/tips-campaign.types';
 
 export const verificationStatus = pgEnum('verification_status', [
   'pending',
@@ -673,7 +680,7 @@ export const integrations = pgTable(
     escalationDelayMinutes: integer('escalation_delay_minutes')
       .default(1800)
       .notNull(),
-    quietHoursEnabled: boolean('quiet_hours_enabled').default(true).notNull(),
+    quietHoursEnabled: boolean('quiet_hours_enabled').default(false).notNull(),
     quietHoursStart: text('quiet_hours_start').default('22:00'),
     quietHoursEnd: text('quiet_hours_end').default('09:00'),
     timezone: text('timezone').default('Asia/Riyadh').notNull(),
@@ -3976,6 +3983,212 @@ export const verificationAutoCancellationEvents = pgTable(
       sql`${table.event} IN ('scheduled', 'paused', 'resumed', 'excluded', 'included', 'stopped', 'platform_checked', 'dispatch_started', 'platform_pending', 'retry_scheduled', 'succeeded', 'failed', 'skipped', 'late_reply')`,
     ),
     pgPolicy('Service role manages verification auto cancellation events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const tipsCampaigns = pgTable(
+  'tips_campaigns',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    name: text('name').notNull(),
+    type: text('type').$type<TipsCampaignType>().notNull(),
+    status: text('status')
+      .$type<TipsCampaignStatus>()
+      .default('draft')
+      .notNull(),
+    actionKind: text('action_kind').$type<'internal' | 'external'>(),
+    actionRoute: text('action_route'),
+    actionUrl: text('action_url'),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
+    targetingMode: text('targeting_mode')
+      .$type<TipsTargetingMode>()
+      .default('filters')
+      .notNull(),
+    audienceFilters: jsonb('audience_filters')
+      .$type<TipsAudienceFilters>()
+      .default({})
+      .notNull(),
+    selectedOrgIds: uuid('selected_org_ids')
+      .array()
+      .default(sql`'{}'::uuid[]`)
+      .notNull(),
+    excludedOrgIds: uuid('excluded_org_ids')
+      .array()
+      .default(sql`'{}'::uuid[]`)
+      .notNull(),
+    revision: integer('revision').default(1).notNull(),
+    reviewedRevision: integer('reviewed_revision'),
+    reviewedAudienceHash: text('reviewed_audience_hash'),
+    reviewedRecipientCount: integer('reviewed_recipient_count'),
+    reviewedAt: timestamp('reviewed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    reviewedBy: uuid('reviewed_by'),
+    publishedAt: timestamp('published_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    publishedBy: uuid('published_by'),
+    publishedReviewToken: text('published_review_token'),
+    recipientCount: integer('recipient_count'),
+    pausedAt: timestamp('paused_at', { withTimezone: true, mode: 'string' }),
+    archivedAt: timestamp('archived_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_tips_campaigns_status_published').on(
+      table.status,
+      table.publishedAt.desc(),
+      table.id,
+    ),
+    index('idx_tips_campaigns_created').on(table.createdAt.desc(), table.id),
+    check(
+      'tips_campaigns_name_check',
+      sql`char_length(btrim(${table.name})) BETWEEN 1 AND 120`,
+    ),
+    check('tips_campaigns_type_check', sql`${table.type} IN ('tip', 'update')`),
+    check(
+      'tips_campaigns_status_check',
+      sql`${table.status} IN ('draft', 'published', 'paused', 'archived')`,
+    ),
+    check(
+      'tips_campaigns_targeting_mode_check',
+      sql`${table.targetingMode} IN ('direct', 'filters')`,
+    ),
+    check(
+      'tips_campaigns_action_check',
+      sql`(${table.actionKind} IS NULL AND ${table.actionRoute} IS NULL AND ${table.actionUrl} IS NULL) OR (${table.actionKind} = 'internal' AND ${table.actionRoute} ~ '^[a-z_]{1,64}$' AND ${table.actionUrl} IS NULL) OR (${table.actionKind} = 'external' AND ${table.actionRoute} IS NULL AND ${table.actionUrl} LIKE 'https://%' AND char_length(${table.actionUrl}) <= 2048)`,
+    ),
+    check(
+      'tips_campaigns_org_lists_check',
+      sql`cardinality(${table.selectedOrgIds}) <= 500 AND cardinality(${table.excludedOrgIds}) <= 500`,
+    ),
+    check('tips_campaigns_revision_check', sql`${table.revision} >= 1`),
+    check(
+      'tips_campaigns_published_check',
+      sql`${table.status} IN ('draft', 'archived') OR (${table.publishedAt} IS NOT NULL AND ${table.recipientCount} IS NOT NULL)`,
+    ),
+    pgPolicy('Service role manages tips campaigns', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const tipsCampaignTranslations = pgTable(
+  'tips_campaign_translations',
+  {
+    campaignId: uuid('campaign_id').notNull(),
+    locale: text('locale').$type<InterfaceLocale>().notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    actionLabel: text('action_label'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.campaignId, table.locale],
+      name: 'tips_campaign_translations_pkey',
+    }),
+    foreignKey({
+      columns: [table.campaignId],
+      foreignColumns: [tipsCampaigns.id],
+      name: 'tips_campaign_translations_campaign_fkey',
+    }).onDelete('cascade'),
+    check(
+      'tips_campaign_translations_locale_check',
+      sql`${table.locale} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
+    ),
+    check(
+      'tips_campaign_translations_title_check',
+      sql`char_length(btrim(${table.title})) BETWEEN 1 AND 80`,
+    ),
+    check(
+      'tips_campaign_translations_description_check',
+      sql`char_length(btrim(${table.description})) BETWEEN 1 AND 500`,
+    ),
+    check(
+      'tips_campaign_translations_action_label_check',
+      sql`${table.actionLabel} IS NULL OR char_length(btrim(${table.actionLabel})) BETWEEN 1 AND 30`,
+    ),
+    pgPolicy('Service role manages tips campaign translations', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const tipsCampaignRecipients = pgTable(
+  'tips_campaign_recipients',
+  {
+    campaignId: uuid('campaign_id').notNull(),
+    orgId: uuid('org_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    firstViewedAt: timestamp('first_viewed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstClickedAt: timestamp('first_clicked_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    dismissedAt: timestamp('dismissed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.campaignId, table.orgId],
+      name: 'tips_campaign_recipients_pkey',
+    }),
+    foreignKey({
+      columns: [table.campaignId],
+      foreignColumns: [tipsCampaigns.id],
+      name: 'tips_campaign_recipients_campaign_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'tips_campaign_recipients_org_fkey',
+    }).onDelete('cascade'),
+    index('idx_tips_campaign_recipients_org_open')
+      .on(table.orgId, table.campaignId)
+      .where(sql`${table.dismissedAt} IS NULL`),
+    pgPolicy('Service role manages tips campaign recipients', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

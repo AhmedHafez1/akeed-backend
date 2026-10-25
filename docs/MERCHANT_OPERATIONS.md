@@ -226,6 +226,15 @@ Staff can ask one Shopify store for an App Store review. The embedded Dashboard 
 - **Reset.** "Reset prompt" on the admin store page (`POST /api/admin/stores/:integrationId/review-prompt/reset`) sets the state back to `eligible` and clears the snooze. It does not touch the switch. It writes a `reset` event and an `admin_access_audit` row (`store.review-prompt.reset`). The admin store page also shows the state, times shown, last shown, last result and what the card would show now.
 - **Who sees it.** Only an owner or admin in a Shopify session for the store's own shop sees the card and can answer it. The store comes from the session, never from the request body.
 
+### Tips and updates
+
+Admins can publish tips and feature announcements to chosen merchants (`docs/TIPS_AND_UPDATES_RUNBOOK.md`). Eligible cards appear on the dashboard overview below the blocked-orders, usage and credit alerts and above the KPIs, newest publication first, also during the first run. In Shopify they are Polaris cards; standalone uses the Akeed card style.
+
+- **Who sees what.** `GET /api/tips?locale=` returns the cards for the session's organization only: recipient rows of published, unexpired campaigns it has not dismissed. Each card comes in the dashboard language when that translation is complete, otherwise in English.
+- **Dismiss.** Permanent for the whole organization. Owners and admins see the control; viewers do not, and the server refuses their dismissal. A failed save brings the card back with an error.
+- **Analytics.** A view is recorded once the card is at least half on screen, and a click when its button is pressed. The server keeps only the first of each per organization.
+- **Failure.** If the read fails, or nothing is eligible, no section renders and the rest of the dashboard is unaffected.
+
 ## Settings Page
 
 ### Page Structure

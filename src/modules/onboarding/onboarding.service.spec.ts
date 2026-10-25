@@ -300,7 +300,7 @@ describe('OnboardingService', () => {
         followUpEnabled: true,
         followUpDelayMinutes: 360,
         escalationDelayMinutes: 1800,
-        quietHoursEnabled: true,
+        quietHoursEnabled: false,
         quietHoursStart: '22:00',
         quietHoursEnd: '09:00',
         sendDelayMinutes: 0,

@@ -303,6 +303,8 @@ describe('order imports PostgreSQL contract', () => {
         '0074_new_store_timing_defaults.sql',
         // Automatic cancellation: store and order columns; proves 0075 re-runs.
         '0075_auto_cancel_unanswered.sql',
+        // Quiet hours off by default for new stores; proves 0076 re-runs.
+        '0076_quiet_hours_default_off.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -327,7 +329,7 @@ describe('order imports PostgreSQL contract', () => {
     }
   });
 
-  it('gives a new store the 0074 timing defaults', async () => {
+  it('gives a new store the 0074 timings with quiet hours off (0076)', async () => {
     const { integrationId } = await createSource();
     const [store] = await client<
       {
@@ -344,7 +346,7 @@ describe('order imports PostgreSQL contract', () => {
     expect(store).toEqual({
       follow_up_delay_minutes: 360,
       escalation_delay_minutes: 1800,
-      quiet_hours_enabled: true,
+      quiet_hours_enabled: false,
       quiet_hours_start: '22:00',
       quiet_hours_end: '09:00',
     });

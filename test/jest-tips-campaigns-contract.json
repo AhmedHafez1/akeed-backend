@@ -1,0 +1,8 @@
+{
+  "rootDir": "..",
+  "testRegex": "test/tips-campaigns\\.contract-spec\\.ts$",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "transform": { "^.+\\.ts$": "ts-jest" },
+  "testEnvironment": "node",
+  "testTimeout": 60000
+}

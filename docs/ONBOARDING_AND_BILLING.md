@@ -99,7 +99,7 @@ Standalone (Supabase) merchants use three calls, all shared with the embedded se
 
 The store name is prefilled from the organization name (the signup company name) when it is empty; an existing name is never overwritten.
 
-A new standalone source is provisioned ready to send, so onboarding does not ask for confirmation rules: auto-verify on, first send immediate, one follow-up after 360 minutes, escalation after 1800 minutes (24 hours after the follow-up), quiet hours on from 22:00 to 09:00 in the store timezone, COD fallback on (`STANDALONE_SOURCE_DEFAULTS`).
+A new standalone source is provisioned ready to send, so onboarding does not ask for confirmation rules: auto-verify on, first send immediate, one follow-up after 360 minutes, escalation after 1800 minutes (24 hours after the follow-up), quiet hours off (22:00 to 09:00 in the store timezone once turned on), COD fallback on (`STANDALONE_SOURCE_DEFAULTS`).
 
 ### Connected sources
 

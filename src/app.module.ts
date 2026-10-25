@@ -15,6 +15,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { MerchantBrandingModule } from './modules/merchant-branding/merchant-branding.module';
 import { ReviewPromptModule } from './modules/review-prompt/review-prompt.module';
+import { TipsModule } from './modules/tips/tips.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { OrderImportsModule } from './modules/order-imports/order-imports.module';
@@ -131,6 +132,7 @@ const billingModule = BillingModule.register({
     OnboardingModule,
     MerchantBrandingModule,
     ReviewPromptModule,
+    TipsModule,
     OrganizationsModule,
     OrdersModule,
     OrderImportsModule,

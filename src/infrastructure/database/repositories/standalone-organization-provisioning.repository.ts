@@ -45,8 +45,9 @@ export function buildStandaloneSourceIdentity(orgId: string): string {
  * Onboarding v2 no longer asks Standalone merchants for confirmation rules
  * (docs/standalone-onboarding-v2.md), so a new source starts ready to send:
  * immediate first send, one follow-up after 6 h, escalation 24 h after the
- * follow-up (30 h after the first message), and quiet hours 22:00-09:00 in the
- * store timezone. They are written explicitly so a column default change
+ * follow-up (30 h after the first message), and quiet hours off (with a
+ * 22:00-09:00 window ready in the store timezone if the merchant turns them
+ * on). They are written explicitly so a column default change
  * cannot alter them. Only new
  * sources get them; existing rows keep what the merchant saved. Orders with no
  * payment method are treated as COD from the start, since COD is the core case.
@@ -58,7 +59,7 @@ export const STANDALONE_SOURCE_DEFAULTS = {
   followUpDelayMinutes: 360,
   escalationEnabled: true,
   escalationDelayMinutes: 1800,
-  quietHoursEnabled: true,
+  quietHoursEnabled: false,
   quietHoursStart: '22:00',
   quietHoursEnd: '09:00',
   assumeCodWhenPaymentMissing: true,

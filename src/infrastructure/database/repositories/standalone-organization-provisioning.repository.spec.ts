@@ -220,7 +220,7 @@ describe('provisionStandaloneSourceForOrganization', () => {
       follow_up_delay_minutes: 360,
       escalation_enabled: true,
       escalation_delay_minutes: 1800,
-      quiet_hours_enabled: true,
+      quiet_hours_enabled: false,
       quiet_hours_start: '22:00',
       quiet_hours_end: '09:00',
       assume_cod_when_payment_missing: true,

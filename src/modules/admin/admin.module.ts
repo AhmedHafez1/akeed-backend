@@ -29,6 +29,8 @@ import { BillingReconciliationProcessor } from './billing-reconciliation.process
 import { AdminTemplatesController } from './admin-templates.controller';
 import { AdminTemplateAuthoringController } from './admin-template-authoring.controller';
 import { AdminMessageTextsController } from './admin-message-texts.controller';
+import { AdminTipsCampaignsController } from './admin-tips-campaigns.controller';
+import { AdminTipsCampaignsService } from './admin-tips-campaigns.service';
 import { AdminMessageTextsService } from './admin-message-texts.service';
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
@@ -70,6 +72,7 @@ export class AdminModule {
         AdminTemplateAuthoringController,
         AdminTemplatesController,
         AdminMessageTextsController,
+        AdminTipsCampaignsController,
       ],
       providers: [
         AdminAccessGuard,
@@ -98,6 +101,7 @@ export class AdminModule {
         LogoImageService,
         WhatsappTemplateOperatorGuard,
         AdminMessageTextsService,
+        AdminTipsCampaignsService,
       ],
     };
   }

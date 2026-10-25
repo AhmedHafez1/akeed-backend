@@ -36,6 +36,7 @@ import { WhatsappTemplateDraftsRepository } from './repositories/whatsapp-templa
 import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-template-lifecycle.repository';
 import { ReviewPromptsRepository } from './repositories/review-prompts.repository';
 import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
+import { TipsCampaignsRepository } from './repositories/tips-campaigns.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -75,6 +76,7 @@ import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
     UsageAlertsRepository,
+    TipsCampaignsRepository,
   ],
   exports: [
     CreditAccountingRepository,
@@ -112,6 +114,7 @@ import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
     UsageAlertsRepository,
+    TipsCampaignsRepository,
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {
