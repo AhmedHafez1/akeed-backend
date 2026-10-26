@@ -18,6 +18,20 @@ describe('validateEnv', () => {
     ).not.toThrow();
   });
 
+  it('accepts a numeric META_PIXEL_ID and rejects anything else', () => {
+    const base = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://localhost/db',
+      ...meta,
+    };
+    expect(() =>
+      validateEnv({ ...base, META_PIXEL_ID: '2079384036148209' }),
+    ).not.toThrow();
+    expect(() =>
+      validateEnv({ ...base, META_PIXEL_ID: 'akeed-pixel' }),
+    ).toThrow(/META_PIXEL_ID must be the numeric/);
+  });
+
   it('names every missing Meta variable rather than failing on the first', () => {
     expect(() =>
       validateEnv({

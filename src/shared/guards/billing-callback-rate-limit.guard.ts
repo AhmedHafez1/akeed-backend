@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { validateShop } from '../../infrastructure/spokes/shopify/shopify.utils';
+import { getClientIp } from '../http/client-ip';
 import { buildBackendLog } from '../logging/backend-log.util';
 
 interface RateLimitEntry {
@@ -85,20 +86,8 @@ export class BillingCallbackRateLimitGuard implements CanActivate {
       return `shop:${shop}`;
     }
 
-    const ip = this.getClientIp(req) ?? 'unknown';
+    const ip = getClientIp(req) ?? 'unknown';
     return `ip:${ip}`;
-  }
-
-  private getClientIp(req: Request): string | undefined {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.trim()) {
-      return forwarded.split(',')[0]?.trim();
-    }
-    if (Array.isArray(forwarded) && forwarded.length > 0) {
-      return forwarded[0]?.trim();
-    }
-    const connection = req.connection as { remoteAddress?: string } | undefined;
-    return (req.ip ?? connection?.remoteAddress)?.trim();
   }
 
   private readNumber(key: string, fallback: number): number {

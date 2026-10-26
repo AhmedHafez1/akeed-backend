@@ -110,6 +110,12 @@ export function validateEnv(
     }
   }
 
+  // Optional: the Conversions API stays off unless the Pixel and token are set.
+  const metaPixelId = read('META_PIXEL_ID')?.trim();
+  if (metaPixelId && !/^\d+$/.test(metaPixelId)) {
+    errors.push('META_PIXEL_ID must be the numeric Meta Pixel (dataset) ID.');
+  }
+
   if (errors.length > 0) {
     throw new Error(
       `Invalid environment configuration:\n - ${errors.join('\n - ')}`,

@@ -425,6 +425,30 @@ customer service window, or when Meta answers `131047`, it is a recorded skip
 the template operators under `/api/admin/message-texts` (same
 `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
 
+## Meta Ad Conversions (Conversions API)
+
+The public site reports ad conversions to a Meta Pixel. The browser Pixel
+(frontend `NEXT_PUBLIC_META_PIXEL_ID`) sends `PageView`, `InstallClick` and
+`CompleteRegistration`; the backend sends `CompleteRegistration` again through
+the Conversions API with the same `event_id`, so Meta counts it once.
+
+| Variable | Notes |
+| --- | --- |
+| `META_PIXEL_ID` | The Pixel (dataset) ID, digits only. It must be the same Pixel the frontend uses in that environment: production on production, the dev Pixel locally and on preview. Startup fails on a value that is not digits. |
+| `META_CAPI_ACCESS_TOKEN` | A Conversions API access token for that Pixel (Events Manager > the Pixel > Settings > Generate access token). Secret: set it on the backend host only, never in the frontend. Without it, or without `META_PIXEL_ID`, nothing is sent and startup logs `meta_conversions_config` with `outcome: skipped`. |
+| `META_TEST_EVENT_CODE` | Optional. While set, every server event carries this code and shows under Events Manager > Test events. Remove it after testing. |
+
+`POST /api/marketing-events/complete-registration` is public, because a new
+account usually has no session until its email is confirmed. It always answers
+`202 { accepted: true }` and reports in the background. It sends only for an
+account that exists in Supabase and was created in the last 15 minutes, once per
+account per process; the email is read from the account (never from the
+request), normalised and SHA-256 hashed, with the hashed user ID as
+`external_id`. A failure never reaches signup. Logs:
+`complete_registration_report` (`skipped` with `reason` `disabled`,
+`unknown_user`, `stale_user` or `duplicate`) and `meta_conversions_send`
+(`success` with `fbtraceId`, or `failure` with the Graph error code).
+
 ## Merchant Logo Header
 
 A merchant uploads a logo in **Settings**. Akeed stores it with a 1200x628 banner built from it, in a public Supabase Storage bucket, and records both URLs on the store. Each message whose template has an approved image twin is sent with the banner as its header. The logo header is included on the Pro and Scale plans of a Shopify store and on every prepaid-credit store (`includesLogoHeader`, `shared/billing/plan-features.ts`); below Pro the Settings card is locked, an upload answers `LOGO_PLAN_REQUIRED`, and a saved logo is kept but not sent. Within that, it is on for every store; staff can switch one store off (`PATCH /api/admin/stores/:integrationId/logo-header`, audited as `store.logo-header.set`). Without a saved logo or a twin, or with the switch off, the text template goes out as before. Registering a twin is in the [WhatsApp template support runbook](WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md#10-image-header-twins-for-the-logo-header).
