@@ -678,7 +678,7 @@ export const integrations = pgTable(
       .notNull(),
     escalationEnabled: boolean('escalation_enabled').default(true).notNull(),
     escalationDelayMinutes: integer('escalation_delay_minutes')
-      .default(1800)
+      .default(1080)
       .notNull(),
     quietHoursEnabled: boolean('quiet_hours_enabled').default(false).notNull(),
     quietHoursStart: text('quiet_hours_start').default('22:00'),

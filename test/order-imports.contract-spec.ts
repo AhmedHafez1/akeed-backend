@@ -305,6 +305,8 @@ describe('order imports PostgreSQL contract', () => {
         '0075_auto_cancel_unanswered.sql',
         // Quiet hours off by default for new stores; proves 0076 re-runs.
         '0076_quiet_hours_default_off.sql',
+        // Twelve hours after the reminder for new stores; proves 0078 re-runs.
+        '0078_no_reply_default_twelve_hours.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -329,7 +331,7 @@ describe('order imports PostgreSQL contract', () => {
     }
   });
 
-  it('gives a new store the 0074 timings with quiet hours off (0076)', async () => {
+  it('gives a new store a 12-hour no-reply gap with quiet hours off', async () => {
     const { integrationId } = await createSource();
     const [store] = await client<
       {
@@ -345,11 +347,39 @@ describe('order imports PostgreSQL contract', () => {
       FROM integrations WHERE id = ${integrationId}`;
     expect(store).toEqual({
       follow_up_delay_minutes: 360,
-      escalation_delay_minutes: 1800,
+      escalation_delay_minutes: 1080,
       quiet_hours_enabled: false,
       quiet_hours_start: '22:00',
       quiet_hours_end: '09:00',
     });
+  });
+
+  it('preserves existing store timings when the default migration runs', async () => {
+    const previousDefault = await createSource();
+    const custom = await createSource();
+    await client`UPDATE integrations SET escalation_delay_minutes = 1800
+      WHERE id = ${previousDefault.integrationId}`;
+    await client`UPDATE integrations SET escalation_delay_minutes = 480
+      WHERE id = ${custom.integrationId}`;
+
+    await client.unsafe(
+      readFileSync(
+        resolve(__dirname, '../drizzle/0078_no_reply_default_twelve_hours.sql'),
+        'utf8',
+      ),
+    );
+
+    const stores = await client<
+      { id: string; escalation_delay_minutes: number }[]
+    >`
+      SELECT id, escalation_delay_minutes FROM integrations
+      WHERE id IN (${previousDefault.integrationId}, ${custom.integrationId})`;
+    expect(stores).toEqual(
+      expect.arrayContaining([
+        { id: previousDefault.integrationId, escalation_delay_minutes: 1800 },
+        { id: custom.integrationId, escalation_delay_minutes: 480 },
+      ]),
+    );
   });
 
   it('stores a 5,000-row draft and its rows in one transaction', async () => {

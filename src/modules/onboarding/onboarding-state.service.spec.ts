@@ -96,6 +96,28 @@ describe('OnboardingStateService', () => {
       expect(state.sendDelayMinutes).toBe(0);
     });
 
+    it('uses an 18-hour total when the no-reply setting is missing', () => {
+      const state = callToState(
+        service,
+        makeIntegration({
+          followUpDelayMinutes: null,
+          escalationDelayMinutes: null,
+        }),
+      );
+
+      expect(state.followUpDelayMinutes).toBe(360);
+      expect(state.escalationDelayMinutes).toBe(1080);
+    });
+
+    it('preserves an existing store with the previous default', () => {
+      const state = callToState(
+        service,
+        makeIntegration({ escalationDelayMinutes: 1800 }),
+      );
+
+      expect(state.escalationDelayMinutes).toBe(1800);
+    });
+
     it('should return custom automation settings from integration', () => {
       const state = callToState(
         service,

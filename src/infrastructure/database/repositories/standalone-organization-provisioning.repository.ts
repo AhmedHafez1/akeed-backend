@@ -58,7 +58,7 @@ export const STANDALONE_SOURCE_DEFAULTS = {
   followUpEnabled: true,
   followUpDelayMinutes: 360,
   escalationEnabled: true,
-  escalationDelayMinutes: 1800,
+  escalationDelayMinutes: 1080,
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
   quietHoursEnd: '09:00',
