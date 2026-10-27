@@ -101,7 +101,6 @@ describe('MerchantBrandingService', () => {
       OLD.logoBannerUrl,
     ]);
     expect(result.logoHeaderAvailable).toBe(true);
-    expect(result.logoHeaderIncluded).toBe(true);
   });
 
   it('refuses a viewer before reading anything', async () => {
@@ -169,29 +168,25 @@ describe('MerchantBrandingService', () => {
       bannerUrl: null,
       updatedAt: null,
       logoHeaderAvailable: true,
-      logoHeaderIncluded: true,
     });
   });
 
-  it('refuses an upload below the Pro plan but still removes', async () => {
+  it('saves a logo for a Shopify store on the Starter plan', async () => {
     const { service, onboardingState, images, integrationsRepo } = setup();
     onboardingState.resolveCurrentIntegration.mockResolvedValue({
       id: 'int-1',
       platformType: 'shopify',
-      billingPlanId: 'basic',
+      billingPlanId: 'starter',
       logoHeaderEnabled: true,
     });
-    expect(await errorCode(service.uploadLogo(user(), file))).toBe(
-      'LOGO_PLAN_REQUIRED',
-    );
-    expect(images.render).not.toHaveBeenCalled();
 
-    const result = await service.removeLogo(user());
-    expect(integrationsRepo.replaceLogo).toHaveBeenCalledWith(
-      'int-1',
-      ORG,
-      null,
-    );
-    expect(result.logoHeaderIncluded).toBe(false);
+    const result = await service.uploadLogo(user(), file);
+
+    expect(images.render).toHaveBeenCalled();
+    expect(integrationsRepo.replaceLogo).toHaveBeenCalledWith('int-1', ORG, {
+      logoUrl: result.logoUrl,
+      logoBannerUrl: result.bannerUrl,
+    });
+    expect(result.logoHeaderAvailable).toBe(true);
   });
 });

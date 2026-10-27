@@ -11,7 +11,6 @@ import {
   type PublicAssetStoragePort,
 } from '../../shared/ports/public-asset-storage.port';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
-import { includesLogoHeader } from '../../shared/billing/plan-features';
 import { canWriteOrganization } from '../auth/organization-role';
 import { OnboardingStateService } from '../onboarding/onboarding-state.service';
 import {
@@ -58,8 +57,6 @@ export class MerchantBrandingService {
     if (!file?.buffer?.byteLength) throw logoError('LOGO_FILE_REQUIRED');
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
-    // Below the plan the card is locked; a saved logo may still be removed.
-    if (!includesLogoHeader(integration)) throw logoError('LOGO_PLAN_REQUIRED');
 
     let rendered: Awaited<ReturnType<LogoImageService['render']>>;
     try {

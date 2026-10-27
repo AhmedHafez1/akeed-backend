@@ -11,8 +11,6 @@ function setup(found = true) {
       logoBannerUrl: 'https://cdn.test/b.jpg',
       logoUpdatedAt: '2026-10-15T10:00:00.000Z',
       logoHeaderEnabled: true,
-      platformType: 'shopify',
-      billingPlanId: 'pro',
     }),
   };
   const templates = {
@@ -55,7 +53,6 @@ describe('AdminStoresService logo header', () => {
     );
     expect(result.logo_header).toEqual({
       enabled: true,
-      plan_included: true,
       logo_url: 'https://cdn.test/l.png',
       banner_url: 'https://cdn.test/b.jpg',
       updated_at: '2026-10-15T10:00:00.000Z',

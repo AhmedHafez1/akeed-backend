@@ -40,26 +40,30 @@ function serviceWithTwinOf(template: ReturnType<typeof selected>) {
   );
 }
 
-function store(platformType: string, billingPlanId: string | null) {
+function store(
+  platformType: string,
+  billingPlanId: string | null,
+  logoHeaderEnabled = true,
+) {
   return {
     platformType,
     billingPlanId,
-    logoHeaderEnabled: true,
+    logoHeaderEnabled,
     logoBannerUrl: BANNER,
   } as never;
 }
 
-describe('VerificationSendService logo header plan gate', () => {
+describe('VerificationSendService logo header', () => {
   it.each([
-    ['shopify', 'pro', true],
-    ['shopify', 'business', true],
-    ['shopify', 'basic', false],
-    ['shopify', 'starter', false],
-    ['standalone', 'starter', true],
-    ['woocommerce', null, true],
+    ['shopify', 'starter'],
+    ['shopify', 'basic'],
+    ['shopify', 'pro'],
+    ['shopify', 'business'],
+    ['standalone', 'starter'],
+    ['woocommerce', null],
   ])(
-    'a %s store on %s sends the banner: %s',
-    async (platformType, billingPlanId, sendsBanner) => {
+    'a %s store on %s with a banner and a twin sends the banner',
+    async (platformType, billingPlanId) => {
       const template = selected();
       const service = serviceWithTwinOf(template);
 
@@ -68,7 +72,20 @@ describe('VerificationSendService logo header plan gate', () => {
         store(platformType, billingPlanId),
       );
 
-      expect(Boolean(result.imageHeader)).toBe(sendsBanner);
+      expect(result.imageHeader).toBeTruthy();
     },
   );
+
+  it('sends the text template when staff switch the store off', async () => {
+    const template = selected();
+    const service = serviceWithTwinOf(template);
+
+    const result = await service['withLogoHeader'](
+      template,
+      store('shopify', 'starter', false),
+    );
+
+    expect(result.imageHeader).toBeFalsy();
+    expect(result).toBe(template);
+  });
 });

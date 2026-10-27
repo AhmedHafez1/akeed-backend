@@ -278,8 +278,6 @@ export class IntegrationsRepository {
         logoBannerUrl: integrations.logoBannerUrl,
         logoUpdatedAt: integrations.logoUpdatedAt,
         logoHeaderEnabled: integrations.logoHeaderEnabled,
-        platformType: integrations.platformType,
-        billingPlanId: integrations.billingPlanId,
       })
       .from(integrations)
       .where(eq(integrations.id, integrationId))
