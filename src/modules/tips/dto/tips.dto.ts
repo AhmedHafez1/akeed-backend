@@ -18,6 +18,8 @@ export type TipsCardActionDto =
   | { kind: 'external'; url: string; label: string };
 
 export interface TipsCardDto {
+  /** First view by any teammate in this organization; null means unread. */
+  first_viewed_at: string | null;
   id: string;
   type: TipsCampaignType;
   /** The language the card is written in, which may be the English fallback. */

@@ -638,7 +638,19 @@ describe('tips campaigns (Postgres contract)', () => {
       await reviewAndPublish(campaign);
       await reviewAndPublish(noButton);
 
+      const beforeRead = await repository.findMerchantCards(alpha, 'en', 20);
+      expect(
+        beforeRead.find((card) => card.id === campaign.id)?.first_viewed_at,
+      ).toBeNull();
       await repository.recordEvent(campaign.id, alpha, 'view');
+      const afterRead = await repository.findMerchantCards(alpha, 'en', 20);
+      expect(
+        afterRead.find((card) => card.id === campaign.id)?.first_viewed_at,
+      ).toEqual(expect.any(String));
+      const otherStore = await repository.findMerchantCards(beta, 'en', 20);
+      expect(
+        otherStore.find((card) => card.id === campaign.id)?.first_viewed_at,
+      ).toBeNull();
       const [{ first_viewed_at: firstView }] = await client<
         { first_viewed_at: string }[]
       >`

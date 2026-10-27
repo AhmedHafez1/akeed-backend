@@ -108,6 +108,7 @@ export interface TipsCreatedCursor {
 }
 
 export type TipsMerchantCardRow = {
+  first_viewed_at: string | null;
   id: string;
   type: TipsCampaignType;
   action_kind: 'internal' | 'external' | null;
@@ -726,6 +727,7 @@ export class TipsCampaignsRepository {
       SELECT
         c.id,
         c.type,
+        ${iso(sql`r.first_viewed_at`)} AS first_viewed_at,
         c.action_kind,
         c.action_route,
         c.action_url,
@@ -749,7 +751,7 @@ export class TipsCampaignsRepository {
         AND r.dismissed_at IS NULL
         AND c.status = 'published'
         AND (c.expires_at IS NULL OR c.expires_at > now())
-      GROUP BY c.id
+      GROUP BY c.id, r.first_viewed_at
       ORDER BY c.published_at DESC, c.id DESC
       LIMIT ${limit}
     `);

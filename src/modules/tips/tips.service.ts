@@ -71,6 +71,7 @@ export class TipsService {
       return [
         {
           id: row.id,
+          first_viewed_at: row.first_viewed_at,
           type: row.type,
           locale: bundle.locale,
           title: bundle.title,

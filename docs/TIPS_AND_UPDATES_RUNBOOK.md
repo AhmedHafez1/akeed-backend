@@ -64,8 +64,8 @@ Recipients are organizations with an active store (`integrations.is_active = tru
 ## Merchant side
 
 - A card shows when the organization is a recipient, the campaign is published (not paused or archived), it has not expired and the organization has not dismissed it.
-- Cards appear newest publication first, at most 20, below the operational alerts and above the KPIs, including during the first run. If there are none, or the read fails, no section renders.
-- **View:** recorded once, when at least half of the card is on screen (IntersectionObserver). The server keeps the first timestamp, so refreshes and other staff never add to it.
+- Cards appear newest publication first, at most 20. Shopify shows them in the header’s Tips & updates popover; standalone shows a dashboard section. When there are no cards, or loading fails, the entry point stays hidden.
+- **View:** Shopify records a view after at least half the card is visible for two continuous seconds in an active browser tab, or when its action is clicked. Standalone records a view when at least half the card is on screen. The server keeps the first timestamp for the organization. The merchant API returns `first_viewed_at`; null means unread. Shopify uses a blue bulb and per-card dots for unread cards. Reading clears the indicators for the whole store on subsequent fetches; it does not remove the cards.
 - **Click:** recorded without delaying navigation, only for a campaign with a button.
 - **Dismiss:** permanent for the organization, on every device and for every member. Owners and admins can dismiss; viewers see cards without a dismiss control, and the server refuses their dismissal (`TIPS_DISMISS_FORBIDDEN`). If saving fails, the card comes back with an error message.
 - An event for a campaign the organization did not receive answers `TIPS_CARD_NOT_FOUND`, the same as a campaign that does not exist.

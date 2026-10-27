@@ -48,6 +48,7 @@ describe('TipsService', () => {
         action_kind: 'internal',
         action_route: 'settings_timing',
         action_url: null,
+        first_viewed_at: null,
         published_at: '2026-10-25T10:00:00.000Z',
         translations: [en, ar],
       },
@@ -68,10 +69,29 @@ describe('TipsService', () => {
           title: 'ساعات الهدوء',
           description: 'نص',
           action: { kind: 'internal', route: 'settings_timing', label: 'افتح' },
+          first_viewed_at: null,
           published_at: '2026-10-25T10:00:00.000Z',
         },
       ],
     });
+  });
+
+  it('returns existing store-wide read history to viewers', async () => {
+    const { service, repo } = setup();
+    const firstViewedAt = '2026-10-26T10:00:00.000Z';
+    repo.findMerchantCards.mockResolvedValue([
+      {
+        id: CAMPAIGN,
+        type: 'tip',
+        action_kind: null,
+        first_viewed_at: firstViewedAt,
+        published_at: '2026-10-25T10:00:00.000Z',
+        translations: [en],
+      },
+    ]);
+    const result = await service.getCards(user('viewer'), 'en');
+    expect(result.cards[0].first_viewed_at).toBe(firstViewedAt);
+    expect(result.can_dismiss).toBe(false);
   });
 
   it('falls back to the whole English bundle and drops an unknown route', async () => {
@@ -83,6 +103,7 @@ describe('TipsService', () => {
         action_kind: 'internal',
         action_route: 'removed_page',
         action_url: null,
+        first_viewed_at: null,
         published_at: '2026-10-25T10:00:00.000Z',
         translations: [en, { ...ar, action_label: null }],
       },
