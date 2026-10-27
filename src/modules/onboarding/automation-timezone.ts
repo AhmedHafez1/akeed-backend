@@ -1,14 +1,7 @@
+import { isValidIanaTimezone } from '../../shared/utils/store-timezone.util';
 import { AUTOMATION_TIMEZONES } from './dto/onboarding.dto';
 
-/** True when the runtime can resolve `value` as an IANA time zone. */
-export function isValidIanaTimezone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { isValidIanaTimezone };
 
 /**
  * Quiet hours run in one of the curated MENA zones or in the store's own

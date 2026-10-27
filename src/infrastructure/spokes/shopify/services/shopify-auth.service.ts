@@ -10,6 +10,7 @@ import { OrganizationsRepository } from '../../../database/repositories/organiza
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
 import { PhoneService } from '../../../../shared/services/phone.service';
+import { followStoreTimezone } from '../../../../shared/utils/store-timezone.util';
 import {
   buildBackendLog,
   normalizeError,
@@ -288,7 +289,14 @@ export class ShopifyAuthService {
         'shopify',
       );
       if (!profile || !integration) return;
+      // Quiet hours start in the store's own zone, not the Riyadh default.
+      const timezone = followStoreTimezone({
+        saved: integration.timezone,
+        previousStoreTimezone: integration.shopTimezone,
+        storeTimezone: profile.ianaTimezone,
+      });
       await this.integrationsRepo.updateById(integration.id, {
+        ...(timezone ? { timezone } : {}),
         storeName: profile.name ?? integration.storeName,
         countryCode:
           profile.billingAddress?.countryCodeV2 ?? integration.countryCode,

@@ -598,6 +598,8 @@ Quiet hours prevent sends during merchant-configured off-hours.
 
 Cross-midnight windows are supported (e.g., 21:00–09:00).
 
+`Asia/Riyadh` is the column default. A Shopify store starts on the zone Shopify reports for it (`shop_timezone`), set when the shop profile syncs at install and re-auth, and follows a later store-zone change while the saved zone is still the default or the previous store zone. A zone the merchant picks is kept.
+
 **Behavior:**
 
 - `isInsideQuietHours(config)` — checks if the current time falls within the quiet window in the merchant's timezone.

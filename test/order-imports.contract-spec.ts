@@ -173,6 +173,7 @@ describe('order imports PostgreSQL contract', () => {
         quiet_hours_enabled boolean NOT NULL DEFAULT false,
         quiet_hours_start text,
         quiet_hours_end text,
+        shop_timezone text,
         UNIQUE (platform_type, platform_store_url),
         UNIQUE (id, org_id)
       );
@@ -307,6 +308,8 @@ describe('order imports PostgreSQL contract', () => {
         '0076_quiet_hours_default_off.sql',
         // Twelve hours after the reminder for new stores; proves 0078 re-runs.
         '0078_no_reply_default_twelve_hours.sql',
+        // Shopify stores move to their store zone; proves 0079 re-runs.
+        '0079_quiet_hours_store_timezone.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -380,6 +383,47 @@ describe('order imports PostgreSQL contract', () => {
         { id: custom.integrationId, escalation_delay_minutes: 480 },
       ]),
     );
+  });
+
+  it('moves Shopify stores on the default zone with quiet hours off to the store zone', async () => {
+    const stores: Record<string, string> = {};
+    for (const [key, timezone, quietHours, shopTimezone, platform] of [
+      ['follows', 'Asia/Riyadh', false, 'Europe/Istanbul', 'shopify'],
+      ['quietOn', 'Asia/Riyadh', true, 'Europe/Istanbul', 'shopify'],
+      ['chosen', 'Asia/Dubai', false, 'Europe/Istanbul', 'shopify'],
+      ['unknown', 'Asia/Riyadh', false, 'Not/AZone', 'shopify'],
+      ['standalone', 'Asia/Riyadh', false, 'Europe/Istanbul', 'standalone'],
+    ] as const) {
+      const [organization] = await client<{ id: string }[]>`
+        INSERT INTO organizations (name, slug)
+        VALUES ('Org', ${`org-${randomUUID()}`})
+        RETURNING id`;
+      const [integration] = await client<{ id: string }[]>`
+        INSERT INTO integrations (org_id, platform_type, platform_store_url,
+          timezone, quiet_hours_enabled, shop_timezone)
+        VALUES (${organization.id}, ${platform}, ${`${platform}:${organization.id}`},
+          ${timezone}, ${quietHours}, ${shopTimezone})
+        RETURNING id`;
+      stores[key] = integration.id;
+    }
+
+    await client.unsafe(
+      readFileSync(
+        resolve(__dirname, '../drizzle/0079_quiet_hours_store_timezone.sql'),
+        'utf8',
+      ),
+    );
+
+    const rows = await client<{ id: string; timezone: string }[]>`
+      SELECT id, timezone FROM integrations
+      WHERE id IN ${client(Object.values(stores))}`;
+    const zoneOf = (key: string) =>
+      rows.find((row) => row.id === stores[key])?.timezone;
+    expect(zoneOf('follows')).toBe('Europe/Istanbul');
+    expect(zoneOf('quietOn')).toBe('Asia/Riyadh');
+    expect(zoneOf('chosen')).toBe('Asia/Dubai');
+    expect(zoneOf('unknown')).toBe('Asia/Riyadh');
+    expect(zoneOf('standalone')).toBe('Asia/Riyadh');
   });
 
   it('stores a 5,000-row draft and its rows in one transaction', async () => {
