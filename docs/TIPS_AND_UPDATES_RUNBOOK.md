@@ -32,6 +32,7 @@ Any admin who passes the control tower guard can create and publish campaigns. E
 
 ## Content
 
+- Every campaign has a type, shown to merchants as a badge: `tip` (Tip, advice), `update` (New feature), `change` (Update: Akeed changed how something works) or `note` (Note: information only).
 - English is required and must be complete. Every other interface language is either complete or absent. A merchant reads their dashboard language when it is complete, otherwise the whole English bundle. A title is never mixed with a body or button in another language.
 - Text is plain, with line breaks kept. The title is 1–80 characters with at most 1 line break, the description 1–500 with at most 8, the button label 1–30, and the internal name 1–120.
 - The button is optional. It is either an Akeed page key, mapped by the frontend to the page in the merchant's mode with the Shopify context kept, or an absolute `https://` link to a public host, opened in a new tab. `javascript:`, `data:`, protocol-relative and credential links are refused. A page that does not exist in a mode (for example `imports_new` in Shopify) shows no button there.

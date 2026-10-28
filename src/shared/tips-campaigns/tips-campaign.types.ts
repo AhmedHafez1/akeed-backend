@@ -2,7 +2,11 @@ import { BILLING_PLAN_IDS } from '../billing/billing-plan';
 import type { InterfaceLocale } from '../i18n/interface-locales';
 import type { TipActionRoute } from './tip-action-routes';
 
-export const TIPS_CAMPAIGN_TYPES = ['tip', 'update'] as const;
+/**
+ * `tip`: advice. `update`: a new feature. `change`: Akeed changed how
+ * something works. `note`: information only.
+ */
+export const TIPS_CAMPAIGN_TYPES = ['tip', 'update', 'change', 'note'] as const;
 export type TipsCampaignType = (typeof TIPS_CAMPAIGN_TYPES)[number];
 
 /** Stored lifecycle. "Expired" is never stored: it is read from `expires_at`. */

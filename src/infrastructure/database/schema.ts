@@ -4066,7 +4066,10 @@ export const tipsCampaigns = pgTable(
       'tips_campaigns_name_check',
       sql`char_length(btrim(${table.name})) BETWEEN 1 AND 120`,
     ),
-    check('tips_campaigns_type_check', sql`${table.type} IN ('tip', 'update')`),
+    check(
+      'tips_campaigns_type_check',
+      sql`${table.type} IN ('tip', 'update', 'change', 'note')`,
+    ),
     check(
       'tips_campaigns_status_check',
       sql`${table.status} IN ('draft', 'published', 'paused', 'archived')`,

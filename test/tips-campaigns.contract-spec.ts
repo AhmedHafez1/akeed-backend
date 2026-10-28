@@ -10,10 +10,12 @@ import {
   type TipsCampaignRecord,
 } from '../src/infrastructure/database/repositories/tips-campaigns.repository';
 import { buildTipsReviewToken } from '../src/shared/tips-campaigns/tips-campaign.policy';
-import type {
-  TipsAudience,
-  TipsAudienceFilters,
-  TipsCampaignAction,
+import {
+  TIPS_CAMPAIGN_TYPES,
+  type TipsAudience,
+  type TipsAudienceFilters,
+  type TipsCampaignAction,
+  type TipsCampaignType,
 } from '../src/shared/tips-campaigns/tips-campaign.types';
 
 function isolatedDatabaseUrl(): string {
@@ -38,7 +40,10 @@ function isolatedDatabaseUrl(): string {
   return value;
 }
 
-const MIGRATION = '0077_tips_campaigns.sql';
+const MIGRATIONS = [
+  '0077_tips_campaigns.sql',
+  '0080_tips_campaign_change_note_types.sql',
+];
 const namespace = `tips_campaigns_${randomUUID().replaceAll('-', '')}`;
 const client = postgres(isolatedDatabaseUrl(), {
   max: 6,
@@ -138,13 +143,14 @@ async function draft(
     action?: TipsCampaignAction | null;
     name?: string;
     expiresAt?: string | null;
+    type?: TipsCampaignType;
   } = {},
 ): Promise<TipsCampaignRecord> {
   const action = options.action ?? null;
   return repository.create(
     {
       name: options.name ?? 'Contract campaign',
-      type: 'tip',
+      type: options.type ?? 'tip',
       action,
       expiresAt: options.expiresAt ?? null,
       audience,
@@ -239,9 +245,11 @@ describe('tips campaigns (Postgres contract)', () => {
         created_at timestamptz DEFAULT now()
       );
     `);
-    await migrate(MIGRATION);
-    // Applying it again proves it re-runs cleanly.
-    await migrate(MIGRATION);
+    // Applying each again proves it re-runs cleanly.
+    for (const file of MIGRATIONS) {
+      await migrate(file);
+      await migrate(file);
+    }
 
     base.egyptStarter = await merchant({
       country: 'EG',
@@ -404,6 +412,21 @@ describe('tips campaigns (Postgres contract)', () => {
         limit: 10,
       });
       expect(escaped).toEqual([]);
+    });
+  });
+
+  describe('campaign types', () => {
+    it('stores every type and refuses an unknown one', async () => {
+      for (const type of TIPS_CAMPAIGN_TYPES) {
+        const campaign = await draft(filters({ countries: ['AU'] }), { type });
+        expect((await repository.findById(campaign.id))?.campaign.type).toBe(
+          type,
+        );
+      }
+      const campaign = await draft(filters({ countries: ['AU'] }));
+      await expect(
+        client`UPDATE tips_campaigns SET type = 'promo' WHERE id = ${campaign.id}`,
+      ).rejects.toThrow(/tips_campaigns_type_check/);
     });
   });
 
