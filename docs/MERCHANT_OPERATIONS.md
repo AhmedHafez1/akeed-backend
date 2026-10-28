@@ -130,7 +130,7 @@ Loaded from `GET /api/verifications` with cursor-based pagination.
 | `canceled`          | `canceled`                     | Customer or merchant canceled.     |
 | `failed`            | `failed`                       | Send failed or plan limit blocked. |
 | `no_reply`          | `no_reply`                     | Escalated to no-reply.             |
-| `no_whatsapp`       | `no_whatsapp`                  | Number not on WhatsApp; call the customer. |
+| `no_whatsapp`       | `no_whatsapp`                  | WhatsApp could not deliver to the number (not on WhatsApp, terms not accepted, or an outdated app); call the customer. |
 
 The API accepts comma-separated status values for composite filters.
 
@@ -185,7 +185,7 @@ Test orders are distinguished by their `akeed-test-` prefix. Shopify API calls (
 
 #### No-Reply Order Cancellation
 
-Available for verifications with status `no_reply` or `no_whatsapp` (the merchant called a customer whose number is not on WhatsApp). Calls `POST /api/verifications/:id/cancel`.
+Available for verifications with status `no_reply` or `no_whatsapp` (the merchant called a customer WhatsApp could not deliver to). Calls `POST /api/verifications/:id/cancel`.
 
 Flow:
 

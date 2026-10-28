@@ -51,9 +51,9 @@ Out of scope:
 | `failed`    | Initial send failed, or a blocked order waited longer than the age limit.          | `VerificationSendService`, `VerificationHubService`, `CapacityRecoveryService` |
 | `expired`   | Reserved enum value for lifecycle compatibility.                                   | Not actively automated in this workflow             |
 
-### Number not on WhatsApp
+### Number WhatsApp cannot deliver to
 
-Meta reports error `131026` when the customer number cannot receive WhatsApp messages: the number is not on WhatsApp, or its owner has not accepted the current terms or runs an outdated app. It usually arrives as a `failed` status webhook with `errors[0].code = 131026`, and sometimes as the synchronous error of the send call. `classifyDeliveryFailure` (`src/shared/verification/delivery-failure.policy.ts`) is the one place that recognizes it; every other code keeps the generic `failed` / `provider_delivery_failed` handling.
+Meta reports error `131026` when the customer number cannot receive WhatsApp messages: the number is not on WhatsApp, or its owner has not accepted the current terms or runs an outdated app. Meta does not say which, so a customer the merchant can chat with on WhatsApp can still land here; the merchant-facing copy therefore says WhatsApp could not deliver, not that the number is off WhatsApp. It usually arrives as a `failed` status webhook with `errors[0].code = 131026`, and sometimes as the synchronous error of the send call. `classifyDeliveryFailure` (`src/shared/verification/delivery-failure.policy.ts`) is the one place that recognizes it; every other code keeps the generic `failed` / `provider_delivery_failed` handling.
 
 On either path the verification moves to `no_whatsapp`, with `no_whatsapp_at` (first report, never overwritten) and `delivery_error_code`:
 
