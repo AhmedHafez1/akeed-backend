@@ -621,7 +621,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 **Order tagging:**
 
 - `addOrderTag(integration, externalOrderId, tag)` — GraphQL `tagsAdd` mutation.
-- Tags used: `Akeed: Verified`, `Akeed: Canceled`, `Akeed: No Reply`, `Akeed: No WhatsApp`.
+- Tags used: `Akeed: Verified`, `Akeed: Canceled`, `Akeed: No Reply`, `Akeed: WhatsApp Undeliverable`.
 
 **Order cancellation:**
 

@@ -112,7 +112,7 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
     ['customer_cancellation', 'Akeed: Canceled'],
     ['merchant_cancellation_tagging', 'Akeed: Canceled'],
     ['automatic_no_reply_tagging', 'Akeed: No Reply'],
-    ['automatic_no_whatsapp_tagging', 'Akeed: No WhatsApp'],
+    ['automatic_no_whatsapp_tagging', 'Akeed: WhatsApp Undeliverable'],
   ] as const)('%s only adds its existing tag', async (action, tag) => {
     const { post, dispatch } = setup();
     await expect(dispatch(action)).resolves.toMatchObject({

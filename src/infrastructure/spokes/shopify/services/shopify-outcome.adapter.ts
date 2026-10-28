@@ -102,7 +102,7 @@ export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
       customer_cancellation: 'Akeed: Canceled',
       merchant_cancellation_tagging: 'Akeed: Canceled',
       automatic_no_reply_tagging: 'Akeed: No Reply',
-      automatic_no_whatsapp_tagging: 'Akeed: No WhatsApp',
+      automatic_no_whatsapp_tagging: 'Akeed: WhatsApp Undeliverable',
     } as const;
     await this.shopify.addOrderTag(connection, externalOrderId, tags[action]);
     return { status: 'applied' };
