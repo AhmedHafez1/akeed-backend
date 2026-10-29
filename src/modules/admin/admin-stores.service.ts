@@ -441,21 +441,6 @@ export class AdminStoresService {
     };
   }
 
-  async getUnconnectedStores() {
-    const rows = await this.repository.findUnconnectedStores();
-    return {
-      data: rows.map((row) => ({
-        platform: row.platform,
-        shop_domain: row.store_domain,
-        skipped_events: Number(row.skipped_events),
-        unique_orders: Number(row.unique_orders),
-        unique_orders_7d: Number(row.unique_orders_7d),
-        first_received_at: row.first_received_at,
-        last_received_at: row.last_received_at,
-      })),
-    };
-  }
-
   async getStoreVerifications(
     integrationId: string,
     query: AdminStoreVerificationsQueryDto,

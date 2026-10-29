@@ -43,7 +43,8 @@ export class WebhookQueueProducer {
    * Persist + enqueue a webhook event.
    *
    * @returns `{ enqueued: true }` on success, `{ enqueued: false, duplicate: true }` if
-   *          the idempotency key already exists.
+   *          the idempotency key already exists, and `{ enqueued: false }` when
+   *          the store has no integration.
    */
   async ingest(
     params: WebhookIngestionParams,
@@ -53,14 +54,35 @@ export class WebhookQueueProducer {
       params.platform,
     );
 
+    // The platform keeps delivering for a store whose Akeed rows were deleted
+    // while the app stays installed, or whose install never completed. That
+    // is expected, so the delivery is acknowledged and dropped: nothing is
+    // stored or queued, and it is logged at info level, not as an error.
+    if (!integration) {
+      this.logger.log(
+        buildBackendLog(WebhookQueueProducer.name, {
+          action: 'webhook-ingest',
+          outcome: 'skipped',
+          shopDomain: params.storeDomain,
+          platform: params.platform,
+          jobType: params.jobType,
+          idempotencyKey: params.idempotencyKey,
+          reason: 'store_not_connected',
+          explanation:
+            'The app is still installed on this store, but Akeed has no integration for it (deleted, or onboarding never completed). Order ignored.',
+        }),
+      );
+      return { enqueued: false };
+    }
+
     const event: WebhookEvent | null = await this.webhookEventsRepo.insertIfNew(
       {
         platform: params.platform,
         jobType: params.jobType,
         idempotencyKey: params.idempotencyKey,
         storeDomain: params.storeDomain,
-        orgId: integration?.orgId ?? null,
-        integrationId: integration?.id ?? null,
+        orgId: integration.orgId,
+        integrationId: integration.id,
         rawPayload: params.rawPayload,
         dispatchRequired: true,
       },
@@ -100,9 +122,9 @@ export class WebhookQueueProducer {
       buildBackendLog(WebhookQueueProducer.name, {
         action: 'webhook-ingest',
         outcome: outcome === 'dispatched' ? 'success' : 'failure',
-        orgId: integration?.orgId ?? undefined,
+        orgId: integration.orgId,
         shopDomain: params.storeDomain,
-        integrationId: integration?.id ?? undefined,
+        integrationId: integration.id,
         platform: params.platform,
         jobType: params.jobType,
         webhookEventId: event.id,

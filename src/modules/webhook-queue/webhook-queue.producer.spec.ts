@@ -67,13 +67,14 @@ describe('WebhookQueueProducer', () => {
     expect(dispatcher.dispatchById).toHaveBeenCalledWith('event-1');
   });
 
-  it('persists unknown stores without trusting payload identity; the worker owns rejection', async () => {
-    const { producer, events, integrations, params } = setup();
+  it('acknowledges and drops a delivery for a store with no integration', async () => {
+    const { producer, events, integrations, dispatcher, params } = setup();
     integrations.findByPlatformDomain.mockResolvedValue(null);
-    await producer.ingest(params);
-    expect(events.insertIfNew).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: null, integrationId: null }),
-    );
+    await expect(producer.ingest(params)).resolves.toEqual({
+      enqueued: false,
+    });
+    expect(events.insertIfNew).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchById).not.toHaveBeenCalled();
   });
 
   it.each(['lookup', 'insert'])(
