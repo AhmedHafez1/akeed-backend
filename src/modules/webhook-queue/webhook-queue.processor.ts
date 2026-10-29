@@ -242,10 +242,10 @@ export class WebhookQueueProcessor extends WorkerHost {
   > | null> {
     // No integration matched the store at ingest: the platform still delivers
     // for a store whose Akeed rows were deleted, or that never finished
-    // installing. Named apart so it does not read as an identity bug; staff
-    // see these stores in admin.
+    // installing. Expected, so it is logged at info level and named apart
+    // from an identity bug; staff see these stores in admin.
     if (!data.integrationId) {
-      this.logger.warn(
+      this.logger.log(
         buildBackendLog(WebhookQueueProcessor.name, {
           action,
           outcome: 'skipped',
@@ -253,6 +253,8 @@ export class WebhookQueueProcessor extends WorkerHost {
           platform: data.platform,
           shopDomain: data.storeDomain,
           reason: 'store_not_connected',
+          explanation:
+            'The app is still installed on this store, but Akeed has no integration for it (deleted, or onboarding never completed). Order ignored.',
         }),
       );
       await this.webhookEventsRepo.markSkipped(
