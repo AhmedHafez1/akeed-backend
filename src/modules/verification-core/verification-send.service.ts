@@ -43,6 +43,7 @@ import {
 } from '../../shared/messaging/order-detail-values';
 import type { TemplateLanguage } from '../../shared/messaging/template-registry.types';
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
+import { withSerializableRetry } from '../../shared/database/serializable-retry';
 import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
@@ -626,14 +627,29 @@ export class VerificationSendService {
     );
 
     try {
-      const accepted = await this.messageDispatches.markAccepted({
-        dispatchId: dispatchClaim.dispatch.id,
-        providerMessageId: waMessageId,
-        sentAt,
-        verificationId: verification.id,
-        kind,
-        generation: dispatchClaim.dispatch.generation,
-        sentTemplate: reportedTemplate,
+      // A deadlock or serialization failure rolls the whole acceptance back,
+      // so running it again repeats only bookkeeping for the wamid in hand:
+      // the provider is not called again. Salvage is for what retrying
+      // cannot fix.
+      const accepted = await withSerializableRetry((attempt) => {
+        if (attempt > 1)
+          this.logger.warn(
+            buildBackendLog('VerificationSendService', {
+              action: 'sendOnce.persistAcceptance',
+              outcome: 'retry',
+              ...sendIdentity,
+              attempt,
+            }),
+          );
+        return this.messageDispatches.markAccepted({
+          dispatchId: dispatchClaim.dispatch.id,
+          providerMessageId: waMessageId,
+          sentAt,
+          verificationId: verification.id,
+          kind,
+          generation: dispatchClaim.dispatch.generation,
+          sentTemplate: reportedTemplate,
+        });
       });
       if (accepted.outcome !== 'accepted') {
         this.logger.error(
@@ -783,24 +799,9 @@ export class VerificationSendService {
     sentAt: string,
     template: SentTemplateIdentity,
   ): Promise<SendOutcome> {
-    let ledgerParked = 0;
-    try {
-      ledgerParked = await this.messageDispatches.markOutcomeUnknown(
-        identity.dispatchId,
-        'acceptance_persistence_failed',
-        identity.waMessageId,
-      );
-    } catch (error) {
-      this.logger.error(
-        buildBackendLog('VerificationSendService', {
-          action: 'salvageAcceptance.markUnknown',
-          outcome: 'failure',
-          ...identity,
-          ...normalizeError(error),
-        }),
-      );
-    }
-
+    // The projection goes first, as it does inside `markAccepted`: parking
+    // the ledger row applies receipts that beat this send, and a failure
+    // receipt applied before the projection would be overwritten by `sent`.
     let projectedRows = 0;
     try {
       projectedRows =
@@ -815,6 +816,24 @@ export class VerificationSendService {
       this.logger.error(
         buildBackendLog('VerificationSendService', {
           action: 'salvageAcceptance.projection',
+          outcome: 'failure',
+          ...identity,
+          ...normalizeError(error),
+        }),
+      );
+    }
+
+    let ledgerParked = 0;
+    try {
+      ledgerParked = await this.messageDispatches.markOutcomeUnknown(
+        identity.dispatchId,
+        'acceptance_persistence_failed',
+        identity.waMessageId,
+      );
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog('VerificationSendService', {
+          action: 'salvageAcceptance.markUnknown',
           outcome: 'failure',
           ...identity,
           ...normalizeError(error),

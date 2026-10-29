@@ -357,6 +357,45 @@ describe('VerificationSendService', () => {
     expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
   });
 
+  function deadlock() {
+    return Object.assign(new Error('Failed query'), {
+      cause: Object.assign(new Error('deadlock detected'), { code: '40P01' }),
+    });
+  }
+
+  it('retries an acceptance that lost a deadlock without sending again', async () => {
+    const { service, messageDispatches, messagingPort } = createMocks();
+    messageDispatches.markAccepted.mockRejectedValueOnce(deadlock());
+
+    await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+      waMessageId: 'wamid-1',
+    });
+    expect(messageDispatches.markAccepted).toHaveBeenCalledTimes(2);
+    expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledTimes(1);
+    expect(messageDispatches.markOutcomeUnknown).not.toHaveBeenCalled();
+    expect(
+      messageDispatches.projectAcceptanceWithoutLedger,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('salvages an acceptance that keeps deadlocking, still sending once', async () => {
+    const { service, messageDispatches, messagingPort } = createMocks();
+    messageDispatches.markAccepted.mockRejectedValue(deadlock());
+
+    await expect(service.sendInitial('ver-1')).resolves.toMatchObject({
+      status: 'sent',
+      waMessageId: 'wamid-1',
+    });
+    expect(messageDispatches.markAccepted).toHaveBeenCalledTimes(3);
+    expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledTimes(1);
+    expect(messageDispatches.markOutcomeUnknown).toHaveBeenCalledWith(
+      'dispatch-1',
+      'acceptance_persistence_failed',
+      'wamid-1',
+    );
+  });
+
   it.each([
     [
       'initial provider exception',

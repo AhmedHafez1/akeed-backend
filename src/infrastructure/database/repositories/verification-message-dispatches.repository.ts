@@ -732,29 +732,36 @@ export class VerificationMessageDispatchesRepository {
   }
 
   /** Returns how many dispatch rows were parked, so a no-op is not mistaken
-   * for a successful write. */
+   * for a successful write.
+   *
+   * A salvaged send records its wamid here, so receipts that were parked
+   * waiting for it are applied here too; otherwise an early failure receipt
+   * stayed unapplied and kept the usage it should have released. */
   async markOutcomeUnknown(
     dispatchId: string,
     errorCode: string,
     providerMessageId?: string,
   ): Promise<number> {
-    const rows = await this.db
-      .update(verificationMessageDispatches)
-      .set({
-        state: 'outcome_unknown',
-        ...(providerMessageId ? { providerMessageId } : {}),
-        lastErrorCode: errorCode,
-        leaseUntil: null,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(
-        and(
-          eq(verificationMessageDispatches.id, dispatchId),
-          eq(verificationMessageDispatches.state, 'sending'),
-        ),
-      )
-      .returning({ id: verificationMessageDispatches.id });
-    return rows.length;
+    return this.withDispatchTransaction(dispatchId, async (tx) => {
+      const rows = await tx
+        .update(verificationMessageDispatches)
+        .set({
+          state: 'outcome_unknown',
+          ...(providerMessageId ? { providerMessageId } : {}),
+          lastErrorCode: errorCode,
+          leaseUntil: null,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(verificationMessageDispatches.id, dispatchId),
+            eq(verificationMessageDispatches.state, 'sending'),
+          ),
+        )
+        .returning();
+      if (rows[0]) await this.drainPendingReceipts(tx, rows[0]);
+      return rows.length;
+    });
   }
 
   /**
@@ -1440,6 +1447,23 @@ export class VerificationMessageDispatchesRepository {
           .for('update');
         if (!source || !usesPrepaidCredits(source)) reconciliationRequired();
         await this.accounting.prepaid.lock(tx, dispatch.orgId);
+      } else if (dispatch) {
+        // A second write to the dispatch row in one transaction (acceptance
+        // followed by a drained receipt) re-runs its foreign-key check, which
+        // takes KEY SHARE on the source. `claim` holds that source FOR UPDATE
+        // while it waits on the dispatch, so taking it here, before the
+        // dispatch, keeps the order source -> dispatch on every path. Without
+        // it the two deadlocked (40P01 in `sendOnce.persistAcceptance`).
+        await tx
+          .select({ id: integrations.id })
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.id, dispatch.integrationId),
+              eq(integrations.orgId, dispatch.orgId),
+            ),
+          )
+          .for('key share');
       }
       return work(tx);
     });

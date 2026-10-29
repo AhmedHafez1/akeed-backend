@@ -495,6 +495,12 @@ Idempotency:
 - Automation jobs use deterministic job ids.
 - Merchant cancellation is idempotent for already merchant-canceled rows.
 
+Dispatch ledger locking (`VerificationMessageDispatchesRepository`):
+
+- Every transaction that writes a dispatch locks its source first, then the organization's credit lock (prepaid only), then the dispatch row. `claim` holds the source `FOR UPDATE`; the other writers take `FOR KEY SHARE` on periodic plans. A second write to a dispatch row in one transaction re-checks its foreign key to the source. Taking the source after the dispatch deadlocked an acceptance against a duplicate claim (40P01, 2026-10-29).
+- `sendOnce` retries the acceptance transaction up to three times on 40P01/40001. It reuses the wamid it already has and does not call the provider again. Only after that does it salvage the send to `outcome_unknown`.
+- Receipts parked before the wamid was recorded are applied by the acceptance, and by the salvage when the acceptance cannot be recorded. The salvage projects the verification before applying them, so a failure receipt is not overwritten by `sent`.
+
 Security:
 
 - Shopify webhooks are protected by `ShopifyHmacGuard`.

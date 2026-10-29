@@ -384,6 +384,159 @@ describe('PostgreSQL usage accounting', () => {
       expect(receipt.appliedAt).not.toBeNull();
     });
 
+    async function periodicUsage(orgId: string) {
+      const [usage] = await db
+        .select()
+        .from(integrationMonthlyUsage)
+        .where(eq(integrationMonthlyUsage.orgId, orgId));
+      return usage.consumedCount;
+    }
+
+    async function parkUndeliverable(providerMessageId: string) {
+      await harness.disabled.resolveOrParkReceipt({
+        providerMessageId,
+        status: 'failed',
+        occurredAt: new Date(Date.now() + 1000).toISOString(),
+        failureInfo: { code: 131026, title: 'Message undeliverable' },
+      });
+    }
+
+    // 2026-10-29 03:10:04 UTC (40P01): a duplicate `claim` held the source FOR
+    // UPDATE and waited on the dispatch, while the acceptance held the
+    // dispatch and its drained failure receipt's second write re-checked the
+    // source foreign key (KEY SHARE).
+    it('accepts a periodic send with a parked failure while a duplicate claim races it', async () => {
+      const source = await merchant(1, 'shopify');
+      const input = await verification(source);
+      const claimed = await harness.disabled.claim(input);
+      if (claimed.outcome !== 'claimed')
+        throw new Error('Expected periodic claim');
+      expect(await periodicUsage(source.orgId)).toBe(1);
+      const providerMessageId = randomUUID();
+      await parkUndeliverable(providerMessageId);
+
+      // The duplicate claim, statement for statement, on its own connection.
+      const duplicate = await harness.client.reserve();
+      try {
+        await duplicate`BEGIN`;
+        await duplicate`SELECT id FROM integrations WHERE id = ${source.integrationId} AND org_id = ${source.orgId} FOR UPDATE`;
+
+        const accepting = harness.disabled.markAccepted({
+          dispatchId: claimed.dispatch.id,
+          providerMessageId,
+          sentAt: new Date().toISOString(),
+          verificationId: input.verificationId,
+          kind: input.kind,
+        });
+        for (let waited = 0; ; waited += 20) {
+          const [{ count }] = await harness.client<[{ count: number }]>`
+            SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+          if (count > 0) break;
+          if (waited > 5000) throw new Error('Acceptance never blocked');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+
+        const duplicateClaim = (async () => {
+          await duplicate`
+            INSERT INTO verification_message_dispatches
+              (org_id, integration_id, verification_id, dispatch_key, kind, state, template_name, language_code)
+            VALUES (${source.orgId}, ${source.integrationId}, ${input.verificationId},
+              ${claimed.dispatch.dispatchKey}, 'initial', 'ready', 'cod_verification', 'en')
+            ON CONFLICT (dispatch_key) DO NOTHING`;
+          await duplicate`SELECT id FROM verification_message_dispatches WHERE dispatch_key = ${claimed.dispatch.dispatchKey} FOR UPDATE`;
+          await duplicate`COMMIT`;
+        })();
+
+        const [accepted, raced] = await Promise.allSettled([
+          accepting,
+          duplicateClaim,
+        ]);
+        expect(raced.status).toBe('fulfilled');
+        expect(accepted).toMatchObject({
+          status: 'fulfilled',
+          value: { outcome: 'accepted' },
+        });
+      } finally {
+        await duplicate`ROLLBACK`.catch(() => undefined);
+        duplicate.release();
+      }
+
+      const [ledger] = await db
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, claimed.dispatch.id));
+      expect(ledger).toMatchObject({
+        state: 'accepted',
+        providerMessageId,
+        usageReserved: false,
+      });
+      expect(ledger.failedAt).not.toBeNull();
+      expect(await periodicUsage(source.orgId)).toBe(0);
+      const [receipt] = await receiptsFor(providerMessageId);
+      expect(receipt.appliedAt).not.toBeNull();
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row.status).toBe('no_whatsapp');
+      // The retried send finds the acceptance and sends nothing.
+      expect(await harness.disabled.claim(input)).toMatchObject({
+        outcome: 'accepted',
+      });
+      expect(await periodicUsage(source.orgId)).toBe(0);
+    });
+
+    it('applies a parked failure when a send is salvaged without its ledger', async () => {
+      const source = await merchant(1, 'shopify');
+      const input = await verification(source);
+      const claimed = await harness.disabled.claim(input);
+      if (claimed.outcome !== 'claimed')
+        throw new Error('Expected periodic claim');
+      const providerMessageId = randomUUID();
+      await parkUndeliverable(providerMessageId);
+
+      // `VerificationSendService.salvageAcceptance`, in its order.
+      await harness.disabled.projectAcceptanceWithoutLedger({
+        verificationId: input.verificationId,
+        kind: input.kind,
+        providerMessageId,
+        sentAt: new Date().toISOString(),
+      });
+      expect(
+        await harness.disabled.markOutcomeUnknown(
+          claimed.dispatch.id,
+          'acceptance_persistence_failed',
+          providerMessageId,
+        ),
+      ).toBe(1);
+
+      const [ledger] = await db
+        .select()
+        .from(verificationMessageDispatches)
+        .where(eq(verificationMessageDispatches.id, claimed.dispatch.id));
+      expect(ledger).toMatchObject({
+        state: 'outcome_unknown',
+        providerMessageId,
+        usageReserved: false,
+      });
+      expect(ledger.failedAt).not.toBeNull();
+      expect(await periodicUsage(source.orgId)).toBe(0);
+      const [receipt] = await receiptsFor(providerMessageId);
+      expect(receipt.appliedAt).not.toBeNull();
+      const [row] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId));
+      expect(row).toMatchObject({
+        status: 'no_whatsapp',
+        waMessageId: providerMessageId,
+      });
+      expect(await harness.disabled.claim(input)).toMatchObject({
+        outcome: 'outcome_unknown',
+      });
+    });
+
     it('resolves a wamid recorded only on a pre-ledger verification', async () => {
       const source = await merchant(1);
       const input = await verification(source);
