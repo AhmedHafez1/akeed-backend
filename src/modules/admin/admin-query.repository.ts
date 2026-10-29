@@ -55,6 +55,17 @@ export interface AdminStoreQueryRow {
   credit_held_credits: number | string | null;
 }
 
+export interface AdminUnconnectedStoreRow {
+  [key: string]: unknown;
+  platform: string;
+  store_domain: string;
+  skipped_events: number;
+  unique_orders: number;
+  unique_orders_7d: number;
+  first_received_at: string;
+  last_received_at: string;
+}
+
 export interface AdminStoreViewRow extends AdminStoreQueryRow {
   is_credit: boolean;
   usage_limit_effective: number | string;
@@ -404,6 +415,43 @@ export class AdminQueryRepository {
     `);
 
     return Array.from(result)[0] ?? null;
+  }
+
+  /**
+   * Stores the platform still sends orders for while Akeed has no
+   * integration for them: their rows were deleted (an unfinished-onboarding
+   * cleanup, or a redact) or the install never completed. Every such order is
+   * skipped, so the merchant gets nothing until the store is connected again.
+   * A store that is connected now is left out, even if older events of its
+   * stay unattributed.
+   */
+  async findUnconnectedStores(): Promise<AdminUnconnectedStoreRow[]> {
+    const result = await this.db.execute<AdminUnconnectedStoreRow>(sql`
+      SELECT
+        w.platform,
+        w.store_domain,
+        COUNT(*)::int AS skipped_events,
+        COUNT(DISTINCT w.raw_payload->>'id')::int AS unique_orders,
+        COUNT(DISTINCT w.raw_payload->>'id') FILTER (
+          WHERE w.received_at >= NOW() - INTERVAL '7 days'
+        )::int AS unique_orders_7d,
+        MIN(w.received_at) AS first_received_at,
+        MAX(w.received_at) AS last_received_at
+      FROM webhook_events w
+      WHERE w.integration_id IS NULL
+        AND w.job_type IN ('order.create', 'order.update')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM integrations i
+          WHERE i.platform_type = w.platform
+            AND i.platform_store_url = w.store_domain
+        )
+      GROUP BY w.platform, w.store_domain
+      ORDER BY MAX(w.received_at) DESC
+      LIMIT 200
+    `);
+
+    return Array.from(result);
   }
 
   async findStoreVerificationTotals(

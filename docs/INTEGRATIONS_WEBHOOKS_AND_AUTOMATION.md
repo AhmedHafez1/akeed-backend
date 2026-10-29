@@ -144,6 +144,8 @@ Processes inbound webhook payloads asynchronously.
 5. Delegate to `VerificationHubService.handleNewOrder()`.
 6. Mark event as `completed`, `skipped`, or `failed`.
 
+**Stores with no integration.** The integration is resolved once, at ingest. Shopify keeps delivering `orders/create` to a shop that still has the app installed after its Akeed rows were deleted (an unfinished-onboarding cleanup with `scripts/sql/delete-organization.sql` or `delete-user.sql`, which do not uninstall the app) or whose install never completed. Such events are skipped as `store_not_connected`; they are never retried and do not recover if the store connects later. `GET /api/admin/stores/unconnected` lists these stores (platform, domain, skipped orders overall and in the last 7 days, first and last skip), leaving out any store that has an integration again, and the admin Stores page shows them above the store list. Events from before this reason existed carry `missing_source_identity`, which now only means an integration without an organization.
+
 **Failure handling:**
 
 After 5 failed attempts, the `@OnWorkerEvent('failed')` listener marks the webhook event as `failed` in the database with the error message.

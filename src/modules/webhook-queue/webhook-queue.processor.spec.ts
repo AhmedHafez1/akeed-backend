@@ -447,7 +447,7 @@ describe('WebhookQueueProcessor', () => {
     expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
   });
 
-  it('skips when the queued event has no trusted source identity', async () => {
+  it('skips an order from a store with no Akeed integration as not connected', async () => {
     const { processor, webhookEventsRepo, verificationHub } = createMocks({
       integration: null,
     });
@@ -458,9 +458,25 @@ describe('WebhookQueueProcessor', () => {
 
     expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
       'event-1',
-      'missing_source_identity',
+      'store_not_connected',
     );
     expect(webhookEventsRepo.markCompleted).not.toHaveBeenCalled();
+    expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
+  });
+
+  it('skips when the queued event has an integration but no organization', async () => {
+    const { processor, webhookEventsRepo, verificationHub } = createMocks({
+      integration: null,
+    });
+
+    await processor.process(
+      buildJob(buildPayload({ orgId: null, integrationId: 'int-1' })),
+    );
+
+    expect(webhookEventsRepo.markSkipped).toHaveBeenCalledWith(
+      'event-1',
+      'missing_source_identity',
+    );
     expect(verificationHub.handleNewOrder).not.toHaveBeenCalled();
   });
 

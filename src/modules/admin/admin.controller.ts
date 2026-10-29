@@ -70,6 +70,13 @@ export class AdminController {
     return this.storesService.getStores(query);
   }
 
+  /** Stores still sending orders that Akeed skips for lack of an integration. */
+  @Get('stores/unconnected')
+  @Header('Cache-Control', 'private, no-store')
+  getUnconnectedStores() {
+    return this.storesService.getUnconnectedStores();
+  }
+
   @Get('stores/:integrationId')
   @Header('Cache-Control', 'private, no-store')
   getStore(@Param('integrationId', new ParseUUIDPipe()) integrationId: string) {

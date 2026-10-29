@@ -339,6 +339,36 @@ describe('AdminStoresService', () => {
     ).toEqual({ key: 'first_real_cod_resolved', at: recent, estimated: true });
   });
 
+  it('lists stores still sending orders without an integration', async () => {
+    const service = createService({
+      findUnconnectedStores: jest.fn().mockResolvedValue([
+        {
+          platform: 'shopify',
+          store_domain: 'orphan.myshopify.com',
+          skipped_events: '430',
+          unique_orders: '215',
+          unique_orders_7d: '84',
+          first_received_at: recent,
+          last_received_at: recent,
+        },
+      ]),
+    });
+
+    await expect(service.getUnconnectedStores()).resolves.toEqual({
+      data: [
+        {
+          platform: 'shopify',
+          shop_domain: 'orphan.myshopify.com',
+          skipped_events: 430,
+          unique_orders: 215,
+          unique_orders_7d: 84,
+          first_received_at: recent,
+          last_received_at: recent,
+        },
+      ],
+    });
+  });
+
   it('throws when the store does not exist', async () => {
     const service = createService({
       findStoreById: jest.fn().mockResolvedValue(null),

@@ -345,7 +345,7 @@ describe('VerificationHubService', () => {
       if (store === 'unknown')
         expect(eventRepo.markSkipped).toHaveBeenCalledWith(
           'event-1',
-          'missing_source_identity',
+          'store_not_connected',
         );
       else
         expect(eventRepo.markSkipped).toHaveBeenCalledWith(

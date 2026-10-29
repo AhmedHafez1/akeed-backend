@@ -240,7 +240,29 @@ export class WebhookQueueProcessor extends WorkerHost {
   ): Promise<Awaited<
     ReturnType<IntegrationsRepository['findBySourceIdentity']>
   > | null> {
-    if (!data.integrationId || !data.orgId) {
+    // No integration matched the store at ingest: the platform still delivers
+    // for a store whose Akeed rows were deleted, or that never finished
+    // installing. Named apart so it does not read as an identity bug; staff
+    // see these stores in admin.
+    if (!data.integrationId) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action,
+          outcome: 'skipped',
+          webhookEventId: data.webhookEventId,
+          platform: data.platform,
+          shopDomain: data.storeDomain,
+          reason: 'store_not_connected',
+        }),
+      );
+      await this.webhookEventsRepo.markSkipped(
+        data.webhookEventId,
+        'store_not_connected',
+      );
+      return null;
+    }
+
+    if (!data.orgId) {
       this.logger.warn(
         buildBackendLog(WebhookQueueProcessor.name, {
           action,
