@@ -237,6 +237,22 @@ export class ShopifyCustomersRedactDto extends ShopifyGdprBaseWebhookDto {
   @ValidateNested()
   @Type(() => ShopifyGdprCustomerDto)
   customer?: ShopifyGdprCustomerDto;
+
+  @IsOptional()
+  @IsArray()
+  @Transform(({ value }): string[] | undefined => {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry));
+    }
+
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    return [String(value)];
+  })
+  @IsString({ each: true })
+  orders_to_redact?: string[];
 }
 
 export class ShopifyShopRedactDto extends ShopifyGdprBaseWebhookDto {}

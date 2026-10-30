@@ -588,6 +588,41 @@ export class WebhookEventsRepository {
     return rows.length > 0;
   }
 
+  async replaceRawPayload(
+    id: string,
+    rawPayload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.db
+      .update(webhookEvents)
+      .set({ rawPayload, updatedAt: new Date().toISOString() })
+      .where(eq(webhookEvents.id, id));
+  }
+
+  /** Shopify `customers/redact` requests received from one store, oldest first. */
+  async findShopifyCustomerRedactions(params: {
+    storeDomain?: string;
+    since?: string;
+    eventId?: string;
+  }): Promise<WebhookEvent[]> {
+    return (await this.db
+      .select()
+      .from(webhookEvents)
+      .where(
+        and(
+          eq(webhookEvents.platform, 'shopify'),
+          eq(webhookEvents.jobType, 'customers/redact'),
+          params.storeDomain
+            ? eq(webhookEvents.storeDomain, params.storeDomain)
+            : undefined,
+          params.since
+            ? sql`${webhookEvents.receivedAt} >= ${params.since}::timestamptz`
+            : undefined,
+          params.eventId ? eq(webhookEvents.id, params.eventId) : undefined,
+        ),
+      )
+      .orderBy(webhookEvents.receivedAt)) as WebhookEvent[];
+  }
+
   async deleteByOrgId(orgId: string): Promise<number> {
     const results = await this.db
       .delete(webhookEvents)

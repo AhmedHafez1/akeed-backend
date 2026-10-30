@@ -104,6 +104,7 @@ Net revenue, ARPPU, fees, VAT, and revenue per accepted message show as unavaila
 | --- | --- | --- |
 | Callback/HMAC spike | Confirm the callback path and clock, preserve a sanitized fingerprint sample, and compare the Paymob HMAC secret without logging it. Never bypass verification. | Valid sandbox callback accepted; invalid HMAC rejected; no duplicate grant. |
 | Callback database failure | Keep returning non-2xx so Paymob retries. Restore PostgreSQL, then reconcile affected references. | Event, purchase, grant, and projection commit atomically once. |
+| Paymob inquiry refused (`providerCode: provider_auth_failed`) | Paymob rejected the credential, not the payment. Check that `PAYMOB_API_KEY` is the legacy API key (not the secret key) and has not been regenerated, update it through Railway secrets and redeploy. Leave the finding open. | The next inquiry after its `nextAttemptAt` resolves it. |
 | Paymob inquiry timeout/rate limit | Leave the `provider_inquiry_deferred` finding open. Scheduled runs skip it until its `nextAttemptAt` (15 minutes, doubling per failure, capped at 24 hours); do not repeatedly click inquiry. | A later bounded inquiry resolves it, or the finding keeps its retry count and next action. |
 | Redis/queue outage | Callbacks continue through synchronous canonical ingestion. Restore Redis, verify scheduler state, then enqueue one named manual run. | One durable run completes and incomplete targets resume without duplicate attempts. |
 | PostgreSQL outage | Stop staff writes and scheduled work; restore the database before replaying callbacks or jobs. | Invariants pass and a full scan completes before unseen findings resolve. |
@@ -136,7 +137,7 @@ Nightly cleanup retains completed runs and attempts for 180 days and resolved fi
 
 ## Credential rotation
 
-Rotate Paymob server/public/HMAC keys and integration ids through Railway secrets; never paste them into tickets or logs. During HMAC rotation coordinate the provider cutover so one deployed secret matches the callback. Keep checkout disabled if credentials are uncertain, verify a sandbox intention, callback, inquiry, and refund, and then restore traffic. Rotation does not authorize deletion or rewriting of durable billing evidence.
+Rotate Paymob server/API/public/HMAC keys and integration ids through Railway secrets; never paste them into tickets or logs. During HMAC rotation coordinate the provider cutover so one deployed secret matches the callback. Keep checkout disabled if credentials are uncertain, verify a sandbox intention, callback, inquiry, and refund, and then restore traffic. Rotation does not authorize deletion or rewriting of durable billing evidence.
 
 ## Escalation
 

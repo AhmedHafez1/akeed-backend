@@ -103,13 +103,22 @@ Queued automation re-checks both installation and billing state at execution tim
 
 Required by Shopify for app listing compliance.
 
-| Handler                     | Action                                                                |
-| --------------------------- | --------------------------------------------------------------------- |
-| `handleCustomerDataRequest` | Exports orders + verifications for the customer (phone-based lookup). |
-| `handleCustomerRedact`      | Deletes all customer data (orders, verifications, memberships).       |
-| `handleShopRedact`          | Deletes all store data (complete uninstall + GDPR wipe).              |
+| Handler                     | Action                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `handleCustomerDataRequest` | Finds the customer's orders and verifications, filtered by the order IDs in the request.                 |
+| `handleCustomerRedact`      | Anonymises the customer's orders, clears their verification metadata and empties stored order payloads. |
+| `handleShopRedact`          | Deletes all store data (complete uninstall + GDPR wipe).                                                 |
 
-Phone numbers are normalized to multiple variations for lookup. Exported orders are filtered by the order IDs in the Shopify request payload.
+Customer requests match a customer within the store's own integration by any key Shopify sends: the Shopify order IDs (`orders_to_redact` or `orders_requested`), the customer ID in the stored order payload, the email (case-insensitive) or the phone (as sent and in E.164). Shopify often sends no phone, and an order's phone usually comes from its address, so no single key is required; a request carrying none of them is logged as `noIdentifiers` and skipped.
+
+Redaction runs in one transaction. Matched orders stay as rows, so usage and billing history hold, but lose the phone, name, email, country, address, line items and raw payload. Verification metadata becomes `{}`. Stored `order.create` / `order.update` webhook payloads that name the customer become `{}`, including orders Akeed skipped and never stored. The request's own stored payload is reduced to the customer ID and order IDs. Re-running a redaction matches nothing new.
+
+To re-run stored `customers/redact` requests (for example ones an older handler skipped), use the replay script. It counts by default and writes only with `--apply`; it needs a store domain or an event ID, never all stores, because an old request re-run today could anonymise orders a returning customer has placed since:
+
+```bash
+npm run replay:shopify-customer-redactions -- --store-domain <shop>.myshopify.com [--since 2026-10-01]
+npm run replay:shopify-customer-redactions -- --event-id <webhook_events id> --apply
+```
 
 ## Queue Infrastructure
 

@@ -3,9 +3,14 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { getTableConfig } from 'drizzle-orm/pg-core';
+import { SQL, eq } from 'drizzle-orm';
+import { getTableConfig, PgDialect, type PgTable } from 'drizzle-orm/pg-core';
 import * as schema from '../src/infrastructure/database';
 import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
+import { OrdersRepository } from '../src/infrastructure/database/repositories/orders.repository';
+import { ShopifyGdprWebhookService } from '../src/infrastructure/spokes/shopify/services/shopify-gdpr-webhook.service';
+import { PhoneService } from '../src/shared/services/phone.service';
+import { replayShopifyCustomerRedactions } from '../scripts/replay-shopify-customer-redactions';
 import { WebhookQueueProducer } from '../src/modules/webhook-queue/webhook-queue.producer';
 import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookJobType } from '../src/modules/webhook-queue/webhook-queue.constants';
@@ -474,5 +479,310 @@ describe('Shopify isolated PostgreSQL contract', () => {
       }),
     ).rejects.toThrow();
     expect(await db.select().from(schema.webhookEvents)).toHaveLength(0);
+  });
+
+  describe('customer redaction', () => {
+    const redactNamespace = `${namespace}_redact`;
+    const redactClient = postgres(databaseUrl, {
+      max: 2,
+      connect_timeout: 5,
+      onnotice: () => undefined,
+      connection: { search_path: `${redactNamespace},public` },
+    });
+    const redactDb = drizzle(redactClient, { schema });
+    const shopDomain = 'redact.myshopify.com';
+    const orgId = randomUUID();
+    const integrationId = randomUUID();
+    const otherIntegrationId = randomUUID();
+
+    /** A table as the application schema declares it; no foreign keys. */
+    async function scaffold(table: PgTable) {
+      const definition = getTableConfig(table);
+      const dialect = new PgDialect();
+      const columns = definition.columns.map((column) => {
+        let result = `"${column.name}" ${column.getSQLType()}`;
+        if (column.notNull) result += ' NOT NULL';
+        if (column.primary) result += ' PRIMARY KEY';
+        if (column.default !== undefined) {
+          const value = column.default;
+          result +=
+            ' DEFAULT ' +
+            (value instanceof SQL
+              ? dialect.sqlToQuery(value).sql
+              : typeof value === 'boolean' || typeof value === 'number'
+                ? String(value)
+                : `'${(typeof value === 'string' ? value : JSON.stringify(value)).replaceAll("'", "''")}'`);
+        }
+        return result;
+      });
+      await redactClient.unsafe(
+        `CREATE TABLE "${definition.name}" (${columns.join(', ')})`,
+      );
+    }
+
+    async function seedOrder(values: {
+      externalOrderId: string;
+      customerPhone: string;
+      customerEmail?: string;
+      customerId?: string;
+      integration?: string;
+    }) {
+      const rawPayload = {
+        id: Number(values.externalOrderId),
+        email: values.customerEmail,
+        customer: values.customerId ? { id: Number(values.customerId) } : null,
+        shipping_address: { phone: values.customerPhone },
+      };
+      const [order] = await redactDb
+        .insert(schema.orders)
+        .values({
+          orgId,
+          integrationId: values.integration ?? integrationId,
+          externalOrderId: values.externalOrderId,
+          customerPhone: values.customerPhone,
+          customerName: 'Synthetic Customer',
+          customerEmail: values.customerEmail,
+          rawPayload,
+          shippingAddress: '1 Synthetic Street',
+        })
+        .returning();
+      await redactDb.insert(schema.verifications).values({
+        orgId,
+        orderId: order.id,
+        metadata: { customerName: 'Synthetic Customer' },
+      });
+      await redactDb.insert(schema.webhookEvents).values({
+        platform: 'shopify',
+        jobType: 'order.create',
+        idempotencyKey: `delivery-${values.externalOrderId}`,
+        storeDomain: shopDomain,
+        orgId,
+        integrationId: values.integration ?? integrationId,
+        orderId: order.id,
+        rawPayload,
+      });
+      return order;
+    }
+
+    function gdprService() {
+      const integrations = {
+        findByPlatformDomain: jest
+          .fn()
+          .mockResolvedValue({ id: integrationId, orgId }),
+      };
+      return new ShopifyGdprWebhookService(
+        new OrdersRepository(redactDb),
+        {} as never,
+        integrations as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        new WebhookEventsRepository(redactDb),
+        new PhoneService(),
+      );
+    }
+
+    beforeAll(async () => {
+      await client.unsafe(`CREATE SCHEMA "${redactNamespace}"`);
+      await redactClient.unsafe(
+        `CREATE FUNCTION "${redactNamespace}".uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'`,
+      );
+      for (const candidate of Object.values(schema)) {
+        if (
+          typeof candidate === 'function' &&
+          'enumName' in candidate &&
+          'enumValues' in candidate
+        ) {
+          const values = candidate.enumValues as string[];
+          await redactClient.unsafe(
+            `CREATE TYPE "${redactNamespace}"."${String(candidate.enumName)}" AS ENUM (${values.map((value) => `'${value}'`).join(', ')})`,
+          );
+        }
+      }
+      for (const table of [
+        schema.orders,
+        schema.verifications,
+        schema.webhookEvents,
+      ])
+        await scaffold(table);
+      await redactClient.unsafe(
+        `CREATE UNIQUE INDEX ON webhook_events (platform, store_domain, idempotency_key)`,
+      );
+    });
+
+    afterAll(async () => {
+      try {
+        await client.unsafe(
+          `DROP SCHEMA IF EXISTS "${redactNamespace}" CASCADE`,
+        );
+      } finally {
+        await redactClient.end({ timeout: 5 });
+      }
+    });
+
+    beforeEach(async () => {
+      await redactClient`DELETE FROM webhook_events`;
+      await redactClient`DELETE FROM verifications`;
+      await redactClient`DELETE FROM orders`;
+    });
+
+    it('redacts a customer without a phone by id and email, leaving other customers and stores alone', async () => {
+      const mine = await seedOrder({
+        externalOrderId: '5001',
+        customerPhone: '+966501110001',
+        customerId: '9177889997097',
+      });
+      const byEmail = await seedOrder({
+        externalOrderId: '5002',
+        customerPhone: '+966501110002',
+        customerEmail: 'Mine@Example.com',
+      });
+      const someoneElse = await seedOrder({
+        externalOrderId: '5003',
+        customerPhone: '+966501110003',
+        customerId: '1111',
+        customerEmail: 'other@example.com',
+      });
+      const otherStore = await seedOrder({
+        externalOrderId: '5004',
+        customerPhone: '+966501110004',
+        customerId: '9177889997097',
+        integration: otherIntegrationId,
+      });
+      // An order Akeed skipped: only its webhook payload holds the customer.
+      await redactDb.insert(schema.webhookEvents).values({
+        platform: 'shopify',
+        jobType: 'order.create',
+        idempotencyKey: 'delivery-skipped',
+        storeDomain: shopDomain,
+        orgId,
+        integrationId,
+        rawPayload: { id: 5005, customer: { id: 9177889997097 } },
+        status: 'skipped',
+      });
+
+      await gdprService().handleCustomerRedact(
+        {
+          customer: { id: '9177889997097', email: 'mine@example.com' },
+          orders_to_redact: [],
+        },
+        shopDomain,
+        'redact-delivery-1',
+        'customers/redact',
+      );
+
+      const orderRows = await redactDb.select().from(schema.orders);
+      const byId = new Map(orderRows.map((row) => [row.id, row]));
+      for (const id of [mine.id, byEmail.id]) {
+        expect(byId.get(id)).toMatchObject({
+          customerPhone: '',
+          customerName: null,
+          customerEmail: null,
+          rawPayload: {},
+          shippingAddress: null,
+        });
+      }
+      for (const id of [someoneElse.id, otherStore.id]) {
+        expect(byId.get(id)?.customerName).toBe('Synthetic Customer');
+      }
+
+      const verificationRows = await redactDb
+        .select()
+        .from(schema.verifications);
+      for (const row of verificationRows) {
+        expect(row.metadata).toEqual(
+          [mine.id, byEmail.id].includes(row.orderId)
+            ? {}
+            : { customerName: 'Synthetic Customer' },
+        );
+      }
+
+      const eventRows = await redactDb.select().from(schema.webhookEvents);
+      const payloadOf = (key: string) =>
+        eventRows.find((row) => row.idempotencyKey === key)?.rawPayload;
+      expect(payloadOf('delivery-5001')).toEqual({});
+      expect(payloadOf('delivery-5002')).toEqual({});
+      expect(payloadOf('delivery-skipped')).toEqual({});
+      expect(payloadOf('delivery-5003')).not.toEqual({});
+      expect(payloadOf('delivery-5004')).not.toEqual({});
+      expect(payloadOf('redact-delivery-1')).toEqual({
+        customer: { id: '9177889997097' },
+        orders_to_redact: [],
+      });
+    });
+
+    it('replays a stored redaction request: counts first, then applies', async () => {
+      const order = await seedOrder({
+        externalOrderId: '6001',
+        customerPhone: '+966501110010',
+        customerId: '8886487220521',
+      });
+      const [request] = await redactDb
+        .insert(schema.webhookEvents)
+        .values({
+          platform: 'shopify',
+          jobType: 'customers/redact',
+          idempotencyKey: 'old-redact-delivery',
+          storeDomain: shopDomain,
+          orgId,
+          integrationId,
+          rawPayload: {
+            customer: { id: '8886487220521', email: 'x@example.com' },
+          },
+        })
+        .returning();
+
+      await expect(
+        replayShopifyCustomerRedactions(redactDb, {}),
+      ).rejects.toThrow('--store-domain');
+
+      const dryRun = await replayShopifyCustomerRedactions(redactDb, {
+        storeDomain: shopDomain,
+      });
+      expect(dryRun).toEqual([
+        {
+          webhookEventId: request.id,
+          storeDomain: shopDomain,
+          outcome: 'would_redact',
+          orders: 1,
+          verifications: 1,
+          webhookEvents: 1,
+        },
+      ]);
+      const [untouched] = await redactDb
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, order.id));
+      expect(untouched.customerName).toBe('Synthetic Customer');
+
+      const applied = await replayShopifyCustomerRedactions(redactDb, {
+        storeDomain: shopDomain,
+        apply: true,
+      });
+      expect(applied[0]).toMatchObject({ outcome: 'redacted', orders: 1 });
+      const [redacted] = await redactDb
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, order.id));
+      expect(redacted).toMatchObject({ customerName: null, rawPayload: {} });
+      const [requestRow] = await redactDb
+        .select()
+        .from(schema.webhookEvents)
+        .where(eq(schema.webhookEvents.id, request.id));
+      expect(requestRow.rawPayload).toEqual({
+        customer: { id: '8886487220521' },
+        orders_to_redact: [],
+      });
+
+      const again = await replayShopifyCustomerRedactions(redactDb, {
+        storeDomain: shopDomain,
+        apply: true,
+      });
+      expect(again[0]).toMatchObject({
+        orders: 0,
+        verifications: 0,
+        webhookEvents: 0,
+      });
+    });
   });
 });

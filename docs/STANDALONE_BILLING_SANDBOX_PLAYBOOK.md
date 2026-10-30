@@ -29,6 +29,7 @@ In the SQL below, `<org>` is the merchant organization id.
    PAYMOB_MODE=test
    PAYMOB_BASE_URL=https://accept.paymob.com
    PAYMOB_SECRET_KEY=egy_sk_test_...
+   PAYMOB_API_KEY=...
    PAYMOB_PUBLIC_KEY=egy_pk_test_...
    PAYMOB_HMAC_SECRET=...
    PAYMOB_CARD_INTEGRATION_ID=...
@@ -38,7 +39,9 @@ In the SQL below, `<org>` is the merchant organization id.
    Paymob enables mobile wallets per account on request, so a new sandbox often has only the card integration. In test mode you can leave `PAYMOB_WALLET_INTEGRATION_ID` empty: checkout then offers cards only. Never put a made-up id there — Paymob rejects the whole checkout for an integration the account doesn't have. Once Paymob enables the wallet, add its id (it must differ from the card id), but don't test the wallet yet. Live mode requires both ids.
 3. Confirm `.env` is not tracked: `git check-ignore .env` must print `.env`.
 
-**Done:** you have the secret key, public key, HMAC secret and card id (plus the wallet id if Paymob has enabled it), and `.env` is ignored.
+   `PAYMOB_API_KEY` is the legacy API key under **Settings → API Key**, not the secret key. Checkout works without it, but every inquiry fails with 401.
+
+**Done:** you have the secret key, API key, public key, HMAC secret and card id (plus the wallet id if Paymob has enabled it), and `.env` is ignored.
 
 ## Session 2 — Paymob can reach your laptop
 

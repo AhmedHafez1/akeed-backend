@@ -48,6 +48,12 @@ const INQUIRY_RETRY: RetryPolicy = {
 };
 
 /**
+ * Paymob's legacy auth tokens are reported to live an hour; reuse one for
+ * less than that so a token never expires between minting and use.
+ */
+const AUTH_TOKEN_TTL_MS = 50 * 60_000;
+
+/**
  * Billing details Paymob requires but Akeed has no business collecting.
  *
  * The purchase is a merchant self-service top-up, not a consumer order, so
@@ -103,6 +109,8 @@ function text(value: unknown): string | undefined {
 @Injectable()
 export class PaymobPaymentsAdapter implements PaymentsPort {
   private readonly logger = new Logger(PaymobPaymentsAdapter.name);
+  private authToken?: { value: string; expiresAt: number };
+  private mintingAuthToken?: Promise<string>;
 
   constructor(
     private readonly http: HttpService,
@@ -174,44 +182,112 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
    *
    * This is the recovery path for a checkout whose response was lost and for a
    * purchase whose callback never arrived, so it is the one call that retries.
+   *
+   * Transaction inquiry is a legacy endpoint: it ignores the secret key the
+   * Intention API takes and wants an `auth_token`, minted from the API key.
    */
   async inquire(input: PaymentReference): Promise<PaymentInquiryResult> {
-    const paymob = this.settings();
+    const reused = this.liveAuthToken() !== undefined;
     try {
-      const response = await boundedCall(
-        () =>
-          firstValueFrom(
-            this.http.post<{ transaction?: unknown }>(
-              this.url('/api/ecommerce/orders/transaction_inquiry'),
-              {
-                merchant_order_id: input.reference,
-                ...(input.providerOrderId
-                  ? { order_id: input.providerOrderId }
-                  : {}),
-              },
-              {
-                headers: {
-                  Authorization: `Token ${paymob.secretKey}`,
-                  'Content-Type': 'application/json',
-                },
-                timeout: REQUEST_TIMEOUT_MS,
-              },
-            ),
-          ).catch((error: unknown) => {
-            // A 5xx or a timeout is worth asking again; a definitive answer is
-            // not, and a 404 is itself an answer.
-            if (retryable(error)) throw new RetryableProviderError('provider');
-            throw error;
-          }),
-        { policy: INQUIRY_RETRY },
-      );
-      return this.readInquiry(input, response.data);
+      return await this.inquireWith(input, await this.legacyAuthToken());
     } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 404)
-        return { outcome: 'not_found', code: 'not_found' };
-      this.logFailure('inquire', input.reference, error);
-      return { outcome: 'unknown', code: 'provider_unavailable' };
+      if (!reused || !authRejected(error))
+        return this.inquiryFailure(input, error);
     }
+    // A cached token can be revoked before it expires; mint one more before
+    // concluding the key itself is wrong.
+    this.authToken = undefined;
+    try {
+      return await this.inquireWith(input, await this.legacyAuthToken());
+    } catch (error) {
+      return this.inquiryFailure(input, error);
+    }
+  }
+
+  private async inquireWith(
+    input: PaymentReference,
+    authToken: string,
+  ): Promise<PaymentInquiryResult> {
+    const response = await boundedCall(
+      () =>
+        firstValueFrom(
+          this.http.post<{ transaction?: unknown }>(
+            this.url('/api/ecommerce/orders/transaction_inquiry'),
+            {
+              auth_token: authToken,
+              merchant_order_id: input.reference,
+              ...(input.providerOrderId
+                ? { order_id: input.providerOrderId }
+                : {}),
+            },
+            {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: REQUEST_TIMEOUT_MS,
+            },
+          ),
+        ).catch((error: unknown) => {
+          // A 5xx or a timeout is worth asking again; a definitive answer is
+          // not, and a 404 is itself an answer.
+          if (retryable(error)) throw new RetryableProviderError('provider');
+          throw error;
+        }),
+      { policy: INQUIRY_RETRY },
+    );
+    return this.readInquiry(input, response.data);
+  }
+
+  private inquiryFailure(
+    input: PaymentReference,
+    error: unknown,
+  ): PaymentInquiryResult {
+    if (isAxiosError(error) && error.response?.status === 404)
+      return { outcome: 'not_found', code: 'not_found' };
+    this.logFailure('inquire', input.reference, error);
+    if (authRejected(error)) {
+      this.authToken = undefined;
+      // Still unknown: a credential fault says nothing about the payment,
+      // but it needs a person to fix the key rather than a later retry.
+      return { outcome: 'unknown', code: 'provider_auth_failed' };
+    }
+    return { outcome: 'unknown', code: 'provider_unavailable' };
+  }
+
+  private liveAuthToken(): string | undefined {
+    return this.authToken && this.authToken.expiresAt > Date.now()
+      ? this.authToken.value
+      : undefined;
+  }
+
+  /** One token for every inquiry until it ages out; one mint at a time. */
+  private legacyAuthToken(): Promise<string> {
+    const live = this.liveAuthToken();
+    if (live) return Promise.resolve(live);
+    this.mintingAuthToken ??= this.mintAuthToken().finally(() => {
+      this.mintingAuthToken = undefined;
+    });
+    return this.mintingAuthToken;
+  }
+
+  private async mintAuthToken(): Promise<string> {
+    const paymob = this.settings();
+    const response = await boundedCall(
+      () =>
+        firstValueFrom(
+          this.http.post<{ token?: unknown }>(
+            this.url('/api/auth/tokens'),
+            { api_key: paymob.apiKey },
+            {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: REQUEST_TIMEOUT_MS,
+            },
+          ),
+        ),
+      { policy: NO_RETRY },
+    );
+    const value = text(response.data?.token);
+    if (!value) throw new Error('Paymob returned no auth token');
+    this.authToken = { value, expiresAt: Date.now() + AUTH_TOKEN_TTL_MS };
+    return value;
   }
 
   private url(path: string): string {
@@ -353,8 +429,10 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
         // raw body, which can carry the client secret.
         providerError: providerErrorSummary(error, [
           paymob.secretKey,
+          paymob.apiKey,
           paymob.publicKey,
           paymob.hmacSecret,
+          this.authToken?.value ?? '',
         ]),
         // `normalizeError` reports the message and name only.
         ...normalizeError(error),
@@ -422,6 +500,12 @@ function providerErrorSummary(
   return summary.length > PROVIDER_ERROR_MAX_LENGTH
     ? `${summary.slice(0, PROVIDER_ERROR_MAX_LENGTH)}…`
     : summary;
+}
+
+/** Paymob refused the credential, not the request. */
+function authRejected(error: unknown): boolean {
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  return status === 401 || status === 403;
 }
 
 function retryable(error: unknown): boolean {

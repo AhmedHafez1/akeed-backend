@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { eq, and, inArray, lt, or, sql } from 'drizzle-orm';
+import { desc, eq, and, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   integrations,
@@ -101,6 +101,91 @@ const retryGuardRetryable = sql<boolean>`CASE
   )}) THEN true
   ELSE COALESCE(${webhookEvents.lastError} LIKE 'dispatch_terminal:%', false)
 END`;
+
+/**
+ * Everything a Shopify GDPR request can name a customer by. Any one key is
+ * enough to match; empty keys are left out of the match.
+ */
+export interface ShopifyCustomerKeys {
+  customerId?: string;
+  email?: string;
+  phones: string[];
+  externalOrderIds: string[];
+}
+
+export interface ShopifyCustomerRedactionResult {
+  orders: number;
+  verifications: number;
+  webhookEvents: number;
+}
+
+/** Stored webhook rows that carry a Shopify order JSON. */
+const SHOPIFY_ORDER_JOB_TYPES = ['order.create', 'order.update'];
+
+export function hasShopifyCustomerKeys(keys: ShopifyCustomerKeys): boolean {
+  return Boolean(
+    keys.customerId ||
+    keys.email ||
+    keys.phones.length > 0 ||
+    keys.externalOrderIds.length > 0,
+  );
+}
+
+function shopifyCustomerOrderMatch(keys: ShopifyCustomerKeys): SQL | undefined {
+  const clauses: SQL[] = [];
+  if (keys.externalOrderIds.length > 0) {
+    clauses.push(inArray(orders.externalOrderId, keys.externalOrderIds));
+  }
+  if (keys.customerId) {
+    clauses.push(
+      sql`${orders.rawPayload}->'customer'->>'id' = ${keys.customerId}`,
+    );
+  }
+  if (keys.email) {
+    clauses.push(sql`lower(${orders.customerEmail}) = lower(${keys.email})`);
+  }
+  if (keys.phones.length > 0) {
+    clauses.push(inArray(orders.customerPhone, keys.phones));
+  }
+  return clauses.length > 0 ? or(...clauses) : undefined;
+}
+
+/**
+ * The order payload is stored as Shopify sent it, so the match reads the raw
+ * fields; rows already linked to a matched order are caught by `order_id`.
+ * This also reaches orders Akeed skipped and never stored as an order.
+ */
+function shopifyCustomerWebhookMatch(
+  keys: ShopifyCustomerKeys,
+  orderIds: string[],
+): SQL | undefined {
+  const payload = webhookEvents.rawPayload;
+  const clauses: SQL[] = [];
+  if (orderIds.length > 0) {
+    clauses.push(inArray(webhookEvents.orderId, orderIds));
+  }
+  if (keys.externalOrderIds.length > 0) {
+    clauses.push(inArray(sql`${payload}->>'id'`, keys.externalOrderIds));
+  }
+  if (keys.customerId) {
+    clauses.push(sql`${payload}->'customer'->>'id' = ${keys.customerId}`);
+  }
+  if (keys.email) {
+    clauses.push(
+      sql`lower(${payload}->>'email') = lower(${keys.email})`,
+      sql`lower(${payload}->'customer'->>'email') = lower(${keys.email})`,
+    );
+  }
+  if (keys.phones.length > 0) {
+    clauses.push(
+      inArray(sql`${payload}->>'phone'`, keys.phones),
+      inArray(sql`${payload}->'customer'->>'phone'`, keys.phones),
+      inArray(sql`${payload}->'shipping_address'->>'phone'`, keys.phones),
+      inArray(sql`${payload}->'billing_address'->>'phone'`, keys.phones),
+    );
+  }
+  return clauses.length > 0 ? or(...clauses) : undefined;
+}
 
 @Injectable()
 export class OrdersRepository {
@@ -290,9 +375,10 @@ export class OrdersRepository {
     }));
   }
 
-  async findByOrgAndPhone(
+  async findShopifyCustomerOrders(
     orgId: string,
-    customerPhone: string,
+    integrationId: string,
+    keys: ShopifyCustomerKeys,
   ): Promise<
     Array<
       typeof orders.$inferSelect & {
@@ -300,40 +386,148 @@ export class OrdersRepository {
       }
     >
   > {
-    return await this.db.query.orders.findMany({
-      where: and(
-        eq(orders.orgId, orgId),
-        eq(orders.customerPhone, customerPhone),
-      ),
-      with: {
-        verifications: true,
-      },
-      orderBy: (orders, { desc }) => [desc(orders.createdAt)],
-    });
-  }
-
-  async redactCustomerByOrderIds(orderIds: string[]): Promise<number> {
-    if (orderIds.length === 0) {
-      return 0;
+    const match = shopifyCustomerOrderMatch(keys);
+    if (!match) {
+      return [];
     }
 
-    const results = await this.db
-      .update(orders)
-      .set({
-        customerPhone: '',
-        customerCountry: null,
-        customerName: null,
-        customerEmail: null,
-        rawPayload: {},
-        lineItems: null,
-        shippingRegion: null,
-        shippingAddress: null,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(inArray(orders.id, orderIds))
-      .returning({ id: orders.id });
+    const customerOrders = await this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.orgId, orgId),
+          eq(orders.integrationId, integrationId),
+          match,
+        ),
+      )
+      .orderBy(desc(orders.createdAt));
+    if (customerOrders.length === 0) {
+      return [];
+    }
 
-    return results.length;
+    const orderVerifications = await this.db
+      .select()
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          inArray(
+            verifications.orderId,
+            customerOrders.map((order) => order.id),
+          ),
+        ),
+      );
+    return customerOrders.map((order) => ({
+      ...order,
+      verifications: orderVerifications.filter(
+        (verification) => verification.orderId === order.id,
+      ),
+    }));
+  }
+
+  /**
+   * Anonymises one Shopify customer's orders, clears their verification
+   * metadata and empties the stored order webhook payloads that name them, in
+   * one transaction. Orders stay (anonymised) so usage and billing history
+   * hold. Re-running matches nothing new, since the matched fields are gone.
+   * `dryRun` counts the same rows without writing.
+   */
+  async redactShopifyCustomer(
+    orgId: string,
+    integrationId: string,
+    keys: ShopifyCustomerKeys,
+    options: { dryRun?: boolean } = {},
+  ): Promise<ShopifyCustomerRedactionResult> {
+    const orderMatch = shopifyCustomerOrderMatch(keys);
+    if (!orderMatch) {
+      return { orders: 0, verifications: 0, webhookEvents: 0 };
+    }
+
+    return this.db.transaction(async (tx) => {
+      const matchedOrders = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.orgId, orgId),
+            eq(orders.integrationId, integrationId),
+            orderMatch,
+          ),
+        )
+        .for('update');
+      const orderIds = matchedOrders.map((order) => order.id);
+
+      const webhookWhere = and(
+        eq(webhookEvents.platform, 'shopify'),
+        eq(webhookEvents.orgId, orgId),
+        eq(webhookEvents.integrationId, integrationId),
+        inArray(webhookEvents.jobType, SHOPIFY_ORDER_JOB_TYPES),
+        sql`${webhookEvents.rawPayload} <> '{}'::jsonb`,
+        shopifyCustomerWebhookMatch(keys, orderIds),
+      );
+      const verificationWhere =
+        orderIds.length > 0
+          ? and(
+              eq(verifications.orgId, orgId),
+              inArray(verifications.orderId, orderIds),
+            )
+          : undefined;
+
+      if (options.dryRun) {
+        const [webhookCount] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(webhookEvents)
+          .where(webhookWhere);
+        const [verificationCount] = verificationWhere
+          ? await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(verifications)
+              .where(verificationWhere)
+          : [{ count: 0 }];
+        return {
+          orders: orderIds.length,
+          verifications: Number(verificationCount.count),
+          webhookEvents: Number(webhookCount.count),
+        };
+      }
+
+      const now = new Date().toISOString();
+      if (orderIds.length > 0) {
+        await tx
+          .update(orders)
+          .set({
+            customerPhone: '',
+            customerCountry: null,
+            customerName: null,
+            customerEmail: null,
+            rawPayload: {},
+            lineItems: null,
+            shippingRegion: null,
+            shippingAddress: null,
+            updatedAt: now,
+          })
+          .where(inArray(orders.id, orderIds));
+      }
+      const clearedVerifications = verificationWhere
+        ? await tx
+            .update(verifications)
+            .set({ metadata: {}, updatedAt: now })
+            .where(verificationWhere)
+            .returning({ id: verifications.id })
+        : [];
+      const scrubbedWebhookEvents = await tx
+        .update(webhookEvents)
+        .set({ rawPayload: {}, updatedAt: now })
+        .where(webhookWhere)
+        .returning({ id: webhookEvents.id });
+
+      return {
+        orders: orderIds.length,
+        verifications: clearedVerifications.length,
+        webhookEvents: scrubbedWebhookEvents.length,
+      };
+    });
   }
 
   /**

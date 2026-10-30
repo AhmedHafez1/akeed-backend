@@ -20,6 +20,7 @@ const config = standaloneCreditBillingConfigService({
   PAYMOB_CALLBACK_URL: 'http://localhost:9000/api/webhooks/payments/paymob',
   PAYMOB_RETURN_URL: 'http://localhost:9000',
   PAYMOB_SECRET_KEY: 'sandbox-secret',
+  PAYMOB_API_KEY: 'sandbox-api-key',
   PAYMOB_PUBLIC_KEY: 'sandbox-public',
   PAYMOB_HMAC_SECRET: SECRET,
   PAYMOB_CARD_INTEGRATION_ID: '4001001',

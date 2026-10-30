@@ -45,6 +45,17 @@ npm run build
 npm run start:prod
 ```
 
+### Deploying on Railway
+
+The production `akeed-backend` service is set up for deploys without dropped requests. These settings live in the Railway service settings, not in the repository:
+
+- **Start command `node dist/main`.** Node receives `SIGTERM` itself, so the shutdown hooks stop the queue workers, close the HTTP server and return database connections. `npm start` (`nest start`) is slower to boot, and npm takes the signal instead.
+- **Healthcheck `/api/health`, timeout 180 s.** Traffic moves to a new deployment only after this answers 200. Migrations run before the server listens, and the endpoint answers 503 while the database is unreachable.
+- **Overlap 20 s.** The old deployment keeps serving for 20 s after the new one passes its healthcheck.
+- **Draining 30 s.** The old deployment has 30 s between `SIGTERM` and `SIGKILL` to finish in-flight requests and jobs. It logs `app-shutdown` when it starts.
+
+Without a healthcheck, Railway routes traffic as soon as the container starts, before the port is open, and callers get 502 "connection refused".
+
 ## Database Migrations
 
 Drizzle Kit also respects the environment. To run migrations against a specific environment, ensure the variables are set before running the command, or rely on `drizzle.config.ts` loading logic.
@@ -137,7 +148,8 @@ Setting it to `true` makes every variable below required and validated at startu
 | `PAYMOB_BASE_URL` | Paymob API origin. Every outbound call is built from this; there is no hard-coded host. |
 | `PAYMOB_CALLBACK_URL` | Processed callback. The pathname **must** be `/api/webhooks/payments/paymob`, which is where the controller is mounted. |
 | `PAYMOB_RETURN_URL` | Prefer the locale-less Standalone `/billing/return` URL so `NEXT_LOCALE` restores locale. Akeed appends only `purchaseRef`; the redirect is context only and never grants credits. |
-| `PAYMOB_SECRET_KEY` | Server-only. Sent as `Authorization: Token <secret>`. |
+| `PAYMOB_SECRET_KEY` | Server-only. Sent as `Authorization: Token <secret>` to the Intention API (checkout). |
+| `PAYMOB_API_KEY` | Server-only. The account's legacy API key (Dashboard → Settings → API Key), the same in test and live. Transaction inquiry is a legacy endpoint that answers the secret key with 401, so Akeed mints an `auth_token` from this key at `/api/auth/tokens`, reuses it for 50 minutes and sends it in the inquiry body. A value that matches or looks like the secret or public key aborts boot. |
 | `PAYMOB_HMAC_SECRET` | Server-only. Verifies the processed callback. |
 | `PAYMOB_PUBLIC_KEY` | Reaches the browser inside the hosted checkout URL. |
 | `PAYMOB_CARD_INTEGRATION_ID` | Online card integration: the numeric id from Developers → Payment Integrations (e.g. `5911539`). Digit-only ids are sent to Paymob as numbers — a string would be looked up as an integration *name* — so leading zeros and values beyond the safe-integer range are rejected at startup. The same rule applies to the wallet id. |
@@ -169,7 +181,7 @@ Keep the two safety switches at their defaults for the initial deploy. Local inv
 
 ### Handling secrets
 
-- `PAYMOB_SECRET_KEY` and `PAYMOB_HMAC_SECRET` are server-only and never leave the process. The structured logger redacts them by key name, and provider error bodies are reduced to a name and message before they are logged.
+- `PAYMOB_SECRET_KEY`, `PAYMOB_API_KEY` and `PAYMOB_HMAC_SECRET` are server-only and never leave the process. The structured logger redacts them by key name, and provider error bodies are reduced to a name and message before they are logged.
 - The hosted-checkout URL embeds the intention client secret in its query, so the whole URL is a credential. It is returned once to the merchant who created the purchase, never persisted, never logged, and never present in any list or detail response. An idempotent replay of the same `Idempotency-Key` therefore answers `checkoutUrl: null` with `CHECKOUT_URL_ALREADY_ISSUED`; a fresh attempt needs a fresh key.
 - Akeed stores no PAN, CVV, wallet credential or reusable token. Card metadata that arrives on a callback is redacted from logs and only its hash is persisted.
 

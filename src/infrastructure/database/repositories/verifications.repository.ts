@@ -956,23 +956,6 @@ export class VerificationsRepository {
       .returning();
   }
 
-  async clearMetadataByOrderIds(orderIds: string[]): Promise<number> {
-    if (orderIds.length === 0) {
-      return 0;
-    }
-
-    const results = await this.db
-      .update(verifications)
-      .set({
-        metadata: {},
-        updatedAt: new Date().toISOString(),
-      })
-      .where(inArray(verifications.orderId, orderIds))
-      .returning({ id: verifications.id });
-
-    return results.length;
-  }
-
   async deleteByOrgId(orgId: string): Promise<number> {
     const results = await this.db
       .delete(verifications)

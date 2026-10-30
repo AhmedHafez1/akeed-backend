@@ -9,6 +9,7 @@ const enabledTest = {
   PAYMOB_MODE: 'test',
   PAYMOB_BASE_URL: 'https://payments.akeed.net',
   PAYMOB_SECRET_KEY: 'sk_test_synthetic-value',
+  PAYMOB_API_KEY: 'synthetic-legacy-api-key',
   PAYMOB_PUBLIC_KEY: 'pk_test_synthetic-value',
   PAYMOB_HMAC_SECRET: 'synthetic-hmac-secret',
   PAYMOB_CARD_INTEGRATION_ID: '4001001',
@@ -21,6 +22,7 @@ const enabledLive = {
   ...enabledTest,
   PAYMOB_MODE: 'live',
   PAYMOB_SECRET_KEY: 'sk_live_synthetic-value',
+  PAYMOB_API_KEY: 'synthetic-legacy-api-key',
   PAYMOB_PUBLIC_KEY: 'pk_live_synthetic-value',
 };
 
@@ -170,6 +172,9 @@ describe('Standalone credit configuration', () => {
     ['PAYMOB_MODE', 'production'],
     ['PAYMOB_SECRET_KEY', 'your-secret-here'],
     ['PAYMOB_HMAC_SECRET', 'placeholder'],
+    ['PAYMOB_API_KEY', ''],
+    ['PAYMOB_API_KEY', enabledTest.PAYMOB_SECRET_KEY],
+    ['PAYMOB_API_KEY', 'egy_sk_test_synthetic-value'],
     ['PAYMOB_WALLET_INTEGRATION_ID', enabledTest.PAYMOB_CARD_INTEGRATION_ID],
   ])('rejects inconsistent %s', (key, value) => {
     expect(() =>

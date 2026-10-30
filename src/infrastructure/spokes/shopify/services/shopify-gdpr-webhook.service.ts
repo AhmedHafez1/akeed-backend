@@ -4,7 +4,11 @@ import { PhoneService } from '../../../../shared/services/phone.service';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { IntegrationMonthlyUsageRepository } from '../../../database/repositories/integration-monthly-usage.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
-import { OrdersRepository } from '../../../database/repositories/orders.repository';
+import {
+  hasShopifyCustomerKeys,
+  OrdersRepository,
+  type ShopifyCustomerKeys,
+} from '../../../database/repositories/orders.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import { VerificationsRepository } from '../../../database/repositories/verifications.repository';
@@ -13,10 +17,21 @@ import {
   ShopifyCustomersRedactDto,
   ShopifyShopRedactDto,
 } from '../dto/shopify-webhooks.dto';
+import { buildShopifyCustomerKeys } from './shopify-customer-keys';
 
 interface WebhookAck {
   received: boolean;
   duplicate?: boolean;
+}
+
+/** Which keys a request carried, for logs that must not hold the values. */
+function keyPresence(keys: ShopifyCustomerKeys) {
+  return {
+    hasCustomerId: Boolean(keys.customerId),
+    hasEmail: Boolean(keys.email),
+    hasPhone: keys.phones.length > 0,
+    orderIdsCount: keys.externalOrderIds.length,
+  };
 }
 
 @Injectable()
@@ -74,11 +89,15 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    const rawPhone = payload.customer?.phone?.trim();
-    if (!rawPhone) {
+    const keys = buildShopifyCustomerKeys(
+      payload.customer,
+      payload.orders_requested,
+      this.phoneService,
+    );
+    if (!hasShopifyCustomerKeys(keys)) {
       this.logger.warn(
         buildBackendLog('ShopifyGdprWebhookService', {
-          action: 'handleCustomerDataRequest.missingPhone',
+          action: 'handleCustomerDataRequest.noIdentifiers',
           outcome: 'skipped',
           shopDomain,
         }),
@@ -86,11 +105,10 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    const normalizedPhone = this.normalizePhone(rawPhone);
-    const orders = await this.fetchOrdersByPhone(
+    const orders = await this.ordersRepo.findShopifyCustomerOrders(
       orgId,
-      rawPhone,
-      normalizedPhone,
+      integration.id,
+      keys,
     );
     const filteredOrders = this.filterOrdersByRequestedIds(
       orders,
@@ -125,6 +143,7 @@ export class ShopifyGdprWebhookService {
         outcome: 'success',
         shopDomain,
         ordersCount: exportPayload.length,
+        ...keyPresence(keys),
       }),
     );
 
@@ -147,7 +166,7 @@ export class ShopifyGdprWebhookService {
       }),
     );
 
-    const { integration, orgId, isDuplicate } =
+    const { integration, orgId, isDuplicate, webhookEventId } =
       await this.resolveWebhookContext({
         shopDomain,
         webhookId,
@@ -171,11 +190,15 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    const rawPhone = payload.customer?.phone?.trim();
-    if (!rawPhone) {
+    const keys = buildShopifyCustomerKeys(
+      payload.customer,
+      payload.orders_to_redact,
+      this.phoneService,
+    );
+    if (!hasShopifyCustomerKeys(keys)) {
       this.logger.warn(
         buildBackendLog('ShopifyGdprWebhookService', {
-          action: 'handleCustomerRedact.missingPhone',
+          action: 'handleCustomerRedact.noIdentifiers',
           outcome: 'skipped',
           shopDomain,
         }),
@@ -183,26 +206,30 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    const normalizedPhone = this.normalizePhone(rawPhone);
-    const orders = await this.fetchOrdersByPhone(
+    const redacted = await this.ordersRepo.redactShopifyCustomer(
       orgId,
-      rawPhone,
-      normalizedPhone,
+      integration.id,
+      keys,
     );
-    const orderIds = orders.map((order) => order.id);
 
-    const redactedOrders =
-      await this.ordersRepo.redactCustomerByOrderIds(orderIds);
-    const clearedVerifications =
-      await this.verificationsRepo.clearMetadataByOrderIds(orderIds);
+    // The request itself carried the customer's email and phone; keep only
+    // the ids, which are enough to show what was redacted and to replay it.
+    if (webhookEventId) {
+      await this.webhookEventsRepo.replaceRawPayload(webhookEventId, {
+        customer: { id: keys.customerId ?? null },
+        orders_to_redact: keys.externalOrderIds,
+      });
+    }
 
     this.logger.log(
       buildBackendLog('ShopifyGdprWebhookService', {
         action: 'handleCustomerRedact.completed',
         outcome: 'success',
         shopDomain,
-        redactedOrders,
-        clearedVerifications,
+        redactedOrders: redacted.orders,
+        clearedVerifications: redacted.verifications,
+        scrubbedWebhookEvents: redacted.webhookEvents,
+        ...keyPresence(keys),
       }),
     );
 
@@ -288,6 +315,7 @@ export class ShopifyGdprWebhookService {
     >;
     orgId?: string;
     isDuplicate: boolean;
+    webhookEventId?: string;
   }> {
     if (!params.webhookId) {
       this.logger.warn(
@@ -329,52 +357,20 @@ export class ShopifyGdprWebhookService {
         );
         return { integration, orgId, isDuplicate: true };
       }
+
+      return {
+        integration,
+        orgId,
+        isDuplicate: false,
+        webhookEventId: insertedWebhookRecord.id,
+      };
     }
 
     return { integration, orgId, isDuplicate: false };
   }
 
-  private normalizePhone(phone: string): string {
-    try {
-      return this.phoneService.standardize(phone);
-    } catch {
-      return phone.trim();
-    }
-  }
-
-  private async fetchOrdersByPhone(
-    orgId: string,
-    rawPhone: string,
-    normalizedPhone: string,
-  ): Promise<
-    Array<Awaited<ReturnType<OrdersRepository['findByOrgAndPhone']>>[number]>
-  > {
-    const normalized = normalizedPhone.trim();
-    const raw = rawPhone.trim();
-
-    if (normalized && normalized !== raw) {
-      const [normalizedOrders, rawOrders] = await Promise.all([
-        this.ordersRepo.findByOrgAndPhone(orgId, normalized),
-        this.ordersRepo.findByOrgAndPhone(orgId, raw),
-      ]);
-
-      const merged = new Map<string, (typeof normalizedOrders)[number]>();
-      for (const order of normalizedOrders) {
-        merged.set(order.id, order);
-      }
-      for (const order of rawOrders) {
-        merged.set(order.id, order);
-      }
-      return Array.from(merged.values());
-    }
-
-    return this.ordersRepo.findByOrgAndPhone(orgId, raw);
-  }
-
   private filterOrdersByRequestedIds(
-    orders: Array<
-      Awaited<ReturnType<OrdersRepository['findByOrgAndPhone']>>[number]
-    >,
+    orders: Awaited<ReturnType<OrdersRepository['findShopifyCustomerOrders']>>,
     requestedIds: string[],
   ) {
     if (!requestedIds || requestedIds.length === 0) {

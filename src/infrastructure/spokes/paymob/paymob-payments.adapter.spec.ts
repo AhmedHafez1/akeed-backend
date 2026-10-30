@@ -6,6 +6,8 @@ import { standaloneCreditBillingConfigService } from '../../../../test/contracts
 import { PaymobPaymentsAdapter } from './paymob-payments.adapter';
 
 const SECRET_KEY = 'sk_test_super_secret';
+const API_KEY = 'legacy_api_key_value';
+const AUTH_TOKEN = 'minted_auth_token_value';
 const PUBLIC_KEY = 'pk_test_public';
 const HMAC_SECRET = 'hmac_test_secret';
 const CLIENT_SECRET = 'cs_test_client_secret_value';
@@ -17,6 +19,7 @@ const environment = {
   PAYMOB_CALLBACK_URL: 'http://localhost:9000/api/webhooks/payments/paymob',
   PAYMOB_RETURN_URL: 'http://localhost:9000/billing/return',
   PAYMOB_SECRET_KEY: SECRET_KEY,
+  PAYMOB_API_KEY: API_KEY,
   PAYMOB_PUBLIC_KEY: PUBLIC_KEY,
   PAYMOB_HMAC_SECRET: HMAC_SECRET,
   PAYMOB_CARD_INTEGRATION_ID: 'card1',
@@ -305,21 +308,162 @@ const inquiryBase = {
   amount_cents: 20000,
 };
 
+/**
+ * Routes the adapter's calls: the token mint answers with `AUTH_TOKEN` unless
+ * told otherwise, and every inquiry is handed to `inquiry`.
+ */
+function inquiryHttp(
+  inquiry: jest.Mock,
+  mint: jest.Mock = jest.fn(() => of(response({ token: AUTH_TOKEN }))),
+) {
+  const post = jest.fn((url: string, ...rest: unknown[]) =>
+    new URL(url).pathname === '/api/auth/tokens'
+      ? (mint(url, ...rest) as unknown)
+      : (inquiry(url, ...rest) as unknown),
+  );
+  return { post, mint, inquiry };
+}
+
 describe('PaymobPaymentsAdapter.inquire', () => {
   const reference = { reference: checkout.reference };
+  const settled = () =>
+    of(
+      response({
+        transaction: { ...inquiryBase, id: 1, success: true },
+      }),
+    );
+
+  it('mints an auth token from the API key and sends it in the body', async () => {
+    const { post, mint, inquiry } = inquiryHttp(jest.fn(settled));
+    await build(post).inquire({ ...reference, providerOrderId: '638730312' });
+
+    const [mintUrl, mintBody] = mint.mock.calls[0] as [string, unknown];
+    expect(new URL(mintUrl).origin).toBe('http://localhost:9000');
+    expect(mintBody).toEqual({ api_key: API_KEY });
+    const [url, body, options] = inquiry.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      { headers: Record<string, string> },
+    ];
+    expect(new URL(url).pathname).toBe(
+      '/api/ecommerce/orders/transaction_inquiry',
+    );
+    expect(body).toEqual({
+      auth_token: AUTH_TOKEN,
+      merchant_order_id: checkout.reference,
+      order_id: '638730312',
+    });
+    // The legacy endpoint answers a secret key with 401.
+    expect(options.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('reuses one token across inquiries', async () => {
+    const { post, mint, inquiry } = inquiryHttp(jest.fn(settled));
+    const adapter = build(post);
+    await adapter.inquire(reference);
+    await adapter.inquire(reference);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(inquiry).toHaveBeenCalledTimes(2);
+  });
+
+  it('mints once for concurrent inquiries', async () => {
+    const { post, mint } = inquiryHttp(jest.fn(settled));
+    const adapter = build(post);
+    await Promise.all([adapter.inquire(reference), adapter.inquire(reference)]);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('mints a fresh token once when a cached one is refused', async () => {
+    const inquiry = jest
+      .fn()
+      .mockReturnValueOnce(settled())
+      .mockReturnValueOnce(throwError(() => axiosFailure(401)))
+      .mockReturnValueOnce(settled());
+    const { post, mint } = inquiryHttp(inquiry);
+    const adapter = build(post);
+    await adapter.inquire(reference);
+    await expect(adapter.inquire(reference)).resolves.toMatchObject({
+      outcome: 'found',
+    });
+    expect(mint).toHaveBeenCalledTimes(2);
+    expect(inquiry).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([401, 403])(
+    'reports a refused credential (HTTP %d) as provider_auth_failed',
+    async (status) => {
+      const { post, inquiry } = inquiryHttp(
+        jest.fn(() => throwError(() => axiosFailure(status))),
+      );
+      await expect(build(post).inquire(reference)).resolves.toMatchObject({
+        outcome: 'unknown',
+        code: 'provider_auth_failed',
+      });
+      // A freshly minted token that is refused is not asked about again.
+      expect(inquiry).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('reports a refused API key as provider_auth_failed without inquiring', async () => {
+    const { post, inquiry } = inquiryHttp(
+      jest.fn(settled),
+      jest.fn(() => throwError(() => axiosFailure(401))),
+    );
+    await expect(build(post).inquire(reference)).resolves.toMatchObject({
+      outcome: 'unknown',
+      code: 'provider_auth_failed',
+    });
+    expect(inquiry).not.toHaveBeenCalled();
+  });
+
+  it('treats a mint response without a token as unknown', async () => {
+    const { post, inquiry } = inquiryHttp(
+      jest.fn(settled),
+      jest.fn(() => of(response({}))),
+    );
+    await expect(build(post).inquire(reference)).resolves.toMatchObject({
+      outcome: 'unknown',
+      code: 'provider_unavailable',
+    });
+    expect(inquiry).not.toHaveBeenCalled();
+  });
+
+  it('never writes the API key or the auth token to the log', async () => {
+    const logged: unknown[] = [];
+    jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((message) => logged.push(message));
+    const { post } = inquiryHttp(
+      jest.fn(() =>
+        throwError(() =>
+          axiosFailure(401, {
+            detail: `Bad token ${AUTH_TOKEN} for ${API_KEY}`,
+          }),
+        ),
+      ),
+    );
+    await build(post).inquire(reference);
+    const text = JSON.stringify(logged);
+    expect(logged.length).toBeGreaterThan(0);
+    for (const secret of [API_KEY, AUTH_TOKEN])
+      expect(text).not.toContain(secret);
+    jest.restoreAllMocks();
+  });
 
   it('reports a settled transaction as successful', async () => {
-    const post = jest.fn(() =>
-      of(
-        response({
-          transaction: {
-            ...inquiryBase,
-            id: 720001,
-            order: { id: 510001 },
-            success: true,
-            pending: false,
-          },
-        }),
+    const { post } = inquiryHttp(
+      jest.fn(() =>
+        of(
+          response({
+            transaction: {
+              ...inquiryBase,
+              id: 720001,
+              order: { id: 510001 },
+              success: true,
+              pending: false,
+            },
+          }),
+        ),
       ),
     );
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
@@ -337,11 +481,13 @@ describe('PaymobPaymentsAdapter.inquire', () => {
     [{ success: true, is_voided: true }, 'canceled'],
     [{ success: true, is_refunded: true }, 'refunded'],
   ])('maps %p to %s', async (flags, status) => {
-    const post = jest.fn(() =>
-      of(
-        response({
-          transaction: { ...inquiryBase, id: 1, ...flags },
-        }),
+    const { post } = inquiryHttp(
+      jest.fn(() =>
+        of(
+          response({
+            transaction: { ...inquiryBase, id: 1, ...flags },
+          }),
+        ),
       ),
     );
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
@@ -350,33 +496,32 @@ describe('PaymobPaymentsAdapter.inquire', () => {
   });
 
   it('reports a 404 as a definitive not-found', async () => {
-    const post = jest.fn(() => throwError(() => axiosFailure(404)));
+    const { post, inquiry } = inquiryHttp(
+      jest.fn(() => throwError(() => axiosFailure(404))),
+    );
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
       outcome: 'not_found',
     });
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(inquiry).toHaveBeenCalledTimes(1);
   });
 
   it('retries a server error, because asking again cannot create anything', async () => {
-    const post = jest
+    const inquiry = jest
       .fn()
       .mockReturnValueOnce(throwError(() => axiosFailure(500)))
-      .mockReturnValueOnce(
-        of(
-          response({
-            transaction: { ...inquiryBase, id: 1, success: true },
-          }),
-        ),
-      );
+      .mockReturnValueOnce(settled());
+    const { post } = inquiryHttp(inquiry);
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
       outcome: 'found',
       status: 'successful',
     });
-    expect(post).toHaveBeenCalledTimes(2);
+    expect(inquiry).toHaveBeenCalledTimes(2);
   }, 20_000);
 
   it('gives up as unknown rather than guessing', async () => {
-    const post = jest.fn(() => throwError(() => axiosFailure(500)));
+    const { post } = inquiryHttp(
+      jest.fn(() => throwError(() => axiosFailure(500))),
+    );
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
       outcome: 'unknown',
       code: 'provider_unavailable',
@@ -384,8 +529,8 @@ describe('PaymobPaymentsAdapter.inquire', () => {
   }, 30_000);
 
   it('refuses to read a response with no usable amount', async () => {
-    const post = jest.fn(() =>
-      of(response({ transaction: { id: 1, currency: 'EGP' } })),
+    const { post } = inquiryHttp(
+      jest.fn(() => of(response({ transaction: { id: 1, currency: 'EGP' } }))),
     );
     await expect(build(post).inquire(reference)).resolves.toMatchObject({
       outcome: 'unknown',

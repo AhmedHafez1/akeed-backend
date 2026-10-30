@@ -34,6 +34,7 @@ describe('Shopify HTTP raw-body boundary', () => {
     markDispatchFailed: jest.fn(),
   };
   const integrations = { findByPlatformDomain: jest.fn() };
+  const gdpr = { handleCustomerRedact: jest.fn() };
   const sign = (body: string) =>
     createHmac('sha256', secret).update(body).digest('base64');
 
@@ -60,7 +61,7 @@ describe('Shopify HTTP raw-body boundary', () => {
         { provide: WebhookEventsRepository, useValue: events },
         { provide: IntegrationsRepository, useValue: integrations },
         { provide: ShopifyBillingWebhookService, useValue: {} },
-        { provide: ShopifyGdprWebhookService, useValue: {} },
+        { provide: ShopifyGdprWebhookService, useValue: gdpr },
       ],
     }).compile();
     app = module.createNestApplication({ rawBody: true, logger: false });
@@ -266,5 +267,38 @@ describe('Shopify HTTP raw-body boundary', () => {
       received: true,
     });
     expect(events.markDispatchFailed).toHaveBeenCalled();
+  });
+
+  it('keeps orders_to_redact on a customer redact request, as strings', async () => {
+    gdpr.handleCustomerRedact.mockResolvedValue({ received: true });
+    const body = JSON.stringify({
+      shop_id: 954889,
+      shop_domain: 'synthetic.myshopify.com',
+      customer: { id: 191167, email: 'redact@example.com', phone: null },
+      orders_to_redact: [299938, 280263],
+    });
+    await request(app.getHttpServer() as Server)
+      .post('/webhooks/shopify/customers/redact')
+      .set('Content-Type', 'application/json')
+      .set('x-shopify-shop-domain', 'synthetic.myshopify.com')
+      .set('x-shopify-webhook-id', 'delivery-redact-1')
+      .set('x-shopify-topic', 'customers/redact')
+      .set('x-shopify-hmac-sha256', sign(body))
+      .send(body)
+      .expect(200, { received: true });
+
+    const [payload, ...headers] = gdpr.handleCustomerRedact.mock.calls[0] as [
+      Record<string, unknown>,
+      ...string[],
+    ];
+    expect(payload).toMatchObject({
+      customer: { id: '191167' },
+      orders_to_redact: ['299938', '280263'],
+    });
+    expect(headers).toEqual([
+      'synthetic.myshopify.com',
+      'delivery-redact-1',
+      'customers/redact',
+    ]);
   });
 });

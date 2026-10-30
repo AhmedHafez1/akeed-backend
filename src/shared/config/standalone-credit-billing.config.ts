@@ -17,6 +17,12 @@ interface PaymobConfiguration {
   mode: PaymentMode;
   baseUrl: string;
   secretKey: string;
+  /**
+   * The account's legacy Accept API key. Transaction inquiry is a legacy
+   * endpoint that rejects the secret key and wants an `auth_token` minted
+   * from this key instead.
+   */
+  apiKey: string;
   publicKey: string;
   hmacSecret: string;
   cardIntegrationId: string;
@@ -198,6 +204,18 @@ export function parseStandaloneCreditBillingConfig(
   const secretKey = required('PAYMOB_SECRET_KEY');
   const publicKey = required('PAYMOB_PUBLIC_KEY');
   const hmacSecret = required('PAYMOB_HMAC_SECRET');
+  // One key for both modes, so it carries no test/live marker to check. It is
+  // easily confused with the secret key, which inquiry rejects with a 401.
+  const apiKey = required('PAYMOB_API_KEY');
+  if (
+    apiKey &&
+    (apiKey === secretKey ||
+      apiKey === publicKey ||
+      /^(?:[a-z]{3}_)?(?:sk|pk|csk)_/i.test(apiKey))
+  )
+    errors.push(
+      'PAYMOB_API_KEY must be the legacy API key, not the secret or public key.',
+    );
   for (const key of [
     'PAYMOB_SECRET_KEY',
     'PAYMOB_PUBLIC_KEY',
@@ -247,6 +265,7 @@ export function parseStandaloneCreditBillingConfig(
     callbackUrl: url('PAYMOB_CALLBACK_URL'),
     returnUrl: url('PAYMOB_RETURN_URL'),
     secretKey,
+    apiKey,
     publicKey,
     hmacSecret,
     cardIntegrationId,
