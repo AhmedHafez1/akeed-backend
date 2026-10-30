@@ -139,6 +139,7 @@ function buildOrder(integration: Record<string, unknown> = {}) {
 function setup(
   options: {
     tracks?: boolean;
+    trackedActions?: CommerceOutcomeAction[];
     capabilities?: CommerceOutcomeAction[];
     results?: Array<CommerceOutcomeOperationResult | Error>;
     integration?: Record<string, unknown>;
@@ -162,6 +163,9 @@ function setup(
     requiresActiveConnection: true,
     capabilities: new Set(options.capabilities ?? [command.action]),
     ...(options.tracks === false ? {} : { tracksSynchronization: true }),
+    ...(options.trackedActions
+      ? { trackedActions: new Set(options.trackedActions) }
+      : {}),
     execute,
   };
   const findForOutcomeDispatch = jest
@@ -212,6 +216,38 @@ describe('commerce outcome synchronization tracking', () => {
     expect(syncs.begin).not.toHaveBeenCalled();
     expect(syncs.rows).toHaveLength(0);
     expect(producer.scheduleRetry).not.toHaveBeenCalled();
+  });
+
+  it('leaves an action outside the tracked set untracked', async () => {
+    const { registry, syncs, producer } = setup({
+      trackedActions: ['customer_cancellation'],
+      results: [
+        { status: 'retryable_failure', errorCode: 'source_unavailable' },
+      ],
+    });
+
+    await expect(registry.dispatch(command)).resolves.toMatchObject({
+      status: 'retryable_failure',
+    });
+
+    expect(syncs.begin).not.toHaveBeenCalled();
+    expect(producer.scheduleRetry).not.toHaveBeenCalled();
+  });
+
+  it('tracks and retries an action in the tracked set', async () => {
+    const { registry, syncs, scheduled } = setup({
+      trackedActions: [command.action],
+      results: [
+        { status: 'retryable_failure', errorCode: 'source_unavailable' },
+      ],
+    });
+
+    await registry.dispatch({ ...command, retryInBackground: true });
+
+    expect(syncs.rows).toEqual([
+      expect.objectContaining({ action: command.action, state: 'pending' }),
+    ]);
+    expect(scheduled).toHaveLength(1);
   });
 
   it('records a confirmed result against the order and its source', async () => {

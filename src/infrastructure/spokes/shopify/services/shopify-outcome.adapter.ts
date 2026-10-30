@@ -1,14 +1,78 @@
 import { Injectable } from '@nestjs/common';
+import { isAxiosError } from 'axios';
 import {
   COMMERCE_OUTCOME_ACTIONS,
   type CommerceCancellationInspection,
   type CommerceOperationResolution,
+  type CommerceOutcomeAction,
   type CommerceOutcomeAdapter,
   type CommerceOutcomeAdapterRequest,
   type CommerceOutcomeOperationResult,
 } from '../../../../shared/commerce/commerce-outcome';
 import { ShopifyApiService } from './shopify-api.service';
-import type { ShopifyOrderCancellationState } from './shopify-api.service.helpers';
+import {
+  ShopifyGraphqlError,
+  type ShopifyOrderCancellationState,
+} from './shopify-api.service.helpers';
+
+/** The tag each tagging outcome adds to the Shopify order. */
+const OUTCOME_TAGS = {
+  customer_confirmation: 'Akeed: Verified',
+  customer_cancellation: 'Akeed: Canceled',
+  merchant_cancellation_tagging: 'Akeed: Canceled',
+  automatic_no_reply_tagging: 'Akeed: No Reply',
+  automatic_no_whatsapp_tagging: 'Akeed: WhatsApp Undeliverable',
+} as const satisfies Partial<Record<CommerceOutcomeAction, string>>;
+
+type TaggingAction = keyof typeof OUTCOME_TAGS;
+
+/** Read when Shopify names a wait in seconds or as a date. */
+function retryAfterMs(header: unknown): number | undefined {
+  if (typeof header !== 'string' || header.trim() === '') return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(seconds * 1000, 0);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? undefined : Math.max(at - Date.now(), 0);
+}
+
+/**
+ * Turns a failed tag write into a result the outcome sync can act on, or
+ * null for an error it cannot place (the registry then treats it as
+ * retryable). Tagging is idempotent, so retrying an unclear failure is safe;
+ * only a failure retrying cannot fix is reported as permanent.
+ */
+export function classifyShopifyWriteError(
+  error: unknown,
+): CommerceOutcomeOperationResult | null {
+  if (error instanceof ShopifyGraphqlError) {
+    return error.kind === 'user'
+      ? { status: 'permanent_failure', errorCode: 'remote_rejected' }
+      : { status: 'retryable_failure', errorCode: 'source_unavailable' };
+  }
+  if (!isAxiosError(error)) return null;
+  const status = error.response?.status;
+  if (status === undefined)
+    return { status: 'retryable_failure', errorCode: 'source_unavailable' };
+  if (status === 401 || status === 403)
+    return {
+      status: 'permanent_failure',
+      errorCode: 'credentials_rejected',
+      requiresAssistance: true,
+    };
+  if (status === 404)
+    return { status: 'permanent_failure', errorCode: 'order_not_found' };
+  if (status === 429) {
+    const wait = retryAfterMs(error.response?.headers?.['retry-after']);
+    return {
+      status: 'retryable_failure',
+      errorCode: 'source_unavailable',
+      ...(wait === undefined ? {} : { retryAfterMs: wait }),
+    };
+  }
+  if (status >= 500)
+    return { status: 'retryable_failure', errorCode: 'source_unavailable' };
+  return null;
+}
 
 /** Financial states in which money was taken or promised. */
 const PAID_FINANCIAL_STATUSES = new Set([
@@ -65,6 +129,13 @@ export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
   readonly platformType = 'shopify';
   readonly capabilities = new Set(COMMERCE_OUTCOME_ACTIONS);
   readonly requiresActiveConnection = true;
+  // Only tag writes are tracked: a cancellation answers with a Shopify job
+  // that automatic cancellation resolves itself, so a sync row for it would
+  // stay pending.
+  readonly tracksSynchronization = true;
+  readonly trackedActions: ReadonlySet<CommerceOutcomeAction> = new Set(
+    Object.keys(OUTCOME_TAGS) as TaggingAction[],
+  );
 
   constructor(private readonly shopify: ShopifyApiService) {}
 
@@ -97,14 +168,17 @@ export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
           }
         : { status: 'accepted_without_reference' };
     }
-    const tags = {
-      customer_confirmation: 'Akeed: Verified',
-      customer_cancellation: 'Akeed: Canceled',
-      merchant_cancellation_tagging: 'Akeed: Canceled',
-      automatic_no_reply_tagging: 'Akeed: No Reply',
-      automatic_no_whatsapp_tagging: 'Akeed: WhatsApp Undeliverable',
-    } as const;
-    await this.shopify.addOrderTag(connection, externalOrderId, tags[action]);
+    try {
+      await this.shopify.addOrderTag(
+        connection,
+        externalOrderId,
+        OUTCOME_TAGS[action],
+      );
+    } catch (error: unknown) {
+      const result = classifyShopifyWriteError(error);
+      if (!result) throw error;
+      return result;
+    }
     return { status: 'applied' };
   }
 

@@ -78,7 +78,9 @@ export class CommerceOutcomeRegistryService {
 
     const adapter = this.adaptersByPlatform.get(order.integration.platformType);
     const tracker =
-      adapter?.tracksSynchronization === true && !isSyntheticOrder(order)
+      adapter?.tracksSynchronization === true &&
+      (adapter.trackedActions?.has(command.action) ?? true) &&
+      !isSyntheticOrder(order)
         ? this.tracker
         : undefined;
 

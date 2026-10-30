@@ -106,6 +106,11 @@ export interface CommerceOutcomeAdapter {
    * the background. Adapters that leave it unset behave as they always have.
    */
   readonly tracksSynchronization?: boolean;
+  /**
+   * Limits tracking to these actions when set; the others dispatch untracked.
+   * Unset, every action of a tracking adapter is tracked.
+   */
+  readonly trackedActions?: ReadonlySet<CommerceOutcomeAction>;
   execute(
     request: CommerceOutcomeAdapterRequest,
   ): Promise<CommerceOutcomeOperationResult>;

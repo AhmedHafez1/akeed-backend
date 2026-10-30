@@ -835,7 +835,7 @@ Approved outcomes are written to EasyOrders as an order status, and the local re
 
 **Shared part (platform-neutral).** The outcome contract is the one every source uses (`src/shared/commerce/commerce-outcome.ts`, `CommerceOutcomeRegistryService`). Around it, for a source that writes to a remote store:
 
-- An adapter may set `tracksSynchronization`. For such an adapter the registry records every dispatch in `commerce_outcome_syncs` (one row per order and action): `pending` before the adapter runs, then `succeeded`, `failed` or `unsupported`. Shopify and Standalone do not set it and dispatch with no row.
+- An adapter may set `tracksSynchronization`. For such an adapter the registry records every dispatch in `commerce_outcome_syncs` (one row per order and action): `pending` before the adapter runs, then `succeeded`, `failed` or `unsupported`. An adapter may also set `trackedActions` to track only those actions. Shopify tracks its tag writes but not its cancellations, whose Shopify job automatic cancellation resolves itself. Standalone does not track and dispatches with no row.
 - A caller may pass `retryInBackground`. The hub does, for customer confirmation and cancellation (and the merchant's manual confirmation, which takes the same path). A merchant no-reply cancellation does not: its failure goes back to the merchant, who is the retry.
 - `CommerceOutcomeSyncProcessor` (queue `commerce-outcome-sync`) tries a `pending` row again through the same registry. `planOutcomeSync` decides: at most 5 attempts, backing off 30 seconds, 2, 8 and 30 minutes; a wait the provider names (`retryAfterMs`) is honored up to 10 minutes and up to 5 times without spending an attempt. A permanent failure is never retried. If the retry cannot be queued the row becomes `failed` with `retry_not_scheduled` instead of waiting forever.
 - A tracking failure is logged and never changes the dispatch result. The verification's status is never changed by any of this.
@@ -1156,7 +1156,7 @@ The `metadata` column on verifications stores operational notes:
 ### Error Isolation
 
 - Shopify webhook ingestion returns 200 immediately; processing failures don't cause Shopify retries that could lead to duplicate processing.
-- Shopify order tagging is best-effort: failures are logged but don't fail the verification action.
+- A failed Shopify tag write never fails the verification action. It is recorded in `commerce_outcome_syncs` and retried in the background like the other connected stores: timeouts, network errors, `5xx`, `429` (honoring `Retry-After`) and GraphQL `errors` are retried; `401`/`403` (`credentials_rejected`), `404` (`order_not_found`) and `userErrors` (`remote_rejected`) are not.
 - WhatsApp send failures release billing reservations and mark verifications as `failed`.
 - Billing reservation is atomic (database-level increment).
 

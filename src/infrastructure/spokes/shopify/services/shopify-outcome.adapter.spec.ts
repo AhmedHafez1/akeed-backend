@@ -2,7 +2,11 @@ import { of, throwError, type Observable } from 'rxjs';
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
 import { ShopifyApiService } from './shopify-api.service';
-import { ShopifyOutcomeAdapter } from './shopify-outcome.adapter';
+import { AxiosError, type AxiosResponse } from 'axios';
+import {
+  classifyShopifyWriteError,
+  ShopifyOutcomeAdapter,
+} from './shopify-outcome.adapter';
 import { CommerceOutcomeModule } from '../../../../modules/commerce-outcomes/commerce-outcome.module';
 import { CommerceOutcomeRegistryService } from '../../../../modules/commerce-outcomes/commerce-outcome-registry.service';
 import { DRIZZLE } from '../../../database/database.provider';
@@ -220,7 +224,7 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
     },
   );
 
-  it('reports GraphQL tag rejection without claiming synchronization applied', async () => {
+  it('reports a GraphQL tag rejection as a permanent failure', async () => {
     const { post, dispatch } = setup();
     post.mockReturnValue(
       of({
@@ -231,8 +235,101 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
       }),
     );
     await expect(dispatch('customer_confirmation')).resolves.toMatchObject({
-      status: 'retryable_failure',
+      status: 'permanent_failure',
+      errorCode: 'remote_rejected',
     });
+  });
+
+  it('retries a throttled GraphQL answer', async () => {
+    const { post, dispatch } = setup();
+    post.mockReturnValue(
+      of({
+        data: {
+          errors: [{ message: 'Throttled', extensions: { code: 'THROTTLED' } }],
+        },
+        headers: {},
+      }),
+    );
+    await expect(dispatch('customer_confirmation')).resolves.toMatchObject({
+      status: 'retryable_failure',
+      errorCode: 'source_unavailable',
+    });
+  });
+
+  function axiosFailure(
+    status?: number,
+    headers: Record<string, string> = {},
+  ): AxiosError {
+    return new AxiosError(
+      'synthetic provider failure',
+      status === undefined ? 'ETIMEDOUT' : undefined,
+      undefined,
+      undefined,
+      status === undefined
+        ? undefined
+        : ({ status, headers, data: {} } as AxiosResponse),
+    );
+  }
+
+  it.each([
+    ['no response', undefined, 'retryable_failure', 'source_unavailable'],
+    ['502', 502, 'retryable_failure', 'source_unavailable'],
+    ['401', 401, 'permanent_failure', 'credentials_rejected'],
+    ['403', 403, 'permanent_failure', 'credentials_rejected'],
+    ['404', 404, 'permanent_failure', 'order_not_found'],
+  ] as const)(
+    'classifies a %s tag write failure',
+    async (_label, status, expectedStatus, errorCode) => {
+      const { post, dispatch } = setup();
+      post.mockReturnValue(throwError(() => axiosFailure(status)));
+      const result = await dispatch('customer_confirmation');
+      expect(result).toMatchObject({ status: expectedStatus, errorCode });
+      expect(JSON.stringify(result)).not.toContain(
+        'synthetic provider failure',
+      );
+    },
+  );
+
+  it('asks the merchant to reconnect when Shopify refuses the token', () => {
+    expect(classifyShopifyWriteError(axiosFailure(401))).toEqual({
+      status: 'permanent_failure',
+      errorCode: 'credentials_rejected',
+      requiresAssistance: true,
+    });
+  });
+
+  it('defers a rate-limited write by the wait Shopify names', () => {
+    expect(
+      classifyShopifyWriteError(axiosFailure(429, { 'retry-after': '2' })),
+    ).toEqual({
+      status: 'retryable_failure',
+      errorCode: 'source_unavailable',
+      retryAfterMs: 2000,
+    });
+    expect(classifyShopifyWriteError(axiosFailure(429))).toEqual({
+      status: 'retryable_failure',
+      errorCode: 'source_unavailable',
+    });
+  });
+
+  it('leaves an error it cannot place to the registry', () => {
+    expect(classifyShopifyWriteError(axiosFailure(400))).toBeNull();
+    expect(classifyShopifyWriteError(new Error('unknown'))).toBeNull();
+  });
+
+  it('tracks tag writes and leaves cancellations untracked', () => {
+    const { api } = setup();
+    const adapter = new ShopifyOutcomeAdapter(api);
+    expect(adapter.tracksSynchronization).toBe(true);
+    expect([...adapter.trackedActions].sort()).toEqual(
+      [
+        'automatic_no_reply_tagging',
+        'automatic_no_whatsapp_tagging',
+        'customer_cancellation',
+        'customer_confirmation',
+        'merchant_cancellation_tagging',
+      ].sort(),
+    );
   });
 
   it('wires the production module to the Shopify adapter without live infrastructure', async () => {

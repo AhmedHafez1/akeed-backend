@@ -4,6 +4,7 @@ export interface GraphQLErrorItem {
   message: string;
   locations?: unknown;
   path?: string[];
+  extensions?: { code?: unknown };
 }
 
 export interface GraphQLUserError {
@@ -267,6 +268,23 @@ export function buildSubscriptionLineItems(payload: {
   return [recurringLineItem, usageLineItem];
 }
 
+/**
+ * A GraphQL answer Shopify returned with HTTP 200 but refused: top-level
+ * `errors` (throttling, access, query problems) or a mutation's `userErrors`
+ * (the input itself was rejected). Callers that classify failures read `kind`
+ * and `codes`; the message stays what it always was.
+ */
+export class ShopifyGraphqlError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'graphql' | 'user',
+    readonly codes: readonly string[] = [],
+  ) {
+    super(message);
+    this.name = 'ShopifyGraphqlError';
+  }
+}
+
 export function throwIfGraphQLErrors(
   errors: GraphQLErrorItem[] | undefined,
   context: string,
@@ -275,8 +293,12 @@ export function throwIfGraphQLErrors(
     return;
   }
 
-  throw new Error(
+  throw new ShopifyGraphqlError(
     `${context}: ${errors.map((error) => error.message).join('; ')}`,
+    'graphql',
+    errors.flatMap((error) =>
+      typeof error.extensions?.code === 'string' ? [error.extensions.code] : [],
+    ),
   );
 }
 
@@ -288,8 +310,9 @@ export function throwIfUserErrors(
     return;
   }
 
-  throw new Error(
+  throw new ShopifyGraphqlError(
     `${context}: ${errors.map((error) => error.message).join('; ')}`,
+    'user',
   );
 }
 
