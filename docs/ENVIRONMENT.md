@@ -49,7 +49,7 @@ npm run start:prod
 
 The production `akeed-backend` service is set up for deploys without dropped requests. These settings live in the Railway service settings, not in the repository:
 
-- **Start command `node dist/main`.** Node receives `SIGTERM` itself, so the shutdown hooks stop the queue workers, close the HTTP server and return database connections. `npm start` (`nest start`) is slower to boot, and npm takes the signal instead.
+- **Start command `node dist/src/main`.** The build keeps the `src/` folder because `scripts/` compiles alongside it. Node receives `SIGTERM` itself, so the shutdown hooks stop the queue workers, close the HTTP server and return database connections. `npm start` (`nest start`) is slower to boot, and npm takes the signal instead.
 - **Healthcheck `/api/health`, timeout 180 s.** Traffic moves to a new deployment only after this answers 200. Migrations run before the server listens, and the endpoint answers 503 while the database is unreachable.
 - **Overlap 20 s.** The old deployment keeps serving for 20 s after the new one passes its healthcheck.
 - **Draining 30 s.** The old deployment has 30 s between `SIGTERM` and `SIGKILL` to finish in-flight requests and jobs. It logs `app-shutdown` when it starts.

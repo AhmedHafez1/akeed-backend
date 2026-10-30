@@ -15,7 +15,7 @@ This file includes Copilot instructions from `.github/copilot-instructions.md`.
 ```bash
 npm run start:dev      # Start NestJS dev server (watch mode)
 npm run build          # Build (nest build)
-npm run start:prod     # Run production server (dist/main)
+npm run start:prod     # Run production server (dist/src/main)
 npx eslint <files>     # Check touched files; npm run lint fixes the whole tree
 npx prettier --check --end-of-line crlf <files> # Check touched code only
 npm run test           # Jest unit tests
