@@ -1,3 +1,7 @@
+import 'reflect-metadata';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { ShopifyAppSubscriptionWebhookDto } from '../dto/shopify-webhooks.dto';
 import { ShopifyBillingWebhookService } from './shopify-billing-webhook.service';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
@@ -125,8 +129,10 @@ describe('ShopifyBillingWebhookService', () => {
 
       await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/CURRENT',
-          status: 'CANCELLED',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/CURRENT',
+            status: 'CANCELLED',
+          },
         },
         'test.myshopify.com',
         'webhook-1',
@@ -156,8 +162,11 @@ describe('ShopifyBillingWebhookService', () => {
 
       const result = await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/PENDING_UPGRADE',
-          status: 'DECLINED',
+          app_subscription: {
+            admin_graphql_api_id:
+              'gid://shopify/AppSubscription/PENDING_UPGRADE',
+            status: 'DECLINED',
+          },
         },
         'test.myshopify.com',
         'webhook-2',
@@ -179,8 +188,10 @@ describe('ShopifyBillingWebhookService', () => {
 
       const result = await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/OTHER',
-          status: 'CANCELLED',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/OTHER',
+            status: 'CANCELLED',
+          },
         },
         'test.myshopify.com',
         'webhook-3',
@@ -201,8 +212,10 @@ describe('ShopifyBillingWebhookService', () => {
 
       const result = await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/OTHER',
-          status: 'FROZEN',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/OTHER',
+            status: 'FROZEN',
+          },
         },
         'test.myshopify.com',
         'webhook-4',
@@ -215,7 +228,7 @@ describe('ShopifyBillingWebhookService', () => {
   });
 
   describe('handleAppSubscriptionUpdate — non-current subscription active', () => {
-    it('allows active status for a different subscription (new subscription activated)', async () => {
+    it('leaves a new subscription for the billing callback to adopt', async () => {
       const { service, integrationsRepo } = createMocks();
       const integration = makeIntegration({
         shopifySubscriptionId: 'gid://shopify/AppSubscription/CURRENT',
@@ -225,55 +238,93 @@ describe('ShopifyBillingWebhookService', () => {
 
       await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/NEW',
-          status: 'ACTIVE',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/NEW',
+            status: 'ACTIVE',
+          },
         },
         'test.myshopify.com',
         'webhook-5',
         'app_subscriptions/update',
       );
 
-      expect(integrationsRepo.updateById).toHaveBeenCalledWith(
-        'int-1',
-        expect.objectContaining({
-          billingStatus: 'active',
-          shopifySubscriptionId: 'gid://shopify/AppSubscription/NEW',
-        }),
-      );
-      expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
-        'isActive',
-      );
+      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
     });
   });
 
   describe('handleAppSubscriptionUpdate — no current subscription ID', () => {
-    it('updates normally when integration has no shopifySubscriptionId', async () => {
-      const { service, integrationsRepo } = createMocks();
-      const integration = makeIntegration({
-        shopifySubscriptionId: null,
-      });
+    it.each(['DECLINED', 'PENDING', 'ACTIVE'])(
+      'leaves a free store unchanged on %s',
+      async (status) => {
+        const { service, integrationsRepo } = createMocks();
+        integrationsRepo.findByPlatformDomain.mockResolvedValue(
+          makeIntegration({ shopifySubscriptionId: null }),
+        );
 
-      integrationsRepo.findByPlatformDomain.mockResolvedValue(integration);
+        await service.handleAppSubscriptionUpdate(
+          {
+            app_subscription: {
+              admin_graphql_api_id: 'gid://shopify/AppSubscription/NEW',
+              status,
+            },
+          },
+          'test.myshopify.com',
+          'webhook-6',
+          'app_subscriptions/update',
+        );
+
+        expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('handleAppSubscriptionUpdate — activation date', () => {
+    it('keeps the activation date and subscription on an active update', async () => {
+      const { service, integrationsRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
+      );
 
       await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/NEW',
-          status: 'DECLINED',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/CURRENT',
+            status: 'ACTIVE',
+          },
         },
         'test.myshopify.com',
-        'webhook-6',
+        'webhook-anchor',
         'app_subscriptions/update',
       );
 
-      expect(integrationsRepo.updateById).toHaveBeenCalledWith(
-        'int-1',
-        expect.objectContaining({
-          billingStatus: 'declined',
-        }),
+      const updates = integrationsRepo.updateById.mock.calls[0][1] as Record<
+        string,
+        unknown
+      >;
+      expect(updates.billingStatus).toBe('active');
+      expect(updates).not.toHaveProperty('billingActivatedAt');
+      expect(updates).not.toHaveProperty('shopifySubscriptionId');
+    });
+
+    it('does not let a pending status stop the current subscription', async () => {
+      const { service, integrationsRepo } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
       );
-      expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
-        'isActive',
+
+      await service.handleAppSubscriptionUpdate(
+        {
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/CURRENT',
+            status: 'PENDING',
+          },
+        },
+        'test.myshopify.com',
+        'webhook-pending',
+        'app_subscriptions/update',
       );
+
+      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
     });
   });
 
@@ -286,8 +337,10 @@ describe('ShopifyBillingWebhookService', () => {
 
       const result = await service.handleAppSubscriptionUpdate(
         {
-          id: 'gid://shopify/AppSubscription/CURRENT',
-          status: 'ACTIVE',
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/CURRENT',
+            status: 'ACTIVE',
+          },
         },
         'test.myshopify.com',
         'webhook-uninstalled',
@@ -299,29 +352,31 @@ describe('ShopifyBillingWebhookService', () => {
     });
   });
 
-  describe('handleAppSubscriptionUpdate — admin_graphql_api_id resolution', () => {
-    it('uses admin_graphql_api_id when present for subscription comparison', async () => {
-      const { service, integrationsRepo } = createMocks();
-      const integration = makeIntegration({
-        shopifySubscriptionId: 'gid://shopify/AppSubscription/CURRENT',
+  describe('ShopifyAppSubscriptionWebhookDto', () => {
+    const validatePayload = (payload: unknown) =>
+      validate(plainToInstance(ShopifyAppSubscriptionWebhookDto, payload), {
+        whitelist: true,
       });
 
-      integrationsRepo.findByPlatformDomain.mockResolvedValue(integration);
-
-      const result = await service.handleAppSubscriptionUpdate(
-        {
-          id: '12345',
-          status: 'DECLINED',
-          admin_graphql_api_id: 'gid://shopify/AppSubscription/OTHER',
+    it('accepts the payload Shopify documents for the topic', async () => {
+      const errors = await validatePayload({
+        app_subscription: {
+          admin_graphql_api_id: 'gid://shopify/AppSubscription/1029266965',
+          name: 'Webhook Test',
+          status: 'PENDING',
+          admin_graphql_api_shop_id: 'gid://shopify/Shop/548380009',
+          created_at: '2021-12-31T19:00:00-05:00',
+          updated_at: '2021-12-31T19:00:00-05:00',
+          currency: 'USD',
+          capped_amount: '20.0',
         },
-        'test.myshopify.com',
-        'webhook-7',
-        'app_subscriptions/update',
-      );
+      });
 
-      // Should skip because the resolved ID differs and status is blocked
-      expect(result).toEqual({ received: true });
-      expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+      expect(errors).toEqual([]);
+    });
+
+    it('rejects a payload without the subscription', async () => {
+      expect(await validatePayload({ status: 'ACTIVE' })).not.toEqual([]);
     });
   });
 });
@@ -341,7 +396,12 @@ describe('ShopifyBillingWebhookService capacity recovery', () => {
       );
 
       await service.handleAppSubscriptionUpdate(
-        { id: 'gid://shopify/AppSubscription/CURRENT', status },
+        {
+          app_subscription: {
+            admin_graphql_api_id: 'gid://shopify/AppSubscription/CURRENT',
+            status,
+          },
+        },
         'test.myshopify.com',
         'webhook-recovery',
         'app_subscriptions/update',

@@ -254,11 +254,13 @@ Capacity recovery is requested when a credit purchase is granted, when a new pla
 Shopify sends `app_subscriptions/update` webhooks when subscription status changes. Handled by `ShopifyBillingWebhookService`:
 
 - Webhooks are HMAC-verified and deduplicated via `webhook_events`.
-- Active status updates `billingStatus` and `billingActivatedAt`.
+- A webhook only reports the status of the subscription in `shopifySubscriptionId`. Only the billing callback adopts a new subscription: a new subscription's webhook can arrive before the callback, and a free store has no subscription to match.
+- Active status updates `billingStatus` and clears `billingCanceledAt`. Webhooks never change `billingActivatedAt`, which anchors the store's 30-day allowance periods. It moves only when a merchant activates a plan.
 - Blocked statuses (`cancelled`, `declined`, `expired`, `frozen`) update billing fields and `billingCanceledAt` without changing installation state.
+- Other statuses (`pending`, `accepted`) change nothing.
 - `isActive` represents whether the Shopify app is installed. Only install and uninstall flows may change it; billing entitlement is controlled by `billingStatus`.
 - Subscription updates for an uninstalled integration are acknowledged without mutating local installation or billing state.
-- Non-current subscription webhooks with blocked status are ignored to prevent a declined upgrade from disabling the merchant's existing active plan.
+- Non-current subscription webhooks are ignored, whatever their status, so a declined upgrade cannot disable the merchant's existing plan.
 - An update that leaves the subscription active requests capacity recovery for the organization, so its blocked orders are sent.
 
 ## Backend Code Map

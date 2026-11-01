@@ -86,13 +86,17 @@ export class ShopifyBillingWebhookService {
     webhookId: string,
     topic: string,
   ): Promise<WebhookAck> {
-    const normalizedStatus = this.normalizeBillingStatus(payload.status);
+    const incomingSubscriptionId =
+      payload.app_subscription.admin_graphql_api_id;
+    const normalizedStatus = this.normalizeBillingStatus(
+      payload.app_subscription.status,
+    );
     this.logger.log(
       buildBackendLog('ShopifyBillingWebhookService', {
         action: 'handleAppSubscriptionUpdate.received',
         outcome: 'success',
         shopDomain,
-        payloadId: String(payload.id),
+        payloadId: incomingSubscriptionId,
         billingStatus: normalizedStatus,
       }),
     );
@@ -160,22 +164,18 @@ export class ShopifyBillingWebhookService {
     }
 
     const now = new Date().toISOString();
-    const incomingSubscriptionId = this.resolveSubscriptionId(payload);
     const isBlockedStatus = this.isBlockedBillingStatus(normalizedStatus);
     const isActiveStatus = normalizedStatus === 'active';
 
-    // If the webhook is for a subscription that is NOT the current one and
-    // the status is blocked (declined/cancelled/expired/frozen), skip the
-    // update. This prevents a declined plan-upgrade attempt from disabling
-    // the merchant's existing active subscription.
-    const isCurrentSubscription =
-      !integration.shopifySubscriptionId ||
-      integration.shopifySubscriptionId === incomingSubscriptionId;
-
-    if (!isCurrentSubscription && isBlockedStatus) {
+    // Only the billing callback adopts a subscription. A new one's webhook can
+    // arrive before the callback, and saving its id here would make the
+    // callback cancel it as the "existing" subscription. A failed upgrade's
+    // webhook must not disable the live plan, or a free store with no
+    // subscription.
+    if (integration.shopifySubscriptionId !== incomingSubscriptionId) {
       this.logger.warn(
         buildBackendLog('ShopifyBillingWebhookService', {
-          action: 'handleAppSubscriptionUpdate.ignoredNonCurrentBlocked',
+          action: 'handleAppSubscriptionUpdate.ignoredNonCurrent',
           outcome: 'skipped',
           shopDomain,
           incomingSubscriptionId,
@@ -186,15 +186,27 @@ export class ShopifyBillingWebhookService {
       return { received: true };
     }
 
+    if (!isActiveStatus && !isBlockedStatus) {
+      this.logger.log(
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppSubscriptionUpdate.ignoredStatus',
+          outcome: 'skipped',
+          shopDomain,
+          billingStatus: normalizedStatus,
+        }),
+      );
+      return { received: true };
+    }
+
+    // billingActivatedAt anchors the store's 30-day allowance periods, so a
+    // status update must never touch it.
     await this.integrationsRepo.updateById(integration.id, {
       billingStatus: normalizedStatus,
       billingStatusUpdatedAt: now,
-      shopifySubscriptionId: incomingSubscriptionId,
-      billingActivatedAt: isActiveStatus ? now : integration.billingActivatedAt,
       billingCanceledAt: isBlockedStatus ? now : null,
     });
 
-    // An active subscription starts a new allowance period.
+    // A subscription that is active again can send its blocked orders.
     if (isActiveStatus) {
       await this.capacityRecovery?.request(
         integration.orgId,
@@ -228,17 +240,5 @@ export class ShopifyBillingWebhookService {
 
   private normalizeBillingStatus(status: string): string {
     return status.trim().toLowerCase();
-  }
-
-  private resolveSubscriptionId(
-    payload: ShopifyAppSubscriptionWebhookDto,
-  ): string {
-    if (payload.admin_graphql_api_id) {
-      return payload.admin_graphql_api_id;
-    }
-
-    return payload.id.startsWith('gid://')
-      ? payload.id
-      : `gid://shopify/AppSubscription/${payload.id}`;
   }
 }

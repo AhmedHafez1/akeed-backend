@@ -433,6 +433,24 @@ export class BillingService {
       chargeId: callbackParams.chargeId,
     });
 
+    // A reopened return URL names the live subscription. Activating it again
+    // would cancel it and move the store's billing period.
+    if (
+      billingResolution.status === 'active' &&
+      billingResolution.subscriptionId === integration.shopifySubscriptionId
+    ) {
+      await this.persistBillingState({
+        integrationId: integration.id,
+        pendingBillingPlanId: null,
+        status: billingResolution.status,
+        clearCanceledAt: true,
+      });
+      return this.createPostBillingRedirectUrl({
+        shop: callbackParams.shop,
+        host: callbackParams.host,
+      });
+    }
+
     if (billingResolution.status === 'active') {
       return this.activateNewSubscription(
         integration,

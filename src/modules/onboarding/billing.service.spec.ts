@@ -528,6 +528,33 @@ describe('BillingService', () => {
       expect(monthlyUsageRepo.resetCountersForPeriod).toHaveBeenCalled();
     });
 
+    it('leaves the live subscription and its period alone on a replayed callback', async () => {
+      const { service, integrationsRepo, monthlyUsageRepo, storePlatform } =
+        createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration({
+          billingPlanId: 'pro',
+          billingStatus: 'active',
+          shopifySubscriptionId: 'gid://shopify/AppSubscription/LIVE',
+        }),
+      );
+      storePlatform.getAppSubscriptionStatus.mockResolvedValue({
+        id: 'gid://shopify/AppSubscription/LIVE',
+        status: 'ACTIVE',
+      });
+
+      await service.handleBillingCallback({
+        shop: 'test.myshopify.com',
+        chargeId: 'gid://shopify/AppSubscription/LIVE',
+      });
+
+      expect(storePlatform.cancelAppSubscription).not.toHaveBeenCalled();
+      expect(monthlyUsageRepo.resetCountersForPeriod).not.toHaveBeenCalled();
+      for (const [, updates] of integrationsRepo.updateById.mock.calls) {
+        expect(updates).not.toHaveProperty('billingActivatedAt');
+      }
+    });
+
     it.each([
       ['starter', 'pro', 'plan_upgraded'],
       ['pro', 'pro', 'plan_renewed'],

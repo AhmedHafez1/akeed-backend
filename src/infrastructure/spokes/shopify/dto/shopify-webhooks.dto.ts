@@ -166,21 +166,22 @@ export class ShopifyAppUninstalledDto {
   id!: string;
 }
 
-export class ShopifyAppSubscriptionWebhookDto {
-  @Transform(({ value }) => String(value))
+export class ShopifyAppSubscriptionPayloadDto {
   @IsString()
   @IsNotEmpty()
-  id!: string;
+  admin_graphql_api_id!: string;
 
-  @Transform(({ value }) => String(value))
   @IsString()
   @IsNotEmpty()
   status!: string;
+}
 
-  @IsOptional()
-  @Transform(({ value }) => String(value))
-  @IsString()
-  admin_graphql_api_id?: string;
+/** Shopify nests the subscription under `app_subscription`, with no numeric id. */
+export class ShopifyAppSubscriptionWebhookDto {
+  @ValidateNested()
+  @Type(() => ShopifyAppSubscriptionPayloadDto)
+  @IsNotEmpty()
+  app_subscription!: ShopifyAppSubscriptionPayloadDto;
 }
 
 export class ShopifyGdprCustomerDto {
