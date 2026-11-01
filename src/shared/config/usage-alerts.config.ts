@@ -11,6 +11,8 @@ export const USAGE_ALERTS_CONFIG = 'usageAlerts';
  *   an allowance reset. Off: they wait for a merchant retry.
  * - `blockedOrderMaxAgeHours`: older blocked orders are left to the merchant
  *   instead of being sent.
+ * - `creditModelNoticeEmailEnabled`: send the one-time email about displayed
+ *   credits to existing prepaid merchants.
  */
 export interface UsageAlertsConfig {
   emailEnabled: boolean;
@@ -19,6 +21,7 @@ export interface UsageAlertsConfig {
   dashboardUrl: string | null;
   recoveryEnabled: boolean;
   blockedOrderMaxAgeHours: number;
+  creditModelNoticeEmailEnabled: boolean;
 }
 
 function fail(message: string): never {
@@ -53,6 +56,16 @@ export function parseUsageAlertsConfig(
   if (emailEnabled && (!resendApiKey || !emailFrom)) {
     fail('EMAIL_ALERTS_ENABLED=true needs RESEND_API_KEY and EMAIL_FROM.');
   }
+  const creditModelNoticeEmailEnabled = readBoolean(
+    config,
+    'CREDIT_MODEL_NOTICE_EMAIL_ENABLED',
+    false,
+  );
+  if (creditModelNoticeEmailEnabled && !emailEnabled) {
+    fail(
+      'CREDIT_MODEL_NOTICE_EMAIL_ENABLED=true needs EMAIL_ALERTS_ENABLED=true.',
+    );
+  }
   const maxAgeRaw = readText(config, 'BLOCKED_ORDER_MAX_AGE_HOURS');
   const blockedOrderMaxAgeHours =
     maxAgeRaw === null
@@ -76,6 +89,7 @@ export function parseUsageAlertsConfig(
       true,
     ),
     blockedOrderMaxAgeHours,
+    creditModelNoticeEmailEnabled,
   };
 }
 

@@ -6,6 +6,8 @@ Last updated: 2026-10-01
 
 This document explains the Akeed merchant onboarding and billing lifecycle from a business perspective. It covers the onboarding flow, billing plan activation, plan change behavior, usage tracking, billing period accounting, and the interaction between billing state and verification processing.
 
+Prepaid merchants see displayed credits: 1 credit = EGP 1, and a message uses 2. Stored credits stay worth EGP 2 each, and `src/shared/billing/merchant-credits.ts` is the only place that converts between them. Merchant APIs, usage emails and the import quote return displayed credits. Ledgers, reservations, purchases, gates, finance reports and staff adjustments stay in stored credits, and staff screens show the displayed value beside them.
+
 Akeed has two billing models. **Shopify (embedded)** merchants subscribe to a monthly plan billed through Shopify, and this document describes that model in detail. **Standalone** merchants have no plan: they buy prepaid credits through Paymob, and one credit pays for one WhatsApp message. Standalone onboarding is described in [standalone-onboarding-v2.md](standalone-onboarding-v2.md), Paymob configuration in `ENVIRONMENT.md`, and staff procedures in `STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`. Standalone merchants can also add orders by file; see `BULK_ORDER_IMPORT.md`.
 
 Onboarding, for a Shopify merchant, is the process they go through after installing the Akeed app. The merchant configures their store, selects a billing plan, and activates their subscription before verification processing begins. Billing controls whether Akeed can send WhatsApp verification messages by enforcing plan-level usage limits.

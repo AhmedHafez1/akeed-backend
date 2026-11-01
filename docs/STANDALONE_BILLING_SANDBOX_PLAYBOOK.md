@@ -14,8 +14,9 @@ Everything used here already exists and passed `npm run test:gate:e045`. These s
 
 Two Akeed rules shape the numbers below:
 
-- A merchant must be **staff-approved** before credits work, and approval grants **30 free credits**.
-- The smallest purchase is **100 credits = 200 EGP**, at 2 EGP per credit.
+- Merchants see 1 credit = 1 EGP, and a message uses 2 credits. The database stores half that: 1 stored credit = 2 displayed credits = 2 EGP. Numbers below say which one they mean, and ledger rows in SQL and the staff console are stored credits.
+- A merchant must be **staff-approved** before credits work, and approval grants **60 free credits** (30 stored).
+- The smallest purchase is **200 credits = 200 EGP**, at 1 EGP per credit (100 stored at 2 EGP).
 
 **Not in this playbook:** Vodafone Cash tests, refunds, chargebacks, production, reconciliation jobs and sign-off. See [After the milestone](#after-the-milestone).
 
@@ -62,11 +63,11 @@ In the SQL below, `<org>` is the merchant organization id.
 2. Sign in. Onboarding opens directly; there is no approval step.
 3. Optional staff check: give your staff Supabase user `akeed_role = admin`, set `ADMIN_CONTROL_TOWER_ENABLED=true` (locally, `ADMIN_REQUIRE_AAL2=false` unless the user has MFA), restart the backend and open `/en/admin/standalone-billing`. The merchant is listed as active.
 
-**Done:** the merchant's `/en/billing` page shows **30 credits** and one `free_grant +30`.
+**Done:** the merchant's `/en/billing` page shows **60 credits** and one `free_grant +60`. The stored ledger row is `+30`.
 
 ## Session 4 — First real sandbox card payment (the milestone)
 
-1. As the merchant, open `/en/billing` and buy **100 credits** (200 EGP).
+1. As the merchant, open `/en/billing` and buy **200 credits** (200 EGP).
 2. On the Paymob checkout, pay with a Paymob **test card**.
 3. Paymob calls Akeed. In one transaction, Akeed verifies the HMAC and trusted fields, marks the purchase successful and adds exactly one ledger entry. The return page only shows the status; it can't add credits.
 4. Check the database:
@@ -96,7 +97,7 @@ The balance stays **130**.
    - The `akeed_cod_verification…` templates must be approved in that WhatsApp account.
    - Add your phone as a test recipient.
 2. In Meta, set the webhook to `https://<tunnel>/webhooks/whatsapp` with your `WA_VERIFY_TOKEN`, and subscribe to `messages`.
-3. From the merchant Settings, send a **test message** to your own phone. It is a real send, so it uses 1 credit.
+3. From the merchant Settings, send a **test message** to your own phone. It is a real send, so it uses 2 credits (1 stored).
 4. Check the database:
    ```sql
    SELECT kind, state, provider_message_id, accepted_at, delivered_at, read_at FROM verification_message_dispatches WHERE org_id = '<org>' ORDER BY created_at DESC LIMIT 3;
@@ -111,14 +112,14 @@ The balance stays **130**.
    - Set the follow-up delay to **2 minutes** and the send delay to **0**.
    - Turn quiet hours off.
 2. Create a **manual order** with your own phone as the customer. Don't reply.
-3. The initial message uses 1 credit. About two minutes later, the follow-up uses 1 more.
+3. The initial message uses 2 credits. About two minutes later, the follow-up uses 2 more.
 4. Reconcile:
    ```sql
    SELECT type, quantity, posted_balance_after FROM credit_ledger_entries WHERE org_id = '<org>' ORDER BY created_at;
    SELECT (SELECT sum(quantity) FROM credit_ledger_entries WHERE org_id = '<org>') AS ledger_total, posted_balance, held_credits FROM credit_accounts WHERE org_id = '<org>';
    ```
 
-**Done:** the ledger reads `+30` free, `+100` purchase, then `-1` three times (test, initial, follow-up). The balance is **127**, `ledger_total` equals `posted_balance`, and `held_credits` is 0.
+**Done:** in stored credits, the ledger reads `+30` free, `+100` purchase, then `-1` three times (test, initial, follow-up). The balance is **127**, `ledger_total` equals `posted_balance`, and `held_credits` is 0.
 
 ## After the milestone
 

@@ -95,7 +95,7 @@ Copy lives in the `hero` namespace of `en.json` and `ar.json`.
 
 - **Headline:** "Confirm COD orders before you ship." / "أكّد طلبات الدفع عند الاستلام قبل ما تشحن."
 - **Primary CTA:** "Get started free" / "ابدأ مجانًا". The secondary CTA is "See how it works".
-- **Microcopy:** "30 free messages" and "No credit card required". The 30 comes from `CREDIT_FREE_GRANT` (see Pricing) and the `hero.microcopy_credits` string is written to match it.
+- **Microcopy:** "30 free messages" and "No credit card required". The 30 is `CREDIT_FREE_GRANT` divided by `CREDITS_PER_MESSAGE` (see Pricing) and the `hero.microcopy_credits` string is written to match it.
 - **Integrations line:** "Works with your store" with Shopify, Independent stores and "+ more integrations".
 - **Value points:** reduce returns, save on shipping costs, official WhatsApp API, built for every merchant.
 
@@ -122,10 +122,10 @@ No monthly subscription. Credits are bought through Paymob. One credit is one Wh
 
 | Item | Value (defaults) | Source |
 | ---- | ---------------- | ------ |
-| Price per credit | EGP 2.00 (`CREDIT_UNIT_PRICE_MINOR` = 200 piastres) | `STANDALONE_CREDIT_PRICE_MINOR` |
-| Free launch credits on sign-up | 30 (one-time) | `STANDALONE_FREE_GRANT` |
-| Purchase range | 100 to 5,000 credits, in steps of 50 | `STANDALONE_PURCHASE_MIN` / `MAX` / `STEP` |
-| Quick presets | 100, 250, 500, 1,000 | `CREDIT_PRESETS` |
+| Price per credit | EGP 1.00 (`CREDIT_UNIT_PRICE_MINOR` = 100 piastres); a message uses 2 credits | `STANDALONE_CREDIT_PRICE_MINOR` = 200, stored credits |
+| Free launch credits on sign-up | 60 (one-time) | `STANDALONE_FREE_GRANT` = 30, stored credits |
+| Purchase range | 200 to 10,000 credits, in steps of 100 | `STANDALONE_PURCHASE_MIN` / `MAX` / `STEP` = 100, 5000, 50, stored credits |
+| Quick presets | 200, 500, 1,000, 2,000 | `CREDIT_PRESETS` |
 
 The public page cannot call the authenticated billing API, so it mirrors these values in `shared/config/pricing.ts`, overridable through `NEXT_PUBLIC_CREDIT_UNIT_PRICE_MINOR`, `NEXT_PUBLIC_CREDIT_FREE_GRANT` and the other `NEXT_PUBLIC_CREDIT_*` variables. Whenever the backend values change, change them in both repos. The page states that the price on the billing page is the authoritative one. The pricing section is made of `CreditPriceCard`, `CreditSlider` (credits to total and order estimate) and `PricingFactsPanel`.
 

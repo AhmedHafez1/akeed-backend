@@ -25,6 +25,12 @@ export class StartOrderImportDto {
   quoteToken?: string;
 }
 
+/** A quote in stored credits, before it is converted for a merchant. */
+export type StoredStartQuote = Omit<
+  OrderImportStartQuoteDto,
+  'estimatedMessagesMin' | 'estimatedMessagesMax'
+>;
+
 /** `GET /api/order-imports/:id/start-quote` (AC1). */
 export interface OrderImportStartQuoteDto {
   batchId: string;
@@ -37,6 +43,9 @@ export interface OrderImportStartQuoteDto {
   slotsRemaining: number | null;
   estimatedCreditsMin: number;
   estimatedCreditsMax: number;
+  /** One per order, doubled when reminders are on. */
+  estimatedMessagesMin: number;
+  estimatedMessagesMax: number;
   ratePerMinute: number;
   estimatedDurationMinutes: number;
   quietHours: {

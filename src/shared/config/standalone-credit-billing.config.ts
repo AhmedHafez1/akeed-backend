@@ -134,6 +134,10 @@ export function parseStandaloneCreditBillingConfig(
       'STANDALONE_PURCHASE_MIN/MAX must be ordered multiples of STANDALONE_PURCHASE_STEP.',
     );
   }
+  // Merchants see half this price per credit, which must stay in whole piastres.
+  if (pricing.priceMinor % 2 !== 0) {
+    errors.push('STANDALONE_CREDIT_PRICE_MINOR must be an even number.');
+  }
   if (pricing.purchaseMax * pricing.priceMinor > MAX_DATABASE_INTEGER) {
     errors.push(
       'STANDALONE_PURCHASE_MAX times STANDALONE_CREDIT_PRICE_MINOR exceeds database money bounds.',

@@ -23,7 +23,7 @@ const billing = {
     .fn()
     .mockResolvedValue({ items: [], nextCursor: null, limit: 25 }),
   readPurchase: jest.fn().mockResolvedValue({ reference: 'akd_x' }),
-  createPurchase: jest.fn().mockResolvedValue({ reference: 'akd_x' }),
+  createMerchantPurchase: jest.fn().mockResolvedValue({ reference: 'akd_x' }),
 };
 
 const REFERENCE = `akd_${'a'.repeat(32)}`;
@@ -72,7 +72,7 @@ describe('BillingController', () => {
     const response = await http()
       .post('/api/billing/purchases')
       .set('Idempotency-Key', 'idem-key-1')
-      .send({ quantity: 100 })
+      .send({ displayQuantity: 200 })
       .expect(201);
     expect(response.headers['cache-control']).toBe('private, no-store');
   });
@@ -81,20 +81,20 @@ describe('BillingController', () => {
     await http()
       .post('/api/billing/purchases')
       .set('Idempotency-Key', 'idem-key-1')
-      .send({ quantity: 150 })
+      .send({ displayQuantity: 300 })
       .expect(201);
-    expect(billing.createPurchase).toHaveBeenCalledWith(
+    expect(billing.createMerchantPurchase).toHaveBeenCalledWith(
       user,
       'idem-key-1',
-      150,
+      { displayQuantity: 300 },
     );
   });
 
   it.each([
-    ['a forged price', { quantity: 100, unitPriceMinor: 1 }],
-    ['a forged total', { quantity: 100, totalMinor: 1 }],
-    ['a forged status', { quantity: 100, status: 'successful' }],
-    ['a forged organization', { quantity: 100, orgId: 'org-2' }],
+    ['a forged price', { displayQuantity: 200, unitPriceMinor: 1 }],
+    ['a forged total', { displayQuantity: 200, totalMinor: 1 }],
+    ['a forged status', { displayQuantity: 200, status: 'successful' }],
+    ['a forged organization', { displayQuantity: 200, orgId: 'org-2' }],
   ])('rejects %s outright rather than stripping it', async (_label, body) => {
     // The global pipe would strip these silently. On a money endpoint the
     // request must fail so the caller learns its value was never used.
@@ -103,40 +103,45 @@ describe('BillingController', () => {
       .set('Idempotency-Key', 'idem-key-1')
       .send(body)
       .expect(400);
-    expect(billing.createPurchase).not.toHaveBeenCalled();
+    expect(billing.createMerchantPurchase).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['a missing quantity', {}],
-    ['a fractional quantity', { quantity: 100.5 }],
-    ['a string quantity', { quantity: 'many' }],
+    ['a fractional quantity', { displayQuantity: 100.5 }],
+    ['a string quantity', { displayQuantity: 'many' }],
   ])('rejects %s', async (_label, body) => {
     await http()
       .post('/api/billing/purchases')
       .set('Idempotency-Key', 'idem-key-1')
       .send(body)
       .expect(400);
-    expect(billing.createPurchase).not.toHaveBeenCalled();
+    expect(billing.createMerchantPurchase).not.toHaveBeenCalled();
   });
 
   it('reports validation failures with the billing error code', async () => {
     const response = await http()
       .post('/api/billing/purchases')
       .set('Idempotency-Key', 'idem-key-1')
-      .send({})
+      .send({ displayQuantity: 'many' })
       .expect(400);
     expect(response.body).toMatchObject({
       code: 'BILLING_VALIDATION_FAILED',
-      fieldErrors: { quantity: expect.any(String) as string },
+      fieldErrors: { displayQuantity: expect.any(String) as string },
     });
   });
 
   it('forwards a missing Idempotency-Key so the service can name it', async () => {
     await http()
       .post('/api/billing/purchases')
-      .send({ quantity: 100 })
+      .send({ displayQuantity: 200 })
       .expect(201);
-    expect(billing.createPurchase).toHaveBeenCalledWith(user, undefined, 100);
+    expect(billing.createMerchantPurchase).toHaveBeenCalledWith(
+      user,
+      undefined,
+      {
+        displayQuantity: 200,
+      },
+    );
   });
 
   it.each(['not-a-reference', 'akd_short', `${REFERENCE}extra`])(

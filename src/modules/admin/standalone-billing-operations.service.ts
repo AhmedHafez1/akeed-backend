@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
 import {
   isStandaloneBillingOperator,
   readStandaloneBillingOperationsConfig,
@@ -70,6 +71,20 @@ export function projection(account: {
     heldCredits: account.heldCredits,
     availableCredits: Math.max(account.postedBalance - account.heldCredits, 0),
     debtCredits: Math.max(-account.postedBalance, 0),
+  };
+}
+
+/** What the merchant sees, so staff can match a support conversation. */
+export function displayedProjection(account: {
+  postedBalance: number;
+  heldCredits: number;
+}): BalanceProjection {
+  const stored = projection(account);
+  return {
+    postedBalance: toDisplayedCredits(stored.postedBalance),
+    heldCredits: toDisplayedCredits(stored.heldCredits),
+    availableCredits: toDisplayedCredits(stored.availableCredits),
+    debtCredits: toDisplayedCredits(stored.debtCredits),
   };
 }
 
@@ -167,6 +182,7 @@ export class StandaloneBillingOperationsService {
         ? {
             status: account.status,
             ...projection(account),
+            displayed: displayedProjection(account),
             balanceState: balanceState(account, lowBalanceThreshold),
             version: account.version,
             activatedAt: detail.activatedAt,
@@ -177,9 +193,21 @@ export class StandaloneBillingOperationsService {
       reconciliation,
       mutationsBlocked: mutationBlock(reconciliation) !== null,
       operations: this.access(userId),
-      ledger: detail.ledger,
+      ledger: {
+        ...detail.ledger,
+        items: detail.ledger.items.map((entry) => ({
+          ...entry,
+          displayedQuantity: toDisplayedCredits(entry.quantity),
+        })),
+      },
       holds: detail.holds,
-      purchases: detail.purchases,
+      purchases: {
+        ...detail.purchases,
+        items: detail.purchases.items.map((purchase) => ({
+          ...purchase,
+          displayedQuantity: toDisplayedCredits(purchase.quantity),
+        })),
+      },
       events: detail.events,
       audit: detail.audit,
     };

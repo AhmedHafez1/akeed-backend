@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
@@ -76,6 +77,8 @@ export type AdminStoreBilling =
       available: number;
       held: number;
       debt: number;
+      /** What the merchant sees; the fields above are stored credits. */
+      displayed_available: number;
       balance_state: BalanceState;
     };
 
@@ -689,6 +692,9 @@ export class AdminStoresService {
             available: Number(row.credit_available ?? 0),
             held: Number(row.credit_held_credits ?? 0),
             debt: Number(row.credit_debt ?? 0),
+            displayed_available: toDisplayedCredits(
+              Number(row.credit_available ?? 0),
+            ),
             balance_state: row.credit_balance_state,
           }
         : {

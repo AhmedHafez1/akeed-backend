@@ -4200,3 +4200,21 @@ export const tipsCampaignRecipients = pgTable(
     }),
   ],
 ).enableRLS();
+
+/** Organizations owed the one-time notice about displayed credits. */
+export const creditModelNotices = pgTable('credit_model_notices', {
+  orgId: uuid('org_id').primaryKey().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+    .defaultNow()
+    .notNull(),
+  dismissedAt: timestamp('dismissed_at', {
+    withTimezone: true,
+    mode: 'string',
+  }),
+  emailClaimedAt: timestamp('email_claimed_at', {
+    withTimezone: true,
+    mode: 'string',
+  }),
+  emailStatus: text('email_status'),
+  emailReason: text('email_reason'),
+}).enableRLS();

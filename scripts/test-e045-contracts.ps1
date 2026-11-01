@@ -72,6 +72,7 @@ try {
     Invoke-ContractStep 'US-04.5-04 Paymob checkout, callback and inquiry' 'test:contract:paymob-checkout'
     Invoke-ContractStep 'US-04.5-06 staff operations, debt and repair' 'test:contract:billing-operations'
     Invoke-ContractStep 'US-04.5-07 reconciliation, monitoring and finance metrics' 'test:contract:billing-observability'
+    Invoke-ContractStep 'Displayed credits from purchase to refund' 'test:contract:credit-display-cycle'
 
     $testExitCode = 0
 }

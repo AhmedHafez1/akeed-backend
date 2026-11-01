@@ -14,6 +14,7 @@ import { BillingEntitlementService } from '../verification-core/billing-entitlem
 import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import { getBillingManagement } from '../../shared/billing/entitlement';
+import { displayedUsage } from '../../shared/billing/merchant-credits';
 import { integrations } from '../../infrastructure/database/schema';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import type {
@@ -339,9 +340,10 @@ export class OnboardingService {
   ): Promise<SettingsResponseDto['billing']['usage']> {
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
+    const { used, limit } = displayedUsage(entitlement);
     return {
-      used: entitlement.consumedCount,
-      limit: entitlement.includedLimit,
+      used,
+      limit,
       periodStart: entitlement.periodStart,
       periodEnd: entitlement.periodEnd,
     };
@@ -586,14 +588,7 @@ export class OnboardingService {
     if (!integration.billingPlanId) return null;
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
-    return {
-      used: entitlement.consumedCount,
-      limit: entitlement.includedLimit,
-      remaining: Math.max(
-        0,
-        entitlement.includedLimit - entitlement.consumedCount,
-      ),
-    };
+    return displayedUsage(entitlement);
   }
 
   private getStandaloneBlockedReasons(

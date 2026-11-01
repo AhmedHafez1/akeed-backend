@@ -85,6 +85,8 @@ export const BILLING_ERROR_CODES = {
   providerRejected: 'BILLING_PROVIDER_REJECTED',
   providerUnavailable: 'BILLING_PROVIDER_UNAVAILABLE',
   checkoutAlreadyIssued: 'CHECKOUT_URL_ALREADY_ISSUED',
+  clientRefreshRequired: 'BILLING_CLIENT_REFRESH_REQUIRED',
+  displayQuantityNotEven: 'BILLING_DISPLAY_QUANTITY_NOT_EVEN',
 } as const;
 
 /** Server-owned purchase terms. Nothing here is ever read from the request. */

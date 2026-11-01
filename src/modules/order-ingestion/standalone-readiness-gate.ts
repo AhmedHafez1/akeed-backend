@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { isCreditDenialCode } from '../../shared/billing/credit-eligibility';
+import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
 import type { SendReadinessBlocker } from './standalone-send-readiness.types';
 import { MANUAL_ORDER_SOURCE_CODES } from './standalone-source-resolver';
 
@@ -114,8 +115,15 @@ export function assertSendReady(
           ? codes.planLimitReached.code
           : codes.entitlementRequired.code,
       reason: slot.reason,
-      consumedCount: slot.consumedCount,
-      includedLimit: slot.includedLimit,
+      ...(isCreditDenialCode(slot.reason)
+        ? {
+            consumedCount: toDisplayedCredits(slot.consumedCount ?? 0),
+            includedLimit: toDisplayedCredits(slot.includedLimit ?? 0),
+          }
+        : {
+            consumedCount: slot.consumedCount,
+            includedLimit: slot.includedLimit,
+          }),
     });
   }
   // The source resolver already refused inactive and unfinished sources;

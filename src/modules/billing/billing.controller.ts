@@ -103,7 +103,7 @@ export class BillingController {
   }
 
   /**
-   * Only the quantity is read from the body. The organization, actor, price,
+   * Only the displayed quantity is read from the body. The organization, actor, price,
    * currency and provider are all derived server-side.
    */
   @Post('purchases')
@@ -114,6 +114,6 @@ export class BillingController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() payload: CreatePurchaseDto,
   ) {
-    return this.billing.createPurchase(user, idempotencyKey, payload.quantity);
+    return this.billing.createMerchantPurchase(user, idempotencyKey, payload);
   }
 }

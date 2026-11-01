@@ -482,6 +482,7 @@ When a store's plan allowance or prepaid credits run out, new orders are kept at
 
 | Variable | Notes |
 | --- | --- |
+| `CREDIT_MODEL_NOTICE_EMAIL_ENABLED` | `true` sends the one-time email about displayed credits to prepaid merchants who held credits before that change, in batches of 50 every five minutes and at most once per organization. Needs `EMAIL_ALERTS_ENABLED=true`. Default `false`. It emails real merchants. |
 | `EMAIL_ALERTS_ENABLED` | `true` sends alert emails through Resend. Default `false`: alerts are still recorded and the dashboard banner still shows, and each email is logged as skipped. |
 | `RESEND_API_KEY` | Server-only Resend API key. Required when email alerts are on; the logger redacts it. |
 | `EMAIL_FROM` | Sender address on a domain verified in Resend, for example `Akeed <alerts@example.com>`. Required when email alerts are on. |

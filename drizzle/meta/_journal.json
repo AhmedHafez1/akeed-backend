@@ -568,6 +568,13 @@
       "when": 1793836800000,
       "tag": "0080_tips_campaign_change_note_types",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793923200000,
+      "tag": "0081_credit_model_notices",
+      "breakpoints": true
     }
   ]
 }

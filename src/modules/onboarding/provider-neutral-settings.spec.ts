@@ -163,7 +163,7 @@ describe('manual entitlement HTTP boundary', () => {
         billingStatus: 'not_required',
         billingManagement: { mode: 'manual', canManageBilling: false },
       },
-      billing: { plans: [], usage: { used: 0, limit: 30 } },
+      billing: { plans: [], usage: { used: 0, limit: 60 } },
     });
     await request(app.getHttpServer())
       .get('/api/onboarding/billing/plans')

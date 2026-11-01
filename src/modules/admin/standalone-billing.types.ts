@@ -16,6 +16,8 @@ export interface AccountSnapshot {
   postedBalance: number;
   heldCredits: number;
   availableCredits: number;
+  /** What the merchant sees; the fields above are stored credits. */
+  displayedAvailableCredits: number;
   version: number;
 }
 

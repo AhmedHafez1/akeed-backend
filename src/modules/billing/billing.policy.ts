@@ -44,16 +44,18 @@ export interface PricedPurchase {
 export function priceQuantity(
   quantity: number,
   pricing: PurchasePricing,
+  /** How a limit reads in an error; merchants get displayed credits. */
+  describeCredits: (stored: number) => number = (stored) => stored,
 ): PricedPurchase {
   if (!Number.isSafeInteger(quantity))
     throw new PurchaseQuantityError('quantity must be a whole number.');
   if (quantity < pricing.purchaseMin || quantity > pricing.purchaseMax)
     throw new PurchaseQuantityError(
-      `quantity must be between ${pricing.purchaseMin} and ${pricing.purchaseMax}.`,
+      `quantity must be between ${describeCredits(pricing.purchaseMin)} and ${describeCredits(pricing.purchaseMax)}.`,
     );
   if (quantity % pricing.purchaseStep !== 0)
     throw new PurchaseQuantityError(
-      `quantity must be a multiple of ${pricing.purchaseStep}.`,
+      `quantity must be a multiple of ${describeCredits(pricing.purchaseStep)}.`,
     );
   const totalMinor = quantity * pricing.priceMinor;
   // The configuration parser already proves max * price fits, but the product

@@ -47,9 +47,14 @@ export class PurchaseRefParamDto {
  * Quantity is the only merchant input. Price, currency, organization and actor
  * are all derived server-side, and the controller's pipe rejects any other
  * property outright rather than silently stripping it.
+ *
+ * `displayQuantity` is in displayed credits. `quantity` is what a page loaded
+ * before displayed credits still sends, in stored credits; it is accepted here
+ * only so that page gets a coded answer telling it to refresh.
  */
 export class CreatePurchaseDto {
-  @Type(() => Number) @IsInt() quantity!: number;
+  @IsOptional() @Type(() => Number) @IsInt() displayQuantity?: number;
+  @IsOptional() @Type(() => Number) @IsInt() quantity?: number;
 }
 
 export interface CreditSummaryResponseDto {
@@ -63,7 +68,15 @@ export interface CreditSummaryResponseDto {
   debtCredits: number;
   lowBalanceThreshold: number;
   freeGrant: { granted: boolean; quantity: number; grantedAt: string | null };
-  price: { unitPriceMinor: number; currency: string };
+  price: {
+    /** One displayed credit. */
+    unitPriceMinor: number;
+    /** One Akeed message. */
+    messagePriceMinor: number;
+    /** Displayed credits one Akeed message uses. */
+    creditsPerMessage: number;
+    currency: string;
+  };
   range: { min: number; max: number; step: number };
   canPurchase: boolean;
   purchaseDenialReason: PurchaseDenialCode | null;

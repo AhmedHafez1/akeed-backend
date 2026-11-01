@@ -449,10 +449,12 @@ describe('start quote (AC1, AC2)', () => {
     await expect(w.quote(batchId)).resolves.toMatchObject({
       orders: 970,
       accountingMode: 'prepaid_credit',
-      creditsAvailable: 2_300,
+      creditsAvailable: 4_600,
       slotsRemaining: null,
-      estimatedCreditsMin: 970,
-      estimatedCreditsMax: 970,
+      estimatedCreditsMin: 1_940,
+      estimatedCreditsMax: 1_940,
+      estimatedMessagesMin: 970,
+      estimatedMessagesMax: 970,
       ratePerMinute: 20,
       estimatedDurationMinutes: 49,
       blockers: [],
@@ -465,8 +467,10 @@ describe('start quote (AC1, AC2)', () => {
     w.state.source = { ...w.state.source, followUpEnabled: true };
     const batchId = w.addBatch(970);
     await expect(w.quote(batchId)).resolves.toMatchObject({
-      estimatedCreditsMin: 970,
-      estimatedCreditsMax: 1_940,
+      estimatedCreditsMin: 1_940,
+      estimatedCreditsMax: 3_880,
+      estimatedMessagesMin: 970,
+      estimatedMessagesMax: 1_940,
     });
   });
 
@@ -511,8 +515,8 @@ describe('start quote (AC1, AC2)', () => {
     expect(result.blockers).toEqual([
       {
         code: 'INSUFFICIENT_CREDITS',
-        shortfall: 570,
-        suggestedPurchaseCredits: 600,
+        shortfall: 1_140,
+        suggestedPurchaseCredits: 1_200,
       },
     ]);
   });
@@ -592,8 +596,8 @@ describe('start quote (AC1, AC2)', () => {
     const draft = w.addBatch(0, { status: 'draft', readyCount: 5 });
     await expect(w.quote(draft)).resolves.toMatchObject({
       orders: 5,
-      creditsAvailable: 457,
-      estimatedCreditsMin: 5,
+      creditsAvailable: 914,
+      estimatedCreditsMin: 10,
       blockers: [],
     });
     expect(w.releases.holdCounts).not.toHaveBeenCalled();
@@ -754,8 +758,8 @@ describe('start (AC3, AC4)', () => {
     ).resolves.toMatchObject({
       code: 'IMPORT_QUOTE_STALE',
       quote: {
-        creditsAvailable: 40,
-        blockers: [{ code: 'INSUFFICIENT_CREDITS', shortfall: 10 }],
+        creditsAvailable: 80,
+        blockers: [{ code: 'INSUFFICIENT_CREDITS', shortfall: 20 }],
       },
     });
     w.state.credits = 60;

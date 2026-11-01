@@ -16,6 +16,14 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import {
+  CREDITS_PER_AKEED_MESSAGE,
+  displayedPurchaseTerms,
+  displayedUnitPriceMinor,
+  OddDisplayedCreditsError,
+  toDisplayedCredits,
+  toStoredCredits,
+} from '../../shared/billing/merchant-credits';
 import { resolveFallbackActiveIntegration } from '../../shared/commerce/current-integration-resolver';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { CreditAccountingRepository } from '../../infrastructure/database/repositories/credit-accounting.repository';
@@ -63,7 +71,11 @@ import type {
   PurchaseDetailDto,
   PurchaseSummaryDto,
 } from './dto/billing.dto';
-import type { LedgerQueryDto, PageQueryDto } from './dto/billing.dto';
+import type {
+  CreatePurchaseDto,
+  LedgerQueryDto,
+  PageQueryDto,
+} from './dto/billing.dto';
 
 const DEFAULT_PAGE = 25;
 
@@ -164,23 +176,28 @@ export class BillingService {
         user.orgId,
       ),
       status: summary?.status ?? 'not_provisioned',
-      postedBalance: summary?.postedBalance ?? 0,
-      heldCredits: summary?.heldCredits ?? 0,
-      availableCredits: summary?.availableCredits ?? 0,
-      debtCredits: summary?.debtCredits ?? 0,
-      lowBalanceThreshold: pricing.lowBalanceThreshold,
+      postedBalance: toDisplayedCredits(summary?.postedBalance ?? 0),
+      heldCredits: toDisplayedCredits(summary?.heldCredits ?? 0),
+      availableCredits: toDisplayedCredits(summary?.availableCredits ?? 0),
+      debtCredits: toDisplayedCredits(summary?.debtCredits ?? 0),
+      lowBalanceThreshold: toDisplayedCredits(pricing.lowBalanceThreshold),
       freeGrant: {
         granted: Boolean(grant),
-        quantity: grant?.quantity ?? pricing.freeGrant,
+        quantity: toDisplayedCredits(grant?.quantity ?? pricing.freeGrant),
         grantedAt: grant?.createdAt ?? null,
       },
       // Always from configuration. A merchant seeing a price they did not get
       // charged is the failure this guarantees against.
-      price: { unitPriceMinor: pricing.priceMinor, currency: 'EGP' },
+      price: {
+        unitPriceMinor: displayedUnitPriceMinor(pricing.priceMinor),
+        messagePriceMinor: pricing.priceMinor,
+        creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
+        currency: 'EGP',
+      },
       range: {
-        min: pricing.purchaseMin,
-        max: pricing.purchaseMax,
-        step: pricing.purchaseStep,
+        min: toDisplayedCredits(pricing.purchaseMin),
+        max: toDisplayedCredits(pricing.purchaseMax),
+        step: toDisplayedCredits(pricing.purchaseStep),
       },
       canPurchase: denial === null,
       purchaseDenialReason: denial,
@@ -203,7 +220,7 @@ export class BillingService {
       items: page.items.map((entry) => ({
         id: entry.id,
         type: entry.type,
-        quantity: entry.quantity,
+        quantity: toDisplayedCredits(entry.quantity),
         actorType:
           entry.type === 'free_grant' || entry.type === 'staff_adjustment'
             ? entry.actorId
@@ -213,7 +230,7 @@ export class BillingService {
               ? 'meta'
               : 'paymob',
         reasonCode: LEDGER_REASON_CODES[entry.type],
-        postedBalanceAfter: entry.postedBalanceAfter,
+        postedBalanceAfter: toDisplayedCredits(entry.postedBalanceAfter),
         createdAt: entry.createdAt,
         purchaseRef: entry.purchaseRef,
       })),
@@ -288,7 +305,54 @@ export class BillingService {
   }
 
   /**
-   * Starts a checkout.
+   * Starts a checkout from a merchant's displayed quantity.
+   *
+   * A body still carrying `quantity` comes from a page loaded before displayed
+   * credits. Its numbers cannot be trusted either way, so it is told to refresh
+   * rather than charged. The stored quantity decides everything past this
+   * point, so idempotency hashes do not depend on how it was entered.
+   */
+  async createMerchantPurchase(
+    user: AuthenticatedUser,
+    idempotencyKey: string | undefined,
+    body: CreatePurchaseDto,
+  ): Promise<CreatePurchaseResponseDto> {
+    if (body.quantity !== undefined)
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Refresh the page to see current credit prices.',
+        code: BILLING_ERROR_CODES.clientRefreshRequired,
+      });
+    if (body.displayQuantity === undefined)
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'displayQuantity is required.',
+        code: BILLING_ERROR_CODES.validationFailed,
+      });
+    let stored: number;
+    try {
+      stored = toStoredCredits(body.displayQuantity);
+    } catch (error) {
+      if (!(error instanceof OddDisplayedCreditsError)) throw error;
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: error.message,
+        code: BILLING_ERROR_CODES.displayQuantityNotEven,
+      });
+    }
+    return this.createPurchase(
+      user,
+      idempotencyKey,
+      stored,
+      toDisplayedCredits,
+    );
+  }
+
+  /**
+   * Starts a checkout for a stored quantity.
    *
    * The local purchase is committed on its own before the provider call. That
    * ordering is what makes a lost response recoverable: the reference exists,
@@ -299,6 +363,7 @@ export class BillingService {
     user: AuthenticatedUser,
     idempotencyKey: string | undefined,
     quantity: number,
+    describeCredits?: (stored: number) => number,
   ): Promise<CreatePurchaseResponseDto> {
     const pricing = this.pricing();
     const [summary, platformType] = await Promise.all([
@@ -323,7 +388,7 @@ export class BillingService {
     let requestKey: string;
     try {
       requestKey = normalizeIdempotencyKey(idempotencyKey);
-      priced = priceQuantity(quantity, pricing);
+      priced = priceQuantity(quantity, pricing, describeCredits);
     } catch (error) {
       if (!(error instanceof PurchaseQuantityError)) throw error;
       throw new BadRequestException({
@@ -517,8 +582,7 @@ export class BillingService {
       reference: purchase.reference,
       status: purchase.status,
       disputeStatus: purchase.disputeStatus,
-      quantity: purchase.quantity,
-      unitPriceMinor: purchase.unitPriceMinor,
+      ...displayedPurchaseTerms(purchase),
       totalMinor: purchase.totalMinor,
       currency: purchase.currency,
       refundedMinor: purchase.refundedMinor,

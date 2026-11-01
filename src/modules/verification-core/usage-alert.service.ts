@@ -20,6 +20,7 @@ import {
   usageAlertLanguage,
   type UsageAlertFacts,
 } from '../../shared/notifications/usage-alert-copy';
+import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
 import { EMAIL_PORT, type EmailPort } from '../../shared/ports/email.port';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { readUsageAlertsConfig } from '../../shared/config/usage-alerts.config';
@@ -150,7 +151,7 @@ export class UsageAlertService {
     await this.deliver(alert, source, {
       level: alert.level,
       storeName: source.storeName ?? null,
-      availableCredits: credits.availableCredits,
+      availableCredits: toDisplayedCredits(credits.availableCredits),
       blockedCount: await blocked(),
       action: 'recharge',
       resetDate: null,

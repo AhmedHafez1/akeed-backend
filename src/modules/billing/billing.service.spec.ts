@@ -152,10 +152,15 @@ describe('BillingService.readCredits', () => {
     await expect(service.readCredits(owner)).resolves.toMatchObject({
       billingEnabled: true,
       status: 'active',
-      availableCredits: 30,
-      lowBalanceThreshold: 10,
-      price: { unitPriceMinor: 200, currency: 'EGP' },
-      range: { min: 100, max: 5000, step: 50 },
+      availableCredits: 60,
+      lowBalanceThreshold: 20,
+      price: {
+        unitPriceMinor: 100,
+        messagePriceMinor: 200,
+        creditsPerMessage: 2,
+        currency: 'EGP',
+      },
+      range: { min: 200, max: 10000, step: 100 },
       canPurchase: true,
       purchaseDenialReason: null,
     });
@@ -170,7 +175,7 @@ describe('BillingService.readCredits', () => {
     await expect(service.readCredits(owner)).resolves.toMatchObject({
       freeGrant: {
         granted: true,
-        quantity: 30,
+        quantity: 60,
         grantedAt: '2026-09-01T00:00:00.000Z',
       },
     });
@@ -190,7 +195,7 @@ describe('BillingService.readCredits', () => {
       version: 4,
     });
     await expect(service.readCredits(owner)).resolves.toMatchObject({
-      debtCredits: 5,
+      debtCredits: 10,
       canPurchase: true,
     });
   });
@@ -240,9 +245,94 @@ describe('BillingService.readCredits', () => {
     });
     await expect(service.readCredits(owner)).resolves.toMatchObject({
       billingEnabled: false,
-      availableCredits: 30,
+      availableCredits: 60,
       canPurchase: false,
       purchaseDenialReason: 'BILLING_DISABLED',
+    });
+  });
+});
+
+describe('BillingService.createMerchantPurchase', () => {
+  it('turns a displayed quantity into the same stored purchase', async () => {
+    const { service, purchases } = setup();
+    await service.createMerchantPurchase(owner, 'idem-key-1', {
+      displayQuantity: 300,
+    });
+    const direct = setup();
+    await direct.service.createPurchase(owner, 'idem-key-1', 150);
+    const stored = (
+      purchases.createPending.mock.calls as unknown[][]
+    )[0][1] as {
+      quantity: number;
+      totalMinor: number;
+      requestHash: string;
+    };
+    const original = (
+      direct.purchases.createPending.mock.calls as unknown[][]
+    )[0][1] as {
+      requestHash: string;
+    };
+    expect(stored).toMatchObject({
+      quantity: 150,
+      unitPriceMinor: 200,
+      totalMinor: 30000,
+    });
+    // A retry across the release must still match its first request.
+    expect(stored.requestHash).toBe(original.requestHash);
+  });
+
+  it('answers in displayed credits with the total unchanged', async () => {
+    const { service } = setup();
+    await expect(
+      service.createMerchantPurchase(owner, 'idem-key-1', {
+        displayQuantity: 200,
+      }),
+    ).resolves.toMatchObject({
+      quantity: 200,
+      unitPriceMinor: 100,
+      totalMinor: 20000,
+    });
+  });
+
+  it('refuses an odd displayed quantity', async () => {
+    const { service, purchases } = setup();
+    await expect(
+      service.createMerchantPurchase(owner, 'idem-key-1', {
+        displayQuantity: 301,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'BILLING_DISPLAY_QUANTITY_NOT_EVEN' },
+    });
+    expect(purchases.createPending).not.toHaveBeenCalled();
+  });
+
+  it('sends a page from before displayed credits to refresh', async () => {
+    const { service, purchases } = setup();
+    await expect(
+      service.createMerchantPurchase(owner, 'idem-key-1', { quantity: 200 }),
+    ).rejects.toMatchObject({
+      response: { code: 'BILLING_CLIENT_REFRESH_REQUIRED' },
+    });
+    expect(purchases.createPending).not.toHaveBeenCalled();
+  });
+
+  it('requires a displayed quantity', async () => {
+    const { service } = setup();
+    await expect(
+      service.createMerchantPurchase(owner, 'idem-key-1', {}),
+    ).rejects.toMatchObject({
+      response: { code: 'BILLING_VALIDATION_FAILED' },
+    });
+  });
+
+  it('names limits in displayed credits', async () => {
+    const { service } = setup();
+    await expect(
+      service.createMerchantPurchase(owner, 'idem-key-1', {
+        displayQuantity: 100,
+      }),
+    ).rejects.toMatchObject({
+      response: { message: 'quantity must be between 200 and 10000.' },
     });
   });
 });

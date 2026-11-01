@@ -57,7 +57,7 @@ describe('integration-scoped dashboard entitlement usage', () => {
   it('uses prepaid availability without reading the legacy monthly quota', async () => {
     const { service, repository } = setup();
     const result = await service.getStatsByOrg('org-1', {});
-    expect(result.usage).toMatchObject({ used: 0, limit: 30 });
+    expect(result.usage).toMatchObject({ used: 0, limit: 60 });
     expect(repository.getIntegrationUsageForPeriod).not.toHaveBeenCalled();
   });
   it('falls back to the monthly quota while credit billing is switched off', async () => {

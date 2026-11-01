@@ -85,7 +85,7 @@ describe('PaymobPaymentsAdapter.createCheckout', () => {
       expiration: 900,
       notification_url: 'http://localhost:9000/api/webhooks/payments/paymob',
       redirection_url: `http://localhost:9000/billing/return?purchaseRef=${checkout.reference}`,
-      items: [{ amount: 200, quantity: 100 }],
+      items: [{ amount: 100, quantity: 200 }],
     });
     expect(options.headers.Authorization).toBe(`Token ${SECRET_KEY}`);
     expect(options.timeout).toBeGreaterThan(0);

@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
+import {
+  displayedUnitPriceMinor,
+  toDisplayedCredits,
+} from '../../../shared/billing/merchant-credits';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -147,8 +151,8 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
       items: [
         {
           name: 'Akeed message credits',
-          amount: input.unitPriceMinor,
-          quantity: input.quantity,
+          amount: displayedUnitPriceMinor(input.unitPriceMinor),
+          quantity: toDisplayedCredits(input.quantity),
         },
       ],
     };

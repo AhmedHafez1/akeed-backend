@@ -5,6 +5,10 @@ import {
   type BatchForRelease,
 } from '../../../infrastructure/database/repositories/order-import-release.repository';
 import { WebhookEventsRepository } from '../../../infrastructure/database/repositories/webhook-events.repository';
+import {
+  displayedCreditBlocker,
+  displayedStartQuote,
+} from '../../../shared/billing/merchant-credits';
 import { readBulkImportConfig } from '../../../shared/config/bulk-import.config';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { quietHoursConfigOf } from '../../../shared/utils/quiet-hours.util';
@@ -15,6 +19,7 @@ import type { StandaloneSource } from '../../order-ingestion/standalone-source-r
 import type { OrderImportBatchDetailDto } from '../dto/order-import.dto';
 import type {
   OrderImportStartQuoteDto,
+  StoredStartQuote,
   OrderImportStopResponseDto,
   StartOrderImportDto,
 } from '../dto/order-import-release.dto';
@@ -74,11 +79,13 @@ export class OrderImportReleaseService {
       throw orderImportError('IMPORT_BATCH_STATE_CONFLICT', {
         status: batch.status,
       });
-    return this.buildQuote(
-      source,
-      batch,
-      new Date(),
-      preview ? batch.readyCount : undefined,
+    return displayedStartQuote(
+      await this.buildQuote(
+        source,
+        batch,
+        new Date(),
+        preview ? batch.readyCount : undefined,
+      ),
     );
   }
 
@@ -116,7 +123,9 @@ export class OrderImportReleaseService {
 
     const quote = await this.buildQuote(source, batch, now);
     if (this.isStale(body.quoteToken, quote, batchId, now))
-      throw orderImportError('IMPORT_QUOTE_STALE', { quote });
+      throw orderImportError('IMPORT_QUOTE_STALE', {
+        quote: displayedStartQuote(quote),
+      });
     this.assertNoBlockers(quote);
 
     const claim = await this.releases.claimForStart({
@@ -255,13 +264,14 @@ export class OrderImportReleaseService {
     return this.detail.detail(user, batchId);
   }
 
+  /** In stored credits, for the gates and the token; merchants get displayed. */
   private async buildQuote(
     source: StandaloneSource,
     batch: BatchForRelease,
     now: Date,
     /** A draft's ready rows; otherwise the batch's held orders are priced. */
     orders?: number,
-  ): Promise<OrderImportStartQuoteDto> {
+  ): Promise<StoredStartQuote> {
     const held =
       orders ?? (await this.releases.holdCounts(batch.orgId, batch.id)).held;
     const readiness = await this.readiness.evaluate(source, {
@@ -319,7 +329,7 @@ export class OrderImportReleaseService {
    */
   private isStale(
     token: string | undefined,
-    fresh: OrderImportStartQuoteDto,
+    fresh: StoredStartQuote,
     batchId: string,
     now: Date,
   ): boolean {
@@ -340,11 +350,11 @@ export class OrderImportReleaseService {
     return claims.balance !== balance && fresh.blockers.length > 0;
   }
 
-  private assertNoBlockers(quote: OrderImportStartQuoteDto): void {
+  private assertNoBlockers(quote: StoredStartQuote): void {
     const [first] = quote.blockers;
     if (first)
       throw orderImportError(first.code, {
-        blockers: quote.blockers,
+        blockers: quote.blockers.map(displayedCreditBlocker),
         ...(first.reason ? { reason: first.reason } : {}),
       });
   }

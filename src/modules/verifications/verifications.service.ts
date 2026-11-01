@@ -11,6 +11,10 @@ import {
   capacityAction,
   renewableSubscriptionPlanId,
 } from '../../shared/billing/usage-alert.policy';
+import {
+  displayedUsage,
+  toDisplayedCredits,
+} from '../../shared/billing/merchant-credits';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
@@ -585,7 +589,10 @@ export class VerificationsService {
       source: this.resolveDashboardSourceState(integrations),
       settings: this.resolveSettingsSummary(source),
       usage: entitlement
-        ? resolveUsage(entitlement.consumedCount, entitlement.includedLimit)
+        ? resolveUsage(
+            displayedUsage(entitlement).used,
+            displayedUsage(entitlement).limit,
+          )
         : null,
       capacity:
         source && entitlement
@@ -642,11 +649,13 @@ export class VerificationsService {
     const mode = 'credits' in entitlement ? 'credits' : 'plan';
     const remaining =
       mode === 'credits'
-        ? Math.max(
-            ('credits' in entitlement
-              ? entitlement.credits?.availableCredits
-              : 0) ?? 0,
-            0,
+        ? toDisplayedCredits(
+            Math.max(
+              ('credits' in entitlement
+                ? entitlement.credits?.availableCredits
+                : 0) ?? 0,
+              0,
+            ),
           )
         : Math.max(entitlement.includedLimit - entitlement.consumedCount, 0);
     return {
@@ -937,12 +946,7 @@ export class VerificationsService {
     >,
   ): DashboardUsageBudgetDto {
     return {
-      used: entitlement.consumedCount,
-      limit: entitlement.includedLimit,
-      remaining: Math.max(
-        entitlement.includedLimit - entitlement.consumedCount,
-        0,
-      ),
+      ...displayedUsage(entitlement),
       period_end:
         'credits' in entitlement ? null : (entitlement.periodEnd ?? null),
       ...('creditDenial' in entitlement
@@ -1098,7 +1102,6 @@ export class VerificationsService {
       : { count: 0, value: '0' };
     const replyRate = this.calculateReplyRate(filteredCounts);
     const confirmationRate = this.calculateConfirmationRate(filteredCounts);
-    const usageLimit = usage.includedLimit;
     const shippingSettings =
       this.resolveDashboardShippingSettings(activeIntegrations);
     const automationSettings =
@@ -1130,8 +1133,8 @@ export class VerificationsService {
         confirmation_rate: confirmationRate,
       },
       usage: {
-        used: usage.consumedCount,
-        limit: usageLimit,
+        used: displayedUsage(usage).used,
+        limit: displayedUsage(usage).limit,
         period_start: usage.periodStart ?? null,
         period_end: usage.periodEnd ?? null,
         confirmed_in_period: confirmedInPeriod.count,
