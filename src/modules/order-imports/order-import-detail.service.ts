@@ -6,6 +6,7 @@ import {
   type BatchDetailRecord,
 } from '../../infrastructure/database/repositories/order-imports.repository';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
+import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
 import { readBulkImportConfig } from '../../shared/config/bulk-import.config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { canWriteOrganization } from '../auth/organization-role';
@@ -204,6 +205,7 @@ export class OrderImportDetailService {
       release: {
         total: hold.held + hold.released + hold.withdrawn,
         ...hold,
+        heldCredits: toDisplayedCredits(hold.held),
       },
       lifecycle: lifecycleBuckets(lifecycle),
     };

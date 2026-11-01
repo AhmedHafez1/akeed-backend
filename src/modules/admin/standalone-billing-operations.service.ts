@@ -198,6 +198,9 @@ export class StandaloneBillingOperationsService {
         items: detail.ledger.items.map((entry) => ({
           ...entry,
           displayedQuantity: toDisplayedCredits(entry.quantity),
+          displayedPostedBalanceAfter: toDisplayedCredits(
+            entry.postedBalanceAfter,
+          ),
         })),
       },
       holds: detail.holds,

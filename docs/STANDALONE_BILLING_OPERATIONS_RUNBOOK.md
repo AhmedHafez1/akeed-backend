@@ -50,11 +50,11 @@ Open **Open** on a row, or filter first: *Balance* (low, no credits, debt), *Acc
 2. Enter the reason and **Apply**. The request carries one idempotency key for this preview; retrying after a network error cannot post twice.
 3. `BILLING_PREVIEW_STALE` means a send, payment or other change moved the account after your preview. Preview again and re-check the figures.
 
-Accounts pending approval cannot be adjusted; approve them first. Adjustments are `staff_adjustment` ledger entries; reverse one with an opposite adjustment, never by editing data.
+Accounts pending approval cannot be adjusted; approve them first. Adjustments are `staff_adjustment` ledger entries in stored credits, where 1 stored credit shows the merchant 2 credits; reverse one with an opposite adjustment, never by editing data.
 
 ### Resolve an unknown send
 
-Unresolved sends hold one credit each. Only sends in *Outcome unknown* can be resolved.
+Unresolved sends hold one stored credit each. Only sends in *Outcome unknown* can be resolved.
 
 - **Accepted** consumes the held credit. It requires the Meta message id.
 - **Not accepted** releases the credit, marks the verification failed and allows the next attempt.

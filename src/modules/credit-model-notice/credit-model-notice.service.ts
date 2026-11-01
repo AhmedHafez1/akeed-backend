@@ -113,7 +113,23 @@ export class CreditModelNoticeService {
           ...normalizeError(error),
         }),
       );
+      await this.recordFailure(orgId);
+    }
+  }
+
+  /** The rest of a claimed batch must still go out if this write fails. */
+  private async recordFailure(orgId: string): Promise<void> {
+    try {
       await this.notices.markEmail(orgId, 'failed', 'send_threw');
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(CreditModelNoticeService.name, {
+          action: 'credit-model-notice-email-record',
+          outcome: 'failure',
+          orgId,
+          ...normalizeError(error),
+        }),
+      );
     }
   }
 }

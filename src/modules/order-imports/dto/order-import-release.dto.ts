@@ -79,7 +79,14 @@ export interface OrderImportReleaseStateDto {
   completedAt: string | null;
   ratePerMinute: number;
   storeTimezone: string | null;
-  release: { total: number; held: number; released: number; withdrawn: number };
+  release: {
+    total: number;
+    held: number;
+    released: number;
+    withdrawn: number;
+    /** Displayed credits one message for each held order would use. */
+    heldCredits: number;
+  };
   lifecycle: {
     queued: number;
     sent: number;

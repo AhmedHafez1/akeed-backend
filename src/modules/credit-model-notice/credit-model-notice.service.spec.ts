@@ -105,4 +105,18 @@ describe('CreditModelNoticeService', () => {
       'send_threw',
     );
   });
+
+  it('still sends the rest of a batch when recording a failure fails', async () => {
+    const { service, notices, email } = create(true);
+    notices.claimEmailBatch.mockResolvedValue(['org-1', 'org-2']);
+    email.send.mockRejectedValueOnce(new Error('down'));
+    notices.markEmail.mockRejectedValueOnce(new Error('database down'));
+    await expect(service.sendEmailBatch()).resolves.toBe(2);
+    expect(email.send).toHaveBeenCalledTimes(2);
+    expect(notices.markEmail).toHaveBeenLastCalledWith(
+      'org-2',
+      'sent',
+      undefined,
+    );
+  });
 });
