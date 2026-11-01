@@ -1,5 +1,5 @@
 {
-  "url": "https://graph.facebook.com/v24.0/phone-number-id-test/messages",
+  "url": "https://graph.facebook.com/v26.0/phone-number-id-test/messages",
   "cases": {
     "ar.standard/initial": {
       "messaging_product": "whatsapp",

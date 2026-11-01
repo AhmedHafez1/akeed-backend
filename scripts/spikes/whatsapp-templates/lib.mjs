@@ -19,8 +19,12 @@ export const EVIDENCE_ROOT = path.join(
   'whatsapp-templates',
 );
 
-// The version src/infrastructure/spokes/meta/whatsapp.service.ts sends with.
-export const GRAPH_API_VERSION = 'v24.0';
+// Same setting and default as src/shared/config/meta-graph.config.ts.
+export const GRAPH_API_VERSION =
+  process.env.META_GRAPH_API_VERSION?.trim() || 'v26.0';
+if (!/^v\d+\.\d+$/.test(GRAPH_API_VERSION)) {
+  throw new Error('META_GRAPH_API_VERSION must look like v26.0.');
+}
 export const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 const REDACTED = '[REDACTED]';

@@ -178,7 +178,7 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
     );
 
     const [openUrl, openBody, openOptions] = httpService.post.mock.calls[0];
-    expect(openUrl).toBe(`https://graph.facebook.com/v24.0/${APP}/uploads`);
+    expect(openUrl).toBe(`https://graph.facebook.com/v26.0/${APP}/uploads`);
     expect(openBody).toBeNull();
     expect(openOptions.headers).toEqual({ Authorization: `OAuth ${TOKEN}` });
     expect(openOptions.params).toEqual({
@@ -188,7 +188,7 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
     });
     const [sendUrl, sendBody, sendOptions] = httpService.post.mock.calls[1];
     expect(sendUrl).toBe(
-      'https://graph.facebook.com/v24.0/upload:MTphdHRhY2htZW50',
+      'https://graph.facebook.com/v26.0/upload:MTphdHRhY2htZW50',
     );
     expect(sendBody).toBe(bytes);
     expect(sendOptions.headers).toEqual({
@@ -228,7 +228,7 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
 
     const [sendUrl, , sendOptions] = httpService.post.mock.calls[1];
     expect(sendUrl).toBe(
-      'https://graph.facebook.com/v24.0/upload:MTphdHRhY2htZW50OjZiNTQ1MmQ0LTJl/YW1l=',
+      'https://graph.facebook.com/v26.0/upload:MTphdHRhY2htZW50OjZiNTQ1MmQ0LTJl/YW1l=',
     );
     expect(sendOptions.params).toEqual({ sig: 'ARZqkGCA_uQMxC8nHKI' });
     expect(sendOptions.headers.Authorization).toBe(`OAuth ${TOKEN}`);
@@ -298,7 +298,7 @@ describe('MetaTemplateCatalogAdapter image twins', () => {
     });
     const [url, body] = httpService.post.mock.calls[0];
     expect(url).toBe(
-      `https://graph.facebook.com/v24.0/${ACCOUNT}/message_templates`,
+      `https://graph.facebook.com/v26.0/${ACCOUNT}/message_templates`,
     );
     expect(body).toEqual(buildMetaImageTwinBody(SUBMISSION));
   });

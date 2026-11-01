@@ -281,7 +281,7 @@ export class FakeMetaTemplateApi {
             cursors: { before: String(start), after: String(end) },
             ...(more
               ? {
-                  next: `https://graph.facebook.com/v24.0/${FAKE_ACCOUNT_ID}/message_templates?access_token=${FAKE_TOKEN}&after=${end}`,
+                  next: `https://graph.facebook.com/v26.0/${FAKE_ACCOUNT_ID}/message_templates?access_token=${FAKE_TOKEN}&after=${end}`,
                 }
               : {}),
           },

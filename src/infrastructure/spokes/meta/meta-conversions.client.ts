@@ -4,9 +4,8 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
+import { readMetaGraphConfig } from '../../../shared/config/meta-graph.config';
 
-/** Same Graph API version as the WhatsApp sender. */
-export const META_CONVERSIONS_GRAPH_URL = 'https://graph.facebook.com/v24.0';
 /** A slow Graph call must not hold a worker; the event is best effort. */
 export const META_CONVERSIONS_TIMEOUT_MS = 5_000;
 
@@ -46,8 +45,10 @@ export class MetaConversionsClient implements OnModuleInit {
   private readonly pixelId: string | undefined;
   private readonly accessToken: string | undefined;
   private readonly testEventCode: string | undefined;
+  private readonly graphBaseUrl: string;
 
   constructor(config: ConfigService) {
+    this.graphBaseUrl = readMetaGraphConfig(config).baseUrl;
     this.pixelId = readOptional(config, 'META_PIXEL_ID');
     this.accessToken = readOptional(config, 'META_CAPI_ACCESS_TOKEN');
     this.testEventCode = readOptional(config, 'META_TEST_EVENT_CODE');
@@ -74,7 +75,7 @@ export class MetaConversionsClient implements OnModuleInit {
 
     try {
       const response = await fetch(
-        `${META_CONVERSIONS_GRAPH_URL}/${encodeURIComponent(this.pixelId)}/events`,
+        `${this.graphBaseUrl}/${encodeURIComponent(this.pixelId)}/events`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

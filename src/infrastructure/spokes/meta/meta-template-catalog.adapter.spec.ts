@@ -95,7 +95,7 @@ describe('MetaTemplateCatalogAdapter', () => {
     });
     expect(api.requests).toHaveLength(1);
     expect(api.requests[0]).toEqual({
-      url: `https://graph.facebook.com/v24.0/${FAKE_ACCOUNT_ID}/message_templates`,
+      url: `https://graph.facebook.com/v26.0/${FAKE_ACCOUNT_ID}/message_templates`,
       authorization: `Bearer ${FAKE_TOKEN}`,
       params: {
         fields:

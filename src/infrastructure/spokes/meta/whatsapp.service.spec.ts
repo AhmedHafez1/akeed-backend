@@ -138,7 +138,7 @@ describe('WhatsAppService', () => {
         'WA_PHONE_NUMBER_ID',
       );
       expect(httpService.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v24.0/phone-id-123/messages',
+        'https://graph.facebook.com/v26.0/phone-id-123/messages',
         expect.objectContaining({
           to: '+14155552671',
           type: 'template',

@@ -1,6 +1,5 @@
 import { ConfigService } from '@nestjs/config';
 import {
-  META_CONVERSIONS_GRAPH_URL,
   MetaConversionsClient,
   type MetaConversionEvent,
 } from './meta-conversions.client';
@@ -64,7 +63,7 @@ describe('MetaConversionsClient', () => {
     await expect(client.send(EVENT)).resolves.toBe('sent');
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`${META_CONVERSIONS_GRAPH_URL}/999653349077771/events`);
+    expect(url).toBe(`https://graph.facebook.com/v26.0/999653349077771/events`);
     expect(url).not.toContain('secret');
     expect(init.method).toBe('POST');
     expect(init.signal).toBeDefined();

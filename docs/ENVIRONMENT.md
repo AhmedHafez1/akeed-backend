@@ -295,6 +295,11 @@ WooCommerce disables a webhook after five consecutive answers that are not `2xx`
   without it then. Sending and message webhooks never read it. See
   [WhatsApp templates](#whatsapp-templates) below.
 
+`META_GRAPH_API_VERSION` sets the Graph API version for every Meta call:
+message sends, templates and the Conversions API. It defaults to `v26.0`.
+Startup fails on a value that doesn't look like `v26.0`. Read Meta's changelog
+and run the send characterization spec before changing it.
+
 `META_APP_SECRET` is the App Secret from the Meta app dashboard (App settings >
 Basic). It signs every inbound webhook. **If it does not match, the signature
 guard rejects every delivery, read and reply callback**, and the symptom is not

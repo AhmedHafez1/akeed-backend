@@ -109,7 +109,7 @@ describe('MetaTemplateCatalogAdapter create and edit', () => {
     });
     expect(api.writes).toHaveLength(1);
     expect(api.writes[0]).toEqual({
-      url: `https://graph.facebook.com/v24.0/${FAKE_ACCOUNT_ID}/message_templates`,
+      url: `https://graph.facebook.com/v26.0/${FAKE_ACCOUNT_ID}/message_templates`,
       authorization: `Bearer ${FAKE_TOKEN}`,
       body: {
         name: 'akeed_cod_confirm_warm_v1',
@@ -313,7 +313,7 @@ describe('MetaTemplateCatalogAdapter create and edit', () => {
 
       expect(api.writes).toEqual([
         {
-          url: `https://graph.facebook.com/v24.0/${template.id}`,
+          url: `https://graph.facebook.com/v26.0/${template.id}`,
           authorization: `Bearer ${FAKE_TOKEN}`,
           body: {
             components: [

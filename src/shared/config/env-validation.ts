@@ -28,6 +28,7 @@ import {
   MERCHANT_BRANDING_CONFIG,
   parseMerchantBrandingConfig,
 } from './merchant-branding.config';
+import { META_GRAPH_CONFIG, parseMetaGraphConfig } from './meta-graph.config';
 import {
   parseUsageAlertsConfig,
   USAGE_ALERTS_CONFIG,
@@ -137,5 +138,6 @@ export function validateEnv(
     [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig(config),
     [MERCHANT_BRANDING_CONFIG]: parseMerchantBrandingConfig(config),
     [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig(config),
+    [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
   };
 }

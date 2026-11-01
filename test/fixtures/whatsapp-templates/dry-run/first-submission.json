@@ -21,7 +21,7 @@
   },
   "request": {
     "method": "POST",
-    "url": "https://graph.facebook.com/v24.0/<WA_BUSINESS_ACCOUNT_ID>/message_templates",
+    "url": "https://graph.facebook.com/v26.0/<WA_BUSINESS_ACCOUNT_ID>/message_templates",
     "headers": {
       "Authorization": "Bearer <WA_ACCESS_TOKEN>"
     },

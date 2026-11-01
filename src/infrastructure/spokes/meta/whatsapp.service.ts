@@ -22,6 +22,7 @@ const CONFIRMED_REJECTION_STATUSES = [400, 401, 403, 404, 422];
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readMetaGraphConfig } from '../../../shared/config/meta-graph.config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import type { OrderDetailValues } from '../../../shared/messaging/order-detail-values';
@@ -70,7 +71,7 @@ export class WhatsAppService {
       );
     }
 
-    this.apiUrl = `https://graph.facebook.com/v24.0/${this.phoneNumberId}/messages`;
+    this.apiUrl = `${readMetaGraphConfig(this.configService).baseUrl}/${this.phoneNumberId}/messages`;
   }
 
   getSenderStatus(): MessagingSenderStatus {

@@ -208,7 +208,7 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 
 `WhatsAppService` implements `MessagingPort` and sends WhatsApp template messages via the Meta Cloud API.
 
-**Endpoint:** `POST https://graph.facebook.com/v24.0/{WA_PHONE_NUMBER_ID}/messages`
+**Endpoint:** `POST https://graph.facebook.com/v26.0/{WA_PHONE_NUMBER_ID}/messages`
 
 **Authentication:** Bearer token from `WA_ACCESS_TOKEN` environment variable.
 
@@ -319,7 +319,7 @@ Both sides take a transaction-scoped advisory lock on the wamid, so whichever si
 
 Meta is the truth about Akeed's templates; the registry (`whatsapp_templates`) keeps a synced copy. Everything here is off until `WHATSAPP_TEMPLATE_SYNC_ENABLED` and, last, `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` are turned on ([ENVIRONMENT.md](ENVIRONMENT.md#whatsapp-templates)).
 
-**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records, and two writes, `createTemplate` and `editTemplate` (see "Staff Template Authoring" below). `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v24.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
+**Port and adapter.** `TEMPLATE_CATALOG_PORT` (`src/shared/ports/template-catalog.port.ts`) has one read, `listTemplates()`, returning neutral records, and two writes, `createTemplate` and `editTemplate` (see "Staff Template Authoring" below). `MetaTemplateCatalogAdapter` implements it with `GET graph.facebook.com/v26.0/{WA_BUSINESS_ACCOUNT_ID}/message_templates`, 100 per page, paging with `cursors.after` (never the `next` URL), at most 60 pages. The token goes only in the `Authorization` header. `meta-template.mapping.ts` is the only file that knows Meta's status, event, category and quality strings; any value it does not list is `unknown`, which is never sendable. Errors map to neutral codes: 4, 80007 and 80008 are `rate_limited`, 190 is `auth_failed`, 10 and 200–299 are `permission_denied`.
 
 **Sync.** A BullMQ repeatable job on the `whatsapp-template-sync` queue runs every 6 hours (`concurrency: 1`, one attempt), plus `POST /api/admin/templates/sync` for a named operator and a delayed follow-up after template webhooks. A run:
 
@@ -1075,8 +1075,8 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 
 | Target                | Endpoint                                           | Purpose                           |
 | --------------------- | -------------------------------------------------- | --------------------------------- |
-| Meta Cloud API        | `POST graph.facebook.com/v24.0/{phoneId}/messages` | Send WhatsApp template messages.  |
-| Meta Graph API        | `GET graph.facebook.com/v24.0/{wabaId}/message_templates` | Template sync (read-only). |
+| Meta Cloud API        | `POST graph.facebook.com/v26.0/{phoneId}/messages` | Send WhatsApp template messages.  |
+| Meta Graph API        | `GET graph.facebook.com/v26.0/{wabaId}/message_templates` | Template sync (read-only). |
 | Shopify Admin GraphQL | `POST {shop}/admin/api/2026-01/graphql.json`       | Tags, cancel, billing, shop name. |
 
 ## Environment Variables

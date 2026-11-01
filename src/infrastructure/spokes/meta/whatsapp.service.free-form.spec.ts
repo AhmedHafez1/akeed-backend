@@ -47,7 +47,7 @@ describe('WhatsAppService.sendFreeFormText', () => {
     });
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
-      'https://graph.facebook.com/v24.0/phone-id/messages',
+      'https://graph.facebook.com/v26.0/phone-id/messages',
       {
         messaging_product: 'whatsapp',
         to: '+201001112223',

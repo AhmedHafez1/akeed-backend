@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
+import { readMetaGraphConfig } from '../../../shared/config/meta-graph.config';
 import type {
   ProviderTemplateRecord,
   TemplateComponentsSnapshot,
@@ -41,9 +42,6 @@ import {
   buildMetaImageTwinBody,
 } from './meta-template-components.builder';
 import { describeMetaComponents } from './meta-template-text';
-
-/** The Graph version Akeed already sends with (record, "Graph API version"). */
-export const META_TEMPLATE_GRAPH_BASE_URL = 'https://graph.facebook.com/v24.0';
 
 /** The fields read for each template. */
 export const META_TEMPLATE_FIELDS = [
@@ -130,11 +128,14 @@ interface MetaTemplatePage {
 @Injectable()
 export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
   private readonly logger = new Logger(MetaTemplateCatalogAdapter.name);
+  private readonly graphBaseUrl: string;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    this.graphBaseUrl = readMetaGraphConfig(config).baseUrl;
+  }
 
   async listTemplates(): Promise<ProviderTemplateRecord[]> {
     const accountId = readWhatsappTemplateConfig(this.config).businessAccountId;
@@ -197,7 +198,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     try {
       const response = await firstValueFrom(
         this.httpService.post<{ id?: unknown }>(
-          `${META_TEMPLATE_GRAPH_BASE_URL}/${appId}/uploads`,
+          `${this.graphBaseUrl}/${appId}/uploads`,
           null,
           {
             // Meta's upload guide uses the `OAuth` scheme; the token never
@@ -233,7 +234,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     try {
       const response = await firstValueFrom(
         this.httpService.post<{ h?: unknown }>(
-          `${META_TEMPLATE_GRAPH_BASE_URL}/${parsed.path}`,
+          `${this.graphBaseUrl}/${parsed.path}`,
           bytes,
           {
             ...(parsed.sig ? { params: { sig: parsed.sig } } : {}),
@@ -289,7 +290,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       category?: unknown;
     }>(
       'meta-template-create',
-      `${META_TEMPLATE_GRAPH_BASE_URL}/${accountId}/message_templates`,
+      `${this.graphBaseUrl}/${accountId}/message_templates`,
       token,
       body,
     );
@@ -328,7 +329,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     }
     const data = await this.post<{ success?: unknown }>(
       'meta-template-edit',
-      `${META_TEMPLATE_GRAPH_BASE_URL}/${providerTemplateId}`,
+      `${this.graphBaseUrl}/${providerTemplateId}`,
       token,
       buildMetaEditBody(submission),
     );
@@ -459,7 +460,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     try {
       const response = await firstValueFrom(
         this.httpService.get<MetaTemplatePage>(
-          `${META_TEMPLATE_GRAPH_BASE_URL}/${accountId}/message_templates`,
+          `${this.graphBaseUrl}/${accountId}/message_templates`,
           {
             headers: { Authorization: `Bearer ${token}` },
             params: {
