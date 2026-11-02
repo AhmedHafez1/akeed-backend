@@ -344,6 +344,7 @@ export function easyOrdersConformanceDriver(
     EasyOrdersInstall
   > = {
     label: 'EasyOrders',
+    revokedKeyAnswer: 400,
     codes: {
       installContextInvalid: 'EASYORDERS_INSTALL_CONTEXT_INVALID',
       connectUnavailable: 'EASYORDERS_CONNECT_UNAVAILABLE',

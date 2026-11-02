@@ -451,6 +451,7 @@ export function wooCommerceConformanceDriver(
     WooCommerceInstall
   > = {
     label: 'WooCommerce',
+    revokedKeyAnswer: 401,
     codes: {
       installContextInvalid: 'WOOCOMMERCE_INSTALL_CONTEXT_INVALID',
       connectUnavailable: 'WOOCOMMERCE_CONNECT_UNAVAILABLE',
@@ -605,7 +606,7 @@ export function wooCommerceConformanceDriver(
       if (
         held.status === 'cancelled' &&
         markers.length === 1 &&
-        /^(customer_cancellation|merchant_no_reply_cancellation):/.test(
+        /^(customer_cancellation|merchant_no_reply_cancellation|automatic_no_reply_cancellation):/.test(
           markers[0],
         ) &&
         held.notes.length === 0

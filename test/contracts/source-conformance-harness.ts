@@ -35,6 +35,8 @@ import type { CommerceOutcomeSyncJobPayload } from '../../src/modules/commerce-o
 import { OUTCOME_SYNC_MAX_ATTEMPTS } from '../../src/modules/commerce-outcomes/commerce-outcome-sync.policy';
 import { CommerceOutcomeSyncProcessor } from '../../src/modules/commerce-outcomes/commerce-outcome-sync.processor';
 import { CommerceOutcomeSyncProducer } from '../../src/modules/commerce-outcomes/commerce-outcome-sync.producer';
+import { AutoCancellationService } from '../../src/modules/auto-cancellation/auto-cancellation.service';
+import { VerificationAutoCancellationsRepository } from '../../src/infrastructure/database/repositories/verification-auto-cancellations.repository';
 import { VerificationAutomationJobType } from '../../src/modules/verification-automation/verification-automation.constants';
 import { VerificationAutomationProcessor } from '../../src/modules/verification-automation/verification-automation.processor';
 import { BillingEntitlementService } from '../../src/modules/verification-core/billing-entitlement.service';
@@ -154,6 +156,8 @@ export interface SourceConformanceDriver<
 > {
   /** The provider's name, as it reads in a case's title. */
   label: string;
+  /** What the store answers a read with once its key is revoked. */
+  revokedKeyAnswer: number;
   codes: {
     installContextInvalid: string;
     connectUnavailable: string;
@@ -648,6 +652,18 @@ export function assembleConformanceWorld(
     hub,
     spokes.flatMap((spoke) => spoke.updateHandlers),
   );
+  const autoCancelRows: string[] = [];
+  const autoCancellation = new AutoCancellationService(
+    new VerificationAutoCancellationsRepository(db as never),
+    registry,
+    {
+      enqueueExecute: (rowId: string) => {
+        autoCancelRows.push(rowId);
+        return Promise.resolve();
+      },
+      enqueueConfirm: () => Promise.resolve(),
+    } as never,
+  );
   const automationProcessor = new VerificationAutomationProcessor(
     verificationsRepo,
     ordersRepo,
@@ -656,6 +672,8 @@ export function assembleConformanceWorld(
     registry,
     billing,
     base.automation as never,
+    undefined,
+    autoCancellation,
   );
   const whatsapp = new WhatsAppWebhookService(
     verificationsRepo,
@@ -754,6 +772,58 @@ export function assembleConformanceWorld(
       },
     } as Parameters<typeof automationProcessor.process>[0]);
     if (kind === 'follow_up') ranFollowUps.add(verificationId);
+  }
+
+  /** Meta's delivery receipt for every message of this verification. */
+  async function deliverMessages(verificationId: string): Promise<void> {
+    const sent = await client<{ provider_message_id: string }[]>`
+      SELECT provider_message_id FROM verification_message_dispatches
+      WHERE verification_id = ${verificationId}
+        AND provider_message_id IS NOT NULL`;
+    await whatsapp.processIncoming({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                statuses: sent.map((message) => ({
+                  id: message.provider_message_id,
+                  status: 'delivered',
+                  timestamp: String(Math.floor(Date.now() / 1000)),
+                })),
+              },
+            },
+          ],
+        },
+      ],
+    } as never);
+  }
+
+  /** Runs every cancellation the escalation scheduled. */
+  async function runAutoCancellations(): Promise<number> {
+    const rows = autoCancelRows.splice(0);
+    for (const rowId of rows) await autoCancellation.execute(rowId);
+    return rows.length;
+  }
+
+  function setAutoCancel(source: { integrationId: string }, enabled: boolean) {
+    return client`
+      UPDATE integrations SET auto_cancel_enabled = ${enabled}
+      WHERE id = ${source.integrationId}`;
+  }
+
+  async function autoCancelEnabled(source: { integrationId: string }) {
+    const [row] = await client<{ auto_cancel_enabled: boolean }[]>`
+      SELECT auto_cancel_enabled FROM integrations
+      WHERE id = ${source.integrationId}`;
+    return row.auto_cancel_enabled;
+  }
+
+  async function autoCancellationOf(verificationId: string) {
+    const [row] = await client<{ status: string; reason: string | null }[]>`
+      SELECT status, reason FROM verification_auto_cancellations
+      WHERE verification_id = ${verificationId}`;
+    return row ?? null;
   }
 
   /** A customer tapping a quick-reply button, as Meta posts it. */
@@ -1170,6 +1240,8 @@ export function assembleConformanceWorld(
       tables.integrations,
       tables.orders,
       tables.verifications,
+      tables.verificationAutoCancellations,
+      tables.verificationAutoCancellationEvents,
       tables.integrationMonthlyUsage,
       tables.webhookEvents,
       tables.memberships,
@@ -1234,6 +1306,7 @@ export function assembleConformanceWorld(
     retryQueue.waiting.length = 0;
     retryQueue.delays.length = 0;
     queued.length = 0;
+    autoCancelRows.length = 0;
     for (const spoke of spokes) spoke.reset();
   }
 
@@ -1248,6 +1321,11 @@ export function assembleConformanceWorld(
     drain,
     runRetries,
     runAutomation,
+    deliverMessages,
+    runAutoCancellations,
+    setAutoCancel,
+    autoCancelEnabled,
+    autoCancellationOf,
     reply,
     reconcile,
     historyOf,
@@ -1672,7 +1750,10 @@ export function defineSourceConformance<
         ]);
         expect(await driver.healthOf(merchant)).toBe('credentials_rejected');
         expect(driver.requestsOf(merchant)).toEqual([
-          expect.objectContaining({ method: 'GET', answered: 400 }),
+          expect.objectContaining({
+            method: 'GET',
+            answered: driver.revokedKeyAnswer,
+          }),
         ]);
         expect(retryQueue.waiting).toHaveLength(0);
         expect(await world.runRetries()).toBe(0);
@@ -2040,23 +2121,29 @@ export function defineSourceConformance<
       });
     });
 
-    describe('AC4 no automatic no-reply cancellation', () => {
+    describe('AC4 automatic no-reply cancellation only when the merchant switches it on', () => {
       it.each([
         ['on', true],
         ['off', false],
       ] as const)(
-        `with remote writes %s, an unanswered order is never canceled in ${driver.label} by Akeed itself`,
+        `with it off and remote writes %s, an unanswered order is never canceled in ${driver.label} by Akeed itself`,
         async (_label, syncEnabled) => {
           driver.switches.outcomeSync(syncEnabled);
           const merchant = await driver.connect();
+          expect(await world.autoCancelEnabled(merchant)).toBe(false);
           const order = await sentOrder(merchant);
 
           await world.runAutomation(order.verificationId, 'follow_up');
+          await world.deliverMessages(order.verificationId);
           await world.runAutomation(order.verificationId, 'no_reply');
 
           expect(await world.verificationStatus(order.verificationId)).toBe(
             'no_reply',
           );
+          expect(await world.runAutoCancellations()).toBe(0);
+          expect(
+            await world.autoCancellationOf(order.verificationId),
+          ).toBeNull();
           expect(driver.requestsOf(merchant)).toHaveLength(0);
           expect(driver.remoteStateOf(merchant, order.order)).toBe('untouched');
           expect(
@@ -2090,10 +2177,60 @@ export function defineSourceConformance<
         },
       );
 
-      it(`the ${driver.label} adapter never offers an automatic or tagging action`, () => {
+      it(`with it on, a delivered and unanswered order is canceled once in ${driver.label}`, async () => {
+        const merchant = await driver.connect();
+        await world.setAutoCancel(merchant, true);
+        const order = await sentOrder(merchant);
+
+        await world.runAutomation(order.verificationId, 'follow_up');
+        await world.deliverMessages(order.verificationId);
+        await world.runAutomation(order.verificationId, 'no_reply');
+
+        expect(await world.runAutoCancellations()).toBe(1);
+        expect(
+          await world.autoCancellationOf(order.verificationId),
+        ).toMatchObject({ status: 'succeeded' });
+        expect(driver.remoteStateOf(merchant, order.order)).toBe('cancelled');
+        expect(driver.writesOf(merchant)).toHaveLength(1);
+        expect(retryQueue.waiting).toHaveLength(0);
+      });
+
+      it(`with it on, an order whose messages were not delivered is left alone in ${driver.label}`, async () => {
+        const merchant = await driver.connect();
+        await world.setAutoCancel(merchant, true);
+        const order = await sentOrder(merchant);
+
+        await world.runAutomation(order.verificationId, 'follow_up');
+        await world.runAutomation(order.verificationId, 'no_reply');
+
+        expect(await world.runAutoCancellations()).toBe(0);
+        expect(
+          await world.autoCancellationOf(order.verificationId),
+        ).toMatchObject({ status: 'paused' });
+        expect(driver.requestsOf(merchant)).toHaveLength(0);
+        expect(driver.remoteStateOf(merchant, order.order)).toBe('untouched');
+      });
+
+      it(`with it on but remote writes off, nothing is written to ${driver.label}`, async () => {
+        driver.switches.outcomeSync(false);
+        const merchant = await driver.connect();
+        await world.setAutoCancel(merchant, true);
+        const order = await sentOrder(merchant);
+
+        await world.runAutomation(order.verificationId, 'follow_up');
+        await world.deliverMessages(order.verificationId);
+        await world.runAutomation(order.verificationId, 'no_reply');
+        await world.runAutoCancellations();
+
+        expect(driver.writesOf(merchant)).toHaveLength(0);
+        expect(driver.remoteStateOf(merchant, order.order)).toBe('untouched');
+      });
+
+      it(`the ${driver.label} adapter offers automatic cancellation and never tagging`, () => {
         const adapter = driver.newAdapter();
 
         expect([...adapter.capabilities].sort()).toEqual([
+          'automatic_no_reply_cancellation',
           'customer_cancellation',
           'customer_confirmation',
           'merchant_no_reply_cancellation',
