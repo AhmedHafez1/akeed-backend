@@ -5,15 +5,13 @@ export const WHATSAPP_OWN_NUMBER_CONFIG = 'whatsappOwnNumber';
  *
  * Connecting and sending are switched separately: connect offers signup, and
  * sending is the kill switch that sends every message from Akeed's number
- * while connections stay as they are. Both are off when absent. The optional
- * allow-list restricts both when populated; an empty list allows every
- * organization while a switch is on. Meta webhook processing ignores these
- * switches, so connection state stays correct while they are off.
+ * while connections stay as they are. Both are off when absent and apply to
+ * every organization. Meta webhook processing ignores these switches, so
+ * connection state stays correct while they are off.
  */
 export interface WhatsappOwnNumberConfig {
   connectEnabled: boolean;
   sendingEnabled: boolean;
-  pilotOrgIds: readonly string[];
   /** Embedded Signup configuration; set whenever connect is on. */
   embeddedSignupConfigId: string | null;
   /** `META_APP_ID`, which launches Embedded Signup; set whenever connect is on. */
@@ -52,8 +50,6 @@ function parseConnectPageBaseUrl(value: string): string | null {
   return url.origin;
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const META_ID_PATTERN = /^\d{1,32}$/;
 
 export function parseWhatsappOwnNumberConfig(
@@ -70,20 +66,6 @@ export function parseWhatsappOwnNumberConfig(
   };
   const connectEnabled = flag('WHATSAPP_OWN_NUMBER_CONNECT_ENABLED');
   const sendingEnabled = flag('WHATSAPP_OWN_NUMBER_SENDING_ENABLED');
-
-  const pilotOrgIds = [
-    ...new Set(
-      read('WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS')
-        .split(',')
-        .map((id) => id.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
-  // A typo would silently shut a pilot merchant out, so it fails at boot.
-  if (pilotOrgIds.some((id) => !UUID_PATTERN.test(id)))
-    errors.push(
-      'WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS must be a comma-separated list of organization UUIDs.',
-    );
 
   const embeddedSignupConfigId = read('META_EMBEDDED_SIGNUP_CONFIG_ID');
   if (embeddedSignupConfigId && !META_ID_PATTERN.test(embeddedSignupConfigId))
@@ -132,7 +114,6 @@ export function parseWhatsappOwnNumberConfig(
   return {
     connectEnabled,
     sendingEnabled,
-    pilotOrgIds,
     embeddedSignupConfigId: connectEnabled ? embeddedSignupConfigId : null,
     metaAppId: connectEnabled ? metaAppId : null,
     connectPageBaseUrl: connectEnabled ? connectPageBaseUrl : null,
@@ -154,28 +135,16 @@ export function readWhatsappOwnNumberConfig(config: {
   return parsed;
 }
 
-function isPilotOrganization(
-  config: WhatsappOwnNumberConfig,
-  orgId: string,
-): boolean {
-  return (
-    config.pilotOrgIds.length === 0 ||
-    config.pilotOrgIds.includes(orgId.toLowerCase())
-  );
-}
-
-/** Whether the organization may connect its own number. */
+/** Whether own-number connecting is enabled for every organization. */
 export function isOwnNumberConnectAllowed(
   config: WhatsappOwnNumberConfig,
-  orgId: string,
 ): boolean {
-  return config.connectEnabled && isPilotOrganization(config, orgId);
+  return config.connectEnabled;
 }
 
-/** Whether the organization's messages may go from its own number. */
+/** Whether own-number sending is enabled for every organization. */
 export function isOwnNumberSendingAllowed(
   config: WhatsappOwnNumberConfig,
-  orgId: string,
 ): boolean {
-  return config.sendingEnabled && isPilotOrganization(config, orgId);
+  return config.sendingEnabled;
 }

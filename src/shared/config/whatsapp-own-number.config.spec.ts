@@ -6,9 +6,6 @@ import {
   WHATSAPP_OWN_NUMBER_CONFIG,
 } from './whatsapp-own-number.config';
 
-const PILOT_ORG = '0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
-const OTHER_ORG = '5a4f3e2d-1c0b-4a9f-8e7d-6c5b4a3f2e1d';
-
 const connectReady = {
   WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'true',
   META_EMBEDDED_SIGNUP_CONFIG_ID: '1234567890',
@@ -22,7 +19,6 @@ describe('parseWhatsappOwnNumberConfig', () => {
     expect(parseWhatsappOwnNumberConfig({})).toEqual({
       connectEnabled: false,
       sendingEnabled: false,
-      pilotOrgIds: [],
       embeddedSignupConfigId: null,
       metaAppId: null,
       connectPageBaseUrl: null,
@@ -130,66 +126,46 @@ describe('parseWhatsappOwnNumberConfig', () => {
     ).toBe('http://localhost:3001');
   });
 
-  it('normalises the pilot list and drops duplicates and blanks', () => {
-    const config = parseWhatsappOwnNumberConfig({
-      WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: ` ${PILOT_ORG.toUpperCase()}, ,${PILOT_ORG}`,
-    });
-    expect(config.pilotOrgIds).toEqual([PILOT_ORG]);
-  });
-
-  it('fails boot on a malformed pilot entry, even with the switches off', () => {
-    expect(() =>
-      parseWhatsappOwnNumberConfig({
-        WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: `${PILOT_ORG},not-a-uuid`,
-      }),
-    ).toThrow('WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS must be a comma-separated');
-  });
+  it.each(['0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b', 'not-a-uuid'])(
+    'ignores a retired allowlist value: %s',
+    (value) => {
+      expect(
+        parseWhatsappOwnNumberConfig({
+          ...connectReady,
+          WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: value,
+        }),
+      ).toEqual(parseWhatsappOwnNumberConfig(connectReady));
+    },
+  );
 });
 
 describe('own-number eligibility', () => {
-  const bothOn = {
-    ...connectReady,
-    WHATSAPP_OWN_NUMBER_SENDING_ENABLED: 'true',
-  };
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    'keeps connecting (%s) and sending (%s) independent',
+    (connectEnabled, sendingEnabled) => {
+      const config = parseWhatsappOwnNumberConfig({
+        ...connectReady,
+        WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: String(connectEnabled),
+        WHATSAPP_OWN_NUMBER_SENDING_ENABLED: String(sendingEnabled),
+      });
+      expect(isOwnNumberConnectAllowed(config)).toBe(connectEnabled);
+      expect(isOwnNumberSendingAllowed(config)).toBe(sendingEnabled);
+    },
+  );
 
-  it('allows nobody while a switch is off, whatever the list says', () => {
+  it('does not let a retired allowlist restrict either switch', () => {
     const config = parseWhatsappOwnNumberConfig({
-      WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: PILOT_ORG,
-    });
-    expect(isOwnNumberConnectAllowed(config, PILOT_ORG)).toBe(false);
-    expect(isOwnNumberSendingAllowed(config, PILOT_ORG)).toBe(false);
-  });
-
-  it('allows every organization with an empty list and a switch on', () => {
-    const config = parseWhatsappOwnNumberConfig(bothOn);
-    expect(isOwnNumberConnectAllowed(config, OTHER_ORG)).toBe(true);
-    expect(isOwnNumberSendingAllowed(config, OTHER_ORG)).toBe(true);
-  });
-
-  it('allows only listed organizations with a populated list', () => {
-    const config = parseWhatsappOwnNumberConfig({
-      ...bothOn,
-      WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: PILOT_ORG,
-    });
-    expect(isOwnNumberConnectAllowed(config, PILOT_ORG.toUpperCase())).toBe(
-      true,
-    );
-    expect(isOwnNumberSendingAllowed(config, PILOT_ORG)).toBe(true);
-    expect(isOwnNumberConnectAllowed(config, OTHER_ORG)).toBe(false);
-    expect(isOwnNumberSendingAllowed(config, OTHER_ORG)).toBe(false);
-  });
-
-  it('keeps connecting and sending independent', () => {
-    const connectOnly = parseWhatsappOwnNumberConfig(connectReady);
-    expect(isOwnNumberConnectAllowed(connectOnly, PILOT_ORG)).toBe(true);
-    expect(isOwnNumberSendingAllowed(connectOnly, PILOT_ORG)).toBe(false);
-
-    const sendOnly = parseWhatsappOwnNumberConfig({
+      ...connectReady,
       WHATSAPP_OWN_NUMBER_SENDING_ENABLED: 'true',
-      SHOPIFY_TOKEN_ENCRYPTION_KEY: 'k'.repeat(32),
+      WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: 'not-a-uuid',
     });
-    expect(isOwnNumberConnectAllowed(sendOnly, PILOT_ORG)).toBe(false);
-    expect(isOwnNumberSendingAllowed(sendOnly, PILOT_ORG)).toBe(true);
+    expect(isOwnNumberConnectAllowed(config)).toBe(true);
+    expect(isOwnNumberSendingAllowed(config)).toBe(true);
   });
 });
 

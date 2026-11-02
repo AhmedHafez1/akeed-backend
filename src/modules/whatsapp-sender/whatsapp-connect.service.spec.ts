@@ -268,19 +268,36 @@ describe('WhatsappConnectService', () => {
       expect(s.ticketsRepo.issue).not.toHaveBeenCalled();
     });
 
-    it('is unavailable with the switch off or outside the pilot', async () => {
+    it('is unavailable with the switch off', async () => {
+      const s = setup({});
       await expectCode(
-        setup({}).service.issueTicket(owner(), 'ar'),
+        s.service.issueTicket(owner(), 'ar'),
         'WHATSAPP_CONNECT_UNAVAILABLE',
       );
-      await expectCode(
-        setup({
-          ...connectOn,
-          WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: OTHER_ORG,
-        }).service.issueTicket(owner(), 'ar'),
-        'WHATSAPP_CONNECT_UNAVAILABLE',
-      );
+      expect(s.ticketsRepo.issue).not.toHaveBeenCalled();
     });
+
+    it.each([ORG, OTHER_ORG])(
+      'issues and claims a ticket for organization %s despite a retired allowlist',
+      async (orgId) => {
+        const s = setup({
+          ...connectOn,
+          WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: 'not-a-uuid',
+        });
+        s.roles.set(`${orgId}:${USER}`, 'owner');
+        const issued = await s.service.issueTicket(owner(orgId), 'ar');
+        const ticket = new URL(issued.connectUrl).searchParams.get('ticket')!;
+        await expect(s.service.claimTicket(ticket)).resolves.toBeDefined();
+        expect(s.ticketsRepo.issue).toHaveBeenCalledWith(
+          expect.objectContaining({ orgId, userId: USER }),
+        );
+        expect(s.membershipsRepo.findByOrgAndUser).toHaveBeenCalledWith(
+          orgId,
+          USER,
+        );
+        expect(s.connectionsRepo.findByOrg).toHaveBeenCalledWith(orgId);
+      },
+    );
 
     it.each(['verifying', 'active', 'offboarded'] as const)(
       'refuses while a connection is %s',
@@ -446,7 +463,7 @@ describe('WhatsappConnectService', () => {
 
       const off = setup({
         ...connectOn,
-        WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: OTHER_ORG,
+        WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'false',
       });
       off.tickets.set(hashInstallToken('B'.repeat(43)), {
         orgId: ORG,

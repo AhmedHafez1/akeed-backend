@@ -83,11 +83,21 @@ describe('validateEnv', () => {
     expect(env.whatsappOwnNumber).toEqual({
       connectEnabled: false,
       sendingEnabled: false,
-      pilotOrgIds: [],
       embeddedSignupConfigId: null,
       metaAppId: null,
       connectPageBaseUrl: null,
     });
+  });
+
+  it('ignores a retired own-number allowlist during startup validation', () => {
+    const base = { NODE_ENV: 'test', DATABASE_URL: 'postgres://x/db' };
+    expect(
+      validateEnv({
+        ...base,
+        WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS:
+          'YOUR_TEST_MERCHANT_ORGANIZATION_UUID',
+      }).whatsappOwnNumber,
+    ).toEqual(validateEnv(base).whatsappOwnNumber);
   });
 
   it('fails boot when own-number connect is on without its signup settings', () => {

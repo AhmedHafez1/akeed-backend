@@ -20,15 +20,15 @@ export class WhatsappSenderService {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * Whether this organization may connect its own number, from the switches
-   * and pilot list. The same for every role, except `canConnect`, which
+   * Whether this organization may connect its own number, from the connect
+   * switch. The same for every role, except `canConnect`, which
    * tells the screen whether to offer the owner-only connect action; the
    * connect endpoints check the role again.
    */
   getAvailability(user: AuthenticatedUser): WhatsappSenderAvailabilityDto {
     const config = readWhatsappOwnNumberConfig(this.config);
     if (
-      !isOwnNumberConnectAllowed(config, user.orgId) ||
+      !isOwnNumberConnectAllowed(config) ||
       !config.metaAppId ||
       !config.embeddedSignupConfigId ||
       !config.connectPageBaseUrl

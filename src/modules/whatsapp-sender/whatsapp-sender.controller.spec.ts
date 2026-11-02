@@ -16,7 +16,7 @@ import { WhatsappSenderController } from './whatsapp-sender.controller';
 import { WhatsappSenderService } from './whatsapp-sender.service';
 
 const ROUTE = '/api/whatsapp-sender';
-const PILOT_ORG = '0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+const ORG = '0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 const OTHER_ORG = '5a4f3e2d-1c0b-4a9f-8e7d-6c5b4a3f2e1d';
 const ENCRYPTION_KEY = 'k'.repeat(32);
 
@@ -73,7 +73,7 @@ describe('/api/whatsapp-sender', () => {
     connect.issueTicket.mockReset();
     user = {
       userId: 'user-1',
-      orgId: PILOT_ORG,
+      orgId: ORG,
       role: 'owner',
       source: 'supabase',
     };
@@ -125,25 +125,28 @@ describe('/api/whatsapp-sender', () => {
     expect(JSON.stringify(response.body)).not.toContain(ENCRYPTION_KEY);
   });
 
-  it('answers unavailable to an organization outside the pilot', async () => {
-    user = {
-      userId: 'user-2',
-      orgId: OTHER_ORG,
-      role: 'owner',
-      source: 'supabase',
-    };
-    const server = await start({
-      ...connectOn,
-      WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: PILOT_ORG,
-    });
-    const response = await http(server).get(ROUTE).expect(200);
-    expect(response.body).toEqual({
-      available: false,
-      appId: null,
-      configId: null,
-      canConnect: false,
-    });
-  });
+  it.each([
+    [ORG, 'supabase'],
+    [OTHER_ORG, 'supabase'],
+    [ORG, 'shopify'],
+    [OTHER_ORG, 'shopify'],
+  ] as const)(
+    'offers connecting to organization %s through %s despite a retired allowlist',
+    async (orgId, source) => {
+      user = { userId: 'user-2', orgId, role: 'owner', source };
+      const server = await start({
+        ...connectOn,
+        WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS: 'not-a-uuid',
+      });
+      const response = await http(server).get(ROUTE).expect(200);
+      expect(response.body).toEqual({
+        available: true,
+        appId: '9876543210',
+        configId: '1234567890',
+        canConnect: true,
+      });
+    },
+  );
 
   it('answers unavailable with only sending on', async () => {
     const server = await start({
@@ -157,7 +160,7 @@ describe('/api/whatsapp-sender', () => {
   it.each(['owner', 'admin', 'viewer'] as const)(
     'answers a %s the same ids, and offers connect to the owner only',
     async (role) => {
-      user = { userId: 'user-1', orgId: PILOT_ORG, role, source: 'shopify' };
+      user = { userId: 'user-1', orgId: ORG, role, source: 'shopify' };
       const server = await start(connectOn);
       const response = await http(server).get(ROUTE).expect(200);
       expect(response.body).toEqual({

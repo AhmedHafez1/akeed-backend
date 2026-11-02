@@ -465,13 +465,13 @@ reads them: row-level security is on and nothing is granted to `anon` or
 `v1:` ciphertext under `SHOPIFY_TOKEN_ENCRYPTION_KEY`, and anything else in
 those columns is treated as no credential. Only a ticket's SHA-256 is stored.
 
-Both switches are off by default, and each is read on its own:
+Both switches are off by default, each is read on its own, and they apply to
+every organization. No organization allow-list is required:
 
 | Variable | Notes |
 | --- | --- |
 | `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID`, `WHATSAPP_CONNECT_PAGE_BASE_URL` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. Signup also uses `META_APP_SECRET`. |
 | `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
-| `WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS` | Optional allow-list of organization UUIDs, comma-separated. A malformed entry fails startup. Empty (default) allows every organization while a switch is on. A populated list allows only the listed organizations, for both switches. It never turns a switch on. |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
 | `WHATSAPP_CONNECT_PAGE_BASE_URL` | The web app's origin that hosts the connect page, for example `https://getakeed.com`: no trailing slash, path, query or fragment, and HTTPS except `http://localhost` or `http://127.0.0.1`. Connect links are built from it, never from the request. Its `/{locale}/whatsapp/connect` pages must be in the Meta app's Allowed domains and Valid OAuth redirect URIs. Required while connect is on; a malformed value fails startup. |
 
@@ -481,7 +481,7 @@ processed whatever the switches say.
 
 `GET /api/whatsapp-sender` (any signed-in member) answers what the connect
 screen needs, with `Cache-Control: no-store`: `available` is `true` only while
-connect is on and the organization is allowed, and only then are `appId` and
+connect is on with valid signup settings, and only then are `appId` and
 `configId` set, and `canConnect` is `true` for the owner. Otherwise it is
 `{ "available": false, "appId": null, "configId": null, "canConnect": false }`.
 It never returns a credential. Changing a connection is for the organization's

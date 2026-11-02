@@ -67,7 +67,7 @@ interface ConnectContext {
  *
  * An owner gets a 10-minute connect ticket. The top-level connect page trades
  * it once for a 30-minute signup ticket, then spends that once to finish.
- * Every step rechecks the switch, the pilot list, the member's owner role and
+ * Every step rechecks the switch, the member's owner role and
  * the organization's existing connection, because a ticket outlives the
  * session that asked for it. Ids from the browser are hints only: the token
  * Meta issues decides which account and number may be saved.
@@ -88,7 +88,7 @@ export class WhatsappConnectService {
     user: AuthenticatedUser,
     locale: WhatsappConnectLocale,
   ): Promise<WhatsappConnectTicketIssuedDto> {
-    const { config } = this.requireConnect(user.orgId);
+    const { config } = this.requireConnect();
     assertWhatsappConnectionChangeAllowed(user.role);
     await this.assertNoBlockingConnection(user.orgId);
 
@@ -279,11 +279,11 @@ export class WhatsappConnectService {
     };
   }
 
-  /** The switch, pilot list and signup settings, or the unavailable code. */
-  private requireConnect(orgId: string): ConnectContext {
+  /** The switch and signup settings, or the unavailable code. */
+  private requireConnect(): ConnectContext {
     const config = readWhatsappOwnNumberConfig(this.config);
     if (
-      !isOwnNumberConnectAllowed(config, orgId) ||
+      !isOwnNumberConnectAllowed(config) ||
       !config.metaAppId ||
       !config.embeddedSignupConfigId ||
       !config.connectPageBaseUrl
@@ -307,7 +307,7 @@ export class WhatsappConnectService {
   ): Promise<ConnectContext> {
     let context: ConnectContext;
     try {
-      context = this.requireConnect(orgId);
+      context = this.requireConnect();
     } catch (error) {
       this.logFailure(step, orgId, 'WHATSAPP_CONNECT_UNAVAILABLE');
       throw error;
