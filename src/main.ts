@@ -5,6 +5,7 @@ import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 import { runMigrations } from './infrastructure/database/migrate';
 import { applyOrderApiEdge } from './modules/order-api/edge/order-api.edge';
 import { applyWooCommerceWebhookEdge } from './infrastructure/spokes/woocommerce/woocommerce-webhook.edge';
+import { applyMetaWebhookEdge } from './infrastructure/spokes/meta/meta-webhook.edge';
 import {
   buildBackendLog,
   normalizeError,
@@ -23,6 +24,8 @@ async function bootstrap() {
   // Likewise: WooCommerce deliveries are read as raw bytes, whatever their
   // content type.
   applyWooCommerceWebhookEdge(app);
+  // Likewise: Meta sends bodies larger than the app-wide limit.
+  applyMetaWebhookEdge(app);
   const adapterHost = app.get(HttpAdapterHost);
   app.useGlobalFilters(new GlobalExceptionFilter(adapterHost));
   app.useGlobalPipes(

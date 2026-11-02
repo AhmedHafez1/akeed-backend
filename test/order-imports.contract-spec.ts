@@ -315,6 +315,8 @@ describe('order imports PostgreSQL contract', () => {
         '0079_quiet_hours_store_timezone.sql',
         // One-time notice about displayed credits; proves 0081 re-runs.
         '0081_credit_model_notices.sql',
+        // Stored Meta webhook events; proves 0082 re-runs.
+        '0082_meta_webhook_events.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

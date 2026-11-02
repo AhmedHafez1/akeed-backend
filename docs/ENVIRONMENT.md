@@ -300,6 +300,13 @@ message sends, templates and the Conversions API. It defaults to `v26.0`.
 Startup fails on a value that doesn't look like `v26.0`. Read Meta's changelog
 and run the send characterization spec before changing it.
 
+`META_WEBHOOK_DURABLE_ENABLED` decides how `POST /webhooks/whatsapp` runs. With
+`true`, each signed POST is stored and answered, then processed on the
+`meta-webhook-processing` queue with retries. With `false` or unset, it's
+processed inside the request. The worker, sweep and purge run either way, so
+stored events still drain. Startup fails on any other value. See
+[Integrations, webhooks and automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md).
+
 `META_APP_SECRET` is the App Secret from the Meta app dashboard (App settings >
 Basic). It signs every inbound webhook. **If it does not match, the signature
 guard rejects every delivery, read and reply callback**, and the symptom is not

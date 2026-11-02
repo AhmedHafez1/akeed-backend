@@ -25,6 +25,12 @@ import { VerificationServiceMessagesRepository } from '../../database/repositori
 import { VerificationAutomationProducer } from '../../../modules/verification-automation/verification-automation.producer';
 import { VerificationAutoCancellationsRepository } from '../../database/repositories/verification-auto-cancellations.repository';
 
+/** How a stored event is being run. */
+export interface WebhookRunOptions {
+  /** An earlier run of this event started and did not finish. */
+  isRetry?: boolean;
+}
+
 @Injectable()
 export class WhatsAppWebhookService {
   private readonly logger = new Logger(WhatsAppWebhookService.name);
@@ -184,7 +190,7 @@ export class WhatsAppWebhookService {
     payload: WhatsAppWebhookPayloadDto,
   ): Promise<{ status: string; message?: string }> {
     try {
-      await this.handleIncoming(payload);
+      await this.processIncomingOrThrow(payload);
       return { status: 'success' };
     } catch (error) {
       this.logger.error(
@@ -199,7 +205,11 @@ export class WhatsAppWebhookService {
     }
   }
 
-  private async handleIncoming(payload: WhatsAppWebhookPayloadDto) {
+  /** For the worker, whose retries depend on seeing the failure. */
+  async processIncomingOrThrow(
+    payload: WhatsAppWebhookPayloadDto,
+    options: WebhookRunOptions = {},
+  ): Promise<void> {
     const entries = payload.entry ?? [];
     const messageCount = entries.reduce(
       (total, entry) =>
@@ -238,7 +248,7 @@ export class WhatsAppWebhookService {
         const value = change.value;
         if (!value) continue;
 
-        await this.handleMessages(value.messages ?? []);
+        await this.handleMessages(value.messages ?? [], options);
         await this.handleStatuses(value.statuses ?? []);
       }
     }
@@ -287,7 +297,25 @@ export class WhatsAppWebhookService {
     return { verificationId: verification.id, intent, via: 'text' };
   }
 
-  private async handleMessages(messages: WhatsAppMessageDto[]) {
+  /**
+   * Whether an earlier run of this event saved this very answer and may have
+   * stopped before telling the store. `updateStatus` then matches no row, so
+   * a retry can't tell that apart from a repeat without looking.
+   */
+  private holdsCustomerAnswer(
+    verification: Awaited<ReturnType<VerificationsRepository['findById']>>,
+    answer: CustomerReplyIntent,
+  ): boolean {
+    if (verification?.status !== answer) return false;
+    return answer === 'confirmed'
+      ? verification.confirmationSource === 'customer'
+      : verification.cancellationSource === 'customer';
+  }
+
+  private async handleMessages(
+    messages: WhatsAppMessageDto[],
+    options: WebhookRunOptions,
+  ) {
     for (const message of messages) {
       const resolved = await this.resolveReply(message);
       if (!resolved) {
@@ -363,7 +391,14 @@ export class WhatsAppWebhookService {
         extraUpdates,
       );
 
-      if (rows.length > 0) {
+      // A retry finishes what the run before it left: the answer is saved, so
+      // the store may never have heard it.
+      const finishing =
+        rows.length === 0 &&
+        options.isRetry === true &&
+        this.holdsCustomerAnswer(existing, newStatus);
+
+      if (rows.length > 0 || finishing) {
         this.logger.log(
           buildBackendLog(WhatsAppWebhookService.name, {
             action: 'whatsapp-webhook-handle-message',
@@ -371,11 +406,13 @@ export class WhatsAppWebhookService {
             verificationId,
             status: newStatus,
             via,
+            ...(finishing ? { reason: 'finishing_saved_answer' } : {}),
           }),
         );
         await this.verificationHub.finalizeVerification(
           verificationId,
           newStatus,
+          ...(finishing ? ([{ skipIfSynced: true }] as const) : []),
         );
         await this.adminLifecycles?.recordMessageStatus({
           verificationId,

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
 import { readWhatsappTemplateConfig } from '../../../shared/config/whatsapp-template.config';
 import {
   buildBackendLog,
@@ -18,6 +17,12 @@ import {
   mapWebhookEvent,
   normalizeLanguageCode,
 } from './meta-template.mapping';
+import {
+  asRecord,
+  changeIdentity,
+  parseBody,
+  type JsonRecord,
+} from './meta-webhook-envelope';
 
 /** The template fields Akeed subscribes to, and their meaning. */
 export const META_TEMPLATE_WEBHOOK_FIELDS: Record<string, TemplateEventField> =
@@ -26,41 +31,6 @@ export const META_TEMPLATE_WEBHOOK_FIELDS: Record<string, TemplateEventField> =
     message_template_quality_update: 'quality',
     template_category_update: 'category',
   };
-
-type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
-/**
- * Parses the signed body. `message_template_id` is an integer that can be
- * larger than 2^53, so its source text is kept as a string
- * instead of a rounded number.
- */
-function parseBody(rawBody: Buffer): unknown {
-  return JSON.parse(
-    rawBody.toString('utf8'),
-    (key: string, value: unknown, context?: { source?: string }) =>
-      key === 'message_template_id' && typeof value === 'number'
-        ? (context?.source ?? String(value))
-        : value,
-  );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const record = asRecord(value);
-  if (record) {
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value ?? null);
-}
 
 /**
  * Template notifications on the WhatsApp webhook.
@@ -93,11 +63,8 @@ export class MetaTemplateWebhookHandler {
 
   /** Never throws: the webhook is answered 200 whatever happens here. */
   async handle(rawBody: Buffer | undefined): Promise<void> {
-    if (!rawBody) return;
     try {
-      const events = this.extract(rawBody);
-      if (events.length === 0) return;
-      await this.templateStatus.applyEvents(events);
+      await this.handleOrThrow(rawBody);
     } catch (error) {
       this.logger.error(
         buildBackendLog(MetaTemplateWebhookHandler.name, {
@@ -107,6 +74,14 @@ export class MetaTemplateWebhookHandler {
         }),
       );
     }
+  }
+
+  /** For the worker, whose retries depend on seeing the failure. */
+  async handleOrThrow(rawBody: Buffer | undefined): Promise<void> {
+    if (!rawBody) return;
+    const events = this.extract(rawBody);
+    if (events.length === 0) return;
+    await this.templateStatus.applyEvents(events);
   }
 
   /** The template events in a delivery, in neutral terms. */
@@ -172,16 +147,7 @@ export class MetaTemplateWebhookHandler {
     ) {
       return null;
     }
-    const identityKey = createHash('sha256')
-      .update(
-        [
-          change.field,
-          entry.id,
-          String(time),
-          createHash('sha256').update(canonicalJson(value)).digest('hex'),
-        ].join('|'),
-      )
-      .digest('hex');
+    const identityKey = changeIdentity(change.field, entry.id, time, value);
     const templateId = value.message_template_id;
     const base = {
       field,

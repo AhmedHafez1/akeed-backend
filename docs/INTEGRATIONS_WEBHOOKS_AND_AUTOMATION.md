@@ -266,7 +266,30 @@ Two buttons are attached to every template:
 
 **Incoming messages:**
 
-`POST /webhooks/whatsapp` — receives customer replies and delivery status updates.
+`POST /webhooks/whatsapp` — receives customer replies, delivery status updates and template notifications. `applyMetaWebhookEdge` in `main.ts` reads this route's JSON up to 4 MB, because Meta sends payloads of up to 3 MB and the app-wide parser stops at 100 KB.
+
+`META_WEBHOOK_DURABLE_ENABLED` decides where the handlers run:
+
+- **Off or unset:** they run inside the request, with no stored copy and no retry. A body that fails DTO validation gets a 400, and a handler error still answers 200, so that event is lost.
+- **On:** after the signature guard, and before any pipe, `MetaWebhookIntakeInterceptor` stores the POST in `meta_webhook_events` and answers without reaching the route handler. The `meta-webhook-processing` queue then runs the same handlers.
+
+**Durable handling.** Everything below applies to the switch on, except that the worker, the sweep and the purge always run, so stored events drain after switching back.
+
+- **Storing:** one row per entry change, not per POST, each holding a body of one entry and one change that the handlers read as a whole delivery. A POST's rows go in with one statement, so it's fully stored or not at all. A database failure answers 500 with `META_WEBHOOK_NOT_PERSISTED` and logs `meta-webhook-not-persisted`, so Meta sends it again. Meta retries for up to 7 days.
+- **Identity:** `dedupe_hash` is built from the field, `entry.id`, `entry.time` and a canonical hash of `value`. A redelivery matches nothing new and answers 200. A body that can't be split is stored as one row, hashed from its bytes, and the worker marks it failed.
+- **Payload:** the column is text. A `message_template_id` can exceed 2^53 and would read back rounded from jsonb.
+- **Queueing:** the job holds only the row's id, and the request never waits on Redis. A failed enqueue is logged as `meta-webhook-enqueue`, and the sweep recovers the row.
+- **Running:** a job claims its row with a 10-minute lease, which raises `attempts`. A stalled or duplicate job loses the claim, and a run that outlived its lease can't overwrite a newer one. The same DTO validation runs here, and an event that fails it is marked failed without retrying.
+- **Retries:** 10 tries, doubling from 15 seconds, about 2 hours in all. After that the row is `failed`, with `last_error` and its payload.
+- **Sweep:** every minute, it re-queues rows never queued, whose job was lost, or left by a crash. Each job gets a fresh jobId, because BullMQ ignores an add with an id it still holds.
+- **Retention:** success clears the payload at once and keeps the hash. A failed event keeps its payload for 14 days so it can be replayed. Finished rows are deleted after 30 days. Rows still waiting are left to the sweep.
+- **Finishing a reply on retry:** a reply saved before a run stopped leaves the order answered, so a re-run gets no row from `updateStatus`. On a retry only, when the order already holds that same customer answer, the steps after the save run again. The store update is skipped when `commerce_outcome_syncs` shows it succeeded or has a background try scheduled, because the merchant may have moved the order on. A first run skips an answered order as it always did.
+
+**What doesn't retry.** These steps catch their own errors, so a failure inside them is logged and never reaches the worker: the dispatch in `VerificationHubService.synchronizeExternalOrder`, `markNoWhatsApp`, `recordCustomerAnswer`, `followUpUnresolvedReply` and the acknowledgment enqueue. A template event is also recorded before its alert and sync request, so a failure after that is a duplicate on retry, and the next scheduled sync corrects the template.
+
+**Order.** The rows of one POST run concurrently, and retries wait, so a retried reply can land after a later one. The first answer saved wins, as it does between two requests.
+
+To replay a failed event, see `WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`.
 
 **Customer reply processing:**
 
@@ -332,7 +355,7 @@ Re-running with the same Meta data changes nothing. `GET /api/admin/templates/sy
 
 The adapter reads `components` in the creation syntax and `quality_score` as the `{ score, date }` object the list response carries. Anything else is `unknown`, which never blocks a send and is never called drift.
 
-**Template webhooks.** `POST /webhooks/whatsapp` keeps its message handling unchanged. After it, `MetaTemplateWebhookHandler` reads the signed raw body, because the request DTO and the global validation pipe strip `field`, `entry.id`, `entry.time` and every template member. It reads `message_template_status_update`, `message_template_quality_update` and `template_category_update`:
+**Template webhooks.** `POST /webhooks/whatsapp` runs its message handling first. After it, inline or on the worker, `MetaTemplateWebhookHandler` reads the signed raw body, because the request DTO and the global validation pipe strip `field`, `entry.id`, `entry.time` and every template member. It reads `message_template_status_update`, `message_template_quality_update` and `template_category_update`:
 
 - `entry[].id` must be `WA_BUSINESS_ACCOUNT_ID`; anything else is logged (`wrong_account`) and dropped.
 - Meta sends no event ID, so an event's identity is the field, the account, `entry[].time` and a hash of `value`. It is stored in `whatsapp_template_events`, unique on that identity: a redelivery is a no-op.
@@ -1102,6 +1125,7 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 | Table                       | Role                                                             |
 | --------------------------- | ---------------------------------------------------------------- |
 | `webhook_events`            | Audit log and deduplication for inbound webhooks.                |
+| `meta_webhook_events`       | Stored Meta webhook changes; no access but the API's.            |
 | `orders`                    | Normalized order records from all platforms.                     |
 | `verifications`             | Verification lifecycle records (status, timestamps, metadata).   |
 | `integrations`              | Platform connections with automation settings and billing state. |

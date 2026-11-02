@@ -4218,3 +4218,45 @@ export const creditModelNotices = pgTable('credit_model_notices', {
   emailStatus: text('email_status'),
   emailReason: text('email_reason'),
 }).enableRLS();
+
+/**
+ * One row per change Meta sent, stored before the webhook is answered. API-only,
+ * and text rather than jsonb so a large template ID reads back exact.
+ */
+export const metaWebhookEvents = pgTable(
+  'meta_webhook_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    dedupeHash: text('dedupe_hash').notNull(),
+    field: text('field'),
+    wabaId: text('waba_id'),
+    phoneNumberId: text('phone_number_id'),
+    payload: text('payload'),
+    status: text('status').default('pending').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    receivedAt: timestamp('received_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    processedAt: timestamp('processed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    failedAt: timestamp('failed_at', { withTimezone: true, mode: 'string' }),
+    lastError: text('last_error'),
+  },
+  (table) => [
+    unique('meta_webhook_events_dedupe_hash_unique').on(table.dedupeHash),
+    check(
+      'meta_webhook_events_status_check',
+      sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`,
+    ),
+  ],
+).enableRLS();

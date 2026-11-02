@@ -359,3 +359,44 @@ from integrations
 where not logo_header_enabled -- stores staff switched off
 order by store_name;
 ```
+
+## 11. Stored Meta webhook events
+
+With `META_WEBHOOK_DURABLE_ENABLED=true`, a Meta event that keeps failing stays in `meta_webhook_events` with status `failed`. The table has no staff screen, and only the API's connection can read it.
+
+See what failed, without the payload:
+
+```sql
+SELECT id, field, attempts, last_error, received_at, failed_at
+FROM meta_webhook_events
+WHERE status = 'failed' AND payload IS NOT NULL
+ORDER BY failed_at DESC;
+```
+
+See whether events are backing up:
+
+```sql
+SELECT status, count(*), min(received_at) AS oldest
+FROM meta_webhook_events
+GROUP BY status;
+```
+
+Replay one after fixing the cause. The sweep queues it within a minute. `attempts = 1` makes it count as a retry, so a saved reply can still reach the store:
+
+```sql
+UPDATE meta_webhook_events
+SET status = 'pending', attempts = 1, next_attempt_at = now(),
+    failed_at = NULL, last_error = NULL
+WHERE id = '<event id>' AND status = 'failed' AND payload IS NOT NULL;
+```
+
+Payloads hold customer data and are cleared 14 days after failure, so replay before then. `last_error` of `validation_failed` or `unsplittable_body` will fail the same way again until the code changes.
+
+| `last_error` | Meaning |
+| --- | --- |
+| `validation_failed` | The change doesn't match the webhook DTO. |
+| `unsplittable_body` | The POST had no usable entry and change. The row holds the whole body. |
+| `attempts_exhausted` | Runs kept crashing until no attempts were left. |
+| Anything else | The last handler error. |
+
+To stop storing new events, set `META_WEBHOOK_DURABLE_ENABLED=false` and redeploy. Stored events still drain.

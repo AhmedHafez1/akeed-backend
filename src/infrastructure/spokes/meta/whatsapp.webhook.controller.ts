@@ -10,6 +10,7 @@ import {
   HttpCode,
   UsePipes,
   UseGuards,
+  UseInterceptors,
   ValidationPipe,
   ForbiddenException,
 } from '@nestjs/common';
@@ -21,6 +22,7 @@ import { MetaWebhookSignatureGuard } from '../../../shared/guards/meta-webhook-s
 import type { RequestWithRawBody } from '../../../shared/models/request-with-raw-body.interface';
 import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
+import { MetaWebhookIntakeInterceptor } from './meta-webhook-intake.interceptor';
 
 @SkipThrottle()
 @Controller('webhooks/whatsapp')
@@ -80,6 +82,7 @@ export class WhatsAppWebhookController {
 
   @Post()
   @UseGuards(MetaWebhookSignatureGuard)
+  @UseInterceptors(MetaWebhookIntakeInterceptor)
   @HttpCode(200)
   async handleIncoming(
     @Body() payload: WhatsAppWebhookPayloadDto,

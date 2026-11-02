@@ -35,6 +35,13 @@ export interface CommerceOutcomeDispatchCommand {
    * pressing a button is.
    */
   retryInBackground?: boolean;
+  /**
+   * For a repeat of an outcome that may already have been sent. A tracked
+   * outcome that succeeded, or has a background try scheduled, is left alone:
+   * a merchant may have moved the order on since, and a repeat would undo that
+   * or report a failure that isn't one.
+   */
+  skipIfSynced?: boolean;
   /** Read by `automatic_no_reply_cancellation` only. */
   cancellation?: CommerceCancellationOptions;
 }

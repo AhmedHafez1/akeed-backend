@@ -116,6 +116,13 @@ export class CommerceOutcomeRegistryService {
       return this.complete(command, { status: 'applied' });
     }
 
+    if (
+      command.skipIfSynced &&
+      (await tracker?.isSettledOrScheduled(command, order.id))
+    ) {
+      return this.complete(command, { status: 'applied' });
+    }
+
     const sync = await tracker?.begin(command, order.id);
     try {
       const result = await adapter.execute({

@@ -30,6 +30,10 @@ import {
 } from './merchant-branding.config';
 import { META_GRAPH_CONFIG, parseMetaGraphConfig } from './meta-graph.config';
 import {
+  META_WEBHOOK_CONFIG,
+  parseMetaWebhookConfig,
+} from './meta-webhook.config';
+import {
   parseUsageAlertsConfig,
   USAGE_ALERTS_CONFIG,
 } from './usage-alerts.config';
@@ -139,5 +143,6 @@ export function validateEnv(
     [MERCHANT_BRANDING_CONFIG]: parseMerchantBrandingConfig(config),
     [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig(config),
     [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
+    [META_WEBHOOK_CONFIG]: parseMetaWebhookConfig(config),
   };
 }

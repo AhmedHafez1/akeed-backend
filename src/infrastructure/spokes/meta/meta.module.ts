@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { HttpModule } from '@nestjs/axios';
 import { WhatsAppService } from './whatsapp.service';
 import { ConfigModule } from '@nestjs/config';
@@ -10,6 +11,11 @@ import { WhatsappTemplateSyncModule } from '../../../modules/template-registry/w
 import { MetaTemplateCatalogAdapter } from './meta-template-catalog.adapter';
 import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
 import { VerificationAutomationQueueModule } from '../../../modules/verification-automation/verification-automation-queue.module';
+import { MetaWebhookEventsProcessor } from './meta-webhook-events.processor';
+import { MetaWebhookEventsScheduler } from './meta-webhook-events.scheduler';
+import { MetaWebhookEventsService } from './meta-webhook-events.service';
+import { MetaWebhookIntakeInterceptor } from './meta-webhook-intake.interceptor';
+import { META_WEBHOOK_QUEUE } from './meta-webhook-queue.constants';
 
 @Module({
   imports: [
@@ -18,6 +24,7 @@ import { VerificationAutomationQueueModule } from '../../../modules/verification
     DatabaseModule,
     WhatsappTemplateSyncModule,
     VerificationAutomationQueueModule,
+    BullModule.registerQueue({ name: META_WEBHOOK_QUEUE }),
   ],
   controllers: [WhatsAppWebhookController],
   providers: [
@@ -25,6 +32,10 @@ import { VerificationAutomationQueueModule } from '../../../modules/verification
     WhatsAppWebhookService,
     MetaTemplateCatalogAdapter,
     MetaTemplateWebhookHandler,
+    MetaWebhookEventsService,
+    MetaWebhookEventsProcessor,
+    MetaWebhookEventsScheduler,
+    MetaWebhookIntakeInterceptor,
   ],
   exports: [WhatsAppService, MetaTemplateCatalogAdapter],
 })

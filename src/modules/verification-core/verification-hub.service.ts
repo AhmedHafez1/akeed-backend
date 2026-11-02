@@ -388,7 +388,11 @@ export class VerificationHubService {
     }
   }
 
-  async finalizeVerification(verificationId: string, status: string) {
+  async finalizeVerification(
+    verificationId: string,
+    status: string,
+    options: { skipIfSynced?: boolean } = {},
+  ) {
     this.logger.log(
       buildBackendLog(VerificationHubService.name, {
         action: 'verification-finalize',
@@ -413,6 +417,7 @@ export class VerificationHubService {
         status,
         verification.id,
         verification.orgId,
+        options,
       );
     }
   }
@@ -812,6 +817,7 @@ export class VerificationHubService {
     status: 'confirmed' | 'canceled',
     verificationId: string,
     orgId: string,
+    options: { skipIfSynced?: boolean },
   ): Promise<void> {
     if (!order.integrationId) {
       this.logger.warn(
@@ -838,6 +844,7 @@ export class VerificationHubService {
         // The customer has answered; a source that tracks synchronization
         // keeps trying to tell the store without anyone asking again.
         retryInBackground: true,
+        ...(options.skipIfSynced ? { skipIfSynced: true } : {}),
       });
     } catch (error) {
       this.logger.error(

@@ -60,6 +60,31 @@ export class CommerceOutcomeSyncTracker {
     }
   }
 
+  /**
+   * Whether this outcome already reached the store or has a try on the way.
+   * A failed read answers no: the adapters read the order before writing.
+   */
+  async isSettledOrScheduled(
+    command: CommerceOutcomeDispatchCommand,
+    orderId: string,
+  ): Promise<boolean> {
+    try {
+      const rows = await this.syncs.findForOrder(
+        command.orgId,
+        command.integrationId,
+        orderId,
+      );
+      const sync = rows.find((row) => row.action === command.action);
+      return (
+        sync?.state === 'succeeded' ||
+        (sync?.state === 'pending' && sync.nextAttemptAt !== null)
+      );
+    } catch (error) {
+      this.logFailure('commerce-outcome-sync-read', command, error);
+      return false;
+    }
+  }
+
   /** Records a result reached without calling the adapter. */
   async recordWithoutAttempt(
     command: CommerceOutcomeDispatchCommand,
