@@ -451,6 +451,7 @@ export function releaseGateHarness(
       tables.integrations,
       tables.orders,
       tables.verifications,
+      tables.verificationAutoCancellations,
       tables.integrationMonthlyUsage,
       tables.adminAccessAudit,
       tables.webhookEvents,

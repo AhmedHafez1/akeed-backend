@@ -299,7 +299,7 @@ describe('OnboardingService', () => {
         timezone: 'Africa/Cairo',
         followUpEnabled: true,
         followUpDelayMinutes: 360,
-        escalationDelayMinutes: 1800,
+        escalationDelayMinutes: 1080,
         quietHoursEnabled: false,
         quietHoursStart: '22:00',
         quietHoursEnd: '09:00',
