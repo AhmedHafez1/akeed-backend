@@ -22,6 +22,7 @@ import { AdminAccessGuard } from '../../src/modules/admin/admin-access.guard';
 import { AdminController } from '../../src/modules/admin/admin.controller';
 import { AdminFunnelService } from '../../src/modules/admin/admin-funnel.service';
 import { AdminMessageTextsController } from '../../src/modules/admin/admin-message-texts.controller';
+import { AdminImageTwinsService } from '../../src/modules/admin/admin-image-twins.service';
 import { AdminMessageTextsService } from '../../src/modules/admin/admin-message-texts.service';
 import { AdminStoresService } from '../../src/modules/admin/admin-stores.service';
 import { AdminTemplateAuthoringController } from '../../src/modules/admin/admin-template-authoring.controller';
@@ -285,6 +286,7 @@ describe('template role and operator controls', () => {
       AdminTemplateDraftService,
       AdminTemplateLifecycleService,
       AdminMessageTextsService,
+      AdminImageTwinsService,
       AdminStoresService,
       AdminFunnelService,
       MessageDispatchResolutionService,
@@ -354,6 +356,7 @@ describe('template role and operator controls', () => {
       'GET /api/admin/templates/:key/impact',
       'GET /api/admin/templates/drafts',
       'GET /api/admin/templates/drafts/:id',
+      'GET /api/admin/templates/image-twins',
       'GET /api/admin/templates/metrics',
       'GET /api/admin/templates/sync/runs',
       'PATCH /api/admin/templates/drafts/:id',
@@ -367,6 +370,8 @@ describe('template role and operator controls', () => {
       'POST /api/admin/templates/drafts/:id/reconcile',
       'POST /api/admin/templates/drafts/:id/submit',
       'POST /api/admin/templates/drafts/validate',
+      'POST /api/admin/templates/image-twins',
+      'POST /api/admin/templates/image-twins/activate',
       'POST /api/admin/templates/sync',
       'PUT /api/admin/message-texts',
     ]);
