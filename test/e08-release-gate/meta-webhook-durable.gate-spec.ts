@@ -1,6 +1,14 @@
 import { createHmac } from 'node:crypto';
 import type { Server } from 'node:http';
-import { Logger, ValidationPipe, type INestApplication } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Logger,
+  Post,
+  Req,
+  ValidationPipe,
+  type INestApplication,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
@@ -19,6 +27,7 @@ import {
   parseMetaWebhookConfig,
 } from '../../src/shared/config/meta-webhook.config';
 import { MetaWebhookSignatureGuard } from '../../src/shared/guards/meta-webhook-signature.guard';
+import type { RequestWithRawBody } from '../../src/shared/models/request-with-raw-body.interface';
 
 /**
  * The durable route over HTTP, in both switch positions.
@@ -40,6 +49,15 @@ interface Row {
   attempts: number;
   nextAttemptAt: string;
   lastError?: string;
+}
+
+/** Stands for every other route: Shopify's HMAC guard needs both of these. */
+@Controller('another-route')
+class AnotherRouteController {
+  @Post()
+  echo(@Body() body: unknown, @Req() request: RequestWithRawBody) {
+    return { body, rawBody: request.rawBody?.toString('utf8') };
+  }
 }
 
 class InMemoryEvents {
@@ -195,7 +213,7 @@ describe('durable Meta webhook route', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [WhatsAppWebhookController],
+      controllers: [WhatsAppWebhookController, AnotherRouteController],
       providers: [
         MetaWebhookSignatureGuard,
         MetaTemplateWebhookHandler,
@@ -260,6 +278,17 @@ describe('durable Meta webhook route', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('leaves the app-wide parser in place for every other route', async () => {
+    const body = JSON.stringify({ hello: 'world' });
+
+    await request(app.getHttpServer() as Server)
+      .post('/another-route')
+      .set('Content-Type', 'application/json')
+      .send(body)
+      .expect(201)
+      .expect({ body: { hello: 'world' }, rawBody: body });
+  });
 
   describe('switch off', () => {
     beforeEach(() => turn(false));
