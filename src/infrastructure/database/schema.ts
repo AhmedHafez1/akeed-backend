@@ -4066,6 +4066,7 @@ export const tipsCampaigns = pgTable(
     publishedBy: uuid('published_by'),
     publishedReviewToken: text('published_review_token'),
     recipientCount: integer('recipient_count'),
+    showAsBanner: boolean('show_as_banner').default(false).notNull(),
     pausedAt: timestamp('paused_at', { withTimezone: true, mode: 'string' }),
     archivedAt: timestamp('archived_at', {
       withTimezone: true,

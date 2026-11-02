@@ -537,6 +537,14 @@ export function tipsEditRejection(
 }
 
 /**
+ * The banner switch is a display setting, not content: it may change in any
+ * state but archived, without a new review.
+ */
+export function tipsBannerRejection(status: TipsCampaignStatus): string | null {
+  return status === 'archived' ? TIPS_CAMPAIGN_ERROR_CODES.notEditable : null;
+}
+
+/**
  * The bundle a merchant reads: their locale when it is complete for this
  * campaign, otherwise English, whole. A title is never shown in one language
  * with the body or button in another.

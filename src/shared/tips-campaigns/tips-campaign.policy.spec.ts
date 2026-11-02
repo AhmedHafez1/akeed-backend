@@ -11,6 +11,7 @@ import {
   normalizeTipsContent,
   normalizeTipsOrgIds,
   parseTipsReviewToken,
+  tipsBannerRejection,
   tipsEditRejection,
   validateTipsName,
 } from './tips-campaign.policy';
@@ -357,6 +358,13 @@ describe('lifecycle', () => {
     expect(tipsEditRejection('archived', none)).toBe(
       'TIPS_CAMPAIGN_NOT_EDITABLE',
     );
+  });
+
+  it('lets the banner switch change in every state but archived', () => {
+    expect(tipsBannerRejection('draft')).toBeNull();
+    expect(tipsBannerRejection('published')).toBeNull();
+    expect(tipsBannerRejection('paused')).toBeNull();
+    expect(tipsBannerRejection('archived')).toBe('TIPS_CAMPAIGN_NOT_EDITABLE');
   });
 });
 

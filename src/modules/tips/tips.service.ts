@@ -77,6 +77,7 @@ export class TipsService {
           title: bundle.title,
           description: bundle.description,
           action,
+          show_as_banner: row.show_as_banner === true,
           published_at: row.published_at,
         },
       ];

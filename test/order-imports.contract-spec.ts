@@ -257,6 +257,11 @@ describe('order imports PostgreSQL contract', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id uuid
       );
+      -- The banner migration only needs the campaign table to pre-exist.
+      CREATE TABLE tips_campaigns (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+      INSERT INTO tips_campaigns DEFAULT VALUES;
     `);
     // Layer the real migration on the hand-written base, twice, to prove it is
     // re-runnable and ships exactly the constraints the repository relies on.
@@ -323,6 +328,7 @@ describe('order imports PostgreSQL contract', () => {
         '0082_meta_webhook_events.sql',
         // Thank-you opt-in off by default; proves 0083 re-runs.
         '0083_merchant_acknowledgments.sql',
+        '0084_tips_campaign_banner.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -345,6 +351,19 @@ describe('order imports PostgreSQL contract', () => {
     } finally {
       await client.end({ timeout: 5 });
     }
+  });
+
+  it('defaults existing and new campaigns to banner off after repeat migration', async () => {
+    const existing = await client<
+      { show_as_banner: boolean }[]
+    >`SELECT show_as_banner FROM tips_campaigns`;
+    expect(existing).toEqual([{ show_as_banner: false }]);
+    const [campaign] = await client<{ show_as_banner: boolean }[]>`
+      INSERT INTO tips_campaigns DEFAULT VALUES RETURNING show_as_banner`;
+    expect(campaign.show_as_banner).toBe(false);
+    await expect(
+      client`UPDATE tips_campaigns SET show_as_banner = NULL`,
+    ).rejects.toThrow();
   });
 
   it('gives a new store a 12-hour no-reply gap with quiet hours off', async () => {
