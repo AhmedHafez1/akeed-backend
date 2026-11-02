@@ -28,28 +28,12 @@ export class CreateOrganizationDto {
   sourceMode?: OrganizationSourceMode;
 }
 
-export class UpdateOrganizationDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  wa_phone_number_id?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  wa_business_account_id?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  wa_access_token?: string;
-}
-
 export interface OrganizationResponseDto {
   id: string;
   name: string;
   slug: string;
   plan_type: string | null;
+  /** Read only: kept for existing readers; no route writes these any more. */
   wa_phone_number_id: string | null;
   wa_business_account_id: string | null;
   wa_access_token_configured: boolean;

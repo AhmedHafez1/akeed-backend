@@ -589,6 +589,13 @@
       "when": 1794096000000,
       "tag": "0083_merchant_acknowledgments",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1794182400000,
+      "tag": "0084_whatsapp_connections",
+      "breakpoints": true
     }
   ]
 }

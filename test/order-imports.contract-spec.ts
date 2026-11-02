@@ -272,9 +272,15 @@ describe('order imports PostgreSQL contract', () => {
             // does not have; only its store columns apply.
             migration.startsWith('0083_')
             ? statement.includes('ALTER TABLE "integrations"')
-            : // The cancellation tables reference columns the base does not have.
-              !migration.startsWith('0075_') ||
-              !statement.includes('verification_auto_cancellation');
+            : // The base has no template registry, so the per-number template
+              // table is left out; the connection and ticket tables apply.
+              migration.startsWith('0084_')
+              ? !statement
+                  .replace(/--.*$/gm, '')
+                  .includes('whatsapp_connection_templates')
+              : // The cancellation tables reference columns the base does not have.
+                !migration.startsWith('0075_') ||
+                !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -323,6 +329,8 @@ describe('order imports PostgreSQL contract', () => {
         '0082_meta_webhook_events.sql',
         // Thank-you opt-in off by default; proves 0083 re-runs.
         '0083_merchant_acknowledgments.sql',
+        // Merchant WhatsApp connections and tickets; proves 0084 re-runs.
+        '0084_whatsapp_connections.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

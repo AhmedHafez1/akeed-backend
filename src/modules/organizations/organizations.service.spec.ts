@@ -2,6 +2,9 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import type { StandaloneOrganizationProvisioningRepository } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
 import { StandaloneSourceConflictError } from '../../infrastructure/database/repositories/standalone-organization-provisioning.repository';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
+import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 
 const organization = {
@@ -23,7 +26,6 @@ const integration = {
 function createService(created = true) {
   const organizationsRepo = {
     findById: jest.fn().mockResolvedValue(organization),
-    updateById: jest.fn(),
   };
   const provisioningRepo = {
     provision: jest.fn().mockResolvedValue({
@@ -130,39 +132,58 @@ describe('OrganizationsService standalone provisioning', () => {
   });
 
   it.each(['owner', 'admin'] as const)(
-    'allows a %s to update only the authenticated organization',
+    'answers a %s with the authenticated organization and writes nothing',
     async (role) => {
       const { service, organizationsRepo } = createService();
-      organizationsRepo.updateById.mockResolvedValue(organization);
 
-      await service.updateCurrentOrganization(
-        { userId: 'user-1', orgId: 'org-1', role, source: 'supabase' },
-        { wa_phone_number_id: 'phone-1' },
-      );
+      await expect(
+        service.updateCurrentOrganization({
+          userId: 'user-1',
+          orgId: 'org-1',
+          role,
+          source: 'supabase',
+        }),
+      ).resolves.toMatchObject({ id: 'org-1', wa_phone_number_id: null });
 
-      expect(organizationsRepo.updateById).toHaveBeenCalledWith('org-1', {
-        waPhoneNumberId: 'phone-1',
-      });
+      expect(organizationsRepo.findById).toHaveBeenCalledWith('org-1');
+      expect(Object.keys(organizationsRepo)).toEqual(['findById']);
     },
   );
+
+  it('no longer reads a request body, so retired wa_* fields cannot reach it', () => {
+    const args = (Reflect.getMetadata(
+      ROUTE_ARGS_METADATA,
+      OrganizationsController,
+      'updateCurrentOrganization',
+    ) ?? {}) as Record<string, unknown>;
+
+    expect(
+      Object.keys(args).some((key) =>
+        key.startsWith(`${RouteParamtypes.BODY}:`),
+      ),
+    ).toBe(false);
+    // The service takes the user alone: there is no payload to forward.
+    expect(
+      Object.getOwnPropertyDescriptor(
+        OrganizationsService.prototype,
+        'updateCurrentOrganization',
+      )?.value,
+    ).toHaveLength(1);
+  });
 
   it('rejects a viewer before reading or updating organization configuration', async () => {
     const { service, organizationsRepo } = createService();
 
     await expect(
-      service.updateCurrentOrganization(
-        {
-          userId: 'viewer-1',
-          orgId: 'org-1',
-          role: 'viewer',
-          source: 'supabase',
-        },
-        { wa_phone_number_id: 'forged' },
-      ),
+      service.updateCurrentOrganization({
+        userId: 'viewer-1',
+        orgId: 'org-1',
+        role: 'viewer',
+        source: 'supabase',
+      }),
     ).rejects.toMatchObject({
       response: { code: 'ORGANIZATION_ROLE_REQUIRED' },
     });
     expect(organizationsRepo.findById).not.toHaveBeenCalled();
-    expect(organizationsRepo.updateById).not.toHaveBeenCalled();
   });
 });

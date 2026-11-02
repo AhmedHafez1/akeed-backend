@@ -70,6 +70,22 @@ const REDACTED_KEYS = new Set([
   'hmac',
   'signature',
   'wa_access_token',
+  // A merchant's own WhatsApp number: the business token and registration
+  // PIN, their ciphertext, and the signup ticket and its stored hash.
+  'business_token',
+  'businesstoken',
+  'business_token_encrypted',
+  'businesstokenencrypted',
+  'registration_pin',
+  'registrationpin',
+  'registration_pin_encrypted',
+  'registrationpinencrypted',
+  'pin',
+  'ticket',
+  'connect_ticket',
+  'connectticket',
+  'token_hash',
+  'tokenhash',
   'shopify_api_secret',
   'supabase_anon_key',
   // A hosted-checkout URL carries the provider client secret in its query, so

@@ -75,6 +75,30 @@ describe('validateEnv', () => {
     );
   });
 
+  it('parses the own-number switches, off by default', () => {
+    const env = validateEnv({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgres://x/db',
+    });
+    expect(env.whatsappOwnNumber).toEqual({
+      connectEnabled: false,
+      sendingEnabled: false,
+      pilotOrgIds: [],
+      embeddedSignupConfigId: null,
+      metaAppId: null,
+    });
+  });
+
+  it('fails boot when own-number connect is on without its signup settings', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'test',
+        DATABASE_URL: 'postgres://x/db',
+        WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'true',
+      }),
+    ).toThrow(/META_EMBEDDED_SIGNUP_CONFIG_ID is required/);
+  });
+
   it('treats a whitespace-only value as missing', () => {
     expect(() =>
       validateEnv({

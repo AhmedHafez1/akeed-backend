@@ -337,7 +337,7 @@ is sent, whatever Meta says about it.
 | `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off. Rollback is turning it off. |
 | `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. The writes are drafts (`/drafts`, `/drafts/:id`, `/drafts/validate`), submission to Meta (`/drafts/:id/submit`, `/drafts/:id/reconcile`), a text edit (`/:key/edit`), `/:key/activate`, `/:key/deactivate`, `/:key/set-default` and `/:key/retire`, and the image twins (`/image-twins`, `/image-twins/activate`). Turning it off is the rollback: templates already approved and active keep sending. `GET /api/admin/session` reports `template_operations.enabled` and `.operator`, so the admin UI hides the controls. |
 | `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Empty (the default) means every staff member may write while operations are on. When IDs are listed, staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. Startup fails on an entry that is not a UUID. |
-| `META_APP_ID` | The Meta app's numeric ID (App settings › Basic). Needed only by **Create missing twins** in Admin › Templates (`POST /api/admin/templates/image-twins`), which uploads the sample image Meta reviews an image-header template with. Without it that action answers `503 WHATSAPP_TEMPLATE_IMAGE_TWIN_NOT_CONFIGURED`; nothing else uses it. Startup fails on a value that is not digits. |
+| `META_APP_ID` | The Meta app's numeric ID (App settings › Basic). Needed only by **Create missing twins** in Admin › Templates (`POST /api/admin/templates/image-twins`), which uploads the sample image Meta reviews an image-header template with. Without it that action answers `503 WHATSAPP_TEMPLATE_IMAGE_TWIN_NOT_CONFIGURED`. It is also required while `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true` (see [Merchant own WhatsApp number](#merchant-own-whatsapp-number)). Startup fails on a value that is not digits. |
 | `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page, in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
 
 Rollout, per environment, dev first:
@@ -454,6 +454,36 @@ customer service window, or when Meta answers `131047`, it is a recorded skip
 (`outside_window`, `window_closed`), not a failure. The texts are managed by
 the template operators under `/api/admin/message-texts` (same
 `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
+
+### Merchant own WhatsApp number
+
+A merchant can connect its own WhatsApp number. Its connection, signup tickets
+and per-number templates are stored in `whatsapp_connections`,
+`whatsapp_connect_tickets` and `whatsapp_connection_templates`. Only the API
+reads them: row-level security is on and nothing is granted to `anon` or
+`authenticated`. The business token and registration PIN are stored only as
+`v1:` ciphertext under `SHOPIFY_TOKEN_ENCRYPTION_KEY`, and anything else in
+those columns is treated as no credential. Only a ticket's SHA-256 is stored.
+
+Both switches are off by default, and each is read on its own:
+
+| Variable | Notes |
+| --- | --- |
+| `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. |
+| `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
+| `WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS` | Optional allow-list of organization UUIDs, comma-separated. A malformed entry fails startup. Empty (default) allows every organization while a switch is on. A populated list allows only the listed organizations, for both switches. It never turns a switch on. |
+| `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
+
+Any value other than `true` or `false` in a switch fails startup. With both
+switches off, none of the other variables is needed. Meta webhooks are
+processed whatever the switches say.
+
+`GET /api/whatsapp-sender` (any signed-in member) answers what the connect
+screen needs, with `Cache-Control: no-store`: `available` is `true` only while
+connect is on and the organization is allowed, and only then are `appId` and
+`configId` set. Otherwise it is `{ "available": false, "appId": null,
+"configId": null }`. It never returns a credential. Changing a connection is
+for the organization's owner only (`403 WHATSAPP_CONNECTION_OWNER_REQUIRED`).
 
 ## Meta Ad Conversions (Conversions API)
 
