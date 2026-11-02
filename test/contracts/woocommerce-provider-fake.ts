@@ -156,6 +156,9 @@ export class FakeWooCommerceStore {
   version: string | null = '9.8.1';
   /** False is "Plain" permalinks: `wp-json` does not answer. */
   permalinks = true;
+
+  /** "Plain" permalinks on a host that redirects `wp-json` instead of a 404. */
+  plainRedirects = false;
   validCertificate = true;
   /** Every request is answered with a redirect to this address. */
   redirectTo: string | null = null;
@@ -345,6 +348,35 @@ export class FakeWooCommerceStore {
           headers: { location: this.redirectTo },
           body: Buffer.alloc(0),
         },
+      };
+    if (this.plainRedirects)
+      return {
+        ...none,
+        response:
+          url.searchParams.get('rest_route') === '/wc/v3'
+            ? {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+                body: Buffer.from(
+                  JSON.stringify({
+                    namespace: 'wc/v3',
+                    _links: {
+                      up: [
+                        {
+                          href: `https://${this.host}${this.basePath}/index.php?rest_route=/`,
+                        },
+                      ],
+                    },
+                  }),
+                ),
+              }
+            : {
+                status: 301,
+                headers: {
+                  location: `https://${this.host}${url.pathname}/`,
+                },
+                body: Buffer.alloc(0),
+              },
       };
     if (!this.permalinks || !url.pathname.startsWith(restBase))
       return { ...none, response: restError(404, 'rest_no_route') };

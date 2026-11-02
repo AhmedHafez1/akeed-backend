@@ -20,6 +20,7 @@ export type WooCommerceErrorCode =
   | 'WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC'
   | 'WOOCOMMERCE_STORE_REDIRECTS'
   | 'WOOCOMMERCE_STORE_TLS_FAILED'
+  | 'WOOCOMMERCE_PLAIN_PERMALINKS'
   | 'WOOCOMMERCE_REST_NOT_FOUND'
   | 'WOOCOMMERCE_REST_UNREACHABLE'
   | 'WOOCOMMERCE_CREDENTIALS_REJECTED'
@@ -58,6 +59,7 @@ const STATUS: Record<WooCommerceErrorCode, HttpStatus> = {
   WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC: HttpStatus.UNPROCESSABLE_ENTITY,
   WOOCOMMERCE_STORE_REDIRECTS: HttpStatus.UNPROCESSABLE_ENTITY,
   WOOCOMMERCE_STORE_TLS_FAILED: HttpStatus.UNPROCESSABLE_ENTITY,
+  WOOCOMMERCE_PLAIN_PERMALINKS: HttpStatus.UNPROCESSABLE_ENTITY,
   WOOCOMMERCE_REST_NOT_FOUND: HttpStatus.UNPROCESSABLE_ENTITY,
   WOOCOMMERCE_REST_UNREACHABLE: HttpStatus.SERVICE_UNAVAILABLE,
   WOOCOMMERCE_CREDENTIALS_REJECTED: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -101,6 +103,8 @@ const MESSAGES: Record<WooCommerceErrorCode, string> = {
     "This address redirects to another one. Enter your store's final address, with or without www, exactly as it appears in the browser.",
   WOOCOMMERCE_STORE_TLS_FAILED:
     "Your store's security certificate is not valid. Ask your hosting provider to fix it, then try again.",
+  WOOCOMMERCE_PLAIN_PERMALINKS:
+    'Your store address is correct, but WordPress is set to Plain permalinks, which blocks the connection. Open Settings > Permalinks, choose Post name and save. If your site uses a cache, clear it, then connect again with the same address.',
   WOOCOMMERCE_REST_NOT_FOUND:
     'Akeed could not find the WooCommerce REST API at this address. In WordPress, open Settings > Permalinks, choose any option other than Plain, and make sure WooCommerce is up to date.',
   WOOCOMMERCE_REST_UNREACHABLE:
@@ -150,6 +154,7 @@ const STORE_FAILURE_CODES: Partial<
   address_not_public: 'WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC',
   redirects: 'WOOCOMMERCE_STORE_REDIRECTS',
   tls_failed: 'WOOCOMMERCE_STORE_TLS_FAILED',
+  plain_permalinks: 'WOOCOMMERCE_PLAIN_PERMALINKS',
   credentials_rejected: 'WOOCOMMERCE_CREDENTIALS_REJECTED',
   permission_denied: 'WOOCOMMERCE_PERMISSION_DENIED',
   budget_exceeded: 'WOOCOMMERCE_PROVIDER_UNAVAILABLE',

@@ -948,8 +948,9 @@ describe('WooCommerce connection PostgreSQL contract', () => {
         ),
       ).resolves.toEqual({ status: 422, code: 'WOOCOMMERCE_STORE_REDIRECTS' });
 
-      // One request, to the store, and nothing after it.
+      // Two looks at the store itself, and the redirect was never followed.
       expect(fake.requests.slice(before)).toEqual([
+        expect.objectContaining({ host: store.host, answered: 301 }),
         expect.objectContaining({ host: store.host, answered: 301 }),
       ]);
       await expect(pendingOf(tenant.orgId)).resolves.toHaveLength(0);
@@ -986,6 +987,22 @@ describe('WooCommerce connection PostgreSQL contract', () => {
           }),
         ),
       ).resolves.toEqual({ status: 422, code: 'WOOCOMMERCE_REST_NOT_FOUND' });
+      await expect(pendingOf(tenant.orgId)).resolves.toHaveLength(0);
+    });
+
+    it('names plain permalinks when the REST address redirects', async () => {
+      const tenant = await createTenant();
+      const store = newStore();
+      store.plainRedirects = true;
+
+      await expect(
+        outcome(
+          service.startInstall(member(tenant), {
+            storeUrl: store.url,
+            locale: 'en',
+          }),
+        ),
+      ).resolves.toEqual({ status: 422, code: 'WOOCOMMERCE_PLAIN_PERMALINKS' });
       await expect(pendingOf(tenant.orgId)).resolves.toHaveLength(0);
     });
 

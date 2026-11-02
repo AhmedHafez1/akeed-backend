@@ -155,7 +155,8 @@ A disconnect made by mistake is undone by reconnecting the same store. The integ
 | `WOOCOMMERCE_STORE_TLS_FAILED` | The store's certificate is invalid or expired. |
 | `WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC` | The domain does not resolve, or resolves to a private address. DNS. |
 | `WOOCOMMERCE_STORE_REDIRECTS` | The address now redirects (a domain move, a forced `www`). Akeed never follows a redirect. |
-| `WOOCOMMERCE_REST_NOT_FOUND` | Plain permalinks, or WooCommerce deactivated. |
+| `WOOCOMMERCE_PLAIN_PERMALINKS` | `wp-json` redirects and the store's REST links show Plain permalinks. The address is fine: choose Post name under Settings > Permalinks, save and clear the site cache. |
+| `WOOCOMMERCE_REST_NOT_FOUND` | Plain permalinks on a host that answers 404, or WooCommerce deactivated. |
 | `WOOCOMMERCE_REST_UNREACHABLE` | The store is down, in maintenance, or a firewall blocks Akeed. |
 | `WOOCOMMERCE_CREDENTIALS_REJECTED` with a key the merchant did not revoke | The host strips the `Authorization` header. |
 | `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED` on every attempt | The host refuses `PUT`. |

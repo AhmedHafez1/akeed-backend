@@ -33,6 +33,8 @@ export interface WooCommerceCredentials {
  *
  * - `address_not_public`, `redirects`, `tls_failed`: refused by the
  *   restricted client.
+ * - `plain_permalinks`: `wp-json` redirects and the store's own REST links
+ *   show Plain permalinks.
  * - `rest_not_found`: a 404.
  * - `credentials_rejected`: a 401. `permission_denied`: a 403.
  * - `budget_exceeded`: the caller's own deadline passed.
@@ -43,6 +45,7 @@ export type WooCommerceCallFailure =
   | 'address_not_public'
   | 'redirects'
   | 'tls_failed'
+  | 'plain_permalinks'
   | 'rest_not_found'
   | 'credentials_rejected'
   | 'permission_denied'
@@ -174,6 +177,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * WordPress builds its REST links with `rest_route` only when permalinks are
+ * Plain. A redirect alone cannot say so: a store may force a trailing slash
+ * or another host with permalinks set correctly.
+ */
+function showsPlainPermalinks(body: unknown): boolean {
+  const links = isRecord(body) ? body._links : undefined;
+  const up = isRecord(links) ? links.up : undefined;
+  const first: unknown = Array.isArray(up) ? up[0] : undefined;
+  const href = isRecord(first) ? first.href : undefined;
+  return typeof href === 'string' && href.includes('rest_route=');
+}
+
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
@@ -273,18 +289,40 @@ export class WooCommerceApiClient {
    * The unauthenticated look at `wp-json/wc/v3` before the merchant is sent
    * to the store. What that address returns is not documented, so only the
    * status is read: a 404 means the REST API is not there, a 5xx means the
-   * store is failing, and any other answer lets the merchant continue.
+   * store is failing, and any other answer lets the merchant continue. A
+   * redirect is not followed; it gets one look at the Plain address instead,
+   * so the merchant is told what to change.
    */
   async probeRestApi(storeUrl: string): Promise<WooCommerceCallResult<object>> {
     const exchange = await this.exchange({
       url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}`,
       method: 'GET',
     });
-    if (exchange.kind === 'failed') return exchange;
+    if (exchange.kind === 'failed')
+      return exchange.reason === 'redirects'
+        ? this.explainRedirect(storeUrl)
+        : exchange;
     const { status } = exchange.response;
     if (status === 404) return failed('rest_not_found');
     if (status >= 500) return failed('unreachable');
     return { kind: 'ok' };
+  }
+
+  private async explainRedirect(
+    storeUrl: string,
+  ): Promise<WooCommerceCallResult<object>> {
+    const exchange = await this.exchange({
+      url: `${storeUrl}/?rest_route=/wc/v3`,
+      method: 'GET',
+      maxResponseBytes: RESTRICTED_HTTP_MAX_BYTES,
+    });
+    return failed(
+      exchange.kind === 'answered' &&
+        exchange.response.status === 200 &&
+        showsPlainPermalinks(readJson(exchange.response))
+        ? 'plain_permalinks'
+        : 'redirects',
+    );
   }
 
   /**

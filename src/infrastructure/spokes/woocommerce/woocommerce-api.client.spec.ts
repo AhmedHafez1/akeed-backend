@@ -102,6 +102,56 @@ describe('WooCommerceApiClient', () => {
         reason: 'unreachable',
       });
     });
+
+    describe('when the REST base redirects', () => {
+      const PLAIN_URL = `${STORE}/?rest_route=/wc/v3`;
+      const indexLinkingTo = (href: string) =>
+        answer(200, { namespace: 'wc/v3', _links: { up: [{ href }] } });
+      const redirectThen = (
+        second: () => RestrictedHttpResponse | Error,
+      ): ReturnType<typeof clientAnswering> =>
+        clientAnswering((request) =>
+          request.url === PLAIN_URL ? second() : refusedBy('redirect'),
+        );
+
+      it('names Plain permalinks when the store links with rest_route', async () => {
+        const { client, requests } = redirectThen(() =>
+          indexLinkingTo('https://example.com/shop/index.php?rest_route=/'),
+        );
+
+        await expect(client.probeRestApi(STORE)).resolves.toEqual({
+          kind: 'failed',
+          reason: 'plain_permalinks',
+        });
+        expect(requests).toEqual([
+          { url: `${STORE}/wp-json/wc/v3`, method: 'GET' },
+          {
+            url: PLAIN_URL,
+            method: 'GET',
+            maxResponseBytes: RESTRICTED_HTTP_MAX_BYTES,
+          },
+        ]);
+      });
+
+      it.each([
+        [
+          'permalinks that are set',
+          () => indexLinkingTo('https://example.com/shop/wp-json/'),
+        ],
+        ['a page that is not JSON', () => answer(200, '<html>')],
+        ['JSON without the links', () => answer(200, { namespace: 'wc/v3' })],
+        ['another status', () => answer(403)],
+        ['a second redirect', () => refusedBy('redirect')],
+        ['no answer', () => refusedBy('network')],
+      ])('stays a redirect for %s', async (_label, second) => {
+        const { client } = redirectThen(second);
+
+        await expect(client.probeRestApi(STORE)).resolves.toEqual({
+          kind: 'failed',
+          reason: 'redirects',
+        });
+      });
+    });
   });
 
   describe('readSystemStatus', () => {

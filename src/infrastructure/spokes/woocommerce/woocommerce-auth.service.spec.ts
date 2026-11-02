@@ -319,6 +319,7 @@ describe('WooCommerceAuthService', () => {
       ['address_not_public', 422, 'WOOCOMMERCE_STORE_ADDRESS_NOT_PUBLIC'],
       ['redirects', 422, 'WOOCOMMERCE_STORE_REDIRECTS'],
       ['tls_failed', 422, 'WOOCOMMERCE_STORE_TLS_FAILED'],
+      ['plain_permalinks', 422, 'WOOCOMMERCE_PLAIN_PERMALINKS'],
       ['rest_not_found', 422, 'WOOCOMMERCE_REST_NOT_FOUND'],
       ['unreachable', 503, 'WOOCOMMERCE_REST_UNREACHABLE'],
     ] as const)(
