@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
@@ -35,6 +35,29 @@ export interface SaveWhatsappConnectionInput {
   businessTokenEncrypted: string;
   registrationPinEncrypted?: string | null;
 }
+
+export interface SaveSignupConnectionInput {
+  wabaId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
+  signupPath: WhatsappSignupPath;
+  /** `v1:` ciphertext from the connection credential boundary. */
+  businessTokenEncrypted: string;
+}
+
+/**
+ * States a finished signup may replace: an earlier signup that never finished
+ * setup, or a released number. A number being set up, live or offboarded is
+ * never overwritten by a signup.
+ */
+export const SIGNUP_REPLACEABLE_STATES = [
+  'connecting',
+  'disconnected',
+] as const satisfies readonly WhatsappConnectionState[];
+
+export type SaveSignupConnectionResult =
+  | { saved: true; connection: WhatsappConnectionRecord }
+  | { saved: false; reason: 'connection_exists' };
 
 /** The number is already held by another organization's live connection. */
 export class WhatsappPhoneNumberInUseError extends Error {
@@ -122,6 +145,61 @@ export class WhatsappConnectionsRepository {
         })
         .returning();
       return row;
+    } catch (error) {
+      if (
+        databaseErrorCode(error) === '23505' &&
+        violatedConstraint(error) === LIVE_PHONE_NUMBER_KEY
+      )
+        throw new WhatsappPhoneNumberInUseError();
+      throw error;
+    }
+  }
+
+  /**
+   * Stores a verified signup as the organization's connection in state
+   * `connecting`. One statement inserts the row or replaces it only while it
+   * is in a {@link SIGNUP_REPLACEABLE_STATES} state, so two concurrent
+   * signups cannot overwrite a connection that moved on in between.
+   *
+   * @throws WhatsappPhoneNumberInUseError when another organization's live
+   * connection holds the number.
+   */
+  async saveSignupForOrg(
+    orgId: string,
+    input: SaveSignupConnectionInput,
+  ): Promise<SaveSignupConnectionResult> {
+    const values = {
+      wabaId: input.wabaId,
+      phoneNumberId: input.phoneNumberId,
+      displayPhoneNumber: input.displayPhoneNumber,
+      signupPath: input.signupPath,
+      state: 'connecting' as const,
+      stateReason: null,
+      businessTokenEncrypted: input.businessTokenEncrypted,
+      registrationPinEncrypted: null,
+      degradedClass: null,
+      degradedSince: null,
+      qualityRating: null,
+      nameStatus: null,
+      lastHealthAt: null,
+      connectedAt: sql`now()`,
+      disconnectedAt: null,
+    };
+    try {
+      const [row] = await this.db
+        .insert(whatsappConnections)
+        .values({ orgId, ...values })
+        .onConflictDoUpdate({
+          target: whatsappConnections.orgId,
+          set: { ...values, updatedAt: sql`now()` },
+          setWhere: inArray(whatsappConnections.state, [
+            ...SIGNUP_REPLACEABLE_STATES,
+          ]),
+        })
+        .returning();
+      return row
+        ? { saved: true, connection: row }
+        : { saved: false, reason: 'connection_exists' };
     } catch (error) {
       if (
         databaseErrorCode(error) === '23505' &&

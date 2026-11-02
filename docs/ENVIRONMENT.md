@@ -469,10 +469,11 @@ Both switches are off by default, and each is read on its own:
 
 | Variable | Notes |
 | --- | --- |
-| `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. |
+| `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID`, `WHATSAPP_CONNECT_PAGE_BASE_URL` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. Signup also uses `META_APP_SECRET`. |
 | `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
 | `WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS` | Optional allow-list of organization UUIDs, comma-separated. A malformed entry fails startup. Empty (default) allows every organization while a switch is on. A populated list allows only the listed organizations, for both switches. It never turns a switch on. |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
+| `WHATSAPP_CONNECT_PAGE_BASE_URL` | The web app's origin that hosts the connect page, for example `https://getakeed.com`: no trailing slash, path, query or fragment, and HTTPS except `http://localhost` or `http://127.0.0.1`. Connect links are built from it, never from the request. Its `/{locale}/whatsapp/connect` pages must be in the Meta app's Allowed domains and Valid OAuth redirect URIs. Required while connect is on; a malformed value fails startup. |
 
 Any value other than `true` or `false` in a switch fails startup. With both
 switches off, none of the other variables is needed. Meta webhooks are
@@ -481,9 +482,44 @@ processed whatever the switches say.
 `GET /api/whatsapp-sender` (any signed-in member) answers what the connect
 screen needs, with `Cache-Control: no-store`: `available` is `true` only while
 connect is on and the organization is allowed, and only then are `appId` and
-`configId` set. Otherwise it is `{ "available": false, "appId": null,
-"configId": null }`. It never returns a credential. Changing a connection is
-for the organization's owner only (`403 WHATSAPP_CONNECTION_OWNER_REQUIRED`).
+`configId` set, and `canConnect` is `true` for the owner. Otherwise it is
+`{ "available": false, "appId": null, "configId": null, "canConnect": false }`.
+It never returns a credential. Changing a connection is for the organization's
+owner only (`403 WHATSAPP_CONNECTION_OWNER_REQUIRED`).
+
+Connecting runs in three requests, each answered with `Cache-Control: no-store`:
+
+1. `POST /api/whatsapp-sender/connect-ticket` `{ "locale": "ar" }` (owner,
+   session auth) answers `{ connectUrl, expiresAt }`. The link is
+   `WHATSAPP_CONNECT_PAGE_BASE_URL/{locale}/whatsapp/connect?ticket=...` and
+   lives 10 minutes; issuing one retires the organization's older unused
+   tickets.
+2. `POST /api/whatsapp-connect/claim` `{ "ticket" }` (no session) spends that
+   ticket once and answers a 30-minute signup ticket with `appId`,
+   `configId` and `graphApiVersion`. The page removes the ticket from its
+   address before loading Meta's SDK.
+3. `POST /api/whatsapp-connect/complete` `{ signupTicket, code, wabaIds?,
+   phoneNumberId?, isOnBusinessApp? }` (no session) spends the signup ticket,
+   exchanges the code at `/oauth/access_token` (never retried), inspects the
+   token with `/debug_token` under the app token, and reads the account's
+   `/phone_numbers`. The token must be valid, issued to `META_APP_ID`, and
+   hold `whatsapp_business_management` and `whatsapp_business_messaging` on
+   the same account. Ids from the page only narrow that choice; with more than
+   one candidate and no single hint nothing is saved. The connection is saved
+   in state `connecting` with the token encrypted, and the answer is
+   `{ state, displayPhoneNumber, signupPath }`.
+
+Claim and complete recheck the switch, the pilot list, the member's owner
+role and the existing connection. A signup replaces only a `connecting` or
+`disconnected` connection. Codes: `WHATSAPP_CONNECT_INVALID_REQUEST` (400),
+`WHATSAPP_CONNECT_TICKET_INVALID` (401, unknown, expired or used, never which),
+`WHATSAPP_CONNECTION_OWNER_REQUIRED` (403), `WHATSAPP_CONNECT_UNAVAILABLE`
+(404), `WHATSAPP_CONNECTION_EXISTS` and `WHATSAPP_NUMBER_ALREADY_CONNECTED`
+(409), `WHATSAPP_SIGNUP_CODE_REJECTED`, `WHATSAPP_SIGNUP_TOKEN_UNVERIFIED`,
+`WHATSAPP_SIGNUP_ASSET_UNVERIFIED` and `WHATSAPP_SIGNUP_ASSET_AMBIGUOUS` (422),
+`WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE` (503). After a failed completion the
+merchant starts again from settings. Logs carry the step, the code and Meta's
+numeric error code, never a ticket, code, token or Meta's error text.
 
 ## Meta Ad Conversions (Conversions API)
 

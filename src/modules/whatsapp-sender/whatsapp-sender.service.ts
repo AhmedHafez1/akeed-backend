@@ -6,11 +6,13 @@ import {
   readWhatsappOwnNumberConfig,
 } from '../../shared/config/whatsapp-own-number.config';
 import type { WhatsappSenderAvailabilityDto } from './dto/whatsapp-sender.dto';
+import { canChangeWhatsappConnection } from './whatsapp-connection-access.policy';
 
 const UNAVAILABLE: WhatsappSenderAvailabilityDto = {
   available: false,
   appId: null,
   configId: null,
+  canConnect: false,
 };
 
 @Injectable()
@@ -19,21 +21,24 @@ export class WhatsappSenderService {
 
   /**
    * Whether this organization may connect its own number, from the switches
-   * and pilot list alone. The same for every role: changing a connection is
-   * checked where it happens.
+   * and pilot list. The same for every role, except `canConnect`, which
+   * tells the screen whether to offer the owner-only connect action; the
+   * connect endpoints check the role again.
    */
   getAvailability(user: AuthenticatedUser): WhatsappSenderAvailabilityDto {
     const config = readWhatsappOwnNumberConfig(this.config);
     if (
       !isOwnNumberConnectAllowed(config, user.orgId) ||
       !config.metaAppId ||
-      !config.embeddedSignupConfigId
+      !config.embeddedSignupConfigId ||
+      !config.connectPageBaseUrl
     )
       return { ...UNAVAILABLE };
     return {
       available: true,
       appId: config.metaAppId,
       configId: config.embeddedSignupConfigId,
+      canConnect: canChangeWhatsappConnection(user.role),
     };
   }
 }

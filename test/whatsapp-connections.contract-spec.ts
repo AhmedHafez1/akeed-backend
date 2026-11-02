@@ -9,6 +9,7 @@ import { WhatsappConnectionTemplatesRepository } from '../src/infrastructure/dat
 import {
   WhatsappConnectionsRepository,
   WhatsappPhoneNumberInUseError,
+  type SaveSignupConnectionInput,
   type SaveWhatsappConnectionInput,
 } from '../src/infrastructure/database/repositories/whatsapp-connections.repository';
 import {
@@ -492,6 +493,192 @@ describe('WhatsApp connections contract', () => {
           ttlSeconds: 0,
         }),
       ).rejects.toThrow('positive');
+    });
+
+    it('accepts a ticket only for the step its lifetime names', async () => {
+      const launch = hash(randomUUID());
+      const signup = hash(randomUUID());
+      const userId = randomUUID();
+      await tickets.issue({
+        orgId: orgA,
+        userId,
+        tokenHash: launch,
+        ttlSeconds: 600,
+      });
+      await tickets.issue({
+        orgId: orgA,
+        userId,
+        tokenHash: signup,
+        ttlSeconds: 1800,
+      });
+
+      expect(
+        await tickets.consume(launch, { lifetimeSeconds: 1800 }),
+      ).toBeNull();
+      expect(
+        await tickets.consume(signup, { lifetimeSeconds: 600 }),
+      ).toBeNull();
+      expect(
+        await tickets.consume(launch, { lifetimeSeconds: 600 }),
+      ).toMatchObject({ orgId: orgA, userId });
+      expect(
+        await tickets.consume(signup, { lifetimeSeconds: 1800 }),
+      ).toMatchObject({ orgId: orgA, userId });
+      expect(
+        await tickets.consume(signup, { lifetimeSeconds: 1800 }),
+      ).toBeNull();
+    });
+
+    it("retires the organization's older unused tickets, and only its own", async () => {
+      const older = hash(randomUUID());
+      const newer = hash(randomUUID());
+      const otherOrg = hash(randomUUID());
+      await tickets.issue({
+        orgId: orgA,
+        userId: randomUUID(),
+        tokenHash: older,
+        ttlSeconds: 600,
+      });
+      await tickets.issue({
+        orgId: orgB,
+        userId: randomUUID(),
+        tokenHash: otherOrg,
+        ttlSeconds: 600,
+      });
+      await tickets.issue({
+        orgId: orgA,
+        userId: randomUUID(),
+        tokenHash: newer,
+        ttlSeconds: 600,
+        revokeOtherUnused: true,
+      });
+      expect(await tickets.consume(older)).toBeNull();
+      expect(await tickets.consume(newer)).not.toBeNull();
+      expect(await tickets.consume(otherOrg)).not.toBeNull();
+    });
+  });
+
+  describe('signup save', () => {
+    const signupInput = (
+      phoneNumberId: string,
+      token = 'EAAG-signup-token',
+    ): SaveSignupConnectionInput => ({
+      wabaId: '100000000000001',
+      phoneNumberId,
+      displayPhoneNumber: '+20 100 000 0001',
+      signupPath: 'new_number',
+      businessTokenEncrypted: encryptConnectionSecret(token, KEY),
+    });
+
+    it('stores a new signup as connecting, ciphertext only', async () => {
+      const result = await connections.saveSignupForOrg(
+        orgA,
+        signupInput('300000000000001'),
+      );
+      expect(result.saved).toBe(true);
+      const row = await connections.findByOrg(orgA);
+      expect(row).toMatchObject({
+        state: 'connecting',
+        phoneNumberId: '300000000000001',
+        signupPath: 'new_number',
+        registrationPinEncrypted: null,
+      });
+      expect(row?.connectedAt).not.toBeNull();
+      expect(row?.businessTokenEncrypted).toMatch(/^v1:/);
+      expect(row?.businessTokenEncrypted).not.toContain('EAAG-signup-token');
+      expect(row && readBusinessToken(row, KEY)).toBe('EAAG-signup-token');
+    });
+
+    it.each(['connecting', 'disconnected'] as const)(
+      'replaces a %s connection',
+      async (state) => {
+        await connections.saveForOrg(orgA, connectionInput('300000000000002'));
+        if (state === 'disconnected')
+          await connections.markDisconnected(orgA, 'PARTNER_REMOVED');
+        const result = await connections.saveSignupForOrg(
+          orgA,
+          signupInput('300000000000003', 'EAAG-new'),
+        );
+        expect(result.saved).toBe(true);
+        const row = await connections.findByOrg(orgA);
+        expect(row).toMatchObject({
+          state: 'connecting',
+          phoneNumberId: '300000000000003',
+          disconnectedAt: null,
+        });
+        expect(row && readBusinessToken(row, KEY)).toBe('EAAG-new');
+      },
+    );
+
+    it.each(['verifying', 'active', 'offboarded'] as const)(
+      'never overwrites a %s connection',
+      async (state) => {
+        const before = await connections.saveForOrg(
+          orgA,
+          connectionInput('300000000000004', { state }),
+        );
+        const result = await connections.saveSignupForOrg(
+          orgA,
+          signupInput('300000000000005', 'EAAG-intruder'),
+        );
+        expect(result).toEqual({ saved: false, reason: 'connection_exists' });
+        const row = await connections.findByOrg(orgA);
+        expect(row).toMatchObject({
+          state,
+          phoneNumberId: '300000000000004',
+          businessTokenEncrypted: before.businessTokenEncrypted,
+        });
+      },
+    );
+
+    it('refuses a number another organization holds, leaving both rows as they were', async () => {
+      await connections.saveSignupForOrg(orgA, signupInput('300000000000006'));
+      await expect(
+        connections.saveSignupForOrg(orgB, signupInput('300000000000006')),
+      ).rejects.toBeInstanceOf(WhatsappPhoneNumberInUseError);
+      expect(await connections.findByOrg(orgB)).toBeNull();
+      expect((await connections.findByOrg(orgA))?.phoneNumberId).toBe(
+        '300000000000006',
+      );
+    });
+
+    it('lets one of two organizations racing for one number win', async () => {
+      const results = await Promise.allSettled([
+        connections.saveSignupForOrg(orgA, signupInput('300000000000007')),
+        connections.saveSignupForOrg(orgB, signupInput('300000000000007')),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((r) => r.status === 'rejected');
+      expect(rejected?.reason).toBeInstanceOf(WhatsappPhoneNumberInUseError);
+      const [{ count }] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM whatsapp_connections
+        WHERE phone_number_id = '300000000000007'`;
+      expect(count).toBe(1);
+    });
+
+    it('keeps one row when one organization finishes two signups at once', async () => {
+      const results = await Promise.all([
+        connections.saveSignupForOrg(orgA, signupInput('300000000000008')),
+        connections.saveSignupForOrg(orgA, signupInput('300000000000009')),
+      ]);
+      expect(results.every((r) => r.saved)).toBe(true);
+      const [{ count }] = await client<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM whatsapp_connections WHERE org_id = ${orgA}`;
+      expect(count).toBe(1);
+      expect((await connections.findByOrg(orgA))?.state).toBe('connecting');
+    });
+
+    it('does not let a signup overwrite a connection that moved on mid-signup', async () => {
+      await connections.saveSignupForOrg(orgA, signupInput('300000000000010'));
+      await client`UPDATE whatsapp_connections SET state = 'active' WHERE org_id = ${orgA}`;
+      const result = await connections.saveSignupForOrg(
+        orgA,
+        signupInput('300000000000011'),
+      );
+      expect(result.saved).toBe(false);
+      expect((await connections.findByOrg(orgA))?.phoneNumberId).toBe(
+        '300000000000010',
+      );
     });
   });
 });

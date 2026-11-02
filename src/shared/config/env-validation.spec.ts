@@ -86,6 +86,7 @@ describe('validateEnv', () => {
       pilotOrgIds: [],
       embeddedSignupConfigId: null,
       metaAppId: null,
+      connectPageBaseUrl: null,
     });
   });
 

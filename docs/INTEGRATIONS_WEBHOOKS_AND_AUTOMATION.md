@@ -1064,6 +1064,18 @@ No switch of its own. Operations are in the [support runbook](WOOCOMMERCE_SUPPOR
 
 **Validate.** `scripts/test-woocommerce-connection-contract.ps1`, `scripts/test-woocommerce-ingestion-contract.ps1`, `scripts/test-woocommerce-outcome-sync-contract.ps1` (disposable Postgres), `npx jest src/infrastructure/spokes/woocommerce`.
 
+## Merchant Own WhatsApp Number: Connecting
+
+An owner can connect the organization's own WhatsApp Business number through Meta Embedded Signup. Connecting stores a verified connection in state `connecting`; it does not change who sends messages. Setup, templates and sending from the merchant's number come later. Off unless `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true` and the organization passes `WHATSAPP_OWN_NUMBER_PILOT_ORG_IDS`; the requests, codes and settings are in `docs/ENVIRONMENT.md` (Merchant own WhatsApp number).
+
+**Flow.** The settings card (Message tab, owner only, shown when `GET /api/whatsapp-sender` answers `available` and `canConnect`) opens a new tab inside the click and sends it to the 10-minute link from `POST /api/whatsapp-sender/connect-ticket`. The top-level page `/{locale}/whatsapp/connect` runs without a session in both standalone and Shopify: it removes `?ticket=` from its address, claims the ticket once for a 30-minute signup ticket held in memory, loads Meta's SDK (this page only, no analytics), and launches Embedded Signup v5 (`config_id`, `response_type: 'code'`, `override_default_response_type: true`, `extras: { setup: {}, version: 'v5' }`). It accepts session messages only from `https://www.facebook.com`, `https://web.facebook.com` and `https://business.facebook.com`, reads v5 (`messaging_account_ids`, `is_on_biz_app`) and v4 (`waba_id`, `waba_ids`, `phone_number_id`) fields, and submits exactly once when it has the code and either the session message or the end of a 4-second wait.
+
+**Verification.** `OwnNumberGraphClient` (`src/infrastructure/spokes/meta/own-number/`) exchanges the code (one bounded attempt), inspects the token with `debug_token` under the app token, and lists the chosen account's phone numbers. `signup-assets.policy.ts` decides: the token must be valid, issued to this app and hold both WhatsApp permissions on the same account; a hinted account or number must be among those the token proves; with several candidates and no single hint nothing is saved. `signup_path` (`coexistence` or `new_number`) comes from the page's `is_on_biz_app` hint and is a label, not an access decision.
+
+**Persistence.** `WhatsappConnectionsRepository.saveSignupForOrg` inserts the organization's row or replaces it in one statement only while it is `connecting` or `disconnected`, so a live, verifying or offboarded connection is never overwritten. A number held by another organization's live connection answers `409 WHATSAPP_NUMBER_ALREADY_CONNECTED`. Tickets are single use (`WhatsappConnectTicketsRepository.consume`), and a ticket is accepted only by the step its lifetime names.
+
+**Validate.** `scripts/test-whatsapp-connections-contract.ps1` (disposable Postgres), `npx jest src/modules/whatsapp-sender src/infrastructure/spokes/meta/own-number`; frontend `npx vitest run src/features/whatsapp-connect`.
+
 ## Server API Guide
 
 The integrator-facing guide for `POST /api/v1/orders` is public: `akeed-frontend/content/docs/en/server-api.md` (`/en/docs/server-api`), with a short Arabic overview at `content/docs/ar/server-api.md`. Settings → API keys links to it and shows the endpoint address.

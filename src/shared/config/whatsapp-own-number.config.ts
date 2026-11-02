@@ -18,6 +18,38 @@ export interface WhatsappOwnNumberConfig {
   embeddedSignupConfigId: string | null;
   /** `META_APP_ID`, which launches Embedded Signup; set whenever connect is on. */
   metaAppId: string | null;
+  /**
+   * Origin of the web app that hosts the connect page, for example
+   * `https://getakeed.com`; set whenever connect is on. Connect links are
+   * built from it, never from a client-supplied address.
+   */
+  connectPageBaseUrl: string | null;
+}
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
+
+/** An origin with no path, query or fragment; HTTPS except on this machine. */
+function parseConnectPageBaseUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const secure =
+    url.protocol === 'https:' ||
+    (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname));
+  if (
+    !secure ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== '/' && url.pathname !== '') ||
+    value.endsWith('/')
+  )
+    return null;
+  return url.origin;
 }
 
 const UUID_PATTERN =
@@ -59,7 +91,19 @@ export function parseWhatsappOwnNumberConfig(
       'META_EMBEDDED_SIGNUP_CONFIG_ID must be the numeric Embedded Signup configuration ID.',
     );
   const metaAppId = read('META_APP_ID');
+  const rawConnectPageBaseUrl = read('WHATSAPP_CONNECT_PAGE_BASE_URL');
+  const connectPageBaseUrl = rawConnectPageBaseUrl
+    ? parseConnectPageBaseUrl(rawConnectPageBaseUrl)
+    : null;
+  if (rawConnectPageBaseUrl && !connectPageBaseUrl)
+    errors.push(
+      'WHATSAPP_CONNECT_PAGE_BASE_URL must be an HTTPS origin with no trailing slash, path, query or fragment.',
+    );
   if (connectEnabled) {
+    if (!rawConnectPageBaseUrl)
+      errors.push(
+        'WHATSAPP_CONNECT_PAGE_BASE_URL is required when WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true.',
+      );
     if (!embeddedSignupConfigId)
       errors.push(
         'META_EMBEDDED_SIGNUP_CONFIG_ID is required when WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true.',
@@ -91,6 +135,7 @@ export function parseWhatsappOwnNumberConfig(
     pilotOrgIds,
     embeddedSignupConfigId: connectEnabled ? embeddedSignupConfigId : null,
     metaAppId: connectEnabled ? metaAppId : null,
+    connectPageBaseUrl: connectEnabled ? connectPageBaseUrl : null,
   };
 }
 

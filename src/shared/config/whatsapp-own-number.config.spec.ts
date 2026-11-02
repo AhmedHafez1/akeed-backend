@@ -13,6 +13,7 @@ const connectReady = {
   WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'true',
   META_EMBEDDED_SIGNUP_CONFIG_ID: '1234567890',
   META_APP_ID: '9876543210',
+  WHATSAPP_CONNECT_PAGE_BASE_URL: 'https://app.example.test',
   SHOPIFY_TOKEN_ENCRYPTION_KEY: 'k'.repeat(32),
 };
 
@@ -24,6 +25,7 @@ describe('parseWhatsappOwnNumberConfig', () => {
       pilotOrgIds: [],
       embeddedSignupConfigId: null,
       metaAppId: null,
+      connectPageBaseUrl: null,
     });
   });
 
@@ -56,6 +58,7 @@ describe('parseWhatsappOwnNumberConfig', () => {
       sendingEnabled: false,
       embeddedSignupConfigId: '1234567890',
       metaAppId: '9876543210',
+      connectPageBaseUrl: 'https://app.example.test',
     });
   });
 
@@ -78,7 +81,7 @@ describe('parseWhatsappOwnNumberConfig', () => {
         WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'true',
       }),
     ).toThrow(
-      /META_EMBEDDED_SIGNUP_CONFIG_ID is required[\s\S]*META_APP_ID is required[\s\S]*SHOPIFY_TOKEN_ENCRYPTION_KEY is required/,
+      /WHATSAPP_CONNECT_PAGE_BASE_URL is required[\s\S]*META_EMBEDDED_SIGNUP_CONFIG_ID is required[\s\S]*META_APP_ID is required[\s\S]*SHOPIFY_TOKEN_ENCRYPTION_KEY is required/,
     );
   });
 
@@ -97,6 +100,34 @@ describe('parseWhatsappOwnNumberConfig', () => {
         META_EMBEDDED_SIGNUP_CONFIG_ID: 'config-1',
       }),
     ).toThrow('META_EMBEDDED_SIGNUP_CONFIG_ID must be the numeric');
+  });
+
+  it.each([
+    'http://app.example.test',
+    'https://app.example.test/',
+    'https://app.example.test/ar',
+    'https://app.example.test?x=1',
+    'https://user:pass@app.example.test',
+    'not a url',
+  ])(
+    'rejects a connect page base URL that is not a bare HTTPS origin: %s',
+    (value) => {
+      expect(() =>
+        parseWhatsappOwnNumberConfig({
+          ...connectReady,
+          WHATSAPP_CONNECT_PAGE_BASE_URL: value,
+        }),
+      ).toThrow('WHATSAPP_CONNECT_PAGE_BASE_URL must be an HTTPS origin');
+    },
+  );
+
+  it('accepts plain HTTP for a local connect page only', () => {
+    expect(
+      parseWhatsappOwnNumberConfig({
+        ...connectReady,
+        WHATSAPP_CONNECT_PAGE_BASE_URL: 'http://localhost:3001',
+      }).connectPageBaseUrl,
+    ).toBe('http://localhost:3001');
   });
 
   it('normalises the pilot list and drops duplicates and blanks', () => {

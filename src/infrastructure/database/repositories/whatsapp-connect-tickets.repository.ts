@@ -13,6 +13,20 @@ export interface IssueWhatsappConnectTicketInput {
   /** SHA-256 hex of the ticket. The ticket itself is never stored. */
   tokenHash: string;
   ttlSeconds: number;
+  /**
+   * Retires the organization's other unused tickets in the same transaction,
+   * so only the newest hand-off can be used.
+   */
+  revokeOtherUnused?: boolean;
+}
+
+export interface ConsumeWhatsappConnectTicketOptions {
+  /**
+   * Only a ticket issued with exactly this lifetime is accepted. Tickets for
+   * different steps share the table and differ only in lifetime, so one
+   * step's ticket cannot stand in for another's.
+   */
+  lifetimeSeconds?: number;
 }
 
 export interface ConsumedWhatsappConnectTicket {
@@ -33,7 +47,26 @@ export class WhatsappConnectTicketsRepository {
   ): Promise<{ id: string; expiresAt: string }> {
     if (!Number.isInteger(input.ttlSeconds) || input.ttlSeconds <= 0)
       throw new Error('Ticket lifetime must be a positive whole number');
-    const [row] = await this.db
+    if (!input.revokeOtherUnused) return this.insertTicket(this.db, input);
+    return this.db.transaction(async (tx) => {
+      await tx
+        .update(whatsappConnectTickets)
+        .set({ usedAt: sql`now()` })
+        .where(
+          and(
+            eq(whatsappConnectTickets.orgId, input.orgId),
+            isNull(whatsappConnectTickets.usedAt),
+          ),
+        );
+      return this.insertTicket(tx, input);
+    });
+  }
+
+  private async insertTicket(
+    db: Pick<Database, 'insert'>,
+    input: IssueWhatsappConnectTicketInput,
+  ): Promise<{ id: string; expiresAt: string }> {
+    const [row] = await db
       .insert(whatsappConnectTickets)
       .values({
         orgId: input.orgId,
@@ -55,7 +88,14 @@ export class WhatsappConnectTicketsRepository {
    */
   async consume(
     tokenHash: string,
+    options: ConsumeWhatsappConnectTicketOptions = {},
   ): Promise<ConsumedWhatsappConnectTicket | null> {
+    const { lifetimeSeconds } = options;
+    if (
+      lifetimeSeconds !== undefined &&
+      (!Number.isInteger(lifetimeSeconds) || lifetimeSeconds <= 0)
+    )
+      throw new Error('Ticket lifetime must be a positive whole number');
     const [row] = await this.db
       .update(whatsappConnectTickets)
       .set({ usedAt: sql`now()` })
@@ -64,6 +104,12 @@ export class WhatsappConnectTicketsRepository {
           eq(whatsappConnectTickets.tokenHash, tokenHash),
           isNull(whatsappConnectTickets.usedAt),
           gt(whatsappConnectTickets.expiresAt, sql`now()`),
+          lifetimeSeconds === undefined
+            ? undefined
+            : eq(
+                whatsappConnectTickets.expiresAt,
+                sql`${whatsappConnectTickets.createdAt} + make_interval(secs => ${lifetimeSeconds})`,
+              ),
         ),
       )
       .returning({

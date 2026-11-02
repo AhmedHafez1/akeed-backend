@@ -11,6 +11,7 @@ import {
   parseWhatsappOwnNumberConfig,
   WHATSAPP_OWN_NUMBER_CONFIG,
 } from '../../shared/config/whatsapp-own-number.config';
+import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderController } from './whatsapp-sender.controller';
 import { WhatsappSenderService } from './whatsapp-sender.service';
 
@@ -23,18 +24,20 @@ const connectOn = {
   WHATSAPP_OWN_NUMBER_CONNECT_ENABLED: 'true',
   META_EMBEDDED_SIGNUP_CONFIG_ID: '1234567890',
   META_APP_ID: '9876543210',
+  WHATSAPP_CONNECT_PAGE_BASE_URL: 'https://app.example.test',
   SHOPIFY_TOKEN_ENCRYPTION_KEY: ENCRYPTION_KEY,
 };
 
 const http = (app: INestApplication) =>
   request(app.getHttpServer() as Parameters<typeof request>[0]);
 
-describe('GET /api/whatsapp-sender', () => {
+describe('/api/whatsapp-sender', () => {
   // Each case boots a Nest app, which can pass 5 s on a loaded full run.
   jest.setTimeout(30_000);
 
   let app: INestApplication | undefined;
   let user: AuthenticatedUser | null;
+  const connect = { issueTicket: jest.fn() };
 
   async function start(env: Record<string, string>) {
     const parsed = parseWhatsappOwnNumberConfig(env);
@@ -42,6 +45,7 @@ describe('GET /api/whatsapp-sender', () => {
       controllers: [WhatsappSenderController],
       providers: [
         WhatsappSenderService,
+        { provide: WhatsappConnectService, useValue: connect },
         {
           provide: ConfigService,
           useValue: new ConfigService({
@@ -66,6 +70,7 @@ describe('GET /api/whatsapp-sender', () => {
   }
 
   beforeEach(() => {
+    connect.issueTicket.mockReset();
     user = {
       userId: 'user-1',
       orgId: PILOT_ORG,
@@ -101,6 +106,7 @@ describe('GET /api/whatsapp-sender', () => {
       available: false,
       appId: null,
       configId: null,
+      canConnect: false,
     });
   });
 
@@ -114,6 +120,7 @@ describe('GET /api/whatsapp-sender', () => {
       available: true,
       appId: '9876543210',
       configId: '1234567890',
+      canConnect: true,
     });
     expect(JSON.stringify(response.body)).not.toContain(ENCRYPTION_KEY);
   });
@@ -134,6 +141,7 @@ describe('GET /api/whatsapp-sender', () => {
       available: false,
       appId: null,
       configId: null,
+      canConnect: false,
     });
   });
 
@@ -147,7 +155,7 @@ describe('GET /api/whatsapp-sender', () => {
   });
 
   it.each(['owner', 'admin', 'viewer'] as const)(
-    'answers a %s the same way: reading never depends on role',
+    'answers a %s the same ids, and offers connect to the owner only',
     async (role) => {
       user = { userId: 'user-1', orgId: PILOT_ORG, role, source: 'shopify' };
       const server = await start(connectOn);
@@ -156,7 +164,50 @@ describe('GET /api/whatsapp-sender', () => {
         available: true,
         appId: '9876543210',
         configId: '1234567890',
+        canConnect: role === 'owner',
       });
     },
   );
+
+  describe('POST connect-ticket', () => {
+    it('hands the body to the service with the caller from the session, uncached', async () => {
+      connect.issueTicket.mockResolvedValue({
+        connectUrl: 'https://app.example.test/ar/whatsapp/connect?ticket=x',
+        expiresAt: '2026-11-02T10:10:00.000Z',
+      });
+      const server = await start(connectOn);
+      await http(server)
+        .post(`${ROUTE}/connect-ticket`)
+        .send({ locale: 'fr', orgId: OTHER_ORG })
+        .expect(201)
+        .expect('Cache-Control', 'no-store');
+      expect(connect.issueTicket).toHaveBeenCalledWith(user, 'fr');
+    });
+
+    it.each([{}, { locale: 'de' }, { locale: ['ar'] }])(
+      'answers WHATSAPP_CONNECT_INVALID_REQUEST for %o without echoing it',
+      async (body) => {
+        const server = await start(connectOn);
+        const response = await http(server)
+          .post(`${ROUTE}/connect-ticket`)
+          .send(body)
+          .expect(400);
+        expect(response.body).toMatchObject({
+          code: 'WHATSAPP_CONNECT_INVALID_REQUEST',
+        });
+        expect(JSON.stringify(response.body)).not.toContain('locale');
+        expect(connect.issueTicket).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses a request the guard does not authenticate', async () => {
+      user = null;
+      const server = await start(connectOn);
+      await http(server)
+        .post(`${ROUTE}/connect-ticket`)
+        .send({ locale: 'ar' })
+        .expect(403);
+      expect(connect.issueTicket).not.toHaveBeenCalled();
+    });
+  });
 });

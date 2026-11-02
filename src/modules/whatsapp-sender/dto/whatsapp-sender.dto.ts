@@ -9,4 +9,6 @@ export interface WhatsappSenderAvailabilityDto {
   appId: string | null;
   /** Embedded Signup configuration id; null unless `available`. */
   configId: string | null;
+  /** `available` and the member is the owner, who alone may connect. */
+  canConnect: boolean;
 }
