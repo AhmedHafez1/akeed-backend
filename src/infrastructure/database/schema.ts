@@ -80,6 +80,7 @@ export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
   'initial',
   'follow_up',
   'legacy_unknown',
+  'acknowledgment',
 ]);
 
 export const verificationDispatchState = pgEnum('verification_dispatch_state', [
@@ -637,6 +638,13 @@ export const integrations = pgTable(
     codReminderEsKey: text('cod_reminder_es_key'),
     codReminderFrKey: text('cod_reminder_fr_key'),
     codReminderTrKey: text('cod_reminder_tr_key'),
+    acknowledgmentEnabled: boolean('acknowledgment_enabled')
+      .default(false)
+      .notNull(),
+    acknowledgmentEnabledAt: timestamp('acknowledgment_enabled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     // The store chose `auto` as its Arabic style.
     codTemplateArAuto: boolean('cod_template_ar_auto').default(false).notNull(),
     shippingCurrency: text('shipping_currency').default('USD').notNull(),
@@ -1338,6 +1346,11 @@ export const verificationMessageDispatches = pgTable(
       table.state,
       table.updatedAt,
     ),
+    index('idx_dispatch_sending_lease')
+      .on(table.leaseUntil)
+      .where(
+        sql`${table.state} = 'sending' AND ${table.leaseUntil} IS NOT NULL`,
+      ),
     foreignKey({
       columns: [table.verificationId, table.orgId],
       foreignColumns: [verifications.id, verifications.orgId],
@@ -2270,7 +2283,7 @@ export const creditReservations = pgTable(
     }),
     check(
       'credit_reservations_kind_check',
-      sql`kind IN ('initial', 'follow_up')`,
+      sql`kind::text IN ('initial', 'follow_up', 'acknowledgment')`,
     ),
     check('credit_reservations_generation_check', sql`generation > 0`),
     check('credit_reservations_quantity_check', sql`quantity > 0`),
@@ -3745,6 +3758,7 @@ export const verificationServiceMessages = pgTable(
     id: uuid().defaultRandom().primaryKey().notNull(),
     orgId: uuid('org_id').notNull(),
     verificationId: uuid('verification_id').notNull(),
+    dispatchId: uuid('dispatch_id'),
     kind: text('kind').$type<ServiceMessageKind>().notNull(),
     state: text('state')
       .$type<ServiceMessageState>()
@@ -3770,6 +3784,17 @@ export const verificationServiceMessages = pgTable(
       foreignColumns: [verifications.id, verifications.orgId],
       name: 'verification_service_messages_verification_fkey',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.dispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+      name: 'verification_service_messages_dispatch_fkey',
+    }),
+    uniqueIndex('verification_service_messages_dispatch_idx')
+      .on(table.dispatchId)
+      .where(sql`${table.dispatchId} IS NOT NULL`),
     unique('verification_service_messages_once_key').on(
       table.verificationId,
       table.kind,

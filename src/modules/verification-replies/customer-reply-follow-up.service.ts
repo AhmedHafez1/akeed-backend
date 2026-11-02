@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import { UsageAlertService } from '../verification-core/usage-alert.service';
+import { withSerializableRetry } from '../../shared/database/serializable-retry';
+import type { DispatchRecord } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { VerificationServiceMessagesRepository } from '../../infrastructure/database/repositories/verification-service-messages.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
@@ -10,6 +13,8 @@ import {
   normalizeError,
 } from '../../shared/logging/backend-log.util';
 import {
+  acknowledgmentOptedIn,
+  acknowledgmentStyle,
   CUSTOMER_SERVICE_WINDOW_MS,
   fillMessageText,
   type MessageTextPurpose,
@@ -45,7 +50,8 @@ type IneligibleReason =
   | 'merchant_canceled'
   | 'not_customer_answer'
   | 'verification_closed'
-  | 'already_handled';
+  | 'already_handled'
+  | 'merchant_disabled';
 
 export type CustomerReplyFollowUpOutcome =
   | { outcome: 'sent'; providerMessageId: string }
@@ -57,12 +63,6 @@ const TEXT_PURPOSES: Record<'confirmed' | 'canceled', MessageTextPurpose> = {
   canceled: 'ack_canceled',
 };
 
-/** `ar.egyptian_v2` reads as `egyptian`: texts are written per dialect. */
-function baseStyleOf(variantKey: string | null | undefined): string | null {
-  const style = variantKey?.split('.')[1];
-  return style ? style.replace(/_v\d+$/, '') : null;
-}
-
 /**
  * The acknowledgment after a customer confirms or cancels, and the nudge
  * after a typed reply Akeed could not read.
@@ -70,9 +70,8 @@ function baseStyleOf(variantKey: string | null | undefined): string | null {
  * Meta does not document what a retried free-form send does, so: best
  * effort, sent once and never retried, and the verification's outcome is
  * final before anything is attempted and never depends on it. The row is
- * claimed before the send, so a replay or a crash never sends twice. These
- * messages are free at the provider: no usage, dispatch or
- * credit row is written.
+ * claimed before the send, so a replay or a crash never sends twice.
+ * Acknowledgments reserve normal message capacity; nudges remain free.
  *
  * Reaches the provider only through `MessagingPort`.
  */
@@ -88,6 +87,7 @@ export class CustomerReplyFollowUpService {
     private readonly messageTexts: MessageTextsService,
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
     @Optional() private readonly switches?: MessageImprovementSwitches,
+    @Optional() private readonly usageAlerts?: UsageAlertService,
   ) {}
 
   /** Whether this kind of message is on at all. */
@@ -153,6 +153,15 @@ export class CustomerReplyFollowUpService {
       return ineligible('verification_not_found');
     }
     if (order.isTest === true) return ineligible('test_order');
+    if (
+      request.kind === 'acknowledgment' &&
+      !acknowledgmentOptedIn(
+        order.integration?.acknowledgmentEnabled,
+        order.integration?.acknowledgmentEnabledAt,
+        request.repliedAt,
+      )
+    )
+      return ineligible('merchant_disabled');
     if (verification.merchantCanceledAt) return ineligible('merchant_canceled');
 
     let purpose: MessageTextPurpose;
@@ -192,7 +201,7 @@ export class CustomerReplyFollowUpService {
         integration?.defaultLanguage,
         order.customerPhone ?? '',
       );
-    const style = baseStyleOf(sent?.variantKey);
+    const style = acknowledgmentStyle(sent?.variantKey);
 
     const repliedAt = Date.parse(request.repliedAt);
     if (
@@ -223,6 +232,61 @@ export class CustomerReplyFollowUpService {
     });
     const identity = { purpose, language, style: text.style };
 
+    let dispatch: DispatchRecord | undefined;
+    if (request.kind === 'acknowledgment') {
+      if (!integration || integration.orgId !== request.orgId)
+        return this.notSent(
+          claim.id,
+          'skipped',
+          'billing_unavailable',
+          identity,
+        );
+      const billed = await withSerializableRetry(() =>
+        this.messageDispatches.claim({
+          orgId: request.orgId,
+          integrationId: integration.id,
+          verificationId: verification.id,
+          kind: 'acknowledgment',
+          repliedAt: request.repliedAt,
+          templateName: null,
+          languageCode: language,
+          leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+        }),
+      );
+      if (billed.outcome !== 'claimed')
+        return this.notSent(
+          claim.id,
+          'skipped',
+          'billing_unavailable',
+          identity,
+        );
+      const claimedDispatch = billed.dispatch;
+      dispatch = claimedDispatch;
+      try {
+        await this.serviceMessages.linkDispatch(
+          claim.id,
+          request.orgId,
+          dispatch.id,
+        );
+      } catch (error) {
+        // No provider call has begun, so this hold can be safely released. If
+        // the release fails too, the lease sweeper parks it for staff.
+        await this.ledgerStep(
+          'customer-reply-follow-up.release',
+          request.orgId,
+          verification.id,
+          undefined,
+          () =>
+            this.messageDispatches.resolveNotAccepted(
+              claimedDispatch.id,
+              undefined,
+              true,
+            ),
+        );
+        throw error;
+      }
+    }
+
     let result: Awaited<
       ReturnType<NonNullable<MessagingPort['sendFreeFormText']>>
     >;
@@ -242,27 +306,133 @@ export class CustomerReplyFollowUpService {
           ...normalizeError(error),
         }),
       );
+      if (dispatch) await this.parkUnclearSend(dispatch, request.orgId);
       return this.notSent(claim.id, 'failed', 'provider_error', identity);
     }
 
     switch (result.outcome) {
       case 'accepted':
+        if (dispatch) {
+          const acceptedDispatch = dispatch;
+          const recorded = await this.ledgerStep(
+            'customer-reply-follow-up.acceptance',
+            request.orgId,
+            verification.id,
+            result.providerMessageId,
+            async () => {
+              const accepted = await this.messageDispatches.markAccepted({
+                dispatchId: acceptedDispatch.id,
+                verificationId: verification.id,
+                kind: 'acknowledgment',
+                generation: acceptedDispatch.generation,
+                providerMessageId: result.providerMessageId,
+                sentAt: new Date().toISOString(),
+              });
+              if (accepted.outcome !== 'accepted')
+                throw new Error('Acknowledgment acceptance was not recorded');
+            },
+          );
+          // The message was sent: keep its id on the dispatch so receipts and
+          // staff resolution see an accepted send, never a refundable one.
+          if (!recorded)
+            await this.ledgerStep(
+              'customer-reply-follow-up.salvage',
+              request.orgId,
+              verification.id,
+              result.providerMessageId,
+              () =>
+                this.messageDispatches.markOutcomeUnknown(
+                  acceptedDispatch.id,
+                  'acceptance_persistence_failed',
+                  result.providerMessageId,
+                ),
+            );
+        }
         await this.serviceMessages.markSent({
           id: claim.id,
           providerMessageId: result.providerMessageId,
           sentAt: new Date().toISOString(),
           text: identity,
         });
+        if (dispatch) await this.usageAlerts?.evaluateOrg(request.orgId);
         return {
           outcome: 'sent',
           providerMessageId: result.providerMessageId,
         };
       case 'window_closed':
+        if (dispatch)
+          await withSerializableRetry(() =>
+            this.messageDispatches.resolveNotAccepted(
+              dispatch.id,
+              undefined,
+              true,
+            ),
+          );
         return this.notSent(claim.id, 'skipped', 'window_closed', identity);
       case 'rejected':
+        if (dispatch)
+          await withSerializableRetry(() =>
+            this.messageDispatches.resolveNotAccepted(
+              dispatch.id,
+              undefined,
+              true,
+            ),
+          );
         return this.notSent(claim.id, 'failed', 'provider_rejected', identity);
       default:
+        if (dispatch) await this.parkUnclearSend(dispatch, request.orgId);
         return this.notSent(claim.id, 'failed', 'provider_error', identity);
+    }
+  }
+
+  /**
+   * A send with no clear answer, as for initial sends: Shopify plan usage is
+   * released while it is unresolved, and a prepaid credit stays held until
+   * staff resolve it.
+   */
+  private async parkUnclearSend(
+    dispatch: DispatchRecord,
+    orgId: string,
+  ): Promise<void> {
+    await this.ledgerStep(
+      'customer-reply-follow-up.unclear',
+      orgId,
+      dispatch.verificationId,
+      undefined,
+      () =>
+        this.messageDispatches.markFailedProviderOutcome(
+          dispatch.id,
+          'provider_error',
+        ),
+    );
+  }
+
+  /**
+   * One billing write after the provider call. It never throws: the send has
+   * happened, and the lease sweeper parks a dispatch left `sending`.
+   */
+  private async ledgerStep(
+    action: string,
+    orgId: string,
+    verificationId: string,
+    wamid: string | undefined,
+    work: () => Promise<unknown>,
+  ): Promise<boolean> {
+    try {
+      await withSerializableRetry(work);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(CustomerReplyFollowUpService.name, {
+          action,
+          outcome: 'failure',
+          orgId,
+          verificationId,
+          ...(wamid ? { wamid } : {}),
+          ...normalizeError(error),
+        }),
+      );
+      return false;
     }
   }
 

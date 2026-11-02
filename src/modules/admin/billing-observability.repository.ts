@@ -690,6 +690,7 @@ export class BillingObservabilityRepository {
       freeCredits: number;
       initialConsumption: number;
       followUpConsumption: number;
+      acknowledgmentConsumption: number;
       failureReversals: number;
       refundedMinor: number;
       chargebackMinor: number;
@@ -699,6 +700,7 @@ export class BillingObservabilityRepository {
         coalesce(sum(entry.quantity) FILTER (WHERE entry.type = 'free_grant'), 0)::int AS "freeCredits",
         coalesce(-sum(entry.quantity) FILTER (WHERE entry.type = 'consumption' AND dispatch.kind = 'initial'), 0)::int AS "initialConsumption",
         coalesce(-sum(entry.quantity) FILTER (WHERE entry.type = 'consumption' AND dispatch.kind = 'follow_up'), 0)::int AS "followUpConsumption",
+        coalesce(-sum(entry.quantity) FILTER (WHERE entry.type = 'consumption' AND dispatch.kind::text = 'acknowledgment'), 0)::int AS "acknowledgmentConsumption",
         coalesce(sum(entry.quantity) FILTER (WHERE entry.type = 'failure_reversal'), 0)::int AS "failureReversals",
         coalesce(-sum(entry.quantity * purchase.unit_price_minor) FILTER (WHERE entry.type = 'refund_reversal'), 0)::bigint AS "refundedMinor",
         coalesce(-sum(entry.quantity * purchase.unit_price_minor) FILTER (WHERE entry.type = 'chargeback_reversal'), 0)::bigint AS "chargebackMinor"

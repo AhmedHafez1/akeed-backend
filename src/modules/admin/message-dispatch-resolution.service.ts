@@ -79,6 +79,7 @@ export class MessageDispatchResolutionService {
         candidate.jobType === 'order.create',
     );
     if (
+      dispatch.kind !== 'acknowledgment' &&
       order &&
       event &&
       (await this.dispatches.isLatestGeneration(dispatchId))

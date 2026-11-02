@@ -8,6 +8,9 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { CREDITS_PER_AKEED_MESSAGE } from '../../shared/billing/merchant-credits';
+import { MessageTextsService } from '../message-texts/message-texts.service';
+import { acknowledgmentStyle } from '../../shared/messaging/message-texts.types';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
@@ -126,6 +129,7 @@ export class OnboardingService {
     private readonly improvementSwitches?: MessageImprovementSwitches,
     @Optional()
     private readonly templateMessages: TemplateMessageService = new TemplateMessageService(),
+    @Optional() private readonly messageTexts?: MessageTextsService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -252,6 +256,41 @@ export class OnboardingService {
       },
       template,
       branding: toMerchantBrandingDto(hydratedIntegration),
+      acknowledgment: await this.acknowledgmentSettings(template),
+    };
+  }
+
+  private async acknowledgmentSettings(
+    template: SettingsResponseDto['template'],
+  ): Promise<NonNullable<SettingsResponseDto['acknowledgment']>> {
+    const previews = {} as NonNullable<
+      SettingsResponseDto['acknowledgment']
+    >['previews'];
+    for (const language of TEMPLATE_LANGUAGES) {
+      const styles = new Set([
+        'default',
+        ...template.variants[language].map((row) => row.variant),
+        ...(template.reminder?.variants[language] ?? []).map(
+          (row) => row.variant,
+        ),
+      ]);
+      previews[language] = {};
+      for (const style of styles) {
+        const dialect = acknowledgmentStyle(language + '.' + style);
+        const [confirmed, canceled] = await Promise.all([
+          this.messageTexts?.resolve('ack_confirmed', language, dialect),
+          this.messageTexts?.resolve('ack_canceled', language, dialect),
+        ]);
+        previews[language][style] = {
+          confirmed: confirmed?.body ?? null,
+          canceled: canceled?.body ?? null,
+        };
+      }
+    }
+    return {
+      available: this.improvementSwitches?.current().acknowledgment === true,
+      creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
+      previews,
     };
   }
 

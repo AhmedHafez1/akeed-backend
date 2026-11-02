@@ -167,7 +167,15 @@ export class WhatsAppWebhookService {
     try {
       const verification =
         await this.verificationsRepo.findById(verificationId);
-      if (!verification) return;
+      if (
+        !verification ||
+        !(await this.messageDispatches.acknowledgmentEnabledForVerification(
+          verificationId,
+          verification.orgId,
+          this.messageTime(message),
+        ))
+      )
+        return;
       await this.automation?.enqueueAcknowledgment({
         verificationId,
         orgId: verification.orgId,
@@ -443,11 +451,7 @@ export class WhatsAppWebhookService {
     wamid: string,
     status: VerificationStatus,
   ): Promise<boolean> {
-    const switches = this.switches();
-    if (
-      !this.serviceMessages ||
-      (!switches.acknowledgment && !switches.unresolvedReplyNudge)
-    ) {
+    if (!this.serviceMessages) {
       return false;
     }
     const matched =
@@ -483,8 +487,8 @@ export class WhatsAppWebhookService {
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
 
-      // An acknowledgment or a nudge is no dispatch: its
-      // receipt touches only its own row, and a failure marks it failed.
+      // Legacy free texts and nudges have no billing dispatch. Paid thank-you
+      // receipts proceed through the ledger even while sending is disabled.
       if (await this.isServiceMessageReceipt(wamid, typedStatus)) continue;
 
       const failureInfo =

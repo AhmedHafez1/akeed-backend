@@ -58,6 +58,7 @@ function setup(
     verification?: Record<string, unknown> | null;
     byWamid?: boolean;
     serviceMessage?: boolean;
+    merchantEnabled?: boolean;
   } = {},
 ) {
   const verification =
@@ -79,6 +80,9 @@ function setup(
     updateStatusByWamid: jest.fn().mockResolvedValue([{ id: 'ver-1' }]),
   };
   const messageDispatches = {
+    acknowledgmentEnabledForVerification: jest
+      .fn()
+      .mockResolvedValue(options.merchantEnabled !== false),
     findByProviderMessageId: jest
       .fn()
       .mockResolvedValue(
@@ -130,6 +134,15 @@ describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
   afterEach(() => jest.restoreAllMocks());
 
   describe('b. acknowledgment', () => {
+    it('does not enqueue while the merchant is opted out', async () => {
+      const { service, automation, verificationsRepo } = setup({
+        switches: { acknowledgment: true },
+        merchantEnabled: false,
+      });
+      await service.processIncoming(button('confirm_ver-1'));
+      expect(verificationsRepo.updateStatus).toHaveBeenCalled();
+      expect(automation.enqueueAcknowledgment).not.toHaveBeenCalled();
+    });
     it.each([
       ['confirm_ver-1', 'confirmed'],
       ['cancel_ver-1', 'canceled'],
@@ -302,10 +315,12 @@ describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
       expect(messageDispatches.resolveOrParkReceipt).not.toHaveBeenCalled();
     });
 
-    it('with both switches off, a receipt goes the old way without a lookup', async () => {
+    it('with both switches off, existing free receipts are still recognized', async () => {
       const { service, serviceMessages, messageDispatches } = setup();
       await service.processIncoming(status('delivered'));
-      expect(serviceMessages.isServiceMessage).not.toHaveBeenCalled();
+      expect(serviceMessages.isServiceMessage).toHaveBeenCalledWith(
+        'wamid.text-1',
+      );
       expect(messageDispatches.resolveOrParkReceipt).toHaveBeenCalled();
     });
   });

@@ -416,6 +416,8 @@ describe('EasyOrders connection PostgreSQL contract', () => {
         auto_cancel_enabled boolean DEFAULT false NOT NULL,
         auto_cancel_restock boolean DEFAULT true NOT NULL,
         auto_cancel_notify_customer boolean DEFAULT false NOT NULL,
+        acknowledgment_enabled boolean DEFAULT false NOT NULL,
+        acknowledgment_enabled_at timestamptz,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE (platform_type, platform_store_url),

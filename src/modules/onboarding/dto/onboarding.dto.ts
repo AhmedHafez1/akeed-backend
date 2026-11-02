@@ -107,6 +107,10 @@ export class UpdateOnboardingSettingsDto {
   @IsBoolean()
   assumeCodWhenPaymentMissing?: boolean;
 
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsBoolean()
+  acknowledgmentEnabled?: boolean;
+
   @IsOptional()
   @IsString()
   @IsIn(ONBOARDING_SHIPPING_CURRENCIES)
@@ -355,6 +359,7 @@ export interface OnboardingStateDto {
   defaultLanguage: OnboardingLanguage;
   isAutoVerifyEnabled: boolean;
   assumeCodWhenPaymentMissing: boolean;
+  acknowledgmentEnabled: boolean;
   shippingCurrency: OnboardingShippingCurrency;
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
@@ -420,6 +425,14 @@ export interface OnboardingBillingPlansResponseDto {
 
 export interface SettingsResponseDto {
   state: OnboardingStateDto;
+  acknowledgment?: {
+    available: boolean;
+    creditsPerMessage: number;
+    previews: Record<
+      TemplateLanguage,
+      Record<string, { confirmed: string | null; canceled: string | null }>
+    >;
+  };
   /** The store's logo and banner, and whether the banner is sent. */
   branding: MerchantBrandingDto;
   billing: {

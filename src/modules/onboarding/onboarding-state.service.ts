@@ -137,6 +137,24 @@ export class OnboardingStateService {
       updates.avgShippingCost = payload.avgShippingCost.toFixed(2);
     }
 
+    if (payload.acknowledgmentEnabled !== undefined) {
+      if (
+        payload.acknowledgmentEnabled &&
+        !integration.acknowledgmentEnabled &&
+        !this.switches().acknowledgment
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Thank-you messages are not available',
+          code: 'SETTINGS_ACKNOWLEDGMENT_UNAVAILABLE',
+        });
+      }
+      updates.acknowledgmentEnabled = payload.acknowledgmentEnabled;
+      if (payload.acknowledgmentEnabled && !integration.acknowledgmentEnabled)
+        updates.acknowledgmentEnabledAt = new Date().toISOString();
+    }
+
     // Automation settings
     if (payload.followUpEnabled !== undefined) {
       updates.followUpEnabled = payload.followUpEnabled;
@@ -584,6 +602,7 @@ export class OnboardingStateService {
       billingPlanId: integration.billingPlanId ?? null,
       billingStatus: integration.billingStatus ?? null,
       billingManagement: getBillingManagement(integration),
+      acknowledgmentEnabled: integration.acknowledgmentEnabled === true,
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,

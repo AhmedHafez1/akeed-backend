@@ -400,3 +400,13 @@ Payloads hold customer data and are cleared 14 days after failure, so replay bef
 | Anything else | The last handler error. |
 
 To stop storing new events, set `META_WEBHOOK_DURABLE_ENABLED=false` and redeploy. Stored events still drain.
+
+## Merchant thank-you messages
+
+Merchants control both acknowledgment outcomes under **Settings › Message › Thank-you messages**. The integration setting `acknowledgment_enabled` starts false, including existing stores. Admins still manage `ack_confirmed` and `ack_canceled` copy; the settings screen shows read-only examples using the same language/dialect resolver as sending.
+
+Each accepted thank-you costs the normal message rate: two displayed prepaid credits or one Shopify plan message. No capacity means the thank-you is skipped without changing the recorded customer answer. Tests, merchant cancellations and automatic cancellations never get thank-you messages. Nudges remain free.
+
+For a paid acknowledgment, follow `verification_service_messages.dispatch_id` to the dispatch and its reservation/ledger. A confirmed rejection releases capacity, and a valid failure receipt reverses consumption once. An unclear provider answer releases plan usage but keeps a prepaid credit held, and an expired lease keeps either reserved, until staff reconcile it; never retry them. Expired leases are parked by the maintenance queue even while the global sending switch is off. Resolve with provider evidence using the existing audited dispatch-resolution action. The resolution must not change the order outcome or replay ingestion.
+
+Historical rows with no dispatch link remain free and are never backfilled into billing.

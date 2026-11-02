@@ -37,6 +37,6 @@ export interface BillableIdentity {
   integrationId: string;
   verificationId: string;
   dispatchId: string;
-  kind: 'initial' | 'follow_up';
+  kind: 'initial' | 'follow_up' | 'acknowledgment';
   generation: number;
 }

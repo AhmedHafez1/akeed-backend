@@ -97,6 +97,11 @@ function setup(
     undefined,
     switches as never,
   );
+  const messageTexts = {
+    resolve: jest.fn((purpose: string, language: string, style: string) =>
+      Promise.resolve({ body: purpose + '.' + language + '.' + style }),
+    ),
+  };
   const settings = new OnboardingService(
     state,
     {
@@ -124,8 +129,15 @@ function setup(
       { describeComponents: describeMetaComponents } as never,
       switches as never,
     ),
+    messageTexts as never,
   );
-  return { state, settings, integrationsRepo, current: () => row };
+  return {
+    messageTexts,
+    state,
+    settings,
+    integrationsRepo,
+    current: () => row,
+  };
 }
 
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
@@ -322,4 +334,114 @@ describe('message lines in the settings response', () => {
     });
     expect(template.messages.ar?.source).toBe('registered');
   });
+});
+
+describe('merchant thank-you message settings', () => {
+  it('defaults off and preserves opt-in when omitted from a settings write', async () => {
+    const off = setup();
+    expect(
+      (await off.settings.getSettings(owner)).state.acknowledgmentEnabled,
+    ).toBe(false);
+    const on = setup({ acknowledgment: true }, { acknowledgmentEnabled: true });
+    await on.settings.updateSettingsResponse(owner, FORM);
+    expect(on.current().acknowledgmentEnabled).toBe(true);
+  });
+  it('saves explicit opt-in and opt-out', async () => {
+    const { settings } = setup({ acknowledgment: true });
+    expect(
+      (
+        await settings.updateSettingsResponse(owner, {
+          ...FORM,
+          acknowledgmentEnabled: true,
+        })
+      ).state.acknowledgmentEnabled,
+    ).toBe(true);
+    expect(
+      (
+        await settings.updateSettingsResponse(owner, {
+          ...FORM,
+          acknowledgmentEnabled: false,
+        })
+      ).state.acknowledgmentEnabled,
+    ).toBe(false);
+  });
+  it('refuses enabling when globally unavailable, but permits disabling and preserving an existing opt-in', async () => {
+    expect(
+      await rejection(
+        setup().settings.updateSettingsResponse(owner, {
+          ...FORM,
+          acknowledgmentEnabled: true,
+        }),
+      ),
+    ).toMatchObject({ code: 'SETTINGS_ACKNOWLEDGMENT_UNAVAILABLE' });
+    const { settings } = setup({}, { acknowledgmentEnabled: true });
+    expect(
+      (
+        await settings.updateSettingsResponse(owner, {
+          ...FORM,
+          acknowledgmentEnabled: true,
+        })
+      ).state.acknowledgmentEnabled,
+    ).toBe(true);
+    expect(
+      (
+        await settings.updateSettingsResponse(owner, {
+          ...FORM,
+          acknowledgmentEnabled: false,
+        })
+      ).state.acknowledgmentEnabled,
+    ).toBe(false);
+  });
+  it('keeps viewer writes forbidden', async () => {
+    await expect(
+      setup({ acknowledgment: true }).settings.updateSettingsResponse(
+        { ...owner, role: 'viewer' },
+        { ...FORM, acknowledgmentEnabled: true },
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('thank-you previews and consent', () => {
+  it('returns active copy through the same base-dialect resolver as sending, plus the displayed normal price', async () => {
+    const { settings, messageTexts } = setup({ acknowledgment: true });
+    const response = await settings.getSettings(owner);
+    expect(response.acknowledgment).toMatchObject({
+      available: true,
+      creditsPerMessage: 2,
+    });
+    expect(response.acknowledgment?.previews.ar.standard.confirmed).toBe(
+      'ack_confirmed.ar.standard',
+    );
+    expect(messageTexts.resolve).toHaveBeenCalledWith(
+      'ack_canceled',
+      'ar',
+      'egyptian',
+    );
+  });
+  it('records consent time only on an explicit off-to-on transition', async () => {
+    const { settings, current } = setup({ acknowledgment: true });
+    await settings.updateSettingsResponse(owner, {
+      ...FORM,
+      acknowledgmentEnabled: true,
+    });
+    const first = current().acknowledgmentEnabledAt;
+    expect(typeof first).toBe('string');
+    await settings.updateSettingsResponse(owner, FORM);
+    expect(current().acknowledgmentEnabledAt).toBe(first);
+  });
+  it.each(['true', 1, null])(
+    'does not accept a non-boolean opt-in (%s)',
+    async (acknowledgmentEnabled) => {
+      const errors = await validate(
+        plainToInstance(UpdateOnboardingSettingsDto, {
+          ...FORM,
+          acknowledgmentEnabled,
+        }),
+      );
+      expect(
+        errors.some((error) => error.property === 'acknowledgmentEnabled'),
+      ).toBe(true);
+    },
+  );
 });

@@ -1,3 +1,4 @@
+import { acknowledgmentOptedIn } from '../../../shared/messaging/message-texts.types';
 import type { CreditTransaction } from '../credit-transaction';
 import { UsageAccountingRouter } from './usage-accounting.router';
 import { reconciliationRequired } from './prepaid-credit-accounting';
@@ -32,6 +33,7 @@ import {
   integrations,
   providerMessageReceipts,
   verificationMessageDispatches,
+  verificationServiceMessages,
   verifications,
 } from '../schema';
 import {
@@ -83,7 +85,7 @@ export interface StaffResolutionAudit {
   requestId?: string;
 }
 
-export type DispatchKind = 'initial' | 'follow_up';
+export type DispatchKind = 'initial' | 'follow_up' | 'acknowledgment';
 
 /**
  * The logical identity of one send: a verification, a kind, and an attempt
@@ -125,7 +127,7 @@ export interface DispatchTemplateClaim {
  * caller says which template it selected, so a row never holds a guessed one.
  */
 function claimTemplateColumns(params: {
-  templateName: string;
+  templateName: string | null;
   languageCode: string;
   identity?: DispatchTemplateClaim;
 }) {
@@ -309,7 +311,8 @@ export class VerificationMessageDispatchesRepository {
     integrationId: string;
     verificationId: string;
     kind: DispatchKind;
-    templateName: string;
+    repliedAt?: string;
+    templateName: string | null;
     languageCode: string;
     /**
      * Which template the send was selected to carry. Every send path passes
@@ -341,6 +344,22 @@ export class VerificationMessageDispatchesRepository {
           ),
         )
         .for('update');
+
+      if (
+        params.kind === 'acknowledgment' &&
+        (!source?.isActive ||
+          !params.repliedAt ||
+          !acknowledgmentOptedIn(
+            source.acknowledgmentEnabled,
+            source.acknowledgmentEnabledAt,
+            params.repliedAt,
+          ))
+      ) {
+        return {
+          outcome: 'blocked' as const,
+          reason: 'acknowledgment_disabled',
+        };
+      }
 
       if (
         source &&
@@ -413,7 +432,10 @@ export class VerificationMessageDispatchesRepository {
         ) {
           return { outcome: 'busy' as const, dispatch };
         }
-        if (dispatch.attemptCount >= MAX_LEASE_RECLAIM_ATTEMPTS) {
+        if (
+          dispatch.kind === 'acknowledgment' ||
+          dispatch.attemptCount >= MAX_LEASE_RECLAIM_ATTEMPTS
+        ) {
           const [unknown] = await tx
             .update(verificationMessageDispatches)
             .set({
@@ -431,6 +453,9 @@ export class VerificationMessageDispatchesRepository {
         // twice for the same logical send.
         reclaimedFromExpiredLease = true;
       }
+
+      if (dispatch.kind === 'acknowledgment' && dispatch.attemptCount > 0)
+        return { outcome: 'busy' as const, dispatch };
 
       if (params.billingExempt) {
         if (!source?.isActive)
@@ -516,6 +541,54 @@ export class VerificationMessageDispatchesRepository {
         .returning();
       return { outcome: 'claimed' as const, dispatch: claimed, usage };
     });
+  }
+
+  /** Crashed thank-you sends are reconciled, never reclaimed or resent. */
+  async expireAcknowledgmentLeases(): Promise<number> {
+    const rows = await this.db.execute(sql`
+      WITH expired AS (
+        SELECT id FROM verification_message_dispatches
+        WHERE kind::text = 'acknowledgment' AND state = 'sending' AND lease_until < now()
+        ORDER BY lease_until LIMIT 100 FOR UPDATE SKIP LOCKED
+      )
+      UPDATE verification_message_dispatches dispatch
+      SET state = 'outcome_unknown', last_error_code = 'dispatch_lease_expired', lease_until = NULL, updated_at = now()
+      FROM expired WHERE dispatch.id = expired.id RETURNING dispatch.id
+    `);
+    return rows.length;
+  }
+
+  async acknowledgmentEnabledForVerification(
+    verificationId: string,
+    orgId: string,
+    repliedAt: string,
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({
+        enabled: integrations.acknowledgmentEnabled,
+        enabledAt: integrations.acknowledgmentEnabledAt,
+      })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(eq(orders.id, verifications.orderId), eq(orders.orgId, orgId)),
+      )
+      .innerJoin(
+        integrations,
+        and(
+          eq(integrations.id, orders.integrationId),
+          eq(integrations.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+          eq(integrations.isActive, true),
+        ),
+      )
+      .limit(1);
+    return acknowledgmentOptedIn(row?.enabled, row?.enabledAt, repliedAt);
   }
 
   async markAccepted(params: {
@@ -650,11 +723,26 @@ export class VerificationMessageDispatchesRepository {
             params.staffAudit?.userId,
           );
         }
+        if (
+          dispatch.kind === 'acknowledgment' &&
+          dispatch.accountingMode === 'prepaid_credit' &&
+          dispatch.failedAt &&
+          !dispatch.deliveredAt &&
+          !dispatch.readAt
+        ) {
+          await this.accounting.prepaid.transition(
+            tx,
+            dispatch,
+            'reverse',
+            params.staffAudit?.userId,
+          );
+        }
         const restoreReleasedUsage =
           dispatch.accountingMode !== 'prepaid_credit' &&
           dispatch.state === 'outcome_unknown' &&
           !dispatch.usageReserved &&
-          dispatch.usagePeriodStart !== null;
+          dispatch.usagePeriodStart !== null &&
+          !(dispatch.kind === 'acknowledgment' && dispatch.failedAt);
         if (restoreReleasedUsage) {
           await this.accounting.periodic.restore(tx, dispatch, params.sentAt);
         }
@@ -847,6 +935,7 @@ export class VerificationMessageDispatchesRepository {
         and(
           eq(verificationMessageDispatches.verificationId, verificationId),
           isNotNull(verificationMessageDispatches.acceptedAt),
+          notInArray(verificationMessageDispatches.kind, ['acknowledgment']),
         ),
       )
       .orderBy(desc(verificationMessageDispatches.acceptedAt))
@@ -1031,7 +1120,10 @@ export class VerificationMessageDispatchesRepository {
     occurredAt: string,
     failureInfo?: { code?: number | string; title?: string },
   ): Promise<ReceiptProjection> {
-    if (dispatch.accountingMode === 'prepaid_credit') {
+    if (
+      dispatch.accountingMode === 'prepaid_credit' ||
+      dispatch.kind === 'acknowledgment'
+    ) {
       // `outcome_unknown` is reachable *with* a provider message id: a send
       // whose acceptance could not be persisted is salvaged there by
       // `VerificationSendService.salvageAcceptance`, keeping the credit held
@@ -1053,7 +1145,10 @@ export class VerificationMessageDispatchesRepository {
             new Date(occurredAt) < new Date(dispatch.acceptedAt))
         )
           return { verificationRows: [] };
-        if (dispatch.state === 'accepted')
+        if (
+          dispatch.state === 'accepted' &&
+          dispatch.accountingMode === 'prepaid_credit'
+        )
           await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
       } else if (dispatch.failedAt) {
         return { verificationRows: [] };
@@ -1081,6 +1176,24 @@ export class VerificationMessageDispatchesRepository {
           updatedAt: occurredAt,
         })
         .where(eq(verificationMessageDispatches.id, dispatch.id));
+    }
+    if (dispatch.kind === 'acknowledgment') {
+      if (status === 'failed')
+        await tx
+          .update(verificationServiceMessages)
+          .set({
+            state: 'failed',
+            skipReason: 'delivery_failed',
+            updatedAt: occurredAt,
+          })
+          .where(
+            and(
+              eq(verificationServiceMessages.dispatchId, dispatch.id),
+              eq(verificationServiceMessages.orgId, dispatch.orgId),
+              eq(verificationServiceMessages.state, 'sent'),
+            ),
+          );
+      return { verificationRows: [] };
     }
     if (dispatch.accountingMode === 'prepaid_credit') {
       // The projection resolves against the provider message id, so a dispatch
@@ -1144,7 +1257,7 @@ export class VerificationMessageDispatchesRepository {
 
   /**
    * Customer messages WhatsApp accepted for one source since `since`: initial
-   * sends and reminders. Billing-exempt onboarding tests are excluded because
+   * sends, reminders and thank-yous, which all use plan messages. Billing-exempt onboarding tests are excluded because
    * they are not order traffic; the plan recommendation sizes on this number.
    */
   async countAcceptedSince(params: {
@@ -1254,6 +1367,11 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, id))
         .returning();
+      if (dispatch.kind === 'acknowledgment') {
+        if (staffAudit)
+          await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
+        return updated;
+      }
       if (noWhatsapp) {
         // The provider refused the message because the number cannot receive
         // WhatsApp. Same rules as an undeliverable receipt.
@@ -1346,6 +1464,12 @@ export class VerificationMessageDispatchesRepository {
         .returning();
       return { outcome: 'outcome_unknown', dispatch: unknown };
     }
+    if (
+      params.kind === 'acknowledgment' &&
+      dispatch &&
+      dispatch.attemptCount > 0
+    )
+      return { outcome: 'busy', dispatch };
     const denial = await this.accounting.newHoldDenial(tx, params.orgId);
     if (denial) return { outcome: 'blocked', reason: denial };
     const previous = dispatch;
@@ -1505,6 +1629,7 @@ export class VerificationMessageDispatchesRepository {
       template?: SentTemplateIdentity;
     },
   ): Promise<number> {
+    if (dispatch.kind === 'acknowledgment') return 0;
     const common = {
       waMessageId: params.providerMessageId,
       ...(params.template

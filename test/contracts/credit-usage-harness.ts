@@ -126,7 +126,11 @@ export function creditUsageHarness() {
         !String(candidate.enumName).startsWith('credit_') &&
         !String(candidate.enumName).startsWith('payment_')
       ) {
-        const values = candidate.enumValues as string[];
+        const values = (candidate.enumValues as string[]).filter(
+          (value) =>
+            candidate.enumName !== 'verification_dispatch_kind' ||
+            value !== 'acknowledgment',
+        );
         await client.unsafe(
           `CREATE TYPE "${String(candidate.enumName)}" AS ENUM (${values.map((item) => `'${item}'`).join(', ')})`,
         );
@@ -165,6 +169,11 @@ export function creditUsageHarness() {
     await migrate('0045_provider_message_receipts.sql');
     await migrate('0053_dispatch_template_identity.sql');
     await migrate('0056_dispatch_template_fallback.sql');
+    await migrate('0060_whatsapp_service_messages.sql');
+    await client.unsafe(
+      'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
+    );
+    await migrate('0083_merchant_acknowledgments.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {

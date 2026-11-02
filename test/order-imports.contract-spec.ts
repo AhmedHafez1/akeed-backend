@@ -268,9 +268,13 @@ describe('order imports PostgreSQL contract', () => {
         ? statement.includes('ADD COLUMN IF NOT EXISTS "notification_email"')
         : migration.startsWith('0081_')
           ? !statement.includes('"credit_accounts"')
-          : // The cancellation tables reference columns the base does not have.
-            !migration.startsWith('0075_') ||
-            !statement.includes('verification_auto_cancellation');
+          : // 0083 also extends dispatch and service-message tables the base
+            // does not have; only its store columns apply.
+            migration.startsWith('0083_')
+            ? statement.includes('ALTER TABLE "integrations"')
+            : // The cancellation tables reference columns the base does not have.
+              !migration.startsWith('0075_') ||
+              !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -317,6 +321,8 @@ describe('order imports PostgreSQL contract', () => {
         '0081_credit_model_notices.sql',
         // Stored Meta webhook events; proves 0082 re-runs.
         '0082_meta_webhook_events.sql',
+        // Thank-you opt-in off by default; proves 0083 re-runs.
+        '0083_merchant_acknowledgments.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

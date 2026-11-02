@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   verificationReplyEvents,
@@ -53,6 +53,27 @@ export class VerificationServiceMessagesRepository {
     return claimed ?? null;
   }
 
+  async linkDispatch(
+    id: string,
+    orgId: string,
+    dispatchId: string,
+  ): Promise<void> {
+    const rows = await this.db
+      .update(verificationServiceMessages)
+      .set({ dispatchId, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(verificationServiceMessages.id, id),
+          eq(verificationServiceMessages.orgId, orgId),
+          eq(verificationServiceMessages.state, 'claimed'),
+          isNull(verificationServiceMessages.dispatchId),
+        ),
+      )
+      .returning({ id: verificationServiceMessages.id });
+    if (rows.length !== 1)
+      throw new Error('Service message dispatch link conflict');
+  }
+
   async markSent(params: {
     id: string;
     providerMessageId: string;
@@ -62,7 +83,8 @@ export class VerificationServiceMessagesRepository {
     await this.db
       .update(verificationServiceMessages)
       .set({
-        state: 'sent',
+        state: sql`CASE WHEN EXISTS (SELECT 1 FROM verification_message_dispatches dispatch WHERE dispatch.id = ${verificationServiceMessages.dispatchId} AND dispatch.org_id = ${verificationServiceMessages.orgId} AND dispatch.failed_at IS NOT NULL) THEN 'failed' ELSE 'sent' END`,
+        skipReason: sql`CASE WHEN EXISTS (SELECT 1 FROM verification_message_dispatches dispatch WHERE dispatch.id = ${verificationServiceMessages.dispatchId} AND dispatch.org_id = ${verificationServiceMessages.orgId} AND dispatch.failed_at IS NOT NULL) THEN 'delivery_failed' ELSE NULL END`,
         providerMessageId: params.providerMessageId,
         sentAt: params.sentAt,
         ...textColumns(params.text),
@@ -112,7 +134,10 @@ export class VerificationServiceMessagesRepository {
       })
       .from(verificationServiceMessages)
       .where(
-        eq(verificationServiceMessages.providerMessageId, providerMessageId),
+        and(
+          eq(verificationServiceMessages.providerMessageId, providerMessageId),
+          isNull(verificationServiceMessages.dispatchId),
+        ),
       )
       .limit(1);
     if (!found) return false;
@@ -140,7 +165,10 @@ export class VerificationServiceMessagesRepository {
       .select({ id: verificationServiceMessages.id })
       .from(verificationServiceMessages)
       .where(
-        eq(verificationServiceMessages.providerMessageId, providerMessageId),
+        and(
+          eq(verificationServiceMessages.providerMessageId, providerMessageId),
+          isNull(verificationServiceMessages.dispatchId),
+        ),
       )
       .limit(1);
     return Boolean(found);

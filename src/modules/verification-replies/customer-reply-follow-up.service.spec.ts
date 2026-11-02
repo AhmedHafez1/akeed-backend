@@ -27,6 +27,7 @@ function setup(
     integration?: Record<string, unknown>;
     dispatch?: { resolvedLanguage: 'ar' | 'en'; variantKey: string } | null;
     claimed?: boolean;
+    billingOutcome?: string;
     send?: FreeFormTextOutcome | Error;
     texts?: Record<string, string>;
   } = {},
@@ -49,6 +50,9 @@ function setup(
     orderNumber: '1117',
     externalOrderId: 'ext-1',
     integration: {
+      id: 'int-1',
+      orgId: 'org-1',
+      acknowledgmentEnabled: true,
       defaultLanguage: 'auto',
       storeName: 'Nour',
       ...options.integration,
@@ -59,6 +63,7 @@ function setup(
     claim: jest
       .fn()
       .mockResolvedValue(options.claimed === false ? null : { id: 'msg-1' }),
+    linkDispatch: jest.fn().mockResolvedValue(undefined),
     markSent: jest.fn().mockResolvedValue(undefined),
     markNotSent: jest.fn().mockResolvedValue(undefined),
   };
@@ -87,6 +92,14 @@ function setup(
     ),
   };
   const dispatches = {
+    claim: jest.fn().mockResolvedValue({
+      outcome: options.billingOutcome ?? 'claimed',
+      dispatch: { id: 'dispatch-1', generation: 1 },
+    }),
+    markAccepted: jest.fn().mockResolvedValue({ outcome: 'accepted' }),
+    resolveNotAccepted: jest.fn().mockResolvedValue({ id: 'dispatch-1' }),
+    markOutcomeUnknown: jest.fn().mockResolvedValue(1),
+    markFailedProviderOutcome: jest.fn().mockResolvedValue(1),
     findLatestAcceptedIdentity: jest
       .fn()
       .mockResolvedValue(
@@ -110,7 +123,7 @@ function setup(
     messagingPort as never,
     { current: () => switches } as never,
   );
-  return { service, serviceMessages, messagingPort, messageTexts };
+  return { service, serviceMessages, messagingPort, messageTexts, dispatches };
 }
 
 const ACK: CustomerReplyFollowUp = {
@@ -135,6 +148,135 @@ describe('CustomerReplyFollowUpService', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
+  describe('merchant opt-in and paid accounting', () => {
+    it('does not charge for an older reply replayed after opt-in', async () => {
+      const { service, messagingPort, dispatches } = setup({
+        integration: { acknowledgmentEnabledAt: new Date(NOW).toISOString() },
+      });
+      expect(await service.handle(ACK)).toMatchObject({
+        outcome: 'ineligible',
+        reason: 'merchant_disabled',
+      });
+      expect(messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      expect(dispatches.claim).not.toHaveBeenCalled();
+    });
+    it.each([false, undefined])(
+      'requires explicit opt-in (%s)',
+      async (acknowledgmentEnabled) => {
+        const { service, serviceMessages, dispatches, messagingPort } = setup({
+          integration: { acknowledgmentEnabled },
+        });
+        expect(await service.handle(ACK)).toEqual({
+          outcome: 'ineligible',
+          reason: 'merchant_disabled',
+        });
+        expect(serviceMessages.claim).not.toHaveBeenCalled();
+        expect(dispatches.claim).not.toHaveBeenCalled();
+        expect(messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      },
+    );
+    it('reserves a normal message and consumes it only on acceptance', async () => {
+      const { service, serviceMessages, dispatches, messagingPort } = setup();
+      await service.handle(ACK);
+      expect(dispatches.claim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'acknowledgment',
+          templateName: null,
+          orgId: 'org-1',
+          integrationId: 'int-1',
+        }),
+      );
+      expect(serviceMessages.linkDispatch).toHaveBeenCalledWith(
+        'msg-1',
+        'org-1',
+        'dispatch-1',
+      );
+      expect(
+        serviceMessages.linkDispatch.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        messagingPort.sendFreeFormText.mock.invocationCallOrder[0],
+      );
+      expect(dispatches.markAccepted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'acknowledgment',
+          providerMessageId: 'wamid.text-1',
+        }),
+      );
+    });
+    it('does not contact the provider when capacity is exhausted', async () => {
+      const { service, dispatches, messagingPort } = setup({
+        billingOutcome: 'blocked',
+      });
+      expect(await service.handle(ACK)).toMatchObject({
+        outcome: 'skipped',
+        reason: 'billing_unavailable',
+      });
+      expect(messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      expect(dispatches.markAccepted).not.toHaveBeenCalled();
+    });
+    it.each([
+      { outcome: 'window_closed' as const },
+      { outcome: 'rejected' as const, code: 'rejected' },
+    ])('releases a confirmed non-send (%s)', async (send) => {
+      const { service, dispatches } = setup({ send });
+      await service.handle(ACK);
+      expect(dispatches.resolveNotAccepted).toHaveBeenCalledWith(
+        'dispatch-1',
+        undefined,
+        true,
+      );
+      expect(dispatches.markAccepted).not.toHaveBeenCalled();
+    });
+    it.each([
+      { outcome: 'failed' as const, code: 'timeout' },
+      new Error('timeout'),
+    ])('parks unclear sends for reconciliation (%s)', async (send) => {
+      const { service, dispatches } = setup({ send });
+      await service.handle(ACK);
+      expect(dispatches.markOutcomeUnknown).not.toHaveBeenCalled();
+      expect(dispatches.markFailedProviderOutcome).toHaveBeenCalledWith(
+        'dispatch-1',
+        'provider_error',
+      );
+      expect(dispatches.resolveNotAccepted).not.toHaveBeenCalled();
+    });
+    it('salvages a known provider id when acceptance persistence fails', async () => {
+      const { service, dispatches } = setup();
+      dispatches.markAccepted.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      await service.handle(ACK);
+      expect(dispatches.markOutcomeUnknown).toHaveBeenCalledWith(
+        'dispatch-1',
+        'acceptance_persistence_failed',
+        'wamid.text-1',
+      );
+    });
+    it('records the sent message even when every billing write fails', async () => {
+      const { service, dispatches, serviceMessages } = setup();
+      dispatches.markAccepted.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      dispatches.markOutcomeUnknown.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      await expect(service.handle(ACK)).resolves.toEqual({
+        outcome: 'sent',
+        providerMessageId: 'wamid.text-1',
+      });
+      expect(serviceMessages.markSent).toHaveBeenCalledWith(
+        expect.objectContaining({ providerMessageId: 'wamid.text-1' }),
+      );
+    });
+    it('never reserves a message credit for nudges', async () => {
+      const { service, dispatches } = setup({
+        verification: { status: 'read' },
+        dispatch: { resolvedLanguage: 'en', variantKey: 'en.friendly' },
+      });
+      await service.handle(NUDGE);
+      expect(dispatches.claim).not.toHaveBeenCalled();
+    });
+  });
   describe('acknowledgment', () => {
     it('sends once after a customer confirms, in the language and dialect of the latest send', async () => {
       const { service, serviceMessages, messagingPort } = setup();

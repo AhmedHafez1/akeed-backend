@@ -152,7 +152,9 @@ export class BillingObservabilityService {
       !!settlements.periodEnd &&
       Date.parse(settlements.periodEnd) >= Date.parse(to);
     const acceptedMessages =
-      facts.ledger.initialConsumption + facts.ledger.followUpConsumption;
+      facts.ledger.initialConsumption +
+      facts.ledger.followUpConsumption +
+      (facts.ledger.acknowledgmentConsumption ?? 0);
     const netRevenueMinor = settlementCovered
       ? Number(settlements.netMinor)
       : null;
@@ -217,6 +219,7 @@ export class BillingObservabilityService {
           : 0,
         initialConsumption: facts.ledger.initialConsumption,
         followUpConsumption: facts.ledger.followUpConsumption,
+        acknowledgmentConsumption: facts.ledger.acknowledgmentConsumption ?? 0,
         failureReversals: facts.ledger.failureReversals,
       },
       finance: {

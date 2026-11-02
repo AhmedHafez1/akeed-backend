@@ -307,7 +307,7 @@ To replay a failed event, see `WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md`.
 4. Check if merchant already canceled (`merchant_canceled_at` is set) → skip to prevent customer from overriding merchant action.
 5. Update verification status in database, with `confirmationSource` or `cancellationSource` set to `customer`.
 6. Call `VerificationHubService.finalizeVerification()` → dispatch the customer outcome through the registry. Shopify adds the existing tag; customer cancellation never calls remote order cancellation.
-7. With `WHATSAPP_ACKNOWLEDGMENT_ENABLED` on, and only when step 5 changed the row, queue one `verification.acknowledgment` job. Nothing is sent from the webhook request itself.
+7. With `WHATSAPP_ACKNOWLEDGMENT_ENABLED` on and the integration opted in through `acknowledgment_enabled`, and only when step 5 changed the row, queue one `verification.acknowledgment` job. Nothing is sent from the webhook request itself.
 
 **Unresolved typed replies.** With
 `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` on, an `unresolved_reply` that has a
@@ -323,10 +323,10 @@ and one `verification.unresolved_reply_nudge` job is queued. Without
 
 Delivery statuses from Meta (`delivered`, `read`, `failed`) are matched by `waMessageId` and update the verification record.
 
-While the acknowledgment or the nudge switch is on, a status for an acknowledgment or
-a nudge (`verification_service_messages.provider_message_id`) is handled first
-and touches only that row: `failed` marks it `failed` with `delivery_failed`,
-and nothing is parked, dispatched or projected on the verification.
+A receipt for an unlinked historical acknowledgment or a nudge is handled first
+through `verification_service_messages.provider_message_id`, even with sending
+disabled. It touches only that row. Paid acknowledgments proceed through the
+dispatch ledger for billing and never project onto the verification.
 
 `VerificationMessageDispatchesRepository.resolveOrParkReceipt` resolves each status to one of three outcomes:
 
@@ -599,6 +599,8 @@ job once; the processor never rethrows, so BullMQ never retries it. Quiet hours
 do not apply: the message answers the customer.
 
 1. Switch on; the order is not a test order; the merchant has not canceled.
+   Acknowledgments also require merchant opt-in and a reply at or after the
+   latest opt-in time. Settings and the send claim both recheck this consent.
 2. Acknowledgment: the verification is `confirmed`/`canceled` with the
    matching `confirmationSource`/`cancellationSource` = `customer`. Nudge: the
    verification is still open.
@@ -609,12 +611,18 @@ do not apply: the message answers the customer.
 5. Text for the language and dialect of the latest accepted send, else the
    language's `default` text; a missing text or store name →
    `skipped`, `text_unavailable`.
-6. `MessagingPort.sendFreeFormText` once → `sent` with the provider id,
+6. For an acknowledgment, reserve one normal billable message and link its
+   dispatch to the service-message claim. No capacity means a recorded skip.
+7. `MessagingPort.sendFreeFormText` once → `sent` with the provider id,
    `skipped` `window_closed` (131047), or `failed` `provider_rejected` /
    `provider_error`.
 
-No usage, credit or dispatch row is written: Meta does not charge for a
-free-form message inside the window. Logs:
+Acknowledgments settle through normal usage accounting on acceptance; confirmed
+non-sends release capacity and valid delivery failures reverse the charge.
+An unclear provider answer releases plan usage but keeps a prepaid credit held
+until audited reconciliation; an expired send lease keeps either reserved.
+Nudges remain free
+and write no billing dispatch. Logs:
 `customer-reply-follow-up` with `kind`, `outcome` and `reason`.
 
 ### Quiet-Hours Engine
@@ -1251,3 +1259,13 @@ npm --prefix akeed-backend run build
 | Meta webhook with wrong verify token                   | 403 Forbidden.                                                                          |
 | 5 consecutive job failures                             | Webhook event marked `failed` with error message.                                       |
 | Test order (akeed-test-\*) escalation                  | Shopify tagging skipped.                                                                |
+
+### Paid thank-you message accounting
+
+**Settings › Message › Thank-you messages** controls both customer-confirmed and customer-canceled acknowledgments with one switch. It is off for all stores until the merchant saves an explicit opt-in. The global switch controls availability; turning it back on preserves each merchant’s choice.
+
+The existing once-per-verification service-message claim prevents repeat sends. New paid acknowledgments link to an `acknowledgment` dispatch, which reserves and settles through the same accounting router as confirmation messages. Nudges and historical unlinked acknowledgments remain free. Receipt routing recognizes unlinked messages even with global sending disabled; linked acknowledgments always reach dispatch accounting. Early receipts are parked and drained on acceptance.
+
+The `reply-follow-up-maintenance` queue sweeps expired acknowledgment send leases every minute (100 rows per sweep), marking them `outcome_unknown` while retaining reservations. It never calls the provider or retries the send. Audited staff resolution settles only billing; it does not replay order ingestion, change verification fields or schedule reminders.
+
+Deploy with acknowledgment sending globally paused: deploy the migration, backend and workers together, then the frontend, then restore global availability. New and existing stores remain off until merchant opt-in.

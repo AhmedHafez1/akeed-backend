@@ -323,7 +323,10 @@ suite pins.
   through `MessagingPort.sendFreeFormText`.
   - The acknowledgment follows a customer confirm or cancel (button or a
     recognized typed answer) that changed the row. Never after a merchant
-    cancellation, an automatic `no_reply` or a test order.
+    cancellation, an automatic `no_reply` or a test order. Both the global
+    switch and the merchant’s **Settings › Message › Thank-you messages**
+    opt-in must be enabled; every store starts off. The worker rechecks the
+    current preference and reserves normal message capacity before sending.
   - The nudge follows a typed reply that quotes (`context.id`) an open
     verification's message, by `wa_message_id` or by the dispatch that sent
     it, and reads as no answer. The reply is stored in
@@ -336,7 +339,9 @@ suite pins.
     (`outside_window`, `window_closed`); a missing text is `text_unavailable`.
     The text is the one for the language and dialect of the latest accepted
     send, else the language's `default` text.
-  - A delivery receipt for a service message touches only its own row; a
+  - A paid acknowledgment receipt settles its billing dispatch and records the
+    service-message result, without changing the order’s outcome. A delivery
+    receipt for a nudge or historical free acknowledgment touches only its own row; a
     `failed` receipt marks it `failed` (`delivery_failed`).
 - **Preview.** The settings response carries `template.messages` and
   `message` on each style, and the onboarding test carries `message`: lines of
@@ -480,8 +485,8 @@ Usage principles:
 - Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
-- Acknowledgments and nudges are free at Meta: they reserve no usage, write no credit or dispatch row, and are
-  recorded only in `verification_service_messages`.
+- Acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
+- Nudges remain free and are recorded only in `verification_service_messages`. Historical unlinked acknowledgments are never billed retroactively.
 - Dashboard usage shows consumed count and included limit for the current billing period.
 - Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade. New orders wait at `blocked` and are sent automatically when capacity returns (see [Orders blocked by capacity](#orders-blocked-by-capacity)).
 

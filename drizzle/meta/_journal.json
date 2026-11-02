@@ -582,6 +582,13 @@
       "when": 1794009600000,
       "tag": "0082_meta_webhook_events",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1794096000000,
+      "tag": "0083_merchant_acknowledgments",
+      "breakpoints": true
     }
   ]
 }

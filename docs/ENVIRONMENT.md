@@ -433,15 +433,21 @@ template metrics (Admin › Templates) before enabling the next.
 | Variable | Item | What `true` does |
 | --- | --- | --- |
 | `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | a | The Message tab offers a reminder style per language, among active `cod_reminder` templates. A store that chose one sends it as the reminder; a store that chose none sends its first-send template. A chosen reminder that cannot be sent falls back to the language's reminder default, then to the first-send template, recorded on the dispatch as `template_fallback_reason = reminder_unavailable`. |
-| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | After a customer confirms or cancels (a button or a recognized typed answer), one free-form text is sent, in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. |
+| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | Offers paid thank-you messages in Settings › Message. Only stores with `acknowledgment_enabled = true` send one free-form text after a customer confirms or cancels (a button or a recognized typed answer), in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. |
 | `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | c | A typed reply to an open verification's message that Akeed could not read gets one free-form nudge, at most once per verification. The reply is stored in `verification_reply_events` without its text; this is stored only while the switch is on. A reply without `context.id` gets nothing. Needs the `unresolved_reply_nudge` texts. |
 | `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` | d | The Message tab offers `auto` as the Arabic style. A store on `auto` sends the Egyptian style to `+20`, the Gulf style to `+966`, `+971`, `+973`, `+974`, `+965` and `+968`, and the standard style to every other Arabic code. A mapped style that cannot be sent falls back to the Arabic default with `auto_style_unavailable`. Turning it off sends the store's stored Arabic style again. |
 | `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` | e | A missing customer or store name is filled from the `fallback_customer_name` and `fallback_store_name` texts of the send's language, not `Customer` and `Akeed Store`. A missing text keeps the old word for that value and logs `message_text_unavailable`, so add all four texts first. |
 | `WHATSAPP_AMOUNT_FORMATTING_ENABLED` | f | The `total` value is written per language and currency (`1,250.00 ج.م`, `EGP 1,250.00`), with the currency's minor units and Western digits. The amount itself never changes. |
 | `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` | g | The Settings preview and the onboarding test phone are built from the template text Meta returned at the last sync. A template without a snapshot keeps the stored preview. The staff text check on Admin › Templates follows it: for a template previewed from the snapshot it reports only differences in what is sent, not the stored preview's wording. |
 
-The acknowledgment and the nudge are free at Meta: they take
-no usage or credit and write no dispatch row. They are recorded in
+Thank-you messages are opt-in per integration and off for all new and existing
+stores. Each accepted acknowledgment uses one normal billable message: two
+merchant-visible credits for prepaid stores, or one plan message. The global
+switch is an availability control and never opts a store in. Acknowledgments
+reserve capacity through a linked `acknowledgment` dispatch; a confirmed
+non-send releases it and a valid delivery failure reverses it. Ambiguous
+sends remain reserved for audited reconciliation and are never resent.
+Nudges remain free and write no billing dispatch. They are recorded in
 `verification_service_messages`, once per verification and kind, claimed
 before the send. Each is sent once and never retried. Outside the 24-hour
 customer service window, or when Meta answers `131047`, it is a recorded skip

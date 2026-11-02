@@ -68,7 +68,8 @@ export type ServiceMessageSkipReason =
   | 'text_unavailable'
   | 'provider_rejected'
   | 'provider_error'
-  | 'delivery_failed';
+  | 'delivery_failed'
+  | 'billing_unavailable';
 
 /** Record 4.10.1 and 4.10.3: the customer service window. */
 export const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -88,4 +89,25 @@ export function fillMessageText(
     const name = key.toLowerCase();
     return Object.hasOwn(values, name) ? values[name] : token;
   });
+}
+
+/** The acknowledgment uses the base dialect of a versioned template style. */
+export function acknowledgmentStyle(
+  variantKey: string | null | undefined,
+): string | null {
+  const style = variantKey?.split('.')[1];
+  return style ? style.replace(/_v\d+$/, '') : null;
+}
+
+/** Meta reply times have second precision; never charge for a pre-consent reply. */
+export function acknowledgmentOptedIn(
+  enabled: boolean | null | undefined,
+  enabledAt: string | null | undefined,
+  repliedAt: string,
+): boolean {
+  return (
+    enabled === true &&
+    (!enabledAt ||
+      Date.parse(repliedAt) >= Math.floor(Date.parse(enabledAt) / 1000) * 1000)
+  );
 }

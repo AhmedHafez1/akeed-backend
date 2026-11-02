@@ -47,7 +47,9 @@ function setup(verification: Record<string, unknown>, rows: unknown[]) {
   const service = new WhatsAppWebhookService(
     verificationsRepo as never,
     hub as never,
-    {} as never,
+    {
+      acknowledgmentEnabledForVerification: jest.fn().mockResolvedValue(true),
+    } as never,
     lifecycles as never,
     switches as never,
     undefined,
