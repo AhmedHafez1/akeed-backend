@@ -13,6 +13,7 @@ import { PrepaidCreditAccounting } from '../src/infrastructure/database/reposito
 import { UsageAccountingRouter } from '../src/infrastructure/database/repositories/usage-accounting.router';
 import { recordedDispatchTemplate } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import {
+  creditAccounts,
   integrations,
   orders,
   organizations,
@@ -280,6 +281,32 @@ async function importedOrder(merchant: Merchant, reference: string) {
   return row.order_id;
 }
 
+/** Opens the organization's prepaid credit account with `quantity` credits. */
+async function fundCredits(orgId: string, quantity: number) {
+  const credits = gate.repositories.credits;
+  await gate.db.transaction(async (tx) => {
+    await tx.insert(creditAccounts).values({ orgId }).onConflictDoNothing();
+    const account = await credits.lockAccount(tx, orgId);
+    await credits.insertLedgerEntry(tx, {
+      orgId,
+      type: 'free_grant',
+      quantity,
+      idempotencyKey: `template-identity-grant:${orgId}`,
+      actorId: randomUUID(),
+      reason: 'Template identity opening balance',
+      postedBalanceBefore: 0,
+      postedBalanceAfter: quantity,
+    });
+    await credits.updateProjection(tx, {
+      orgId,
+      expectedVersion: account.version,
+      postedBalance: quantity,
+      heldCredits: 0,
+      status: 'active',
+    });
+  });
+}
+
 /** An order and its verification, stored but not sent. */
 async function unsentVerification(
   store: { orgId: string; integrationId: string },
@@ -509,9 +536,14 @@ describe('template identity PostgreSQL contract', () => {
       });
     });
 
-    it.each(['shopify', 'easyorders', 'woocommerce'] as const)(
-      'for a plan-billed %s store, first send and reminder',
-      async (platformType) => {
+    // Shopify stores are billed by plan; connected stores pay from prepaid credits.
+    it.each([
+      { platformType: 'shopify', accountingMode: 'periodic_plan' },
+      { platformType: 'easyorders', accountingMode: 'prepaid_credit' },
+      { platformType: 'woocommerce', accountingMode: 'prepaid_credit' },
+    ] as const)(
+      'for a $platformType store billed by $accountingMode, first send and reminder',
+      async ({ platformType, accountingMode }) => {
         const orgId = randomUUID();
         await gate.db.insert(organizations).values({
           id: orgId,
@@ -536,6 +568,7 @@ describe('template identity PostgreSQL contract', () => {
             codTemplateEnVariant: 'direct',
           })
           .returning();
+        if (accountingMode === 'prepaid_credit') await fundCredits(orgId, 10);
         const { verification } = await unsentVerification({
           orgId,
           integrationId: integration.id,
@@ -566,14 +599,14 @@ describe('template identity PostgreSQL contract', () => {
           {
             kind: 'initial',
             state: 'accepted',
-            accountingMode: 'periodic_plan',
+            accountingMode,
             purpose: 'initial',
             ...AR_GULF,
           },
           {
             kind: 'follow_up',
             state: 'accepted',
-            accountingMode: 'periodic_plan',
+            accountingMode,
             purpose: 'reminder',
             ...AR_GULF,
           },

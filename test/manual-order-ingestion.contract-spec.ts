@@ -114,7 +114,7 @@ describe('manual order ingestion PostgreSQL contract', () => {
     created = true;
     await client.unsafe(`
       CREATE TYPE webhook_event_status AS ENUM ('pending', 'processing', 'completed', 'failed', 'skipped');
-      CREATE TYPE verification_status AS ENUM ('pending', 'sent', 'delivered', 'read', 'confirmed', 'canceled', 'expired', 'failed', 'no_reply', 'no_whatsapp');
+      CREATE TYPE verification_status AS ENUM ('pending', 'sent', 'delivered', 'read', 'confirmed', 'canceled', 'expired', 'failed', 'no_reply', 'no_whatsapp', 'blocked');
       CREATE TYPE verification_dispatch_kind AS ENUM ('initial', 'follow_up', 'legacy_unknown');
       CREATE TYPE verification_dispatch_state AS ENUM ('ready', 'sending', 'accepted', 'rejected', 'outcome_unknown');
       CREATE TABLE organizations (
