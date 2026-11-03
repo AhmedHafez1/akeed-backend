@@ -11,6 +11,8 @@ import {
 } from '../../../../shared/ports/messaging.port';
 import { resolveSender } from '../../../../modules/whatsapp-sender/sender-resolution.policy';
 import { readBusinessToken } from './whatsapp-connection-credentials';
+import { MerchantMessageFailure } from '../../../../shared/ports/sender-recovery.port';
+import { classifyOwnNumberFailure } from './own-number-send-failure.policy';
 
 export interface MetaSendContext {
   url: string;
@@ -31,6 +33,10 @@ export class MetaSendContextService {
     params: Parameters<MessagingPort['sendVerificationTemplate']>[0],
   ): Promise<MetaSendContext> {
     const refuse = (code: string): never => {
+      if (params.sender?.kind === 'merchant_own')
+        throw new MerchantMessageFailure(
+          classifyOwnNumberFailure({ localCode: code }),
+        );
       throw new ConfirmedMessageRejection(code);
     };
     const sender = params.sender;
@@ -69,7 +75,9 @@ export class MetaSendContextService {
         !connection ||
         connection.id !== sender.connectionId ||
         !dispatch.senderPhoneNumberId ||
-        connection.phoneNumberId !== dispatch.senderPhoneNumberId
+        connection.phoneNumberId !== dispatch.senderPhoneNumberId ||
+        (dispatch.senderConnectionGeneration != null &&
+          connection.signupGeneration !== dispatch.senderConnectionGeneration)
       )
         return refuse('sender_connection_unavailable');
       const template = await this.templates.findForSend(
@@ -89,6 +97,15 @@ export class MetaSendContextService {
       if (!businessToken) return refuse('sender_credentials_unavailable');
       token = businessToken;
       phoneNumberId = dispatch.senderPhoneNumberId;
+      if (
+        !context.merchantAttempt ||
+        !(await this.dispatches.authorizeMerchantAttempt(
+          context.orgId,
+          context.dispatchId,
+          context.merchantAttempt,
+        ))
+      )
+        return refuse('sender_attempt_not_authorized');
     }
     return {
       url: `${readMetaGraphConfig(this.config).baseUrl}/${phoneNumberId}/messages`,

@@ -134,6 +134,7 @@ export class ConnectionTemplatesService {
   ): Promise<TemplateRunResult> {
     const { templateSubmitIntervalMs, templateBatchSize } =
       readWhatsappOwnNumberConfig(this.config);
+    const observedAt = new Date().toISOString();
     const listed = await this.graph.listTemplates({
       wabaId: connection.wabaId,
       businessToken,
@@ -174,7 +175,13 @@ export class ConnectionTemplatesService {
       now,
     )) {
       if (!plan.patch) continue;
-      await this.rows.updateForOrg(connection.orgId, plan.row.id, plan.patch);
+      await this.rows.updateForOrg(
+        connection.orgId,
+        plan.row.id,
+        plan.patch,
+        undefined,
+        observedAt,
+      );
       if (plan.patch.driftReason)
         this.log('drift', connection, {
           templateKey: registryById.get(plan.row.templateId)?.template.key,

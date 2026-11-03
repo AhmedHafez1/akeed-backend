@@ -24,6 +24,8 @@ import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../../shared/config/whatsap
 import { VerificationServiceMessagesRepository } from '../../database/repositories/verification-service-messages.repository';
 import { VerificationAutomationProducer } from '../../../modules/verification-automation/verification-automation.producer';
 import { VerificationAutoCancellationsRepository } from '../../database/repositories/verification-auto-cancellations.repository';
+import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
+import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.policy';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
@@ -49,6 +51,7 @@ export class WhatsAppWebhookService {
     private readonly automation?: VerificationAutomationProducer,
     @Optional()
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
+    @Optional() private readonly senderRecovery?: VerificationSendService,
   ) {}
 
   /**
@@ -257,7 +260,10 @@ export class WhatsAppWebhookService {
         if (!value) continue;
 
         await this.handleMessages(value.messages ?? [], options);
-        await this.handleStatuses(value.statuses ?? []);
+        await this.handleStatuses(value.statuses ?? [], {
+          phoneNumberId: value.metadata?.phone_number_id,
+          wabaId: entry.id,
+        });
       }
     }
   }
@@ -472,7 +478,10 @@ export class WhatsAppWebhookService {
     return matched;
   }
 
-  private async handleStatuses(statuses: WhatsAppStatusDto[]) {
+  private async handleStatuses(
+    statuses: WhatsAppStatusDto[],
+    routing: { phoneNumberId?: string; wabaId?: string } = {},
+  ) {
     const allowedStatuses: VerificationStatus[] = [
       'delivered',
       'read',
@@ -483,6 +492,48 @@ export class WhatsAppWebhookService {
       const wamid = statusObj.id;
       const status = statusObj.status;
       if (!wamid || !status) continue;
+
+      if (
+        ['sent', 'delivered', 'read', 'failed'].includes(status) &&
+        this.messageDispatches.recordMerchantReceipt
+      ) {
+        const seconds = Number(statusObj.timestamp);
+        const occurredAt =
+          Number.isFinite(seconds) && seconds > 0
+            ? new Date(seconds * 1000).toISOString()
+            : new Date().toISOString();
+        const merchant = await this.messageDispatches.recordMerchantReceipt({
+          providerMessageId: wamid,
+          attemptId: statusObj.biz_opaque_callback_data,
+          ...routing,
+          status: status as 'sent' | 'delivered' | 'read' | 'failed',
+          occurredAt,
+          ...(status === 'failed'
+            ? {
+                failure: classifyOwnNumberFailure({
+                  code: statusObj.errors?.[0]?.code,
+                }),
+              }
+            : {}),
+        });
+        if (merchant) {
+          await this.senderRecovery?.enqueueRecovery(
+            merchant.orgId,
+            merchant.dispatchId,
+          );
+          if (
+            status === 'failed' &&
+            String(statusObj.errors?.[0]?.code) === '131026' &&
+            (await this.verificationsRepo.findById(merchant.verificationId))
+              ?.status === 'no_whatsapp'
+          )
+            await this.verificationHub.markNoWhatsApp(
+              merchant.verificationId,
+              'receipt',
+            );
+          continue;
+        }
+      }
 
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
@@ -505,6 +556,20 @@ export class WhatsAppWebhookService {
       // A receipt can beat the commit that records its wamid. It is parked
       // rather than dropped, and the acceptance applies it when it lands.
       const resolution = await this.messageDispatches.resolveOrParkReceipt({
+        ...(routing.phoneNumberId && routing.wabaId
+          ? {
+              senderReceiptContext: {
+                ...routing,
+                ...(typedStatus === 'failed'
+                  ? {
+                      failure: classifyOwnNumberFailure({
+                        code: failureInfo?.code,
+                      }),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
         providerMessageId: wamid,
         status: typedStatus as 'delivered' | 'read' | 'failed',
         occurredAt,

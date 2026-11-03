@@ -1,4 +1,13 @@
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
+import type { SelectedCodTemplate } from '../../../shared/messaging/cod-template-selector';
+import {
+  UNKNOWN_SENDER_OUTCOME,
+  type MerchantAttemptContext,
+  type SenderFailure,
+  type SenderRecoveryWork,
+} from '../../../shared/ports/sender-recovery.port';
+import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 import {
   FEATURE_OFF_SENDER,
   type ResolvedSender,
@@ -44,6 +53,8 @@ import {
   integrations,
   providerMessageReceipts,
   verificationMessageDispatches,
+  verificationSenderAttempts,
+  whatsappConnectionTemplates,
   verificationServiceMessages,
   whatsappConnections,
   verifications,
@@ -241,6 +252,11 @@ type DispatchWriter =
  */
 /** A delivery receipt as the provider reported it. */
 export interface ProviderReceipt {
+  senderReceiptContext?: {
+    phoneNumberId?: string;
+    wabaId?: string;
+    failure?: SenderFailure;
+  };
   providerMessageId: string;
   status: 'delivered' | 'read' | 'failed';
   occurredAt: string;
@@ -348,6 +364,7 @@ export class VerificationMessageDispatchesRepository {
      * and restore paths from ever touching usage for it.
      */
     billingExempt?: boolean;
+    fallbackForDispatchId?: string;
   }): Promise<DispatchClaimResult> {
     const dispatchKey = buildDispatchKey(params.verificationId, params.kind);
     const now = new Date().toISOString();
@@ -363,6 +380,155 @@ export class VerificationMessageDispatchesRepository {
           ),
         )
         .for('update');
+
+      if (params.fallbackForDispatchId) {
+        const [verification] = await tx
+          .select()
+          .from(verifications)
+          .where(
+            and(
+              eq(verifications.id, params.verificationId),
+              eq(verifications.orgId, params.orgId),
+            ),
+          )
+          .for('update');
+        if (!verification || this.recoveryClosed(verification.status))
+          return { outcome: 'blocked' as const, reason: 'verification_closed' };
+        const [previous] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(
+                verificationMessageDispatches.id,
+                params.fallbackForDispatchId,
+              ),
+              eq(verificationMessageDispatches.orgId, params.orgId),
+            ),
+          )
+          .for('update');
+        if (
+          !previous ||
+          previous.verificationId !== params.verificationId ||
+          previous.kind !== params.kind ||
+          previous.senderKind !== 'merchant_own' ||
+          previous.senderRecoveryState !== 'fallback' ||
+          params.sender?.kind !== 'akeed_system' ||
+          params.chargeRule !== 'fallback'
+        )
+          return {
+            outcome: 'blocked' as const,
+            reason: 'sender_fallback_not_authorized',
+          };
+        const [successor] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            eq(
+              verificationMessageDispatches.fallbackForDispatchId,
+              previous.id,
+            ),
+          );
+        if (successor) {
+          if (successor.state === 'rejected' || successor.failedAt)
+            return {
+              outcome: 'blocked' as const,
+              reason: 'sender_fallback_failed',
+            };
+          if (
+            successor.state === 'sending' &&
+            successor.leaseUntil &&
+            new Date(successor.leaseUntil) < new Date()
+          ) {
+            const [unknown] = await tx
+              .update(verificationMessageDispatches)
+              .set({
+                state: 'outcome_unknown',
+                leaseUntil: null,
+                lastErrorCode: 'dispatch_lease_expired',
+              })
+              .where(eq(verificationMessageDispatches.id, successor.id))
+              .returning();
+            return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+          }
+          return {
+            outcome:
+              successor.state === 'accepted'
+                ? ('accepted' as const)
+                : successor.state === 'outcome_unknown'
+                  ? ('outcome_unknown' as const)
+                  : ('busy' as const),
+            dispatch: successor,
+          };
+        }
+        if (
+          previous.usageReserved ||
+          (previous.accountingMode === 'prepaid_credit' &&
+            previous.billingCost &&
+            !previous.billingRefundedAt)
+        )
+          reconciliationRequired();
+        if (previous.accountingMode === 'prepaid_credit')
+          return this.claimPrepaid(tx, params);
+        const [fresh] = await tx
+          .insert(verificationMessageDispatches)
+          .values({
+            orgId: params.orgId,
+            integrationId: params.integrationId,
+            verificationId: params.verificationId,
+            kind: params.kind,
+            generation: previous.generation + 1,
+            dispatchKey: buildDispatchKey(
+              params.verificationId,
+              params.kind,
+              previous.generation + 1,
+            ),
+            fallbackForDispatchId: previous.id,
+            ...claimTemplateColumns(params),
+          })
+          .returning();
+        const entitlement = resolveEntitlement(source, {
+          id: params.integrationId,
+          orgId: params.orgId,
+        });
+        if (!params.billingExempt && !entitlement.allowed)
+          throw new ConflictException('Fallback integration is not eligible');
+        const senderColumns = await this.claimSenderColumns(tx, params, fresh);
+        const reservation = params.billingExempt
+          ? null
+          : await this.accounting.periodic.reserve(
+              tx,
+              {
+                ...params,
+                id: params.integrationId,
+                senderKind: 'akeed_system',
+                chargeRule: 'fallback',
+              },
+              entitlement,
+              now,
+            );
+        if (reservation && !reservation.allowed)
+          throw new ConflictException('Fallback accounting refused');
+        const [claimed] = await tx
+          .update(verificationMessageDispatches)
+          .set({
+            state: 'sending',
+            ...senderColumns,
+            leaseUntil: params.leaseUntil,
+            attemptCount: 1,
+            usageReserved: !params.billingExempt,
+            usagePeriodStart: params.billingExempt
+              ? null
+              : entitlement.periodStart,
+            billingPool: reservation?.allowed ? reservation.pool : null,
+            billingCost: reservation?.allowed ? reservation.cost : null,
+            metadata: params.billingExempt ? { billingExempt: true } : {},
+            updatedAt: now,
+          })
+          .where(eq(verificationMessageDispatches.id, fresh.id))
+          .returning();
+        return { outcome: 'claimed' as const, dispatch: claimed };
+      }
 
       if (
         params.kind === 'acknowledgment' &&
@@ -422,11 +588,50 @@ export class VerificationMessageDispatchesRepository {
         throw new Error('Dispatch identity mismatch');
       }
       if (dispatch.state === 'accepted') {
+        if (
+          dispatch.senderKind === 'merchant_own' &&
+          dispatch.billingRefundedAt
+        )
+          return { outcome: 'busy' as const, dispatch };
         return { outcome: 'accepted' as const, dispatch };
+      }
+      if (
+        dispatch.senderKind === 'merchant_own' &&
+        ((dispatch.state === 'outcome_unknown' &&
+          !dispatch.providerMessageId) ||
+          (dispatch.state === 'sending' &&
+            dispatch.leaseUntil &&
+            new Date(dispatch.leaseUntil) < new Date()))
+      ) {
+        const [attempt] = await tx
+          .select()
+          .from(verificationSenderAttempts)
+          .where(
+            and(
+              eq(verificationSenderAttempts.dispatchId, dispatch.id),
+              eq(verificationSenderAttempts.orgId, dispatch.orgId),
+            ),
+          )
+          .orderBy(desc(verificationSenderAttempts.attemptNumber))
+          .limit(1);
+        await this.merchantFailure(
+          tx,
+          dispatch,
+          attempt,
+          UNKNOWN_SENDER_OUTCOME,
+          now,
+        );
+        return { outcome: 'busy' as const, dispatch };
       }
       if (dispatch.state === 'outcome_unknown') {
         return { outcome: 'outcome_unknown' as const, dispatch };
       }
+      if (
+        dispatch.senderKind === 'merchant_own' &&
+        dispatch.senderRecoveryState &&
+        dispatch.senderRecoveryState !== 'complete'
+      )
+        return { outcome: 'busy' as const, dispatch };
       // A row already bound to prepaid credits owns a reservation and a ledger
       // identity. Reaching here means credit billing was switched off after the
       // row was created, and re-claiming it would reserve monthly usage for a
@@ -624,6 +829,7 @@ export class VerificationMessageDispatchesRepository {
         | 'senderConnectionId'
         | 'senderPhoneNumberId'
         | 'senderReason'
+        | 'senderConnectionGeneration'
       >
     >
   > {
@@ -639,7 +845,10 @@ export class VerificationMessageDispatchesRepository {
     if (sender.kind === 'merchant_own') {
       if (!sender.connectionId) throw new Error('Sender connection missing');
       const [connection] = await tx
-        .select({ phoneNumberId: whatsappConnections.phoneNumberId })
+        .select({
+          phoneNumberId: whatsappConnections.phoneNumberId,
+          signupGeneration: whatsappConnections.signupGeneration,
+        })
         .from(whatsappConnections)
         .where(
           and(
@@ -652,6 +861,13 @@ export class VerificationMessageDispatchesRepository {
         .limit(1);
       if (!connection) throw new Error('Sender connection unavailable');
       phoneNumberId = connection.phoneNumberId;
+      return {
+        senderKind: sender.kind,
+        senderConnectionId: sender.connectionId,
+        senderPhoneNumberId: phoneNumberId,
+        senderReason: sender.reason,
+        senderConnectionGeneration: connection.signupGeneration,
+      };
     }
     return {
       senderKind: sender.kind,
@@ -659,6 +875,876 @@ export class VerificationMessageDispatchesRepository {
       senderPhoneNumberId: phoneNumberId,
       senderReason: sender.reason,
     };
+  }
+
+  private recoveryClosed(status: string | null): boolean {
+    return [
+      'confirmed',
+      'canceled',
+      'expired',
+      'no_reply',
+      'no_whatsapp',
+      'blocked',
+    ].includes(status ?? '');
+  }
+
+  async hasSenderRecovery(
+    verificationId: string,
+    orgId: string,
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: verificationMessageDispatches.id })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.verificationId, verificationId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          sql`(${verificationMessageDispatches.senderRecoveryState} IN ('retry', 'fallback') OR ${verificationMessageDispatches.senderAutomationPending})`,
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  private async refundMerchant(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+    now: string,
+  ) {
+    if (dispatch.billingRefundedAt) return;
+    if (dispatch.accountingMode === 'prepaid_credit')
+      await this.settlePrepaid(tx, dispatch, 'release', now);
+    else await this.accounting.periodic.release(tx, dispatch, now);
+    await tx
+      .update(verificationMessageDispatches)
+      .set({ usageReserved: false, billingRefundedAt: now })
+      .where(eq(verificationMessageDispatches.id, dispatch.id));
+  }
+
+  async beginMerchantAttempt(
+    orgId: string,
+    dispatchId: string,
+    template: SelectedCodTemplate,
+    retry = false,
+  ) {
+    return withSerializableRetry(() =>
+      this.withDispatchTransaction(dispatchId, async (tx) => {
+        const [verification] = await tx
+          .select()
+          .from(verifications)
+          .where(
+            and(
+              eq(verifications.orgId, orgId),
+              sql`${verifications.id} = (SELECT verification_id FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+            ),
+          )
+          .for('update');
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, dispatchId),
+              eq(verificationMessageDispatches.orgId, orgId),
+            ),
+          )
+          .for('update');
+        if (!dispatch || dispatch.senderKind !== 'merchant_own') return null;
+        if (!verification || this.recoveryClosed(verification.status)) {
+          if (
+            dispatch.senderRecoveryState === 'retry' ||
+            dispatch.state === 'sending'
+          ) {
+            await this.refundMerchant(tx, dispatch, new Date().toISOString());
+            await tx
+              .update(verificationMessageDispatches)
+              .set({
+                state: 'rejected',
+                senderRecoveryState: 'canceled',
+                senderRecoveryDueAt: null,
+                leaseUntil: null,
+              })
+              .where(eq(verificationMessageDispatches.id, dispatchId));
+          }
+          return null;
+        }
+        if (
+          retry &&
+          (dispatch.senderRecoveryState !== 'retry' ||
+            !dispatch.senderRecoveryDueAt ||
+            new Date(dispatch.senderRecoveryDueAt) > new Date() ||
+            dispatch.senderRetryCount >= 2)
+        )
+          return null;
+        if (!retry && dispatch.state !== 'sending') return null;
+        const number = dispatch.senderRetryCount + (retry ? 1 : 0);
+        const [existing] = await tx
+          .select()
+          .from(verificationSenderAttempts)
+          .where(
+            and(
+              eq(verificationSenderAttempts.dispatchId, dispatchId),
+              eq(verificationSenderAttempts.attemptNumber, number),
+            ),
+          );
+        if (existing) return null;
+        const [connection] = await tx
+          .select()
+          .from(whatsappConnections)
+          .where(
+            and(
+              eq(whatsappConnections.id, dispatch.senderConnectionId!),
+              eq(whatsappConnections.orgId, orgId),
+            ),
+          );
+        if (!connection)
+          throw new ConflictException('Sender connection missing');
+        const claimToken = randomUUID();
+        const leaseUntil = new Date(Date.now() + 60_000).toISOString();
+        const [attempt] = await tx
+          .insert(verificationSenderAttempts)
+          .values({
+            orgId,
+            dispatchId,
+            attemptNumber: number,
+            claimToken,
+            state: 'authorized',
+            connectionId: connection.id,
+            signupGeneration:
+              dispatch.senderConnectionGeneration ??
+              connection.signupGeneration,
+            phoneNumberId: dispatch.senderPhoneNumberId!,
+            wabaId: connection.wabaId,
+            leaseUntil,
+          })
+          .returning();
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            state: 'sending',
+            senderRecoveryState: retry ? 'retry' : null,
+            senderRecoveryDueAt: null,
+            senderRetryCount: number,
+            senderRecoveryTemplate: { ...template, imageHeader: undefined },
+            providerMessageId: null,
+            acceptedAt: null,
+            failedAt: null,
+            leaseUntil,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(verificationMessageDispatches.id, dispatchId));
+        return { attemptId: attempt.id, claimToken };
+      }),
+    );
+  }
+
+  /** Consumes authorization once, immediately before the adapter calls HTTP. */
+  async authorizeMerchantAttempt(
+    orgId: string,
+    dispatchId: string,
+    context: MerchantAttemptContext,
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(verificationSenderAttempts)
+      .set({ state: 'in_flight' })
+      .where(
+        and(
+          eq(verificationSenderAttempts.id, context.attemptId),
+          eq(verificationSenderAttempts.orgId, orgId),
+          eq(verificationSenderAttempts.dispatchId, dispatchId),
+          eq(verificationSenderAttempts.claimToken, context.claimToken),
+          eq(verificationSenderAttempts.state, 'authorized'),
+          sql`${verificationSenderAttempts.leaseUntil} > now()`,
+          sql`EXISTS (SELECT 1 FROM verification_message_dispatches d JOIN verifications v ON v.id = d.verification_id AND v.org_id = d.org_id JOIN whatsapp_connections c ON c.id = d.sender_connection_id AND c.org_id = d.org_id WHERE d.id = ${dispatchId} AND d.sender_retry_count = ${verificationSenderAttempts.attemptNumber} AND d.state = 'sending' AND c.signup_generation = ${verificationSenderAttempts.signupGeneration} AND c.state = 'active' AND v.status NOT IN ('confirmed','canceled','expired','no_reply','no_whatsapp','blocked'))`,
+        ),
+      )
+      .returning({ id: verificationSenderAttempts.id });
+    return rows.length === 1;
+  }
+
+  private async merchantFailure(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+    attempt: typeof verificationSenderAttempts.$inferSelect | undefined,
+    failure: SenderFailure,
+    now: string,
+  ) {
+    if (attempt)
+      await tx
+        .update(verificationSenderAttempts)
+        .set({
+          state: failure.class === 'outcome_unknown' ? 'unknown' : 'failed',
+          failedAt: failure.class === 'outcome_unknown' ? null : now,
+          failure,
+        })
+        .where(eq(verificationSenderAttempts.id, attempt.id));
+    const [verification] = await tx
+      .select()
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.id, dispatch.verificationId),
+          eq(verifications.orgId, dispatch.orgId),
+        ),
+      );
+    const closed = !verification || this.recoveryClosed(verification.status);
+    const action = closed
+      ? 'canceled'
+      : failure.action === 'retry' && dispatch.senderRetryCount < 2
+        ? 'retry'
+        : failure.action === 'fail'
+          ? 'complete'
+          : 'fallback';
+    const dueAt =
+      action === 'retry'
+        ? new Date(
+            Date.now() + (dispatch.senderRetryCount === 0 ? 30_000 : 120_000),
+          ).toISOString()
+        : action === 'fallback'
+          ? now
+          : null;
+    if (action !== 'retry') await this.refundMerchant(tx, dispatch, now);
+    await tx
+      .update(verificationMessageDispatches)
+      .set({
+        state:
+          action === 'retry'
+            ? 'sending'
+            : dispatch.providerMessageId
+              ? 'accepted'
+              : 'rejected',
+        failedAt: now,
+        resolvedAt: action === 'retry' ? null : now,
+        lastErrorCode: failure.code ?? 'outcome_unknown',
+        senderRecoveryState: action,
+        senderRecoveryVersion: sql`${verificationMessageDispatches.senderRecoveryVersion} + 1`,
+        senderRecoveryDueAt: dueAt,
+        leaseUntil: null,
+        updatedAt: now,
+      })
+      .where(eq(verificationMessageDispatches.id, dispatch.id));
+    if (action === 'complete' && !closed)
+      await tx
+        .update(verifications)
+        .set(
+          failure.code === '131026'
+            ? buildNoWhatsappPayload(now, { code: failure.code })
+            : { status: 'failed', updatedAt: now },
+        )
+        .where(
+          and(
+            eq(verifications.id, dispatch.verificationId),
+            eq(verifications.orgId, dispatch.orgId),
+            notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
+          ),
+        );
+    if (failure.degrade)
+      await tx
+        .update(whatsappConnections)
+        .set({
+          degradedClass: sql`CASE WHEN ${whatsappConnections.degradedClass} = 'credentials' THEN 'credentials' ELSE ${failure.degrade} END`,
+          degradedSince: sql`COALESCE(${whatsappConnections.degradedSince}, now())`,
+          healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+          nextHealthAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(whatsappConnections.id, dispatch.senderConnectionId!),
+            eq(whatsappConnections.orgId, dispatch.orgId),
+            eq(
+              whatsappConnections.signupGeneration,
+              dispatch.senderConnectionGeneration ??
+                attempt?.signupGeneration ??
+                0,
+            ),
+            sql`${whatsappConnections.state} IN ('active', 'verifying')`,
+          ),
+        );
+    if (failure.templateStatus && dispatch.senderRecoveryTemplate?.registryKey)
+      await tx
+        .update(whatsappConnectionTemplates)
+        .set({
+          status: failure.templateStatus,
+          lastErrorCode: failure.code,
+          lastError: null,
+          statusEventAt: now,
+        })
+        .where(
+          and(
+            eq(whatsappConnectionTemplates.orgId, dispatch.orgId),
+            eq(
+              whatsappConnectionTemplates.connectionId,
+              dispatch.senderConnectionId!,
+            ),
+            sql`${whatsappConnectionTemplates.templateId} IN (SELECT id FROM whatsapp_templates WHERE key = ${dispatch.senderRecoveryTemplate.registryKey} AND meta_template_name = ${dispatch.templateName} AND meta_language_code = ${dispatch.languageCode})`,
+            sql`EXISTS (SELECT 1 FROM whatsapp_connections c WHERE c.id = ${dispatch.senderConnectionId} AND c.org_id = ${dispatch.orgId} AND c.signup_generation = ${dispatch.senderConnectionGeneration ?? attempt?.signupGeneration ?? 0})`,
+          ),
+        );
+  }
+
+  async failMerchantAttempt(
+    orgId: string,
+    dispatchId: string,
+    context: MerchantAttemptContext | null,
+    failure: SenderFailure,
+  ) {
+    await withSerializableRetry(() =>
+      this.withDispatchTransaction(dispatchId, async (tx) => {
+        await tx
+          .select()
+          .from(verifications)
+          .where(
+            and(
+              eq(verifications.orgId, orgId),
+              sql`${verifications.id} = (SELECT verification_id FROM verification_message_dispatches WHERE id = ${dispatchId})`,
+            ),
+          )
+          .for('update');
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, dispatchId),
+              eq(verificationMessageDispatches.orgId, orgId),
+            ),
+          )
+          .for('update');
+        if (!dispatch || dispatch.senderKind !== 'merchant_own') return;
+        const [attempt] = context
+          ? await tx
+              .select()
+              .from(verificationSenderAttempts)
+              .where(
+                and(
+                  eq(verificationSenderAttempts.id, context.attemptId),
+                  eq(verificationSenderAttempts.claimToken, context.claimToken),
+                  eq(verificationSenderAttempts.dispatchId, dispatchId),
+                  eq(verificationSenderAttempts.orgId, orgId),
+                ),
+              )
+              .for('update')
+          : await tx
+              .select()
+              .from(verificationSenderAttempts)
+              .where(
+                and(
+                  eq(verificationSenderAttempts.dispatchId, dispatchId),
+                  eq(verificationSenderAttempts.orgId, orgId),
+                ),
+              )
+              .orderBy(desc(verificationSenderAttempts.attemptNumber))
+              .limit(1)
+              .for('update');
+        if (
+          context &&
+          (!attempt || !['authorized', 'in_flight'].includes(attempt.state))
+        )
+          return;
+        if (attempt && attempt.attemptNumber !== dispatch.senderRetryCount)
+          return;
+        if (
+          ['complete', 'canceled', 'fallback'].includes(
+            dispatch.senderRecoveryState ?? '',
+          )
+        )
+          return;
+        await this.merchantFailure(
+          tx,
+          dispatch,
+          attempt,
+          failure,
+          new Date().toISOString(),
+        );
+      }),
+    );
+  }
+
+  async acceptMerchantAttempt(
+    orgId: string,
+    dispatchId: string,
+    context: MerchantAttemptContext,
+    providerMessageId: string,
+    sentAt: string,
+  ): Promise<boolean> {
+    const accepted = await withSerializableRetry(() =>
+      this.withDispatchTransaction(dispatchId, async (tx) => {
+        await tx
+          .select()
+          .from(verifications)
+          .where(
+            and(
+              eq(verifications.orgId, orgId),
+              sql`${verifications.id} = (SELECT verification_id FROM verification_message_dispatches WHERE id = ${dispatchId})`,
+            ),
+          )
+          .for('update');
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, dispatchId),
+              eq(verificationMessageDispatches.orgId, orgId),
+            ),
+          )
+          .for('update');
+        const [attempt] = await tx
+          .select()
+          .from(verificationSenderAttempts)
+          .where(
+            and(
+              eq(verificationSenderAttempts.id, context.attemptId),
+              eq(verificationSenderAttempts.claimToken, context.claimToken),
+              eq(verificationSenderAttempts.orgId, orgId),
+              eq(verificationSenderAttempts.dispatchId, dispatchId),
+            ),
+          )
+          .for('update');
+        if (!dispatch || !attempt) return false;
+        if (
+          attempt.providerMessageId &&
+          attempt.providerMessageId !== providerMessageId
+        )
+          throw new ConflictException('Merchant attempt acceptance conflict');
+        await tx
+          .update(verificationSenderAttempts)
+          .set({
+            providerMessageId,
+            acceptedAt: attempt.acceptedAt ?? sentAt,
+            ...(!attempt.failedAt ? { state: 'accepted' as const } : {}),
+          })
+          .where(eq(verificationSenderAttempts.id, attempt.id));
+        if (
+          attempt.failedAt ||
+          attempt.attemptNumber !== dispatch.senderRetryCount ||
+          ['fallback', 'canceled'].includes(dispatch.senderRecoveryState ?? '')
+        )
+          return false;
+        if (
+          dispatch.state === 'accepted' &&
+          dispatch.senderRecoveryState === 'complete' &&
+          dispatch.providerMessageId === providerMessageId
+        )
+          return true;
+        await this.projectAcceptedVerification(tx, dispatch, {
+          providerMessageId,
+          sentAt,
+          template: recordedDispatchTemplate(dispatch),
+        });
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            state: 'accepted',
+            providerMessageId,
+            acceptedAt: sentAt,
+            leaseUntil: null,
+            senderRecoveryState: 'complete',
+            senderRecoveryDueAt: dispatch.senderRetryCount > 0 ? sentAt : null,
+            senderAutomationPending: dispatch.senderRetryCount > 0,
+            lastErrorCode: null,
+            updatedAt: sentAt,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatchId));
+        return true;
+      }),
+    );
+    await this.drainMerchantReceipts(providerMessageId);
+    const current = await this.findSenderRecovery(orgId, dispatchId);
+    return accepted && current?.senderRecoveryState === 'complete';
+  }
+
+  private async drainMerchantReceipts(providerMessageId: string) {
+    const receipts = await this.db
+      .select()
+      .from(providerMessageReceipts)
+      .where(
+        and(
+          eq(providerMessageReceipts.providerMessageId, providerMessageId),
+          isNull(providerMessageReceipts.appliedAt),
+          isNotNull(providerMessageReceipts.senderReceiptContext),
+        ),
+      )
+      .orderBy(providerMessageReceipts.occurredAt)
+      .limit(100);
+    for (const receipt of receipts) {
+      const applied = await this.recordMerchantReceipt({
+        providerMessageId,
+        status: receipt.status,
+        occurredAt: receipt.occurredAt,
+        ...receipt.senderReceiptContext,
+      });
+      if (applied)
+        await this.db
+          .update(providerMessageReceipts)
+          .set({ appliedAt: new Date().toISOString() })
+          .where(eq(providerMessageReceipts.id, receipt.id));
+    }
+  }
+
+  async findSenderRecovery(orgId: string, dispatchId: string) {
+    const [row] = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, dispatchId),
+          eq(verificationMessageDispatches.orgId, orgId),
+        ),
+      );
+    return row ?? null;
+  }
+
+  async senderFailureEvent(orgId: string, dispatchId: string) {
+    const [row] = await this.db
+      .select({
+        failure: verificationSenderAttempts.failure,
+        connectionId: verificationSenderAttempts.connectionId,
+        version: verificationMessageDispatches.senderRecoveryVersion,
+      })
+      .from(verificationSenderAttempts)
+      .innerJoin(
+        verificationMessageDispatches,
+        eq(
+          verificationMessageDispatches.id,
+          verificationSenderAttempts.dispatchId,
+        ),
+      )
+      .where(
+        and(
+          eq(verificationSenderAttempts.orgId, orgId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationSenderAttempts.dispatchId, dispatchId),
+        ),
+      )
+      .orderBy(desc(verificationSenderAttempts.attemptNumber))
+      .limit(1);
+    if (
+      !row?.failure ||
+      (!row.failure.degrade && row.failure.class !== 'template')
+    )
+      return null;
+    return {
+      orgId,
+      connectionId: row.connectionId,
+      kind:
+        row.failure.class === 'template'
+          ? ('template_failed' as const)
+          : ('degraded' as const),
+      failureClass: row.failure.class,
+      dedupeKey: `dispatch:${dispatchId}:${row.version}`,
+    };
+  }
+
+  async acknowledgeRecoveryAutomation(orgId: string, dispatchId: string) {
+    await this.db
+      .update(verificationMessageDispatches)
+      .set({ senderAutomationPending: false, senderRecoveryDueAt: null })
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, dispatchId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationMessageDispatches.senderRecoveryState, 'complete'),
+        ),
+      );
+  }
+
+  async recoveryAcceptance(orgId: string, dispatchId: string) {
+    const [row] = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.orgId, orgId),
+          sql`(${verificationMessageDispatches.id} = ${dispatchId} OR ${verificationMessageDispatches.fallbackForDispatchId} = ${dispatchId})`,
+          eq(verificationMessageDispatches.state, 'accepted'),
+          isNull(verificationMessageDispatches.failedAt),
+        ),
+      )
+      .orderBy(desc(verificationMessageDispatches.generation))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async finishSenderRecovery(
+    orgId: string,
+    dispatchId: string,
+    canceled = false,
+    scheduleAutomation = false,
+  ) {
+    await withSerializableRetry(() =>
+      this.withDispatchTransaction(dispatchId, async (tx) => {
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, dispatchId),
+              eq(verificationMessageDispatches.orgId, orgId),
+            ),
+          )
+          .for('update');
+        if (
+          !dispatch ||
+          !['retry', 'fallback'].includes(dispatch.senderRecoveryState ?? '')
+        )
+          return;
+        if (canceled)
+          await this.refundMerchant(tx, dispatch, new Date().toISOString());
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            senderRecoveryState: canceled ? 'canceled' : 'complete',
+            senderRecoveryDueAt: scheduleAutomation
+              ? new Date().toISOString()
+              : null,
+            senderAutomationPending: scheduleAutomation,
+            ...(canceled
+              ? {
+                  state: dispatch.providerMessageId
+                    ? ('accepted' as const)
+                    : ('rejected' as const),
+                  leaseUntil: null,
+                  failedAt: new Date().toISOString(),
+                }
+              : {}),
+          })
+          .where(eq(verificationMessageDispatches.id, dispatchId));
+      }),
+    );
+  }
+
+  /** Merchant receipts never enter the shared-sender projection path. */
+  async recordMerchantReceipt(input: {
+    providerMessageId: string;
+    attemptId?: string;
+    phoneNumberId?: string;
+    wabaId?: string;
+    status: 'sent' | 'delivered' | 'read' | 'failed';
+    occurredAt: string;
+    failure?: SenderFailure;
+  }): Promise<{
+    dispatchId: string;
+    orgId: string;
+    verificationId: string;
+  } | null> {
+    const callbackId =
+      input.attemptId && /^[0-9a-f-]{36}$/i.test(input.attemptId)
+        ? input.attemptId
+        : null;
+    const [found] = await this.db
+      .select()
+      .from(verificationSenderAttempts)
+      .where(
+        callbackId
+          ? eq(verificationSenderAttempts.id, callbackId)
+          : eq(
+              verificationSenderAttempts.providerMessageId,
+              input.providerMessageId,
+            ),
+      )
+      .limit(1);
+    if (!found) return null;
+    const identity = { dispatchId: found.dispatchId, orgId: found.orgId };
+    // A known merchant receipt with invalid routing evidence is consumed, not
+    // handed to the legacy unscoped projection.
+    const [root] = await this.db
+      .select({ verificationId: verificationMessageDispatches.verificationId })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, found.dispatchId),
+          eq(verificationMessageDispatches.orgId, found.orgId),
+        ),
+      );
+    if (!root) return null;
+    const result = { ...identity, verificationId: root.verificationId };
+    if (
+      !input.phoneNumberId ||
+      input.phoneNumberId !== found.phoneNumberId ||
+      !input.wabaId ||
+      input.wabaId !== found.wabaId ||
+      (found.providerMessageId &&
+        found.providerMessageId !== input.providerMessageId)
+    )
+      return result;
+    await withSerializableRetry(() =>
+      this.withDispatchTransaction(found.dispatchId, async (tx) => {
+        await tx
+          .select()
+          .from(verifications)
+          .where(
+            and(
+              eq(verifications.id, root.verificationId),
+              eq(verifications.orgId, found.orgId),
+            ),
+          )
+          .for('update');
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, found.dispatchId),
+              eq(verificationMessageDispatches.orgId, found.orgId),
+            ),
+          )
+          .for('update');
+        const [attempt] = await tx
+          .select()
+          .from(verificationSenderAttempts)
+          .where(eq(verificationSenderAttempts.id, found.id))
+          .for('update');
+        if (!dispatch || !attempt) return;
+        const now = input.occurredAt;
+        const current =
+          dispatch.senderRetryCount === attempt.attemptNumber &&
+          !['fallback', 'canceled'].includes(
+            dispatch.senderRecoveryState ?? '',
+          ) &&
+          !dispatch.billingRefundedAt;
+        if (input.status === 'failed') {
+          if (attempt.failedAt || attempt.deliveredAt || attempt.readAt) return;
+          await tx
+            .update(verificationSenderAttempts)
+            .set({
+              providerMessageId: input.providerMessageId,
+              state: 'failed',
+              failedAt: now,
+              failure: input.failure ?? UNKNOWN_SENDER_OUTCOME,
+            })
+            .where(eq(verificationSenderAttempts.id, attempt.id));
+          if (current)
+            await this.merchantFailure(
+              tx,
+              dispatch,
+              attempt,
+              input.failure ?? UNKNOWN_SENDER_OUTCOME,
+              new Date().toISOString(),
+            );
+        } else {
+          await tx
+            .update(verificationSenderAttempts)
+            .set({
+              providerMessageId: input.providerMessageId,
+              acceptedAt: attempt.acceptedAt ?? now,
+              state: 'accepted',
+              ...(input.status !== 'sent'
+                ? { deliveredAt: attempt.deliveredAt ?? now }
+                : {}),
+              ...(input.status === 'read'
+                ? { readAt: attempt.readAt ?? now }
+                : {}),
+            })
+            .where(eq(verificationSenderAttempts.id, attempt.id));
+          if (!current || (input.status === 'sent' && attempt.failedAt)) return;
+          await this.projectAcceptedVerification(tx, dispatch, {
+            providerMessageId: input.providerMessageId,
+            sentAt: attempt.acceptedAt ?? now,
+            repair:
+              dispatch.state === 'accepted' &&
+              dispatch.senderRecoveryState === 'complete',
+            template: recordedDispatchTemplate(dispatch),
+          });
+          await tx
+            .update(verificationMessageDispatches)
+            .set({
+              state: 'accepted',
+              providerMessageId: input.providerMessageId,
+              acceptedAt: attempt.acceptedAt ?? now,
+              failedAt: null,
+              ...(input.status !== 'sent' ? { deliveredAt: now } : {}),
+              ...(input.status === 'read' ? { readAt: now } : {}),
+              senderRecoveryState: 'complete',
+              senderRecoveryDueAt:
+                dispatch.senderRecoveryState === 'retry'
+                  ? now
+                  : dispatch.senderRecoveryDueAt,
+              senderAutomationPending:
+                dispatch.senderRecoveryState === 'retry' ||
+                dispatch.senderAutomationPending,
+              leaseUntil: null,
+              updatedAt: now,
+            })
+            .where(eq(verificationMessageDispatches.id, dispatch.id));
+          if (input.status !== 'sent')
+            await tx
+              .update(verifications)
+              .set({
+                status:
+                  input.status === 'read'
+                    ? 'read'
+                    : sql`CASE WHEN ${verifications.status} = 'read' THEN 'read'::verification_status ELSE 'delivered'::verification_status END`,
+                deliveredAt: now,
+                ...(input.status === 'read' ? { readAt: now } : {}),
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(verifications.id, dispatch.verificationId),
+                  eq(verifications.orgId, dispatch.orgId),
+                  notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
+                ),
+              );
+        }
+      }),
+    );
+    return result;
+  }
+
+  async dueSenderRecovery(): Promise<SenderRecoveryWork[]> {
+    const pending = await this.db
+      .select({ providerMessageId: providerMessageReceipts.providerMessageId })
+      .from(providerMessageReceipts)
+      .innerJoin(
+        verificationSenderAttempts,
+        eq(
+          verificationSenderAttempts.providerMessageId,
+          providerMessageReceipts.providerMessageId,
+        ),
+      )
+      .where(
+        and(
+          isNull(providerMessageReceipts.appliedAt),
+          isNotNull(providerMessageReceipts.senderReceiptContext),
+        ),
+      )
+      .limit(100);
+    for (const receipt of pending)
+      await this.drainMerchantReceipts(receipt.providerMessageId);
+    const expired = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.senderKind, 'merchant_own'),
+          sql`((${verificationMessageDispatches.state} = 'sending' AND ${verificationMessageDispatches.leaseUntil} < now()) OR (${verificationMessageDispatches.state} = 'outcome_unknown' AND ${verificationMessageDispatches.providerMessageId} IS NULL))`,
+        ),
+      )
+      .limit(100);
+    for (const dispatch of expired)
+      await this.failMerchantAttempt(
+        dispatch.orgId,
+        dispatch.id,
+        null,
+        UNKNOWN_SENDER_OUTCOME,
+      );
+    const rows = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        sql`(${verificationMessageDispatches.senderRecoveryState} IN ('retry','fallback') OR ${verificationMessageDispatches.senderAutomationPending}) AND ${verificationMessageDispatches.senderRecoveryDueAt} <= now()`,
+      )
+      .limit(100);
+    return rows.map((row) => ({
+      dispatchId: row.id,
+      orgId: row.orgId,
+      verificationId: row.verificationId,
+      action: row.senderRecoveryState === 'retry' ? 'retry' : 'fallback',
+      dueAt: row.senderRecoveryDueAt!,
+      version: row.senderRecoveryVersion,
+    }));
   }
 
   async findForSender(
@@ -970,7 +2056,8 @@ export class VerificationMessageDispatchesRepository {
     errorCode: string,
     providerMessageId?: string,
   ): Promise<number> {
-    return this.withDispatchTransaction(dispatchId, async (tx) => {
+    let merchantAcceptance = false;
+    const count = await this.withDispatchTransaction(dispatchId, async (tx) => {
       const rows = await tx
         .update(verificationMessageDispatches)
         .set({
@@ -987,9 +2074,35 @@ export class VerificationMessageDispatchesRepository {
           ),
         )
         .returning();
-      if (rows[0]) await this.drainPendingReceipts(tx, rows[0]);
+      if (rows[0]?.senderKind === 'merchant_own' && providerMessageId) {
+        const attempts = await tx
+          .update(verificationSenderAttempts)
+          .set({
+            providerMessageId,
+            acceptedAt: new Date().toISOString(),
+            state: 'accepted',
+          })
+          .where(
+            and(
+              eq(verificationSenderAttempts.dispatchId, dispatchId),
+              eq(verificationSenderAttempts.orgId, rows[0].orgId),
+              eq(
+                verificationSenderAttempts.attemptNumber,
+                rows[0].senderRetryCount,
+              ),
+              sql`${verificationSenderAttempts.state} IN ('authorized','in_flight')`,
+            ),
+          )
+          .returning({ id: verificationSenderAttempts.id });
+        merchantAcceptance = attempts.length > 0;
+      }
+      if (rows[0] && !merchantAcceptance)
+        await this.drainPendingReceipts(tx, rows[0]);
       return rows.length;
     });
+    if (merchantAcceptance && providerMessageId)
+      await this.drainMerchantReceipts(providerMessageId);
+    return count;
   }
 
   /**
@@ -1161,6 +2274,7 @@ export class VerificationMessageDispatchesRepository {
               ? String(receipt.failureInfo.code)
               : null,
           errorTitle: receipt.failureInfo?.title ?? null,
+          senderReceiptContext: receipt.senderReceiptContext ?? null,
         })
         .onConflictDoNothing();
       return { outcome: 'parked' as const };
@@ -1586,6 +2700,41 @@ export class VerificationMessageDispatchesRepository {
       .for('update');
     if (dispatch && dispatch.integrationId !== params.integrationId)
       throw new Error('Dispatch identity mismatch');
+    if (
+      dispatch?.senderKind === 'merchant_own' &&
+      ((dispatch.state === 'outcome_unknown' && !dispatch.providerMessageId) ||
+        (dispatch.state === 'sending' &&
+          dispatch.leaseUntil &&
+          new Date(dispatch.leaseUntil) < new Date()))
+    ) {
+      const [attempt] = await tx
+        .select()
+        .from(verificationSenderAttempts)
+        .where(
+          and(
+            eq(verificationSenderAttempts.dispatchId, dispatch.id),
+            eq(verificationSenderAttempts.orgId, dispatch.orgId),
+          ),
+        )
+        .orderBy(desc(verificationSenderAttempts.attemptNumber))
+        .limit(1);
+      await this.merchantFailure(
+        tx,
+        dispatch,
+        attempt,
+        UNKNOWN_SENDER_OUTCOME,
+        new Date().toISOString(),
+      );
+      return { outcome: 'busy', dispatch };
+    }
+    if (
+      !params.fallbackForDispatchId &&
+      dispatch?.senderKind === 'merchant_own' &&
+      ['retry', 'fallback', 'canceled'].includes(
+        dispatch.senderRecoveryState ?? '',
+      )
+    )
+      return { outcome: 'busy', dispatch };
     if (dispatch?.state === 'outcome_unknown')
       return { outcome: 'outcome_unknown', dispatch };
     if (dispatch?.state === 'accepted' && !dispatch.failedAt)
@@ -1659,6 +2808,7 @@ export class VerificationMessageDispatchesRepository {
           dispatchKey,
           generation,
           accountingMode: 'prepaid_credit',
+          fallbackForDispatchId: params.fallbackForDispatchId ?? null,
           kind: params.kind,
           state: 'ready',
           ...claimTemplateColumns(params),

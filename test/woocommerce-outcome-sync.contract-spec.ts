@@ -662,6 +662,9 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       tables.webhookEvents,
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     // What the scaffold cannot derive from the Drizzle tables: the partial
@@ -688,6 +691,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       '0060_whatsapp_service_messages.sql',
       '0087_whatsapp_dispatch_senders.sql',
       '0088_own_number_billing.sql',
+      '0089_sender_recovery.sql',
       // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
     ])

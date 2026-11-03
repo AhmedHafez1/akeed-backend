@@ -33,7 +33,11 @@ const params: Parameters<MessagingPort['sendVerificationTemplate']>[0] = {
     reason: 'own_number',
     units: 1,
   },
-  dispatchContext: { orgId: 'org', dispatchId: 'dispatch' },
+  dispatchContext: {
+    orgId: 'org',
+    dispatchId: 'dispatch',
+    merchantAttempt: { attemptId: 'attempt', claimToken: 'claim' },
+  },
 };
 
 function setup() {
@@ -61,7 +65,10 @@ function setup() {
     degradedClass: null,
     businessTokenEncrypted: encryptConnectionSecret(merchantToken, key),
   };
-  const dispatches = { findForSender: jest.fn().mockResolvedValue(dispatch) };
+  const dispatches = {
+    findForSender: jest.fn().mockResolvedValue(dispatch),
+    authorizeMerchantAttempt: jest.fn().mockResolvedValue(true),
+  };
   const connections = { findByOrg: jest.fn().mockResolvedValue(connection) };
   const templates = {
     findForSend: jest
@@ -262,7 +269,7 @@ describe('claimed merchant sender', () => {
       expect(output).not.toContain(merchantToken);
       expect(output).not.toContain(encodeURIComponent(merchantToken));
       expect(output).not.toContain('shared-secret');
-      expect(output).toContain('[REDACTED]');
+      if (mode === 'network') expect(output).toContain('[REDACTED]');
       expect(http.post).toHaveBeenCalledTimes(1);
     },
   );

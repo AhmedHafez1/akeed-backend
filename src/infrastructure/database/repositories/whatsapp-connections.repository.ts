@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { SenderHealthResult } from '../../../shared/ports/sender-recovery.port';
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
@@ -140,6 +142,94 @@ export function violatedConstraint(error: unknown): string | undefined {
 export class WhatsappConnectionsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
+  async findDueHealth(limit = 50) {
+    return this.db
+      .select({
+        id: whatsappConnections.id,
+        orgId: whatsappConnections.orgId,
+        signupGeneration: whatsappConnections.signupGeneration,
+        nextHealthAt: whatsappConnections.nextHealthAt,
+      })
+      .from(whatsappConnections)
+      .where(
+        and(
+          inArray(whatsappConnections.state, ['verifying', 'active']),
+          sql`${whatsappConnections.nextHealthAt} <= now()`,
+          sql`(${whatsappConnections.healthLeaseUntil} IS NULL OR ${whatsappConnections.healthLeaseUntil} < now())`,
+        ),
+      )
+      .orderBy(whatsappConnections.nextHealthAt)
+      .limit(limit);
+  }
+
+  async claimHealth(orgId: string, id: string, generation: number) {
+    const [row] = await this.db
+      .update(whatsappConnections)
+      .set({
+        healthClaimToken: randomUUID(),
+        healthLeaseUntil: sql`now() + interval '1 minute'`,
+      })
+      .where(
+        and(
+          eq(whatsappConnections.id, id),
+          eq(whatsappConnections.orgId, orgId),
+          eq(whatsappConnections.signupGeneration, generation),
+          inArray(whatsappConnections.state, ['verifying', 'active']),
+          sql`${whatsappConnections.nextHealthAt} <= now()`,
+          sql`(${whatsappConnections.healthLeaseUntil} IS NULL OR ${whatsappConnections.healthLeaseUntil} < now())`,
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  async completeHealth(
+    claim: WhatsappConnectionRecord,
+    result: SenderHealthResult,
+  ) {
+    let degraded = claim.degradedClass;
+    if (result.status === 'BLOCKED')
+      degraded =
+        degraded === 'credentials'
+          ? degraded
+          : (result.failure?.degrade ?? 'restricted');
+    if (result.status === 'AVAILABLE' && degraded !== 'credentials')
+      degraded = null;
+    const active =
+      claim.state === 'verifying' && result.status === 'AVAILABLE' && !degraded;
+    const [row] = await this.db
+      .update(whatsappConnections)
+      .set({
+        ...(active ? { state: 'active' as const, stateReason: null } : {}),
+        degradedClass: degraded,
+        degradedSince: degraded ? (claim.degradedSince ?? sql`now()`) : null,
+        ...(result.status !== 'unknown'
+          ? {
+              qualityRating: result.qualityRating ?? claim.qualityRating,
+              nameStatus: result.nameStatus ?? claim.nameStatus,
+            }
+          : {}),
+        lastHealthAt: sql`now()`,
+        nextHealthAt: sql`now() + ${degraded ? 15 : 360} * interval '1 minute'`,
+        healthLeaseUntil: null,
+        healthClaimToken: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(whatsappConnections.id, claim.id),
+          eq(whatsappConnections.orgId, claim.orgId),
+          eq(whatsappConnections.signupGeneration, claim.signupGeneration),
+          eq(whatsappConnections.healthRevision, claim.healthRevision),
+          eq(whatsappConnections.healthClaimToken, claim.healthClaimToken!),
+          sql`${whatsappConnections.healthLeaseUntil} > now()`,
+          inArray(whatsappConnections.state, ['verifying', 'active']),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
   async findByOrg(orgId: string): Promise<WhatsappConnectionRecord | null> {
     const [row] = await this.db
       .select()
@@ -191,6 +281,10 @@ export class WhatsappConnectionsRepository {
       registrationPinEncrypted: input.registrationPinEncrypted ?? null,
       degradedClass: null,
       degradedSince: null,
+      healthRevision: 0,
+      healthClaimToken: null,
+      healthLeaseUntil: null,
+      nextHealthAt: sql`now()`,
       disconnectedAt: null,
     };
     try {
@@ -199,7 +293,11 @@ export class WhatsappConnectionsRepository {
         .values({ orgId, ...values })
         .onConflictDoUpdate({
           target: whatsappConnections.orgId,
-          set: { ...values, updatedAt: sql`now()` },
+          set: {
+            ...values,
+            healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+            updatedAt: sql`now()`,
+          },
         })
         .returning();
       return row;
@@ -237,6 +335,9 @@ export class WhatsappConnectionsRepository {
       registrationPinEncrypted: null,
       degradedClass: null,
       degradedSince: null,
+      healthClaimToken: null,
+      healthLeaseUntil: null,
+      nextHealthAt: sql`now()`,
       qualityRating: null,
       nameStatus: null,
       lastHealthAt: null,
@@ -255,6 +356,7 @@ export class WhatsappConnectionsRepository {
             // The row keeps its id, so a job queued for the replaced signup
             // is told apart by its generation.
             signupGeneration: sql`${whatsappConnections.signupGeneration} + 1`,
+            healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
             updatedAt: sql`now()`,
           },
           setWhere: inArray(whatsappConnections.state, [
@@ -511,6 +613,9 @@ export class WhatsappConnectionsRepository {
         businessTokenEncrypted: null,
         registrationPinEncrypted: null,
         disconnectedAt: sql`now()`,
+        healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+        healthClaimToken: null,
+        healthLeaseUntil: null,
         updatedAt: sql`now()`,
       })
       .where(eq(whatsappConnections.orgId, orgId))

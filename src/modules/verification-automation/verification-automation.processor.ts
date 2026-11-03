@@ -66,7 +66,49 @@ export class VerificationAutomationProcessor extends WorkerHost {
       }),
     );
 
+    if (
+      ((name as VerificationAutomationJobType) ===
+        VerificationAutomationJobType.FOLLOW_UP ||
+        (name as VerificationAutomationJobType) ===
+          VerificationAutomationJobType.ESCALATE_NO_REPLY) &&
+      (await this.verificationSendService.hasSenderRecovery?.(
+        data.verificationId,
+        data.orgId,
+      ))
+    )
+      return;
     switch (name as VerificationAutomationJobType) {
+      case VerificationAutomationJobType.SENDER_RECOVERY_SWEEP:
+        await this.verificationSendService.sweepSenderRecovery();
+        return;
+      case VerificationAutomationJobType.SENDER_RETRY:
+      case VerificationAutomationJobType.SENDER_FALLBACK: {
+        if (!data.dispatchId) return;
+        const outcome = await this.verificationSendService.resumeSenderRecovery(
+          data.orgId,
+          data.dispatchId,
+        );
+        if (outcome.status === 'sent') {
+          const ctx = await this.loadContext(data.verificationId, data.orgId);
+          if (ctx && !this.isStatusTerminal(ctx.verification.status)) {
+            await this.automationProducer.prepareRecoverySchedule(data);
+            await this.verificationHub.scheduleFollowUpAndEscalation({
+              verificationId: data.verificationId,
+              orgId: data.orgId,
+              integration: ctx.integration,
+              baselineSentAt: outcome.sentAt
+                ? new Date(outcome.sentAt)
+                : new Date(),
+              reminderAlreadySent: outcome.recoveryKind === 'follow_up',
+            });
+            await this.verificationSendService.acknowledgeRecoveryAutomation(
+              data.orgId,
+              data.dispatchId,
+            );
+          }
+        }
+        return;
+      }
       case VerificationAutomationJobType.INITIAL_SEND:
         await this.handleInitialSend(job, token);
         return;

@@ -22,6 +22,8 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
+import type { SenderFailure } from '../../shared/ports/sender-recovery.port';
 import type { OrderLineItem } from '../../shared/interfaces/order.interface';
 import type {
   UsageAlertEmailStatus,
@@ -1316,9 +1318,51 @@ export const verificationMessageDispatches = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    senderConnectionGeneration: bigint('sender_connection_generation', {
+      mode: 'number',
+    }),
+    senderRecoveryState: text('sender_recovery_state').$type<
+      'retry' | 'fallback' | 'complete' | 'canceled'
+    >(),
+    senderRetryCount: integer('sender_retry_count').notNull().default(0),
+    senderRecoveryVersion: integer('sender_recovery_version')
+      .notNull()
+      .default(0),
+    senderRecoveryDueAt: timestamp('sender_recovery_due_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    senderRecoveryTemplate: jsonb(
+      'sender_recovery_template',
+    ).$type<SelectedCodTemplate>(),
+    fallbackForDispatchId: uuid('fallback_for_dispatch_id'),
+    senderAutomationPending: boolean('sender_automation_pending')
+      .notNull()
+      .default(false),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
+    check(
+      'sender_recovery_state_check',
+      sql`${table.senderRecoveryState} IS NULL OR ${table.senderRecoveryState} IN ('retry','fallback','complete','canceled')`,
+    ),
+    check(
+      'sender_retry_budget_check',
+      sql`${table.senderRetryCount} BETWEEN 0 AND 2`,
+    ),
+    foreignKey({
+      columns: [table.fallbackForDispatchId, table.orgId],
+      foreignColumns: [table.id, table.orgId],
+      name: 'dispatch_fallback_source_fkey',
+    }),
+    uniqueIndex('dispatch_one_sender_fallback')
+      .on(table.fallbackForDispatchId)
+      .where(sql`${table.fallbackForDispatchId} IS NOT NULL`),
+    index('dispatch_sender_recovery_due')
+      .on(table.senderRecoveryDueAt)
+      .where(
+        sql`${table.senderRecoveryState} IN ('retry','fallback') OR ${table.senderAutomationPending}`,
+      ),
     check(
       'dispatch_template_purpose_check',
       sql`template_purpose IS NULL OR template_purpose IN ('initial', 'reminder', 'test')`,
@@ -1412,6 +1456,69 @@ export const verificationMessageDispatches = pgTable(
   ],
 );
 
+export const verificationSenderAttempts = pgTable(
+  'verification_sender_attempts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    dispatchId: uuid('dispatch_id').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    claimToken: uuid('claim_token').notNull(),
+    state: text('state')
+      .$type<'authorized' | 'in_flight' | 'accepted' | 'failed' | 'unknown'>()
+      .notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    signupGeneration: bigint('signup_generation', { mode: 'number' }).notNull(),
+    phoneNumberId: text('phone_number_id').notNull(),
+    wabaId: text('waba_id').notNull(),
+    providerMessageId: text('provider_message_id'),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    acceptedAt: timestamp('accepted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    deliveredAt: timestamp('delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    readAt: timestamp('read_at', { withTimezone: true, mode: 'string' }),
+    failedAt: timestamp('failed_at', { withTimezone: true, mode: 'string' }),
+    failure: jsonb('failure').$type<SenderFailure>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('sender_attempt_dispatch_number_key').on(
+      table.dispatchId,
+      table.attemptNumber,
+    ),
+    unique('sender_attempt_provider_key').on(table.providerMessageId),
+    foreignKey({
+      columns: [table.dispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+    }),
+    check(
+      'sender_attempt_budget_check',
+      sql`${table.attemptNumber} BETWEEN 0 AND 2`,
+    ),
+    check(
+      'sender_attempt_state_check',
+      sql`${table.state} IN ('authorized', 'in_flight', 'accepted', 'failed', 'unknown')`,
+    ),
+  ],
+).enableRLS();
+
 /**
  * Delivery receipts that arrived before the send they describe was recorded.
  * The acceptance transaction applies them when it stores the wamid (see
@@ -1429,6 +1536,11 @@ export const providerMessageReceipts = pgTable(
     }).notNull(),
     errorCode: text('error_code'),
     errorTitle: text('error_title'),
+    senderReceiptContext: jsonb('sender_receipt_context').$type<{
+      phoneNumberId?: string;
+      wabaId?: string;
+      failure?: SenderFailure;
+    }>(),
     receivedAt: timestamp('received_at', {
       withTimezone: true,
       mode: 'string',
@@ -4438,6 +4550,18 @@ export const whatsappConnections = pgTable(
     }),
     providerIsOnBizApp: boolean('provider_is_on_biz_app'),
     providerPlatformType: text('provider_platform_type'),
+    healthRevision: integer('health_revision').notNull().default(0),
+    healthClaimToken: uuid('health_claim_token'),
+    healthLeaseUntil: timestamp('health_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    nextHealthAt: timestamp('next_health_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),

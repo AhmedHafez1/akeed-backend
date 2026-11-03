@@ -39,7 +39,8 @@ type SyntheticTestResult =
         | 'failed'
         | 'plan_limit_reached'
         | 'skipped'
-        | 'outcome_unknown';
+        | 'outcome_unknown'
+        | 'recovery_pending';
       reason?: string;
     });
 /**
@@ -215,6 +216,7 @@ export class VerificationHubService {
     orgId: string;
     integration: IntegrationRecord;
     baselineSentAt: Date;
+    reminderAlreadySent?: boolean;
   }): Promise<void> {
     // An undeliverable receipt that beat the acceptance is applied while the
     // acceptance is recorded, so the row can already be `no_whatsapp` here.
@@ -239,6 +241,7 @@ export class VerificationHubService {
     let followUpDueAt: Date | null = null;
     if (
       integration.followUpEnabled &&
+      !params.reminderAlreadySent &&
       (integration.followUpDelayMinutes ?? 0) > 0
     ) {
       followUpDueAt = adjustForQuietHours(
@@ -751,6 +754,7 @@ export class VerificationHubService {
     outcome: { status: string; reason?: string },
     options: { blockOnCapacity?: boolean } = {},
   ): Promise<void> {
+    if (outcome.status === 'recovery_pending') return;
     if (
       outcome.status === 'failed' &&
       outcome.reason === NO_WHATSAPP_SEND_REASON

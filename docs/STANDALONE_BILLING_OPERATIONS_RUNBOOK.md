@@ -184,3 +184,9 @@ Run in a non-production environment with the switch on and one operator named:
 | `BILLING_DISPATCH_NOT_CREDIT_BILLED` | The send is on periodic accounting; use the generic resolver |
 | `BILLING_PURCHASE_NOT_ELIGIBLE` | Inquiry cannot change this purchase |
 | `MESSAGE_DISPATCH_RESOLUTION_CONFLICT` | The send was already resolved differently |
+
+## Merchant sender recovery
+
+Merchant-number attempts with no clear provider outcome automatically return their charge and attempt Akeed fallback. Inspect `verification_sender_attempts`, the original dispatch refund timestamp, and the fallback dispatch linked by `fallback_for_dispatch_id`. Late receipts update the original attempt audit without charging it again. Retryable merchant failures retain one charge across their two delayed retries.
+
+An `outcome_unknown` row that already has a provider message ID is evidence of acceptance with incomplete bookkeeping, not an unknown provider send. Preserve its repair/staff-resolution workflow. Shared Akeed ambiguous sends and staff resolution are unchanged.

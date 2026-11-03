@@ -263,7 +263,7 @@ A send from the merchant's own WhatsApp number costs less than one from the Akee
 
 **Gates before a claim.** Send readiness, import quotes, the hub and capacity recovery price the next send by its likely sender: the merchant's number when own-number sending is on and the connection is active and not degraded. The template is not checked there, so the claim still decides the real cost. On Shopify, the own-number pool only counts toward capacity, the dashboard and the plan usage alerts while that is true; otherwise merchants see the Akeed pool alone, as before. A prepaid account is not `depleted` while a spare pays for the next own-number send.
 
-**Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. A fallback is never blocked by an empty balance or pool. No send path uses it yet; the own-number fallback send will.
+**Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. A fallback is never blocked by an empty balance or pool. Merchant sender recovery passes this rule explicitly after returning the failed merchant charge. The fallback records its actual cost, including a partial charge or zero; it does not create debt. Delayed merchant retries retain one charge until acceptance or terminal settlement.
 
 ## Usage Alerts
 

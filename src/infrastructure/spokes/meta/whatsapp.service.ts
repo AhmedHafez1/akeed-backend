@@ -2,6 +2,11 @@ import {
   MetaSendContextService,
   type MetaSendContext,
 } from './own-number/meta-send-context.service';
+import {
+  MerchantMessageFailure,
+  type MerchantAttemptContext,
+} from '../../../shared/ports/sender-recovery.port';
+import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.policy';
 import type { ResolvedSender } from '../../../shared/ports/sender-resolver.port';
 import {
   ConfirmedMessageRejection,
@@ -99,7 +104,11 @@ export class WhatsAppService {
     verificationId: string;
     template: SelectedCodTemplate;
     sender?: ResolvedSender;
-    dispatchContext?: { orgId: string; dispatchId: string };
+    dispatchContext?: {
+      orgId: string;
+      dispatchId: string;
+      merchantAttempt?: MerchantAttemptContext;
+    };
     fallbacks?: { customer?: string; store?: string };
     detailValues?: OrderDetailValues;
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
@@ -155,6 +164,13 @@ export class WhatsAppService {
       messaging_product: 'whatsapp',
       to: params.to,
       type: 'template',
+      ...(params.sender?.kind === 'merchant_own' &&
+      params.dispatchContext?.merchantAttempt
+        ? {
+            biz_opaque_callback_data:
+              params.dispatchContext.merchantAttempt.attemptId,
+          }
+        : {}),
       template: {
         name,
         language: {
@@ -246,6 +262,27 @@ export class WhatsAppService {
         template: toSentTemplateIdentity(template),
       };
     } catch (error) {
+      if (params.sender?.kind === 'merchant_own') {
+        const response = isAxiosError<{ error?: { code?: unknown } }>(error)
+          ? error.response
+          : undefined;
+        const failure = classifyOwnNumberFailure({
+          code: response?.data?.error?.code,
+          httpStatus: response?.status,
+          transport: !response,
+        });
+        this.logger.error(
+          buildBackendLog(WhatsAppService.name, {
+            action: 'whatsapp-merchant-send',
+            outcome: 'failure',
+            verificationId: params.verificationId,
+            failureClass: failure.class,
+            errorCode: failure.code ?? 'outcome_unknown',
+            ...this.safeError(error, context.token),
+          }),
+        );
+        throw new MerchantMessageFailure(failure);
+      }
       this.failSend(error, params, template, context.token);
     }
   }

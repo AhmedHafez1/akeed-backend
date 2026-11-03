@@ -258,6 +258,14 @@ Two buttons are attached to every template:
 - Confirm: payload `confirm_{verificationId}`
 - Cancel: payload `cancel_{verificationId}`
 
+### Merchant sender recovery and health
+
+The Meta spoke maps synchronous errors and failed status receipts through one pure policy. Recipient faults do not fall back; retryable codes allow two delayed attempts, and sender/template/payload/unknown failures follow the sender policy. Timeout, network, 5xx and missing-message-ID outcomes immediately use Akeed fallback. Merchant payloads carry the attempt ID as `biz_opaque_callback_data`; status routing validates the signed event phone/WABA against the attempt snapshot. Receipts that precede acceptance are retained and drained, including when the callback identity is absent. Full inbound merchant reply and account-lifecycle routing is handled separately.
+
+Connection health uses a bounded authenticated phone read through `SENDER_HEALTH_PORT`. Setup queues the first check; a one-minute sweep queues due checks, normally every six hours and every fifteen minutes while degraded. Only aggregate `AVAILABLE` activates a verifying number or clears payment/restricted degradation. Credentials degradation requires reconnect. Unclassified `BLOCKED` health degrades as restricted; transient read errors retain current state. Connection generation, health revision and fenced claims reject stale results. Template failures affect only the selected connection-template row, and an older sync cannot clear them.
+
+`SENDER_EVENT_PORT` exposes activation, degradation, recovery and template-failure events with deduplication identities. The current consumer records structured events; merchant alert delivery is separate. No deployment switch is enabled by these jobs.
+
 ### Receiving WhatsApp Webhooks
 
 **Webhook subscription verification:**

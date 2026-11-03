@@ -88,6 +88,14 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     null, // billing_pool
     null, // billing_cost
     null, // billing_refunded_at
+    null, // sender_connection_generation
+    null, // sender_recovery_state
+    0, // sender_retry_count
+    0, // sender_recovery_version
+    null, // sender_recovery_due_at
+    null, // sender_recovery_template
+    null, // fallback_for_dispatch_id
+    false, // sender_automation_pending
   ];
 }
 

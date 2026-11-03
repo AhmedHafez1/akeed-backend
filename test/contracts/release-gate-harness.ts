@@ -457,6 +457,9 @@ export function releaseGateHarness(
       tables.webhookEvents,
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     // What the scaffold cannot derive: the partial one-order-per-event index
@@ -483,6 +486,7 @@ export function releaseGateHarness(
     await migrate('0060_whatsapp_service_messages.sql');
     await migrate('0087_whatsapp_dispatch_senders.sql');
     await migrate('0088_own_number_billing.sql');
+    await migrate('0089_sender_recovery.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',

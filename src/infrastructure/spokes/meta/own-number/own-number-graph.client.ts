@@ -15,6 +15,8 @@ import {
   type MetaTemplateNode,
 } from '../meta-template-catalog.adapter';
 import { mapApiStatus, mapCategory } from '../meta-template.mapping';
+import type { SenderHealthResult } from '../../../../shared/ports/sender-recovery.port';
+import { classifyOwnNumberFailure } from './own-number-send-failure.policy';
 
 /**
  * The login code lives 30 seconds, so the exchange gets one bounded attempt.
@@ -110,6 +112,60 @@ export class OwnNumberGraphClient {
 
   constructor(config: ConfigService) {
     this.graphBaseUrl = readMetaGraphConfig(config).baseUrl;
+  }
+
+  async readHealth(
+    phoneNumberId: string,
+    businessToken: string,
+  ): Promise<SenderHealthResult> {
+    const url = new URL(`${this.graphBaseUrl}/${assertMetaId(phoneNumberId)}`);
+    url.searchParams.set(
+      'fields',
+      'id,health_status,quality_rating,name_status',
+    );
+    const result = await this.getJson(
+      'whatsapp_connection_health',
+      url,
+      businessToken,
+      SIGNUP_GRAPH_READ_TIMEOUT_MS,
+    );
+    if (!result.ok)
+      return {
+        status: result.kind === 'rejected' ? 'BLOCKED' : 'unknown',
+        ...(result.kind === 'rejected'
+          ? {
+              failure: classifyOwnNumberFailure({
+                code: result.graphErrorCode,
+              }),
+            }
+          : {}),
+      };
+    const raw = result.value as {
+      id?: unknown;
+      health_status?: {
+        can_send_message?: unknown;
+        entities?: { errors?: { error_code?: unknown }[] }[];
+      };
+      quality_rating?: unknown;
+      name_status?: unknown;
+    };
+    if (String(raw.id) !== phoneNumberId) return { status: 'unknown' };
+    const status = raw.health_status?.can_send_message;
+    if (status !== 'AVAILABLE' && status !== 'LIMITED' && status !== 'BLOCKED')
+      return { status: 'unknown' };
+    const failures = (raw.health_status?.entities ?? [])
+      .flatMap((entity) => entity.errors ?? [])
+      .map((error) => classifyOwnNumberFailure({ code: error.error_code }));
+    const failure =
+      failures.find((item) => item.class === 'credentials') ??
+      failures.find((item) => item.class === 'payment') ??
+      failures.find((item) => item.class === 'restricted');
+    return {
+      status,
+      ...(failure ? { failure } : {}),
+      qualityRating: providerEnum(raw.quality_rating),
+      nameStatus: providerEnum(raw.name_status),
+    };
   }
 
   /** `GET /oauth/access_token`: the login code for a business token. */

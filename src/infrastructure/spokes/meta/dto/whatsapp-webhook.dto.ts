@@ -86,6 +86,9 @@ export class WhatsAppStatusErrorDto {
 export class WhatsAppStatusDto {
   @IsOptional()
   @IsString()
+  biz_opaque_callback_data?: string;
+  @IsOptional()
+  @IsString()
   id?: string;
 
   @IsOptional()
@@ -105,6 +108,8 @@ export class WhatsAppStatusDto {
 }
 
 export class WhatsAppChangeValueDto {
+  @IsOptional()
+  metadata?: { phone_number_id?: string };
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -126,6 +131,9 @@ export class WhatsAppChangeDto {
 }
 
 export class WhatsAppEntryDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

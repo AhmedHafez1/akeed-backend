@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import {
   CONNECTION_SETUP_JOB,
+  CONNECTION_HEALTH_JOB,
   CONNECTION_TEMPLATE_SYNC_JOB,
   CONNECTION_TEMPLATE_SYNC_WEBHOOK_DELAY_MS,
   WHATSAPP_CONNECTION_SETUP_QUEUE,
@@ -30,6 +31,27 @@ export class WhatsappConnectionSetupProducer {
     @InjectQueue(WHATSAPP_CONNECTION_SETUP_QUEUE)
     private readonly queue: Queue<WhatsappConnectionSetupJobData>,
   ) {}
+
+  async requestHealth(
+    orgId: string,
+    connectionId: string,
+    signupGeneration: number,
+  ): Promise<boolean> {
+    try {
+      await this.queue.add(
+        CONNECTION_HEALTH_JOB,
+        { orgId, connectionId, signupGeneration },
+        {
+          ...CONNECTION_SETUP_JOB_OPTIONS,
+          jobId: `wa-health-${connectionId}-${signupGeneration}-${Math.floor(Date.now() / 60_000)}`,
+        },
+      );
+      return true;
+    } catch (error) {
+      this.logQueueFailure('whatsapp_health_enqueue', error);
+      return false;
+    }
+  }
 
   /** True when queued. False is not an error: the sweep picks the row up. */
   async enqueueSetup(

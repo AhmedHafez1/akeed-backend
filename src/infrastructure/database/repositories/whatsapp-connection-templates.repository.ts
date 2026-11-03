@@ -229,6 +229,7 @@ export class WhatsappConnectionTemplatesRepository {
     id: string,
     patch: WhatsappConnectionTemplatePatch,
     expectedAttempts?: number,
+    observedAt?: string,
   ): Promise<WhatsappConnectionTemplateRecord | null> {
     const [row] = await this.db
       .update(whatsappConnectionTemplates)
@@ -243,6 +244,11 @@ export class WhatsappConnectionTemplatesRepository {
         and(
           eq(whatsappConnectionTemplates.orgId, orgId),
           eq(whatsappConnectionTemplates.id, id),
+          ...(observedAt
+            ? [
+                sql`(${whatsappConnectionTemplates.statusEventAt} IS NULL OR ${whatsappConnectionTemplates.statusEventAt} <= ${observedAt})`,
+              ]
+            : []),
           ...(expectedAttempts === undefined
             ? []
             : [eq(whatsappConnectionTemplates.attempts, expectedAttempts)]),

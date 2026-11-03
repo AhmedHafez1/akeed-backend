@@ -251,10 +251,12 @@ describe('order imports PostgreSQL contract', () => {
       );
       CREATE TABLE verification_message_dispatches (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id uuid,
         verification_id uuid,
         sender_kind text NOT NULL DEFAULT 'akeed_system',
         accounting_mode text NOT NULL DEFAULT 'periodic_plan',
-        usage_reserved boolean NOT NULL DEFAULT false
+        usage_reserved boolean NOT NULL DEFAULT false,
+        UNIQUE(id, org_id)
       );
       CREATE TABLE verification_service_messages (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE credit_reservations (
@@ -289,11 +291,14 @@ describe('order imports PostgreSQL contract', () => {
                   .includes('whatsapp_connection_templates')
               : // The base has no credit or usage tables; only the dispatch
                 // billing columns, checks and triggers of 0088 apply.
-                migration.startsWith('0088_')
-                ? !/"credit_|"integration_monthly_usage"/.test(statement)
-                : // The cancellation tables reference columns the base does not have.
-                  !migration.startsWith('0075_') ||
-                  !statement.includes('verification_auto_cancellation');
+                migration.startsWith('0089_')
+                ? !statement.includes('verification_sender_attempts') &&
+                  !statement.includes('provider_message_receipts')
+                : migration.startsWith('0088_')
+                  ? !/"credit_|"integration_monthly_usage"/.test(statement)
+                  : // The cancellation tables reference columns the base does not have.
+                    !migration.startsWith('0075_') ||
+                    !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -349,6 +354,7 @@ describe('order imports PostgreSQL contract', () => {
         '0086_whatsapp_connection_setup.sql',
         '0087_whatsapp_dispatch_senders.sql',
         '0088_own_number_billing.sql',
+        '0089_sender_recovery.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

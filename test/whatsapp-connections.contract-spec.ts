@@ -114,6 +114,17 @@ describe('WhatsApp connections contract', () => {
         }
       }
     }
+    for (const statement of readFileSync(
+      resolve(__dirname, '../drizzle/0089_sender_recovery.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (
+        /^\s*(ALTER TABLE whatsapp_connections|CREATE INDEX.*whatsapp_connection_health_due)/.test(
+          statement,
+        )
+      )
+        await client.unsafe(statement);
+    }
     [{ id: orgA }, { id: orgB }] = await client<{ id: string }[]>`
       INSERT INTO organizations (name) VALUES ('A'), ('B') RETURNING id`;
     [{ id: templateOne }, { id: templateTwo }] = await client<{ id: string }[]>`

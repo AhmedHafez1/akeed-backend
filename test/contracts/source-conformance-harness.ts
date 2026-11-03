@@ -1246,6 +1246,9 @@ export function assembleConformanceWorld(
       tables.webhookEvents,
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     await client.unsafe(`
@@ -1270,6 +1273,7 @@ export function assembleConformanceWorld(
       '0060_whatsapp_service_messages.sql',
       '0087_whatsapp_dispatch_senders.sql',
       '0088_own_number_billing.sql',
+      '0089_sender_recovery.sql',
       ...options.migrations,
     ])
       await migrate(name);

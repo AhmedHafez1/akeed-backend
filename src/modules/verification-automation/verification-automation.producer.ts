@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import type { SenderRecoveryWork } from '../../shared/ports/sender-recovery.port';
 import {
   buildBackendLog,
   normalizeError,
@@ -48,13 +49,68 @@ interface ReplyFollowUpParams {
  * existing job has finished and been removed).
  */
 @Injectable()
-export class VerificationAutomationProducer {
+export class VerificationAutomationProducer implements OnApplicationBootstrap {
   private readonly logger = new Logger(VerificationAutomationProducer.name);
 
   constructor(
     @InjectQueue(VERIFICATION_AUTOMATION_QUEUE_NAME)
     private readonly queue: Queue<VerificationAutomationJobPayload>,
   ) {}
+
+  onApplicationBootstrap(): void {
+    void this.queue
+      .upsertJobScheduler(
+        'verification-sender-recovery',
+        { every: 60_000 },
+        {
+          name: VerificationAutomationJobType.SENDER_RECOVERY_SWEEP,
+          data: { verificationId: '', orgId: '', scheduledAt: '' },
+          opts: DEFAULT_QUEUE_JOB_OPTIONS,
+        },
+      )
+      .catch((error) =>
+        this.logger.warn(
+          buildBackendLog(VerificationAutomationProducer.name, {
+            action: 'sender-recovery-scheduler',
+            outcome: 'retry',
+            ...normalizeError(error),
+          }),
+        ),
+      );
+  }
+
+  async enqueueSenderRecovery(work: SenderRecoveryWork): Promise<void> {
+    const jobId = `sender-recovery-${work.dispatchId}-${work.version}`;
+    const old = await this.queue.getJob(jobId);
+    if (old && FINISHED_JOB_STATES.has(await old.getState()))
+      await old.remove();
+    await this.queue.add(
+      work.action === 'retry'
+        ? VerificationAutomationJobType.SENDER_RETRY
+        : VerificationAutomationJobType.SENDER_FALLBACK,
+      {
+        verificationId: work.verificationId,
+        orgId: work.orgId,
+        dispatchId: work.dispatchId,
+        scheduledAt: work.dueAt,
+      },
+      {
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
+        jobId,
+        delay: Math.max(0, new Date(work.dueAt).getTime() - Date.now()),
+      },
+    );
+  }
+
+  async prepareRecoverySchedule(params: {
+    orgId: string;
+    verificationId: string;
+  }): Promise<void> {
+    await this.cancelPendingReminders(params);
+    const schedule = { ...params, dueAt: new Date() };
+    await this.removeFinishedJob(schedule, 'follow-up-1');
+    await this.removeFinishedJob(schedule, 'no-reply');
+  }
 
   /**
    * A verification reopened after its delayed send already ran (a capacity

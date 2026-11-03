@@ -111,7 +111,7 @@ describe('sender ledger PostgreSQL contract', () => {
     },
   );
 
-  it('retains a merchant sender on an expired periodic lease despite a different fresh resolution', async () => {
+  it('retains the merchant audit identity while an expired periodic lease enters fallback', async () => {
     const source = await merchant(3, 'shopify');
     const { connection, sender } = await ownConnection(source.orgId);
     const input = await verification(source);
@@ -124,15 +124,23 @@ describe('sender ledger PostgreSQL contract', () => {
       .update(whatsappConnections)
       .set({ phoneNumberId: 'replacement-phone', state: 'disconnected' })
       .where(eq(whatsappConnections.id, connection.id));
-    const retry = await claim({ ...input, sender: FEATURE_OFF_SENDER });
+    expect(
+      await dispatches.claim({ ...input, sender: FEATURE_OFF_SENDER }),
+    ).toMatchObject({ outcome: 'busy' });
+    const retry = await dispatches.findSenderRecovery(
+      source.orgId,
+      original.id,
+    );
     expect(retry).toMatchObject({
       id: original.id,
-      attemptCount: 2,
+      attemptCount: 1,
+      senderRecoveryState: 'fallback',
       senderKind: 'merchant_own',
       senderConnectionId: connection.id,
       senderPhoneNumberId: connection.phoneNumberId,
       senderReason: 'own_number',
     });
+    expect(typeof retry?.billingRefundedAt).toBe('string');
   });
 
   it('resolves new prepaid generations independently without changing charges', async () => {

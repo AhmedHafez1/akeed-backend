@@ -66,6 +66,10 @@ function setup(testOrder = false, overrides: Record<string, unknown> = {}) {
       }),
     ),
     markAccepted: jest.fn().mockResolvedValue({ outcome: 'accepted' }),
+    beginMerchantAttempt: jest
+      .fn()
+      .mockResolvedValue({ attemptId: 'attempt', claimToken: 'claim' }),
+    acceptMerchantAttempt: jest.fn().mockResolvedValue(true),
   };
   const messaging = {
     sendVerificationTemplate: jest
@@ -137,7 +141,11 @@ describe('sender selection in verification sends', () => {
       1,
       expect.objectContaining({
         sender: own,
-        dispatchContext: { orgId: 'org', dispatchId: 'dispatch' },
+        dispatchContext: {
+          orgId: 'org',
+          dispatchId: 'dispatch',
+          merchantAttempt: { attemptId: 'attempt', claimToken: 'claim' },
+        },
         template: expect.not.objectContaining({
           imageHeader: expect.anything(),
         }),
