@@ -111,7 +111,7 @@ Required by Shopify for app listing compliance.
 
 Customer requests match a customer within the store's own integration by any key Shopify sends: the Shopify order IDs (`orders_to_redact` or `orders_requested`), the customer ID in the stored order payload, the email (case-insensitive) or the phone (as sent and in E.164). Shopify often sends no phone, and an order's phone usually comes from its address, so no single key is required; a request carrying none of them is logged as `noIdentifiers` and skipped.
 
-Redaction runs in one transaction. Matched orders stay as rows, so usage and billing history hold, but lose the phone, name, email, country, address, line items and raw payload. Verification metadata becomes `{}`. Stored `order.create` / `order.update` webhook payloads that name the customer become `{}`, including orders Akeed skipped and never stored. The request's own stored payload is reduced to the customer ID and order IDs. Re-running a redaction matches nothing new.
+Redaction runs in one transaction. Matched orders stay as rows, so usage and billing history hold, but lose the phone, name, email, country, address, line items and raw payload. Verification metadata becomes `{}`. Stored `order.create` / `order.update` webhook payloads that name the customer become `{}`, including orders Akeed skipped and never stored. The request's own stored payload is reduced to the customer ID and order IDs. Stored customer WhatsApp messages linked to those orders or sent from those phones lose their text and identifiers, and are removed from retained Meta webhook payloads. Re-running a redaction matches nothing new.
 
 To re-run stored `customers/redact` requests (for example ones an older handler skipped), use the replay script. It counts by default and writes only with `--apply`; it needs a store domain or an event ID, never all stores, because an old request re-run today could anonymise orders a returning customer has placed since:
 
@@ -260,7 +260,7 @@ Two buttons are attached to every template:
 
 ### Merchant sender recovery and health
 
-The Meta spoke maps synchronous errors and failed status receipts through one pure policy. Recipient faults do not fall back; retryable codes allow two delayed attempts, and sender/template/payload/unknown failures follow the sender policy. Timeout, network, 5xx and missing-message-ID outcomes immediately use Akeed fallback. Merchant payloads carry the attempt ID as `biz_opaque_callback_data`; status routing validates the signed event phone/WABA against the attempt snapshot. Receipts that precede acceptance are retained and drained, including when the callback identity is absent. Full inbound merchant reply and account-lifecycle routing is handled separately.
+The Meta spoke maps synchronous errors and failed status receipts through one pure policy. Recipient faults do not fall back; retryable codes allow two delayed attempts, and sender/template/payload/unknown failures follow the sender policy. Timeout, network, 5xx and missing-message-ID outcomes immediately use Akeed fallback. Merchant payloads carry the attempt ID as `biz_opaque_callback_data`; status routing validates the signed event phone/WABA against the attempt snapshot. Receipts that precede acceptance are retained and drained, including when the callback identity is absent. Inbound merchant replies and account-lifecycle events are routed as described in [Merchant Own WhatsApp Number: Routing, Lifecycle and Disconnect](#merchant-own-whatsapp-number-routing-lifecycle-and-disconnect).
 
 Connection health uses a bounded authenticated phone read through `SENDER_HEALTH_PORT`. Setup queues the first check; a one-minute sweep queues due checks, normally every six hours and every fifteen minutes while degraded. Only aggregate `AVAILABLE` activates a verifying number or clears payment/restricted degradation. Credentials degradation requires reconnect. Unclassified `BLOCKED` health degrades as restricted; transient read errors retain current state. Connection generation, health revision and fenced claims reject stale results. Template failures affect only the selected connection-template row, and an older sync cannot clear them.
 
@@ -285,6 +285,7 @@ Connection health uses a bounded authenticated phone read through `SENDER_HEALTH
 
 - **Storing:** one row per entry change, not per POST, each holding a body of one entry and one change that the handlers read as a whole delivery. A POST's rows go in with one statement, so it's fully stored or not at all. A database failure answers 500 with `META_WEBHOOK_NOT_PERSISTED` and logs `meta-webhook-not-persisted`, so Meta sends it again. Meta retries for up to 7 days.
 - **Identity:** `dedupe_hash` is built from the field, `entry.id`, `entry.time` and a canonical hash of `value`. A redelivery matches nothing new and answers 200. A body that can't be split is stored as one row, hashed from its bytes, and the worker marks it failed.
+- **Privacy filter:** each change is passed through `MetaWebhookRoutingService.prepare` in the same transaction as the insert, so only routing keys, statuses and admitted customer content are stored (see [Routing, Lifecycle and Disconnect](#merchant-own-whatsapp-number-routing-lifecycle-and-disconnect)). The dedupe hash is still computed from the original change.
 - **Payload:** the column is text. A `message_template_id` can exceed 2^53 and would read back rounded from jsonb.
 - **Queueing:** the job holds only the row's id, and the request never waits on Redis. A failed enqueue is logged as `meta-webhook-enqueue`, and the sweep recovers the row.
 - **Running:** a job claims its row with a 10-minute lease, which raises `attempts`. A stalled or duplicate job loses the claim, and a run that outlived its lease can't overwrite a newer one. The same DTO validation runs here, and an event that fails it is marked failed without retrying.
@@ -1115,7 +1116,46 @@ Contacts and history sync (`smb_app_data`) are never called.
 
 A claim snapshots the sender and phone-number ID transactionally, including billing-exempt test sends. The Meta adapter reads that tenant-scoped dispatch snapshot, verifies the connection still owns the same phone and exact approved text template, and decrypts its business token only through the strict v1 guard. Merchant sends have a 15-second timeout and no automatic HTTP retry; shared sends keep their existing payload, logo-header fallback and timeout behavior. Tokens are redacted per request, including provider errors that quote their encoded values.
 
-A retry of an existing dispatch keeps its recorded sender. If sending has been disabled or its credentials or connection are unusable, it stops before HTTP and uses existing failure handling. There is no automatic switch to another sender. Service messages still use Akeed and record their sender before HTTP. Sender-aware billing, automatic fallback, activation after health checks, merchant reply routing and alerts are separate capabilities. Keep `WHATSAPP_OWN_NUMBER_SENDING_ENABLED=false` until those capabilities and live checks are ready.
+A retry of an existing dispatch keeps its recorded sender. If sending has been disabled or its credentials or connection are unusable, it stops before HTTP and uses existing failure handling. There is no automatic switch to another sender. Service messages still use Akeed and record their sender before HTTP. Merchant alerts and the merchant connection screens are separate capabilities. Keep `WHATSAPP_OWN_NUMBER_SENDING_ENABLED=false` until those capabilities and live checks are ready.
+
+## Merchant Own WhatsApp Number: Routing, Lifecycle and Disconnect
+
+`MetaWebhookRoutingService` (`src/infrastructure/spokes/meta/`) is the one router for inline requests and durable jobs. It reads the signed raw body, so `field`, `entry.id`, `entry.time`, `metadata.phone_number_id` and `from_user_id` survive DTO whitelisting.
+
+**Routing.**
+
+| Field | Routed by | Unknown or inconsistent |
+| --- | --- | --- |
+| `messages` (replies and statuses) | `metadata.phone_number_id` plus `entry.id`: the Akeed number, or a live connection whose WABA matches | Logged (`meta-webhook-route`, `unknown_receiver`) and dropped |
+| Template status, quality and category | `entry.id` (existing template handler) | Dropped as before |
+| `account_update` | `entry.id` to the live connection of that WABA | `unknown_account`, dropped |
+| `phone_number_quality_update`, `account_review_update`, `business_capability_update` | WABA plus normalized display number | `wrong_display_number`, dropped; a match requests a health check |
+| `smb_message_echoes`, `history`, `smb_app_state_sync` | Never reach a handler | Only routing and dedupe metadata is stored |
+
+Reply and status handling requires `field === 'messages'`. Statuses are kept when the signed receiver matches the attempt, dispatch or service-message snapshot, so a late receipt after disconnect or replacement still lands.
+
+**Customer replies on a merchant number.** Ownership is checked before any side effect, including cancellation, nudges and acknowledgments. A button or quote that resolves to another organization's verification is refused (`foreign_verification`), with no fallback to phone matching. Quotes resolve through current verification IDs, logical dispatches, older physical attempts (`verification_sender_attempts`) and service messages. An unquoted recognized answer is accepted only when the customer has exactly one open verification for an order from the last 30 days; the match is stored on the `customer_messages` row, so a retry finishes the same answer. The shared Akeed number keeps its existing behavior and never phone-matches.
+
+**Customer messages (`customer_messages`).** Text is kept only when it quotes an Akeed message of that organization or its sender has an order there from the last 30 days; a username-only sender (`from_user_id`, no phone) needs a qualifying quote. Media is never downloaded. Filtering runs before the durable event is stored: rejected content is discarded and unqualified text and sender identifiers are stripped. Admission is checked again when the event runs. Rows expire after 90 days; a daily `customer-messages-purge` job on `meta-webhook-processing` deletes them in bounded batches. Customer redaction clears linked and phone-matched rows and removes those messages from retained `meta_webhook_events` payloads in the same transaction; the redacted row stays as a content-free tombstone, so a redelivery cannot recreate it. The table has RLS on and no client grants.
+
+**Lifecycle (`account_update`).**
+
+| Event | Result |
+| --- | --- |
+| `PARTNER_REMOVED`, `PARTNER_APP_UNINSTALLED`, `ACCOUNT_DELETED` | `disconnected`, credentials cleared, history kept; sends revert to Akeed |
+| `ACCOUNT_OFFBOARDED` | `offboarded`, credentials kept |
+| `ACCOUNT_RECONNECTED` | `verifying`; only a passing health check makes it `active` again |
+| `ACCOUNT_RESTRICTION`, `ACCOUNT_VIOLATION`, `DISABLED_UPDATE` | Degraded as `restricted` (a `credentials` degradation is kept) |
+
+Writes are fenced by connection ID, `signup_generation`, the event key and the event time: a duplicate, an older event or one for a replaced signup changes nothing, and no event revives a disconnected row. Each write invalidates running setup and health claims. `SENDER_EVENT_PORT` receives `disconnected`, `offboarded`, `reconnecting` or `degraded` with a dedupe key per connection, generation and event; merchant alerts consume it separately.
+
+**One organization per WABA.** The partial unique index `whatsapp_connections_live_waba_key` allows one live connection (or one still in disconnect cleanup) per WABA, because Meta's app subscription is per WABA. Signup takes a per-WABA advisory lock; a conflict answers `WHATSAPP_ACCOUNT_ALREADY_CONNECTED` (409). Migration `0090` aborts with `WHATSAPP_LIVE_WABA_OWNERSHIP_CONFLICT` if existing rows already conflict, rather than picking an owner.
+
+**Disconnect.** `POST /api/whatsapp-sender/disconnect` (owner only; works whatever the connection switches say) commits `disconnected` with credentials cleared in one transaction and holds a one-minute cleanup lease in `disconnect_cleanup_until`. It then makes one `DELETE /{waba-id}/subscribed_apps` with a 15-second deadline, using the token read before the clear and held only in memory. It never calls deregister. The response is `{ state: 'disconnected', providerCleanup: 'succeeded' | 'manual_required' | 'not_needed', businessAppSteps }`; a failed unsubscribe still answers 200 with `manual_required`. For Coexistence numbers `businessAppSteps` is `['settings', 'account', 'business_platform', 'disconnect']` (Settings → Account → Business Platform in the WhatsApp Business app), for the merchant screens to show. A new signup for that WABA is refused until the lease is released or expires, which also covers a crash.
+
+**Logs.** `meta-webhook-route` (`reason`, `field`), `whatsapp-disconnect`, `whatsapp-disconnect-cleanup`, `customer-messages-purge` (`deleted`). Message bodies, sender phones and `from_user_id` are redacted.
+
+**Validate.** `scripts/test-merchant-webhook-routing-contract.ps1` (disposable Postgres; also part of `scripts/test-e045-contracts.ps1`), `npx jest src/infrastructure/spokes/meta src/modules/whatsapp-sender`.
 
 ## Server API Guide
 

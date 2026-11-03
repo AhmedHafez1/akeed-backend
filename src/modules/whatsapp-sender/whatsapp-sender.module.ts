@@ -1,4 +1,6 @@
 import { SenderResolverService } from './sender-resolver.service';
+import { ConnectionLifecycleService } from './connection-lifecycle.service';
+import { WhatsappDisconnectService } from './whatsapp-disconnect.service';
 import { ConnectionHealthService } from './connection-health.service';
 import { SenderEventsService } from './sender-events.service';
 import { MetaSenderHealthAdapter } from '../../infrastructure/spokes/meta/own-number/meta-sender-health.adapter';
@@ -37,6 +39,8 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
   ],
   controllers: [WhatsappSenderController, WhatsappConnectController],
   providers: [
+    ConnectionLifecycleService,
+    WhatsappDisconnectService,
     ConnectionHealthService,
     SenderEventsService,
     MetaSenderHealthAdapter,
@@ -59,6 +63,7 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
     WhatsappTemplatesRepository,
   ],
   exports: [
+    ConnectionLifecycleService,
     SENDER_EVENT_PORT,
     SenderResolverService,
     WhatsappConnectionsRepository,

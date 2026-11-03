@@ -361,6 +361,25 @@ export class OwnNumberGraphClient {
     return { ok: true, value: undefined };
   }
 
+  async unsubscribeApp(input: {
+    wabaId: string;
+    businessToken: string;
+  }): Promise<OwnNumberGraphResult<void>> {
+    const result = await this.requestJson(
+      'whatsapp_disconnect_unsubscribe',
+      'DELETE',
+      new URL(
+        `${this.graphBaseUrl}/${assertMetaId(input.wabaId)}/subscribed_apps`,
+      ),
+      input.businessToken,
+      SETUP_GRAPH_TIMEOUT_MS,
+    );
+    if (!result.ok) return result;
+    return (result.value as { success?: unknown }).success === true
+      ? { ok: true, value: undefined }
+      : this.malformed('whatsapp_disconnect_unsubscribe');
+  }
+
   /**
    * `GET /{phone-number-id}` with the fields that tell how the number is used.
    * Meta documents `is_on_biz_app` and `platform_type` together for
@@ -546,7 +565,7 @@ export class OwnNumberGraphClient {
 
   private async requestJson(
     action: string,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     url: URL,
     bearer: string | undefined,
     timeoutMs: number,

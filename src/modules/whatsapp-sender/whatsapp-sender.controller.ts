@@ -24,6 +24,10 @@ import { ConnectionStatusService } from './connection-status.service';
 import { whatsappConnectError } from './whatsapp-connect.errors';
 import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderService } from './whatsapp-sender.service';
+import {
+  WhatsappDisconnectService,
+  type WhatsappDisconnectResponseDto,
+} from './whatsapp-disconnect.service';
 
 /** Answers with a code and never repeats the rejected value. */
 export const issueWhatsappConnectTicketPipe = new ValidationPipe({
@@ -42,6 +46,7 @@ export class WhatsappSenderController {
     private readonly sender: WhatsappSenderService,
     private readonly connect: WhatsappConnectService,
     private readonly status: ConnectionStatusService,
+    private readonly disconnectService: WhatsappDisconnectService,
   ) {}
 
   @Get()
@@ -50,6 +55,15 @@ export class WhatsappSenderController {
     @CurrentUser() user: AuthenticatedUser,
   ): WhatsappSenderAvailabilityDto {
     return this.sender.getAvailability(user);
+  }
+
+  @Post('disconnect')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  disconnect(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WhatsappDisconnectResponseDto> {
+    return this.disconnectService.disconnect(user);
   }
 
   /** Setup progress and template counts; `null` before any signup. */

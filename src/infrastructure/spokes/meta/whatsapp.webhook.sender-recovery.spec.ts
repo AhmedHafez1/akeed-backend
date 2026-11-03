@@ -52,6 +52,7 @@ describe('merchant receipt integration', () => {
             id: 'waba',
             changes: [
               {
+                field: 'messages',
                 value: {
                   metadata: { phone_number_id: 'merchant-phone' },
                   statuses: [
@@ -94,6 +95,7 @@ describe('merchant receipt integration', () => {
           id: 'waba',
           changes: [
             {
+              field: 'messages',
               value: {
                 metadata: { phone_number_id: 'merchant-phone' },
                 statuses: [

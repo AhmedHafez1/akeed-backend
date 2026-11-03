@@ -4488,6 +4488,18 @@ export const whatsappConnections = pgTable(
     signupPath: text('signup_path').$type<WhatsappSignupPath>().notNull(),
     state: text('state').$type<WhatsappConnectionState>().notNull(),
     stateReason: text('state_reason'),
+    lifecycleEventAt: timestamp('lifecycle_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lifecycleEventKey: text('lifecycle_event_key'),
+    disconnectCleanupUntil: timestamp('disconnect_cleanup_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerCleanup: text('provider_cleanup').$type<
+      'succeeded' | 'manual_required' | 'not_needed'
+    >(),
     businessTokenEncrypted: text('business_token_encrypted'),
     registrationPinEncrypted: text('registration_pin_encrypted'),
     degradedClass: text('degraded_class').$type<WhatsappDegradedClass>(),
@@ -4617,6 +4629,11 @@ export const whatsappConnections = pgTable(
       .on(table.phoneNumberId)
       .where(sql`${table.state} <> 'disconnected'`),
     index('idx_whatsapp_connections_waba').on(table.wabaId),
+    uniqueIndex('whatsapp_connections_live_waba_key')
+      .on(table.wabaId)
+      .where(
+        sql`${table.state} <> 'disconnected' OR ${table.disconnectCleanupUntil} IS NOT NULL`,
+      ),
     check(
       'whatsapp_connections_waba_id_check',
       sql`${table.wabaId} ~ '^[0-9]{1,32}$'`,
@@ -4656,6 +4673,61 @@ export const whatsappConnections = pgTable(
     check(
       'whatsapp_connections_credentials_check',
       sql`CASE WHEN ${table.state} = 'disconnected' THEN ${table.businessTokenEncrypted} IS NULL AND ${table.registrationPinEncrypted} IS NULL AND ${table.disconnectedAt} IS NOT NULL ELSE ${table.businessTokenEncrypted} IS NOT NULL END`,
+    ),
+  ],
+).enableRLS();
+
+/** Admitted inbound text; a redaction leaves only a replay tombstone until expiry. */
+export const customerMessages = pgTable(
+  'customer_messages',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id'),
+    verificationId: uuid('verification_id'),
+    providerMessageId: text('provider_message_id').notNull().unique(),
+    customerPhone: text('customer_phone'),
+    customerUserId: text('customer_user_id'),
+    messageType: text('message_type').notNull(),
+    body: text('body'),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    redactedAt: timestamp('redacted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+      name: 'customer_messages_connection_fkey',
+    }),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'customer_messages_verification_fkey',
+    }).onDelete('cascade'),
+    index('customer_messages_org_phone_idx').on(
+      table.orgId,
+      table.customerPhone,
+    ),
+    index('customer_messages_verification_idx').on(
+      table.orgId,
+      table.verificationId,
+    ),
+    index('customer_messages_expiry_idx').on(table.expiresAt),
+    check(
+      'customer_messages_redaction_check',
+      sql`${table.redactedAt} IS NULL OR (${table.body} IS NULL AND ${table.customerPhone} IS NULL AND ${table.customerUserId} IS NULL)`,
     ),
   ],
 ).enableRLS();

@@ -21,7 +21,7 @@ const REPLIED_AT = new Date(Number(TIMESTAMP) * 1000).toISOString();
 function wrap(value: WhatsAppChangeValueDto): WhatsAppWebhookPayloadDto {
   return {
     object: 'whatsapp_business_account',
-    entry: [{ changes: [{ value }] }],
+    entry: [{ changes: [{ field: 'messages', value }] }],
   };
 }
 

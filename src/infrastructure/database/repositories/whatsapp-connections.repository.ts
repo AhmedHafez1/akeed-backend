@@ -12,7 +12,10 @@ import {
   type WhatsappSetupStep,
   type WhatsappSignupPath,
 } from '../schema';
-import { databaseErrorCode } from '../../../shared/database/serializable-retry';
+import {
+  databaseErrorCode,
+  withSerializableRetry,
+} from '../../../shared/database/serializable-retry';
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -68,6 +71,13 @@ export class WhatsappPhoneNumberInUseError extends Error {
   constructor() {
     super('WhatsApp phone number is connected to another organization');
     this.name = 'WhatsappPhoneNumberInUseError';
+  }
+}
+
+export class WhatsappAccountInUseError extends Error {
+  constructor() {
+    super('WhatsApp account is connected to another organization');
+    this.name = 'WhatsappAccountInUseError';
   }
 }
 
@@ -141,6 +151,182 @@ export function violatedConstraint(error: unknown): string | undefined {
 @Injectable()
 export class WhatsappConnectionsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+
+  private async withWabaLock<T>(
+    wabaId: string,
+    work: (
+      tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    ) => Promise<T>,
+  ): Promise<T> {
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${wabaId}, 901))`,
+        );
+        await tx
+          .update(whatsappConnections)
+          .set({ disconnectCleanupUntil: null })
+          .where(
+            and(
+              eq(whatsappConnections.wabaId, wabaId),
+              eq(whatsappConnections.state, 'disconnected'),
+              sql`${whatsappConnections.disconnectCleanupUntil} <= now()`,
+            ),
+          );
+        return work(tx);
+      }),
+    );
+  }
+
+  async applyLifecycle(input: {
+    orgId: string;
+    connectionId: string;
+    generation: number;
+    occurredAt: string;
+    eventKey: string;
+    event: string;
+    reason: string;
+  }) {
+    const disconnect = [
+      'PARTNER_REMOVED',
+      'PARTNER_APP_UNINSTALLED',
+      'ACCOUNT_DELETED',
+    ].includes(input.event);
+    const offboard = input.event === 'ACCOUNT_OFFBOARDED';
+    const reconnect = input.event === 'ACCOUNT_RECONNECTED';
+    const [row] = await this.db
+      .update(whatsappConnections)
+      .set({
+        state: disconnect
+          ? 'disconnected'
+          : offboard
+            ? 'offboarded'
+            : reconnect
+              ? 'verifying'
+              : undefined,
+        stateReason: input.reason,
+        ...(disconnect
+          ? {
+              businessTokenEncrypted: null,
+              registrationPinEncrypted: null,
+              disconnectedAt: sql`now()`,
+            }
+          : {}),
+        ...(!disconnect && !offboard && !reconnect
+          ? {
+              degradedClass: sql`CASE WHEN ${whatsappConnections.degradedClass} = 'credentials' THEN 'credentials' ELSE 'restricted' END`,
+              degradedSince: sql`COALESCE(${whatsappConnections.degradedSince}, now())`,
+            }
+          : {}),
+        lifecycleEventAt: input.occurredAt,
+        lifecycleEventKey: input.eventKey,
+        healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+        healthClaimToken: null,
+        healthLeaseUntil: null,
+        nextHealthAt: sql`now()`,
+        setupLeaseUntil: null,
+        // Invalidate any running setup claim without inventing a new signup.
+        setupAttempts: sql`${whatsappConnections.setupAttempts} + 1`,
+        setupStatus: sql`CASE WHEN ${whatsappConnections.setupStatus} = 'running' THEN 'failed' ELSE ${whatsappConnections.setupStatus} END`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(whatsappConnections.orgId, input.orgId),
+          eq(whatsappConnections.id, input.connectionId),
+          eq(whatsappConnections.signupGeneration, input.generation),
+          ne(whatsappConnections.state, 'disconnected'),
+          sql`${whatsappConnections.lifecycleEventKey} IS DISTINCT FROM ${input.eventKey}`,
+          sql`${input.occurredAt}::timestamptz >= COALESCE(${whatsappConnections.connectedAt}, ${whatsappConnections.createdAt})`,
+          sql`(${whatsappConnections.lifecycleEventAt} IS NULL OR ${whatsappConnections.lifecycleEventAt} < ${input.occurredAt}::timestamptz OR (${whatsappConnections.lifecycleEventAt} = ${input.occurredAt}::timestamptz AND ${whatsappConnections.lifecycleEventKey} <> ${input.eventKey} AND ${disconnect}))`,
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  async requestHealth(orgId: string, id: string, generation: number) {
+    await this.db
+      .update(whatsappConnections)
+      .set({
+        nextHealthAt: sql`now()`,
+        healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+        healthLeaseUntil: null,
+        healthClaimToken: null,
+      })
+      .where(
+        and(
+          eq(whatsappConnections.orgId, orgId),
+          eq(whatsappConnections.id, id),
+          eq(whatsappConnections.signupGeneration, generation),
+          inArray(whatsappConnections.state, ['active', 'verifying']),
+        ),
+      );
+  }
+
+  /** Returns the old credential snapshot only to the disconnect service. */
+  async beginDisconnect(
+    orgId: string,
+  ): Promise<WhatsappConnectionRecord | null> {
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(whatsappConnections)
+          .where(eq(whatsappConnections.orgId, orgId))
+          .for('update');
+        if (!row || row.state === 'disconnected') return null;
+        await tx
+          .update(whatsappConnections)
+          .set({
+            state: 'disconnected',
+            stateReason: 'merchant_disconnect',
+            businessTokenEncrypted: null,
+            registrationPinEncrypted: null,
+            disconnectedAt: sql`now()`,
+            disconnectCleanupUntil: sql`now() + interval '1 minute'`,
+            providerCleanup: 'manual_required',
+            healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+            healthClaimToken: null,
+            healthLeaseUntil: null,
+            setupAttempts: sql`${whatsappConnections.setupAttempts} + 1`,
+            setupLeaseUntil: null,
+            setupStatus: sql`CASE WHEN ${whatsappConnections.setupStatus} = 'running' THEN 'failed' ELSE ${whatsappConnections.setupStatus} END`,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(whatsappConnections.id, row.id),
+              eq(whatsappConnections.orgId, orgId),
+            ),
+          );
+        return row;
+      }),
+    );
+  }
+
+  async finishDisconnect(
+    orgId: string,
+    id: string,
+    generation: number,
+    cleanup: 'succeeded' | 'manual_required',
+  ) {
+    await this.db
+      .update(whatsappConnections)
+      .set({
+        disconnectCleanupUntil: null,
+        providerCleanup: cleanup,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(whatsappConnections.orgId, orgId),
+          eq(whatsappConnections.id, id),
+          eq(whatsappConnections.signupGeneration, generation),
+          eq(whatsappConnections.state, 'disconnected'),
+        ),
+      );
+  }
 
   async findDueHealth(limit = 50) {
     return this.db
@@ -288,20 +474,27 @@ export class WhatsappConnectionsRepository {
       disconnectedAt: null,
     };
     try {
-      const [row] = await this.db
-        .insert(whatsappConnections)
-        .values({ orgId, ...values })
-        .onConflictDoUpdate({
-          target: whatsappConnections.orgId,
-          set: {
-            ...values,
-            healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning();
+      const [row] = await this.withWabaLock(input.wabaId, (tx) =>
+        tx
+          .insert(whatsappConnections)
+          .values({ orgId, ...values })
+          .onConflictDoUpdate({
+            target: whatsappConnections.orgId,
+            set: {
+              ...values,
+              healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+              updatedAt: sql`now()`,
+            },
+          })
+          .returning(),
+      );
       return row;
     } catch (error) {
+      if (
+        databaseErrorCode(error) === '23505' &&
+        violatedConstraint(error) === 'whatsapp_connections_live_waba_key'
+      )
+        throw new WhatsappAccountInUseError();
       if (
         databaseErrorCode(error) === '23505' &&
         violatedConstraint(error) === LIVE_PHONE_NUMBER_KEY
@@ -343,31 +536,45 @@ export class WhatsappConnectionsRepository {
       lastHealthAt: null,
       connectedAt: sql`now()`,
       disconnectedAt: null,
+      lifecycleEventAt: null,
+      lifecycleEventKey: null,
+      disconnectCleanupUntil: null,
+      providerCleanup: null,
       ...SETUP_RESET,
     };
     try {
-      const [row] = await this.db
-        .insert(whatsappConnections)
-        .values({ orgId, ...values })
-        .onConflictDoUpdate({
-          target: whatsappConnections.orgId,
-          set: {
-            ...values,
-            // The row keeps its id, so a job queued for the replaced signup
-            // is told apart by its generation.
-            signupGeneration: sql`${whatsappConnections.signupGeneration} + 1`,
-            healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
-            updatedAt: sql`now()`,
-          },
-          setWhere: inArray(whatsappConnections.state, [
-            ...SIGNUP_REPLACEABLE_STATES,
-          ]),
-        })
-        .returning();
+      const [row] = await this.withWabaLock(input.wabaId, (tx) =>
+        tx
+          .insert(whatsappConnections)
+          .values({ orgId, ...values })
+          .onConflictDoUpdate({
+            target: whatsappConnections.orgId,
+            set: {
+              ...values,
+              // The row keeps its id, so a job queued for the replaced signup
+              // is told apart by its generation.
+              signupGeneration: sql`${whatsappConnections.signupGeneration} + 1`,
+              healthRevision: sql`${whatsappConnections.healthRevision} + 1`,
+              updatedAt: sql`now()`,
+            },
+            setWhere: and(
+              sql`(${whatsappConnections.disconnectCleanupUntil} IS NULL OR ${whatsappConnections.disconnectCleanupUntil} <= now())`,
+              inArray(whatsappConnections.state, [
+                ...SIGNUP_REPLACEABLE_STATES,
+              ]),
+            ),
+          })
+          .returning(),
+      );
       return row
         ? { saved: true, connection: row }
         : { saved: false, reason: 'connection_exists' };
     } catch (error) {
+      if (
+        databaseErrorCode(error) === '23505' &&
+        violatedConstraint(error) === 'whatsapp_connections_live_waba_key'
+      )
+        throw new WhatsappAccountInUseError();
       if (
         databaseErrorCode(error) === '23505' &&
         violatedConstraint(error) === LIVE_PHONE_NUMBER_KEY

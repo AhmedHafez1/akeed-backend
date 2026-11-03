@@ -66,6 +66,33 @@ describe('OwnNumberGraphClient setup calls', () => {
     });
   });
 
+  it('unsubscribes once with DELETE and never deregisters the number', async () => {
+    const { meta, client } = setup();
+    meta.state.subscribedAppIds.add(FAKE_SETUP_APP_ID);
+    expect(
+      await client.unsubscribeApp({ wabaId: FAKE_WABA_ID, ...token }),
+    ).toEqual({ ok: true, value: undefined });
+    expect(meta.requests).toHaveLength(1);
+    expect(meta.requests[0]).toMatchObject({
+      method: 'DELETE',
+      path: `/${FAKE_WABA_ID}/subscribed_apps`,
+      body: undefined,
+    });
+    expect(meta.state.subscribedAppIds.has(FAKE_SETUP_APP_ID)).toBe(false);
+  });
+
+  it('returns a failed cleanup without retrying a rejected unsubscribe', async () => {
+    const { meta, client } = setup();
+    meta.state.failures.unsubscribe = [
+      { kind: 'meta_error', httpStatus: 401, code: 190 },
+    ];
+    expect(
+      await client.unsubscribeApp({ wabaId: FAKE_WABA_ID, ...token }),
+    ).toMatchObject({ ok: false, kind: 'rejected', graphErrorCode: 190 });
+    expect(meta.requests).toHaveLength(1);
+    expect(logs.join(' ')).not.toContain(FAKE_BUSINESS_TOKEN);
+  });
+
   it('reads the fields that tell Coexistence apart, and nulls what Meta leaves out', async () => {
     const { meta, client } = setup();
     meta.state.phones[FAKE_PHONE_NUMBER_ID] = { platform_type: 'CLOUD_API' };

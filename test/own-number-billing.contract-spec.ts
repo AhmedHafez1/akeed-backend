@@ -29,7 +29,7 @@ async function ownSender(orgId: string): Promise<ResolvedSender> {
     .insert(whatsappConnections)
     .values({
       orgId,
-      wabaId: '1000',
+      wabaId: randomUUID(),
       phoneNumberId: randomUUID(),
       signupPath: 'coexistence',
       state: 'active',

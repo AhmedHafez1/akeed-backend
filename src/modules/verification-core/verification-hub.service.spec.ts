@@ -258,6 +258,7 @@ describe('VerificationHubService', () => {
             {
               changes: [
                 {
+                  field: 'messages',
                   value: {
                     messages: [
                       {

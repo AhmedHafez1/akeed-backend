@@ -640,6 +640,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       '0087_whatsapp_dispatch_senders.sql',
       '0088_own_number_billing.sql',
       '0089_sender_recovery.sql',
+      '0090_merchant_webhook_routing.sql',
     ])
       await migrate(name);
     // The WooCommerce tables as the migrations leave them. Applied twice,

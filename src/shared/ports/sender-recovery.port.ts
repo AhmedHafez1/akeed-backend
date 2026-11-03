@@ -59,7 +59,15 @@ export const SENDER_EVENT_PORT = Symbol('SENDER_EVENT_PORT');
 export interface SenderEvent {
   orgId: string;
   connectionId: string;
-  kind: 'activated' | 'degraded' | 'recovered' | 'template_failed';
+  kind:
+    | 'activated'
+    | 'degraded'
+    | 'recovered'
+    | 'template_failed'
+    | 'disconnected'
+    | 'offboarded'
+    | 'reconnecting';
+  reason?: string;
   dedupeKey: string;
   failureClass?: SenderFailureClass;
 }

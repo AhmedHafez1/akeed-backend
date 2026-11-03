@@ -44,7 +44,7 @@ async function ownConnection(orgId: string) {
     .insert(whatsappConnections)
     .values({
       orgId,
-      wabaId: '1000',
+      wabaId: randomUUID(),
       phoneNumberId: randomUUID(),
       signupPath: 'coexistence',
       state: 'active',

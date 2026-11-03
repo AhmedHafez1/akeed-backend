@@ -52,7 +52,7 @@ async function fixture(platform: string, balance = 3) {
     .insert(whatsappConnections)
     .values({
       orgId: source.orgId,
-      wabaId: '1000',
+      wabaId: randomUUID(),
       phoneNumberId: randomUUID(),
       signupPath: 'coexistence',
       state: 'active',
@@ -749,7 +749,7 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         .insert(whatsappConnections)
         .values({
           orgId: source.orgId,
-          wabaId: '1000',
+          wabaId: randomUUID(),
           phoneNumberId: randomUUID(),
           signupPath: 'coexistence',
           state: 'active',

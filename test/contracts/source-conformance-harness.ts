@@ -785,6 +785,7 @@ export function assembleConformanceWorld(
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 statuses: sent.map((message) => ({
                   id: message.provider_message_id,
@@ -837,6 +838,7 @@ export function assembleConformanceWorld(
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 messages: [
                   {
@@ -1274,6 +1276,7 @@ export function assembleConformanceWorld(
       '0087_whatsapp_dispatch_senders.sql',
       '0088_own_number_billing.sql',
       '0089_sender_recovery.sql',
+      '0090_merchant_webhook_routing.sql',
       ...options.migrations,
     ])
       await migrate(name);

@@ -86,6 +86,7 @@
     "replay:shopify-customer-redactions": "tsx scripts/replay-shopify-customer-redactions.ts",
     "docs:order-api-guide": "node scripts/order-api-guide.js",
     "docs:order-api-guide:check": "node scripts/order-api-guide.js --check",
+    "test:contract:merchant-webhook-routing": "jest --config ./test/jest-merchant-webhook-routing-contract.json --runInBand",
     "test:contract:sender-recovery": "jest --config ./test/jest-sender-recovery-contract.json --runInBand"
   },
   "dependencies": {

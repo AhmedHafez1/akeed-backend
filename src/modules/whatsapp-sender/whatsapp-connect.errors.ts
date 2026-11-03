@@ -11,6 +11,7 @@ export type WhatsappConnectErrorCode =
   | 'WHATSAPP_CONNECTION_OWNER_REQUIRED'
   | 'WHATSAPP_CONNECTION_EXISTS'
   | 'WHATSAPP_NUMBER_ALREADY_CONNECTED'
+  | 'WHATSAPP_ACCOUNT_ALREADY_CONNECTED'
   | 'WHATSAPP_SIGNUP_CODE_REJECTED'
   | 'WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE'
   | 'WHATSAPP_SIGNUP_TOKEN_UNVERIFIED'
@@ -24,6 +25,7 @@ const STATUS: Record<WhatsappConnectErrorCode, HttpStatus> = {
   WHATSAPP_CONNECTION_OWNER_REQUIRED: HttpStatus.FORBIDDEN,
   WHATSAPP_CONNECTION_EXISTS: HttpStatus.CONFLICT,
   WHATSAPP_NUMBER_ALREADY_CONNECTED: HttpStatus.CONFLICT,
+  WHATSAPP_ACCOUNT_ALREADY_CONNECTED: HttpStatus.CONFLICT,
   WHATSAPP_SIGNUP_CODE_REJECTED: HttpStatus.UNPROCESSABLE_ENTITY,
   WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
   WHATSAPP_SIGNUP_TOKEN_UNVERIFIED: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -45,6 +47,8 @@ const MESSAGES: Record<WhatsappConnectErrorCode, string> = {
     'This organization already has a WhatsApp number connected or being set up.',
   WHATSAPP_NUMBER_ALREADY_CONNECTED:
     'This WhatsApp number is already connected to another Akeed account.',
+  WHATSAPP_ACCOUNT_ALREADY_CONNECTED:
+    'This WhatsApp Business account is already connected to another Akeed organization.',
   WHATSAPP_SIGNUP_CODE_REJECTED:
     'Meta did not accept the sign-in. Start again from Akeed settings.',
   WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE:

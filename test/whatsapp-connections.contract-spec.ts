@@ -125,6 +125,15 @@ describe('WhatsApp connections contract', () => {
       )
         await client.unsafe(statement);
     }
+    await client.unsafe(
+      `CREATE TABLE verifications (id uuid PRIMARY KEY, org_id uuid NOT NULL, UNIQUE(id, org_id))`,
+    );
+    for (const part of readFileSync(
+      resolve(__dirname, '../drizzle/0090_merchant_webhook_routing.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (part.trim()) await client.unsafe(part);
+    }
     [{ id: orgA }, { id: orgB }] = await client<{ id: string }[]>`
       INSERT INTO organizations (name) VALUES ('A'), ('B') RETURNING id`;
     [{ id: templateOne }, { id: templateTwo }] = await client<{ id: string }[]>`
@@ -875,7 +884,12 @@ describe('WhatsApp connections contract', () => {
 
   describe('template provisioning', () => {
     async function connection(orgId = orgA, phone = '500000000000001') {
-      return connections.saveForOrg(orgId, connectionInput(phone));
+      return connections.saveForOrg(
+        orgId,
+        connectionInput(phone, {
+          wabaId: orgId === orgB ? '100000000000002' : '100000000000001',
+        }),
+      );
     }
 
     it('adds each template once, however often rows are ensured', async () => {

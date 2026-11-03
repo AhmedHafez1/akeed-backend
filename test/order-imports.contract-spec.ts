@@ -247,7 +247,9 @@ describe('order imports PostgreSQL contract', () => {
       CREATE TABLE verifications (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id uuid,
-        order_id uuid
+        order_id uuid,
+        -- Migration 0028's key; 0090 references it.
+        CONSTRAINT verifications_id_org_id_key UNIQUE (id, org_id)
       );
       CREATE TABLE verification_message_dispatches (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -355,6 +357,7 @@ describe('order imports PostgreSQL contract', () => {
         '0087_whatsapp_dispatch_senders.sql',
         '0088_own_number_billing.sql',
         '0089_sender_recovery.sql',
+        '0090_merchant_webhook_routing.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

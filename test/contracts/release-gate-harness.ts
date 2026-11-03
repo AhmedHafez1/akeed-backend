@@ -487,6 +487,7 @@ export function releaseGateHarness(
     await migrate('0087_whatsapp_dispatch_senders.sql');
     await migrate('0088_own_number_billing.sql');
     await migrate('0089_sender_recovery.sql');
+    await migrate('0090_merchant_webhook_routing.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',
@@ -589,6 +590,7 @@ export function releaseGateHarness(
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 messages: [
                   {

@@ -144,6 +144,7 @@ export function creditUsageHarness() {
       tables.integrationMonthlyUsage,
       tables.adminAccessAudit,
       tables.webhookEvents,
+      tables.metaWebhookEvents,
       // 0035 reads ownership and billing history when it activates accounts.
       tables.memberships,
       tables.billingFreePlanClaims,
@@ -176,6 +177,7 @@ export function creditUsageHarness() {
     await migrate('0087_whatsapp_dispatch_senders.sql');
     await migrate('0088_own_number_billing.sql');
     await migrate('0089_sender_recovery.sql');
+    await migrate('0090_merchant_webhook_routing.sql');
     await client.unsafe(
       'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
     );

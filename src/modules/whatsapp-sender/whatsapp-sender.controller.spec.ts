@@ -15,6 +15,7 @@ import { ConnectionStatusService } from './connection-status.service';
 import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderController } from './whatsapp-sender.controller';
 import { WhatsappSenderService } from './whatsapp-sender.service';
+import { WhatsappDisconnectService } from './whatsapp-disconnect.service';
 
 const ROUTE = '/api/whatsapp-sender';
 const ORG = '0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
@@ -40,6 +41,7 @@ describe('/api/whatsapp-sender', () => {
   let user: AuthenticatedUser | null;
   const connect = { issueTicket: jest.fn() };
   const status = { forOrganization: jest.fn() };
+  const disconnect = { disconnect: jest.fn() };
 
   async function start(env: Record<string, string>) {
     const parsed = parseWhatsappOwnNumberConfig(env);
@@ -49,6 +51,7 @@ describe('/api/whatsapp-sender', () => {
         WhatsappSenderService,
         { provide: WhatsappConnectService, useValue: connect },
         { provide: ConnectionStatusService, useValue: status },
+        { provide: WhatsappDisconnectService, useValue: disconnect },
         {
           provide: ConfigService,
           useValue: new ConfigService({
@@ -75,6 +78,7 @@ describe('/api/whatsapp-sender', () => {
   beforeEach(() => {
     connect.issueTicket.mockReset();
     status.forOrganization.mockReset();
+    disconnect.disconnect.mockReset();
     user = {
       userId: 'user-1',
       orgId: ORG,
@@ -111,6 +115,38 @@ describe('/api/whatsapp-sender', () => {
       const server = await start(connectOn);
       await http(server).get(`${ROUTE}/connection`).expect(403);
       expect(status.forOrganization).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST disconnect', () => {
+    it('uses the authenticated organization and works with switches off', async () => {
+      disconnect.disconnect.mockResolvedValue({
+        state: 'disconnected',
+        providerCleanup: 'manual_required',
+        businessAppSteps: [
+          'settings',
+          'account',
+          'business_platform',
+          'disconnect',
+        ],
+      });
+      const server = await start({});
+      const response = await http(server)
+        .post(`${ROUTE}/disconnect`)
+        .send({ orgId: OTHER_ORG })
+        .expect(200)
+        .expect('Cache-Control', 'no-store');
+      expect(disconnect.disconnect).toHaveBeenCalledWith(user);
+      expect(response.body).toMatchObject({
+        state: 'disconnected',
+        providerCleanup: 'manual_required',
+      });
+    });
+    it('requires authentication', async () => {
+      user = null;
+      const server = await start({});
+      await http(server).post(`${ROUTE}/disconnect`).expect(403);
+      expect(disconnect.disconnect).not.toHaveBeenCalled();
     });
   });
 
