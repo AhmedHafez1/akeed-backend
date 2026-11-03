@@ -337,7 +337,7 @@ is sent, whatever Meta says about it.
 | `WHATSAPP_TEMPLATE_GUARDRAIL_ENABLED` | `true` or `false` (default). A send uses only a template that is active in Akeed **and** approved at Meta; otherwise the language default, otherwise the send is skipped as `template_unavailable` (nothing is sent and no usage is taken). It acts only once this environment has synced at least once: before the first successful sync, sends behave as with the switch off. Rollback is turning it off. |
 | `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` | `true` or `false` (default). While `false`, every template write under `/api/admin/templates`, the on-demand sync included, answers `403 WHATSAPP_TEMPLATE_OPERATIONS_DISABLED`. The writes are drafts (`/drafts`, `/drafts/:id`, `/drafts/validate`), submission to Meta (`/drafts/:id/submit`, `/drafts/:id/reconcile`), a text edit (`/:key/edit`), `/:key/activate`, `/:key/deactivate`, `/:key/set-default` and `/:key/retire`, and the image twins (`/image-twins`, `/image-twins/activate`). Turning it off is the rollback: templates already approved and active keep sending. `GET /api/admin/session` reports `template_operations.enabled` and `.operator`, so the admin UI hides the controls. |
 | `WHATSAPP_TEMPLATE_OPERATOR_IDS` | Comma-separated Supabase user ids of the staff allowed to write templates. Empty (the default) means every staff member may write while operations are on. When IDs are listed, staff not listed get `403 WHATSAPP_TEMPLATE_OPERATOR_REQUIRED`. Startup fails on an entry that is not a UUID. |
-| `META_APP_ID` | The Meta app's numeric ID (App settings › Basic). Needed only by **Create missing twins** in Admin › Templates (`POST /api/admin/templates/image-twins`), which uploads the sample image Meta reviews an image-header template with. Without it that action answers `503 WHATSAPP_TEMPLATE_IMAGE_TWIN_NOT_CONFIGURED`; nothing else uses it. Startup fails on a value that is not digits. |
+| `META_APP_ID` | The Meta app's numeric ID (App settings › Basic). Needed only by **Create missing twins** in Admin › Templates (`POST /api/admin/templates/image-twins`), which uploads the sample image Meta reviews an image-header template with. Without it that action answers `503 WHATSAPP_TEMPLATE_IMAGE_TWIN_NOT_CONFIGURED`. It is also required while `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true` (see [Merchant own WhatsApp number](#merchant-own-whatsapp-number)). Startup fails on a value that is not digits. |
 | `WHATSAPP_TEMPLATE_TEST_PHONES` | Comma-separated staff phone numbers a template test may be sent to from the admin Templates page, in international format (`+201001234567`; a leading `00` and spaces, dashes or brackets are accepted). Empty (the default) keeps staff test sends off: `403 WHATSAPP_TEMPLATE_TEST_SEND_DISABLED`. A number not on the list gets `403 WHATSAPP_TEMPLATE_TEST_PHONE_NOT_ALLOWED`. Startup fails on an entry that is not an international number. Set it per environment: a test goes out from that environment's own sender. A test send also needs `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and a named operator. |
 
 Rollout, per environment, dev first:
@@ -454,6 +454,75 @@ customer service window, or when Meta answers `131047`, it is a recorded skip
 (`outside_window`, `window_closed`), not a failure. The texts are managed by
 the template operators under `/api/admin/message-texts` (same
 `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
+
+### Merchant own WhatsApp number
+
+A merchant can connect its own WhatsApp number. Its connection, signup tickets
+and per-number templates are stored in `whatsapp_connections`,
+`whatsapp_connect_tickets` and `whatsapp_connection_templates`. Only the API
+reads them: row-level security is on and nothing is granted to `anon` or
+`authenticated`. The business token and registration PIN are stored only as
+`v1:` ciphertext under `SHOPIFY_TOKEN_ENCRYPTION_KEY`, and anything else in
+those columns is treated as no credential. Only a ticket's SHA-256 is stored.
+
+Both switches are off by default, each is read on its own, and they apply to
+every organization. No organization allow-list is required:
+
+| Variable | Notes |
+| --- | --- |
+| `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID`, `WHATSAPP_CONNECT_PAGE_BASE_URL` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. Signup also uses `META_APP_SECRET`. |
+| `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
+| `WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS` | Optional, default `2000`, `0` to `60000`. Akeed's pause between two template submissions to one merchant's account. Meta documents no creation limit; this only spreads the requests out. Startup fails on a value out of range. |
+| `WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE` | Optional, default `10`, `1` to `50`. Template submissions per setup or sync run before it yields and queues the next. Startup fails on a value out of range. |
+| `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
+| `WHATSAPP_CONNECT_PAGE_BASE_URL` | The web app's origin that hosts the connect page, for example `https://getakeed.com`: no trailing slash, path, query or fragment, and HTTPS except `http://localhost` or `http://127.0.0.1`. Connect links are built from it, never from the request. Its `/{locale}/whatsapp/connect` pages must be in the Meta app's Allowed domains and Valid OAuth redirect URIs. Required while connect is on; a malformed value fails startup. |
+
+Any value other than `true` or `false` in a switch fails startup. With both
+switches off, none of the other variables is needed. Meta webhooks are
+processed whatever the switches say, and so are setup and template sync for a
+connection that already exists: sending off never marks a number ready.
+
+`GET /api/whatsapp-sender` (any signed-in member) answers what the connect
+screen needs, with `Cache-Control: no-store`: `available` is `true` only while
+connect is on with valid signup settings, and only then are `appId` and
+`configId` set, and `canConnect` is `true` for the owner. Otherwise it is
+`{ "available": false, "appId": null, "configId": null, "canConnect": false }`.
+It never returns a credential. Changing a connection is for the organization's
+owner only (`403 WHATSAPP_CONNECTION_OWNER_REQUIRED`).
+
+Connecting runs in three requests, each answered with `Cache-Control: no-store`:
+
+1. `POST /api/whatsapp-sender/connect-ticket` `{ "locale": "ar" }` (owner,
+   session auth) answers `{ connectUrl, expiresAt }`. The link is
+   `WHATSAPP_CONNECT_PAGE_BASE_URL/{locale}/whatsapp/connect?ticket=...` and
+   lives 10 minutes; issuing one retires the organization's older unused
+   tickets.
+2. `POST /api/whatsapp-connect/claim` `{ "ticket" }` (no session) spends that
+   ticket once and answers a 30-minute signup ticket with `appId`,
+   `configId` and `graphApiVersion`. The page removes the ticket from its
+   address before loading Meta's SDK.
+3. `POST /api/whatsapp-connect/complete` `{ signupTicket, code, wabaIds?,
+   phoneNumberId?, isOnBusinessApp? }` (no session) spends the signup ticket,
+   exchanges the code at `/oauth/access_token` (never retried), inspects the
+   token with `/debug_token` under the app token, and reads the account's
+   `/phone_numbers`. The token must be valid, issued to `META_APP_ID`, and
+   hold `whatsapp_business_management` and `whatsapp_business_messaging` on
+   the same account. Ids from the page only narrow that choice; with more than
+   one candidate and no single hint nothing is saved. The connection is saved
+   in state `connecting` with the token encrypted, and the answer is
+   `{ state, displayPhoneNumber, signupPath }`.
+
+Claim and complete recheck the switch, the pilot list, the member's owner
+role and the existing connection. A signup replaces only a `connecting` or
+`disconnected` connection. Codes: `WHATSAPP_CONNECT_INVALID_REQUEST` (400),
+`WHATSAPP_CONNECT_TICKET_INVALID` (401, unknown, expired or used, never which),
+`WHATSAPP_CONNECTION_OWNER_REQUIRED` (403), `WHATSAPP_CONNECT_UNAVAILABLE`
+(404), `WHATSAPP_CONNECTION_EXISTS` and `WHATSAPP_NUMBER_ALREADY_CONNECTED`
+(409), `WHATSAPP_SIGNUP_CODE_REJECTED`, `WHATSAPP_SIGNUP_TOKEN_UNVERIFIED`,
+`WHATSAPP_SIGNUP_ASSET_UNVERIFIED` and `WHATSAPP_SIGNUP_ASSET_AMBIGUOUS` (422),
+`WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE` (503). After a failed completion the
+merchant starts again from settings. Logs carry the step, the code and Meta's
+numeric error code, never a ticket, code, token or Meta's error text.
 
 ## Meta Ad Conversions (Conversions API)
 

@@ -10,7 +10,6 @@ import {
 import {
   CreateOrganizationDto,
   OrganizationResponseDto,
-  UpdateOrganizationDto,
 } from './dto/organizations.dto';
 import { OrganizationsService } from './organizations.service';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
@@ -41,13 +40,13 @@ export class OrganizationsController {
     return this.organizationsService.createOrganization(user, payload);
   }
 
+  /** Reads no body: the `wa_*` fields it once took are retired. */
   @Patch('current')
   async updateCurrentOrganization(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() payload: UpdateOrganizationDto,
   ): Promise<{ organization: OrganizationResponseDto }> {
     const organization =
-      await this.organizationsService.updateCurrentOrganization(user, payload);
+      await this.organizationsService.updateCurrentOrganization(user);
 
     return { organization };
   }

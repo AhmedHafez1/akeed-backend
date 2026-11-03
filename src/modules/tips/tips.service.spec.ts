@@ -20,7 +20,7 @@ function setup() {
       expiresAt: null,
       actionKind: null,
     }),
-    recordEvent: jest.fn().mockResolvedValue(undefined),
+    recordEvent: jest.fn().mockResolvedValue(true),
   };
   return { repo, service: new TipsService(repo as never) };
 }
@@ -39,11 +39,25 @@ const ar = {
 };
 
 describe('TipsService', () => {
+  it('passes the delivery generation and returns ignored stale events', async () => {
+    const { service, repo } = setup();
+    repo.recordEvent.mockResolvedValue(false);
+    expect(
+      await service.recordEvent(user('owner'), CAMPAIGN, 'dismiss', 2),
+    ).toEqual({ recorded: false });
+    expect(repo.recordEvent).toHaveBeenCalledWith(
+      CAMPAIGN,
+      user('owner').orgId,
+      'dismiss',
+      2,
+    );
+  });
   it('reads cards for the authenticated organization in its locale', async () => {
     const { service, repo } = setup();
     repo.findMerchantCards.mockResolvedValue([
       {
         id: CAMPAIGN,
+        delivery_generation: 1,
         type: 'tip',
         action_kind: 'internal',
         action_route: 'settings_timing',
@@ -65,6 +79,7 @@ describe('TipsService', () => {
       cards: [
         {
           id: CAMPAIGN,
+          delivery_generation: 1,
           type: 'tip',
           locale: 'ar',
           title: 'ساعات الهدوء',
@@ -84,6 +99,7 @@ describe('TipsService', () => {
     repo.findMerchantCards.mockResolvedValue([
       {
         id: CAMPAIGN,
+        delivery_generation: 1,
         type: 'tip',
         action_kind: null,
         first_viewed_at: firstViewedAt,
@@ -101,6 +117,7 @@ describe('TipsService', () => {
     repo.findMerchantCards.mockResolvedValue([
       {
         id: CAMPAIGN,
+        delivery_generation: 1,
         type: 'update',
         action_kind: 'internal',
         action_route: 'removed_page',
@@ -157,6 +174,7 @@ describe('TipsService', () => {
       CAMPAIGN,
       user('admin').orgId,
       'dismiss',
+      1,
     );
   });
 });

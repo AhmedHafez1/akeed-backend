@@ -24,6 +24,8 @@ import {
   AdminTipsListQueryDto,
   AdminTipsOrganizationsQueryDto,
   AdminTipsPublishDto,
+  AdminTipsRecipientsDto,
+  AdminTipsHistoryQueryDto,
 } from './dto/admin-tips-campaigns.dto';
 import { readRequestId } from './standalone-billing-operator.guard';
 
@@ -88,6 +90,37 @@ export class AdminTipsCampaignsController {
     @Query() query: AdminTipsOrganizationsQueryDto,
   ) {
     return this.campaigns.recipients(id, query);
+  }
+
+  @Get(':id/recipient-options')
+  @Header('Cache-Control', 'private, no-store')
+  recipientOptions(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: AdminTipsOrganizationsQueryDto,
+  ) {
+    return this.campaigns.recipientOptions(id, query);
+  }
+
+  @Get(':id/recipients/:orgId/history')
+  @Header('Cache-Control', 'private, no-store')
+  history(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('orgId', new ParseUUIDPipe()) orgId: string,
+    @Query() query: AdminTipsHistoryQueryDto,
+  ) {
+    return this.campaigns.recipientHistory(id, orgId, query);
+  }
+
+  @Post(':id/recipients')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(WRITE_THROTTLE)
+  @Header('Cache-Control', 'private, no-store')
+  changeRecipients(
+    @Req() request: RequestWithAdmin,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: AdminTipsRecipientsDto,
+  ) {
+    return this.campaigns.changeRecipients(this.audit(request), id, body);
   }
 
   @Post(':id/review')

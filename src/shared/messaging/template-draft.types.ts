@@ -113,7 +113,16 @@ export type TemplateEditSubmission = Pick<
  * the parent's text and buttons unchanged, with an image header reviewed
  * against the sample image `headerHandle` stands for.
  */
-export interface ImageTwinSubmission {
+export interface ImageTwinSubmission extends TemplateCopySubmission {
+  /** The provider's opaque handle for the uploaded sample image. */
+  headerHandle: string;
+}
+
+/**
+ * A synced template as the provider is asked to create it again: in another
+ * account, or as the base of an image twin. Text and buttons are unchanged.
+ */
+export interface TemplateCopySubmission {
   templateName: string;
   languageCode: string;
   category: TemplateCategory;
@@ -122,8 +131,6 @@ export interface ImageTwinSubmission {
   footer?: TemplateTextSegment[];
   samples: { parameter: string; sample: string }[];
   buttons: { kind: 'quick_reply'; text: string }[];
-  /** The provider's opaque handle for the uploaded sample image. */
-  headerHandle: string;
 }
 
 export interface TemplateSubmissionResult {

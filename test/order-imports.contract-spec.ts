@@ -154,6 +154,7 @@ describe('order imports PostgreSQL contract', () => {
     await client.unsafe(`
       DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      DO $$ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       CREATE FUNCTION get_user_org_id() RETURNS uuid LANGUAGE sql STABLE
         AS $fn$ SELECT nullif(current_setting('akeed.test_org', true), '')::uuid $fn$;
       CREATE TABLE organizations (
@@ -259,9 +260,19 @@ describe('order imports PostgreSQL contract', () => {
       );
       -- The banner migration only needs the campaign table to pre-exist.
       CREATE TABLE tips_campaigns (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        published_at timestamptz
       );
       INSERT INTO tips_campaigns DEFAULT VALUES;
+      CREATE TABLE tips_campaign_recipients (
+        campaign_id uuid NOT NULL REFERENCES tips_campaigns(id) ON DELETE CASCADE,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        first_viewed_at timestamptz,
+        first_clicked_at timestamptz,
+        dismissed_at timestamptz,
+        PRIMARY KEY (campaign_id, org_id)
+      );
     `);
     // Layer the real migration on the hand-written base, twice, to prove it is
     // re-runnable and ships exactly the constraints the repository relies on.
@@ -277,9 +288,15 @@ describe('order imports PostgreSQL contract', () => {
             // does not have; only its store columns apply.
             migration.startsWith('0083_')
             ? statement.includes('ALTER TABLE "integrations"')
-            : // The cancellation tables reference columns the base does not have.
-              !migration.startsWith('0075_') ||
-              !statement.includes('verification_auto_cancellation');
+            : // The base has no template registry, so the per-number template
+              // table is left out; the connection and ticket tables apply.
+              migration.startsWith('0085_') || migration.startsWith('0086_')
+              ? !statement
+                  .replace(/--.*$/gm, '')
+                  .includes('whatsapp_connection_templates')
+              : // The cancellation tables reference columns the base does not have.
+                !migration.startsWith('0075_') ||
+                !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -329,6 +346,11 @@ describe('order imports PostgreSQL contract', () => {
         // Thank-you opt-in off by default; proves 0083 re-runs.
         '0083_merchant_acknowledgments.sql',
         '0084_tips_campaign_banner.sql',
+        '0087_tips_recipient_deliveries.sql',
+        // Merchant WhatsApp connections and tickets; proves 0085 re-runs.
+        '0085_whatsapp_connections.sql',
+        // Connection setup progress and template claims; proves 0086 re-runs.
+        '0086_whatsapp_connection_setup.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

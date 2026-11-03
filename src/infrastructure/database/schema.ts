@@ -4183,6 +4183,14 @@ export const tipsCampaignRecipients = pgTable(
   {
     campaignId: uuid('campaign_id').notNull(),
     orgId: uuid('org_id').notNull(),
+    deliveryGeneration: integer('delivery_generation').default(1).notNull(),
+    deliveryStartedAt: timestamp('delivery_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    removedAt: timestamp('removed_at', { withTimezone: true, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4215,9 +4223,65 @@ export const tipsCampaignRecipients = pgTable(
       name: 'tips_campaign_recipients_org_fkey',
     }).onDelete('cascade'),
     index('idx_tips_campaign_recipients_org_open')
-      .on(table.orgId, table.campaignId)
-      .where(sql`${table.dismissedAt} IS NULL`),
+      .on(table.orgId, table.deliveryStartedAt.desc(), table.campaignId)
+      .where(sql`${table.dismissedAt} IS NULL AND ${table.removedAt} IS NULL`),
+    check(
+      'tips_recipient_generation_check',
+      sql`${table.deliveryGeneration} >= 1`,
+    ),
     pgPolicy('Service role manages tips campaign recipients', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const tipsCampaignDeliveryHistory = pgTable(
+  'tips_campaign_delivery_history',
+  {
+    campaignId: uuid('campaign_id').notNull(),
+    orgId: uuid('org_id').notNull(),
+    deliveryGeneration: integer('delivery_generation').notNull(),
+    deliveryStartedAt: timestamp('delivery_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    firstViewedAt: timestamp('first_viewed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstClickedAt: timestamp('first_clicked_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    dismissedAt: timestamp('dismissed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    removedAt: timestamp('removed_at', { withTimezone: true, mode: 'string' }),
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.campaignId, table.orgId, table.deliveryGeneration],
+    }),
+    foreignKey({
+      columns: [table.campaignId, table.orgId],
+      foreignColumns: [
+        tipsCampaignRecipients.campaignId,
+        tipsCampaignRecipients.orgId,
+      ],
+    }).onDelete('cascade'),
+    check(
+      'tips_campaign_delivery_history_delivery_generation_check',
+      sql`${table.deliveryGeneration} >= 1`,
+    ),
+    pgPolicy('Service role manages tips delivery history', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],
@@ -4284,5 +4348,360 @@ export const metaWebhookEvents = pgTable(
       'meta_webhook_events_status_check',
       sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`,
     ),
+  ],
+).enableRLS();
+
+/**
+ * Lifecycle of a merchant's own number. Health problems are `degradedClass`,
+ * not a state, so a degraded number keeps its state and its credentials.
+ */
+export const WHATSAPP_CONNECTION_STATES = [
+  'connecting',
+  'verifying',
+  'active',
+  'offboarded',
+  'disconnected',
+] as const;
+export type WhatsappConnectionState =
+  (typeof WHATSAPP_CONNECTION_STATES)[number];
+export type WhatsappSignupPath = 'coexistence' | 'new_number';
+export type WhatsappDegradedClass = 'credentials' | 'payment' | 'restricted';
+export const WHATSAPP_SETUP_STATUSES = [
+  'pending',
+  'running',
+  'failed',
+  'exhausted',
+  'complete',
+] as const;
+export type WhatsappSetupStatus = (typeof WHATSAPP_SETUP_STATUSES)[number];
+/** Setup steps, in order. `done` is reached only with status `complete`. */
+export const WHATSAPP_SETUP_STEPS = [
+  'subscribe',
+  'verify_number',
+  'register',
+  'provision',
+  'done',
+] as const;
+export type WhatsappSetupStep = (typeof WHATSAPP_SETUP_STEPS)[number];
+export type WhatsappTemplateDriftReason =
+  | 'registry_edited'
+  | 'provider_differs';
+
+/**
+ * A merchant's own WhatsApp number, one per organization. Holds credential
+ * ciphertext: never return a row through a DTO.
+ */
+export const whatsappConnections = pgTable(
+  'whatsapp_connections',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    wabaId: text('waba_id').notNull(),
+    phoneNumberId: text('phone_number_id').notNull(),
+    displayPhoneNumber: text('display_phone_number'),
+    signupPath: text('signup_path').$type<WhatsappSignupPath>().notNull(),
+    state: text('state').$type<WhatsappConnectionState>().notNull(),
+    stateReason: text('state_reason'),
+    businessTokenEncrypted: text('business_token_encrypted'),
+    registrationPinEncrypted: text('registration_pin_encrypted'),
+    degradedClass: text('degraded_class').$type<WhatsappDegradedClass>(),
+    degradedSince: timestamp('degraded_since', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    qualityRating: text('quality_rating'),
+    nameStatus: text('name_status'),
+    lastHealthAt: timestamp('last_health_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    thankYouEnabled: boolean('thank_you_enabled').default(true).notNull(),
+    connectedAt: timestamp('connected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    disconnectedAt: timestamp('disconnected_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // Raised by each signup that replaces the row; fences older setup jobs.
+    signupGeneration: bigint('signup_generation', { mode: 'number' })
+      .default(1)
+      .notNull(),
+    setupStatus: text('setup_status')
+      .$type<WhatsappSetupStatus>()
+      .default('pending')
+      .notNull(),
+    setupStep: text('setup_step')
+      .$type<WhatsappSetupStep>()
+      .default('subscribe')
+      .notNull(),
+    setupAttempts: integer('setup_attempts').default(0).notNull(),
+    setupLeaseUntil: timestamp('setup_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    setupNextAttemptAt: timestamp('setup_next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    setupErrorCode: text('setup_error_code'),
+    subscribedAt: timestamp('subscribed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    numberVerifiedAt: timestamp('number_verified_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    registeredAt: timestamp('registered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    setupCompletedAt: timestamp('setup_completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerIsOnBizApp: boolean('provider_is_on_biz_app'),
+    providerPlatformType: text('provider_platform_type'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'whatsapp_connections_org_id_fkey',
+    }).onDelete('cascade'),
+    index('idx_whatsapp_connections_setup_due')
+      .on(table.setupNextAttemptAt)
+      .where(sql`${table.setupStatus} IN ('pending', 'failed', 'running')`),
+    check(
+      'whatsapp_connections_setup_status_check',
+      sql`${table.setupStatus} IN ('pending', 'running', 'failed', 'exhausted', 'complete')`,
+    ),
+    check(
+      'whatsapp_connections_setup_step_check',
+      sql`${table.setupStep} IN ('subscribe', 'verify_number', 'register', 'provision', 'done')`,
+    ),
+    check(
+      'whatsapp_connections_setup_attempts_check',
+      sql`${table.setupAttempts} >= 0`,
+    ),
+    check(
+      'whatsapp_connections_signup_generation_check',
+      sql`${table.signupGeneration} >= 1`,
+    ),
+    check(
+      'whatsapp_connections_setup_lease_check',
+      sql`${table.setupStatus} <> 'running' OR ${table.setupLeaseUntil} IS NOT NULL`,
+    ),
+    check(
+      'whatsapp_connections_setup_complete_check',
+      sql`(${table.setupStatus} = 'complete') = (${table.setupStep} = 'done')`,
+    ),
+    check(
+      'whatsapp_connections_setup_error_code_check',
+      sql`${table.setupErrorCode} IS NULL OR ${table.setupErrorCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
+    check(
+      'whatsapp_connections_provider_platform_type_check',
+      sql`${table.providerPlatformType} IS NULL OR ${table.providerPlatformType} ~ '^[A-Z_]{1,32}$'`,
+    ),
+    unique('whatsapp_connections_org_id_key').on(table.orgId),
+    unique('whatsapp_connections_id_org_id_key').on(table.id, table.orgId),
+    // Every state but disconnected holds the number.
+    uniqueIndex('whatsapp_connections_live_phone_number_key')
+      .on(table.phoneNumberId)
+      .where(sql`${table.state} <> 'disconnected'`),
+    index('idx_whatsapp_connections_waba').on(table.wabaId),
+    check(
+      'whatsapp_connections_waba_id_check',
+      sql`${table.wabaId} ~ '^[0-9]{1,32}$'`,
+    ),
+    check(
+      'whatsapp_connections_phone_number_id_check',
+      sql`${table.phoneNumberId} ~ '^[0-9]{1,32}$'`,
+    ),
+    check(
+      'whatsapp_connections_display_phone_number_check',
+      sql`${table.displayPhoneNumber} IS NULL OR char_length(${table.displayPhoneNumber}) BETWEEN 1 AND 32`,
+    ),
+    check(
+      'whatsapp_connections_signup_path_check',
+      sql`${table.signupPath} IN ('coexistence', 'new_number')`,
+    ),
+    check(
+      'whatsapp_connections_state_check',
+      sql`${table.state} IN ('connecting', 'verifying', 'active', 'offboarded', 'disconnected')`,
+    ),
+    check(
+      'whatsapp_connections_degraded_class_check',
+      sql`${table.degradedClass} IS NULL OR ${table.degradedClass} IN ('credentials', 'payment', 'restricted')`,
+    ),
+    check(
+      'whatsapp_connections_degraded_since_check',
+      sql`(${table.degradedClass} IS NULL) = (${table.degradedSince} IS NULL)`,
+    ),
+    check(
+      'whatsapp_connections_business_token_encrypted_check',
+      sql`${table.businessTokenEncrypted} IS NULL OR ${table.businessTokenEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'whatsapp_connections_registration_pin_encrypted_check',
+      sql`${table.registrationPinEncrypted} IS NULL OR ${table.registrationPinEncrypted} LIKE 'v1:%'`,
+    ),
+    check(
+      'whatsapp_connections_credentials_check',
+      sql`CASE WHEN ${table.state} = 'disconnected' THEN ${table.businessTokenEncrypted} IS NULL AND ${table.registrationPinEncrypted} IS NULL AND ${table.disconnectedAt} IS NOT NULL ELSE ${table.businessTokenEncrypted} IS NOT NULL END`,
+    ),
+  ],
+).enableRLS();
+
+/** Single-use hand-off to the signup page. Only the SHA-256 is stored. */
+export const whatsappConnectTickets = pgTable(
+  'whatsapp_connect_tickets',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    tokenHash: text('token_hash').notNull(),
+    orgId: uuid('org_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+      name: 'whatsapp_connect_tickets_org_id_fkey',
+    }).onDelete('cascade'),
+    unique('whatsapp_connect_tickets_token_hash_key').on(table.tokenHash),
+    index('idx_whatsapp_connect_tickets_org_created').on(
+      table.orgId,
+      table.createdAt.desc(),
+    ),
+    check(
+      'whatsapp_connect_tickets_token_hash_check',
+      sql`${table.tokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'whatsapp_connect_tickets_expiry_check',
+      sql`${table.expiresAt} > ${table.createdAt}`,
+    ),
+  ],
+).enableRLS();
+
+/**
+ * A registry template as submitted to one merchant's WhatsApp Business
+ * Account. `orgId` rides in the connection foreign key, so a row cannot name
+ * another organization's connection.
+ */
+export const whatsappConnectionTemplates = pgTable(
+  'whatsapp_connection_templates',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    orgId: uuid('org_id').notNull(),
+    templateId: uuid('template_id').notNull(),
+    metaTemplateId: text('meta_template_id'),
+    metaLanguageCode: text('meta_language_code').notNull(),
+    // Meta's status as reported, or 'not_submitted'. Only the length is
+    // checked, because Meta adds statuses.
+    status: text('status').default('not_submitted').notNull(),
+    category: text('category'),
+    quality: text('quality'),
+    rejectionReason: text('rejection_reason'),
+    submittedAt: timestamp('submitted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    statusEventAt: timestamp('status_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastError: text('last_error'),
+    attempts: integer('attempts').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // SHA-256 of the registry text submitted, compared with the registry.
+    submittedComponentsHash: text('submitted_components_hash'),
+    driftAt: timestamp('drift_at', { withTimezone: true, mode: 'string' }),
+    driftReason: text('drift_reason').$type<WhatsappTemplateDriftReason>(),
+    lastSyncedAt: timestamp('last_synced_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      'whatsapp_connection_templates_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'whatsapp_connection_templates_components_hash_check',
+      sql`${table.submittedComponentsHash} IS NULL OR ${table.submittedComponentsHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'whatsapp_connection_templates_drift_check',
+      sql`((${table.driftAt} IS NULL) = (${table.driftReason} IS NULL)) AND (${table.driftReason} IS NULL OR ${table.driftReason} IN ('registry_edited', 'provider_differs'))`,
+    ),
+    check(
+      'whatsapp_connection_templates_last_error_code_check',
+      sql`${table.lastErrorCode} IS NULL OR ${table.lastErrorCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+      name: 'whatsapp_connection_templates_connection_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.templateId],
+      foreignColumns: [whatsappTemplates.id],
+      name: 'whatsapp_connection_templates_template_id_fkey',
+    }),
+    unique('whatsapp_connection_templates_connection_template_key').on(
+      table.connectionId,
+      table.templateId,
+    ),
+    index('idx_whatsapp_connection_templates_template').on(table.templateId),
+    index('idx_whatsapp_connection_templates_org').on(table.orgId),
+    check(
+      'whatsapp_connection_templates_meta_template_id_check',
+      sql`${table.metaTemplateId} IS NULL OR ${table.metaTemplateId} ~ '^[0-9]{1,32}$'`,
+    ),
+    check(
+      'whatsapp_connection_templates_status_check',
+      sql`char_length(${table.status}) BETWEEN 1 AND 64`,
+    ),
+    pgPolicy('Service role manages whatsapp connection templates', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 ).enableRLS();

@@ -92,7 +92,7 @@ export function parseUploadSession(
 export const META_TEMPLATE_PAGE_SIZE = 100;
 export const META_TEMPLATE_MAX_PAGES = 60;
 
-interface MetaTemplateNode {
+export interface MetaTemplateNode {
   id?: unknown;
   name?: unknown;
   language?: unknown;
@@ -533,7 +533,10 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
  * One listed template in neutral terms. A node without a name, a language or
  * an ID cannot be matched to anything and is left out.
  */
-function toRecord(node: MetaTemplateNode): ProviderTemplateRecord | null {
+/** One listed template in neutral terms, or null when it cannot be read. */
+export function toRecord(
+  node: MetaTemplateNode,
+): ProviderTemplateRecord | null {
   const id =
     typeof node.id === 'string'
       ? node.id

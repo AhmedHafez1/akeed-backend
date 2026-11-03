@@ -173,7 +173,7 @@ A sync that fails changes nothing and is not retried; the next scheduled run is 
 | `whatsapp-template-alert` | A template in use changed. `alertCode` is `template_unavailable` or `template_recategorized` (critical), `template_text_changed` or `template_sync_failed` (attention). Carries the template key, never its text. |
 | `whatsapp-template-sync` | One sync run: counts, or a neutral `errorCode` (`auth_failed`, `permission_denied`, `rate_limited`, `network`, `provider_error`, `not_configured`, `too_many_pages`, `persistence_failed`). |
 | `whatsapp-template-events` / `whatsapp-template-event` | Template webhooks: how many were applied, stale, conflicting, unregistered or duplicates. |
-| `meta-template-webhook` | A template webhook that was dropped, for example `wrong_account`. |
+| `meta-template-webhook` | A template webhook that was dropped, for example `wrong_account`. A merchant account's events are dropped from this path and handled by `whatsapp_connection_template_hint`. |
 | `meta-template-list`, `meta-template-create`, `meta-template-edit` | A failed call to Meta, with Meta's numeric code. |
 | `sendOnce.templateFallback` | A send used the language default. `reason` and `storedTemplateKey` say why and which choice was passed over. |
 | `sendOnce.templateSelection` with `reason: template_unavailable` | A send was skipped: no template could be sent in that language. |
@@ -400,6 +400,17 @@ Payloads hold customer data and are cleared 14 days after failure, so replay bef
 | Anything else | The last handler error. |
 
 To stop storing new events, set `META_WEBHOOK_DURABLE_ENABLED=false` and redeploy. Stored events still drain.
+
+## 12. Templates in a merchant's own account
+
+When a merchant connects their own number, Akeed submits the registry's live text templates to the merchant's account and keeps them in step. Each merchant account has its own rows (`whatsapp_connection_templates`); Akeed's registry, sync and alerts are unchanged.
+
+- **Where to look.** `GET /api/admin/whatsapp-connections/:orgId` lists the setup status and each template with its status, last error code, next retry and drift. Setup in `exhausted` needs you; `failed` retries on its own at the time shown.
+- **The list is the truth.** A merchant template webhook only writes a hint and queues a sync of that account a minute later. The 6-hour sync covers the rest.
+- **Drift.** `registry_edited`: the registry text changed after Akeed submitted it. `provider_differs`: the merchant's account holds other text under the same name and language. Akeed never overwrites, deletes or resubmits either; new text is a new template in the registry, as for Akeed's own account.
+- **Out of retries.** `exhausted` with a code such as `character_limit` means Meta refused the text; `incompatible` means the text cannot be copied (for example `text_header` or `non_quick_reply_button`). Neither is sent again on its own.
+- **Not ready means not used.** Only `approved` with category `utility` counts as ready. Pending, rejected, paused or recategorized templates are never treated as ready.
+- **Image twins** are not provisioned to merchant accounts.
 
 ## Merchant thank-you messages
 

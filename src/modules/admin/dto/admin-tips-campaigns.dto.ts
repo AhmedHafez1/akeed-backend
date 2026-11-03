@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -8,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -167,6 +170,40 @@ export class AdminTipsPublishDto {
   @IsString()
   @MaxLength(200)
   review_token!: string;
+}
+
+export class AdminTipsRecipientsDto {
+  @IsInt()
+  @Min(1)
+  revision!: number;
+
+  @IsIn(['add', 'remove', 'reissue'])
+  operation!: 'add' | 'remove' | 'reissue';
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ArrayUnique((value: unknown) =>
+    typeof value === 'string' ? value.toLowerCase() : value,
+  )
+  @IsUUID('all', { each: true })
+  org_ids!: string[];
+}
+
+export class AdminTipsHistoryQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  before?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }
 
 export class AdminTipsBannerDto {

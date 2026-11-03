@@ -1,6 +1,6 @@
 # Tips and Updates Runbook
 
-Admins publish tips and feature announcements to chosen merchant accounts. Merchants see them in Tips & updates, and admins can also show a campaign as a slim banner on the dashboard and confirmations in both Shopify and standalone. Campaigns never send email, WhatsApp, push or popups. Every campaign is created and published by hand. Nothing is triggered automatically, and recipients are never added after publication.
+Admins publish tips and feature announcements to chosen merchant accounts. Merchants see them in Tips & updates, and admins can also show a campaign as a slim banner on the dashboard and confirmations in both Shopify and standalone. Campaigns never send email, WhatsApp, push or popups. Every campaign is created and published by hand. Publication saves the initial audience; staff can explicitly add, remove or reissue individual merchant accounts afterward. Nothing is triggered automatically.
 
 ## Where it lives
 
@@ -13,7 +13,7 @@ Admins publish tips and feature announcements to chosen merchant accounts. Merch
 | Data | `tips_campaigns`, `tips_campaign_translations`, `tips_campaign_recipients` (`drizzle/0077_tips_campaigns.sql`), via `TipsCampaignsRepository` |
 | Merchant cards and banners | `akeed-frontend/src/features/tips` (standalone and Polaris skins, shared event tracking) |
 
-Any admin who passes the control tower guard can create and publish campaigns. Every create, edit, publish, pause, resume, archive and banner change writes an `admin_access_audit` row (`tips-campaign.<action>`) in the same transaction as the change. Banner changes use `tips-campaign.banner` with `{ campaignId, showAsBanner }` metadata.
+Any admin who passes the control tower guard can create and publish campaigns. Every create, edit, publish, pause, resume, archive, banner change and changed recipient batch writes an `admin_access_audit` row (`tips-campaign.<action>`) in the same transaction as the change. Banner changes use `tips-campaign.banner` with `{ campaignId, showAsBanner }` metadata. Recipient changes use `tips-campaign.recipients.add|remove|reissue` with affected organization ids and the new revision.
 
 ## Lifecycle
 
@@ -29,7 +29,7 @@ Any admin who passes the control tower guard can create and publish campaigns. E
 - Repeating an action that already holds succeeds without change, so retries are safe.
 - In a draft, every field can change. After publication only the name, type, translations and button change. The audience and expiry stay as published. A content edit keeps `published_at`, the recipients, the analytics and every dismissal.
 - The Banner switch is available in each list row and on a saved campaign's page. It is off for existing and new campaigns by default. It saves immediately for draft, published and paused campaigns (including expired ones), but is disabled for archived campaigns. It changes only display: revision and review stay valid, and unsaved content stays in the editor. Repeating the current setting makes no change and writes no audit row. A flag never overrides publication, targeting, expiry or dismissal rules.
-- To reach other merchants, or to show a card again, create a new campaign. There is no resend and no reset of dismissals.
+- Published and paused campaigns support explicit account additions, removals and **Show again**. Expired and archived campaigns are read-only for recipient changes. The publication rules and expiry remain fixed; filters are never rerun automatically.
 
 ## Content
 
@@ -63,15 +63,35 @@ Recipients are organizations with an active store (`integrations.is_active = tru
    - If the audience changed, everything rolls back and the publish is refused with `TIPS_CAMPAIGN_AUDIENCE_CHANGED`, which carries the new count. Merchants never see a partial or unreviewed list.
    - Repeating the publish with the same token returns the published campaign (`already_published: true`).
 
+## Manage enrolled accounts
+
+After publication, the recipient section has **Enrolled accounts** and **Find accounts to add**, with search, pagination and selections of up to 500 accounts per action. An account is an organization, not an individual teammate.
+
+- **Add accounts** enrolls accounts with an active store as unread. Adding an already enrolled, undismissed account is a no-op. Removed or dismissed accounts require **Show again**.
+- **Remove** soft-removes enrolled accounts, including accounts whose store is now inactive. Their rows and activity remain available, but merchant reads and events exclude them.
+- **Show again** restores a removed or dismissed account with an active store. It archives the previous delivery in `tips_campaign_delivery_history`, increments `delivery_generation`, clears current engagement timestamps and starts a new unread delivery. Reissuing an active, undismissed delivery changes nothing.
+- Staff confirm the selected count and visibility effect. Paused campaigns accept edits but remain hidden until resumed. No operation changes publication criteria, expiry or publication time.
+- Current analytics count active enrollments, including dismissed accounts, and their current-delivery activity. Removed accounts do not count. Expand **Previous deliveries** on an account to inspect earlier engagement and removal timestamps.
+
+`POST api/admin/tips-campaigns/:id/recipients` accepts `{ revision, operation: "add" | "remove" | "reissue", org_ids }`. It validates the whole batch, locks the campaign and affected recipients, checks active-store eligibility for adds/reissues, enforces the 50,000 active-enrollment limit, and writes the operation and audit atomically. A changed batch increments the campaign revision; stale retries conflict without reapplying. A no-op leaves the revision and audit unchanged.
+
+The picker is `GET .../:id/recipient-options`; previous deliveries are paginated through `GET .../:id/recipients/:orgId/history?before=<generation>&limit=25`. Existing draft audience controls continue to work; recipient rows are first created at publication.
+
+Merchant cards include `delivery_generation`. View, click and dismiss bodies carry that generation. Requests without it belong only to generation 1; old-generation events are ignored with `{ recorded: false }`. All event SQL checks the authenticated organization, current generation and removal state. Merchant observers and cached read/dismiss state are keyed by generation.
+
+Delivery history is service-role-only, with RLS and no access for anonymous or authenticated database roles. Migration `0087_tips_recipient_deliveries.sql` backfills existing recipients to generation 1 without changing engagement timestamps. Its journal timestamp is immediately after 0084 and before the reserved WhatsApp migrations 0085/0086, so it can ship independently. Drizzle applies migrations by journal timestamp, not filename number. When integrating the WhatsApp branch, preserve this applied timestamp, keep journal entries in timestamp order and renumber only unapplied journal indexes as needed.
+
+Additional error codes: `TIPS_RECIPIENT_INELIGIBLE`, `TIPS_RECIPIENT_REISSUE_REQUIRED`, `TIPS_RECIPIENT_NOT_ENROLLED`.
+
 ## Merchant side
 
 - A card shows when the organization is a recipient, the campaign is published (not paused or archived), it has not expired and the organization has not dismissed it.
-- Cards appear newest publication first, at most 20. Shopify shows them in the header’s Tips & updates popover; standalone shows a dashboard section. When there are no cards, or loading fails, the entry point stays hidden.
+- Cards appear newest account delivery first, at most 20. An added or reissued delivery starts at the time of that action; the original publication date stays unchanged. Shopify shows them in the header’s Tips & updates popover; standalone shows a dashboard section. When there are no cards, or loading fails, the entry point stays hidden.
 - With `show_as_banner` on, a visible card also appears as a single-line banner above the dashboard and confirmations. It stays in the menu or section. Only the newest flagged card from the same eligible card list appears; dismissing it advances to the next. Turning the flag off leaves the card in the menu or section. Missing flags from an older API are treated as off.
 - The banner contains the type badge, a truncated title, the optional campaign action and a dismiss icon. The description remains in the menu or section. Title and action use the campaign content's language and direction. Standalone targets a compact 44-pixel height; embedded uses a subdued Polaris surface.
 - **View:** Shopify records a view after at least half the card is visible for two continuous seconds in an active browser tab, or when its action is clicked. Standalone records a view when at least half the card is on screen. The server keeps the first timestamp for the organization. The merchant API returns `first_viewed_at`; null means unread. Shopify uses a blue bulb and per-card dots for unread cards. Reading clears the indicators for the whole store on subsequent fetches; it does not remove the cards.
 - **Click:** recorded without delaying navigation, only for a campaign with a button.
-- **Dismiss:** permanent for the organization, on every device and for every member. Owners and admins can dismiss; viewers see cards without a dismiss control, and the server refuses their dismissal (`TIPS_DISMISS_FORBIDDEN`). If saving fails, the card comes back with an error message.
+- **Dismiss:** hides the current delivery for the organization, on every device and for every member, until staff explicitly use **Show again**. Owners and admins can dismiss; viewers see cards without a dismiss control, and the server refuses their dismissal (`TIPS_DISMISS_FORBIDDEN`). If saving fails, the card comes back with an error message.
 - Banners use the same view, click and dismiss handlers as cards. Their views follow the same visibility rules for each mode, and the server retains one first timestamp per organization. Dismissing either surface hides both; a failed dismissal restores both. Viewers retain the action but see no dismiss icon.
 - An event for a campaign the organization did not receive answers `TIPS_CARD_NOT_FOUND`, the same as a campaign that does not exist.
 
@@ -88,7 +108,7 @@ SELECT count(*) AS recipients,
        count(first_clicked_at) AS clicked,
        count(dismissed_at) AS dismissed
 FROM tips_campaign_recipients
-WHERE campaign_id = '<campaign id>';
+WHERE campaign_id = '<campaign id>' AND removed_at IS NULL;
 
 -- What one organization would see now.
 SELECT c.id, c.name, c.published_at
@@ -96,9 +116,10 @@ FROM tips_campaign_recipients r
 JOIN tips_campaigns c ON c.id = r.campaign_id
 WHERE r.org_id = '<org id>'
   AND r.dismissed_at IS NULL
+  AND r.removed_at IS NULL
   AND c.status = 'published'
   AND (c.expires_at IS NULL OR c.expires_at > now())
-ORDER BY c.published_at DESC, c.id DESC;
+ORDER BY r.delivery_started_at DESC, c.id DESC;
 
 -- Who changed a campaign.
 SELECT created_at, user_id, action, metadata
