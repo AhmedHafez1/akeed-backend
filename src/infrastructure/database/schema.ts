@@ -861,6 +861,9 @@ export const integrationMonthlyUsage = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
+    // Messages sent from the merchant's own number. Its limit is derived from
+    // `included_limit` and the plan's own-number multiplier, never stored.
+    ownNumberConsumed: integer('own_number_consumed').default(0).notNull(),
   },
   (table) => [
     index('idx_integration_monthly_usage_org_id').using(
@@ -1303,6 +1306,16 @@ export const verificationMessageDispatches = pgTable(
     resolvedLanguage: text('resolved_language').$type<TemplateLanguage>(),
     templateFallbackReason: text('template_fallback_reason'),
     templateSkippedKey: text('template_skipped_key'),
+    // What the claim charged and from which pool. NULL on rows written before
+    // it was recorded; those settle exactly as they always did.
+    billingPool: text('billing_pool').$type<
+      'credits' | 'akeed' | 'own_number'
+    >(),
+    billingCost: integer('billing_cost'),
+    billingRefundedAt: timestamp('billing_refunded_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
@@ -1374,6 +1387,14 @@ export const verificationMessageDispatches = pgTable(
     check(
       'verification_message_dispatches_attempt_count_check',
       sql`${table.attemptCount} >= 0`,
+    ),
+    check(
+      'dispatch_billing_pool_check',
+      sql`billing_pool IS NULL OR billing_pool IN ('credits', 'akeed', 'own_number')`,
+    ),
+    check(
+      'dispatch_billing_cost_check',
+      sql`(billing_pool IS NULL AND billing_cost IS NULL) OR (billing_pool = 'credits' AND billing_cost IN (0, 1, 2)) OR (billing_pool IN ('akeed', 'own_number') AND billing_cost >= 0)`,
     ),
     pgPolicy('Service role manages verification message dispatches', {
       as: 'permissive',
@@ -2073,6 +2094,8 @@ export const creditLedgerType = pgEnum('credit_ledger_type', [
   'chargeback_reversal',
   'chargeback_reinstatement',
   'staff_adjustment',
+  'own_number_pack',
+  'own_number_pack_reversal',
 ]);
 export const paymentPurchaseStatus = pgEnum('payment_purchase_status', [
   'pending',
@@ -2102,6 +2125,8 @@ export const creditAccounts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
       .notNull()
       .defaultNow(),
+    // An own-number send already paid for: half of a stored credit.
+    spareCredit: integer('spare_credit').notNull().default(0),
   },
   (table) => [
     foreignKey({
@@ -2111,6 +2136,7 @@ export const creditAccounts = pgTable(
     }),
     check('credit_accounts_held_credits_check', sql`held_credits >= 0`),
     check('credit_accounts_version_check', sql`version >= 0`),
+    check('credit_accounts_spare_credit_check', sql`spare_credit IN (0, 1)`),
     index('credit_account_status_idx').on(table.status),
     pgPolicy('credit_service_access', {
       for: 'all',

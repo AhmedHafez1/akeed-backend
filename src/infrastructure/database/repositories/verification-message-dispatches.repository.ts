@@ -19,6 +19,12 @@ import {
   sql,
 } from 'drizzle-orm';
 import { usesPrepaidCredits } from '../../../shared/billing/credit-eligibility';
+import {
+  decidePrepaidCharge,
+  nextSendDisplayedCost,
+  usesCreditReservation,
+  type ChargeRule,
+} from '../../../shared/billing/own-number-billing.policy';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import type {
@@ -328,6 +334,11 @@ export class VerificationMessageDispatchesRepository {
      */
     identity?: DispatchTemplateClaim;
     sender?: ResolvedSender;
+    /**
+     * `fallback` charges an Akeed-number retry of a failed own-number attempt
+     * with what is left instead of blocking it (D4). Absent is `standard`.
+     */
+    chargeRule?: ChargeRule;
     leaseUntil: string;
     /**
      * Onboarding test sends are free: the dispatch is still claimed and leased
@@ -508,10 +519,21 @@ export class VerificationMessageDispatchesRepository {
             includedLimit: number;
           }
         | undefined;
+      // The sender decides the pool, so it is settled before usage is taken.
+      const senderColumns = await this.claimSenderColumns(tx, params, dispatch);
+      let billing: {
+        billingPool?: 'akeed' | 'own_number';
+        billingCost?: number;
+      } = {};
       if (!dispatch.usageReserved) {
         const reservation = await this.accounting.periodic.reserve(
           tx,
-          { ...params, id: params.integrationId },
+          {
+            ...params,
+            id: params.integrationId,
+            senderKind: senderColumns.senderKind ?? dispatch.senderKind,
+            chargeRule: params.chargeRule,
+          },
           entitlement,
           now,
         );
@@ -527,13 +549,18 @@ export class VerificationMessageDispatchesRepository {
           consumedAfter: reservation.consumedAfter,
           includedLimit: reservation.includedLimit,
         };
+        billing = {
+          billingPool: reservation.pool,
+          billingCost: reservation.cost,
+        };
       }
 
       const [claimed] = await tx
         .update(verificationMessageDispatches)
         .set({
           state: 'sending',
-          ...(await this.claimSenderColumns(tx, params, dispatch)),
+          ...senderColumns,
+          ...billing,
           ...claimTemplateColumns(params),
           usagePeriodStart:
             dispatch.usagePeriodStart ?? entitlement.periodStart,
@@ -553,12 +580,53 @@ export class VerificationMessageDispatchesRepository {
     });
   }
 
+  /**
+   * Settles a prepaid dispatch by what its claim charged, never by its sender.
+   * A reservation settles as it always has. An own-number charge was taken at
+   * claim time, so acceptance has nothing to do and a release or reversal
+   * returns the credit once.
+   */
+  private async settlePrepaid(
+    tx: CreditTransaction,
+    dispatch: DispatchRecord,
+    action: 'consume' | 'release' | 'reverse',
+    occurredAt: string,
+    actorId?: string,
+  ): Promise<void> {
+    if (usesCreditReservation(dispatch)) {
+      await this.accounting.prepaid.transition(tx, dispatch, action, actorId);
+      return;
+    }
+    if (action !== 'consume')
+      await this.accounting.prepaid.refundSpare(tx, dispatch, occurredAt);
+  }
+
+  /** The sender a claim will record, for the charge decided before it. */
+  private claimedSenderKind(
+    params: Parameters<VerificationMessageDispatchesRepository['claim']>[0],
+    dispatch: DispatchRecord | undefined,
+  ): DispatchRecord['senderKind'] {
+    if (dispatch && dispatch.attemptCount > 0)
+      return dispatch.senderReason ? dispatch.senderKind : 'akeed_system';
+    return params.sender?.kind ?? 'akeed_system';
+  }
+
   /** Sender metadata is immutable once an attempt has begun. */
   private async claimSenderColumns(
     tx: CreditTransaction,
     params: Parameters<VerificationMessageDispatchesRepository['claim']>[0],
     dispatch: DispatchRecord,
-  ) {
+  ): Promise<
+    Partial<
+      Pick<
+        DispatchRecord,
+        | 'senderKind'
+        | 'senderConnectionId'
+        | 'senderPhoneNumberId'
+        | 'senderReason'
+      >
+    >
+  > {
     if (dispatch.attemptCount > 0 && dispatch.senderReason) return {};
     const sender =
       dispatch.attemptCount > 0
@@ -736,10 +804,11 @@ export class VerificationMessageDispatchesRepository {
           )
             throw new ConflictException('Dispatch resolution conflict');
           if (dispatch.accountingMode === 'prepaid_credit') {
-            await this.accounting.prepaid.transition(
+            await this.settlePrepaid(
               tx,
               dispatch,
               'consume',
+              params.sentAt,
               params.staffAudit?.userId,
             );
             const [newer] = await tx
@@ -785,10 +854,11 @@ export class VerificationMessageDispatchesRepository {
             dispatch.providerMessageId !== params.providerMessageId
           )
             reconciliationRequired();
-          await this.accounting.prepaid.transition(
+          await this.settlePrepaid(
             tx,
             dispatch,
             'consume',
+            params.sentAt,
             params.staffAudit?.userId,
           );
         }
@@ -799,10 +869,11 @@ export class VerificationMessageDispatchesRepository {
           !dispatch.deliveredAt &&
           !dispatch.readAt
         ) {
-          await this.accounting.prepaid.transition(
+          await this.settlePrepaid(
             tx,
             dispatch,
             'reverse',
+            params.sentAt,
             params.staffAudit?.userId,
           );
         }
@@ -1218,7 +1289,7 @@ export class VerificationMessageDispatchesRepository {
           dispatch.state === 'accepted' &&
           dispatch.accountingMode === 'prepaid_credit'
         )
-          await this.accounting.prepaid.transition(tx, dispatch, 'reverse');
+          await this.settlePrepaid(tx, dispatch, 'reverse', occurredAt);
       } else if (dispatch.failedAt) {
         return { verificationRows: [] };
       }
@@ -1416,10 +1487,11 @@ export class VerificationMessageDispatchesRepository {
       if (dispatch.accountingMode === 'prepaid_credit') {
         if (dispatch.providerMessageId)
           throw new ConflictException('Provider acceptance already recorded');
-        await this.accounting.prepaid.transition(
+        await this.settlePrepaid(
           tx,
           dispatch,
           'release',
+          now,
           staffAudit?.userId,
         );
       }
@@ -1539,7 +1611,18 @@ export class VerificationMessageDispatchesRepository {
       dispatch.attemptCount > 0
     )
       return { outcome: 'busy', dispatch };
-    const denial = await this.accounting.newHoldDenial(tx, params.orgId);
+    // A prepaid claim is always a fresh attempt: a ready row or a new
+    // generation, never a reclaim of a recorded one.
+    const senderKind = this.claimedSenderKind(
+      params,
+      dispatch?.state === 'ready' ? dispatch : undefined,
+    );
+    const rule = params.chargeRule ?? 'standard';
+    const denial = await this.accounting.newHoldDenial(
+      tx,
+      params.orgId,
+      rule === 'fallback' ? 0 : nextSendDisplayedCost(senderKind),
+    );
     if (denial) return { outcome: 'blocked', reason: denial };
     const previous = dispatch;
     if (previous && previous.state !== 'ready') {
@@ -1594,12 +1677,28 @@ export class VerificationMessageDispatchesRepository {
         .where(eq(verificationMessageDispatches.id, previous.id))
         .returning();
     }
-    await this.accounting.prepaid.hold(tx, dispatch);
+    const senderColumns = await this.claimSenderColumns(tx, params, dispatch);
+    const locked = await this.accounting.prepaid.lock(tx, params.orgId);
+    const charge = decidePrepaidCharge({
+      sender: senderColumns.senderKind ?? senderKind,
+      rule,
+      snapshot: {
+        availableStored: locked.postedBalance - locked.heldCredits,
+        spare: locked.spareCredit,
+      },
+    });
+    if (!charge.allowed) return { outcome: 'blocked', reason: charge.reason };
+    if (charge.action === 'reserve')
+      await this.accounting.prepaid.hold(tx, dispatch);
+    else if (charge.action !== 'none')
+      await this.accounting.prepaid.chargeSpare(tx, dispatch, charge.action);
     const [claimed] = await tx
       .update(verificationMessageDispatches)
       .set({
         state: 'sending',
-        ...(await this.claimSenderColumns(tx, params, dispatch)),
+        ...senderColumns,
+        billingPool: charge.pool,
+        billingCost: charge.cost,
         ...claimTemplateColumns(params),
         usageReserved: false,
         usagePeriodStart: null,

@@ -39,8 +39,9 @@ Settlement evidence is access-controlled at its referenced location; the console
 Open **Open** on a row, or filter first: *Balance* (low, no credits, debt), *Account status* and *Reconciliation → Needs reconciliation* (flagged purchases, unresolved sends, or a projection that no longer matches its ledger).
 
 - **Ledger reconciliation** compares the posted balance with the ledger total, and held credits with held reservations. Both must match.
+- **Spare credit** is half a stored credit already paid for by an own-number send. It must equal twice the net own-number packs (`own_number_pack` minus `own_number_pack_reversal`) minus the own-number charges not yet returned, and it is only ever 0 or 1. The merchant sees it as one credit on top of the displayed balance.
 - A **yellow alert** means the projection drifted. Every write except projection repair is refused with `CREDIT_PROJECTION_MISMATCH` until it is repaired. Callbacks for the account are frozen too.
-- A **red alert** names contradictory records (for example, a credit still held for a send that was already settled). Every write, including repair, is refused. Escalate to engineering with the organization id and the listed references; do not try to work around it.
+- A **red alert** names contradictory records (for example, a credit still held for a send that was already settled, or `spare_credit_mismatch`: a spare that disagrees with its own-number charges). Every write, including repair, is refused. Escalate to engineering with the organization id and the listed references; do not try to work around it.
 
 ## Procedures
 

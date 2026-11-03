@@ -74,11 +74,16 @@ export class IntegrationMonthlyUsageRepository {
   async getIntegrationUsageForPeriod(params: {
     integrationId: string;
     periodStart: string;
-  }): Promise<{ consumedCount: number; includedLimit: number }> {
+  }): Promise<{
+    consumedCount: number;
+    includedLimit: number;
+    ownNumberConsumed?: number;
+  }> {
     const [usage] = await this.db
       .select({
         consumedCount: integrationMonthlyUsage.consumedCount,
         includedLimit: integrationMonthlyUsage.includedLimit,
+        ownNumberConsumed: integrationMonthlyUsage.ownNumberConsumed,
       })
       .from(integrationMonthlyUsage)
       .where(
@@ -91,6 +96,7 @@ export class IntegrationMonthlyUsageRepository {
     return {
       consumedCount: usage?.consumedCount ?? 0,
       includedLimit: usage?.includedLimit ?? 0,
+      ownNumberConsumed: usage?.ownNumberConsumed ?? 0,
     };
   }
 
@@ -239,9 +245,12 @@ export class IntegrationMonthlyUsageRepository {
     periodStart: string;
     includedLimit?: number;
   }): Promise<void> {
+    // Both pools reset together, so a plan change never leaves own-number
+    // usage from the old plan counted against the new one.
     const updates: Record<string, unknown> = {
       consumedCount: 0,
       blockedCount: 0,
+      ownNumberConsumed: 0,
       updatedAt: new Date().toISOString(),
     };
 

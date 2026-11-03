@@ -20,11 +20,13 @@ import {
 import {
   buildReconciliationReport,
   findContradictions,
+  spareContradiction,
 } from './standalone-billing-operations.policy';
 import type {
   PurchaseFact,
   ReconciliationReport,
   ReservationFact,
+  SpareFact,
 } from './standalone-billing-operations.types';
 
 type Reader = DrizzleDB | CreditTransaction;
@@ -102,19 +104,50 @@ export class StandaloneBillingOperationsRepository {
     orgId: string,
     reader: Reader = this.db,
   ): Promise<ReconciliationReport | undefined> {
-    const [invariant, reservations, purchases] = await Promise.all([
+    const [invariant, reservations, purchases, spare] = await Promise.all([
       this.credits.checkInvariant(orgId, reader),
       this.reservationFacts(orgId, reader),
       this.purchaseFacts(orgId, reader),
+      this.spareFact(orgId, reader),
     ]);
     if (!invariant) return undefined;
+    const spareMismatch = spare ? spareContradiction(spare) : null;
     return buildReconciliationReport({
       postedBalance: invariant.postedBalance,
       heldCredits: invariant.heldCredits,
       ledgerBalance: Number(invariant.ledgerBalance),
       reservationHolds: Number(invariant.reservationHolds),
-      contradictions: findContradictions(reservations, purchases),
+      contradictions: [
+        ...findContradictions(reservations, purchases),
+        ...(spareMismatch ? [spareMismatch] : []),
+      ],
     });
+  }
+
+  /**
+   * The account's spare and the own-number charges behind it. Both subqueries
+   * use a raw alias and qualify the outer column, for the reason given on
+   * `checkInvariant`.
+   */
+  private async spareFact(
+    orgId: string,
+    reader: Reader,
+  ): Promise<SpareFact | undefined> {
+    const [row] = await reader
+      .select({
+        spareCredit: creditAccounts.spareCredit,
+        netPacks: sql<number>`(SELECT COALESCE(-sum(entry.quantity), 0)::int FROM ${creditLedgerEntries} AS entry WHERE entry.org_id = ${creditAccounts}.org_id AND entry.type::text IN ('own_number_pack', 'own_number_pack_reversal'))`,
+        openCharges: sql<number>`(SELECT count(*)::int FROM ${verificationMessageDispatches} AS dispatch WHERE dispatch.org_id = ${creditAccounts}.org_id AND dispatch.accounting_mode = 'prepaid_credit' AND dispatch.billing_pool = 'credits' AND dispatch.billing_cost = 1 AND dispatch.billing_refunded_at IS NULL)`,
+      })
+      .from(creditAccounts)
+      .where(eq(creditAccounts.orgId, orgId));
+    return row
+      ? {
+          spareCredit: row.spareCredit,
+          netPacks: Number(row.netPacks),
+          openCharges: Number(row.openCharges),
+        }
+      : undefined;
   }
 
   /**

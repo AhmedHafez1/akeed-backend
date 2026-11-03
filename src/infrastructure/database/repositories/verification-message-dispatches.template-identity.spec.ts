@@ -248,7 +248,11 @@ describe('VerificationMessageDispatchesRepository template identity at claim', (
       mode: () => 'prepaid_credit',
       newHoldDenial: jest.fn().mockResolvedValue(null),
       prepaid: {
-        lock: jest.fn().mockResolvedValue(undefined),
+        lock: jest.fn().mockResolvedValue({
+          postedBalance: 1,
+          heldCredits: 0,
+          spareCredit: 0,
+        }),
         hold: jest.fn().mockResolvedValue(undefined),
       },
     };

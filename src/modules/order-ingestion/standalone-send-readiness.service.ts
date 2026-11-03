@@ -93,12 +93,22 @@ export class StandaloneSendReadinessService {
       return { ready: false, blockers, snapshot };
 
     // Billing gates: the credit account first, then usage availability.
+    // Credits are counted in stored credits, which the merchant's own number
+    // spends at half the rate of the Akeed number.
+    const need =
+      snapshot.accountingMode === 'prepaid_credit'
+        ? await this.creditEligibility.storedCreditsFor(source, required)
+        : { storedCredits: required };
+    const requiredCredits = need.storedCredits;
+    if (need.ownNumber) snapshot.ownNumber = need.ownNumber;
     const denial = await this.creditEligibility.resolveDenial(source);
     if (denial) {
       blockers.push({
         kind: 'credit_denied',
         code: denial,
-        ...(denial === 'INSUFFICIENT_CREDITS' ? { shortfall: required } : {}),
+        ...(denial === 'INSUFFICIENT_CREDITS'
+          ? { shortfall: requiredCredits }
+          : {}),
       });
       if (stopEarly) return { ready: false, blockers, snapshot };
     }
@@ -139,8 +149,8 @@ export class StandaloneSendReadinessService {
     }
 
     const available = snapshot.creditsAvailable;
-    if (available !== null && available < required) {
-      const shortfall = required - Math.max(available, 0);
+    if (available !== null && available < requiredCredits) {
+      const shortfall = requiredCredits - Math.max(available, 0);
       const existing = blockers.find(
         (blocker) =>
           blocker.kind === 'credit_denied' &&

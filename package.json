@@ -50,6 +50,7 @@
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:acknowledgment-billing": "jest --config ./test/jest-acknowledgment-billing-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
+    "test:contract:own-number-billing": "jest --config ./test/jest-own-number-billing-contract.json --runInBand",
     "test:contract:credit-display-cycle": "jest --config ./test/jest-credit-display-cycle-contract.json --runInBand",
     "test:contract:blocked-order-recovery": "jest --config ./test/jest-blocked-order-recovery-contract.json --runInBand",
     "test:contract:auto-cancellation": "jest --config ./test/jest-auto-cancellation-contract.json --runInBand",

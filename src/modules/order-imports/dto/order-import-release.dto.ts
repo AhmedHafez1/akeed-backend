@@ -29,7 +29,13 @@ export class StartOrderImportDto {
 export type StoredStartQuote = Omit<
   OrderImportStartQuoteDto,
   'estimatedMessagesMin' | 'estimatedMessagesMax'
->;
+> & {
+  /**
+   * Set when the messages would go from the merchant's own number. The
+   * estimates stay message counts; only the displayed credits change.
+   */
+  ownNumber?: { spareCredit: number };
+};
 
 /** `GET /api/order-imports/:id/start-quote` (AC1). */
 export interface OrderImportStartQuoteDto {

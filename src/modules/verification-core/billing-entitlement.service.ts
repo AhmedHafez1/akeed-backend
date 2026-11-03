@@ -1,5 +1,5 @@
 import { UsageAccountingRouter } from '../../infrastructure/database/repositories/usage-accounting.router';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { IntegrationMonthlyUsageRepository } from '../../infrastructure/database/repositories/integration-monthly-usage.repository';
 import {
   resolveEntitlement,
@@ -9,13 +9,30 @@ import {
   type UsageAccountingMode,
 } from '../../shared/billing/entitlement';
 import { getBillingPeriodStart } from '../../shared/billing/billing-period';
+import { ownNumberLimit } from '../../shared/billing/billing-plan';
+import {
+  nextSendDisplayedCost,
+  periodicUsageForNextSend,
+} from '../../shared/billing/own-number-billing.policy';
+import {
+  SENDER_RESOLVER_PORT,
+  type SenderResolverPort,
+} from '../../shared/ports/sender-resolver.port';
 
 @Injectable()
 export class BillingEntitlementService {
   constructor(
     private readonly monthlyUsageRepository: IntegrationMonthlyUsageRepository,
     private readonly accounting?: UsageAccountingRouter,
+    @Optional()
+    @Inject(SENDER_RESOLVER_PORT)
+    private readonly senders?: SenderResolverPort,
   ) {}
+
+  /** The next send's likely sender; the Akeed number when unknown. */
+  private async predictSender(orgId: string) {
+    return (await this.senders?.predict?.(orgId)) ?? 'akeed_system';
+  }
 
   evaluateAccess(
     source: EntitlementSource,
@@ -36,7 +53,10 @@ export class BillingEntitlementService {
     const entitlement = resolveEntitlement(source, identity, undefined, mode);
     const accounting = this.accounting;
     if (source && accounting && mode === 'prepaid_credit') {
-      const availability = await accounting.readAvailability(source.orgId);
+      const availability = await accounting.readAvailability(
+        source.orgId,
+        nextSendDisplayedCost(await this.predictSender(source.orgId)),
+      );
       return {
         ...entitlement,
         planId: null,
@@ -51,8 +71,28 @@ export class BillingEntitlementService {
           integrationId: identity.id,
           periodStart: entitlement.periodStart,
         })
-      : { consumedCount: 0 };
-    return { ...entitlement, consumedCount: usage.consumedCount };
+      : { consumedCount: 0, ownNumberConsumed: 0 };
+    // While the next send would go from the merchant's number, both pools
+    // count; otherwise only the Akeed pool does, exactly as before.
+    const sender = source
+      ? await this.predictSender(source.orgId)
+      : 'akeed_system';
+    if (sender !== 'merchant_own')
+      return { ...entitlement, consumedCount: usage.consumedCount };
+    const combined = periodicUsageForNextSend(
+      {
+        akeedUsed: usage.consumedCount,
+        akeedLimit: entitlement.includedLimit,
+        ownUsed: usage.ownNumberConsumed ?? 0,
+        ownLimit: ownNumberLimit(entitlement.includedLimit),
+      },
+      sender,
+    );
+    return {
+      ...entitlement,
+      consumedCount: combined.used,
+      includedLimit: combined.limit,
+    };
   }
 
   async hasAvailableSlot(
@@ -71,7 +111,10 @@ export class BillingEntitlementService {
           consumedCount: 0,
           includedLimit: 0,
         };
-      return accounting.readAvailability(source.orgId);
+      return accounting.readAvailability(
+        source.orgId,
+        nextSendDisplayedCost(await this.predictSender(source.orgId)),
+      );
     }
     const entitlement = await this.readEntitlement(identity);
     const available =

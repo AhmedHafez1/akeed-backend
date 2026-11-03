@@ -301,6 +301,10 @@ function world(options: { mode?: 'prepaid_credit' | 'periodic_plan' } = {}) {
     ),
   };
   const creditEligibility = {
+    // Every send in this flow goes from the Akeed number: one credit each.
+    storedCreditsFor: jest.fn(async (_source: unknown, messages: number) => ({
+      storedCredits: messages,
+    })),
     resolveDenial: jest.fn(async () => {
       if (state.mode !== 'prepaid_credit') return null;
       if (state.suspended) return 'CREDIT_ACCOUNT_SUSPENDED';

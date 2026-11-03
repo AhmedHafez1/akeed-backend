@@ -281,6 +281,13 @@ describe('standalone source provisioning PostgreSQL contract', () => {
     `;
     for (const statement of statements) await client.unsafe(statement);
     await replayAutoActivationMigration();
+    // 0088 adds the account's spare credit, which every account row carries.
+    for (const statement of readFileSync(
+      resolve(__dirname, '../drizzle/0088_own_number_billing.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint'))
+      if (statement.includes('"credit_accounts"'))
+        await client.unsafe(statement);
   });
 
   afterAll(async () => {

@@ -29,4 +29,17 @@ export class SenderResolverService implements SenderResolverPort {
     );
     return resolveSender({ enabled, connection, template });
   }
+
+  async predict(orgId: string) {
+    const enabled = readWhatsappOwnNumberConfig(this.config).sendingEnabled;
+    if (!enabled) return 'akeed_system' as const;
+    const connection = await this.connections.findByOrg(orgId);
+    // With no template given, passing every connection check stops at
+    // `template_missing`: the number itself can send.
+    return connection &&
+      resolveSender({ enabled, connection, template: null }).reason ===
+        'template_missing'
+      ? ('merchant_own' as const)
+      : ('akeed_system' as const);
+  }
 }

@@ -25,6 +25,8 @@ const LEDGER_TYPES: CreditLedgerType[] = [
   'chargeback_reversal',
   'chargeback_reinstatement',
   'staff_adjustment',
+  'own_number_pack',
+  'own_number_pack_reversal',
 ];
 
 export class PageQueryDto {
@@ -90,6 +92,8 @@ export type LedgerReasonCode =
   | 'delivery_failure_restored'
   | 'launch_grant'
   | 'message_accepted'
+  | 'own_number_messages'
+  | 'own_number_messages_returned'
   | 'payment_verified'
   | 'refund_reversed'
   | 'staff_adjustment';

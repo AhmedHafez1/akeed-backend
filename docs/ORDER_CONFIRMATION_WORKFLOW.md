@@ -281,7 +281,7 @@ Each confirmation, reminder and onboarding test selects its template, resolves i
 
 The dispatch records `sender_kind`, `sender_connection_id`, `sender_phone_number_id` and `sender_reason` before sending. A reclaimed attempt retains that sender and phone snapshot; a new message resolves afresh. Merchant sends omit the logo image header, use the connection's strictly decrypted business token and have a 15-second deadline. Turning sending off also stops already-claimed merchant retries before HTTP. Missing credentials, a replaced number or a connection/template no longer ready refuses the attempt without silently changing its sender. Existing failure and accounting handling applies; automatic sender fallback is not enabled.
 
-Test orders sent through the billing-exempt onboarding path still resolve their sender and reserve no usage or credit. All other sends retain their existing accounting. Acknowledgments and nudges remain on Akeed and record their shared sender metadata with reason `service_message`. Historical sender metadata remains null rather than being inferred. Setup still ends in `verifying`; this send path never activates a connection.
+Test orders sent through the billing-exempt onboarding path still resolve their sender and reserve no usage or credit. Every other send is charged by its claimed sender and records `billing_pool` and `billing_cost` in the same claim: a send from the merchant's number costs 1 displayed credit or one own-number plan message, as described in [Own-number billing](ONBOARDING_AND_BILLING.md#own-number-billing). Acknowledgments and nudges remain on Akeed and record their shared sender metadata with reason `service_message`. Historical sender metadata remains null rather than being inferred. Setup still ends in `verifying`; this send path never activates a connection.
 
 ### Customer-message improvements
 
@@ -493,6 +493,7 @@ Usage principles:
 - Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
+- A send from the merchant's own number draws the own-number pool on a plan and costs 1 displayed credit on prepaid; releases and reversals return it to the pool it came from ([Own-number billing](ONBOARDING_AND_BILLING.md#own-number-billing)).
 - Acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
 - Nudges remain free and are recorded only in `verification_service_messages`. Historical unlinked acknowledgments are never billed retroactively.
 - Dashboard usage shows consumed count and included limit for the current billing period.

@@ -687,6 +687,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       '0056_dispatch_template_fallback.sql',
       '0060_whatsapp_service_messages.sql',
       '0087_whatsapp_dispatch_senders.sql',
+      '0088_own_number_billing.sql',
       // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
     ])

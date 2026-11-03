@@ -72,7 +72,7 @@ describe('sender ledger PostgreSQL contract', () => {
   afterAll(harness.teardown);
 
   it.each(['standalone', 'shopify'])(
-    'persists merchant identity before sending and keeps current %s accounting',
+    'persists merchant identity before sending and charges the own number on %s',
     async (platform) => {
       const source = await merchant(3, platform);
       const { connection, sender } = await ownConnection(source.orgId);
@@ -85,8 +85,19 @@ describe('sender ledger PostgreSQL contract', () => {
         senderPhoneNumberId: connection.phoneNumberId,
         senderReason: 'own_number',
       });
-      if (platform === 'standalone') await balance(source.orgId, 3, 1);
-      else expect(dispatch.usageReserved).toBe(true);
+      // An own-number send takes half a stored credit, as one pack and a
+      // spare, or one message from the own-number pool.
+      if (platform === 'standalone') {
+        await balance(source.orgId, 2, 0);
+        expect(await harness.credits.getSummary(source.orgId)).toMatchObject({
+          spareCredit: 1,
+        });
+      } else
+        expect(dispatch).toMatchObject({
+          usageReserved: true,
+          billingPool: 'own_number',
+          billingCost: 1,
+        });
       expect(
         await dispatches.findForSender(
           randomUUID(),

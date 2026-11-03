@@ -218,6 +218,7 @@ export function paymobBillingHarness(
     await migrate('0056_dispatch_template_fallback.sql');
     await migrate('0060_whatsapp_service_messages.sql');
     await migrate('0087_whatsapp_dispatch_senders.sql');
+    await migrate('0088_own_number_billing.sql');
   }
 
   /** An active Standalone merchant holding `quantity` granted credits. */

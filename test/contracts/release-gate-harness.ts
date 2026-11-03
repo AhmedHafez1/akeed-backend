@@ -482,6 +482,7 @@ export function releaseGateHarness(
     await migrate('0056_dispatch_template_fallback.sql');
     await migrate('0060_whatsapp_service_messages.sql');
     await migrate('0087_whatsapp_dispatch_senders.sql');
+    await migrate('0088_own_number_billing.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',

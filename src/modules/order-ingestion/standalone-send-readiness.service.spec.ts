@@ -16,7 +16,18 @@ function setup(mode: 'prepaid_credit' | 'periodic_plan' = 'prepaid_credit') {
     evaluateAccess: jest.fn(() => ({ allowed: true, reason: null })),
     hasAvailableSlot: jest.fn(),
   };
-  const credits = { resolveDenial: jest.fn().mockResolvedValue(null) };
+  const credits = {
+    resolveDenial: jest.fn().mockResolvedValue(null),
+    storedCreditsFor: jest.fn(
+      (
+        _source: unknown,
+        messages: number,
+      ): Promise<{
+        storedCredits: number;
+        ownNumber?: { spareCredit: number };
+      }> => Promise.resolve({ storedCredits: messages }),
+    ),
+  };
   const eligibility = {
     evaluateOrderForVerification: jest.fn(() => ({
       eligible: true,
@@ -73,6 +84,29 @@ describe('StandaloneSendReadinessService', () => {
         available: 400,
       },
     ]);
+  });
+
+  it('counts own-number sends at half a stored credit and reports the spare', async () => {
+    const { service, entitlements, credits } = setup();
+    credits.storedCreditsFor.mockResolvedValue({
+      storedCredits: 485,
+      ownNumber: { spareCredit: 1 },
+    });
+    entitlements.hasAvailableSlot.mockResolvedValue(prepaid(400));
+    const result = await service.evaluate(source, {
+      required: 970,
+      mode: 'all',
+    });
+    expect(credits.storedCreditsFor).toHaveBeenCalledWith(source, 970);
+    expect(result.blockers).toEqual([
+      {
+        kind: 'credit_denied',
+        code: 'INSUFFICIENT_CREDITS',
+        shortfall: 85,
+        available: 400,
+      },
+    ]);
+    expect(result.snapshot.ownNumber).toEqual({ spareCredit: 1 });
   });
 
   it('is ready for one message when N would be short (the manual paths)', async () => {

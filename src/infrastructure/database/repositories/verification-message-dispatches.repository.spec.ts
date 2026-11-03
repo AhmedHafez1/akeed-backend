@@ -78,6 +78,16 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     {}, // metadata
     '2026-05-15T00:00:00.000Z', // created_at
     '2026-05-15T00:00:00.000Z', // updated_at
+    null, // template_variant_key
+    null, // template_purpose
+    null, // meta_template_name
+    null, // meta_language_code
+    null, // resolved_language
+    null, // template_fallback_reason
+    null, // template_skipped_key
+    null, // billing_pool
+    null, // billing_cost
+    null, // billing_refunded_at
   ];
 }
 

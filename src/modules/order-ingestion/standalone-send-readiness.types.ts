@@ -71,6 +71,12 @@ export interface SendReadinessSnapshot {
   creditsAvailable: number | null;
   /** Periodic-plan sources only. */
   slotsRemaining: number | null;
+  /**
+   * Present only on a prepaid source whose next sends would go from the
+   * merchant's own number: those cost half a stored credit, and the account's
+   * spare already pays for one.
+   */
+  ownNumber?: { spareCredit: number };
 }
 
 export interface SendReadiness {

@@ -48,11 +48,12 @@ export class UsageAccountingRouter {
       : 'periodic_plan';
   }
 
-  async readAvailability(orgId: string) {
+  /** `displayedCost` prices the next send; the default is the Akeed number. */
+  async readAvailability(orgId: string, displayedCost?: number) {
     const summary = await this.prepaid.repository.getSummary(orgId);
     let reason = !readStandaloneCreditBillingConfig(this.config).enabled
       ? ('PAYMENT_PENDING_RECONCILIATION' as const)
-      : creditDenial(summary);
+      : creditDenial(summary, displayedCost);
     if (!reason) {
       const invariant = await this.prepaid.repository.checkInvariant(orgId);
       if (
@@ -70,9 +71,14 @@ export class UsageAccountingRouter {
     };
   }
 
+  /**
+   * Why a new prepaid charge of `displayedCost` cannot be taken. The default
+   * is an Akeed-number send; an own-number send costs 1 and a fallback 0.
+   */
   async newHoldDenial(
     tx: CreditTransaction,
     orgId: string,
+    displayedCost?: number,
   ): Promise<CreditDenialCode | null> {
     if (!readStandaloneCreditBillingConfig(this.config).enabled)
       return 'PAYMENT_PENDING_RECONCILIATION';
@@ -82,7 +88,10 @@ export class UsageAccountingRouter {
       .where(eq(creditAccounts.orgId, orgId));
     if (!existing) return 'CREDIT_ACCOUNT_NOT_PROVISIONED';
     const account = await this.prepaid.lock(tx, orgId);
-    const denial = creditDenial(this.prepaid.repository.summary(account));
+    const denial = creditDenial(
+      this.prepaid.repository.summary(account),
+      displayedCost,
+    );
     if (denial) return denial;
     const [legacy] = await tx
       .select({ id: verificationMessageDispatches.id })

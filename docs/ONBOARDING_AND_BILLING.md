@@ -6,7 +6,7 @@ Last updated: 2026-10-01
 
 This document explains the Akeed merchant onboarding and billing lifecycle from a business perspective. It covers the onboarding flow, billing plan activation, plan change behavior, usage tracking, billing period accounting, and the interaction between billing state and verification processing.
 
-Prepaid merchants see displayed credits: 1 credit = EGP 1, and a message uses 2. Stored credits stay worth EGP 2 each, and `src/shared/billing/merchant-credits.ts` is the only place that converts between them. Merchant APIs, usage emails and the import quote return displayed credits. Ledgers, reservations, purchases, gates, finance reports and staff adjustments stay in stored credits, and staff screens show the displayed value beside them.
+Prepaid merchants see displayed credits: 1 credit = EGP 1, and a message from the Akeed number uses 2. A message from the merchant's own number uses 1 (see [Own-number billing](#own-number-billing)). Stored credits stay worth EGP 2 each, and `src/shared/billing/merchant-credits.ts` is the only place that converts between them. Merchant APIs, usage emails and the import quote return displayed credits. Ledgers, reservations, purchases, gates, finance reports and staff adjustments stay in stored credits, and staff screens show the displayed value beside them.
 
 Akeed has two billing models. **Shopify (embedded)** merchants subscribe to a monthly plan billed through Shopify, and this document describes that model in detail. **Standalone** merchants have no plan: they buy prepaid credits through Paymob, and one credit pays for one WhatsApp message. Standalone onboarding is described in [standalone-onboarding-v2.md](standalone-onboarding-v2.md), Paymob configuration in `ENVIRONMENT.md`, and staff procedures in `STANDALONE_BILLING_OPERATIONS_RUNBOOK.md`. Standalone merchants can also add orders by file; see `BULK_ORDER_IMPORT.md`.
 
@@ -216,6 +216,7 @@ Usage is tracked in the `integration_monthly_usage` table:
 | `consumedCount` | Number of currently billable WhatsApp sends this period. |
 | `includedLimit` | Plan's included confirmations for this period.  |
 | `blockedCount`  | Sends blocked because the limit was reached.    |
+| `ownNumberConsumed` | Messages taken from the own-number pool this period. Its limit is `includedLimit` × 3 and is never stored. |
 
 Rules:
 
@@ -225,18 +226,44 @@ Rules:
 - An unknown provider outcome is refunded while it is shown as failed; if staff later proves acceptance, the original-period usage is restored.
 - Follow-up messages consume from included monthly confirmations.
 - When the limit is reached, new orders are kept at verification status `blocked` until the period renews or the merchant upgrades, then sent automatically (see [Orders blocked by capacity](ORDER_CONFIRMATION_WORKFLOW.md#orders-blocked-by-capacity)).
-- Plan changes reset usage counters to start a fresh period.
+- Plan changes reset both pools together to start a fresh period.
 
 ### Entitlement Enforcement
 
-`BillingEntitlementService` gates every WhatsApp send:
+The dispatch claim gates every WhatsApp send, in one transaction with the send's ledger row:
 
 1. Resolve the plan and its included limit.
 2. Compute the current billing period start.
-3. Attempt to reserve a slot via `reserveMonthlyVerificationSlot`.
+3. Reserve usage through `PeriodicPlanAccounting.reserve`, which picks the pool from the claimed sender (see [Own-number billing](#own-number-billing)).
 4. If the reservation succeeds, the send proceeds.
-5. If the limit is reached, the send is refused with reason `plan_limit_reached` and the verification is set to `blocked`.
-6. If the send fails after reservation, the slot is released.
+5. If no pool can pay, the send is refused with reason `plan_limit_reached` and the verification is set to `blocked`.
+6. If the send fails after reservation, the usage is returned to the pool it came from.
+
+`BillingEntitlementService` answers the read-side questions (is a slot available, what does the dashboard show) with the same pools.
+
+### Own-number billing
+
+A send from the merchant's own WhatsApp number costs less than one from the Akeed number. The cost and pool are decided by `src/shared/billing/own-number-billing.policy.ts` and recorded on the dispatch at claim time as `billing_pool` (`credits`, `akeed` or `own_number`) and `billing_cost`. Release, reversal, restore and duplicate receipts use those recorded values, never the sender. Dispatches claimed before these columns existed have them null and settle as one unit from the Akeed pool or one reserved credit.
+
+| Send | Prepaid (Standalone, EasyOrders, WooCommerce) | Shopify plan |
+| --- | --- | --- |
+| Akeed number | 2 displayed credits: one reserved stored credit, as before | 1 from the Akeed pool |
+| Merchant's number | 1 displayed credit | 1 from the own-number pool; when that is empty and the number is healthy, 1 from the Akeed pool |
+| Fallback to Akeed after an own-number attempt failed | 2 displayed credits, or what is left | 1 from the Akeed pool; when that is empty, 3 from the own-number pool, or what is left |
+| Nothing left | Blocked, except a fallback, which is sent and charges nothing | Both pools empty: blocked, except a fallback |
+
+| Plan | Akeed messages | Own-number messages |
+| --- | ---: | ---: |
+| Starter (one-time) | 30 | 90 |
+| Basic | 300 | 900 |
+| Pro | 1,000 | 3,000 |
+| Scale | 2,500 | 7,500 |
+
+**Prepaid spare credit.** A stored credit pays for two own-number sends. `credit_accounts.spare_credit` (0 or 1) holds the half already paid for. With no spare, an own-number send posts one stored credit as an `own_number_pack` ledger entry (−1) and leaves a spare; with a spare, it uses it and writes no ledger row. So the charge lands on the first of each two, and the balance always covers a send before it goes out. A failed or refused own-number send returns its credit as a spare, and a second return turns the two spares back into a stored credit through `own_number_pack_reversal` (+1). The dispatch's `billing_refunded_at` makes each return happen once. Own-number charges are taken at claim time and need no reservation, so acceptance moves nothing. Merchants see a pack as −2 credits and a pack reversal as +2, and the spare as one credit in their balance: displayed credits are `(posted_balance − held_credits) × 2 + spare_credit`.
+
+**Gates before a claim.** Send readiness, import quotes, the hub and capacity recovery price the next send by its likely sender: the merchant's number when own-number sending is on and the connection is active and not degraded. The template is not checked there, so the claim still decides the real cost. On Shopify, the own-number pool only counts toward capacity, the dashboard and the plan usage alerts while that is true; otherwise merchants see the Akeed pool alone, as before. A prepaid account is not `depleted` while a spare pays for the next own-number send.
+
+**Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. A fallback is never blocked by an empty balance or pool. No send path uses it yet; the own-number fallback send will.
 
 ## Usage Alerts
 
@@ -244,8 +271,8 @@ Rules:
 
 | Accounting | Levels | Sent once per |
 | --- | --- | --- |
-| Plan allowance (Shopify) | `80`, `95`, `100` percent of `includedLimit` | Billing period (`cycle_key` is the period start; `one_time:<start>` for Starter) |
-| Prepaid credits (standalone and connected stores) | `low` at or under `STANDALONE_LOW_BALANCE_THRESHOLD`, `depleted` under one credit | Incident: the open row blocks a repeat until the balance is back above the level and the row is resolved |
+| Plan allowance (Shopify) | `80`, `95`, `100` percent of `includedLimit`, or of both pools together while the next send would use the merchant's number | Billing period (`cycle_key` is the period start; `one_time:<start>` for Starter) |
+| Prepaid credits (standalone and connected stores) | `low` at or under `STANDALONE_LOW_BALANCE_THRESHOLD`, `depleted` under one stored credit unless a spare pays for the next own-number send | Incident: the open row blocks a repeat until the balance is back above the level and the row is resolved |
 
 Each alert is a `usage_alerts` row, and its unique index is the dedupe: only the caller whose insert wins sends the email, so retries, duplicate events and parallel workers send nothing more. A jump past several levels records them all and emails only the highest. The email, in the store's message language (`auto` falls back to Arabic), gives the usage or credits left, the blocked-order count, the action (upgrade, buy credits, or the reset date) and a dashboard link. It goes through `EMAIL_PORT` (`ResendEmailAdapter`), once and without retry, with the alert id as the idempotency key. The result is stored in `email_status`: `sent`, `skipped` (email switched off, no recipient, or a lower level superseded) or `failed`. Alerts go to the store's own email when the platform reports one (Shopify's `shop.email`, saved as `integrations.notification_email`), otherwise to the organization owner's sign-in email. Configuration is in [ENVIRONMENT.md](ENVIRONMENT.md#usage-alerts-and-blocked-orders).
 

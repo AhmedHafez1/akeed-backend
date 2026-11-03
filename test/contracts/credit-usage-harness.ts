@@ -174,6 +174,7 @@ export function creditUsageHarness() {
     await migrate('0056_dispatch_template_fallback.sql');
     await migrate('0060_whatsapp_service_messages.sql');
     await migrate('0087_whatsapp_dispatch_senders.sql');
+    await migrate('0088_own_number_billing.sql');
     await client.unsafe(
       'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
     );
