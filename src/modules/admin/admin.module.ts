@@ -41,6 +41,8 @@ import { AdminTemplateInspectionService } from './admin-template-inspection.serv
 import { AdminTemplateTestSendService } from './admin-template-test-send.service';
 import { WhatsappTemplateOperatorGuard } from './whatsapp-template-operator.guard';
 import { WhatsappTemplateSyncModule } from '../template-registry/whatsapp-template-sync.module';
+import { WhatsappSenderModule } from '../whatsapp-sender/whatsapp-sender.module';
+import { AdminWhatsappConnectionsController } from './admin-whatsapp-connections.controller';
 
 export interface AdminModuleOptions {
   /**
@@ -62,6 +64,7 @@ export class AdminModule {
         WebhookQueueModule,
         BillingReconciliationQueueModule,
         WhatsappTemplateSyncModule,
+        WhatsappSenderModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -73,6 +76,7 @@ export class AdminModule {
         AdminTemplatesController,
         AdminMessageTextsController,
         AdminTipsCampaignsController,
+        AdminWhatsappConnectionsController,
       ],
       providers: [
         AdminAccessGuard,

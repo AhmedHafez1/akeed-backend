@@ -37,6 +37,10 @@ import {
   parseUsageAlertsConfig,
   USAGE_ALERTS_CONFIG,
 } from './usage-alerts.config';
+import {
+  parseWhatsappOwnNumberConfig,
+  WHATSAPP_OWN_NUMBER_CONFIG,
+} from './whatsapp-own-number.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -144,5 +148,6 @@ export function validateEnv(
     [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig(config),
     [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
     [META_WEBHOOK_CONFIG]: parseMetaWebhookConfig(config),
+    [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(config),
   };
 }

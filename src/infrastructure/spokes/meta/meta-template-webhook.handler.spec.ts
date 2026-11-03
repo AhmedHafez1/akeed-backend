@@ -253,3 +253,103 @@ describe('MetaTemplateWebhookHandler', () => {
     await expect(handler.handle(undefined)).resolves.toBeUndefined();
   });
 });
+
+describe('MetaTemplateWebhookHandler for merchant accounts', () => {
+  const MERCHANT = '102290129340398';
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  function merchantSetup(env: Record<string, string> = {}) {
+    const parsed = parseWhatsappTemplateConfig({
+      WHATSAPP_TEMPLATE_SYNC_ENABLED: 'true',
+      WA_BUSINESS_ACCOUNT_ID: ACCOUNT_ID,
+      ...env,
+    });
+    const templateStatus = { applyEvents: jest.fn().mockResolvedValue({}) };
+    const hints = { apply: jest.fn().mockResolvedValue(undefined) };
+    const handler = new MetaTemplateWebhookHandler(
+      { get: () => parsed } as never,
+      templateStatus as never,
+      hints as never,
+    );
+    return { handler, templateStatus, hints };
+  }
+
+  const forAccount = (name: string, accountId: string) =>
+    body(
+      JSON.parse(
+        JSON.stringify(fixture(name)).replaceAll(ACCOUNT_ID, accountId),
+      ),
+    );
+
+  it("hands a merchant account's events to its connection, not to the registry", async () => {
+    const { handler, templateStatus, hints } = merchantSetup();
+
+    await handler.handleOrThrow(forAccount('status-approved', MERCHANT));
+
+    expect(templateStatus.applyEvents).not.toHaveBeenCalled();
+    expect(hints.apply).toHaveBeenCalledWith(MERCHANT, [
+      expect.objectContaining({
+        field: 'status',
+        status: 'approved',
+        providerTemplateId: '900000000000001',
+      }),
+    ]);
+  });
+
+  it('keeps the Akeed account on the registry path only', async () => {
+    const { handler, templateStatus, hints } = merchantSetup();
+
+    await handler.handleOrThrow(body(fixture('status-approved')));
+
+    expect(templateStatus.applyEvents).toHaveBeenCalledTimes(1);
+    expect(hints.apply).not.toHaveBeenCalled();
+  });
+
+  it('splits a batched delivery by account', async () => {
+    const { handler, templateStatus, hints } = merchantSetup();
+    const akeed = fixture('status-paused') as { entry: unknown[] };
+    const merchant = JSON.parse(
+      JSON.stringify(fixture('status-rejected')).replaceAll(
+        ACCOUNT_ID,
+        MERCHANT,
+      ),
+    ) as { entry: unknown[] };
+
+    await handler.handleOrThrow(
+      body({ ...akeed, entry: [...akeed.entry, ...merchant.entry] }),
+    );
+
+    expect(templateStatus.applyEvents).toHaveBeenCalledWith([
+      expect.objectContaining({ status: 'paused' }),
+    ]);
+    expect(hints.apply).toHaveBeenCalledWith(MERCHANT, [
+      expect.objectContaining({ status: 'rejected' }),
+    ]);
+  });
+
+  it("still routes merchant events while Akeed's own sync is off", async () => {
+    const { handler, templateStatus, hints } = merchantSetup({
+      WHATSAPP_TEMPLATE_SYNC_ENABLED: 'false',
+    });
+
+    await handler.handleOrThrow(forAccount('status-approved', MERCHANT));
+
+    expect(templateStatus.applyEvents).not.toHaveBeenCalled();
+    expect(hints.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an account id that is not numeric', async () => {
+    const { handler, hints } = merchantSetup();
+
+    await handler.handleOrThrow(forAccount('status-approved', 'waba-x'));
+
+    expect(hints.apply).not.toHaveBeenCalled();
+  });
+});

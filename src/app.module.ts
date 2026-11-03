@@ -29,6 +29,7 @@ import { VerificationAutomationModule } from './modules/verification-automation/
 import { CapacityRecoveryModule } from './modules/capacity-recovery/capacity-recovery.module';
 import { CreditModelNoticeModule } from './modules/credit-model-notice/credit-model-notice.module';
 import { AutoCancellationModule } from './modules/auto-cancellation/auto-cancellation.module';
+import { WhatsappSenderModule } from './modules/whatsapp-sender/whatsapp-sender.module';
 import { EMAIL_PORT } from './shared/ports/email.port';
 import { ResendEmailAdapter } from './infrastructure/spokes/resend/resend-email.adapter';
 import { MESSAGING_PORT } from './shared/ports/messaging.port';
@@ -149,6 +150,7 @@ const billingModule = BillingModule.register({
     CapacityRecoveryModule,
     CreditModelNoticeModule,
     AutoCancellationModule,
+    WhatsappSenderModule,
     DatabaseModule,
     // Staff billing operations drive the same payment services, so they
     // receive this one billing module instance instead of registering another.

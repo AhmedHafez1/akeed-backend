@@ -82,6 +82,46 @@ describe('buildBackendLog', () => {
       settlement: { netMinor: 19430 },
     });
   });
+
+  it('redacts own-number credentials and signup tickets in every spelling', () => {
+    const line = buildBackendLog('WhatsappSender', {
+      action: 'whatsapp-connection-save',
+      outcome: 'success',
+      orgId: 'org-1',
+      phoneNumberId: '1234567890',
+      business_token: 'EAAG-snake',
+      businessToken: 'EAAG-camel',
+      businessTokenEncrypted: 'v1:iv:tag:camel-cipher',
+      business_token_encrypted: 'v1:iv:tag:snake-cipher',
+      registrationPin: '808080',
+      registration_pin: '654321',
+      registrationPinEncrypted: 'v1:iv:tag:pin-cipher',
+      pin: '112233',
+      ticket: 'raw-ticket-value',
+      connectTicket: 'raw-connect-ticket',
+      tokenHash: 'a'.repeat(64),
+      token_hash: 'b'.repeat(64),
+    });
+    for (const secret of [
+      'EAAG-snake',
+      'EAAG-camel',
+      'camel-cipher',
+      'snake-cipher',
+      '808080',
+      '654321',
+      'pin-cipher',
+      '112233',
+      'raw-ticket-value',
+      'raw-connect-ticket',
+      'a'.repeat(64),
+      'b'.repeat(64),
+    ])
+      expect(line).not.toContain(secret);
+    expect(JSON.parse(line)).toMatchObject({
+      orgId: 'org-1',
+      phoneNumberId: '1234567890',
+    });
+  });
 });
 
 describe('normalizeError', () => {

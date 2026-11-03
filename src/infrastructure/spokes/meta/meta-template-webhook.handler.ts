@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ConnectionTemplateHintsService } from '../../../modules/whatsapp-sender/connection-template-hints.service';
 import { readWhatsappTemplateConfig } from '../../../shared/config/whatsapp-template.config';
 import {
   buildBackendLog,
@@ -24,6 +25,8 @@ import {
   type JsonRecord,
 } from './meta-webhook-envelope';
 
+const META_ACCOUNT_ID = /^\d{1,32}$/;
+
 /** The template fields Akeed subscribes to, and their meaning. */
 export const META_TEMPLATE_WEBHOOK_FIELDS: Record<string, TemplateEventField> =
   {
@@ -43,8 +46,10 @@ export const META_TEMPLATE_WEBHOOK_FIELDS: Record<string, TemplateEventField> =
  * Contract-record rules applied here:
  * - Only the three subscribed template fields are read; anything else on the
  *   body is the message handler's, or ignored.
- * - `entry[].id` must be this environment's WhatsApp Business Account;
- *   anything else is logged and dropped.
+ * - `entry[].id` must be this environment's WhatsApp Business Account for the
+ *   registry; anything else is logged and dropped from that path. Another
+ *   account's events go to the merchant connection that holds it, as hints
+ *   for its own rows; an account no connection holds is dropped there.
  * - The provider sends no event ID (4.8.14). An event's identity is the field,
  *   `entry[].id`, `entry[].time` and a hash of `value`; `entry[].time` is its
  *   time.
@@ -59,6 +64,8 @@ export class MetaTemplateWebhookHandler {
   constructor(
     private readonly config: ConfigService,
     private readonly templateStatus: TemplateStatusService,
+    @Optional()
+    private readonly merchantHints?: ConnectionTemplateHintsService,
   ) {}
 
   /** Never throws: the webhook is answered 200 whatever happens here. */
@@ -80,27 +87,15 @@ export class MetaTemplateWebhookHandler {
   async handleOrThrow(rawBody: Buffer | undefined): Promise<void> {
     if (!rawBody) return;
     const events = this.extract(rawBody);
-    if (events.length === 0) return;
-    await this.templateStatus.applyEvents(events);
+    if (events.length > 0) await this.templateStatus.applyEvents(events);
+    if (!this.merchantHints) return;
+    for (const [wabaId, merchantEvents] of this.extractMerchant(rawBody))
+      await this.merchantHints.apply(wabaId, merchantEvents);
   }
 
   /** The template events in a delivery, in neutral terms. */
   extract(rawBody: Buffer): TemplateProviderEvent[] {
-    const body = asRecord(parseBody(rawBody));
-    const entries = Array.isArray(body?.entry) ? body.entry : [];
-    const templateChanges = entries.flatMap((entry) => {
-      const record = asRecord(entry);
-      const changes = Array.isArray(record?.changes) ? record.changes : [];
-      return changes
-        .map((change) => asRecord(change))
-        .filter(
-          (change): change is JsonRecord =>
-            change !== null &&
-            typeof change.field === 'string' &&
-            Object.hasOwn(META_TEMPLATE_WEBHOOK_FIELDS, change.field),
-        )
-        .map((change) => ({ entry: record!, change }));
-    });
+    const templateChanges = this.templateChanges(rawBody);
     if (templateChanges.length === 0) return [];
 
     const config = readWhatsappTemplateConfig(this.config);
@@ -129,6 +124,56 @@ export class MetaTemplateWebhookHandler {
       else this.skip('malformed', field);
     }
     return events;
+  }
+
+  /**
+   * Template events for accounts other than Akeed's, grouped by account id:
+   * merchants' own numbers. Read whatever Akeed's own sync switch says, so a
+   * connection's state stays correct; which connection an account belongs
+   * to is decided by the receiver.
+   */
+  extractMerchant(rawBody: Buffer): Map<string, TemplateProviderEvent[]> {
+    const byAccount = new Map<string, TemplateProviderEvent[]>();
+    const akeedAccountId = readWhatsappTemplateConfig(
+      this.config,
+    ).businessAccountId;
+    for (const { entry, change } of this.templateChanges(rawBody)) {
+      const accountId = typeof entry.id === 'string' ? entry.id : null;
+      if (
+        !accountId ||
+        !META_ACCOUNT_ID.test(accountId) ||
+        accountId === akeedAccountId
+      )
+        continue;
+      const field = META_TEMPLATE_WEBHOOK_FIELDS[change.field as string];
+      const event = this.toEvent(field, entry, change);
+      if (!event) {
+        this.skip('malformed', field);
+        continue;
+      }
+      byAccount.set(accountId, [...(byAccount.get(accountId) ?? []), event]);
+    }
+    return byAccount;
+  }
+
+  private templateChanges(
+    rawBody: Buffer,
+  ): { entry: JsonRecord; change: JsonRecord }[] {
+    const body = asRecord(parseBody(rawBody));
+    const entries = Array.isArray(body?.entry) ? body.entry : [];
+    return entries.flatMap((entry) => {
+      const record = asRecord(entry);
+      const changes = Array.isArray(record?.changes) ? record.changes : [];
+      return changes
+        .map((change) => asRecord(change))
+        .filter(
+          (change): change is JsonRecord =>
+            change !== null &&
+            typeof change.field === 'string' &&
+            Object.hasOwn(META_TEMPLATE_WEBHOOK_FIELDS, change.field),
+        )
+        .map((change) => ({ entry: record!, change }));
+    });
   }
 
   private toEvent(

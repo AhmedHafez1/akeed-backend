@@ -10,7 +10,6 @@ import { ConfigService } from '@nestjs/config';
 import {
   CreateOrganizationDto,
   OrganizationResponseDto,
-  UpdateOrganizationDto,
 } from './dto/organizations.dto';
 import { OrganizationsRepository } from '../../infrastructure/database/repositories/organizations.repository';
 import {
@@ -177,49 +176,23 @@ export class OrganizationsService {
     );
   }
 
+  /**
+   * No organization field is writable any more: the WhatsApp sender fields
+   * (`wa_*`) are retired, and a merchant's own number is connected through
+   * `/api/whatsapp-sender`. Writers get the current organization back;
+   * viewers are still refused.
+   */
   async updateCurrentOrganization(
     user: AuthenticatedUser,
-    payload: UpdateOrganizationDto,
   ): Promise<OrganizationResponseDto> {
     assertOrganizationWriteAllowed(user.role, {
       code: 'ORGANIZATION_ROLE_REQUIRED',
       message: 'Owner or admin role is required to update the organization',
     });
-    const orgId = user.orgId;
-    const updates: {
-      waPhoneNumberId?: string | null;
-      waBusinessAccountId?: string | null;
-      waAccessToken?: string | null;
-    } = {};
-
-    if (payload.wa_phone_number_id !== undefined) {
-      updates.waPhoneNumberId = payload.wa_phone_number_id;
-    }
-
-    if (payload.wa_business_account_id !== undefined) {
-      updates.waBusinessAccountId = payload.wa_business_account_id;
-    }
-
-    if (payload.wa_access_token !== undefined) {
-      updates.waAccessToken = payload.wa_access_token;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      const organization = await this.organizationsRepo.findById(orgId);
-      if (!organization) {
-        throw new NotFoundException('Organization not found');
-      }
-      return this.toResponse(organization);
-    }
-
-    const organization = await this.organizationsRepo.updateById(orgId, {
-      ...updates,
-    });
-
+    const organization = await this.organizationsRepo.findById(user.orgId);
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
-
     return this.toResponse(organization);
   }
 

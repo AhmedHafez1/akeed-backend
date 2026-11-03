@@ -1,5 +1,6 @@
 import type {
   ImageTwinSubmission,
+  TemplateCopySubmission,
   TemplateEditSubmission,
   TemplateSubmission,
 } from '../../../shared/messaging/template-draft.types';
@@ -89,6 +90,28 @@ function buildBodyComponent(submission: {
 export function buildMetaImageTwinBody(
   submission: ImageTwinSubmission,
 ): Record<string, unknown> | null {
+  return buildCopyBody(submission, {
+    type: 'HEADER',
+    format: 'IMAGE',
+    example: { header_handle: [submission.headerHandle] },
+  });
+}
+
+/**
+ * The create request body of a registry template copied as it is into a
+ * merchant's account: the same name, language, body, footer and quick
+ * replies, with the sample values staff previews use.
+ */
+export function buildMetaTemplateCopyBody(
+  submission: TemplateCopySubmission,
+): Record<string, unknown> | null {
+  return buildCopyBody(submission, null);
+}
+
+function buildCopyBody(
+  submission: TemplateCopySubmission,
+  header: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   const category = META_CATEGORY[submission.category];
   if (!category) return null;
   return {
@@ -101,11 +124,7 @@ export function buildMetaImageTwinBody(
           parameter_format: META_PARAMETER_FORMAT[submission.parameterFormat],
         }),
     components: [
-      {
-        type: 'HEADER',
-        format: 'IMAGE',
-        example: { header_handle: [submission.headerHandle] },
-      },
+      ...(header ? [header] : []),
       buildBodyComponent(submission),
       ...(submission.footer && submission.footer.length > 0
         ? [{ type: 'FOOTER', text: toMetaText(submission.footer) }]
