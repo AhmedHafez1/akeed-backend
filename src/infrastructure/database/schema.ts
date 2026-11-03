@@ -4183,6 +4183,14 @@ export const tipsCampaignRecipients = pgTable(
   {
     campaignId: uuid('campaign_id').notNull(),
     orgId: uuid('org_id').notNull(),
+    deliveryGeneration: integer('delivery_generation').default(1).notNull(),
+    deliveryStartedAt: timestamp('delivery_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    removedAt: timestamp('removed_at', { withTimezone: true, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4215,9 +4223,65 @@ export const tipsCampaignRecipients = pgTable(
       name: 'tips_campaign_recipients_org_fkey',
     }).onDelete('cascade'),
     index('idx_tips_campaign_recipients_org_open')
-      .on(table.orgId, table.campaignId)
-      .where(sql`${table.dismissedAt} IS NULL`),
+      .on(table.orgId, table.deliveryStartedAt.desc(), table.campaignId)
+      .where(sql`${table.dismissedAt} IS NULL AND ${table.removedAt} IS NULL`),
+    check(
+      'tips_recipient_generation_check',
+      sql`${table.deliveryGeneration} >= 1`,
+    ),
     pgPolicy('Service role manages tips campaign recipients', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const tipsCampaignDeliveryHistory = pgTable(
+  'tips_campaign_delivery_history',
+  {
+    campaignId: uuid('campaign_id').notNull(),
+    orgId: uuid('org_id').notNull(),
+    deliveryGeneration: integer('delivery_generation').notNull(),
+    deliveryStartedAt: timestamp('delivery_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    firstViewedAt: timestamp('first_viewed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstClickedAt: timestamp('first_clicked_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    dismissedAt: timestamp('dismissed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    removedAt: timestamp('removed_at', { withTimezone: true, mode: 'string' }),
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.campaignId, table.orgId, table.deliveryGeneration],
+    }),
+    foreignKey({
+      columns: [table.campaignId, table.orgId],
+      foreignColumns: [
+        tipsCampaignRecipients.campaignId,
+        tipsCampaignRecipients.orgId,
+      ],
+    }).onDelete('cascade'),
+    check(
+      'tips_campaign_delivery_history_delivery_generation_check',
+      sql`${table.deliveryGeneration} >= 1`,
+    ),
+    pgPolicy('Service role manages tips delivery history', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

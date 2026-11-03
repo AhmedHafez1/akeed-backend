@@ -57,6 +57,8 @@ import type {
   AdminTipsCampaignUpdateDto,
   AdminTipsListQueryDto,
   AdminTipsOrganizationsQueryDto,
+  AdminTipsRecipientsDto,
+  AdminTipsHistoryQueryDto,
 } from './dto/admin-tips-campaigns.dto';
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -106,6 +108,10 @@ export interface AdminTipsOrganizationView {
   first_viewed_at: string | null;
   first_clicked_at: string | null;
   dismissed_at: string | null;
+  removed_at?: string | null;
+  delivery_generation?: number | null;
+  delivery_started_at?: string | null;
+  eligible?: boolean;
 }
 
 function toIso(value: string | null): string | null {
@@ -531,7 +537,7 @@ export class AdminTipsCampaignsService {
 
   /**
    * A draft lists its live audience with exclusions flagged; a published
-   * campaign lists its frozen recipients with their first events.
+   * campaign lists enrolled and removed accounts with their current events.
    */
   async recipients(id: string, query: AdminTipsOrganizationsQueryDto) {
     const { campaign } = await this.require(id);
@@ -550,6 +556,115 @@ export class AdminTipsCampaignsService {
           )
         : await this.campaigns.pageRecipients(id, page);
     return this.organizationPage(rows, limit);
+  }
+
+  async recipientOptions(id: string, query: AdminTipsOrganizationsQueryDto) {
+    await this.require(id);
+    const limit = query.limit ?? DEFAULT_ORGANIZATION_LIMIT;
+    const rows = await this.campaigns.pageRecipientOptions(id, {
+      search: query.search,
+      cursor: nameCursor(query.cursor),
+      limit: limit + 1,
+    });
+    return this.organizationPage(rows, limit);
+  }
+
+  async recipientHistory(
+    id: string,
+    orgId: string,
+    query: AdminTipsHistoryQueryDto,
+  ) {
+    await this.require(id);
+    const limit = query.limit ?? DEFAULT_ORGANIZATION_LIMIT;
+    const rows = await this.campaigns.deliveryHistory(
+      id,
+      orgId,
+      query.before,
+      limit + 1,
+    );
+    const items = rows.slice(0, limit);
+    return {
+      items,
+      next_before:
+        rows.length > limit
+          ? items[items.length - 1].delivery_generation
+          : null,
+    };
+  }
+
+  async changeRecipients(
+    audit: TipsAdminAudit,
+    id: string,
+    dto: AdminTipsRecipientsDto,
+  ) {
+    const orgIds = [
+      ...new Set(dto.org_ids.map((value) => value.toLowerCase())),
+    ].sort();
+    if (
+      !orgIds.length ||
+      orgIds.length > TIPS_LIMITS.orgList ||
+      orgIds.some((value) => !UUID_PATTERN.test(value)) ||
+      !['add', 'remove', 'reissue'].includes(dto.operation)
+    ) {
+      throw this.invalid([{ field: 'org_ids', code: 'invalid_value' }]);
+    }
+    const outcome = await this.campaigns.changeRecipients({
+      id,
+      revision: dto.revision,
+      operation: dto.operation,
+      orgIds,
+      maxRecipients: TIPS_LIMITS.maxRecipients,
+      audit,
+    });
+    switch (outcome.kind) {
+      case 'not_found':
+        throw this.notFound();
+      case 'revision_conflict':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.revisionConflict,
+          'This campaign changed. Reload before editing recipients.',
+        );
+      case 'invalid_transition':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.invalidTransition,
+          'Only published or paused campaigns can change recipients.',
+        );
+      case 'expired':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.expired,
+          'This campaign has expired.',
+        );
+      case 'ineligible':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.recipientIneligible,
+          'An account no longer has an active store.',
+          { org_ids: outcome.orgIds },
+        );
+      case 'reissue_required':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.recipientReissueRequired,
+          'Use Show again for removed or dismissed accounts.',
+          { org_ids: outcome.orgIds },
+        );
+      case 'not_enrolled':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.recipientNotEnrolled,
+          'Add new accounts before showing the campaign again.',
+          { org_ids: outcome.orgIds },
+        );
+      case 'too_large':
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.audienceTooLarge,
+          'This audience is larger than one campaign may reach.',
+          { recipient_count: outcome.count },
+        );
+      case 'updated':
+        return {
+          campaign: await this.get(id),
+          changed: outcome.changed,
+          unchanged: outcome.unchanged,
+        };
+    }
   }
 
   private organizationPage(
@@ -571,6 +686,14 @@ export class AdminTipsCampaignsService {
           first_viewed_at: row.first_viewed_at,
           first_clicked_at: row.first_clicked_at,
           dismissed_at: row.dismissed_at,
+          ...(row.delivery_generation !== undefined
+            ? {
+                delivery_generation: row.delivery_generation,
+                delivery_started_at: row.delivery_started_at ?? null,
+                removed_at: row.removed_at ?? null,
+                eligible: row.eligible === true,
+              }
+            : {}),
         }),
       ),
       next_cursor:

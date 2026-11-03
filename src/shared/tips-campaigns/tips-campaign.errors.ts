@@ -17,6 +17,9 @@ export const TIPS_CAMPAIGN_ERROR_CODES = {
   audienceChanged: 'TIPS_CAMPAIGN_AUDIENCE_CHANGED',
   cardNotFound: 'TIPS_CARD_NOT_FOUND',
   dismissForbidden: 'TIPS_DISMISS_FORBIDDEN',
+  recipientIneligible: 'TIPS_RECIPIENT_INELIGIBLE',
+  recipientReissueRequired: 'TIPS_RECIPIENT_REISSUE_REQUIRED',
+  recipientNotEnrolled: 'TIPS_RECIPIENT_NOT_ENROLLED',
 } as const;
 
 export type TipsCampaignErrorCode =

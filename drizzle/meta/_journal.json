@@ -600,12 +600,19 @@
     {
       "idx": 85,
       "version": "7",
+      "when": 1794182400001,
+      "tag": "0087_tips_recipient_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
       "when": 1794268800000,
       "tag": "0085_whatsapp_connections",
       "breakpoints": true
     },
     {
-      "idx": 86,
+      "idx": 87,
       "version": "7",
       "when": 1794355200000,
       "tag": "0086_whatsapp_connection_setup",
