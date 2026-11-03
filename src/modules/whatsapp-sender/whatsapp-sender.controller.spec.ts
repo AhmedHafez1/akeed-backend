@@ -11,6 +11,7 @@ import {
   parseWhatsappOwnNumberConfig,
   WHATSAPP_OWN_NUMBER_CONFIG,
 } from '../../shared/config/whatsapp-own-number.config';
+import { ConnectionStatusService } from './connection-status.service';
 import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderController } from './whatsapp-sender.controller';
 import { WhatsappSenderService } from './whatsapp-sender.service';
@@ -38,6 +39,7 @@ describe('/api/whatsapp-sender', () => {
   let app: INestApplication | undefined;
   let user: AuthenticatedUser | null;
   const connect = { issueTicket: jest.fn() };
+  const status = { forOrganization: jest.fn() };
 
   async function start(env: Record<string, string>) {
     const parsed = parseWhatsappOwnNumberConfig(env);
@@ -46,6 +48,7 @@ describe('/api/whatsapp-sender', () => {
       providers: [
         WhatsappSenderService,
         { provide: WhatsappConnectService, useValue: connect },
+        { provide: ConnectionStatusService, useValue: status },
         {
           provide: ConfigService,
           useValue: new ConfigService({
@@ -71,6 +74,7 @@ describe('/api/whatsapp-sender', () => {
 
   beforeEach(() => {
     connect.issueTicket.mockReset();
+    status.forOrganization.mockReset();
     user = {
       userId: 'user-1',
       orgId: ORG,
@@ -82,6 +86,32 @@ describe('/api/whatsapp-sender', () => {
   afterEach(async () => {
     await app?.close();
     app = undefined;
+  });
+
+  describe('GET connection', () => {
+    it('answers the caller organization only, uncached', async () => {
+      status.forOrganization.mockResolvedValue(null);
+      user = {
+        userId: 'user-3',
+        orgId: OTHER_ORG,
+        role: 'viewer',
+        source: 'shopify',
+      };
+      const server = await start(connectOn);
+      const response = await http(server)
+        .get(`${ROUTE}/connection`)
+        .expect(200)
+        .expect('Cache-Control', 'no-store');
+      expect(response.body).toEqual({ connection: null });
+      expect(status.forOrganization).toHaveBeenCalledWith(OTHER_ORG);
+    });
+
+    it('refuses a request the guard does not authenticate', async () => {
+      user = null;
+      const server = await start(connectOn);
+      await http(server).get(`${ROUTE}/connection`).expect(403);
+      expect(status.forOrganization).not.toHaveBeenCalled();
+    });
   });
 
   it('sits behind the session guard', () => {

@@ -18,7 +18,8 @@ import {
 } from '../src/infrastructure/spokes/meta/own-number/whatsapp-connection-credentials';
 
 /**
- * Merchant WhatsApp connections against real PostgreSQL: migration 0085 and
+ * Merchant WhatsApp connections against real PostgreSQL: migrations 0085
+ * and 0086 and
  * its three repositories. Synthetic data only; nothing leaves the process.
  */
 function isolatedDatabaseUrl(): string {
@@ -98,14 +99,19 @@ describe('WhatsApp connections contract', () => {
       GRANT USAGE ON SCHEMA ${namespace} TO anon, authenticated;
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${namespace} GRANT ALL ON TABLES TO anon, authenticated;
     `);
-    const migration = readFileSync(
-      resolve(__dirname, '../drizzle/0085_whatsapp_connections.sql'),
-      'utf8',
-    );
-    // Twice, to prove the migration re-runs.
+    // Twice, to prove each migration re-runs.
     for (let run = 0; run < 2; run += 1) {
-      for (const statement of migration.split('--> statement-breakpoint')) {
-        if (statement.trim()) await client.unsafe(statement);
+      for (const file of [
+        '0085_whatsapp_connections.sql',
+        '0086_whatsapp_connection_setup.sql',
+      ]) {
+        const migration = readFileSync(
+          resolve(__dirname, '../drizzle', file),
+          'utf8',
+        );
+        for (const statement of migration.split('--> statement-breakpoint')) {
+          if (statement.trim()) await client.unsafe(statement);
+        }
       }
     }
     [{ id: orgA }, { id: orgB }] = await client<{ id: string }[]>`
@@ -679,6 +685,315 @@ describe('WhatsApp connections contract', () => {
       expect((await connections.findByOrg(orgA))?.phoneNumberId).toBe(
         '300000000000010',
       );
+    });
+  });
+  describe('setup', () => {
+    const LEASE_MS = 60_000;
+    const signup = (phoneNumberId: string): SaveSignupConnectionInput => ({
+      wabaId: '100000000000001',
+      phoneNumberId,
+      displayPhoneNumber: null,
+      signupPath: 'new_number',
+      businessTokenEncrypted: encryptConnectionSecret('EAAG-setup-token', KEY),
+    });
+
+    async function saved(orgId = orgA, phone = '400000000000001') {
+      const result = await connections.saveSignupForOrg(orgId, signup(phone));
+      if (!result.saved) throw new Error('not saved');
+      return result.connection;
+    }
+
+    it('starts a signup at the first step, pending and due', async () => {
+      const row = await saved();
+      expect(row).toMatchObject({
+        signupGeneration: 1,
+        setupStatus: 'pending',
+        setupStep: 'subscribe',
+        setupAttempts: 0,
+      });
+      expect(await connections.findDueSetups(10)).toEqual([
+        { id: row.id, signupGeneration: 1 },
+      ]);
+    });
+
+    it('lets exactly one of several concurrent workers claim a setup', async () => {
+      const row = await saved();
+      const claims = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          connections.claimSetup(row.id, 1, LEASE_MS),
+        ),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(await connections.findDueSetups(10)).toEqual([]);
+    });
+
+    it('raises the generation on a replacing signup and fences the old claim', async () => {
+      const row = await saved();
+      const claim = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      const replaced = await connections.saveSignupForOrg(
+        orgA,
+        signup('400000000000002'),
+      );
+      expect(replaced).toMatchObject({
+        saved: true,
+        connection: {
+          id: row.id,
+          signupGeneration: 2,
+          setupStatus: 'pending',
+          setupStep: 'subscribe',
+          setupLeaseUntil: null,
+        },
+      });
+      await expect(
+        connections.recordSetupProgress(claim, { setupStep: 'verify_number' }),
+      ).resolves.toBeNull();
+      await expect(connections.completeSetup(claim)).resolves.toBeNull();
+      await expect(
+        connections.claimSetup(row.id, 1, LEASE_MS),
+      ).resolves.toBeNull();
+      await expect(
+        connections.claimSetup(row.id, 2, LEASE_MS),
+      ).resolves.not.toBeNull();
+    });
+
+    it('hands an expired lease to the next worker and stops the first from writing', async () => {
+      const row = await saved();
+      const first = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      await client`UPDATE whatsapp_connections SET setup_lease_until = now() - interval '1 second' WHERE id = ${row.id}`;
+      const second = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      expect(second.setupAttempts).toBe(2);
+      await expect(
+        connections.recordSetupProgress(first, { setupStep: 'verify_number' }),
+      ).resolves.toBeNull();
+      await expect(
+        connections.recordSetupProgress(second, {
+          setupStep: 'verify_number',
+          subscribedAt: 'now',
+        }),
+      ).resolves.toMatchObject({ setupStep: 'verify_number' });
+    });
+
+    it('keeps the first registration PIN however often it is stored', async () => {
+      const row = await saved();
+      const claim = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      const first = encryptConnectionSecret('111111', KEY);
+      const second = encryptConnectionSecret('222222', KEY);
+      await connections.storeRegistrationPinOnce(claim, first);
+      const kept = await connections.storeRegistrationPinOnce(claim, second);
+      expect(kept?.registrationPinEncrypted).toBe(first);
+    });
+
+    it('waits out a failed attempt, and resets the count when work continues', async () => {
+      const row = await saved();
+      const claim = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      await connections.releaseSetup(claim, {
+        status: 'failed',
+        errorCode: 'number_unavailable',
+        nextAttemptAt: new Date(Date.now() + 60 * 60_000),
+      });
+      expect(await connections.findDueSetups(10)).toEqual([]);
+      await client`UPDATE whatsapp_connections SET setup_next_attempt_at = now() - interval '1 second' WHERE id = ${row.id}`;
+      const again = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      expect(again.setupAttempts).toBe(2);
+      const released = await connections.releaseSetup(again, {
+        status: 'pending',
+        errorCode: null,
+        nextAttemptAt: new Date(),
+      });
+      expect(released).toMatchObject({
+        setupStatus: 'pending',
+        setupAttempts: 0,
+      });
+    });
+
+    it('completes setup as verifying, never active, and takes it out of the sweep', async () => {
+      const row = await saved();
+      const claim = (await connections.claimSetup(row.id, 1, LEASE_MS))!;
+      await connections.recordSetupProgress(claim, {
+        setupStep: 'provision',
+        numberVerifiedAt: 'now',
+        providerIsOnBizApp: false,
+        providerPlatformType: 'CLOUD_API',
+      });
+      const done = await connections.completeSetup(claim);
+      expect(done).toMatchObject({
+        state: 'verifying',
+        setupStatus: 'complete',
+        setupStep: 'done',
+        providerPlatformType: 'CLOUD_API',
+      });
+      expect(done?.setupCompletedAt).not.toBeNull();
+      expect(await connections.findDueSetups(10)).toEqual([]);
+      expect(await connections.findForTemplateSync()).toEqual([
+        { id: row.id, signupGeneration: 1 },
+      ]);
+    });
+
+    it('never claims a disconnected connection', async () => {
+      const row = await saved();
+      await connections.markDisconnected(orgA, 'test');
+      await expect(
+        connections.claimSetup(row.id, 1, LEASE_MS),
+      ).resolves.toBeNull();
+      expect(await connections.findDueSetups(10)).toEqual([]);
+      expect(await connections.findLiveByWabaId('100000000000001')).toBeNull();
+    });
+
+    it.each([
+      ['an unknown setup status', `setup_status = 'ready'`],
+      ['an unknown step', `setup_step = 'sync_history'`],
+      [
+        'a running claim without a lease',
+        `setup_status = 'running', setup_lease_until = NULL`,
+      ],
+      ['complete before the last step', `setup_status = 'complete'`],
+      [
+        'a provider message as an error code',
+        `setup_error_code = 'Meta said: no'`,
+      ],
+      ['a lower-case platform type', `provider_platform_type = 'cloud_api'`],
+    ])('refuses %s', async (_, assignment) => {
+      const row = await saved();
+      await expect(
+        client.unsafe(
+          `UPDATE whatsapp_connections SET ${assignment} WHERE id = '${row.id}'`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+    });
+  });
+
+  describe('template provisioning', () => {
+    async function connection(orgId = orgA, phone = '500000000000001') {
+      return connections.saveForOrg(orgId, connectionInput(phone));
+    }
+
+    it('adds each template once, however often rows are ensured', async () => {
+      const row = await connection();
+      const input = [
+        { templateId: templateOne, metaLanguageCode: 'ar' },
+        { templateId: templateTwo, metaLanguageCode: 'en' },
+      ];
+      await expect(templates.ensureRows(orgA, row.id, input)).resolves.toBe(2);
+      await expect(templates.ensureRows(orgA, row.id, input)).resolves.toBe(0);
+      expect(await templates.listForConnection(orgA, row.id)).toHaveLength(2);
+    });
+
+    it('adds nothing for a connection of another organization', async () => {
+      const row = await connection();
+      await expect(
+        templates.ensureRows(orgB, row.id, [
+          { templateId: templateOne, metaLanguageCode: 'ar' },
+        ]),
+      ).resolves.toBe(0);
+      expect(await templates.listForOrg(orgB)).toEqual([]);
+    });
+
+    it('lets one worker claim a template, and never a row awaiting an answer', async () => {
+      const row = await connection();
+      await templates.ensureRows(orgA, row.id, [
+        { templateId: templateOne, metaLanguageCode: 'ar' },
+      ]);
+      const [target] = await templates.listForConnection(orgA, row.id);
+      const claims = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          templates.claimForSubmission(orgA, target.id, 60_000),
+        ),
+      );
+      const [claimed] = claims.filter(Boolean);
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(claimed).toMatchObject({ status: 'submitting', attempts: 1 });
+      await templates.updateForOrg(
+        orgA,
+        target.id,
+        { status: 'unresolved' },
+        1,
+      );
+      await expect(
+        templates.claimForSubmission(orgA, target.id, 60_000),
+      ).resolves.toBeNull();
+    });
+
+    it('drops a late write from a worker whose claim was taken over', async () => {
+      const row = await connection();
+      await templates.ensureRows(orgA, row.id, [
+        { templateId: templateOne, metaLanguageCode: 'ar' },
+      ]);
+      const [target] = await templates.listForConnection(orgA, row.id);
+      await templates.claimForSubmission(orgA, target.id, 60_000);
+      await templates.updateForOrg(
+        orgA,
+        target.id,
+        { status: 'failed', nextAttemptAt: null },
+        1,
+      );
+      await templates.claimForSubmission(orgA, target.id, 60_000);
+      await expect(
+        templates.updateForOrg(orgA, target.id, { status: 'pending' }, 1),
+      ).resolves.toBeNull();
+      await expect(
+        templates.updateForOrg(orgA, target.id, { status: 'pending' }, 2),
+      ).resolves.toMatchObject({ status: 'pending' });
+    });
+
+    it('writes drift with its reason, stamped by the database', async () => {
+      const row = await connection();
+      await templates.ensureRows(orgA, row.id, [
+        { templateId: templateOne, metaLanguageCode: 'ar' },
+      ]);
+      const [target] = await templates.listForConnection(orgA, row.id);
+      const updated = await templates.updateForOrg(orgA, target.id, {
+        driftAt: 'now',
+        driftReason: 'registry_edited',
+        submittedComponentsHash: 'a'.repeat(64),
+        lastSyncedAt: 'now',
+      });
+      expect(updated).toMatchObject({ driftReason: 'registry_edited' });
+      expect(updated?.driftAt).not.toBeNull();
+      expect(updated?.lastSyncedAt).not.toBeNull();
+      await expect(
+        client`UPDATE whatsapp_connection_templates SET drift_reason = NULL WHERE id = ${target.id}`,
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client`UPDATE whatsapp_connection_templates SET submitted_components_hash = 'not-a-hash' WHERE id = ${target.id}`,
+      ).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('applies a newer status hint to the one row holding that Meta template, in its organization only', async () => {
+      const a = await connection(orgA, '500000000000001');
+      const b = await connection(orgB, '500000000000002');
+      for (const [orgId, connectionId] of [
+        [orgA, a.id],
+        [orgB, b.id],
+      ] as const) {
+        await templates.ensureRows(orgId, connectionId, [
+          { templateId: templateOne, metaLanguageCode: 'ar' },
+        ]);
+        const [target] = await templates.listForConnection(orgId, connectionId);
+        await templates.updateForOrg(orgId, target.id, {
+          metaTemplateId: '7000000001',
+          status: 'pending',
+        });
+      }
+      const hint = {
+        metaTemplateId: '7000000001',
+        status: 'approved',
+        occurredAt: '2026-11-03T10:00:00.000Z',
+      };
+      await expect(templates.applyStatusHint(orgA, a.id, hint)).resolves.toBe(
+        true,
+      );
+      await expect(
+        templates.applyStatusHint(orgA, a.id, {
+          ...hint,
+          status: 'paused',
+          occurredAt: '2026-11-03T09:00:00.000Z',
+        }),
+      ).resolves.toBe(false);
+      await expect(templates.applyStatusHint(orgA, b.id, hint)).resolves.toBe(
+        false,
+      );
+      expect((await templates.listForOrg(orgA))[0].status).toBe('approved');
+      expect((await templates.listForOrg(orgB))[0].status).toBe('pending');
     });
   });
 });

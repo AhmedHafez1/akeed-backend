@@ -4302,6 +4302,26 @@ export type WhatsappConnectionState =
   (typeof WHATSAPP_CONNECTION_STATES)[number];
 export type WhatsappSignupPath = 'coexistence' | 'new_number';
 export type WhatsappDegradedClass = 'credentials' | 'payment' | 'restricted';
+export const WHATSAPP_SETUP_STATUSES = [
+  'pending',
+  'running',
+  'failed',
+  'exhausted',
+  'complete',
+] as const;
+export type WhatsappSetupStatus = (typeof WHATSAPP_SETUP_STATUSES)[number];
+/** Setup steps, in order. `done` is reached only with status `complete`. */
+export const WHATSAPP_SETUP_STEPS = [
+  'subscribe',
+  'verify_number',
+  'register',
+  'provision',
+  'done',
+] as const;
+export type WhatsappSetupStep = (typeof WHATSAPP_SETUP_STEPS)[number];
+export type WhatsappTemplateDriftReason =
+  | 'registry_edited'
+  | 'provider_differs';
 
 /**
  * A merchant's own WhatsApp number, one per organization. Holds credential
@@ -4340,6 +4360,46 @@ export const whatsappConnections = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    // Raised by each signup that replaces the row; fences older setup jobs.
+    signupGeneration: bigint('signup_generation', { mode: 'number' })
+      .default(1)
+      .notNull(),
+    setupStatus: text('setup_status')
+      .$type<WhatsappSetupStatus>()
+      .default('pending')
+      .notNull(),
+    setupStep: text('setup_step')
+      .$type<WhatsappSetupStep>()
+      .default('subscribe')
+      .notNull(),
+    setupAttempts: integer('setup_attempts').default(0).notNull(),
+    setupLeaseUntil: timestamp('setup_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    setupNextAttemptAt: timestamp('setup_next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    setupErrorCode: text('setup_error_code'),
+    subscribedAt: timestamp('subscribed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    numberVerifiedAt: timestamp('number_verified_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    registeredAt: timestamp('registered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    setupCompletedAt: timestamp('setup_completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerIsOnBizApp: boolean('provider_is_on_biz_app'),
+    providerPlatformType: text('provider_platform_type'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4353,6 +4413,41 @@ export const whatsappConnections = pgTable(
       foreignColumns: [organizations.id],
       name: 'whatsapp_connections_org_id_fkey',
     }).onDelete('cascade'),
+    index('idx_whatsapp_connections_setup_due')
+      .on(table.setupNextAttemptAt)
+      .where(sql`${table.setupStatus} IN ('pending', 'failed', 'running')`),
+    check(
+      'whatsapp_connections_setup_status_check',
+      sql`${table.setupStatus} IN ('pending', 'running', 'failed', 'exhausted', 'complete')`,
+    ),
+    check(
+      'whatsapp_connections_setup_step_check',
+      sql`${table.setupStep} IN ('subscribe', 'verify_number', 'register', 'provision', 'done')`,
+    ),
+    check(
+      'whatsapp_connections_setup_attempts_check',
+      sql`${table.setupAttempts} >= 0`,
+    ),
+    check(
+      'whatsapp_connections_signup_generation_check',
+      sql`${table.signupGeneration} >= 1`,
+    ),
+    check(
+      'whatsapp_connections_setup_lease_check',
+      sql`${table.setupStatus} <> 'running' OR ${table.setupLeaseUntil} IS NOT NULL`,
+    ),
+    check(
+      'whatsapp_connections_setup_complete_check',
+      sql`(${table.setupStatus} = 'complete') = (${table.setupStep} = 'done')`,
+    ),
+    check(
+      'whatsapp_connections_setup_error_code_check',
+      sql`${table.setupErrorCode} IS NULL OR ${table.setupErrorCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
+    check(
+      'whatsapp_connections_provider_platform_type_check',
+      sql`${table.providerPlatformType} IS NULL OR ${table.providerPlatformType} ~ '^[A-Z_]{1,32}$'`,
+    ),
     unique('whatsapp_connections_org_id_key').on(table.orgId),
     unique('whatsapp_connections_id_org_id_key').on(table.id, table.orgId),
     // Every state but disconnected holds the number.
@@ -4471,6 +4566,24 @@ export const whatsappConnectionTemplates = pgTable(
       mode: 'string',
     }),
     lastError: text('last_error'),
+    attempts: integer('attempts').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // SHA-256 of the registry text submitted, compared with the registry.
+    submittedComponentsHash: text('submitted_components_hash'),
+    driftAt: timestamp('drift_at', { withTimezone: true, mode: 'string' }),
+    driftReason: text('drift_reason').$type<WhatsappTemplateDriftReason>(),
+    lastSyncedAt: timestamp('last_synced_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastErrorCode: text('last_error_code'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4479,6 +4592,22 @@ export const whatsappConnectionTemplates = pgTable(
       .notNull(),
   },
   (table) => [
+    check(
+      'whatsapp_connection_templates_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'whatsapp_connection_templates_components_hash_check',
+      sql`${table.submittedComponentsHash} IS NULL OR ${table.submittedComponentsHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'whatsapp_connection_templates_drift_check',
+      sql`((${table.driftAt} IS NULL) = (${table.driftReason} IS NULL)) AND (${table.driftReason} IS NULL OR ${table.driftReason} IN ('registry_edited', 'provider_differs'))`,
+    ),
+    check(
+      'whatsapp_connection_templates_last_error_code_check',
+      sql`${table.lastErrorCode} IS NULL OR ${table.lastErrorCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
     foreignKey({
       columns: [table.connectionId, table.orgId],
       foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],

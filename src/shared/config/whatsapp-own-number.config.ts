@@ -22,7 +22,17 @@ export interface WhatsappOwnNumberConfig {
    * built from it, never from a client-supplied address.
    */
   connectPageBaseUrl: string | null;
+  /**
+   * Akeed's own pacing between template submissions to one merchant account.
+   * Meta documents no creation limit; this only spreads the requests out.
+   */
+  templateSubmitIntervalMs: number;
+  /** Templates submitted per setup or sync run before it yields. */
+  templateBatchSize: number;
 }
+
+export const DEFAULT_TEMPLATE_SUBMIT_INTERVAL_MS = 2_000;
+export const DEFAULT_TEMPLATE_BATCH_SIZE = 10;
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 
@@ -107,6 +117,34 @@ export function parseWhatsappOwnNumberConfig(
       'SHOPIFY_TOKEN_ENCRYPTION_KEY is required when the merchant own-number switches are on.',
     );
 
+  const integer = (
+    key: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number => {
+    const value = read(key);
+    if (!value) return fallback;
+    const parsed = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+      errors.push(`${key} must be a whole number from ${min} to ${max}.`);
+      return fallback;
+    }
+    return parsed;
+  };
+  const templateSubmitIntervalMs = integer(
+    'WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS',
+    DEFAULT_TEMPLATE_SUBMIT_INTERVAL_MS,
+    0,
+    60_000,
+  );
+  const templateBatchSize = integer(
+    'WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE',
+    DEFAULT_TEMPLATE_BATCH_SIZE,
+    1,
+    50,
+  );
+
   if (errors.length)
     throw new Error(
       `Invalid environment configuration:\n - ${errors.join('\n - ')}`,
@@ -117,6 +155,8 @@ export function parseWhatsappOwnNumberConfig(
     embeddedSignupConfigId: connectEnabled ? embeddedSignupConfigId : null,
     metaAppId: connectEnabled ? metaAppId : null,
     connectPageBaseUrl: connectEnabled ? connectPageBaseUrl : null,
+    templateSubmitIntervalMs,
+    templateBatchSize,
   };
 }
 

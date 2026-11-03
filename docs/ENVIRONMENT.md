@@ -472,12 +472,15 @@ every organization. No organization allow-list is required:
 | --- | --- |
 | `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID`, `WHATSAPP_CONNECT_PAGE_BASE_URL` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. Signup also uses `META_APP_SECRET`. |
 | `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
+| `WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS` | Optional, default `2000`, `0` to `60000`. Akeed's pause between two template submissions to one merchant's account. Meta documents no creation limit; this only spreads the requests out. Startup fails on a value out of range. |
+| `WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE` | Optional, default `10`, `1` to `50`. Template submissions per setup or sync run before it yields and queues the next. Startup fails on a value out of range. |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
 | `WHATSAPP_CONNECT_PAGE_BASE_URL` | The web app's origin that hosts the connect page, for example `https://getakeed.com`: no trailing slash, path, query or fragment, and HTTPS except `http://localhost` or `http://127.0.0.1`. Connect links are built from it, never from the request. Its `/{locale}/whatsapp/connect` pages must be in the Meta app's Allowed domains and Valid OAuth redirect URIs. Required while connect is on; a malformed value fails startup. |
 
 Any value other than `true` or `false` in a switch fails startup. With both
 switches off, none of the other variables is needed. Meta webhooks are
-processed whatever the switches say.
+processed whatever the switches say, and so are setup and template sync for a
+connection that already exists: sending off never marks a number ready.
 
 `GET /api/whatsapp-sender` (any signed-in member) answers what the connect
 screen needs, with `Cache-Control: no-store`: `available` is `true` only while

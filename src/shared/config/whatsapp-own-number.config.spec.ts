@@ -22,7 +22,33 @@ describe('parseWhatsappOwnNumberConfig', () => {
       embeddedSignupConfigId: null,
       metaAppId: null,
       connectPageBaseUrl: null,
+      templateSubmitIntervalMs: 2_000,
+      templateBatchSize: 10,
     });
+  });
+
+  it('reads template pacing and refuses values out of range', () => {
+    expect(
+      parseWhatsappOwnNumberConfig({
+        WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS: '0',
+        WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE: '25',
+      }),
+    ).toMatchObject({ templateSubmitIntervalMs: 0, templateBatchSize: 25 });
+    expect(() =>
+      parseWhatsappOwnNumberConfig({
+        WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS: '60001',
+      }),
+    ).toThrow(/WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS/);
+    expect(() =>
+      parseWhatsappOwnNumberConfig({
+        WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE: '0',
+      }),
+    ).toThrow(/WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE/);
+    expect(() =>
+      parseWhatsappOwnNumberConfig({
+        WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE: '2.5',
+      }),
+    ).toThrow(/WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE/);
   });
 
   it('keeps the switches off with signup settings present but switched off', () => {

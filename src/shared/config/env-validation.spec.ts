@@ -86,6 +86,8 @@ describe('validateEnv', () => {
       embeddedSignupConfigId: null,
       metaAppId: null,
       connectPageBaseUrl: null,
+      templateSubmitIntervalMs: 2_000,
+      templateBatchSize: 10,
     });
   });
 

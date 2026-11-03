@@ -38,6 +38,7 @@ import {
   SIGNUP_TICKET_TTL_SECONDS,
   WhatsappConnectService,
 } from './whatsapp-connect.service';
+import type { WhatsappConnectionSetupProducer } from './whatsapp-connection-setup.producer';
 
 const ORG = '0b9f6f7e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 const OTHER_ORG = '5a4f3e2d-1c0b-4a9f-8e7d-6c5b4a3f2e1d';
@@ -66,7 +67,10 @@ function fakes(state: FakeMetaSignupState) {
   const tickets = new Map<string, StoredTicket>();
   const connectionRows = new Map<
     string,
-    { state: WhatsappConnectionState } & Partial<SaveSignupConnectionInput>
+    {
+      state: WhatsappConnectionState;
+      signupGeneration?: number;
+    } & Partial<SaveSignupConnectionInput>
   >();
   const roles = new Map<string, OrganizationRole>([
     [`${ORG}:${USER}`, 'owner'],
@@ -138,7 +142,12 @@ function fakes(state: FakeMetaSignupState) {
             saved: false as const,
             reason: 'connection_exists' as const,
           });
-        const row = { ...input, state: 'connecting' as const, id: 'conn-1' };
+        const row = {
+          ...input,
+          state: 'connecting' as const,
+          id: 'conn-1',
+          signupGeneration: (existing?.signupGeneration ?? 0) + 1,
+        };
         connectionRows.set(orgId, row);
         return Promise.resolve({ saved: true as const, connection: row });
       },
@@ -172,6 +181,7 @@ describe('WhatsappConnectService', () => {
     state: FakeMetaSignupState = defaultSignupState(),
   ) {
     const f = fakes(state);
+    const setupQueue = { enqueueSetup: jest.fn().mockResolvedValue(true) };
     jest
       .spyOn(global, 'fetch')
       .mockImplementation(f.meta.fetch as typeof fetch);
@@ -187,8 +197,9 @@ describe('WhatsappConnectService', () => {
       f.connectionsRepo as unknown as WhatsappConnectionsRepository,
       f.membershipsRepo as unknown as MembershipsRepository,
       new OwnNumberGraphClient(config),
+      setupQueue as unknown as WhatsappConnectionSetupProducer,
     );
-    return { service, ...f };
+    return { service, setupQueue, ...f };
   }
 
   const owner = (orgId = ORG): AuthenticatedUser => ({
@@ -238,6 +249,40 @@ describe('WhatsappConnectService', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('setup hand-off', () => {
+    it('queues setup for the saved signup and its generation', async () => {
+      const s = setup();
+      const { signupTicket } = await claimed(s);
+      await expect(complete(s, signupTicket)).resolves.toMatchObject({
+        state: 'connecting',
+      });
+      expect(s.setupQueue.enqueueSetup).toHaveBeenCalledWith('conn-1', 1);
+      expect(logs.join('\n')).toContain('"setupQueued":true');
+    });
+
+    it('still completes the signup when the queue is down', async () => {
+      const s = setup();
+      s.setupQueue.enqueueSetup.mockResolvedValue(false);
+      const { signupTicket } = await claimed(s);
+      await expect(complete(s, signupTicket)).resolves.toMatchObject({
+        state: 'connecting',
+      });
+      // The row stays due for setup; the sweep finds it.
+      expect(s.connectionRows.get(ORG)?.state).toBe('connecting');
+      expect(logs.join('\n')).toContain('"setupQueued":false');
+    });
+
+    it('queues nothing when the signup is not saved', async () => {
+      const s = setup();
+      s.connectionRows.set(ORG, { state: 'active' });
+      const { signupTicket } = await claimed(s).catch(() => ({
+        signupTicket: '',
+      }));
+      if (signupTicket) await complete(s, signupTicket).catch(() => null);
+      expect(s.setupQueue.enqueueSetup).not.toHaveBeenCalled();
+    });
+  });
 
   describe('issueTicket', () => {
     it('gives an owner a 10-minute link on the configured origin, storing only a hash', async () => {

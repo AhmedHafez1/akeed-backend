@@ -1,10 +1,10 @@
-import type { ImageTwinSubmission } from './template-draft.types';
+import {
+  planTemplateCopy,
+  type TemplateCopySkipReason,
+} from './template-copy.policy';
+import type { TemplateCopySubmission } from './template-draft.types';
 import type { TemplateCategory } from './template-provider.types';
 import type { RegistryTemplate } from './template-registry.types';
-import {
-  templateSampleValues,
-  variablesByParameter,
-} from './template-rendering';
 import type { TemplateTextModel } from './template-text.types';
 
 /** The suffix a twin adds to its parent's provider name, key and style. */
@@ -16,18 +16,14 @@ export type ImageTwinSkipReason =
   | 'has_twin'
   /** Staff retired it for good. */
   | 'retired'
-  /** No sync has stored the provider's text for it yet. */
-  | 'not_synced'
   /** The provider's text could not be read. */
   | 'unreadable'
-  /** It has a text header; a template has one header at most. */
-  | 'text_header'
-  /** A button that is not a quick reply cannot be copied. */
-  | 'non_quick_reply_button'
-  /** The provider's parameters do not match the registry's variables. */
-  | 'format_mismatch'
-  /** The provider's category is unknown, so none can be asked for. */
-  | 'unknown_category';
+  /**
+   * The parent's text cannot be copied: not synced, a text header (a
+   * template has one header at most), a button that is not a quick reply, a
+   * parameter mismatch or an unknown category.
+   */
+  | TemplateCopySkipReason;
 
 export interface ImageTwinParent {
   template: Pick<
@@ -44,7 +40,7 @@ export interface ImageTwinParent {
 }
 
 export type ImageTwinPlan =
-  | { kind: 'create'; submission: Omit<ImageTwinSubmission, 'headerHandle'> }
+  | { kind: 'create'; submission: TemplateCopySubmission }
   /** The provider already holds the twin: register it, send nothing. */
   | { kind: 'adopt'; templateName: string }
   | { kind: 'skip'; reason: ImageTwinSkipReason };
@@ -90,50 +86,5 @@ export function planImageTwin(
   ) {
     return { kind: 'adopt', templateName };
   }
-  if (!model) return { kind: 'skip', reason: 'not_synced' };
-  if (model.header) return { kind: 'skip', reason: 'text_header' };
-  if (model.buttons.some((button) => button.kind !== 'quick_reply')) {
-    return { kind: 'skip', reason: 'non_quick_reply_button' };
-  }
-  if (!parent.category || parent.category === 'unknown') {
-    return { kind: 'skip', reason: 'unknown_category' };
-  }
-
-  const parameters = [
-    ...new Set(
-      model.body.flatMap((segment) =>
-        'parameter' in segment ? [segment.parameter] : [],
-      ),
-    ),
-  ];
-  const expectedFormat =
-    template.variables.length === 0 ? 'none' : template.parameterFormat;
-  if (model.format !== expectedFormat) {
-    return { kind: 'skip', reason: 'format_mismatch' };
-  }
-  const variables = variablesByParameter(template);
-  const values = templateSampleValues(template.language);
-  const samples: { parameter: string; sample: string }[] = [];
-  for (const parameter of parameters) {
-    const variable = variables.get(parameter);
-    if (!variable) return { kind: 'skip', reason: 'format_mismatch' };
-    samples.push({ parameter, sample: values[variable.key] });
-  }
-
-  return {
-    kind: 'create',
-    submission: {
-      templateName,
-      languageCode: template.languageCode,
-      category: parent.category,
-      parameterFormat: model.format,
-      body: model.body,
-      ...(model.footer ? { footer: model.footer } : {}),
-      samples,
-      buttons: model.buttons.map((button) => ({
-        kind: 'quick_reply' as const,
-        text: button.text,
-      })),
-    },
-  };
+  return planTemplateCopy(template, parent.category, model, templateName);
 }

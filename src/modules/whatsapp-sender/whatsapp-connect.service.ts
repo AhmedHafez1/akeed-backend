@@ -39,6 +39,7 @@ import type {
   WhatsappSignupCompletedDto,
 } from './dto/whatsapp-connect.dto';
 import { assertWhatsappConnectionChangeAllowed } from './whatsapp-connection-access.policy';
+import { WhatsappConnectionSetupProducer } from './whatsapp-connection-setup.producer';
 import {
   whatsappConnectError,
   type WhatsappConnectErrorCode,
@@ -82,6 +83,7 @@ export class WhatsappConnectService {
     private readonly connections: WhatsappConnectionsRepository,
     private readonly memberships: MembershipsRepository,
     private readonly graph: OwnNumberGraphClient,
+    private readonly setupQueue: WhatsappConnectionSetupProducer,
   ) {}
 
   async issueTicket(
@@ -261,6 +263,12 @@ export class WhatsappConnectService {
         'changed_during_signup',
       );
 
+    // The saved row is already due for setup, so a queue that is down only
+    // delays it until the sweep finds the row.
+    const queued = await this.setupQueue.enqueueSetup(
+      saved.connection.id,
+      saved.connection.signupGeneration,
+    );
     this.logger.log(
       buildBackendLog(WhatsappConnectService.name, {
         action: 'whatsapp_signup_complete',
@@ -270,6 +278,7 @@ export class WhatsappConnectService {
         wabaId: waba.id,
         phoneNumberId: phone.phoneNumber.id,
         signupPath,
+        setupQueued: queued,
       }),
     );
     return {

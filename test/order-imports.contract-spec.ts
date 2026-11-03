@@ -279,7 +279,7 @@ describe('order imports PostgreSQL contract', () => {
             ? statement.includes('ALTER TABLE "integrations"')
             : // The base has no template registry, so the per-number template
               // table is left out; the connection and ticket tables apply.
-              migration.startsWith('0085_')
+              migration.startsWith('0085_') || migration.startsWith('0086_')
               ? !statement
                   .replace(/--.*$/gm, '')
                   .includes('whatsapp_connection_templates')
@@ -337,6 +337,8 @@ describe('order imports PostgreSQL contract', () => {
         '0084_tips_campaign_banner.sql',
         // Merchant WhatsApp connections and tickets; proves 0085 re-runs.
         '0085_whatsapp_connections.sql',
+        // Connection setup progress and template claims; proves 0086 re-runs.
+        '0086_whatsapp_connection_setup.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

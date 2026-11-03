@@ -18,7 +18,9 @@ import {
   IssueWhatsappConnectTicketDto,
   type WhatsappConnectTicketIssuedDto,
 } from './dto/whatsapp-connect.dto';
+import type { WhatsappConnectionStatusDto } from './dto/whatsapp-connection-status.dto';
 import type { WhatsappSenderAvailabilityDto } from './dto/whatsapp-sender.dto';
+import { ConnectionStatusService } from './connection-status.service';
 import { whatsappConnectError } from './whatsapp-connect.errors';
 import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderService } from './whatsapp-sender.service';
@@ -39,6 +41,7 @@ export class WhatsappSenderController {
   constructor(
     private readonly sender: WhatsappSenderService,
     private readonly connect: WhatsappConnectService,
+    private readonly status: ConnectionStatusService,
   ) {}
 
   @Get()
@@ -47,6 +50,15 @@ export class WhatsappSenderController {
     @CurrentUser() user: AuthenticatedUser,
   ): WhatsappSenderAvailabilityDto {
     return this.sender.getAvailability(user);
+  }
+
+  /** Setup progress and template counts; `null` before any signup. */
+  @Get('connection')
+  @Header('Cache-Control', 'no-store')
+  async getConnection(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ connection: WhatsappConnectionStatusDto | null }> {
+    return { connection: await this.status.forOrganization(user.orgId) };
   }
 
   /** 201 with the connect page link: the only response that ever holds it. */

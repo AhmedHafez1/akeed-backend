@@ -603,6 +603,13 @@
       "when": 1794268800000,
       "tag": "0085_whatsapp_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1794355200000,
+      "tag": "0086_whatsapp_connection_setup",
+      "breakpoints": true
     }
   ]
 }
