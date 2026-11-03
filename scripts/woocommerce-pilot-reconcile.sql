@@ -164,7 +164,13 @@ SELECT
   (SELECT count(*) FROM verification_message_dispatches
     WHERE org_id = :org_id AND accepted_at IS NOT NULL)       AS sends_accepted_by_meta,
   (SELECT count(*) FROM verification_message_dispatches
-    WHERE org_id = :org_id AND sender_kind <> 'akeed_system') AS sends_not_from_akeed_sender;
+    WHERE org_id = :org_id AND sender_kind = 'merchant_own') AS sends_from_merchant_sender,
+  (SELECT count(*) FROM verification_message_dispatches
+    WHERE org_id = :org_id AND (
+      sender_kind NOT IN ('akeed_system', 'merchant_own')
+      OR (sender_kind = 'merchant_own' AND (sender_connection_id IS NULL OR sender_phone_number_id IS NULL OR sender_reason IS NULL))
+      OR (sender_kind = 'akeed_system' AND sender_connection_id IS NOT NULL)
+    )) AS sends_with_inconsistent_sender;
 
 \echo '== 11. Store updates by action and state =='
 

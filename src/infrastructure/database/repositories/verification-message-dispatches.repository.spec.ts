@@ -59,6 +59,9 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     kind,
     state,
     'akeed_system', // sender_kind
+    null, // sender_connection_id
+    null, // sender_phone_number_id
+    null, // sender_reason
     'cod_verification', // template_name
     'ar', // language_code
     providerMessageId, // provider_message_id

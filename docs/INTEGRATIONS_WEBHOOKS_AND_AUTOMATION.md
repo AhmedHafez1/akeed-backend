@@ -1066,7 +1066,7 @@ No switch of its own. Operations are in the [support runbook](WOOCOMMERCE_SUPPOR
 
 ## Merchant Own WhatsApp Number: Connecting
 
-An owner can connect the organization's own WhatsApp Business number through Meta Embedded Signup. Connecting stores a verified connection in state `connecting`; it does not change who sends messages. Setup and templates follow in the background (next section); sending from the merchant's number comes later. Available to every organization when `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true` with valid signup settings; the requests, codes and settings are in `docs/ENVIRONMENT.md` (Merchant own WhatsApp number).
+An owner can connect the organization's own WhatsApp Business number through Meta Embedded Signup. Connecting stores a verified connection in state `connecting`; it does not change who sends messages. Setup and templates follow in the background (next section); sending additionally requires an active connection and the own-number sending switch. Available to every organization when `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED=true` with valid signup settings; the requests, codes and settings are in `docs/ENVIRONMENT.md` (Merchant own WhatsApp number).
 
 **Flow.** The settings card (Message tab, owner only, shown when `GET /api/whatsapp-sender` answers `available` and `canConnect`) opens a new tab inside the click and sends it to the 10-minute link from `POST /api/whatsapp-sender/connect-ticket`. The top-level page `/{locale}/whatsapp/connect` runs without a session in both standalone and Shopify: it removes `?ticket=` from its address, claims the ticket once for a 30-minute signup ticket held in memory, loads Meta's SDK (this page only, no analytics), and launches Embedded Signup v5 (`config_id`, `response_type: 'code'`, `override_default_response_type: true`, `extras: { setup: {}, version: 'v5' }`). It accepts session messages only from `https://www.facebook.com`, `https://web.facebook.com` and `https://business.facebook.com`, reads v5 (`messaging_account_ids`, `is_on_biz_app`) and v4 (`waba_id`, `waba_ids`, `phone_number_id`) fields, and submits exactly once when it has the code and either the session message or the end of a 4-second wait.
 
@@ -1100,6 +1100,14 @@ Contacts and history sync (`smb_app_data`) are never called.
 **Logs.** `whatsapp_connection_setup` (`step`, `errorCode`, `attempts`, `exhausted`), `whatsapp_connection_setup_sweep`, `whatsapp_connection_templates_run` (`added`, `submitted`, `stoppedBy`, drift as `attention: drift`), `whatsapp_connection_template_hint`, and the Graph calls `whatsapp_setup_*` with HTTP status and Meta code only.
 
 **Validate.** `scripts/test-whatsapp-connections-contract.ps1` (disposable Postgres), `npx jest src/modules/whatsapp-sender src/infrastructure/spokes/meta`.
+
+## Merchant Own WhatsApp Number: Sending
+
+`SENDER_RESOLVER_PORT` is bound through the verification core's dynamic registration. Core sees only sender kind, connection ID, reason and the current single accounting unit. Resolution runs per message after exact template selection and before claiming. The first failure decides: sending disabled, no connection, inactive/disconnected/offboarded state, degradation, missing exact template/language, non-approved status, or non-UTILITY category. There is no connection or merchant-template query when sending is disabled.
+
+A claim snapshots the sender and phone-number ID transactionally, including billing-exempt test sends. The Meta adapter reads that tenant-scoped dispatch snapshot, verifies the connection still owns the same phone and exact approved text template, and decrypts its business token only through the strict v1 guard. Merchant sends have a 15-second timeout and no automatic HTTP retry; shared sends keep their existing payload, logo-header fallback and timeout behavior. Tokens are redacted per request, including provider errors that quote their encoded values.
+
+A retry of an existing dispatch keeps its recorded sender. If sending has been disabled or its credentials or connection are unusable, it stops before HTTP and uses existing failure handling. There is no automatic switch to another sender. Service messages still use Akeed and record their sender before HTTP. Sender-aware billing, automatic fallback, activation after health checks, merchant reply routing and alerts are separate capabilities. Keep `WHATSAPP_OWN_NUMBER_SENDING_ENABLED=false` until those capabilities and live checks are ready.
 
 ## Server API Guide
 

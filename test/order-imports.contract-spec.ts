@@ -251,8 +251,10 @@ describe('order imports PostgreSQL contract', () => {
       );
       CREATE TABLE verification_message_dispatches (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        verification_id uuid
+        verification_id uuid,
+        sender_kind text NOT NULL DEFAULT 'akeed_system'
       );
+      CREATE TABLE verification_service_messages (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE credit_reservations (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id uuid
@@ -339,6 +341,7 @@ describe('order imports PostgreSQL contract', () => {
         '0085_whatsapp_connections.sql',
         // Connection setup progress and template claims; proves 0086 re-runs.
         '0086_whatsapp_connection_setup.sql',
+        '0087_whatsapp_dispatch_senders.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

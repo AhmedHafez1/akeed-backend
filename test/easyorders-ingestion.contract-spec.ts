@@ -650,6 +650,8 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
       '0056_dispatch_template_fallback.sql',
+      '0060_whatsapp_service_messages.sql',
+      '0087_whatsapp_dispatch_senders.sql',
     ])
       await migrate(name);
     // The story's own migrations, twice: both must be re-runnable.

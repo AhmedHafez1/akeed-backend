@@ -610,6 +610,13 @@
       "when": 1794355200000,
       "tag": "0086_whatsapp_connection_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1794441600000,
+      "tag": "0087_whatsapp_dispatch_senders",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { SenderResolverService } from './sender-resolver.service';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
@@ -29,6 +30,7 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
   ],
   controllers: [WhatsappSenderController, WhatsappConnectController],
   providers: [
+    SenderResolverService,
     WhatsappSenderService,
     WhatsappConnectService,
     ConnectionSetupService,
@@ -45,6 +47,7 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
     WhatsappTemplatesRepository,
   ],
   exports: [
+    SenderResolverService,
     WhatsappConnectionsRepository,
     WhatsappConnectTicketsRepository,
     WhatsappConnectionTemplatesRepository,

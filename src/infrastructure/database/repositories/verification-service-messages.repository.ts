@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
@@ -22,6 +23,7 @@ export class VerificationServiceMessagesRepository {
   constructor(
     @Inject(DRIZZLE)
     private readonly db: DrizzleDB,
+    private readonly config?: ConfigService,
   ) {}
 
   /**
@@ -42,6 +44,10 @@ export class VerificationServiceMessagesRepository {
         verificationId: params.verificationId,
         kind: params.kind,
         repliedAt: params.repliedAt,
+        senderKind: 'akeed_system',
+        senderReason: 'service_message',
+        senderPhoneNumberId:
+          this.config?.get<string>('WA_PHONE_NUMBER_ID') ?? null,
       })
       .onConflictDoNothing({
         target: [
@@ -60,7 +66,13 @@ export class VerificationServiceMessagesRepository {
   ): Promise<void> {
     const rows = await this.db
       .update(verificationServiceMessages)
-      .set({ dispatchId, updatedAt: sql`now()` })
+      .set({
+        dispatchId,
+        senderKind: sql`(SELECT sender_kind FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        senderReason: sql`(SELECT sender_reason FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        senderPhoneNumberId: sql`(SELECT sender_phone_number_id FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        updatedAt: sql`now()`,
+      })
       .where(
         and(
           eq(verificationServiceMessages.id, id),

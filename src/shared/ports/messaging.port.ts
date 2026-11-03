@@ -1,3 +1,4 @@
+import type { ResolvedSender } from './sender-resolver.port';
 import type {
   SelectedCodTemplate,
   SentTemplateIdentity,
@@ -28,6 +29,8 @@ export interface MessagingPort {
     verificationId: string;
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
+    sender?: ResolvedSender;
+    dispatchContext?: { orgId: string; dispatchId: string };
     /**
      * Words for a missing customer or store name, in the template's language.
      * Absent: the adapter keeps its own words, as before.

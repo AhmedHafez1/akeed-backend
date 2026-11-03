@@ -1,4 +1,9 @@
 import {
+  MetaSendContextService,
+  type MetaSendContext,
+} from './own-number/meta-send-context.service';
+import type { ResolvedSender } from '../../../shared/ports/sender-resolver.port';
+import {
   ConfirmedMessageRejection,
   type FreeFormTextOutcome,
   type MessagingSenderStatus,
@@ -47,6 +52,7 @@ export class WhatsAppService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly sendContext?: MetaSendContextService,
   ) {
     this.accessToken = this.configService.get<string>('WA_ACCESS_TOKEN')!;
     this.phoneNumberId = this.configService.get<string>('WA_PHONE_NUMBER_ID')!;
@@ -92,10 +98,18 @@ export class WhatsAppService {
     totalPrice: string;
     verificationId: string;
     template: SelectedCodTemplate;
+    sender?: ResolvedSender;
+    dispatchContext?: { orgId: string; dispatchId: string };
     fallbacks?: { customer?: string; store?: string };
     detailValues?: OrderDetailValues;
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
+    if (params.sender?.kind === 'merchant_own' && !this.sendContext)
+      throw new ConfirmedMessageRejection('sender_context_unavailable');
+    const context =
+      params.sender && this.sendContext
+        ? await this.sendContext.resolve(params)
+        : { url: this.apiUrl, token: this.accessToken };
     const bodyParameterValueByKey: Record<TemplateVariableKey, string> = {
       customer:
         (params.customerName ?? '').trim() ||
@@ -185,7 +199,8 @@ export class WhatsAppService {
       },
     });
 
-    const image = template.imageHeader;
+    const image =
+      params.sender?.kind === 'merchant_own' ? undefined : template.imageHeader;
     if (image) {
       const sent: SentTemplateIdentity = {
         ...toSentTemplateIdentity(template),
@@ -195,6 +210,7 @@ export class WhatsAppService {
       try {
         const response = await this.postMessage(
           buildPayload(image.templateName, image.languageCode, image.imageUrl),
+          context,
         );
         return { ...(response.data as WhatsAppResponse), template: sent };
       } catch (error) {
@@ -203,7 +219,7 @@ export class WhatsAppService {
           code === undefined ||
           !IMAGE_HEADER_FALLBACK_ERROR_CODES.has(code)
         ) {
-          this.failSend(error, params, sent);
+          this.failSend(error, params, sent, context.token);
         }
         this.logger.warn(
           buildBackendLog(WhatsAppService.name, {
@@ -214,7 +230,7 @@ export class WhatsAppService {
             templateName: image.templateName,
             fallbackTemplateName: template.templateName,
             providerErrorCode: code,
-            ...this.safeError(error),
+            ...this.safeError(error, context.token),
           }),
         );
       }
@@ -223,21 +239,26 @@ export class WhatsAppService {
     try {
       const response = await this.postMessage(
         buildPayload(template.templateName, template.languageCode),
+        context,
       );
       return {
         ...(response.data as WhatsAppResponse),
         template: toSentTemplateIdentity(template),
       };
     } catch (error) {
-      this.failSend(error, params, template);
+      this.failSend(error, params, template, context.token);
     }
   }
 
-  private postMessage(payload: Record<string, unknown>) {
+  private postMessage(
+    payload: Record<string, unknown>,
+    context: MetaSendContext,
+  ) {
     return firstValueFrom(
-      this.httpService.post(this.apiUrl, payload, {
+      this.httpService.post(context.url, payload, {
+        ...(context.timeout ? { timeout: context.timeout } : {}),
         headers: {
-          Authorization: `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${context.token}`,
           'Content-Type': 'application/json',
         },
       }),
@@ -261,6 +282,7 @@ export class WhatsAppService {
     error: unknown,
     params: { verificationId: string; to: string },
     template: SentTemplateIdentity,
+    token: string,
   ): never {
     const context = this.withoutToken(
       this.buildSafeErrorContext(error, {
@@ -268,6 +290,7 @@ export class WhatsAppService {
         resolvedLanguage: template.language,
         templateName: template.templateName,
       }),
+      token,
     );
     this.logger.error(
       buildBackendLog(WhatsAppService.name, {
@@ -280,7 +303,7 @@ export class WhatsAppService {
         templateName: template.templateName,
         languageCode: template.languageCode,
         context,
-        ...this.safeError(error),
+        ...this.safeError(error, token),
       }),
     );
     const code = this.confirmedRejectionCode(error);
@@ -366,20 +389,31 @@ export class WhatsAppService {
    * An error from the provider can quote the request, and with it the access
    * token. Nothing built from one is logged or thrown with the token in it.
    */
-  private withoutToken(text: string): string {
-    if (!this.accessToken) return text;
-    return text
-      .split(this.accessToken)
-      .join('[REDACTED]')
-      .split(encodeURIComponent(this.accessToken))
-      .join('[REDACTED]');
+  private withoutToken(text: string, token?: string): string {
+    for (const secret of [this.accessToken, token]) {
+      if (!secret) continue;
+      for (const value of [
+        secret,
+        encodeURIComponent(secret),
+        encodeURI(secret),
+      ])
+        text = text.split(value).join('[REDACTED]');
+    }
+    return text;
   }
 
-  private safeError(error: unknown): ReturnType<typeof normalizeError> {
+  private safeError(
+    error: unknown,
+    token?: string,
+  ): ReturnType<typeof normalizeError> {
     return Object.fromEntries(
       Object.entries(normalizeError(error)).map(([key, value]) => [
         key,
-        typeof value === 'string' ? this.withoutToken(value) : value,
+        typeof value === 'string'
+          ? this.withoutToken(value, token)
+          : Array.isArray(value)
+            ? value.map((item: string) => this.withoutToken(item, token))
+            : value,
       ]),
     );
   }

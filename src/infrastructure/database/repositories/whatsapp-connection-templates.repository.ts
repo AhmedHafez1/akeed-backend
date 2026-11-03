@@ -1,3 +1,4 @@
+import type { SelectedCodTemplate } from '../../../shared/messaging/cod-template-selector';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -5,6 +6,7 @@ import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
 import {
   whatsappConnectionTemplates,
+  whatsappTemplates,
   type WhatsappTemplateDriftReason,
 } from '../schema';
 import { databaseErrorCode } from '../../../shared/database/serializable-retry';
@@ -57,6 +59,42 @@ const CONNECTION_FKEY = 'whatsapp_connection_templates_connection_fkey';
 @Injectable()
 export class WhatsappConnectionTemplatesRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+
+  /** Exact text template and language selected for this send, scoped to its tenant. */
+  async findForSend(
+    orgId: string,
+    connectionId: string,
+    template: SelectedCodTemplate,
+  ) {
+    if (!template.registryKey) return null;
+    const [row] = await this.db
+      .select({
+        status: whatsappConnectionTemplates.status,
+        category: whatsappConnectionTemplates.category,
+      })
+      .from(whatsappConnectionTemplates)
+      .innerJoin(
+        whatsappTemplates,
+        eq(whatsappTemplates.id, whatsappConnectionTemplates.templateId),
+      )
+      .where(
+        and(
+          eq(whatsappConnectionTemplates.orgId, orgId),
+          eq(whatsappConnectionTemplates.connectionId, connectionId),
+          eq(whatsappTemplates.key, template.registryKey),
+          eq(whatsappTemplates.language, template.language),
+          eq(whatsappTemplates.metaTemplateName, template.templateName),
+          eq(whatsappTemplates.metaLanguageCode, template.languageCode),
+          eq(
+            whatsappConnectionTemplates.metaLanguageCode,
+            template.languageCode,
+          ),
+          eq(whatsappTemplates.headerFormat, 'none'),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
 
   async listForOrg(orgId: string): Promise<WhatsappConnectionTemplateRecord[]> {
     return this.db

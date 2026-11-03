@@ -147,6 +147,9 @@ export function creditUsageHarness() {
       // 0035 reads ownership and billing history when it activates accounts.
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     const dispatchDdl = readFileSync(
@@ -170,6 +173,7 @@ export function creditUsageHarness() {
     await migrate('0053_dispatch_template_identity.sql');
     await migrate('0056_dispatch_template_fallback.sql');
     await migrate('0060_whatsapp_service_messages.sql');
+    await migrate('0087_whatsapp_dispatch_senders.sql');
     await client.unsafe(
       'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
     );

@@ -275,6 +275,14 @@ store and source. Add `include_test=true` to count test sends.
   answers `400 ADMIN_TEMPLATE_METRICS_RANGE_INVALID`.
 - Sends without a recorded template are returned apart, under `not_recorded`.
 
+### Which sender a send used
+
+Each confirmation, reminder and onboarding test selects its template, resolves its sender, then claims its dispatch before contacting the provider. With own-number sending disabled, the resolver returns Akeed without reading connections or merchant template statuses. When enabled, a merchant connection must be active and not degraded, and the exact selected text template and language must be approved as UTILITY in that account. Otherwise the first failing check records why Akeed was selected.
+
+The dispatch records `sender_kind`, `sender_connection_id`, `sender_phone_number_id` and `sender_reason` before sending. A reclaimed attempt retains that sender and phone snapshot; a new message resolves afresh. Merchant sends omit the logo image header, use the connection's strictly decrypted business token and have a 15-second deadline. Turning sending off also stops already-claimed merchant retries before HTTP. Missing credentials, a replaced number or a connection/template no longer ready refuses the attempt without silently changing its sender. Existing failure and accounting handling applies; automatic sender fallback is not enabled.
+
+Test orders sent through the billing-exempt onboarding path still resolve their sender and reserve no usage or credit. All other sends retain their existing accounting. Acknowledgments and nudges remain on Akeed and record their shared sender metadata with reason `service_message`. Historical sender metadata remains null rather than being inferred. Setup still ends in `verifying`; this send path never activates a connection.
+
 ### Customer-message improvements
 
 Seven improvements, each behind its own switch and all off by default (see

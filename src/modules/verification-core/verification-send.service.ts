@@ -1,3 +1,8 @@
+import {
+  SENDER_RESOLVER_PORT,
+  FEATURE_OFF_SENDER,
+  type SenderResolverPort,
+} from '../../shared/ports/sender-resolver.port';
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -168,6 +173,10 @@ export class VerificationSendService {
     private readonly messageTexts?: MessageTextsService,
     @Optional()
     private readonly usageAlerts?: UsageAlertService,
+    @Inject(SENDER_RESOLVER_PORT)
+    private readonly senderResolver: SenderResolverPort = {
+      resolve: () => Promise.resolve(FEATURE_OFF_SENDER),
+    },
   ) {}
 
   private switches() {
@@ -353,7 +362,11 @@ export class VerificationSendService {
     }
     // A store with the logo header on sends the image twin of the same
     // template when one exists; the text template stays the recorded identity.
-    const template = await this.withLogoHeader(selection.template, integration);
+    let template = await this.withLogoHeader(selection.template, integration);
+    const sender = await this.senderResolver.resolve({
+      orgId: order.orgId,
+      template,
+    });
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
     const recordedFallback =
@@ -401,6 +414,7 @@ export class VerificationSendService {
       },
       leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
       billingExempt: ctx.billingExempt,
+      sender,
     });
     if (dispatchClaim.outcome === 'blocked') {
       if (dispatchClaim.reason !== 'plan_limit_reached') {
@@ -491,6 +505,19 @@ export class VerificationSendService {
       return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
+    // Reclaims retain the sender the first attempt recorded, even when the
+    // resolver now chooses differently. A new message gets a fresh decision.
+    const claimedSender = dispatchClaim.dispatch.senderKind
+      ? {
+          kind: dispatchClaim.dispatch.senderKind,
+          connectionId: dispatchClaim.dispatch.senderConnectionId ?? null,
+          reason: dispatchClaim.dispatch.senderReason ?? 'feature_off',
+          units: 1 as const,
+        }
+      : sender;
+    if (claimedSender.kind === 'merchant_own') {
+      template = { ...template, imageHeader: undefined };
+    }
     let response: Awaited<
       ReturnType<MessagingPort['sendVerificationTemplate']>
     > | null = null;
@@ -520,6 +547,11 @@ export class VerificationSendService {
           : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
         template,
+        sender: claimedSender,
+        dispatchContext: {
+          orgId: order.orgId,
+          dispatchId: dispatchClaim.dispatch.id,
+        },
         ...(Object.keys(detailValues).length ? { detailValues } : {}),
         ...(switches.localizedFallbacks
           ? await this.localizedFallbacks({

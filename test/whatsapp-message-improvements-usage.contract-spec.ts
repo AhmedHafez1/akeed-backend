@@ -19,7 +19,7 @@ import { creditUsageHarness } from './contracts/credit-usage-harness';
 /**
  * Acknowledgment and nudge against real PostgreSQL, through the real repositories
  * and the real usage accounting: an acknowledgment and a nudge are recorded
- * once each and take no usage, no credit and no dispatch.
+ * once each. Opted-in acknowledgments take one plan unit or credit; nudges take none.
  */
 const harness = creditUsageHarness();
 const { db, client, dispatches, merchant, verification, acceptance } = harness;
@@ -80,7 +80,7 @@ async function sentVerification(platformType: 'standalone' | 'shopify') {
   return input;
 }
 
-describe('service messages take no usage (PostgreSQL)', () => {
+describe('service-message accounting (PostgreSQL)', () => {
   beforeAll(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
@@ -116,10 +116,17 @@ describe('service messages take no usage (PostgreSQL)', () => {
   });
 
   it.each(['standalone', 'shopify'] as const)(
-    'a %s store: one acknowledgment and one nudge, usage and credits unchanged',
+    'a %s store: one billed acknowledgment and one free nudge, each once',
     async (platformType) => {
       const confirmed = await sentVerification(platformType);
       const open = await sentVerification(platformType);
+      await db
+        .update(tables.integrations)
+        .set({
+          acknowledgmentEnabled: true,
+          acknowledgmentEnabledAt: new Date(Date.now() - 1000).toISOString(),
+        })
+        .where(eq(tables.integrations.id, confirmed.integrationId));
       await db
         .update(tables.verifications)
         .set({ status: 'confirmed', confirmationSource: 'customer' })
@@ -158,7 +165,20 @@ describe('service messages take no usage (PostgreSQL)', () => {
         },
         { verification_id: open.verificationId, kind: 'nudge', state: 'sent' },
       ]);
-      expect(await accounting(confirmed.orgId)).toEqual(before);
+      const after = await accounting(confirmed.orgId);
+      expect(after.dispatch_rows).toBe(before.dispatch_rows + 1);
+      if (platformType === 'standalone') {
+        expect(after.ledger).toBe(before.ledger + 1);
+        expect(after.usage).toEqual(before.usage);
+        await harness.balance(confirmed.orgId, 1, 0);
+      } else {
+        expect(after.ledger).toBe(before.ledger);
+        expect(after.accounts).toEqual(before.accounts);
+        const [usage] = await client<
+          { consumed_count: number }[]
+        >`SELECT consumed_count FROM integration_monthly_usage WHERE org_id = ${confirmed.orgId}`;
+        expect(usage.consumed_count).toBe(2);
+      }
       expect(await accounting(open.orgId)).toEqual(beforeOpen);
     },
   );

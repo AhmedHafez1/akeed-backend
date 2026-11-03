@@ -31,6 +31,8 @@ export interface SentTemplateIdentity {
  * the registry's parameter format and its variables in send order.
  */
 export interface SelectedCodTemplate extends SentTemplateIdentity {
+  /** Exact registry identity; absent only on legacy direct adapter calls. */
+  registryKey?: string;
   parameterFormat: TemplateParameterFormat;
   variables: readonly TemplateVariable[];
   /**

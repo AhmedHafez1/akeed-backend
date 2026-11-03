@@ -1,3 +1,8 @@
+import { ConfigService } from '@nestjs/config';
+import {
+  FEATURE_OFF_SENDER,
+  type ResolvedSender,
+} from '../../../shared/ports/sender-resolver.port';
 import { acknowledgmentOptedIn } from '../../../shared/messaging/message-texts.types';
 import type { CreditTransaction } from '../credit-transaction';
 import { UsageAccountingRouter } from './usage-accounting.router';
@@ -34,6 +39,7 @@ import {
   providerMessageReceipts,
   verificationMessageDispatches,
   verificationServiceMessages,
+  whatsappConnections,
   verifications,
 } from '../schema';
 import {
@@ -304,6 +310,7 @@ export class VerificationMessageDispatchesRepository {
     @Inject(DRIZZLE)
     private readonly db: DrizzleDB,
     private readonly accounting: UsageAccountingRouter,
+    private readonly config?: ConfigService,
   ) {}
 
   async claim(params: {
@@ -320,6 +327,7 @@ export class VerificationMessageDispatchesRepository {
      * template records none.
      */
     identity?: DispatchTemplateClaim;
+    sender?: ResolvedSender;
     leaseUntil: string;
     /**
      * Onboarding test sends are free: the dispatch is still claimed and leased
@@ -467,6 +475,7 @@ export class VerificationMessageDispatchesRepository {
           .update(verificationMessageDispatches)
           .set({
             state: 'sending',
+            ...(await this.claimSenderColumns(tx, params, dispatch)),
             ...claimTemplateColumns(params),
             attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
             lastErrorCode: reclaimedFromExpiredLease
@@ -524,6 +533,7 @@ export class VerificationMessageDispatchesRepository {
         .update(verificationMessageDispatches)
         .set({
           state: 'sending',
+          ...(await this.claimSenderColumns(tx, params, dispatch)),
           ...claimTemplateColumns(params),
           usagePeriodStart:
             dispatch.usagePeriodStart ?? entitlement.periodStart,
@@ -541,6 +551,65 @@ export class VerificationMessageDispatchesRepository {
         .returning();
       return { outcome: 'claimed' as const, dispatch: claimed, usage };
     });
+  }
+
+  /** Sender metadata is immutable once an attempt has begun. */
+  private async claimSenderColumns(
+    tx: CreditTransaction,
+    params: Parameters<VerificationMessageDispatchesRepository['claim']>[0],
+    dispatch: DispatchRecord,
+  ) {
+    if (dispatch.attemptCount > 0 && dispatch.senderReason) return {};
+    const sender =
+      dispatch.attemptCount > 0
+        ? FEATURE_OFF_SENDER
+        : (params.sender ??
+          (params.kind === 'acknowledgment'
+            ? { ...FEATURE_OFF_SENDER, reason: 'service_message' }
+            : FEATURE_OFF_SENDER));
+    let phoneNumberId = this.config?.get<string>('WA_PHONE_NUMBER_ID') ?? null;
+    if (sender.kind === 'merchant_own') {
+      if (!sender.connectionId) throw new Error('Sender connection missing');
+      const [connection] = await tx
+        .select({ phoneNumberId: whatsappConnections.phoneNumberId })
+        .from(whatsappConnections)
+        .where(
+          and(
+            eq(whatsappConnections.id, sender.connectionId),
+            eq(whatsappConnections.orgId, params.orgId),
+            eq(whatsappConnections.state, 'active'),
+            isNull(whatsappConnections.degradedClass),
+          ),
+        )
+        .limit(1);
+      if (!connection) throw new Error('Sender connection unavailable');
+      phoneNumberId = connection.phoneNumberId;
+    }
+    return {
+      senderKind: sender.kind,
+      senderConnectionId: sender.connectionId,
+      senderPhoneNumberId: phoneNumberId,
+      senderReason: sender.reason,
+    };
+  }
+
+  async findForSender(
+    orgId: string,
+    dispatchId: string,
+    verificationId: string,
+  ) {
+    const [row] = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, dispatchId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationMessageDispatches.verificationId, verificationId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   /** Crashed thank-you sends are reconciled, never reclaimed or resent. */
@@ -1530,6 +1599,7 @@ export class VerificationMessageDispatchesRepository {
       .update(verificationMessageDispatches)
       .set({
         state: 'sending',
+        ...(await this.claimSenderColumns(tx, params, dispatch)),
         ...claimTemplateColumns(params),
         usageReserved: false,
         usagePeriodStart: null,

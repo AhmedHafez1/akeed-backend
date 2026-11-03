@@ -61,6 +61,7 @@
     "test:contract:whatsapp-template-authoring": "jest --config ./test/jest-whatsapp-template-authoring-contract.json --runInBand",
     "test:contract:whatsapp-message-improvements": "jest --config ./test/jest-whatsapp-message-improvements-contract.json --runInBand",
     "test:contract:meta-webhook-events": "jest --config ./test/jest-meta-webhook-events-contract.json --runInBand",
+    "test:contract:whatsapp-sender": "jest --config ./test/jest-whatsapp-sender-contract.json --runInBand",
     "test:contract:whatsapp-connections": "jest --config ./test/jest-whatsapp-connections-contract.json --runInBand",
     "test:contract:whatsapp-template-release-gate": "jest --config ./test/jest-e08-release-gate-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",

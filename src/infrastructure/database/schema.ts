@@ -1245,7 +1245,13 @@ export const verificationMessageDispatches = pgTable(
       .default('periodic_plan'),
     kind: verificationDispatchKind().notNull(),
     state: verificationDispatchState().default('ready').notNull(),
-    senderKind: text('sender_kind').default('akeed_system').notNull(),
+    senderKind: text('sender_kind')
+      .$type<'akeed_system' | 'merchant_own'>()
+      .default('akeed_system')
+      .notNull(),
+    senderConnectionId: uuid('sender_connection_id'),
+    senderPhoneNumberId: text('sender_phone_number_id'),
+    senderReason: text('sender_reason'),
     templateName: text('template_name'),
     languageCode: text('language_code'),
     providerMessageId: text('provider_message_id'),
@@ -1363,7 +1369,7 @@ export const verificationMessageDispatches = pgTable(
     }),
     check(
       'verification_message_dispatches_sender_kind_check',
-      sql`${table.senderKind} = 'akeed_system'`,
+      sql`${table.senderKind} IN ('akeed_system', 'merchant_own')`,
     ),
     check(
       'verification_message_dispatches_attempt_count_check',
@@ -3759,6 +3765,12 @@ export const verificationServiceMessages = pgTable(
     orgId: uuid('org_id').notNull(),
     verificationId: uuid('verification_id').notNull(),
     dispatchId: uuid('dispatch_id'),
+    senderKind: text('sender_kind')
+      .$type<'akeed_system' | 'merchant_own'>()
+      .default('akeed_system')
+      .notNull(),
+    senderReason: text('sender_reason'),
+    senderPhoneNumberId: text('sender_phone_number_id'),
     kind: text('kind').$type<ServiceMessageKind>().notNull(),
     state: text('state')
       .$type<ServiceMessageState>()
