@@ -1,9 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate as migrateDrizzle } from 'drizzle-orm/postgres-js/migrator';
 import * as schema from '../src/infrastructure/database';
 import { AdminTipsCampaignsService } from '../src/modules/admin/admin-tips-campaigns.service';
 import {
@@ -45,6 +53,7 @@ const MIGRATIONS = [
   '0077_tips_campaigns.sql',
   '0080_tips_campaign_change_note_types.sql',
   '0084_tips_campaign_banner.sql',
+  '0087_tips_recipient_deliveries.sql',
 ];
 const namespace = `tips_campaigns_${randomUUID().replaceAll('-', '')}`;
 const client = postgres(isolatedDatabaseUrl(), {
@@ -59,6 +68,7 @@ const repository = new TipsCampaignsRepository(
 const STAFF = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 const AUDIT = { userId: STAFF, requestId: 'req-contract' };
 const legacyCampaignId = randomUUID();
+const legacyOrgId = randomUUID();
 const MAX = 50_000;
 let created = false;
 
@@ -254,6 +264,10 @@ describe('tips campaigns (Postgres contract)', () => {
         await client`INSERT INTO tips_campaigns (id, name, type, created_by, updated_by)
           VALUES (${legacyCampaignId}, 'Existing campaign', 'tip', ${STAFF}, ${STAFF})`;
       }
+      if (file === '0087_tips_recipient_deliveries.sql') {
+        await client`INSERT INTO organizations (id,name) VALUES (${legacyOrgId}, 'Legacy account')`;
+        await client`INSERT INTO tips_campaign_recipients (campaign_id,org_id,created_at,first_viewed_at,dismissed_at) VALUES (${legacyCampaignId},${legacyOrgId},'2026-10-20T10:00:00Z','2026-10-20T11:00:00Z','2026-10-20T12:00:00Z')`;
+      }
       await migrate(file);
       await migrate(file);
     }
@@ -312,6 +326,424 @@ describe('tips campaigns (Postgres contract)', () => {
     } finally {
       await client.end({ timeout: 5 });
     }
+  });
+
+  describe('explicit recipient membership', () => {
+    it('ships after 0084 while allowing the reserved WhatsApp migrations to run later', async () => {
+      const journal = JSON.parse(
+        readFileSync(
+          resolve(__dirname, '../drizzle/meta/_journal.json'),
+          'utf8',
+        ),
+      ) as {
+        entries: {
+          idx: number;
+          version: string;
+          when: number;
+          tag: string;
+          breakpoints: boolean;
+        }[];
+      };
+      const tip = journal.entries.find(
+        (entry) => entry.tag === '0087_tips_recipient_deliveries',
+      )!;
+      const baseline = journal.entries.find(
+        (entry) => entry.tag === '0084_tips_campaign_banner',
+      )!;
+      const pendingWhen = [1794268800000, 1794355200000];
+      expect(tip.when).toBeGreaterThan(baseline.when);
+      expect(tip.when).toBeLessThan(pendingWhen[0]);
+      const folder = mkdtempSync(join(tmpdir(), 'akeed-tips-order-'));
+      if (
+        dirname(folder) !== resolve(tmpdir()) ||
+        !basename(folder).startsWith('akeed-tips-order-')
+      ) {
+        throw new Error('Unexpected migration test directory');
+      }
+      try {
+        mkdirSync(join(folder, 'meta'));
+        const entries = [{ ...baseline, tag: 'baseline' }];
+        const writeJournal = () =>
+          writeFileSync(
+            join(folder, 'meta/_journal.json'),
+            JSON.stringify({ version: '7', dialect: 'postgresql', entries }),
+          );
+        writeFileSync(
+          join(folder, 'baseline.sql'),
+          "CREATE TABLE tips_migration_order (step text PRIMARY KEY); INSERT INTO tips_migration_order VALUES ('0084');",
+        );
+        const db = drizzle(client);
+        const config = {
+          migrationsFolder: folder,
+          migrationsSchema: namespace,
+          migrationsTable: 'tips_order_migrations',
+        };
+        writeJournal();
+        await migrateDrizzle(db, config);
+        entries.push(tip);
+        writeFileSync(
+          join(folder, tip.tag + '.sql'),
+          readFileSync(
+            resolve(__dirname, '../drizzle', tip.tag + '.sql'),
+            'utf8',
+          ),
+        );
+        writeJournal();
+        await migrateDrizzle(db, config);
+        for (let index = 0; index < pendingWhen.length; index++) {
+          const tag = 'pending_' + index;
+          entries.push({
+            ...baseline,
+            idx: tip.idx + index + 1,
+            tag,
+            when: pendingWhen[index],
+          });
+          writeFileSync(
+            join(folder, tag + '.sql'),
+            `INSERT INTO tips_migration_order VALUES ('008${index + 5}');`,
+          );
+        }
+        writeJournal();
+        await migrateDrizzle(db, config);
+        await migrateDrizzle(db, config);
+        const steps = await client<
+          { step: string }[]
+        >`SELECT step FROM tips_migration_order ORDER BY step`;
+        expect(steps.map((row) => row.step)).toEqual(['0084', '0085', '0086']);
+        const applied = await client<
+          { created_at: string }[]
+        >`SELECT created_at FROM tips_order_migrations ORDER BY created_at`;
+        expect(applied.map((row) => Number(row.created_at))).toEqual([
+          baseline.when,
+          tip.when,
+          ...pendingWhen,
+        ]);
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
+    });
+    const testOrgs: string[] = [];
+    const newMerchant = async (spec: StoreSpec = {}) => {
+      const id = await merchant(spec);
+      testOrgs.push(id);
+      return id;
+    };
+    afterAll(async () => {
+      await client.unsafe(
+        'DELETE FROM organizations WHERE id = ANY($1::uuid[])',
+        [testOrgs],
+      );
+    });
+    const change = (
+      id: string,
+      revision: number,
+      operation: 'add' | 'remove' | 'reissue',
+      orgIds: string[],
+      maxRecipients = MAX,
+    ) =>
+      repository.changeRecipients({
+        id,
+        revision,
+        operation,
+        orgIds,
+        maxRecipients,
+        audit: AUDIT,
+      });
+
+    it('backfills generation one without losing legacy engagement', async () => {
+      const [row] =
+        await client`SELECT * FROM tips_campaign_recipients WHERE campaign_id=${legacyCampaignId}`;
+      expect(row.delivery_generation).toBe(1);
+      expect(row.delivery_started_at).toEqual(row.created_at);
+      expect(row.first_viewed_at).not.toBeNull();
+      expect(row.dismissed_at).not.toBeNull();
+    });
+
+    it('keeps delivery history private to the service role', async () => {
+      const [permissions] = await client`SELECT
+        has_table_privilege('anon', ${namespace + '.tips_campaign_delivery_history'}, 'SELECT') AS anon,
+        has_table_privilege('authenticated', ${namespace + '.tips_campaign_delivery_history'}, 'SELECT') AS authenticated,
+        has_table_privilege('service_role', ${namespace + '.tips_campaign_delivery_history'}, 'SELECT') AS service`;
+      expect(permissions).toEqual({
+        anon: false,
+        authenticated: false,
+        service: true,
+      });
+      const [table] =
+        await client`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=${namespace} AND c.relname='tips_campaign_delivery_history'`;
+      expect(table.relrowsecurity).toBe(true);
+      const policies =
+        await client`SELECT roles FROM pg_policies WHERE schemaname=${namespace} AND tablename='tips_campaign_delivery_history'`;
+      expect(policies).toHaveLength(1);
+      expect(policies[0].roles).toEqual(['service_role']);
+    });
+
+    it('adds an unread account without changing publication, rules, or existing dismissals', async () => {
+      const original = await newMerchant();
+      const added = await newMerchant();
+      const campaign = await draft(direct([original]));
+      await reviewAndPublish(campaign);
+      const before = (await repository.findById(campaign.id))!.campaign;
+      await repository.recordEvent(campaign.id, original, 'dismiss');
+      expect(
+        await change(campaign.id, 1, 'add', [added, original]),
+      ).toMatchObject({ kind: 'reissue_required' });
+      expect(await change(campaign.id, 1, 'add', [added])).toEqual({
+        kind: 'updated',
+        changed: 1,
+        unchanged: 0,
+      });
+      const after = (await repository.findById(campaign.id))!.campaign;
+      expect(after.publishedAt).toEqual(before.publishedAt);
+      expect(after.selectedOrgIds).toEqual(before.selectedOrgIds);
+      expect(after.revision).toBe(2);
+      expect(after.recipientCount).toBe(2);
+      expect(
+        (await repository.findMerchantCards(added, 'en', 20))[0],
+      ).toMatchObject({
+        id: campaign.id,
+        delivery_generation: 1,
+        first_viewed_at: null,
+      });
+      expect(await cardIds(original)).not.toContain(campaign.id);
+      expect(await change(campaign.id, 2, 'add', [added])).toEqual({
+        kind: 'updated',
+        changed: 0,
+        unchanged: 1,
+      });
+      expect((await repository.findById(campaign.id))!.campaign.revision).toBe(
+        2,
+      );
+    });
+
+    it('removes inactive accounts, preserves events, and requires an active store to reissue', async () => {
+      const org = await newMerchant();
+      const campaign = await draft(direct([org]));
+      await reviewAndPublish(campaign);
+      await repository.recordEvent(campaign.id, org, 'view');
+      await client`UPDATE integrations SET is_active=false WHERE org_id=${org}`;
+      expect(await change(campaign.id, 1, 'remove', [org])).toMatchObject({
+        changed: 1,
+      });
+      expect(await cardIds(org)).not.toContain(campaign.id);
+      expect(await repository.recordEvent(campaign.id, org, 'view')).toBe(
+        false,
+      );
+      expect(
+        await repository.findRecipientVisibility(campaign.id, org),
+      ).toBeNull();
+      expect(await change(campaign.id, 2, 'reissue', [org])).toMatchObject({
+        kind: 'ineligible',
+      });
+      const rows = await repository.pageRecipients(campaign.id, { limit: 10 });
+      expect(rows[0]).toMatchObject({
+        eligible: false,
+        delivery_generation: 1,
+      });
+      expect(rows[0].removed_at).not.toBeNull();
+      expect(rows[0].first_viewed_at).not.toBeNull();
+      expect(await repository.analytics(campaign.id)).toEqual({
+        recipients: 0,
+        viewed: 0,
+        clicked: 0,
+        dismissed: 0,
+      });
+      expect(await change(campaign.id, 2, 'remove', [org])).toMatchObject({
+        changed: 0,
+      });
+      await client`UPDATE integrations SET is_active=true WHERE org_id=${org}`;
+      expect(await change(campaign.id, 2, 'reissue', [org])).toMatchObject({
+        changed: 1,
+      });
+      expect(
+        (await repository.deliveryHistory(campaign.id, org, undefined, 10))[0]
+          .removed_at,
+      ).not.toBeNull();
+    });
+
+    it('archives each dismissed delivery, marks reissues unread, and ignores old-tab events', async () => {
+      const org = await newMerchant();
+      const campaign = await draft(direct([org]), {
+        action: { kind: 'internal', route: 'settings_message' },
+      });
+      await reviewAndPublish(campaign);
+      for (const event of ['view', 'click', 'dismiss'] as const)
+        expect(await repository.recordEvent(campaign.id, org, event)).toBe(
+          true,
+        );
+      expect(await change(campaign.id, 1, 'reissue', [org])).toMatchObject({
+        changed: 1,
+      });
+      const card = (await repository.findMerchantCards(org, 'en', 20))[0];
+      expect(card).toMatchObject({
+        delivery_generation: 2,
+        first_viewed_at: null,
+      });
+      for (const event of ['view', 'click', 'dismiss'] as const)
+        expect(await repository.recordEvent(campaign.id, org, event)).toBe(
+          false,
+        );
+      expect(await repository.recordEvent(campaign.id, org, 'dismiss', 1)).toBe(
+        false,
+      );
+      expect(await change(campaign.id, 1, 'reissue', [org])).toEqual({
+        kind: 'revision_conflict',
+      });
+      expect(await change(campaign.id, 2, 'reissue', [org])).toMatchObject({
+        changed: 0,
+      });
+      expect(await repository.recordEvent(campaign.id, org, 'dismiss', 2)).toBe(
+        true,
+      );
+      await change(campaign.id, 2, 'reissue', [org]);
+      const history = await repository.deliveryHistory(
+        campaign.id,
+        org,
+        undefined,
+        1,
+      );
+      expect(history[0].delivery_generation).toBe(2);
+      const prior = await repository.deliveryHistory(campaign.id, org, 2, 10);
+      expect(prior[0]).toMatchObject({
+        delivery_generation: 1,
+        first_viewed_at: expect.any(String),
+        first_clicked_at: expect.any(String),
+        dismissed_at: expect.any(String),
+      });
+      expect(
+        (
+          await repository.pageRecipientOptions(campaign.id, { limit: 500 })
+        ).find((row) => row.org_id === org),
+      ).toMatchObject({
+        delivery_generation: 3,
+        first_viewed_at: null,
+        dismissed_at: null,
+      });
+    });
+
+    it('rejects mixed ineligible selections, unknown reissues, and audience overflow atomically', async () => {
+      const original = await newMerchant();
+      const added = await newMerchant();
+      const inactive = await newMerchant({ active: false });
+      const campaign = await draft(direct([original]));
+      await reviewAndPublish(campaign);
+      expect(
+        await change(campaign.id, 1, 'add', [added, inactive]),
+      ).toMatchObject({ kind: 'ineligible', orgIds: [inactive] });
+      expect(await change(campaign.id, 1, 'reissue', [added])).toMatchObject({
+        kind: 'not_enrolled',
+      });
+      expect(await change(campaign.id, 1, 'add', [added], 1)).toMatchObject({
+        kind: 'too_large',
+        count: 2,
+      });
+      expect(await recipientIds(campaign.id)).toEqual([original]);
+      expect((await repository.findById(campaign.id))!.campaign.revision).toBe(
+        1,
+      );
+    });
+
+    it('allows paused edits and refuses drafts, expired campaigns, and archived campaigns', async () => {
+      const org = await newMerchant();
+      const added = await newMerchant();
+      const campaign = await draft(direct([org]));
+      expect(await change(campaign.id, 1, 'add', [added])).toMatchObject({
+        kind: 'invalid_transition',
+      });
+      await reviewAndPublish(campaign);
+      await repository.transition({
+        id: campaign.id,
+        from: 'published',
+        next: 'paused',
+        action: 'pause',
+        audit: AUDIT,
+      });
+      expect(await change(campaign.id, 1, 'add', [added])).toMatchObject({
+        changed: 1,
+      });
+      expect(await cardIds(added)).not.toContain(campaign.id);
+      await client`UPDATE tips_campaigns SET expires_at=now()-interval '1 second' WHERE id=${campaign.id}`;
+      expect(await change(campaign.id, 2, 'remove', [added])).toMatchObject({
+        kind: 'expired',
+      });
+      await client`UPDATE tips_campaigns SET status='archived' WHERE id=${campaign.id}`;
+      expect(await change(campaign.id, 2, 'remove', [added])).toMatchObject({
+        kind: 'invalid_transition',
+      });
+    });
+
+    it('rolls history, unread state, revision, and counts back if auditing fails', async () => {
+      const org = await newMerchant();
+      const campaign = await draft(direct([org]));
+      await reviewAndPublish(campaign);
+      await repository.recordEvent(campaign.id, org, 'dismiss');
+      await client.unsafe(
+        "ALTER TABLE admin_access_audit ADD CONSTRAINT refuse_recipient_audit CHECK (action NOT LIKE 'tips-campaign.recipients.%') NOT VALID",
+      );
+      try {
+        await expect(
+          change(campaign.id, 1, 'reissue', [org]),
+        ).rejects.toThrow();
+      } finally {
+        await client.unsafe(
+          'ALTER TABLE admin_access_audit DROP CONSTRAINT refuse_recipient_audit',
+        );
+      }
+      expect(
+        await repository.deliveryHistory(campaign.id, org, undefined, 10),
+      ).toEqual([]);
+      expect((await repository.findById(campaign.id))!.campaign.revision).toBe(
+        1,
+      );
+      expect(await cardIds(org)).not.toContain(campaign.id);
+    });
+
+    it('serializes concurrent edits and publication without partial enrollments', async () => {
+      const org = await newMerchant();
+      const first = await newMerchant();
+      const second = await newMerchant();
+      const campaign = await draft(direct([org]));
+      const results = await Promise.all([
+        reviewAndPublish(campaign),
+        change(campaign.id, 1, 'add', [first]),
+      ]);
+      expect(['updated', 'invalid_transition']).toContain(results[1].kind);
+      const revision = (await repository.findById(campaign.id))!.campaign
+        .revision;
+      const concurrent = await Promise.all([
+        change(campaign.id, revision, 'add', [second]),
+        change(campaign.id, revision, 'remove', [org]),
+      ]);
+      expect(concurrent.map((row) => row.kind).sort()).toEqual([
+        'revision_conflict',
+        'updated',
+      ]);
+      const current = (await repository.findById(campaign.id))!.campaign;
+      const [count] =
+        await client`SELECT count(*)::int AS count FROM tips_campaign_recipients WHERE campaign_id=${campaign.id} AND removed_at IS NULL`;
+      expect(current.recipientCount).toBe(count.count);
+    });
+
+    it('surfaces an old reissued campaign ahead of the twenty-card cap without changing its publication date', async () => {
+      const org = await newMerchant();
+      const older = await draft(direct([org]));
+      await reviewAndPublish(older);
+      await client`UPDATE tips_campaigns SET published_at='2026-01-01' WHERE id=${older.id}`;
+      await client`UPDATE tips_campaign_recipients SET delivery_started_at='2026-01-01' WHERE campaign_id=${older.id}`;
+      for (let index = 0; index < 21; index++) {
+        const campaign = await draft(direct([org]));
+        await reviewAndPublish(campaign);
+      }
+      expect(await cardIds(org)).not.toContain(older.id);
+      await repository.recordEvent(older.id, org, 'dismiss');
+      await change(older.id, 1, 'reissue', [org]);
+      expect((await cardIds(org))[0]).toBe(older.id);
+      expect(
+        new Date(
+          (await repository.findById(older.id))!.campaign.publishedAt!,
+        ).getUTCFullYear(),
+      ).toBe(2026);
+    });
   });
 
   describe('audience filters', () => {

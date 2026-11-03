@@ -71,6 +71,7 @@ export class TipsService {
       return [
         {
           id: row.id,
+          delivery_generation: row.delivery_generation,
           first_viewed_at: row.first_viewed_at,
           type: row.type,
           locale: bundle.locale,
@@ -86,13 +87,14 @@ export class TipsService {
   }
 
   /**
-   * A card's first view, first click or permanent dismissal. Repeats are
+   * A delivery's first view, first click or dismissal. Repeats are
    * harmless; a campaign this organization did not receive is not found.
    */
   async recordEvent(
     user: AuthenticatedUser,
     campaignId: string,
     event: TipsEvent,
+    generation = 1,
   ): Promise<TipsEventResponseDto> {
     if (event === 'dismiss') {
       assertOrganizationWriteAllowed(user.role, {
@@ -112,7 +114,12 @@ export class TipsService {
         code: TIPS_CAMPAIGN_ERROR_CODES.cardNotFound,
       });
     }
-    await this.campaigns.recordEvent(campaignId, user.orgId, event);
-    return { recorded: true };
+    const recorded = await this.campaigns.recordEvent(
+      campaignId,
+      user.orgId,
+      event,
+      generation,
+    );
+    return { recorded };
   }
 }

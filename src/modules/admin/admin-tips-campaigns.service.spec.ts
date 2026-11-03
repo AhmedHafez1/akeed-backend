@@ -98,6 +98,9 @@ function setup(current: TipsCampaignDetail = detail()) {
     setBanner: jest
       .fn()
       .mockResolvedValue({ kind: 'updated', campaign: current.campaign }),
+    changeRecipients: jest
+      .fn()
+      .mockResolvedValue({ kind: 'updated', changed: 1, unchanged: 0 }),
   };
   class FixedClockService extends AdminTipsCampaignsService {
     protected override now(): Date {
@@ -117,6 +120,78 @@ async function rejection(promise: Promise<unknown>) {
 }
 
 describe('AdminTipsCampaignsService', () => {
+  describe('recipient changes', () => {
+    it('passes a normalized explicit selection and returns counts plus campaign', async () => {
+      const { service, repo } = setup(detail({ status: 'published' }));
+      const result = await service.changeRecipients(AUDIT, ID, {
+        revision: 3,
+        operation: 'add',
+        org_ids: [ID.toUpperCase(), ID],
+      });
+      expect(repo.changeRecipients).toHaveBeenCalledWith({
+        id: ID,
+        revision: 3,
+        operation: 'add',
+        orgIds: [ID],
+        maxRecipients: 50_000,
+        audit: AUDIT,
+      });
+      expect(result).toMatchObject({
+        changed: 1,
+        unchanged: 0,
+        campaign: { id: ID },
+      });
+    });
+
+    it.each([
+      ['revision_conflict', 'TIPS_CAMPAIGN_REVISION_CONFLICT'],
+      ['invalid_transition', 'TIPS_CAMPAIGN_INVALID_TRANSITION'],
+      ['expired', 'TIPS_CAMPAIGN_EXPIRED'],
+      ['ineligible', 'TIPS_RECIPIENT_INELIGIBLE'],
+      ['reissue_required', 'TIPS_RECIPIENT_REISSUE_REQUIRED'],
+      ['not_enrolled', 'TIPS_RECIPIENT_NOT_ENROLLED'],
+      ['too_large', 'TIPS_CAMPAIGN_AUDIENCE_TOO_LARGE'],
+      ['not_found', 'TIPS_CAMPAIGN_NOT_FOUND'],
+    ])('maps %s to a stable error', async (kind, code) => {
+      const { service, repo } = setup();
+      repo.changeRecipients.mockResolvedValue({
+        kind,
+        orgIds: [ID],
+        count: 50_001,
+      });
+      await expect(
+        service.changeRecipients(AUDIT, ID, {
+          revision: 3,
+          operation: 'reissue',
+          org_ids: [ID],
+        }),
+      ).rejects.toMatchObject({ response: { code } });
+    });
+
+    it('rejects an empty, oversized, or malformed selection without a database write', async () => {
+      const { service, repo } = setup();
+      for (const ids of [
+        [],
+        ['not-an-id'],
+        Array.from(
+          { length: 501 },
+          (_, index) =>
+            `${String(index).padStart(8, '0')}-1111-4111-8111-111111111111`,
+        ),
+      ]) {
+        await expect(
+          service.changeRecipients(AUDIT, ID, {
+            revision: 3,
+            operation: 'add',
+            org_ids: ids,
+          }),
+        ).rejects.toMatchObject({
+          response: { code: 'TIPS_CAMPAIGN_INVALID' },
+        });
+      }
+      expect(repo.changeRecipients).not.toHaveBeenCalled();
+    });
+  });
   describe('review', () => {
     it('records the audience and returns a token for the current revision', async () => {
       const { service, repo } = setup();

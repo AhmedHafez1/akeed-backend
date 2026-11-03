@@ -1,4 +1,4 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, IsInt, Min, Max } from 'class-validator';
 import {
   INTERFACE_LOCALES,
   type InterfaceLocale,
@@ -18,6 +18,7 @@ export type TipsCardActionDto =
   | { kind: 'external'; url: string; label: string };
 
 export interface TipsCardDto {
+  delivery_generation: number;
   /** First view by any teammate in this organization; null means unread. */
   first_viewed_at: string | null;
   id: string;
@@ -39,5 +40,13 @@ export interface TipsCardsResponseDto {
 }
 
 export interface TipsEventResponseDto {
-  recorded: true;
+  recorded: boolean;
+}
+
+export class TipsEventDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  delivery_generation?: number;
 }

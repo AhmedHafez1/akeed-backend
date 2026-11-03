@@ -1,5 +1,6 @@
 import {
   Controller,
+  Body,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,6 +15,7 @@ import { CurrentUser } from '../auth/guards/current-user.decorator';
 import { DualAuthGuard } from '../auth/guards/dual-auth.guard';
 import {
   TipsCardsQueryDto,
+  TipsEventDto,
   type TipsCardsResponseDto,
   type TipsEventResponseDto,
 } from './dto/tips.dto';
@@ -38,8 +40,9 @@ export class TipsController {
   view(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: TipsEventDto = {},
   ): Promise<TipsEventResponseDto> {
-    return this.tips.recordEvent(user, id, 'view');
+    return this.tips.recordEvent(user, id, 'view', body.delivery_generation);
   }
 
   /** The card's button was clicked; navigation does not wait for this. */
@@ -48,17 +51,19 @@ export class TipsController {
   click(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: TipsEventDto = {},
   ): Promise<TipsEventResponseDto> {
-    return this.tips.recordEvent(user, id, 'click');
+    return this.tips.recordEvent(user, id, 'click', body.delivery_generation);
   }
 
-  /** Hides the card for the whole account, permanently. */
+  /** Hides the current delivery for the whole account. */
   @Post(':id/dismiss')
   @HttpCode(HttpStatus.OK)
   dismiss(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: TipsEventDto = {},
   ): Promise<TipsEventResponseDto> {
-    return this.tips.recordEvent(user, id, 'dismiss');
+    return this.tips.recordEvent(user, id, 'dismiss', body.delivery_generation);
   }
 }

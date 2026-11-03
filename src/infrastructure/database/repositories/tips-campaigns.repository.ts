@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { PREPAID_CREDIT_PLATFORMS } from '../../../shared/billing/credit-eligibility';
 import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 import type { InterfaceLocale } from '../../../shared/i18n/interface-locales';
@@ -15,6 +15,7 @@ import type {
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
+  tipsCampaignDeliveryHistory,
   tipsCampaignRecipients,
   tipsCampaignTranslations,
   tipsCampaigns,
@@ -95,7 +96,27 @@ export type TipsAudienceOrganizationRow = {
   first_viewed_at: string | null;
   first_clicked_at: string | null;
   dismissed_at: string | null;
+  removed_at?: string | null;
+  delivery_generation?: number | null;
+  delivery_started_at?: string | null;
+  eligible?: boolean;
 };
+
+export type TipsRecipientOperation = 'add' | 'remove' | 'reissue';
+export type TipsRecipientChangeOutcome =
+  | {
+      kind:
+        | 'not_found'
+        | 'revision_conflict'
+        | 'invalid_transition'
+        | 'expired';
+    }
+  | {
+      kind: 'ineligible' | 'reissue_required' | 'not_enrolled';
+      orgIds: string[];
+    }
+  | { kind: 'too_large'; count: number }
+  | { kind: 'updated'; changed: number; unchanged: number };
 
 /** Keyset position in a list sorted by display name, then id. */
 export interface TipsNameCursor {
@@ -109,6 +130,7 @@ export interface TipsCreatedCursor {
 }
 
 export type TipsMerchantCardRow = {
+  delivery_generation: number;
   first_viewed_at: string | null;
   id: string;
   type: TipsCampaignType;
@@ -194,7 +216,7 @@ class PublishAbort extends Error {
 }
 
 /**
- * Tips and updates campaigns, their translations and frozen recipients.
+ * Tips and updates campaigns, their translations and account deliveries.
  * Every admin write and its `admin_access_audit` row commit together.
  */
 @Injectable()
@@ -329,6 +351,226 @@ export class TipsCampaignsRepository {
       { mode: 'filters', filters: {}, selectedOrgIds: [], excludedOrgIds: [] },
       page,
       false,
+    );
+  }
+
+  /** Search eligible accounts and their existing membership in this campaign. */
+  async pageRecipientOptions(
+    id: string,
+    page: { search?: string; cursor?: TipsNameCursor; limit: number },
+  ): Promise<TipsAudienceOrganizationRow[]> {
+    const result = await this.db.execute<TipsAudienceOrganizationRow>(sql`
+      SELECT o.id AS org_id, o.name AS organization_name, i.store_name,
+        CASE WHEN i.platform_type = 'standalone' THEN NULL ELSE i.platform_store_url END AS shop_domain,
+        i.platform_type AS platform, upper(i.country_code) AS country_code,
+        false AS excluded, true AS eligible,
+        ${iso(sql`r.first_viewed_at`)} AS first_viewed_at,
+        ${iso(sql`r.first_clicked_at`)} AS first_clicked_at,
+        ${iso(sql`r.dismissed_at`)} AS dismissed_at,
+        ${iso(sql`r.removed_at`)} AS removed_at,
+        ${iso(sql`r.delivery_started_at`)} AS delivery_started_at,
+        r.delivery_generation, ${SORT_NAME} AS sort_name
+      FROM ${this.audienceFrom()}
+      LEFT JOIN tips_campaign_recipients r ON r.org_id = o.id AND r.campaign_id = ${id}::uuid
+      WHERE ${this.searchCondition(page.search)} AND ${this.nameCursorCondition(page.cursor)}
+      ORDER BY ${SORT_NAME}, o.id LIMIT ${page.limit}
+    `);
+    return Array.from(result);
+  }
+
+  async deliveryHistory(
+    id: string,
+    orgId: string,
+    before: number | undefined,
+    limit: number,
+  ) {
+    const result = await this.db.execute<{
+      delivery_generation: number;
+      delivery_started_at: string;
+      first_viewed_at: string | null;
+      first_clicked_at: string | null;
+      dismissed_at: string | null;
+      removed_at: string | null;
+      archived_at: string;
+    }>(sql`
+      SELECT delivery_generation, ${iso(sql`delivery_started_at`)} AS delivery_started_at,
+        ${iso(sql`first_viewed_at`)} AS first_viewed_at, ${iso(sql`first_clicked_at`)} AS first_clicked_at,
+        ${iso(sql`dismissed_at`)} AS dismissed_at, ${iso(sql`removed_at`)} AS removed_at,
+        ${iso(sql`archived_at`)} AS archived_at
+      FROM tips_campaign_delivery_history
+      WHERE campaign_id = ${id}::uuid AND org_id = ${orgId}::uuid
+        ${before === undefined ? sql`` : sql`AND delivery_generation < ${before}`}
+      ORDER BY delivery_generation DESC LIMIT ${limit}
+    `);
+    return Array.from(result);
+  }
+
+  /** Membership edits and their audit commit together, serialized with publish. */
+  async changeRecipients(params: {
+    id: string;
+    revision: number;
+    operation: TipsRecipientOperation;
+    orgIds: string[];
+    maxRecipients: number;
+    audit: TipsAdminAudit;
+  }): Promise<TipsRecipientChangeOutcome> {
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        const [campaign] = await tx
+          .select()
+          .from(tipsCampaigns)
+          .where(eq(tipsCampaigns.id, params.id))
+          .for('update');
+        if (!campaign) return { kind: 'not_found' } as const;
+        if (campaign.revision !== params.revision)
+          return { kind: 'revision_conflict' } as const;
+        if (!['published', 'paused'].includes(campaign.status))
+          return { kind: 'invalid_transition' } as const;
+        // Use the database clock, as merchant eligibility does.
+        const expired = await tx.execute(
+          sql`SELECT 1 WHERE ${campaign.expiresAt}::timestamptz <= clock_timestamp()`,
+        );
+        if (Array.from(expired).length) return { kind: 'expired' } as const;
+        const recipients = await tx
+          .select()
+          .from(tipsCampaignRecipients)
+          .where(
+            and(
+              eq(tipsCampaignRecipients.campaignId, params.id),
+              inArray(tipsCampaignRecipients.orgId, params.orgIds),
+            ),
+          )
+          .for('update');
+        const byId = new Map(recipients.map((row) => [row.orgId, row]));
+        if (params.operation !== 'remove') {
+          const eligible = await tx.execute<{ org_id: string }>(
+            sql`SELECT org_id FROM integrations WHERE is_active = true AND org_id IN (${inList(params.orgIds)}) FOR SHARE`,
+          );
+          const eligibleIds = new Set(
+            Array.from(eligible).map((row) => row.org_id),
+          );
+          const ineligible = params.orgIds.filter((id) => !eligibleIds.has(id));
+          if (ineligible.length)
+            return { kind: 'ineligible', orgIds: ineligible } as const;
+        }
+        if (params.operation === 'add') {
+          const reissue = recipients.filter(
+            (row) => row.removedAt !== null || row.dismissedAt !== null,
+          );
+          if (reissue.length)
+            return {
+              kind: 'reissue_required',
+              orgIds: reissue.map((row) => row.orgId),
+            } as const;
+        }
+        if (params.operation === 'reissue') {
+          const missing = params.orgIds.filter((id) => !byId.has(id));
+          if (missing.length)
+            return { kind: 'not_enrolled', orgIds: missing } as const;
+        }
+        const changedIds = params.orgIds.filter((id) => {
+          const row = byId.get(id);
+          if (params.operation === 'add') return !row;
+          if (params.operation === 'remove')
+            return row && row.removedAt === null;
+          return row && (row.removedAt !== null || row.dismissedAt !== null);
+        });
+        if (!changedIds.length)
+          return {
+            kind: 'updated',
+            changed: 0,
+            unchanged: params.orgIds.length,
+          } as const;
+        const [countRow] = Array.from(
+          await tx.execute<{ count: number }>(
+            sql`SELECT count(*)::int AS count FROM tips_campaign_recipients WHERE campaign_id = ${params.id}::uuid AND removed_at IS NULL`,
+          ),
+        );
+        const delta =
+          params.operation === 'add'
+            ? changedIds.length
+            : params.operation === 'remove'
+              ? -changedIds.length
+              : changedIds.filter((id) => byId.get(id)?.removedAt !== null)
+                  .length;
+        const count = Number(countRow.count) + delta;
+        if (count > params.maxRecipients)
+          return { kind: 'too_large', count } as const;
+        if (params.operation === 'add') {
+          await tx
+            .insert(tipsCampaignRecipients)
+            .values(
+              changedIds.map((orgId) => ({ campaignId: params.id, orgId })),
+            );
+        } else if (params.operation === 'remove') {
+          await tx
+            .update(tipsCampaignRecipients)
+            .set({ removedAt: sql`now()` })
+            .where(
+              and(
+                eq(tipsCampaignRecipients.campaignId, params.id),
+                inArray(tipsCampaignRecipients.orgId, changedIds),
+              ),
+            );
+        } else {
+          await tx.insert(tipsCampaignDeliveryHistory).values(
+            changedIds.map((id) => {
+              const row = byId.get(id)!;
+              return {
+                campaignId: params.id,
+                orgId: id,
+                deliveryGeneration: row.deliveryGeneration,
+                deliveryStartedAt: row.deliveryStartedAt,
+                firstViewedAt: row.firstViewedAt,
+                firstClickedAt: row.firstClickedAt,
+                dismissedAt: row.dismissedAt,
+                removedAt: row.removedAt,
+              };
+            }),
+          );
+          await tx
+            .update(tipsCampaignRecipients)
+            .set({
+              deliveryGeneration: sql`${tipsCampaignRecipients.deliveryGeneration} + 1`,
+              deliveryStartedAt: sql`now()`,
+              removedAt: null,
+              firstViewedAt: null,
+              firstClickedAt: null,
+              dismissedAt: null,
+            })
+            .where(
+              and(
+                eq(tipsCampaignRecipients.campaignId, params.id),
+                inArray(tipsCampaignRecipients.orgId, changedIds),
+              ),
+            );
+        }
+        await tx
+          .update(tipsCampaigns)
+          .set({
+            revision: sql`${tipsCampaigns.revision} + 1`,
+            recipientCount: count,
+            updatedBy: params.audit.userId,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(tipsCampaigns.id, params.id));
+        await this.audit(
+          tx,
+          `tips-campaign.recipients.${params.operation}`,
+          params.audit,
+          {
+            campaignId: params.id,
+            orgIds: changedIds,
+            revision: campaign.revision + 1,
+            changed: changedIds.length,
+          },
+        );
+        return {
+          kind: 'updated',
+          changed: changedIds.length,
+          unchanged: params.orgIds.length - changedIds.length,
+        } as const;
+      }),
     );
   }
 
@@ -469,7 +711,7 @@ export class TipsCampaignsRepository {
   }
 
   /**
-   * Freezes the recipients and activates the campaign in one transaction.
+   * Snapshots the initial recipients and activates the campaign atomically.
    * The recipients are inserted from the live audience and hashed in the same
    * statement; if that differs from what the admin reviewed, everything rolls
    * back, so merchants never see a partial or unreviewed snapshot. A retry
@@ -680,7 +922,7 @@ export class TipsCampaignsRepository {
           count(r.first_clicked_at)::int AS clicked,
           count(r.dismissed_at)::int AS dismissed
         FROM tips_campaign_recipients r
-        WHERE r.campaign_id IN (SELECT id FROM page)
+        WHERE r.campaign_id IN (SELECT id FROM page) AND r.removed_at IS NULL
         GROUP BY r.campaign_id
       )
       SELECT
@@ -719,7 +961,7 @@ export class TipsCampaignsRepository {
         count(first_clicked_at)::int AS clicked,
         count(dismissed_at)::int AS dismissed
       FROM tips_campaign_recipients
-      WHERE campaign_id = ${id}::uuid
+      WHERE campaign_id = ${id}::uuid AND removed_at IS NULL
     `);
     const [row] = Array.from(result);
     return {
@@ -730,7 +972,7 @@ export class TipsCampaignsRepository {
     };
   }
 
-  /** The frozen recipients of a published campaign, with their timestamps. */
+  /** Enrolled accounts, including removed accounts so staff can restore them. */
   async pageRecipients(
     id: string,
     page: { search?: string; cursor?: TipsNameCursor; limit: number },
@@ -747,6 +989,9 @@ export class TipsCampaignsRepository {
         ${iso(sql`r.first_viewed_at`)} AS first_viewed_at,
         ${iso(sql`r.first_clicked_at`)} AS first_clicked_at,
         ${iso(sql`r.dismissed_at`)} AS dismissed_at,
+        ${iso(sql`r.removed_at`)} AS removed_at,
+        ${iso(sql`r.delivery_started_at`)} AS delivery_started_at,
+        r.delivery_generation, (i.id IS NOT NULL) AS eligible,
         ${SORT_NAME} AS sort_name
       FROM tips_campaign_recipients r
       JOIN organizations o ON o.id = r.org_id
@@ -775,6 +1020,7 @@ export class TipsCampaignsRepository {
       SELECT
         c.id,
         c.type,
+        r.delivery_generation,
         ${iso(sql`r.first_viewed_at`)} AS first_viewed_at,
         c.action_kind,
         c.action_route,
@@ -798,10 +1044,11 @@ export class TipsCampaignsRepository {
         ON t.campaign_id = c.id AND t.locale IN (${inList(locales)})
       WHERE r.org_id = ${orgId}::uuid
         AND r.dismissed_at IS NULL
+        AND r.removed_at IS NULL
         AND c.status = 'published'
         AND (c.expires_at IS NULL OR c.expires_at > now())
-      GROUP BY c.id, r.first_viewed_at
-      ORDER BY c.published_at DESC, c.id DESC
+      GROUP BY c.id, r.first_viewed_at, r.delivery_generation, r.delivery_started_at
+      ORDER BY r.delivery_started_at DESC, c.id DESC
       LIMIT ${limit}
     `);
     return Array.from(result);
@@ -827,6 +1074,7 @@ export class TipsCampaignsRepository {
         and(
           eq(tipsCampaignRecipients.campaignId, campaignId),
           eq(tipsCampaignRecipients.orgId, orgId),
+          sql`${tipsCampaignRecipients.removedAt} IS NULL`,
         ),
       )
       .limit(1);
@@ -842,7 +1090,8 @@ export class TipsCampaignsRepository {
     campaignId: string,
     orgId: string,
     event: 'view' | 'click' | 'dismiss',
-  ): Promise<void> {
+    generation = 1,
+  ): Promise<boolean> {
     const column = {
       view: sql.raw('first_viewed_at'),
       click: sql.raw('first_clicked_at'),
@@ -854,17 +1103,20 @@ export class TipsCampaignsRepository {
         : sql`c.status = 'published' AND (c.expires_at IS NULL OR c.expires_at > now()) AND r.dismissed_at IS NULL`;
     const needsAction =
       event === 'click' ? sql`AND c.action_kind IS NOT NULL` : sql``;
-    await this.db.execute(sql`
+    const rows = await this.db.execute(sql`
       UPDATE tips_campaign_recipients r
       SET ${column} = COALESCE(r.${column}, now())
       FROM tips_campaigns c
       WHERE r.campaign_id = ${campaignId}::uuid
         AND r.org_id = ${orgId}::uuid
         AND c.id = r.campaign_id
-        AND r.${column} IS NULL
+        AND r.removed_at IS NULL
+        AND r.delivery_generation = ${generation}
         AND ${visible}
         ${needsAction}
+      RETURNING r.delivery_generation
     `);
+    return Array.from(rows).length > 0;
   }
 
   audienceFromRecord(campaign: TipsCampaignRecord): TipsAudience {

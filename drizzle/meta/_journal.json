@@ -596,6 +596,13 @@
       "when": 1794182400000,
       "tag": "0084_tips_campaign_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1794182400001,
+      "tag": "0087_tips_recipient_deliveries",
+      "breakpoints": true
     }
   ]
 }
