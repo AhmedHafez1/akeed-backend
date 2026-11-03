@@ -18,7 +18,7 @@ import {
 } from '../src/infrastructure/spokes/meta/own-number/whatsapp-connection-credentials';
 
 /**
- * Merchant WhatsApp connections against real PostgreSQL: migration 0084 and
+ * Merchant WhatsApp connections against real PostgreSQL: migration 0085 and
  * its three repositories. Synthetic data only; nothing leaves the process.
  */
 function isolatedDatabaseUrl(): string {
@@ -99,7 +99,7 @@ describe('WhatsApp connections contract', () => {
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${namespace} GRANT ALL ON TABLES TO anon, authenticated;
     `);
     const migration = readFileSync(
-      resolve(__dirname, '../drizzle/0084_whatsapp_connections.sql'),
+      resolve(__dirname, '../drizzle/0085_whatsapp_connections.sql'),
       'utf8',
     );
     // Twice, to prove the migration re-runs.

@@ -27,6 +27,8 @@ export interface TipsCardDto {
   title: string;
   description: string;
   action: TipsCardActionDto | null;
+  /** Also shown as the slim banner on the dashboard and confirmations. */
+  show_as_banner: boolean;
   published_at: string;
 }
 

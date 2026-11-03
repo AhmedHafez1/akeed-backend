@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { PREPAID_CREDIT_PLATFORMS } from '../../../shared/billing/credit-eligibility';
 import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 import type { InterfaceLocale } from '../../../shared/i18n/interface-locales';
@@ -71,6 +71,7 @@ export type TipsCampaignListRow = TipsCampaignAnalytics & {
   type: TipsCampaignType;
   status: TipsCampaignStatus;
   action_kind: string | null;
+  show_as_banner: boolean;
   published_at: string | null;
   expires_at: string | null;
   recipient_count: number | null;
@@ -114,6 +115,7 @@ export type TipsMerchantCardRow = {
   action_kind: 'internal' | 'external' | null;
   action_route: string | null;
   action_url: string | null;
+  show_as_banner: boolean;
   published_at: string;
   translations: TipsTranslation[];
 };
@@ -162,6 +164,7 @@ const AUDIT_ACTIONS = {
   pause: 'tips-campaign.pause',
   resume: 'tips-campaign.resume',
   archive: 'tips-campaign.archive',
+  banner: 'tips-campaign.banner',
 } as const;
 
 const SORT_NAME = sql.raw(
@@ -599,6 +602,50 @@ export class TipsCampaignsRepository {
     );
   }
 
+  /**
+   * Turns the banner on or off for any campaign that is not archived. It
+   * leaves the revision alone, so a pending review and an open editor stay
+   * valid.
+   */
+  async setBanner(params: {
+    id: string;
+    showAsBanner: boolean;
+    audit: TipsAdminAudit;
+  }): Promise<TipsTransitionOutcome> {
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        const [campaign] = await tx
+          .update(tipsCampaigns)
+          .set({
+            showAsBanner: params.showAsBanner,
+            updatedBy: params.audit.userId,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(tipsCampaigns.id, params.id),
+              ne(tipsCampaigns.status, 'archived'),
+            ),
+          )
+          .returning();
+        if (!campaign) {
+          const [exists] = await tx
+            .select({ id: tipsCampaigns.id })
+            .from(tipsCampaigns)
+            .where(eq(tipsCampaigns.id, params.id));
+          return exists
+            ? ({ kind: 'state_changed' } as const)
+            : ({ kind: 'not_found' } as const);
+        }
+        await this.audit(tx, AUDIT_ACTIONS.banner, params.audit, {
+          campaignId: params.id,
+          showAsBanner: params.showAsBanner,
+        });
+        return { kind: 'updated', campaign } as const;
+      }),
+    );
+  }
+
   /** One page of campaigns, newest first, with analytics for the page only. */
   async listPage(page: {
     status?: TipsCampaignStatus;
@@ -642,6 +689,7 @@ export class TipsCampaignsRepository {
         page.type,
         page.status,
         page.action_kind,
+        page.show_as_banner,
         ${iso(sql`page.published_at`)} AS published_at,
         ${iso(sql`page.expires_at`)} AS expires_at,
         page.recipient_count,
@@ -731,6 +779,7 @@ export class TipsCampaignsRepository {
         c.action_kind,
         c.action_route,
         c.action_url,
+        c.show_as_banner,
         ${iso(sql`c.published_at`)} AS published_at,
         COALESCE(
           json_agg(

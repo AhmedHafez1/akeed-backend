@@ -32,6 +32,7 @@ import {
   normalizeTipsAudience,
   normalizeTipsContent,
   parseTipsReviewToken,
+  tipsBannerRejection,
   tipsEditRejection,
   validateTipsName,
   type TipsActionInput,
@@ -68,6 +69,8 @@ export interface AdminTipsCampaignView {
   status: TipsCampaignStatus;
   effective_status: TipsCampaignEffectiveStatus;
   action: TipsCampaignAction | null;
+  /** Also shown to merchants as the slim banner, beside its card. */
+  show_as_banner: boolean;
   expires_at: string | null;
   audience: {
     mode: TipsAudience['mode'];
@@ -206,6 +209,7 @@ export class AdminTipsCampaignsService {
           now,
         ),
         has_action: row.action_kind !== null,
+        show_as_banner: row.show_as_banner,
         published_at: row.published_at,
         expires_at: row.expires_at,
         created_at: row.created_at,
@@ -503,6 +507,29 @@ export class AdminTipsCampaignsService {
   }
 
   /**
+   * Shows or hides the campaign as the merchant banner. It takes effect at
+   * once and needs no review; repeating the current value changes nothing.
+   */
+  async setBanner(
+    audit: TipsAdminAudit,
+    id: string,
+    showAsBanner: boolean,
+  ): Promise<AdminTipsCampaignView> {
+    const { campaign } = await this.require(id);
+    const rejection = tipsBannerRejection(campaign.status);
+    if (rejection) throw this.conflict(rejection, this.editMessage(rejection));
+    if (campaign.showAsBanner === showAsBanner) return this.get(id);
+    const outcome = await this.campaigns.setBanner({ id, showAsBanner, audit });
+    if (outcome.kind === 'not_found') throw this.notFound();
+    if (outcome.kind === 'state_changed')
+      throw this.conflict(
+        TIPS_CAMPAIGN_ERROR_CODES.notEditable,
+        this.editMessage(TIPS_CAMPAIGN_ERROR_CODES.notEditable),
+      );
+    return this.get(id);
+  }
+
+  /**
    * A draft lists its live audience with exclusions flagged; a published
    * campaign lists its frozen recipients with their first events.
    */
@@ -626,6 +653,7 @@ export class AdminTipsCampaignsService {
         this.now(),
       ),
       action,
+      show_as_banner: campaign.showAsBanner,
       expires_at: toIso(campaign.expiresAt),
       audience: {
         mode: audience.mode,

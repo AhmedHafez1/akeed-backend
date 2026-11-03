@@ -18,6 +18,7 @@ import { AdminAccessGuard } from './admin-access.guard';
 import { AdminTipsCampaignsService } from './admin-tips-campaigns.service';
 import type { RequestWithAdmin } from './admin.types';
 import {
+  AdminTipsBannerDto,
   AdminTipsCampaignCreateDto,
   AdminTipsCampaignUpdateDto,
   AdminTipsListQueryDto,
@@ -143,6 +144,22 @@ export class AdminTipsCampaignsController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.campaigns.changeLifecycle(this.audit(request), id, 'archive');
+  }
+
+  @Post(':id/banner')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(WRITE_THROTTLE)
+  @Header('Cache-Control', 'private, no-store')
+  setBanner(
+    @Req() request: RequestWithAdmin,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: AdminTipsBannerDto,
+  ) {
+    return this.campaigns.setBanner(
+      this.audit(request),
+      id,
+      body.show_as_banner,
+    );
   }
 
   private audit(request: RequestWithAdmin) {

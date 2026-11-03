@@ -39,6 +39,7 @@ function record(
     publishedBy: null,
     publishedReviewToken: null,
     recipientCount: null,
+    showAsBanner: false,
     pausedAt: null,
     archivedAt: null,
     createdBy: AUDIT.userId,
@@ -70,6 +71,7 @@ function detail(
 
 function setup(current: TipsCampaignDetail = detail()) {
   const repo = {
+    listPage: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue(current),
     analytics: jest.fn().mockResolvedValue({
       recipients: 0,
@@ -91,6 +93,9 @@ function setup(current: TipsCampaignDetail = detail()) {
       .mockResolvedValue({ kind: 'updated', campaign: current.campaign }),
     create: jest.fn().mockResolvedValue(current.campaign),
     transition: jest
+      .fn()
+      .mockResolvedValue({ kind: 'updated', campaign: current.campaign }),
+    setBanner: jest
       .fn()
       .mockResolvedValue({ kind: 'updated', campaign: current.campaign }),
   };
@@ -417,6 +422,92 @@ describe('AdminTipsCampaignsService', () => {
         (await rejection(raced.service.changeLifecycle(AUDIT, ID, 'pause')))
           .code,
       ).toBe('TIPS_CAMPAIGN_REVISION_CONFLICT');
+    });
+  });
+
+  describe('banner', () => {
+    it.each([false, true])(
+      'exposes banner=%s in list and detail read models',
+      async (showAsBanner) => {
+        const { service, repo } = setup(detail({ showAsBanner }));
+        repo.listPage.mockResolvedValue([
+          {
+            id: ID,
+            name: 'Campaign',
+            type: 'tip',
+            status: 'draft',
+            action_kind: null,
+            show_as_banner: showAsBanner,
+            published_at: null,
+            expires_at: null,
+            created_at: NOW.toISOString(),
+            recipient_count: null,
+            recipients: 0,
+            viewed: 0,
+            clicked: 0,
+            dismissed: 0,
+          },
+        ]);
+        expect((await service.get(ID)).show_as_banner).toBe(showAsBanner);
+        expect((await service.list({})).items[0].show_as_banner).toBe(
+          showAsBanner,
+        );
+      },
+    );
+
+    const published = {
+      status: 'published' as const,
+      publishedAt: '2026-10-01 00:00:00+00',
+      recipientCount: 2,
+    };
+
+    it('switches a published campaign without touching its revision', async () => {
+      const { service, repo } = setup(detail(published));
+      await service.setBanner(AUDIT, ID, true);
+      expect(repo.setBanner).toHaveBeenCalledWith({
+        id: ID,
+        showAsBanner: true,
+        audit: AUDIT,
+      });
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(repo.saveReview).not.toHaveBeenCalled();
+    });
+
+    it('allows drafts and paused campaigns', async () => {
+      for (const status of ['draft', 'paused'] as const) {
+        const { service, repo } = setup(detail({ ...published, status }));
+        await service.setBanner(AUDIT, ID, true);
+        expect(repo.setBanner).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('treats the current value as done', async () => {
+      const { service, repo } = setup(
+        detail({ ...published, showAsBanner: true }),
+      );
+      const view = await service.setBanner(AUDIT, ID, true);
+      expect(repo.setBanner).not.toHaveBeenCalled();
+      expect(view.show_as_banner).toBe(true);
+    });
+
+    it('refuses an archived campaign, also when archived meanwhile', async () => {
+      const archived = setup(
+        detail({
+          ...published,
+          status: 'archived',
+          archivedAt: NOW.toISOString(),
+        }),
+      );
+      expect(
+        (await rejection(archived.service.setBanner(AUDIT, ID, true))).code,
+      ).toBe('TIPS_CAMPAIGN_NOT_EDITABLE');
+      expect(archived.repo.setBanner).not.toHaveBeenCalled();
+
+      const raced = setup(detail(published));
+      raced.repo.setBanner.mockResolvedValue({ kind: 'state_changed' });
+      expect(
+        (await rejection(raced.service.setBanner(AUDIT, ID, true))).code,
+      ).toBe('TIPS_CAMPAIGN_NOT_EDITABLE');
     });
   });
 });

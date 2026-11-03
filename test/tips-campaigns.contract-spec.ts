@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '../src/infrastructure/database';
+import { AdminTipsCampaignsService } from '../src/modules/admin/admin-tips-campaigns.service';
 import {
   TipsCampaignsRepository,
   type TipsCampaignRecord,
@@ -43,6 +44,7 @@ function isolatedDatabaseUrl(): string {
 const MIGRATIONS = [
   '0077_tips_campaigns.sql',
   '0080_tips_campaign_change_note_types.sql',
+  '0084_tips_campaign_banner.sql',
 ];
 const namespace = `tips_campaigns_${randomUUID().replaceAll('-', '')}`;
 const client = postgres(isolatedDatabaseUrl(), {
@@ -56,6 +58,7 @@ const repository = new TipsCampaignsRepository(
 );
 const STAFF = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
 const AUDIT = { userId: STAFF, requestId: 'req-contract' };
+const legacyCampaignId = randomUUID();
 const MAX = 50_000;
 let created = false;
 
@@ -247,6 +250,10 @@ describe('tips campaigns (Postgres contract)', () => {
     `);
     // Applying each again proves it re-runs cleanly.
     for (const file of MIGRATIONS) {
+      if (file === '0084_tips_campaign_banner.sql') {
+        await client`INSERT INTO tips_campaigns (id, name, type, created_by, updated_by)
+          VALUES (${legacyCampaignId}, 'Existing campaign', 'tip', ${STAFF}, ${STAFF})`;
+      }
       await migrate(file);
       await migrate(file);
     }
@@ -761,6 +768,127 @@ describe('tips campaigns (Postgres contract)', () => {
           limit: 50,
         });
         expect(recipients.length).toBe(published.recipients);
+      }
+    });
+  });
+  describe('banner setting', () => {
+    const admin = new AdminTipsCampaignsService(repository);
+
+    it('defaults existing and new campaigns to off and refuses null', async () => {
+      expect(
+        (await repository.findById(legacyCampaignId))?.campaign.showAsBanner,
+      ).toBe(false);
+      const campaign = await draft(filters({}));
+      expect(campaign.showAsBanner).toBe(false);
+      await expect(
+        client`UPDATE tips_campaigns SET show_as_banner = NULL WHERE id = ${campaign.id}`,
+      ).rejects.toThrow();
+    });
+
+    it.each(TIPS_CAMPAIGN_TYPES)(
+      'switches a published %s without changing review, revision or recipients',
+      async (type) => {
+        const orgId = await merchant();
+        const campaign = await draft(direct([orgId]), { type });
+        await reviewAndPublish(campaign);
+        const before = (await repository.findById(campaign.id))!.campaign;
+        const changed = await admin.setBanner(AUDIT, campaign.id, true);
+        expect(changed.show_as_banner).toBe(true);
+        const after = (await repository.findById(campaign.id))!.campaign;
+        for (const key of [
+          'revision',
+          'reviewedRevision',
+          'reviewedAudienceHash',
+          'reviewedAt',
+          'publishedAt',
+          'recipientCount',
+        ] as const)
+          expect(after[key]).toEqual(before[key]);
+        expect(await recipientIds(campaign.id)).toEqual([orgId]);
+        expect(
+          (await repository.findMerchantCards(orgId, 'en', 20)).find(
+            (row) => row.id === campaign.id,
+          )?.show_as_banner,
+        ).toBe(true);
+        expect(
+          (await admin.list({ search: campaign.name, limit: 100 })).items.find(
+            (row) => row.id === campaign.id,
+          )?.show_as_banner,
+        ).toBe(true);
+        const audits = await client<
+          { metadata: unknown }[]
+        >`SELECT metadata FROM admin_access_audit WHERE action = 'tips-campaign.banner' AND metadata->>'campaignId' = ${campaign.id}`;
+        expect(audits).toEqual([
+          { metadata: { campaignId: campaign.id, showAsBanner: true } },
+        ]);
+        const updatedAt = after.updatedAt;
+        await admin.setBanner(AUDIT, campaign.id, true);
+        expect(
+          (await repository.findById(campaign.id))!.campaign.updatedAt,
+        ).toBe(updatedAt);
+        const [count] = await client<
+          { count: number }[]
+        >`SELECT count(*)::int AS count FROM admin_access_audit WHERE action = 'tips-campaign.banner' AND metadata->>'campaignId' = ${campaign.id}`;
+        expect(count.count).toBe(1);
+        await admin.setBanner(AUDIT, campaign.id, false);
+        expect(
+          (await repository.findMerchantCards(orgId, 'en', 20))[0]
+            .show_as_banner,
+        ).toBe(false);
+      },
+    );
+
+    it('keeps a reviewed draft publishable and refuses archived writes', async () => {
+      const campaign = await draft(direct([await merchant()]));
+      const summary = await repository.summarizeAudience(
+        repository.audienceFromRecord(campaign),
+      );
+      await repository.saveReview(
+        campaign.id,
+        campaign.revision,
+        summary,
+        STAFF,
+      );
+      const review = await admin.review(AUDIT, campaign.id);
+      await admin.setBanner(AUDIT, campaign.id, true);
+      await expect(
+        admin.publish(AUDIT, campaign.id, review.review_token),
+      ).resolves.toMatchObject({ status: 'published', show_as_banner: true });
+      await admin.changeLifecycle(AUDIT, campaign.id, 'archive');
+      await expect(
+        admin.setBanner(AUDIT, campaign.id, true),
+      ).rejects.toMatchObject({
+        response: { code: 'TIPS_CAMPAIGN_NOT_EDITABLE' },
+      });
+      expect(
+        await repository.setBanner({
+          id: campaign.id,
+          showAsBanner: false,
+          audit: AUDIT,
+        }),
+      ).toEqual({ kind: 'state_changed' });
+    });
+
+    it('rolls the setting back when the audit cannot be written', async () => {
+      const campaign = await draft(filters({}));
+      await client.unsafe(
+        "ALTER TABLE admin_access_audit ADD CONSTRAINT refuse_banner_audit CHECK (action <> 'tips-campaign.banner') NOT VALID",
+      );
+      try {
+        await expect(
+          repository.setBanner({
+            id: campaign.id,
+            showAsBanner: true,
+            audit: AUDIT,
+          }),
+        ).rejects.toThrow();
+        expect(
+          (await repository.findById(campaign.id))!.campaign.showAsBanner,
+        ).toBe(false);
+      } finally {
+        await client.unsafe(
+          'ALTER TABLE admin_access_audit DROP CONSTRAINT refuse_banner_audit',
+        );
       }
     });
   });

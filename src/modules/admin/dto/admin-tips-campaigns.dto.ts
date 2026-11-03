@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -166,6 +167,11 @@ export class AdminTipsPublishDto {
   @IsString()
   @MaxLength(200)
   review_token!: string;
+}
+
+export class AdminTipsBannerDto {
+  @IsBoolean()
+  show_as_banner!: boolean;
 }
 
 export class AdminTipsListQueryDto {

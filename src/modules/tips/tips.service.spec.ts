@@ -48,6 +48,7 @@ describe('TipsService', () => {
         action_kind: 'internal',
         action_route: 'settings_timing',
         action_url: null,
+        show_as_banner: true,
         first_viewed_at: null,
         published_at: '2026-10-25T10:00:00.000Z',
         translations: [en, ar],
@@ -69,6 +70,7 @@ describe('TipsService', () => {
           title: 'ساعات الهدوء',
           description: 'نص',
           action: { kind: 'internal', route: 'settings_timing', label: 'افتح' },
+          show_as_banner: true,
           first_viewed_at: null,
           published_at: '2026-10-25T10:00:00.000Z',
         },
@@ -112,6 +114,7 @@ describe('TipsService', () => {
     expect(card.locale).toBe('en');
     expect(card.title).toBe('Quiet hours');
     expect(card.action).toBeNull();
+    expect(card.show_as_banner).toBe(false);
   });
 
   it('tells viewers they cannot dismiss, and refuses their dismissal', async () => {
