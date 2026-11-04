@@ -10,6 +10,7 @@ import {
 } from '../../shared/billing/entitlement';
 import { getBillingPeriodStart } from '../../shared/billing/billing-period';
 import { ownNumberLimit } from '../../shared/billing/billing-plan';
+import { usagePool } from '../../shared/billing/usage-pools';
 import {
   nextSendDisplayedCost,
   periodicUsageForNextSend,
@@ -64,6 +65,7 @@ export class BillingEntitlementService {
         consumedCount: availability.consumedCount,
         credits: availability.credits,
         creditDenial: availability.reason,
+        pools: null,
       };
     }
     const usage = source
@@ -77,8 +79,15 @@ export class BillingEntitlementService {
     const sender = source
       ? await this.predictSender(source.orgId)
       : 'akeed_system';
+    const pools = {
+      akeed: usagePool(usage.consumedCount, entitlement.includedLimit),
+      ownNumber: usagePool(
+        usage.ownNumberConsumed ?? 0,
+        ownNumberLimit(entitlement.includedLimit),
+      ),
+    };
     if (sender !== 'merchant_own')
-      return { ...entitlement, consumedCount: usage.consumedCount };
+      return { ...entitlement, consumedCount: usage.consumedCount, pools };
     const combined = periodicUsageForNextSend(
       {
         akeedUsed: usage.consumedCount,
@@ -92,6 +101,7 @@ export class BillingEntitlementService {
       ...entitlement,
       consumedCount: combined.used,
       includedLimit: combined.limit,
+      pools,
     };
   }
 

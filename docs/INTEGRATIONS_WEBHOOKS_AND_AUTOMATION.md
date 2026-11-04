@@ -1379,3 +1379,12 @@ The `whatsapp-sender-alerts` BullMQ queue evaluates persisted facts after sender
 Email uses `EMAIL_PORT` and the existing Resend settings. The active store's notification email is preferred, otherwise the oldest owner's sign-in email; Shopify placeholder addresses are skipped. Copy uses the store's message language (Arabic, English, Urdu, Spanish, French or Turkish), with Arabic for auto or unknown values. Payment and restriction instructions link to WhatsApp Manager. Emails contain no customer identifiers, message bodies, credentials or provider error text. With `EMAIL_ALERTS_ENABLED=false`, incidents record `email_disabled` and API facts remain available; missing recipients record `no_recipient`. Neither case is replayed merely because email is later enabled.
 
 Validate with `scripts/test-whatsapp-sender-alerts-contract.ps1` against disposable PostgreSQL and the sender-alert unit suites. The migration is additive and uses the existing email switch; no new environment variables are required.
+
+
+## WhatsApp sender read models
+
+`GET /api/whatsapp-sender` retains connect availability and public signup IDs, and adds `sendingEnabled`, safe alert facts, role permissions, and `lastAcceptedSend`. Connect/disconnect is owner-only; owners and admins can change thank-you settings; viewers can read status. Permissions describe role capabilities, while endpoint state checks still apply.
+
+The last accepted confirmation or reminder is a historical observation with sender, reason, acceptance time, and delivery status. It is separate from current readiness. `GET /api/whatsapp-sender/connection` preserves template counts and adds persisted quality/degradation facts and `templateDetails`: key, language, provider language code, status, category, and current sender/reason. Missing live templates appear explicitly. Current readiness uses the same policy as sending and can differ by template and language.
+
+These reads do not call Meta, enqueue jobs, open incidents, or deliver email. They never expose business tokens, registration PINs, ciphertext, raw provider errors, or staff-only template diagnostics.

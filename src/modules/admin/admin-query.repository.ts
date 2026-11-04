@@ -40,6 +40,12 @@ export interface AdminStoreQueryRow {
   paid_subscription_activated_at: string | null;
   provenance: Record<string, string> | null;
   usage_used: number | string | null;
+  own_number_used?: number | string;
+  credit_spare?: number | string;
+  whatsapp_state?: string | null;
+  whatsapp_reason?: string | null;
+  last_sender_kind?: string | null;
+  last_sender_reason?: string | null;
   usage_limit: number | string | null;
   last_activity_at: string | null;
   failed_24h: number | string | null;
@@ -721,7 +727,7 @@ export class AdminQueryRepository {
           (CASE
             WHEN NOT is_credit THEN NULL
             WHEN COALESCE(credit_posted_balance, 0) < 0 THEN 'debt'
-            WHEN ${available} = 0 THEN 'zero'
+            WHEN ${available} = 0 AND COALESCE(credit_spare, 0) = 0 THEN 'zero'
             WHEN ${available} <= ${derivation.lowBalanceThreshold}::int THEN 'low'
             ELSE 'ok' END) AS credit_balance_state
         FROM fallback_stores
@@ -790,6 +796,12 @@ export class AdminQueryRepository {
         l.paid_subscription_activated_at,
         l.provenance,
         COALESCE(u.consumed_count, 0) AS usage_used,
+        COALESCE(u.own_number_consumed, 0) AS own_number_used,
+        ca.spare_credit AS credit_spare,
+        (SELECT c.state FROM whatsapp_connections c WHERE c.org_id = i.org_id) AS whatsapp_state,
+        (SELECT COALESCE(c.degraded_class, c.state_reason) FROM whatsapp_connections c WHERE c.org_id = i.org_id) AS whatsapp_reason,
+        (SELECT d.sender_kind FROM verification_message_dispatches d WHERE d.org_id = i.org_id AND d.integration_id = i.id AND d.accepted_at IS NOT NULL AND d.kind::text IN ('initial','follow_up') AND COALESCE(d.metadata->>'billingExempt','false') <> 'true' ORDER BY d.accepted_at DESC, d.id DESC LIMIT 1) AS last_sender_kind,
+        (SELECT d.sender_reason FROM verification_message_dispatches d WHERE d.org_id = i.org_id AND d.integration_id = i.id AND d.accepted_at IS NOT NULL AND d.kind::text IN ('initial','follow_up') AND COALESCE(d.metadata->>'billingExempt','false') <> 'true' ORDER BY d.accepted_at DESC, d.id DESC LIMIT 1) AS last_sender_reason,
         COALESCE(u.included_limit, 0) AS usage_limit,
         GREATEST(
           i.updated_at,

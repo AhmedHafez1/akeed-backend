@@ -329,5 +329,6 @@ export function creditUsageHarness() {
     balance,
     adjust,
     namespace,
+    scaffold,
   };
 }

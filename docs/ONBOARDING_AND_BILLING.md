@@ -452,3 +452,12 @@ npm --prefix akeed-frontend run build
 | Plan change resets usage                          | `consumedCount` and `blockedCount` reset, new `includedLimit` applied.                                            |
 | Settings page billing tab shows usage             | Displays `used / limit`, period dates, and warning banner at 80% and 95%.                                         |
 | Missing store name during billing initiation      | Returns `400 Bad Request` with prerequisite error.                                                                |
+
+
+## Per-message credit usage
+
+Authenticated members can read `GET /api/billing/credits/usage?timeZone=Africa%2FCairo`. The timezone defaults to UTC and must be a named timezone; invalid input returns the existing billing validation code. The response is private and uncached.
+
+The response includes `asOf`, `timeZone`, `monthStart`, `usedThisMonth`, a monthly `bySender` breakdown, and fourteen ordered `daily` buckets with displayed credits and sender breakdowns. Totals come from accepted prepaid dispatches and their actual recorded costs. Refunds restate the original send day. A send funded by the spare credit is counted even though it makes no ledger posting; a pack posting is never treated as two messages on its posting day. Legacy dispatches use their linked consumption and reversal evidence. If a relevant accepted legacy dispatch has no billing evidence, the endpoint returns 503 and the UI shows unavailable; it does not substitute a partial or estimated total. Billing-exempt tests and free merchant-number service replies contribute no usage; charged shared-number thank-yous are already represented by their billing dispatch and counted once. Partial and free fallbacks use their actual recorded cost.
+
+Settings and onboarding usage also expose `pools.akeed` and `pools.ownNumber`, each containing used, limit, and remaining messages, while retaining the existing aggregate fields. These are accounting pools: a sender can draw from a different pool under the fallback and healthy-number spillover rules. Admin store responses carry the same separate pool figures, connection and last-sender facts, and displayed prepaid balances including the spare credit.

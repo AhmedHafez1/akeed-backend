@@ -171,7 +171,16 @@ describe('AdminStoresService', () => {
       model: 'plan',
       plan: 'basic',
       subscription_status: 'active',
-      usage: { used: 30, limit: 100, remaining: 70, percent: 30 },
+      usage: {
+        used: 30,
+        limit: 100,
+        remaining: 70,
+        percent: 30,
+        pools: {
+          akeed: { used: 30, limit: 100, remaining: 70 },
+          ownNumber: { used: 0, limit: 300, remaining: 300 },
+        },
+      },
     });
     expect(shopify.shop_domain).toBe('example.myshopify.com');
     expect(shopify.customer_countries).toEqual({

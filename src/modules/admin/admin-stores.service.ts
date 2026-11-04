@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
+import { ownNumberLimit } from '../../shared/billing/billing-plan';
+import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
@@ -58,6 +60,7 @@ const UUID_PATTERN =
 type PlanId = (typeof PLAN_IDS)[number];
 
 interface AdminUsage {
+  pools?: UsagePools;
   used: number;
   limit: number;
   remaining: number;
@@ -92,6 +95,12 @@ export interface AdminCustomerCountries {
 }
 
 export interface AdminStoreView {
+  whatsapp: {
+    state: string | null;
+    reason: string | null;
+    lastSender: string | null;
+    lastSenderReason: string | null;
+  };
   integration_id: string;
   org_id: string;
   platform: string;
@@ -679,6 +688,13 @@ export class AdminStoresService {
     const used = Number(row.usage_used ?? 0);
     const limit = Number(row.usage_limit_effective ?? 0);
     const usage = {
+      pools: {
+        akeed: usagePool(used, limit),
+        ownNumber: usagePool(
+          Number(row.own_number_used ?? 0),
+          ownNumberLimit(limit),
+        ),
+      },
       used,
       limit,
       remaining: Math.max(limit - used, 0),
@@ -692,9 +708,9 @@ export class AdminStoresService {
             available: Number(row.credit_available ?? 0),
             held: Number(row.credit_held_credits ?? 0),
             debt: Number(row.credit_debt ?? 0),
-            displayed_available: toDisplayedCredits(
-              Number(row.credit_available ?? 0),
-            ),
+            displayed_available:
+              toDisplayedCredits(Number(row.credit_available ?? 0)) +
+              Number(row.credit_spare ?? 0),
             balance_state: row.credit_balance_state,
           }
         : {
@@ -707,6 +723,12 @@ export class AdminStoresService {
 
     return {
       integration_id: row.integration_id,
+      whatsapp: {
+        state: row.whatsapp_state ?? null,
+        reason: row.whatsapp_reason ?? null,
+        lastSender: row.last_sender_kind ?? null,
+        lastSenderReason: row.last_sender_reason ?? null,
+      },
       org_id: row.org_id,
       platform: row.platform_type,
       organization_name: row.organization_name,

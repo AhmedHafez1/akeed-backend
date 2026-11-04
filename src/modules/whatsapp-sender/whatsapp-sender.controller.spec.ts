@@ -301,6 +301,12 @@ describe('/api/whatsapp-sender', () => {
       configId: null,
       canConnect: false,
       alerts: [],
+      sendingEnabled: false,
+      lastAcceptedSend: null,
+      permissions: {
+        canDisconnect: user!.role === 'owner',
+        canUpdateThankYou: user!.role !== 'viewer',
+      },
     });
   });
 
@@ -316,6 +322,12 @@ describe('/api/whatsapp-sender', () => {
       configId: '1234567890',
       canConnect: true,
       alerts: [],
+      sendingEnabled: false,
+      lastAcceptedSend: null,
+      permissions: {
+        canDisconnect: user!.role === 'owner',
+        canUpdateThankYou: user!.role !== 'viewer',
+      },
     });
     expect(JSON.stringify(response.body)).not.toContain(ENCRYPTION_KEY);
   });
@@ -340,6 +352,12 @@ describe('/api/whatsapp-sender', () => {
         configId: '1234567890',
         canConnect: true,
         alerts: [],
+        sendingEnabled: false,
+        lastAcceptedSend: null,
+        permissions: {
+          canDisconnect: true,
+          canUpdateThankYou: true,
+        },
       });
     },
   );
@@ -365,6 +383,12 @@ describe('/api/whatsapp-sender', () => {
         configId: '1234567890',
         canConnect: role === 'owner',
         alerts: [],
+        sendingEnabled: false,
+        lastAcceptedSend: null,
+        permissions: {
+          canDisconnect: role === 'owner',
+          canUpdateThankYou: role !== 'viewer',
+        },
       });
     },
   );

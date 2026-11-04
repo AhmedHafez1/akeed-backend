@@ -385,6 +385,7 @@ export class OnboardingService {
       limit,
       periodStart: entitlement.periodStart,
       periodEnd: entitlement.periodEnd,
+      pools: entitlement.pools,
     };
   }
 
@@ -627,7 +628,7 @@ export class OnboardingService {
     if (!integration.billingPlanId) return null;
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
-    return displayedUsage(entitlement);
+    return { ...displayedUsage(entitlement), pools: entitlement.pools };
   }
 
   private getStandaloneBlockedReasons(
