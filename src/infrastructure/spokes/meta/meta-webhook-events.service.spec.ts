@@ -4,6 +4,7 @@ import { MetaWebhookEventsProcessor } from './meta-webhook-events.processor';
 import { MetaWebhookEventsScheduler } from './meta-webhook-events.scheduler';
 import { MetaWebhookEventsService } from './meta-webhook-events.service';
 import {
+  CUSTOMER_MESSAGES_PURGE_SCHEDULER,
   META_WEBHOOK_MAX_ATTEMPTS,
   META_WEBHOOK_PURGE_SCHEDULER,
   META_WEBHOOK_SWEEP_BATCH,
@@ -300,11 +301,13 @@ describe('MetaWebhookEventsProcessor', () => {
     ['process', 'process', [{ eventId: 'event-1' }]],
     ['sweep', 'sweep', []],
     ['purge', 'purge', []],
+    ['customer-messages-purge', 'purgeCustomerMessages', []],
   ])('routes %s jobs', async (name, method, data) => {
     const events = {
       process: jest.fn(),
       sweep: jest.fn(),
       purge: jest.fn(),
+      purgeCustomerMessages: jest.fn(),
     };
     const processor = new MetaWebhookEventsProcessor(events as never);
 
@@ -331,7 +334,11 @@ describe('MetaWebhookEventsScheduler', () => {
 
     expect(
       queue.upsertJobScheduler.mock.calls.map(([name]: [string]) => name),
-    ).toEqual([META_WEBHOOK_SWEEP_SCHEDULER, META_WEBHOOK_PURGE_SCHEDULER]);
+    ).toEqual([
+      META_WEBHOOK_SWEEP_SCHEDULER,
+      META_WEBHOOK_PURGE_SCHEDULER,
+      CUSTOMER_MESSAGES_PURGE_SCHEDULER,
+    ]);
   });
 
   it('logs a queue failure instead of stopping boot', async () => {

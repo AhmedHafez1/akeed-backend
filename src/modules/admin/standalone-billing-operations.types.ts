@@ -59,12 +59,26 @@ export type ContradictionCode =
   | 'reservation_released_unbalanced'
   | 'purchase_entry_without_success'
   | 'purchase_success_without_entry'
-  | 'purchase_reversal_exceeds_grant';
+  | 'purchase_reversal_exceeds_grant'
+  | 'spare_credit_mismatch';
 
 export interface Contradiction {
   code: ContradictionCode;
   reservationId?: string;
   purchaseRef?: string;
+  /** For `spare_credit_mismatch`: the spare the ledger and dispatches imply. */
+  expectedSpare?: number;
+  spareCredit?: number;
+}
+
+/**
+ * Own-number charges behind an account's spare credit. Each open charge is
+ * one displayed credit; each net pack is one stored credit, worth two.
+ */
+export interface SpareFact {
+  spareCredit: number;
+  netPacks: number;
+  openCharges: number;
 }
 
 export interface ReservationFact {

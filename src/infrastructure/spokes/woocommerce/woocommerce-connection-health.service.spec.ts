@@ -411,6 +411,19 @@ describe('WooCommerceConnectionHealthService', () => {
       ]);
     });
 
+    it('finds nothing wrong when the store calls itself by its own address over plain HTTP', async () => {
+      const { service, api } = createService();
+      api.readSystemStatus.mockResolvedValue({
+        kind: 'ok',
+        homeUrl: STORE.replace('https://', 'http://'),
+        version: null,
+      });
+
+      const check = await service.check(ORG);
+
+      expect(check.problems).toEqual([]);
+    });
+
     it('says so when the store now calls itself by another address, without repeating that address', async () => {
       const { service, api } = createService();
       api.readSystemStatus.mockResolvedValue({

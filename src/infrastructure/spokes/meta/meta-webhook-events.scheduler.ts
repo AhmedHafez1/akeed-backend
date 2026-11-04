@@ -7,6 +7,9 @@ import {
 } from '../../../shared/logging/backend-log.util';
 import {
   META_WEBHOOK_PURGE_EVERY_MS,
+  CUSTOMER_MESSAGES_PURGE_JOB,
+  CUSTOMER_MESSAGES_PURGE_SCHEDULER,
+  CUSTOMER_MESSAGES_PURGE_EVERY_MS,
   META_WEBHOOK_PURGE_JOB,
   META_WEBHOOK_PURGE_SCHEDULER,
   META_WEBHOOK_QUEUE,
@@ -52,6 +55,15 @@ export class MetaWebhookEventsScheduler implements OnApplicationBootstrap {
         { every: META_WEBHOOK_PURGE_EVERY_MS },
         {
           name: META_WEBHOOK_PURGE_JOB,
+          data: {},
+          opts: REPEATING_JOB_OPTIONS,
+        },
+      );
+      await this.queue.upsertJobScheduler(
+        CUSTOMER_MESSAGES_PURGE_SCHEDULER,
+        { every: CUSTOMER_MESSAGES_PURGE_EVERY_MS },
+        {
+          name: CUSTOMER_MESSAGES_PURGE_JOB,
           data: {},
           opts: REPEATING_JOB_OPTIONS,
         },

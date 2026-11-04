@@ -186,10 +186,16 @@ export function paymobBillingHarness(
       // 0035 reads ownership and billing history when it activates accounts.
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
       ...(options.extraTables ?? []).filter(
         (table) =>
           table !== tables.memberships &&
-          table !== tables.billingFreePlanClaims,
+          table !== tables.billingFreePlanClaims &&
+          table !== tables.whatsappConnections &&
+          table !== tables.whatsappTemplates &&
+          table !== tables.whatsappConnectionTemplates,
       ),
     ])
       await scaffold(table);
@@ -216,6 +222,11 @@ export function paymobBillingHarness(
     await migrate('0045_provider_message_receipts.sql');
     await migrate('0053_dispatch_template_identity.sql');
     await migrate('0056_dispatch_template_fallback.sql');
+    await migrate('0060_whatsapp_service_messages.sql');
+    await migrate('0087_whatsapp_dispatch_senders.sql');
+    await migrate('0088_own_number_billing.sql');
+    await migrate('0089_sender_recovery.sql');
+    await migrate('0090_merchant_webhook_routing.sql');
   }
 
   /** An active Standalone merchant holding `quantity` granted credits. */

@@ -132,6 +132,7 @@ export class CreditAccountingRepository {
         0,
       ),
       debtCredits: Math.max(-account.postedBalance, 0),
+      spareCredit: account.spareCredit,
       version: account.version,
     };
   }
@@ -259,6 +260,8 @@ export class CreditAccountingRepository {
       postedBalance: number;
       heldCredits: number;
       status?: CreditAccountStatus;
+      /** Omitted keeps the stored spare; only own-number charges move it. */
+      spareCredit?: 0 | 1;
     },
   ): Promise<Account> {
     const [account] = await tx
@@ -267,6 +270,9 @@ export class CreditAccountingRepository {
         postedBalance: input.postedBalance,
         heldCredits: input.heldCredits,
         ...(input.status ? { status: input.status } : {}),
+        ...(input.spareCredit !== undefined
+          ? { spareCredit: input.spareCredit }
+          : {}),
         version: sql`${creditAccounts.version} + 1`,
         updatedAt: new Date().toISOString(),
       })

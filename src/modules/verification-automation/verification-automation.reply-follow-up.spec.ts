@@ -81,6 +81,25 @@ describe('VerificationAutomationProcessor reply follow-ups', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('passes the receiving connection generation to the service', async () => {
+    const handle = jest.fn().mockResolvedValue({ outcome: 'sent' });
+    const receivingSender = {
+      connectionId: 'connection',
+      phoneNumberId: 'phone',
+      signupGeneration: 3,
+    };
+    await setup(handle).process(
+      job(VerificationAutomationJobType.ACKNOWLEDGMENT, {
+        repliedAt: '2026-10-06T11:59:00.000Z',
+        intent: 'confirmed',
+        receivingSender,
+      }),
+    );
+    expect(handle).toHaveBeenCalledWith(
+      expect.objectContaining({ receivingSender }),
+    );
+  });
+
   it('skips a job without its reply', async () => {
     const handle = jest.fn();
     await setup(handle).process(

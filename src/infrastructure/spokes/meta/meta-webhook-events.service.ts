@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
   ValidationPipe,
 } from '@nestjs/common';
 import { Queue, UnrecoverableError } from 'bullmq';
@@ -39,6 +40,8 @@ import {
   type MetaWebhookJobPayload,
 } from './meta-webhook-queue.constants';
 import { WhatsAppWebhookService } from './whatsapp.webhook.service';
+import { MetaWebhookRoutingService } from './meta-webhook-routing.service';
+import { CustomerMessagesRepository } from '../../database/repositories/customer-messages.repository';
 
 const JOB_OPTIONS = {
   attempts: META_WEBHOOK_MAX_ATTEMPTS,
@@ -77,7 +80,22 @@ export class MetaWebhookEventsService {
     private readonly events: MetaWebhookEventsRepository,
     private readonly messages: WhatsAppWebhookService,
     private readonly templates: MetaTemplateWebhookHandler,
+    @Optional() private readonly routing?: MetaWebhookRoutingService,
+    @Optional() private readonly customers?: CustomerMessagesRepository,
   ) {}
+
+  private failureContext(error: unknown) {
+    // SQL exceptions can contain bound customer text and payloads.
+    return normalizeError(
+      this.routing
+        ? new Error(
+            error instanceof PermanentEventFailure
+              ? error.message
+              : 'meta_webhook_operation_failed',
+          )
+        : error,
+    );
+  }
 
   /**
    * Stores a signed POST. Throws when it can't, so Meta sends it again. Once
@@ -86,16 +104,29 @@ export class MetaWebhookEventsService {
   async accept(rawBody: Buffer): Promise<void> {
     let rows: { id: string }[];
     try {
-      rows = await this.events.insertMany(
-        splitWebhookBody(rawBody),
-        new Date(Date.now() + META_WEBHOOK_ENQUEUE_GRACE_MS).toISOString(),
-      );
+      const events = splitWebhookBody(rawBody);
+      const due = new Date(
+        Date.now() + META_WEBHOOK_ENQUEUE_GRACE_MS,
+      ).toISOString();
+      rows = this.routing
+        ? await this.events.insertManyPrepared(
+            events,
+            due,
+            async (payload, db) =>
+              (
+                await this.routing!.prepare(
+                  Buffer.from(payload),
+                  new CustomerMessagesRepository(db),
+                )
+              ).toString('utf8'),
+          )
+        : await this.events.insertMany(events, due);
     } catch (error) {
       this.logger.error(
         buildBackendLog(MetaWebhookEventsService.name, {
           action: 'meta-webhook-not-persisted',
           outcome: 'failure',
-          ...normalizeError(error),
+          ...this.failureContext(error),
         }),
       );
       throw new InternalServerErrorException({
@@ -129,7 +160,7 @@ export class MetaWebhookEventsService {
         action: 'meta-webhook-enqueue',
         outcome: 'failure',
         eventCount,
-        ...normalizeError(error),
+        ...this.failureContext(error),
       }),
     );
   }
@@ -175,6 +206,13 @@ export class MetaWebhookEventsService {
     if (!isSingleChange(body)) {
       throw new PermanentEventFailure('unsplittable_body');
     }
+    if (this.routing) {
+      await this.routing.process(rawBody, {
+        isRetry: event.attempts > 1,
+        receivedAt: event.receivedAt,
+      });
+      return;
+    }
     const dto = await this.validate(body);
     await this.messages.processIncomingOrThrow(dto, {
       isRetry: event.attempts > 1,
@@ -201,7 +239,10 @@ export class MetaWebhookEventsService {
     event: MetaWebhookEvent,
     error: unknown,
   ): Promise<never> {
-    const message = safeErrorMessage(error);
+    const message =
+      this.routing && !(error instanceof PermanentEventFailure)
+        ? 'handler_failed'
+        : safeErrorMessage(error);
     const permanent = error instanceof PermanentEventFailure;
     const terminal = permanent || event.attempts >= META_WEBHOOK_MAX_ATTEMPTS;
     this.logger.error(
@@ -212,7 +253,7 @@ export class MetaWebhookEventsService {
         field: event.field,
         attempts: event.attempts,
         terminal,
-        ...normalizeError(error),
+        ...this.failureContext(error),
       }),
     );
     // A database outage can fail this write too. The lease then runs out and
@@ -237,7 +278,7 @@ export class MetaWebhookEventsService {
           action: 'meta-webhook-event-record',
           outcome: 'failure',
           eventId: event.id,
-          ...normalizeError(recordError),
+          ...this.failureContext(recordError),
         }),
       );
     }
@@ -296,6 +337,17 @@ export class MetaWebhookEventsService {
         action: 'meta-webhook-purge',
         outcome: 'success',
         ...result,
+      }),
+    );
+  }
+
+  async purgeCustomerMessages(): Promise<void> {
+    const deleted = (await this.customers?.purge()) ?? 0;
+    this.logger.log(
+      buildBackendLog(MetaWebhookEventsService.name, {
+        action: 'customer-messages-purge',
+        outcome: 'success',
+        deleted,
       }),
     );
   }

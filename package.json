@@ -50,6 +50,7 @@
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:acknowledgment-billing": "jest --config ./test/jest-acknowledgment-billing-contract.json --runInBand",
     "test:contract:credit-usage": "jest --config ./test/jest-credit-usage-contract.json --runInBand",
+    "test:contract:own-number-billing": "jest --config ./test/jest-own-number-billing-contract.json --runInBand",
     "test:contract:credit-display-cycle": "jest --config ./test/jest-credit-display-cycle-contract.json --runInBand",
     "test:contract:blocked-order-recovery": "jest --config ./test/jest-blocked-order-recovery-contract.json --runInBand",
     "test:contract:auto-cancellation": "jest --config ./test/jest-auto-cancellation-contract.json --runInBand",
@@ -61,6 +62,7 @@
     "test:contract:whatsapp-template-authoring": "jest --config ./test/jest-whatsapp-template-authoring-contract.json --runInBand",
     "test:contract:whatsapp-message-improvements": "jest --config ./test/jest-whatsapp-message-improvements-contract.json --runInBand",
     "test:contract:meta-webhook-events": "jest --config ./test/jest-meta-webhook-events-contract.json --runInBand",
+    "test:contract:whatsapp-sender": "jest --config ./test/jest-whatsapp-sender-contract.json --runInBand",
     "test:contract:whatsapp-connections": "jest --config ./test/jest-whatsapp-connections-contract.json --runInBand",
     "test:contract:whatsapp-template-release-gate": "jest --config ./test/jest-e08-release-gate-contract.json --runInBand",
     "test:acceptance:e04": "jest --config ./test/jest-e04-acceptance.json --runInBand",
@@ -83,7 +85,9 @@
     "backfill:order-customer-country": "tsx scripts/backfill-order-customer-country.ts",
     "replay:shopify-customer-redactions": "tsx scripts/replay-shopify-customer-redactions.ts",
     "docs:order-api-guide": "node scripts/order-api-guide.js",
-    "docs:order-api-guide:check": "node scripts/order-api-guide.js --check"
+    "docs:order-api-guide:check": "node scripts/order-api-guide.js --check",
+    "test:contract:merchant-webhook-routing": "jest --config ./test/jest-merchant-webhook-routing-contract.json --runInBand",
+    "test:contract:sender-recovery": "jest --config ./test/jest-sender-recovery-contract.json --runInBand"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

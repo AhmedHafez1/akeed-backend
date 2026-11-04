@@ -96,7 +96,7 @@ When a merchant reports that orders stopped arriving:
 | --- | --- | --- |
 | `WOOCOMMERCE_INGESTION_ENABLED` was off when orders arrived | Deployment configuration; every order delivery answered `404` | Turn ingestion on first. Re-enable is refused while it is off (`503 WOOCOMMERCE_WEBHOOK_ENABLE_UNAVAILABLE`). |
 | The webhook was edited in WooCommerce (secret, URL) | `rejected_deliveries` is above zero | Disconnect and reconnect. Re-enabling cannot fix a wrong secret. |
-| The store reports another address than the one connected | The check answers `WOOCOMMERCE_STORE_URL_MISMATCH`; `rejected_deliveries` rises | A different address cannot be connected to this account. Escalate (section 5). |
+| The store reports another host or path than the one connected (an `http://` scheme for the same address is accepted) | The check answers `WOOCOMMERCE_STORE_URL_MISMATCH`; `rejected_deliveries` rises | A different address cannot be connected to this account. Escalate (section 5). |
 | Akeed answered `5xx` | `woocommerce-webhook-not-persisted` in the API log at that time | An Akeed incident. Fix it, then re-enable. |
 
 4. Re-enable: the button in Settings or the setup screen, or `POST /api/woocommerce/connection/webhooks/enable` as an owner or admin. Akeed reads both webhooks, sets each `disabled` one to `active`, and reads them again. It reports success only for a state the store confirmed.

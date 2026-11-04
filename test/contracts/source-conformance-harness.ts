@@ -785,6 +785,7 @@ export function assembleConformanceWorld(
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 statuses: sent.map((message) => ({
                   id: message.provider_message_id,
@@ -837,6 +838,7 @@ export function assembleConformanceWorld(
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 messages: [
                   {
@@ -1246,6 +1248,9 @@ export function assembleConformanceWorld(
       tables.webhookEvents,
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     await client.unsafe(`
@@ -1267,6 +1272,11 @@ export function assembleConformanceWorld(
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
       '0056_dispatch_template_fallback.sql',
+      '0060_whatsapp_service_messages.sql',
+      '0087_whatsapp_dispatch_senders.sql',
+      '0088_own_number_billing.sql',
+      '0089_sender_recovery.sql',
+      '0090_merchant_webhook_routing.sql',
       ...options.migrations,
     ])
       await migrate(name);

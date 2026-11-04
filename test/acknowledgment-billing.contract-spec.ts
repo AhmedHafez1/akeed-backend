@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import { ConfigService } from '@nestjs/config';
+import { of, throwError, type Observable } from 'rxjs';
+import { OrdersRepository } from '../src/infrastructure/database/repositories/orders.repository';
+import { VerificationsRepository } from '../src/infrastructure/database/repositories/verifications.repository';
+import { WhatsappConnectionsRepository } from '../src/infrastructure/database/repositories/whatsapp-connections.repository';
+import { CustomerReplyFollowUpService } from '../src/modules/verification-replies/customer-reply-follow-up.service';
+import { MetaSendContextService } from '../src/infrastructure/spokes/meta/own-number/meta-send-context.service';
+import { WhatsAppService } from '../src/infrastructure/spokes/meta/whatsapp.service';
+import { encryptConnectionSecret } from '../src/infrastructure/spokes/meta/own-number/whatsapp-connection-credentials';
 import { creditUsageHarness } from './contracts/credit-usage-harness';
 import {
   integrations,
@@ -7,6 +16,10 @@ import {
   verifications,
   verificationMessageDispatches,
   verificationServiceMessages,
+  whatsappConnections,
+  creditAccounts,
+  creditReservations,
+  creditLedgerEntries,
 } from '../src/infrastructure/database/schema';
 import { VerificationServiceMessagesRepository } from '../src/infrastructure/database/repositories/verification-service-messages.repository';
 
@@ -54,6 +67,252 @@ async function snapshot(id: string) {
 describe('paid thank-you messages against PostgreSQL', () => {
   beforeAll(harness.setup);
   afterAll(harness.teardown);
+
+  describe('free thank-yous from the receiving merchant number', () => {
+    const key = 'c'.repeat(64);
+    let nextPhone = 800000000000000;
+    async function merchantReply(platform: string) {
+      const params = await input(platform, 1);
+      await db
+        .update(integrations)
+        .set({ acknowledgmentEnabled: false })
+        .where(eq(integrations.id, params.integrationId));
+      if (platform === 'standalone') await harness.adjust(params.orgId, -1);
+      else
+        await db.insert(integrationMonthlyUsage).values({
+          orgId: params.orgId,
+          integrationId: params.integrationId,
+          periodStart: `${new Date().toISOString().slice(0, 7)}-01`,
+          includedLimit: 30,
+          consumedCount: 30,
+          ownNumberConsumed: 90,
+        });
+      const [connection] = await db
+        .insert(whatsappConnections)
+        .values({
+          orgId: params.orgId,
+          wabaId: String(nextPhone++),
+          phoneNumberId: String(nextPhone++),
+          signupPath: 'coexistence',
+          state: 'active',
+          businessTokenEncrypted: encryptConnectionSecret(
+            'synthetic-merchant-token',
+            key,
+          ),
+        })
+        .returning();
+      const config = new ConfigService({
+        whatsappOwnNumber: { sendingEnabled: true },
+        WA_PHONE_NUMBER_ID: 'shared-phone',
+        WA_ACCESS_TOKEN: 'synthetic-shared-token',
+        SHOPIFY_TOKEN_ENCRYPTION_KEY: key,
+      });
+      const http = {
+        post: jest
+          .fn<
+            Observable<{ data: { messages: { id: string }[] } }>,
+            [string, unknown, unknown]
+          >()
+          .mockReturnValue(
+            of({ data: { messages: [{ id: `wamid.${randomUUID()}` }] } }),
+          ),
+      };
+      const connections = new WhatsappConnectionsRepository(db as never);
+      const sendContext = new MetaSendContextService(
+        config,
+        dispatches,
+        connections,
+        {} as never,
+        serviceMessages,
+      );
+      const adapter = new WhatsAppService(http as never, config, sendContext);
+      const service = new CustomerReplyFollowUpService(
+        new VerificationsRepository(db as never),
+        new OrdersRepository(db as never),
+        dispatches,
+        serviceMessages,
+        {
+          resolve: jest.fn((purpose: string) =>
+            Promise.resolve({
+              body:
+                purpose === 'fallback_store_name'
+                  ? 'Synthetic store'
+                  : 'Thank you for {{order}} from {{store}}',
+              style: 'default',
+            }),
+          ),
+        } as never,
+        adapter,
+        undefined,
+        undefined,
+        connections,
+        config,
+      );
+      return {
+        params,
+        connection,
+        http,
+        service,
+        request: {
+          kind: 'acknowledgment' as const,
+          orgId: params.orgId,
+          verificationId: params.verificationId,
+          repliedAt: new Date().toISOString(),
+          intent: 'confirmed' as const,
+          receivingSender: {
+            connectionId: connection.id,
+            phoneNumberId: connection.phoneNumberId,
+            signupGeneration: connection.signupGeneration,
+          },
+        },
+      };
+    }
+
+    async function accountingSnapshot(orgId: string) {
+      return {
+        accounts: await db
+          .select()
+          .from(creditAccounts)
+          .where(eq(creditAccounts.orgId, orgId)),
+        reservations: await db
+          .select()
+          .from(creditReservations)
+          .where(eq(creditReservations.orgId, orgId)),
+        ledger: await db
+          .select()
+          .from(creditLedgerEntries)
+          .where(eq(creditLedgerEntries.orgId, orgId)),
+        pools: await db
+          .select()
+          .from(integrationMonthlyUsage)
+          .where(eq(integrationMonthlyUsage.orgId, orgId)),
+        dispatches: await db
+          .select()
+          .from(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.orgId, orgId)),
+      };
+    }
+
+    it.each(['standalone', 'shopify'])(
+      'sends once with exhausted capacity and no accounting changes (%s)',
+      async (platform) => {
+        const f = await merchantReply(platform);
+        const before = await accountingSnapshot(f.params.orgId);
+        const orderBefore = await snapshot(f.params.verificationId);
+        const results = await Promise.all([
+          f.service.handle(f.request),
+          f.service.handle(f.request),
+        ]);
+        expect(results.map((result) => result.outcome).sort()).toEqual([
+          'ineligible',
+          'sent',
+        ]);
+        expect(f.http.post).toHaveBeenCalledTimes(1);
+        expect(f.http.post.mock.calls[0][0]).toContain(
+          `/${f.connection.phoneNumberId}/messages`,
+        );
+        const [record] = await db
+          .select()
+          .from(verificationServiceMessages)
+          .where(
+            eq(
+              verificationServiceMessages.verificationId,
+              f.params.verificationId,
+            ),
+          );
+        expect(record).toMatchObject({
+          state: 'sent',
+          senderKind: 'merchant_own',
+          senderPhoneNumberId: f.connection.phoneNumberId,
+          dispatchId: null,
+        });
+        expect(
+          await serviceMessages.recordDeliveryFailure(
+            record.providerMessageId!,
+          ),
+        ).toBe(true);
+        expect(
+          await serviceMessages.recordDeliveryFailure(
+            record.providerMessageId!,
+          ),
+        ).toBe(true);
+        expect(await accountingSnapshot(f.params.orgId)).toEqual(before);
+        expect(await snapshot(f.params.verificationId)).toEqual(orderBefore);
+      },
+    );
+
+    it('authorizes only its tenant, verification, phone, and still-claimed acknowledgment', async () => {
+      const f = await merchantReply('standalone');
+      const claimed = await serviceMessages.claim({
+        ...f.request,
+        sender: f.request.receivingSender,
+      });
+      const params = {
+        orgId: f.params.orgId,
+        serviceMessageId: claimed!.id,
+        verificationId: f.params.verificationId,
+        phoneNumberId: f.connection.phoneNumberId,
+      };
+      expect(
+        await serviceMessages.isClaimedMerchantAcknowledgment(params),
+      ).toBe(true);
+      for (const change of [
+        { orgId: randomUUID() },
+        { verificationId: randomUUID() },
+        { serviceMessageId: randomUUID() },
+        { phoneNumberId: 'foreign-phone' },
+      ])
+        expect(
+          await serviceMessages.isClaimedMerchantAcknowledgment({
+            ...params,
+            ...change,
+          }),
+        ).toBe(false);
+      await serviceMessages.markNotSent({
+        id: claimed!.id,
+        state: 'skipped',
+        reason: 'window_closed',
+      });
+      expect(
+        await serviceMessages.isClaimedMerchantAcknowledgment(params),
+      ).toBe(false);
+      await f.service.handle(f.request);
+      expect(f.http.post).not.toHaveBeenCalled();
+    });
+
+    it('records a closed window once without billing or a shared-number fallback', async () => {
+      const f = await merchantReply('standalone');
+      const before = await accountingSnapshot(f.params.orgId);
+      f.http.post.mockReturnValue(
+        throwError(() => ({
+          isAxiosError: true,
+          response: { status: 400, data: { error: { code: 131047 } } },
+        })),
+      );
+      await expect(f.service.handle(f.request)).resolves.toEqual({
+        outcome: 'skipped',
+        reason: 'window_closed',
+      });
+      await f.service.handle(f.request);
+      expect(f.http.post).toHaveBeenCalledTimes(1);
+      const [record] = await db
+        .select()
+        .from(verificationServiceMessages)
+        .where(
+          eq(
+            verificationServiceMessages.verificationId,
+            f.params.verificationId,
+          ),
+        );
+      expect(record).toMatchObject({
+        state: 'skipped',
+        skipReason: 'window_closed',
+        senderKind: 'merchant_own',
+        dispatchId: null,
+      });
+      expect(await accountingSnapshot(f.params.orgId)).toEqual(before);
+    });
+  });
 
   it('migrates the old enum and defaults merchant opt-in off', async () => {
     const source = await merchant();

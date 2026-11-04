@@ -518,6 +518,36 @@ describe('WooCommerceAuthService', () => {
       ).toBe(first.secret);
     });
 
+    it('connects a store that calls itself by its own address over plain HTTP', async () => {
+      const { service, api } = createService();
+      api.readSystemStatus.mockResolvedValue({
+        kind: 'ok',
+        homeUrl: STORE.replace('https://', 'http://'),
+        version: null,
+      });
+
+      await expect(
+        answerOf(service.handleCallback(CALLBACK_TOKEN, body())),
+      ).resolves.toEqual({ status: 200 });
+    });
+
+    it('refuses a store that calls itself by another host over plain HTTP', async () => {
+      const { service, api } = createService();
+      api.readSystemStatus.mockResolvedValue({
+        kind: 'ok',
+        homeUrl: REPORTED_HOME.replace('https://', 'http://'),
+        version: null,
+      });
+
+      await expect(
+        answerOf(service.handleCallback(CALLBACK_TOKEN, body())),
+      ).resolves.toEqual({
+        status: 422,
+        code: 'WOOCOMMERCE_STORE_URL_MISMATCH',
+      });
+      expect(api.createWebhook).not.toHaveBeenCalled();
+    });
+
     it('never writes a key, a token, the store path or what the store reported into a log line', async () => {
       const { service, api } = createService();
       await service.handleCallback(CALLBACK_TOKEN, body());

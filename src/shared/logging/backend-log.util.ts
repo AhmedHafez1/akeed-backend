@@ -23,6 +23,17 @@ interface NormalizedError {
 
 const REDACTED_VALUE = '[REDACTED]';
 const REDACTED_KEYS = new Set([
+  'body',
+  'text',
+  'message_body',
+  'messagebody',
+  'from',
+  'from_user_id',
+  'fromuserid',
+  'customer_user_id',
+  'customeruserid',
+  'display_phone_number',
+  'displayphonenumber',
   'authorization',
   'cookie',
   'set-cookie',

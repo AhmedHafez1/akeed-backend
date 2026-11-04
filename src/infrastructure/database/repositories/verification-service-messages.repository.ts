@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
@@ -11,6 +12,7 @@ import type {
   ServiceMessageSkipReason,
 } from '../../../shared/messaging/message-texts.types';
 import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
+import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 
 /**
  * Acknowledgments and nudges, and the unresolved replies a
@@ -22,6 +24,7 @@ export class VerificationServiceMessagesRepository {
   constructor(
     @Inject(DRIZZLE)
     private readonly db: DrizzleDB,
+    private readonly config?: ConfigService,
   ) {}
 
   /**
@@ -34,6 +37,7 @@ export class VerificationServiceMessagesRepository {
     verificationId: string;
     kind: ServiceMessageKind;
     repliedAt: string;
+    sender?: MerchantReplySender;
   }): Promise<{ id: string } | null> {
     const [claimed] = await this.db
       .insert(verificationServiceMessages)
@@ -42,6 +46,14 @@ export class VerificationServiceMessagesRepository {
         verificationId: params.verificationId,
         kind: params.kind,
         repliedAt: params.repliedAt,
+        senderKind: params.sender ? 'merchant_own' : 'akeed_system',
+        senderReason: params.sender
+          ? 'own_number_thank_you'
+          : 'service_message',
+        senderPhoneNumberId:
+          params.sender?.phoneNumberId ??
+          this.config?.get<string>('WA_PHONE_NUMBER_ID') ??
+          null,
       })
       .onConflictDoNothing({
         target: [
@@ -53,6 +65,34 @@ export class VerificationServiceMessagesRepository {
     return claimed ?? null;
   }
 
+  async isClaimedMerchantAcknowledgment(params: {
+    orgId: string;
+    serviceMessageId: string;
+    verificationId: string;
+    phoneNumberId: string;
+  }): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: verificationServiceMessages.id })
+      .from(verificationServiceMessages)
+      .where(
+        and(
+          eq(verificationServiceMessages.id, params.serviceMessageId),
+          eq(verificationServiceMessages.orgId, params.orgId),
+          eq(verificationServiceMessages.verificationId, params.verificationId),
+          eq(verificationServiceMessages.kind, 'acknowledgment'),
+          eq(verificationServiceMessages.state, 'claimed'),
+          eq(verificationServiceMessages.senderKind, 'merchant_own'),
+          eq(
+            verificationServiceMessages.senderPhoneNumberId,
+            params.phoneNumberId,
+          ),
+          isNull(verificationServiceMessages.dispatchId),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
+  }
+
   async linkDispatch(
     id: string,
     orgId: string,
@@ -60,7 +100,13 @@ export class VerificationServiceMessagesRepository {
   ): Promise<void> {
     const rows = await this.db
       .update(verificationServiceMessages)
-      .set({ dispatchId, updatedAt: sql`now()` })
+      .set({
+        dispatchId,
+        senderKind: sql`(SELECT sender_kind FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        senderReason: sql`(SELECT sender_reason FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        senderPhoneNumberId: sql`(SELECT sender_phone_number_id FROM verification_message_dispatches WHERE id = ${dispatchId} AND org_id = ${orgId})`,
+        updatedAt: sql`now()`,
+      })
       .where(
         and(
           eq(verificationServiceMessages.id, id),

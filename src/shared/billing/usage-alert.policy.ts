@@ -52,18 +52,23 @@ export function planUsageAlertLevels(
 
 /**
  * Every credit level the balance has reached, lowest first. `low` is at or
- * under the merchant-facing threshold; `depleted` is under one credit, when
- * nothing can be sent. A threshold of 0 turns `low` off.
+ * under the merchant-facing threshold; `depleted` is under one stored credit,
+ * when nothing can be sent. A threshold of 0 turns `low` off.
+ *
+ * `spareCoversNextSend` is true when the next send would go from the
+ * merchant's own number and the account's spare pays for it: one more
+ * message can still go, so the balance is not yet depleted.
  */
 export function creditAlertLevels(
   availableCredits: number,
   lowBalanceThreshold: number,
+  spareCoversNextSend = false,
 ): CreditAlertLevel[] {
   const levels: CreditAlertLevel[] = [];
   if (lowBalanceThreshold > 0 && availableCredits <= lowBalanceThreshold) {
     levels.push('low');
   }
-  if (availableCredits < 1) levels.push('depleted');
+  if (availableCredits < 1 && !spareCoversNextSend) levels.push('depleted');
   return levels;
 }
 
@@ -71,8 +76,13 @@ export function creditAlertLevels(
 export function recoveredCreditLevels(
   availableCredits: number,
   lowBalanceThreshold: number,
+  spareCoversNextSend = false,
 ): CreditAlertLevel[] {
-  const reached = creditAlertLevels(availableCredits, lowBalanceThreshold);
+  const reached = creditAlertLevels(
+    availableCredits,
+    lowBalanceThreshold,
+    spareCoversNextSend,
+  );
   return (['low', 'depleted'] as const).filter(
     (level) => !reached.includes(level),
   );

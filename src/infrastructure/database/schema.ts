@@ -22,6 +22,8 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
+import type { SenderFailure } from '../../shared/ports/sender-recovery.port';
 import type { OrderLineItem } from '../../shared/interfaces/order.interface';
 import type {
   UsageAlertEmailStatus,
@@ -861,6 +863,9 @@ export const integrationMonthlyUsage = pgTable(
       withTimezone: true,
       mode: 'string',
     }).defaultNow(),
+    // Messages sent from the merchant's own number. Its limit is derived from
+    // `included_limit` and the plan's own-number multiplier, never stored.
+    ownNumberConsumed: integer('own_number_consumed').default(0).notNull(),
   },
   (table) => [
     index('idx_integration_monthly_usage_org_id').using(
@@ -1245,7 +1250,13 @@ export const verificationMessageDispatches = pgTable(
       .default('periodic_plan'),
     kind: verificationDispatchKind().notNull(),
     state: verificationDispatchState().default('ready').notNull(),
-    senderKind: text('sender_kind').default('akeed_system').notNull(),
+    senderKind: text('sender_kind')
+      .$type<'akeed_system' | 'merchant_own'>()
+      .default('akeed_system')
+      .notNull(),
+    senderConnectionId: uuid('sender_connection_id'),
+    senderPhoneNumberId: text('sender_phone_number_id'),
+    senderReason: text('sender_reason'),
     templateName: text('template_name'),
     languageCode: text('language_code'),
     providerMessageId: text('provider_message_id'),
@@ -1297,9 +1308,61 @@ export const verificationMessageDispatches = pgTable(
     resolvedLanguage: text('resolved_language').$type<TemplateLanguage>(),
     templateFallbackReason: text('template_fallback_reason'),
     templateSkippedKey: text('template_skipped_key'),
+    // What the claim charged and from which pool. NULL on rows written before
+    // it was recorded; those settle exactly as they always did.
+    billingPool: text('billing_pool').$type<
+      'credits' | 'akeed' | 'own_number'
+    >(),
+    billingCost: integer('billing_cost'),
+    billingRefundedAt: timestamp('billing_refunded_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    senderConnectionGeneration: bigint('sender_connection_generation', {
+      mode: 'number',
+    }),
+    senderRecoveryState: text('sender_recovery_state').$type<
+      'retry' | 'fallback' | 'complete' | 'canceled'
+    >(),
+    senderRetryCount: integer('sender_retry_count').notNull().default(0),
+    senderRecoveryVersion: integer('sender_recovery_version')
+      .notNull()
+      .default(0),
+    senderRecoveryDueAt: timestamp('sender_recovery_due_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    senderRecoveryTemplate: jsonb(
+      'sender_recovery_template',
+    ).$type<SelectedCodTemplate>(),
+    fallbackForDispatchId: uuid('fallback_for_dispatch_id'),
+    senderAutomationPending: boolean('sender_automation_pending')
+      .notNull()
+      .default(false),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
+    check(
+      'sender_recovery_state_check',
+      sql`${table.senderRecoveryState} IS NULL OR ${table.senderRecoveryState} IN ('retry','fallback','complete','canceled')`,
+    ),
+    check(
+      'sender_retry_budget_check',
+      sql`${table.senderRetryCount} BETWEEN 0 AND 2`,
+    ),
+    foreignKey({
+      columns: [table.fallbackForDispatchId, table.orgId],
+      foreignColumns: [table.id, table.orgId],
+      name: 'dispatch_fallback_source_fkey',
+    }),
+    uniqueIndex('dispatch_one_sender_fallback')
+      .on(table.fallbackForDispatchId)
+      .where(sql`${table.fallbackForDispatchId} IS NOT NULL`),
+    index('dispatch_sender_recovery_due')
+      .on(table.senderRecoveryDueAt)
+      .where(
+        sql`${table.senderRecoveryState} IN ('retry','fallback') OR ${table.senderAutomationPending}`,
+      ),
     check(
       'dispatch_template_purpose_check',
       sql`template_purpose IS NULL OR template_purpose IN ('initial', 'reminder', 'test')`,
@@ -1363,11 +1426,19 @@ export const verificationMessageDispatches = pgTable(
     }),
     check(
       'verification_message_dispatches_sender_kind_check',
-      sql`${table.senderKind} = 'akeed_system'`,
+      sql`${table.senderKind} IN ('akeed_system', 'merchant_own')`,
     ),
     check(
       'verification_message_dispatches_attempt_count_check',
       sql`${table.attemptCount} >= 0`,
+    ),
+    check(
+      'dispatch_billing_pool_check',
+      sql`billing_pool IS NULL OR billing_pool IN ('credits', 'akeed', 'own_number')`,
+    ),
+    check(
+      'dispatch_billing_cost_check',
+      sql`(billing_pool IS NULL AND billing_cost IS NULL) OR (billing_pool = 'credits' AND billing_cost IN (0, 1, 2)) OR (billing_pool IN ('akeed', 'own_number') AND billing_cost >= 0)`,
     ),
     pgPolicy('Service role manages verification message dispatches', {
       as: 'permissive',
@@ -1384,6 +1455,69 @@ export const verificationMessageDispatches = pgTable(
     }),
   ],
 );
+
+export const verificationSenderAttempts = pgTable(
+  'verification_sender_attempts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    dispatchId: uuid('dispatch_id').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    claimToken: uuid('claim_token').notNull(),
+    state: text('state')
+      .$type<'authorized' | 'in_flight' | 'accepted' | 'failed' | 'unknown'>()
+      .notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    signupGeneration: bigint('signup_generation', { mode: 'number' }).notNull(),
+    phoneNumberId: text('phone_number_id').notNull(),
+    wabaId: text('waba_id').notNull(),
+    providerMessageId: text('provider_message_id'),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    acceptedAt: timestamp('accepted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    deliveredAt: timestamp('delivered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    readAt: timestamp('read_at', { withTimezone: true, mode: 'string' }),
+    failedAt: timestamp('failed_at', { withTimezone: true, mode: 'string' }),
+    failure: jsonb('failure').$type<SenderFailure>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('sender_attempt_dispatch_number_key').on(
+      table.dispatchId,
+      table.attemptNumber,
+    ),
+    unique('sender_attempt_provider_key').on(table.providerMessageId),
+    foreignKey({
+      columns: [table.dispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+    }),
+    check(
+      'sender_attempt_budget_check',
+      sql`${table.attemptNumber} BETWEEN 0 AND 2`,
+    ),
+    check(
+      'sender_attempt_state_check',
+      sql`${table.state} IN ('authorized', 'in_flight', 'accepted', 'failed', 'unknown')`,
+    ),
+  ],
+).enableRLS();
 
 /**
  * Delivery receipts that arrived before the send they describe was recorded.
@@ -1402,6 +1536,11 @@ export const providerMessageReceipts = pgTable(
     }).notNull(),
     errorCode: text('error_code'),
     errorTitle: text('error_title'),
+    senderReceiptContext: jsonb('sender_receipt_context').$type<{
+      phoneNumberId?: string;
+      wabaId?: string;
+      failure?: SenderFailure;
+    }>(),
     receivedAt: timestamp('received_at', {
       withTimezone: true,
       mode: 'string',
@@ -2067,6 +2206,8 @@ export const creditLedgerType = pgEnum('credit_ledger_type', [
   'chargeback_reversal',
   'chargeback_reinstatement',
   'staff_adjustment',
+  'own_number_pack',
+  'own_number_pack_reversal',
 ]);
 export const paymentPurchaseStatus = pgEnum('payment_purchase_status', [
   'pending',
@@ -2096,6 +2237,8 @@ export const creditAccounts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
       .notNull()
       .defaultNow(),
+    // An own-number send already paid for: half of a stored credit.
+    spareCredit: integer('spare_credit').notNull().default(0),
   },
   (table) => [
     foreignKey({
@@ -2105,6 +2248,7 @@ export const creditAccounts = pgTable(
     }),
     check('credit_accounts_held_credits_check', sql`held_credits >= 0`),
     check('credit_accounts_version_check', sql`version >= 0`),
+    check('credit_accounts_spare_credit_check', sql`spare_credit IN (0, 1)`),
     index('credit_account_status_idx').on(table.status),
     pgPolicy('credit_service_access', {
       for: 'all',
@@ -3750,7 +3894,8 @@ export const whatsappMessageTextEvents = pgTable(
 /**
  * Each acknowledgment and nudge. The unique (verification, kind)
  * is the once-per-verification rule; the row is claimed before the send.
- * Free at the provider: no usage, dispatch or credit row is written.
+ * Shared-number acknowledgments link a billing dispatch. Merchant-number
+ * acknowledgments and nudges are unlinked and use no Akeed capacity.
  */
 export const verificationServiceMessages = pgTable(
   'verification_service_messages',
@@ -3759,6 +3904,12 @@ export const verificationServiceMessages = pgTable(
     orgId: uuid('org_id').notNull(),
     verificationId: uuid('verification_id').notNull(),
     dispatchId: uuid('dispatch_id'),
+    senderKind: text('sender_kind')
+      .$type<'akeed_system' | 'merchant_own'>()
+      .default('akeed_system')
+      .notNull(),
+    senderReason: text('sender_reason'),
+    senderPhoneNumberId: text('sender_phone_number_id'),
     kind: text('kind').$type<ServiceMessageKind>().notNull(),
     state: text('state')
       .$type<ServiceMessageState>()
@@ -4402,6 +4553,18 @@ export const whatsappConnections = pgTable(
     signupPath: text('signup_path').$type<WhatsappSignupPath>().notNull(),
     state: text('state').$type<WhatsappConnectionState>().notNull(),
     stateReason: text('state_reason'),
+    lifecycleEventAt: timestamp('lifecycle_event_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lifecycleEventKey: text('lifecycle_event_key'),
+    disconnectCleanupUntil: timestamp('disconnect_cleanup_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    providerCleanup: text('provider_cleanup').$type<
+      'succeeded' | 'manual_required' | 'not_needed'
+    >(),
     businessTokenEncrypted: text('business_token_encrypted'),
     registrationPinEncrypted: text('registration_pin_encrypted'),
     degradedClass: text('degraded_class').$type<WhatsappDegradedClass>(),
@@ -4464,6 +4627,18 @@ export const whatsappConnections = pgTable(
     }),
     providerIsOnBizApp: boolean('provider_is_on_biz_app'),
     providerPlatformType: text('provider_platform_type'),
+    healthRevision: integer('health_revision').notNull().default(0),
+    healthClaimToken: uuid('health_claim_token'),
+    healthLeaseUntil: timestamp('health_lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    nextHealthAt: timestamp('next_health_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4519,6 +4694,11 @@ export const whatsappConnections = pgTable(
       .on(table.phoneNumberId)
       .where(sql`${table.state} <> 'disconnected'`),
     index('idx_whatsapp_connections_waba').on(table.wabaId),
+    uniqueIndex('whatsapp_connections_live_waba_key')
+      .on(table.wabaId)
+      .where(
+        sql`${table.state} <> 'disconnected' OR ${table.disconnectCleanupUntil} IS NOT NULL`,
+      ),
     check(
       'whatsapp_connections_waba_id_check',
       sql`${table.wabaId} ~ '^[0-9]{1,32}$'`,
@@ -4558,6 +4738,61 @@ export const whatsappConnections = pgTable(
     check(
       'whatsapp_connections_credentials_check',
       sql`CASE WHEN ${table.state} = 'disconnected' THEN ${table.businessTokenEncrypted} IS NULL AND ${table.registrationPinEncrypted} IS NULL AND ${table.disconnectedAt} IS NOT NULL ELSE ${table.businessTokenEncrypted} IS NOT NULL END`,
+    ),
+  ],
+).enableRLS();
+
+/** Admitted inbound text; a redaction leaves only a replay tombstone until expiry. */
+export const customerMessages = pgTable(
+  'customer_messages',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id'),
+    verificationId: uuid('verification_id'),
+    providerMessageId: text('provider_message_id').notNull().unique(),
+    customerPhone: text('customer_phone'),
+    customerUserId: text('customer_user_id'),
+    messageType: text('message_type').notNull(),
+    body: text('body'),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    redactedAt: timestamp('redacted_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+      name: 'customer_messages_connection_fkey',
+    }),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'customer_messages_verification_fkey',
+    }).onDelete('cascade'),
+    index('customer_messages_org_phone_idx').on(
+      table.orgId,
+      table.customerPhone,
+    ),
+    index('customer_messages_verification_idx').on(
+      table.orgId,
+      table.verificationId,
+    ),
+    index('customer_messages_expiry_idx').on(table.expiresAt),
+    check(
+      'customer_messages_redaction_check',
+      sql`${table.redactedAt} IS NULL OR (${table.body} IS NULL AND ${table.customerPhone} IS NULL AND ${table.customerUserId} IS NULL)`,
     ),
   ],
 ).enableRLS();

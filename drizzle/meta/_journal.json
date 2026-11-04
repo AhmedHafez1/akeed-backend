@@ -617,6 +617,34 @@
       "when": 1794355200000,
       "tag": "0086_whatsapp_connection_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1794441600000,
+      "tag": "0087_whatsapp_dispatch_senders",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1794528000000,
+      "tag": "0088_own_number_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1794614400000,
+      "tag": "0089_sender_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1794700800000,
+      "tag": "0090_merchant_webhook_routing",
+      "breakpoints": true
     }
   ]
 }

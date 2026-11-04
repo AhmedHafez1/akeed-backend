@@ -150,6 +150,7 @@ describe('WhatsappConnectionSetupScheduler', () => {
     expect(
       queue.upsertJobScheduler.mock.calls.map((c) => [c[0], c[1]]),
     ).toEqual([
+      ['whatsapp-health-sweep', { every: 60_000 }],
       ['whatsapp-connection-setup-sweep', { every: 120_000 }],
       ['whatsapp-connection-template-sync-6h', { every: 21_600_000 }],
     ]);

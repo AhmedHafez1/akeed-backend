@@ -123,7 +123,35 @@ SELECT
   (SELECT count(*) FROM verification_message_dispatches
     WHERE org_id = :org_id AND accepted_at IS NOT NULL)       AS sends_accepted_by_meta,
   (SELECT count(*) FROM verification_message_dispatches
-    WHERE org_id = :org_id AND sender_kind <> 'akeed_system') AS sends_not_from_akeed_sender;
+    WHERE org_id = :org_id AND sender_kind = 'merchant_own') AS sends_from_merchant_sender,
+  (SELECT count(*) FROM verification_message_dispatches
+    WHERE org_id = :org_id AND (
+      sender_kind NOT IN ('akeed_system', 'merchant_own')
+      OR (sender_kind = 'merchant_own' AND (sender_connection_id IS NULL OR sender_phone_number_id IS NULL OR sender_reason IS NULL))
+      OR (sender_kind = 'akeed_system' AND sender_connection_id IS NOT NULL)
+    )) AS sends_with_inconsistent_sender;
+
+-- What each send was charged, by pool. Prepaid costs are displayed credits
+-- (2 for an Akeed-number send, 1 from the merchant's number); plan costs are
+-- messages. The spare must equal 2 x net packs - open own-number charges.
+SELECT
+  (SELECT coalesce(sum(own_number_consumed), 0) FROM integration_monthly_usage
+    WHERE org_id = :org_id)                                   AS own_number_usage_consumed,
+  (SELECT spare_credit FROM credit_accounts WHERE org_id = :org_id) AS spare_credit,
+  (SELECT coalesce(-sum(quantity), 0) FROM credit_ledger_entries
+    WHERE org_id = :org_id AND type::text IN ('own_number_pack', 'own_number_pack_reversal')) AS net_own_number_packs,
+  (SELECT count(*) FROM verification_message_dispatches
+    WHERE org_id = :org_id AND billing_pool = 'credits' AND billing_cost = 1
+      AND billing_refunded_at IS NULL)                        AS open_own_number_charges,
+  (SELECT count(*) FROM verification_message_dispatches
+    WHERE org_id = :org_id AND billing_pool IS NULL
+      AND state <> 'ready')                                   AS sends_without_billing_record;
+
+SELECT billing_pool, sender_kind, count(*) AS sends, coalesce(sum(billing_cost), 0) AS cost
+FROM verification_message_dispatches
+WHERE org_id = :org_id AND billing_pool IS NOT NULL
+GROUP BY billing_pool, sender_kind
+ORDER BY billing_pool, sender_kind;
 
 \echo '== 9. Store updates by action and state =='
 

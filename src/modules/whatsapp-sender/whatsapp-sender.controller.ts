@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Patch,
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
@@ -24,6 +25,18 @@ import { ConnectionStatusService } from './connection-status.service';
 import { whatsappConnectError } from './whatsapp-connect.errors';
 import { WhatsappConnectService } from './whatsapp-connect.service';
 import { WhatsappSenderService } from './whatsapp-sender.service';
+import {
+  WhatsappConnectionSettingsService,
+  whatsappConnectionSettingsError,
+} from './whatsapp-connection-settings.service';
+import {
+  UpdateWhatsappConnectionSettingsDto,
+  type WhatsappConnectionSettingsDto,
+} from './dto/whatsapp-connection-settings.dto';
+import {
+  WhatsappDisconnectService,
+  type WhatsappDisconnectResponseDto,
+} from './whatsapp-disconnect.service';
 
 /** Answers with a code and never repeats the rejected value. */
 export const issueWhatsappConnectTicketPipe = new ValidationPipe({
@@ -34,6 +47,15 @@ export const issueWhatsappConnectTicketPipe = new ValidationPipe({
     whatsappConnectError('WHATSAPP_CONNECT_INVALID_REQUEST'),
 });
 
+export const whatsappConnectionSettingsPipe = new ValidationPipe({
+  expectedType: UpdateWhatsappConnectionSettingsDto,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  exceptionFactory: () =>
+    whatsappConnectionSettingsError('WHATSAPP_CONNECTION_SETTINGS_INVALID'),
+});
+
 /** The merchant's own WhatsApp number, for signed-in members. */
 @Controller('api/whatsapp-sender')
 @UseGuards(DualAuthGuard)
@@ -42,6 +64,8 @@ export class WhatsappSenderController {
     private readonly sender: WhatsappSenderService,
     private readonly connect: WhatsappConnectService,
     private readonly status: ConnectionStatusService,
+    private readonly disconnectService: WhatsappDisconnectService,
+    private readonly settings: WhatsappConnectionSettingsService,
   ) {}
 
   @Get()
@@ -50,6 +74,27 @@ export class WhatsappSenderController {
     @CurrentUser() user: AuthenticatedUser,
   ): WhatsappSenderAvailabilityDto {
     return this.sender.getAvailability(user);
+  }
+
+  @Post('disconnect')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  disconnect(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WhatsappDisconnectResponseDto> {
+    return this.disconnectService.disconnect(user);
+  }
+
+  @Patch('connection')
+  @Header('Cache-Control', 'no-store')
+  updateConnection(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(whatsappConnectionSettingsPipe) body: object,
+  ): Promise<WhatsappConnectionSettingsDto> {
+    return this.settings.update(
+      user,
+      body as UpdateWhatsappConnectionSettingsDto,
+    );
   }
 
   /** Setup progress and template counts; `null` before any signup. */

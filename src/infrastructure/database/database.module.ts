@@ -38,10 +38,12 @@ import { ReviewPromptsRepository } from './repositories/review-prompts.repositor
 import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
 import { TipsCampaignsRepository } from './repositories/tips-campaigns.repository';
 import { MetaWebhookEventsRepository } from './repositories/meta-webhook-events.repository';
+import { CustomerMessagesRepository } from './repositories/customer-messages.repository';
 
 @Module({
   imports: [ConfigModule],
   providers: [
+    CustomerMessagesRepository,
     CreditAccountingRepository,
     PeriodicPlanAccounting,
     PrepaidCreditAccounting,
@@ -81,6 +83,7 @@ import { MetaWebhookEventsRepository } from './repositories/meta-webhook-events.
     MetaWebhookEventsRepository,
   ],
   exports: [
+    CustomerMessagesRepository,
     CreditAccountingRepository,
     PeriodicPlanAccounting,
     PrepaidCreditAccounting,

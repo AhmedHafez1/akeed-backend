@@ -59,6 +59,9 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     kind,
     state,
     'akeed_system', // sender_kind
+    null, // sender_connection_id
+    null, // sender_phone_number_id
+    null, // sender_reason
     'cod_verification', // template_name
     'ar', // language_code
     providerMessageId, // provider_message_id
@@ -75,6 +78,24 @@ function dispatchRow(overrides: DispatchOverrides = {}) {
     {}, // metadata
     '2026-05-15T00:00:00.000Z', // created_at
     '2026-05-15T00:00:00.000Z', // updated_at
+    null, // template_variant_key
+    null, // template_purpose
+    null, // meta_template_name
+    null, // meta_language_code
+    null, // resolved_language
+    null, // template_fallback_reason
+    null, // template_skipped_key
+    null, // billing_pool
+    null, // billing_cost
+    null, // billing_refunded_at
+    null, // sender_connection_generation
+    null, // sender_recovery_state
+    0, // sender_retry_count
+    0, // sender_recovery_version
+    null, // sender_recovery_due_at
+    null, // sender_recovery_template
+    null, // fallback_for_dispatch_id
+    false, // sender_automation_pending
   ];
 }
 

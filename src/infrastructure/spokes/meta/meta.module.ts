@@ -1,3 +1,4 @@
+import { MetaSendContextService } from './own-number/meta-send-context.service';
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { HttpModule } from '@nestjs/axios';
@@ -15,6 +16,7 @@ import { VerificationAutomationQueueModule } from '../../../modules/verification
 import { MetaWebhookEventsProcessor } from './meta-webhook-events.processor';
 import { MetaWebhookEventsScheduler } from './meta-webhook-events.scheduler';
 import { MetaWebhookEventsService } from './meta-webhook-events.service';
+import { MetaWebhookRoutingService } from './meta-webhook-routing.service';
 import { MetaWebhookIntakeInterceptor } from './meta-webhook-intake.interceptor';
 import { META_WEBHOOK_QUEUE } from './meta-webhook-queue.constants';
 
@@ -31,7 +33,9 @@ import { META_WEBHOOK_QUEUE } from './meta-webhook-queue.constants';
   ],
   controllers: [WhatsAppWebhookController],
   providers: [
+    MetaWebhookRoutingService,
     WhatsAppService,
+    MetaSendContextService,
     WhatsAppWebhookService,
     MetaTemplateCatalogAdapter,
     MetaTemplateWebhookHandler,

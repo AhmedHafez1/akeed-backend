@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import {
   CONNECTION_SETUP_SWEEP_EVERY_MS,
+  CONNECTION_HEALTH_SWEEP_JOB,
   CONNECTION_SETUP_SWEEP_JOB,
   CONNECTION_SETUP_SWEEP_SCHEDULER,
   CONNECTION_TEMPLATE_SYNC_ALL_JOB,
@@ -35,6 +36,15 @@ export class WhatsappConnectionSetupScheduler implements OnApplicationBootstrap 
 
   async schedule(): Promise<void> {
     try {
+      await this.queue.upsertJobScheduler(
+        'whatsapp-health-sweep',
+        { every: 60_000 },
+        {
+          name: CONNECTION_HEALTH_SWEEP_JOB,
+          data: {},
+          opts: CONNECTION_SETUP_JOB_OPTIONS,
+        },
+      );
       await this.queue.upsertJobScheduler(
         CONNECTION_SETUP_SWEEP_SCHEDULER,
         { every: CONNECTION_SETUP_SWEEP_EVERY_MS },

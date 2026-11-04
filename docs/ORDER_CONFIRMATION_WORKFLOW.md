@@ -275,6 +275,22 @@ store and source. Add `include_test=true` to count test sends.
   answers `400 ADMIN_TEMPLATE_METRICS_RANGE_INVALID`.
 - Sends without a recorded template are returned apart, under `not_recorded`.
 
+### Merchant sender recovery
+
+Merchant HTTP attempts are recorded separately from the logical dispatch, including each claim, connection generation, provider message ID and result. Retries retain the original charge. A failed merchant attempt is settled and refunded before one new Akeed dispatch generation is claimed with the fallback charge rule. Partial or empty balances never create debt. Duplicate jobs and receipts cannot create another fallback generation.
+
+Synchronous immediate fallback continues in the sending job. Failed receipts queue `verification.sender_retry` or `verification.sender_fallback`; a one-minute sweep restores missed queue handoffs and reconciles expired merchant claims. Closed verifications stop recovery. Pending recovery pauses reminder and no-reply work; successful replacement acceptance restarts the remaining automation from that acceptance time. Scheduling has its own durable handoff so a worker crash cannot lose it.
+
+A merchant send with no clear provider result is refunded and superseded by Akeed. A late merchant acceptance or failure remains in the attempt audit without restoring its charge or changing the replacement message. A known accepted message whose bookkeeping failed stays on the acceptance-repair path. Shared-sender ambiguous outcomes and staff resolution retain their existing behavior.
+
+### Which sender a send used
+
+Each confirmation, reminder and onboarding test selects its template, resolves its sender, then claims its dispatch before contacting the provider. With own-number sending disabled, the resolver returns Akeed without reading connections or merchant template statuses. When enabled, a merchant connection must be active and not degraded, and the exact selected text template and language must be approved as UTILITY in that account. Otherwise the first failing check records why Akeed was selected.
+
+The dispatch records `sender_kind`, `sender_connection_id`, `sender_phone_number_id` and `sender_reason` before sending. A reclaimed attempt retains that sender and phone snapshot; a new message resolves afresh. Merchant sends omit the logo image header, use the connection's strictly decrypted business token and have a 15-second deadline. Turning sending off also stops already-claimed merchant retries before HTTP. Missing credentials, a replaced number or a connection/template no longer ready refuses the attempt without silently changing its sender. Merchant failures follow a sender-specific policy: recipient faults stop, transient coded faults receive two durable delayed retries (30 seconds, then 120 seconds), and eligible failures fall back to Akeed. Shared-sender failure handling is unchanged.
+
+Test orders sent through the billing-exempt onboarding path still resolve their sender and reserve no usage or credit. Every other send is charged by its claimed sender and records `billing_pool` and `billing_cost` in the same claim: a send from the merchant's number costs 1 displayed credit or one own-number plan message, as described in [Own-number billing](ONBOARDING_AND_BILLING.md#own-number-billing). Acknowledgments and nudges remain on Akeed and record their shared sender metadata with reason `service_message`. Historical sender metadata remains null rather than being inferred. Setup ends in `verifying`; only a health check reporting aggregate `AVAILABLE` activates the connection. Sending still requires its independent deployment switch.
+
 ### Customer-message improvements
 
 Seven improvements, each behind its own switch and all off by default (see
@@ -323,16 +339,25 @@ suite pins.
   through `MessagingPort.sendFreeFormText`.
   - The acknowledgment follows a customer confirm or cancel (button or a
     recognized typed answer) that changed the row. Never after a merchant
-    cancellation, an automatic `no_reply` or a test order. Both the global
+    cancellation, an automatic `no_reply` or a test order. On Akeed's number, both the global
     switch and the merchant’s **Settings › Message › Thank-you messages**
     opt-in must be enabled; every store starts off. The worker rechecks the
     current preference and reserves normal message capacity before sending.
+  - On a merchant's number, the acknowledgment follows that connection's
+    `thank_you_enabled` preference (default on), independently of the global
+    acknowledgment switch and the integration's paid opt-in. The receiving
+    phone, connection and signup generation travel with the job. Sending
+    requires the own-number sending switch and the same active, healthy
+    connection; a disconnect, replacement or disabled preference stops it.
+    Credentials are checked again immediately before HTTP. It uses no Akeed
+    credits or plan capacity, and never falls back to Akeed.
   - The nudge follows a typed reply that quotes (`context.id`) an open
     verification's message, by `wa_message_id` or by the dispatch that sent
     it, and reads as no answer. The reply is stored in
     `verification_reply_events` without its text. Without `context.id` nothing
     is stored or sent. The verification still runs out to `no_reply` if the
-    customer never taps a button.
+    customer never taps a button. Unrecognized typed replies received on
+    merchant numbers do not trigger nudges.
   - One row per verification and kind in `verification_service_messages`,
     claimed before the send, so a replay or a crash never sends twice. Outside
     the 24-hour window, or when Meta answers 131047, the row is `skipped`
@@ -341,7 +366,7 @@ suite pins.
     send, else the language's `default` text.
   - A paid acknowledgment receipt settles its billing dispatch and records the
     service-message result, without changing the order’s outcome. A delivery
-    receipt for a nudge or historical free acknowledgment touches only its own row; a
+    receipt for a nudge, merchant-number acknowledgment or historical free acknowledgment touches only its own row; a
     `failed` receipt marks it `failed` (`delivery_failed`).
 - **Preview.** The settings response carries `template.messages` and
   `message` on each style, and the onboarding test carries `message`: lines of
@@ -485,7 +510,9 @@ Usage principles:
 - Unknown provider outcomes are refunded while failed and restored to their original billing period if staff later proves acceptance.
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
-- Acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
+- A send from the merchant's own number draws the own-number pool on a plan and costs 1 displayed credit on prepaid; releases and reversals return it to the pool it came from ([Own-number billing](ONBOARDING_AND_BILLING.md#own-number-billing)).
+- Akeed-number acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
+- Merchant-number acknowledgments have no billing dispatch and use no Akeed credits or plan capacity. Their service-message row records `merchant_own` and the receiving `sender_phone_number_id`; failures affect that row only. Meta bills the merchant separately under its service-message pricing.
 - Nudges remain free and are recorded only in `verification_service_messages`. Historical unlinked acknowledgments are never billed retroactively.
 - Dashboard usage shows consumed count and included limit for the current billing period.
 - Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade. New orders wait at `blocked` and are sent automatically when capacity returns (see [Orders blocked by capacity](#orders-blocked-by-capacity)).

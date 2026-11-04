@@ -38,6 +38,7 @@ export const FAKE_SETUP_APP_ID = '999653349077771';
 export type SetupFakeOperation =
   | 'subscribed_apps_read'
   | 'subscribe'
+  | 'unsubscribe'
   | 'phone_numbers'
   | 'phone_read'
   | 'register'
@@ -213,9 +214,18 @@ export function createMetaSetupFake(
 
     let match = /^\/(\d+)\/subscribed_apps$/.exec(path);
     if (match) {
-      const op = method === 'POST' ? 'subscribe' : 'subscribed_apps_read';
+      const op =
+        method === 'DELETE'
+          ? 'unsubscribe'
+          : method === 'POST'
+            ? 'subscribe'
+            : 'subscribed_apps_read';
       const failure = takeFailure(op);
       if (failure) return fail(failure, echo, init?.signal);
+      if (method === 'DELETE') {
+        state.subscribedAppIds.delete(FAKE_SETUP_APP_ID);
+        return json(200, { success: true });
+      }
       if (method === 'POST') {
         state.subscribedAppIds.add(FAKE_SETUP_APP_ID);
         return json(200, { success: true });

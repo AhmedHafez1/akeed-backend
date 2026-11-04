@@ -136,6 +136,7 @@ describe('VerificationSendService and the template registry', () => {
     expect(messagingPort.sendVerificationTemplate).toHaveBeenCalledWith(
       expect.objectContaining({
         template: {
+          registryKey: 'cod_confirm.ar.gulf',
           variantKey: 'ar.gulf',
           language: 'ar',
           templateName: 'akeed_cod_verification_direct_gulf',

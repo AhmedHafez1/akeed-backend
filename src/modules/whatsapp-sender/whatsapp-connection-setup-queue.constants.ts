@@ -2,6 +2,8 @@ export const WHATSAPP_CONNECTION_SETUP_QUEUE = 'whatsapp-connection-setup';
 
 /** One attempt at a connection's setup. */
 export const CONNECTION_SETUP_JOB = 'connection-setup';
+export const CONNECTION_HEALTH_JOB = 'connection-health';
+export const CONNECTION_HEALTH_SWEEP_JOB = 'connection-health-sweep';
 /** Finds setups that are due and queues them. */
 export const CONNECTION_SETUP_SWEEP_JOB = 'connection-setup-sweep';
 /** Reconciles one connection's templates with its account. */
@@ -33,6 +35,7 @@ export interface ConnectionTemplateSyncJob {
 }
 
 export type WhatsappConnectionSetupJobData =
+  | { orgId: string; connectionId: string; signupGeneration: number }
   | ConnectionSetupJob
   | ConnectionTemplateSyncJob
   | Record<string, never>;

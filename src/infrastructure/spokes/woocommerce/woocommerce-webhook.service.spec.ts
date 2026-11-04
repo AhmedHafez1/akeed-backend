@@ -399,7 +399,10 @@ describe('WooCommerceWebhookService', () => {
         'another store as the source',
         () => ({ source: 'https://other.example.com' }),
       ],
-      ['the store over plain HTTP', () => ({ source: 'http://example.com/' })],
+      [
+        'another store over plain HTTP',
+        () => ({ source: 'http://other.example.com/' }),
+      ],
       [
         'the store under a path',
         () => ({ source: 'https://example.com/shop' }),
@@ -510,11 +513,13 @@ describe('WooCommerceWebhookService', () => {
       expect(lines).toContain('source_mismatch');
     });
 
-    it('accepts the source with or without a trailing slash, in any letter case', async () => {
+    it('accepts the source with or without a trailing slash, in any letter case or over plain HTTP', async () => {
       for (const source of [
         'https://example.com',
         'https://example.com/',
         'HTTPS://EXAMPLE.COM/',
+        // Sent from a background job of a store whose settings say http.
+        'http://example.com/',
       ]) {
         const { service, producer } = createService();
         const { headers, body } = delivery(undefined, { source });

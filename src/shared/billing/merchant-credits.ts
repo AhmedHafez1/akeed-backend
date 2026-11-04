@@ -11,6 +11,17 @@ export const DISPLAYED_CREDITS_PER_STORED = 2;
 /** Displayed credits one message from the Akeed number uses. */
 export const CREDITS_PER_AKEED_MESSAGE = DISPLAYED_CREDITS_PER_STORED;
 
+/** Displayed credits one message from the merchant's own number uses. */
+export const CREDITS_PER_OWN_NUMBER_MESSAGE = 1;
+
+/**
+ * A stored balance plus the account's spare, as the merchant sees it. The
+ * spare is an own-number message already paid for: one displayed credit.
+ */
+export function toDisplayedBalance(stored: number, spareCredit = 0): number {
+  return toDisplayedCredits(stored) + (spareCredit === 1 ? 1 : 0);
+}
+
 export class OddDisplayedCreditsError extends Error {
   constructor() {
     super('A displayed credit quantity must be even.');
@@ -41,11 +52,14 @@ export function displayedUnitPriceMinor(storedUnitPriceMinor: number): number {
 export function displayedUsage(entitlement: {
   consumedCount: number;
   includedLimit: number;
-  credits?: unknown;
+  credits?: { spareCredit?: number } | null;
 }): { used: number; limit: number; remaining: number } {
-  const factor = 'credits' in entitlement ? DISPLAYED_CREDITS_PER_STORED : 1;
+  const prepaid = 'credits' in entitlement;
+  const factor = prepaid ? DISPLAYED_CREDITS_PER_STORED : 1;
   const used = entitlement.consumedCount * factor;
-  const limit = entitlement.includedLimit * factor;
+  const limit =
+    entitlement.includedLimit * factor +
+    (prepaid && entitlement.credits?.spareCredit === 1 ? 1 : 0);
   return { used, limit, remaining: Math.max(limit - used, 0) };
 }
 
@@ -80,25 +94,34 @@ export function displayedStartQuote<
     estimatedCreditsMin: number;
     estimatedCreditsMax: number;
     blockers: { shortfall?: number; suggestedPurchaseCredits?: number }[];
+    /** Messages that would go from the merchant's own number. */
+    ownNumber?: { spareCredit: number };
   },
 >(
   quote: T,
-): T & { estimatedMessagesMin: number; estimatedMessagesMax: number } {
+): Omit<T, 'ownNumber'> & {
+  estimatedMessagesMin: number;
+  estimatedMessagesMax: number;
+} {
+  const { ownNumber, ...stored } = quote;
   const messages = {
     estimatedMessagesMin: quote.estimatedCreditsMin,
     estimatedMessagesMax: quote.estimatedCreditsMax,
   };
   if (quote.accountingMode !== 'prepaid_credit')
-    return { ...quote, ...messages };
+    return { ...stored, ...messages };
+  const perMessage = ownNumber
+    ? CREDITS_PER_OWN_NUMBER_MESSAGE
+    : CREDITS_PER_AKEED_MESSAGE;
   return {
-    ...quote,
+    ...stored,
     ...messages,
     creditsAvailable:
       quote.creditsAvailable === null
         ? null
-        : toDisplayedCredits(quote.creditsAvailable),
-    estimatedCreditsMin: toDisplayedCredits(quote.estimatedCreditsMin),
-    estimatedCreditsMax: toDisplayedCredits(quote.estimatedCreditsMax),
+        : toDisplayedBalance(quote.creditsAvailable, ownNumber?.spareCredit),
+    estimatedCreditsMin: quote.estimatedCreditsMin * perMessage,
+    estimatedCreditsMax: quote.estimatedCreditsMax * perMessage,
     blockers: quote.blockers.map(displayedCreditBlocker),
   };
 }

@@ -67,6 +67,9 @@ describe('provider-neutral entitlement PostgreSQL contract', () => {
       'utf8',
     );
     await client.unsafe(migration.split('--> statement-breakpoint')[0]);
+    await client.unsafe(
+      `ALTER TABLE "${namespace}".integration_monthly_usage ADD COLUMN own_number_consumed integer NOT NULL DEFAULT 0`,
+    );
   });
 
   afterAll(async () => {
