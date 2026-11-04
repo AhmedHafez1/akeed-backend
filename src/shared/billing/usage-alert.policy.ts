@@ -1,3 +1,4 @@
+import type { UsagePools } from './usage-pools';
 import type { BillingPlanId } from './billing-plan';
 import { isOneTimeBillingPlan } from './billing-plan';
 import { isBillingStatusActive } from '../utils/billing.util';
@@ -145,4 +146,22 @@ export function renewableSubscriptionPlanId(params: {
 }): BillingPlanId | null {
   if (!isBillingStatusActive(params.billingStatus)) return null;
   return renewablePlanId({ mode: 'plan', planId: params.planId });
+}
+
+/**
+ * The pools a plan alert reports separately: only when the merchant's own
+ * number has paid for something this period, or the alert's figures already
+ * count both pools because the next send would go from that number. Otherwise
+ * the email reads exactly as it did before own numbers, about the Akeed pool.
+ */
+export function reportedUsagePools(entitlement: {
+  consumedCount: number;
+  pools?: UsagePools | null;
+}): UsagePools | null {
+  const pools = entitlement.pools;
+  if (!pools) return null;
+  return pools.ownNumber.used > 0 ||
+    entitlement.consumedCount !== pools.akeed.used
+    ? pools
+    : null;
 }

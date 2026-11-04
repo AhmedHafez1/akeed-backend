@@ -1,6 +1,7 @@
 import type { CreditDenialCode } from '../../../shared/billing/credit-eligibility';
 import type { BillingPlanId } from '../../../shared/billing/billing-plan';
 import type { CapacityAction } from '../../../shared/billing/usage-alert.policy';
+import type { UsagePools } from '../../../shared/billing/usage-pools';
 import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
 import type { RemoteSyncDto } from '../../../shared/verification/outcome-sync';
 import type { VerificationRowCapability } from '../../../shared/verification/verification-row-actions';
@@ -389,6 +390,11 @@ export interface VerificationOverviewDto {
     limit: number;
     percent: number;
     state: UsageState;
+    /**
+     * Shopify plans: the Akeed and own-number pools as persisted, which paid
+     * each send. Null for prepaid credits.
+     */
+    pools?: UsagePools | null;
   } | null;
   /**
    * Orders waiting for sending capacity and what unblocks them. Null when

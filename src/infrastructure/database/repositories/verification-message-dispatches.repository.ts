@@ -2516,13 +2516,21 @@ export class VerificationMessageDispatchesRepository {
    * sends, reminders and thank-yous, which all use plan messages. Billing-exempt onboarding tests are excluded because
    * they are not order traffic; the plan recommendation sizes on this number.
    */
+  /**
+   * Accepted chargeable sends since a moment, in total and by the plan pool
+   * that paid for each. A send recorded before the pool was stored was paid
+   * from the Akeed pool, the only one there was.
+   */
   async countAcceptedSince(params: {
     orgId: string;
     integrationId: string;
     since: string;
-  }): Promise<number> {
+  }): Promise<{ total: number; akeed: number; ownNumber: number }> {
     const [row] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        count: sql<number>`count(*)::int`,
+        ownNumber: sql<number>`(count(*) filter (where ${verificationMessageDispatches.billingPool} = 'own_number'))::int`,
+      })
       .from(verificationMessageDispatches)
       .where(
         and(
@@ -2532,7 +2540,9 @@ export class VerificationMessageDispatchesRepository {
           sql`coalesce((${verificationMessageDispatches.metadata} ->> 'billingExempt')::boolean, false) = false`,
         ),
       );
-    return row?.count ?? 0;
+    const total = row?.count ?? 0;
+    const ownNumber = row?.ownNumber ?? 0;
+    return { total, akeed: total - ownNumber, ownNumber };
   }
 
   async isLatestGeneration(id: string): Promise<boolean> {

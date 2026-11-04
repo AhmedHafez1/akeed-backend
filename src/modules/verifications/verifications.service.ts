@@ -589,10 +589,13 @@ export class VerificationsService {
       source: this.resolveDashboardSourceState(integrations),
       settings: this.resolveSettingsSummary(source),
       usage: entitlement
-        ? resolveUsage(
-            displayedUsage(entitlement).used,
-            displayedUsage(entitlement).limit,
-          )
+        ? {
+            ...resolveUsage(
+              displayedUsage(entitlement).used,
+              displayedUsage(entitlement).limit,
+            ),
+            pools: entitlement.pools ?? null,
+          }
         : null,
       capacity:
         source && entitlement

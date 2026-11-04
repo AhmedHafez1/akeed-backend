@@ -357,3 +357,69 @@ describe('UsageAlertService delivery', () => {
     await expect(service.evaluateOrg('org-1')).resolves.toBeUndefined();
   });
 });
+
+describe('UsageAlertService plan pools', () => {
+  const pools = (akeedUsed: number, ownUsed: number) => ({
+    akeed: { used: akeedUsed, limit: 100, remaining: 100 - akeedUsed },
+    ownNumber: { used: ownUsed, limit: 300, remaining: 300 - ownUsed },
+  });
+  const textOf = (email: { send: jest.Mock }) =>
+    (email.send.mock.calls as unknown as [{ text: string }][])[0][0].text;
+
+  it('reports both pools once the merchant number has paid for sends', async () => {
+    const { service, store, entitlements, email } = setup();
+    entitlements.readEntitlement.mockResolvedValue({
+      ...planEntitlement(80),
+      pools: pools(80, 12),
+    });
+
+    await service.evaluateOrg('org-1');
+
+    const text = textOf(email);
+    expect(text).toContain('Messages from Akeed: 80 of 100 used.');
+    expect(text).toContain('Messages from your number: 12 of 300 used.');
+    expect(text).toContain('Meta bills your business separately');
+    expect(text).not.toContain('WhatsApp confirmations in this period');
+    // The level, cycle and dedupe come from the same figures as before.
+    expect(subjects(email)).toEqual([
+      'You have used 80% of your Akeed confirmations',
+    ]);
+    expect(store.rows).toEqual([
+      expect.objectContaining({ level: '80', cycleKey: '2026-10-01' }),
+    ]);
+  });
+
+  it('keeps the original wording while only the Akeed pool counts', async () => {
+    const { service, entitlements, email } = setup();
+    entitlements.readEntitlement.mockResolvedValue({
+      ...planEntitlement(80),
+      pools: pools(80, 0),
+    });
+
+    await service.evaluateOrg('org-1');
+
+    const text = textOf(email);
+    expect(text).toContain(
+      'You have used 80 of 100 WhatsApp confirmations in this period.',
+    );
+    expect(text).not.toContain('Messages from your number');
+  });
+
+  it('breaks combined figures down by pool without changing the level', async () => {
+    const { service, store, entitlements, email } = setup();
+    // The next send would go from the merchant's number, so the entitlement
+    // already counts both pools: 320 of 400 is 80%.
+    entitlements.readEntitlement.mockResolvedValue({
+      ...planEntitlement(320),
+      includedLimit: 400,
+      pools: pools(90, 230),
+    });
+
+    await service.evaluateOrg('org-1');
+
+    expect(store.rows).toEqual([expect.objectContaining({ level: '80' })]);
+    const text = textOf(email);
+    expect(text).toContain('Messages from Akeed: 90 of 100 used.');
+    expect(text).toContain('Messages from your number: 230 of 300 used.');
+  });
+});

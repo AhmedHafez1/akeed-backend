@@ -206,6 +206,30 @@ describe('AdminStoresService', () => {
     });
   });
 
+  it.each([
+    [0, 0, 960],
+    [1, 1, 961],
+    // A stray value never inflates the merchant-visible balance.
+    [2, 0, 960],
+  ])(
+    'shows stored credits plus a spare of %s as the merchant sees them',
+    async (stored, spare, displayed) => {
+      const service = createService({
+        findStorePage: jest.fn().mockResolvedValue({
+          summary,
+          rows: [standaloneRow({ credit_spare: stored })],
+        }),
+      });
+      const [store] = (await service.getStores({})).data;
+      expect(store.billing).toMatchObject({
+        model: 'credits',
+        available: 480,
+        spare,
+        displayed_available: displayed,
+      });
+    },
+  );
+
   it('reports critical signals ahead of attention signals', async () => {
     const service = createService({
       findStorePage: jest.fn().mockResolvedValue({

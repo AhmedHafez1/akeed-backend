@@ -77,6 +77,11 @@ export interface CreditSummaryResponseDto {
     messagePriceMinor: number;
     /** Displayed credits one Akeed message uses. */
     creditsPerMessage: number;
+    /**
+     * Displayed credits one message from the merchant's own number uses.
+     * Whether the merchant can send from their number is a separate fact.
+     */
+    ownNumberCreditsPerMessage: number;
     currency: string;
   };
   range: { min: number; max: number; step: number };

@@ -1,5 +1,8 @@
 import type { SenderAlert } from '../../../shared/notifications/sender-alert.policy';
-import type { LastAcceptedSender } from '../../../infrastructure/database/repositories/whatsapp-sender-read.repository';
+import type {
+  LastAcceptedByMessage,
+  LastAcceptedSender,
+} from '../../../infrastructure/database/repositories/whatsapp-sender-read.repository';
 /**
  * What the connect screen needs to launch Embedded Signup. Public Meta ids
  * only: never a token, PIN, ticket or ciphertext.
@@ -7,7 +10,10 @@ import type { LastAcceptedSender } from '../../../infrastructure/database/reposi
 export interface WhatsappSenderAvailabilityDto {
   sendingEnabled: boolean;
   permissions: { canDisconnect: boolean; canUpdateThankYou: boolean };
+  /** The later of `lastAccepted.confirmation` and `lastAccepted.reminder`. */
   lastAcceptedSend: LastAcceptedSender | null;
+  /** Historical, per message: never a statement of current readiness. */
+  lastAccepted: LastAcceptedByMessage;
   alerts: SenderAlert[];
   /** Connect is on and this organization is allowed. */
   available: boolean;

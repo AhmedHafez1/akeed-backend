@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { verificationMessageDispatches as dispatches } from '../schema';
 
@@ -10,12 +10,39 @@ export interface LastAcceptedSender {
   deliveryStatus: 'accepted' | 'delivered' | 'read' | 'failed';
 }
 
+/** The latest accepted confirmation and reminder, kept apart. */
+export interface LastAcceptedByMessage {
+  confirmation: LastAcceptedSender | null;
+  reminder: LastAcceptedSender | null;
+}
+
+type ChargeableKind = 'initial' | 'follow_up';
+
 @Injectable()
 export class WhatsappSenderReadRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
   /** Historical observation, never a prediction of the next template's sender. */
   async lastAccepted(orgId: string): Promise<LastAcceptedSender | null> {
+    return this.latest(orgId, ['initial', 'follow_up']);
+  }
+
+  /**
+   * The same observation for confirmations and reminders separately, so a
+   * screen can name which message it describes.
+   */
+  async lastAcceptedByMessage(orgId: string): Promise<LastAcceptedByMessage> {
+    const [confirmation, reminder] = await Promise.all([
+      this.latest(orgId, ['initial']),
+      this.latest(orgId, ['follow_up']),
+    ]);
+    return { confirmation, reminder };
+  }
+
+  private async latest(
+    orgId: string,
+    kinds: ChargeableKind[],
+  ): Promise<LastAcceptedSender | null> {
     const [row] = await this.db
       .select({
         kind: dispatches.senderKind,
@@ -30,7 +57,7 @@ export class WhatsappSenderReadRepository {
         and(
           eq(dispatches.orgId, orgId),
           isNotNull(dispatches.acceptedAt),
-          sql`${dispatches.kind}::text IN ('initial', 'follow_up')`,
+          inArray(dispatches.kind, kinds),
           sql`coalesce(${dispatches.metadata}->>'billingExempt', 'false') <> 'true'`,
         ),
       )

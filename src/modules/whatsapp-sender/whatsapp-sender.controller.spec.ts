@@ -303,6 +303,7 @@ describe('/api/whatsapp-sender', () => {
       alerts: [],
       sendingEnabled: false,
       lastAcceptedSend: null,
+      lastAccepted: { confirmation: null, reminder: null },
       permissions: {
         canDisconnect: user!.role === 'owner',
         canUpdateThankYou: user!.role !== 'viewer',
@@ -324,6 +325,7 @@ describe('/api/whatsapp-sender', () => {
       alerts: [],
       sendingEnabled: false,
       lastAcceptedSend: null,
+      lastAccepted: { confirmation: null, reminder: null },
       permissions: {
         canDisconnect: user!.role === 'owner',
         canUpdateThankYou: user!.role !== 'viewer',
@@ -354,6 +356,7 @@ describe('/api/whatsapp-sender', () => {
         alerts: [],
         sendingEnabled: false,
         lastAcceptedSend: null,
+        lastAccepted: { confirmation: null, reminder: null },
         permissions: {
           canDisconnect: true,
           canUpdateThankYou: true,
@@ -385,6 +388,7 @@ describe('/api/whatsapp-sender', () => {
         alerts: [],
         sendingEnabled: false,
         lastAcceptedSend: null,
+        lastAccepted: { confirmation: null, reminder: null },
         permissions: {
           canDisconnect: role === 'owner',
           canUpdateThankYou: role !== 'viewer',

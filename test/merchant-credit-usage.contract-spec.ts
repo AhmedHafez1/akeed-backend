@@ -4,6 +4,7 @@ import { AdminQueryRepository } from '../src/modules/admin/admin-query.repositor
 import { creditUsageHarness } from './contracts/credit-usage-harness';
 import { CreditUsageRepository } from '../src/infrastructure/database/repositories/credit-usage.repository';
 import { WhatsappSenderReadRepository } from '../src/infrastructure/database/repositories/whatsapp-sender-read.repository';
+import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import {
   adminStoreLifecycles,
   integrations,
@@ -103,6 +104,18 @@ describe('merchant per-send usage on disposable PostgreSQL', () => {
     expect(await latest.lastAccepted(source.orgId)).toMatchObject({
       kind: 'merchant_own',
       acceptedAt: '2026-11-03T12:00:00.000Z',
+    });
+    // A thank-you is neither; with no reminder yet, only the confirmation shows.
+    expect(await latest.lastAcceptedByMessage(source.orgId)).toMatchObject({
+      confirmation: {
+        kind: 'merchant_own',
+        acceptedAt: '2026-11-03T12:00:00.000Z',
+      },
+      reminder: null,
+    });
+    expect(await latest.lastAcceptedByMessage(randomUUID())).toEqual({
+      confirmation: null,
+      reminder: null,
     });
     expect((await completeUsage(randomUUID(), 'UTC', asOf)).usedThisMonth).toBe(
       0,
@@ -253,5 +266,16 @@ describe('merchant per-send usage on disposable PostgreSQL', () => {
     expect(page.rows.find((row) => row.org_id === shopify.orgId)).toMatchObject(
       { usage_used: 0, own_number_used: 1 },
     );
+    // Plan recommendations size each pool from what that pool paid for.
+    await expect(
+      new VerificationMessageDispatchesRepository(
+        h.db as never,
+        {} as never,
+      ).countAcceptedSince({
+        orgId: shopify.orgId,
+        integrationId: shopify.integrationId,
+        since: '2026-11-01T00:00:00Z',
+      }),
+    ).resolves.toEqual({ total: 1, akeed: 0, ownNumber: 1 });
   });
 });

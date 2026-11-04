@@ -7,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
-import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
+import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
 import { ownNumberLimit } from '../../shared/billing/billing-plan';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
@@ -80,7 +80,9 @@ export type AdminStoreBilling =
       available: number;
       held: number;
       debt: number;
-      /** What the merchant sees; the fields above are stored credits. */
+      /** The spare displayed credit (0 or 1) on top of the stored balance. */
+      spare: number;
+      /** What the merchant sees: stored available as displayed, plus the spare. */
       displayed_available: number;
       balance_state: BalanceState;
     };
@@ -708,9 +710,11 @@ export class AdminStoresService {
             available: Number(row.credit_available ?? 0),
             held: Number(row.credit_held_credits ?? 0),
             debt: Number(row.credit_debt ?? 0),
-            displayed_available:
-              toDisplayedCredits(Number(row.credit_available ?? 0)) +
+            spare: Number(row.credit_spare ?? 0) === 1 ? 1 : 0,
+            displayed_available: toDisplayedBalance(
+              Number(row.credit_available ?? 0),
               Number(row.credit_spare ?? 0),
+            ),
             balance_state: row.credit_balance_state,
           }
         : {

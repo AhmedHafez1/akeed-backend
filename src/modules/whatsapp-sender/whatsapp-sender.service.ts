@@ -15,6 +15,7 @@ const UNAVAILABLE: WhatsappSenderAvailabilityDto = {
   sendingEnabled: false,
   permissions: { canDisconnect: false, canUpdateThankYou: false },
   lastAcceptedSend: null,
+  lastAccepted: { confirmation: null, reminder: null },
   available: false,
   appId: null,
   configId: null,
@@ -44,7 +45,7 @@ export class WhatsappSenderService {
     const facts = {
       alerts,
       sendingEnabled: config.sendingEnabled,
-      lastAcceptedSend: (await this.reads?.lastAccepted(user.orgId)) ?? null,
+      ...(await this.lastAccepted(user.orgId)),
       permissions: {
         canDisconnect: canChangeWhatsappConnection(user.role),
         canUpdateThankYou: canWriteOrganization(user.role),
@@ -64,5 +65,21 @@ export class WhatsappSenderService {
       configId: config.embeddedSignupConfigId,
       canConnect: canChangeWhatsappConnection(user.role),
     };
+  }
+
+  /** Both historical facts from one read; the combined one is the later of the two. */
+  private async lastAccepted(orgId: string) {
+    const byMessage = (await this.reads?.lastAcceptedByMessage(orgId)) ?? {
+      confirmation: null,
+      reminder: null,
+    };
+    const { confirmation, reminder } = byMessage;
+    const lastAcceptedSend =
+      confirmation && reminder
+        ? confirmation.acceptedAt >= reminder.acceptedAt
+          ? confirmation
+          : reminder
+        : (confirmation ?? reminder);
+    return { lastAcceptedSend, lastAccepted: byMessage };
   }
 }
