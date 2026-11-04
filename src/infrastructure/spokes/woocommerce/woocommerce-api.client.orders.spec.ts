@@ -116,6 +116,25 @@ describe('WooCommerceApiClient order calls', () => {
       });
     });
 
+    it('accepts a plain-HTTP link to the same store', async () => {
+      const { client } = clientAnswering(() =>
+        answer(
+          200,
+          order({
+            _links: {
+              self: [
+                { href: 'http://example.com/shop/wp-json/wc/v3/orders/1001' },
+              ],
+            },
+          }),
+        ),
+      );
+
+      await expect(
+        client.getOrder(STORE, credentials, ORDER_ID),
+      ).resolves.toMatchObject({ kind: 'found' });
+    });
+
     it('accepts the link of a store at a domain root', async () => {
       const { client } = clientAnswering(() =>
         answer(
@@ -175,11 +194,11 @@ describe('WooCommerceApiClient order calls', () => {
         }),
       ],
       [
-        'a plain-HTTP link',
+        'a plain-HTTP link to another host',
         order({
           _links: {
             self: [
-              { href: 'http://example.com/shop/wp-json/wc/v3/orders/1001' },
+              { href: 'http://other.example/shop/wp-json/wc/v3/orders/1001' },
             ],
           },
         }),

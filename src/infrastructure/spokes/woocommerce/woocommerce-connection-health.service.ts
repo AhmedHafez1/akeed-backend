@@ -19,7 +19,7 @@ import {
 } from './woocommerce-api.client';
 import { readWooCommerceCredentials } from './woocommerce-credentials';
 import {
-  canonicalizeWooCommerceStoreUrl,
+  isSameWooCommerceStore,
   wooCommerceStoreHost,
 } from './woocommerce-store-url';
 import {
@@ -158,8 +158,7 @@ export class WooCommerceConnectionHealthService {
       });
     }
     // The store's own value is compared and dropped: never stored or shown.
-    const reported = canonicalizeWooCommerceStoreUrl(store.homeUrl);
-    if (!reported.ok || reported.url !== connection.storeUrl)
+    if (!isSameWooCommerceStore(store.homeUrl, connection.storeUrl))
       problems.push('WOOCOMMERCE_STORE_URL_MISMATCH');
 
     const reading = await this.readWebhooks(connection, credentials, budget);

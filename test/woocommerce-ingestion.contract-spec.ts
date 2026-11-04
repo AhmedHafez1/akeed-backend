@@ -1521,12 +1521,24 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       },
     );
 
-    it('refuses the store over plain HTTP as the source', async () => {
+    it('accepts the store over plain HTTP as the source', async () => {
       const merchant = await connectMerchant();
       const before = await totalEvents();
 
       const ack = await deliver(merchant, placedCodFixture().payload, {
         headers: { source: `http://${merchant.store.host}/` },
+      });
+
+      expect(ack.status).toBe(200);
+      expect(await totalEvents()).toBe(before + 1);
+    });
+
+    it('refuses another store over plain HTTP as the source', async () => {
+      const merchant = await connectMerchant();
+      const before = await totalEvents();
+
+      const ack = await deliver(merchant, placedCodFixture().payload, {
+        headers: { source: `http://www.${merchant.store.host}/` },
       });
 
       expect(ack.status).toBe(401);

@@ -30,7 +30,7 @@ import {
   hashInstallToken,
   isWellFormedInstallToken,
 } from '../../../shared/commerce/install-token';
-import { canonicalizeWooCommerceStoreUrl } from './woocommerce-store-url';
+import { isSameWooCommerceStore } from './woocommerce-store-url';
 import { wooCommerceError } from './woocommerce.errors';
 
 /** The `X-WC-Webhook-*` headers of a delivery (finding 3.2). All untrusted. */
@@ -193,13 +193,11 @@ export class WooCommerceWebhookService {
     else if (!isValidWooCommerceSignature(rawBody, headers.signature, secret))
       reason = 'signature_mismatch';
 
-    // Strict equality after canonicalization (findings 2.9 and 2.16): a
-    // different spelling is refused, never accepted.
-    if (!reason) {
-      const reported = canonicalizeWooCommerceStoreUrl(headers.source);
-      if (!reported.ok || reported.url !== connection.storeUrl)
-        reason = 'source_mismatch';
-    }
+    // Strict equality after canonicalization (findings 2.9 and 2.16): another
+    // host or path is refused. Only an `http://` scheme is read as `https://`,
+    // because the store sends deliveries from a background job.
+    if (!reason && !isSameWooCommerceStore(headers.source, connection.storeUrl))
+      reason = 'source_mismatch';
     if (!reason) return;
 
     await this.connections.recordRejectedDelivery(

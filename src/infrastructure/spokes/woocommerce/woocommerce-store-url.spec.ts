@@ -1,5 +1,6 @@
 import {
   canonicalizeWooCommerceStoreUrl,
+  isSameWooCommerceStore,
   wooCommerceStoreHost,
 } from './woocommerce-store-url';
 
@@ -109,6 +110,30 @@ describe('canonicalizeWooCommerceStoreUrl', () => {
     for (const url of ['https://example.com', 'https://example.com/a/b']) {
       expect(canonicalizeWooCommerceStoreUrl(url)).toEqual({ ok: true, url });
     }
+  });
+});
+
+describe('isSameWooCommerceStore', () => {
+  it.each([
+    ['https://example.com', 'https://example.com'],
+    ['http://example.com', 'https://example.com'],
+    ['HTTP://Example.com/', 'https://example.com'],
+    ['  http://example.com/shop/  ', 'https://example.com/shop'],
+  ])('reads %s as the store at %s', (reported, storeUrl) => {
+    expect(isSameWooCommerceStore(reported, storeUrl)).toBe(true);
+  });
+
+  it.each([
+    ['another host', 'http://other.example.com'],
+    ['www in front', 'http://www.example.com'],
+    ['a subdirectory', 'http://example.com/shop'],
+    ['a port', 'http://example.com:8080'],
+    ['credentials', 'http://user@example.com'],
+    ['another scheme', 'ftp://example.com'],
+    ['no scheme', 'example.com'],
+    ['a value that is not text', 42],
+  ])('refuses %s', (_label, reported) => {
+    expect(isSameWooCommerceStore(reported, 'https://example.com')).toBe(false);
   });
 });
 
