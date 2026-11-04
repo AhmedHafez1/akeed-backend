@@ -483,6 +483,9 @@ export class VerificationAutomationProcessor extends WorkerHost {
         orgId: data.orgId,
         repliedAt: data.reply.repliedAt,
         intent: data.reply.intent,
+        ...(data.reply.receivingSender
+          ? { receivingSender: data.reply.receivingSender }
+          : {}),
       });
     } catch (error) {
       this.logger.error(

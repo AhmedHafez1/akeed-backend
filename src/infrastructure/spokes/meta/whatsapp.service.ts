@@ -12,6 +12,7 @@ import {
   ConfirmedMessageRejection,
   type FreeFormTextOutcome,
   type MessagingSenderStatus,
+  type MessagingPort,
 } from '../../../shared/ports/messaging.port';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../../../shared/messaging/message-texts.types';
 
@@ -355,11 +356,9 @@ export class WhatsAppService {
    * Sent once, never retried. 131047 is the closed window,
    * an expected outcome. Never throws.
    */
-  async sendFreeFormText(params: {
-    to: string;
-    body: string;
-    verificationId: string;
-  }): Promise<FreeFormTextOutcome> {
+  async sendFreeFormText(
+    params: Parameters<NonNullable<MessagingPort['sendFreeFormText']>>[0],
+  ): Promise<FreeFormTextOutcome> {
     if (!params.body || params.body.length > MESSAGE_TEXT_MAX_LENGTH) {
       return { outcome: 'rejected', code: 'body_length' };
     }
@@ -369,11 +368,21 @@ export class WhatsAppService {
       type: 'text',
       text: { body: params.body },
     };
+    let context: MetaSendContext = {
+      url: this.apiUrl,
+      token: this.accessToken,
+    };
     try {
+      if (params.sender) {
+        if (!this.sendContext)
+          return { outcome: 'rejected', code: 'sender_context_unavailable' };
+        context = await this.sendContext.resolveFreeForm(params);
+      }
       const response = await firstValueFrom(
-        this.httpService.post(this.apiUrl, payload, {
+        this.httpService.post(context.url, payload, {
+          ...(context.timeout ? { timeout: context.timeout } : {}),
           headers: {
-            Authorization: `Bearer ${this.accessToken}`,
+            Authorization: `Bearer ${context.token}`,
             'Content-Type': 'application/json',
           },
         }),
@@ -414,7 +423,7 @@ export class WhatsAppService {
           buildBackendLog(WhatsAppService.name, {
             ...fields,
             outcome: 'failure',
-            ...this.safeError(error),
+            ...this.safeError(error, context.token),
           }),
         );
       }

@@ -63,6 +63,8 @@ function setup() {
     phoneNumberId: 'merchant-phone',
     state: 'active',
     degradedClass: null,
+    signupGeneration: 2,
+    thankYouEnabled: true,
     businessTokenEncrypted: encryptConnectionSecret(merchantToken, key),
   };
   const dispatches = {
@@ -80,6 +82,9 @@ function setup() {
     dispatches as never,
     connections as never,
     templates as never,
+    {
+      isClaimedMerchantAcknowledgment: jest.fn().mockResolvedValue(true),
+    } as never,
   );
   const http = {
     post: jest
@@ -311,5 +316,139 @@ describe('claimed merchant sender', () => {
       'second-secret',
     );
     expect(reader).toBeDefined();
+  });
+});
+
+describe('merchant free-form sender', () => {
+  const freeForm: Parameters<
+    NonNullable<MessagingPort['sendFreeFormText']>
+  >[0] = {
+    to: '+201000000001',
+    body: 'Thank you',
+    verificationId: 'verification',
+    sender: {
+      kind: 'merchant_own',
+      orgId: 'org',
+      connectionId: 'connection',
+      phoneNumberId: 'merchant-phone',
+      signupGeneration: 2,
+      serviceMessageId: 'service-message',
+    },
+  };
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('uses the receiving number and encrypted merchant token without templates or billing dispatches', async () => {
+    const s = setup();
+    await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toEqual({
+      outcome: 'accepted',
+      providerMessageId: 'wamid',
+    });
+    expect(s.http.post).toHaveBeenCalledWith(
+      expect.stringContaining('/merchant-phone/messages'),
+      {
+        messaging_product: 'whatsapp',
+        to: freeForm.to,
+        type: 'text',
+        text: { body: 'Thank you' },
+      },
+      {
+        timeout: 15_000,
+        headers: {
+          Authorization: `Bearer ${merchantToken}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    expect(s.templates.findForSend).not.toHaveBeenCalled();
+    expect(s.dispatches.findForSender).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { state: 'disconnected' },
+    { state: 'offboarded' },
+    { degradedClass: 'payment' },
+    { thankYouEnabled: false },
+    { signupGeneration: 3 },
+    { orgId: 'foreign' },
+    { id: 'replacement' },
+    { phoneNumberId: 'replacement' },
+    { businessTokenEncrypted: merchantToken },
+    { businessTokenEncrypted: 'v1:bad:tag:data' },
+  ])('revalidates changed connection %o before HTTP', async (change) => {
+    const s = setup();
+    Object.assign(s.connection, change);
+    expect((await s.adapter.sendFreeFormText(freeForm)).outcome).not.toBe(
+      'accepted',
+    );
+    expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('honors the sending kill switch before reading credentials', async () => {
+    const s = setup();
+    s.values.whatsappOwnNumber = { sendingEnabled: false };
+    expect((await s.adapter.sendFreeFormText(freeForm)).outcome).not.toBe(
+      'accepted',
+    );
+    expect(s.connections.findByOrg).not.toHaveBeenCalled();
+    expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses an absent service-message authorization boundary', async () => {
+    const s = setup();
+    const reader = new MetaSendContextService(
+      { get: (name: string) => s.values[name] } as never,
+      s.dispatches as never,
+      s.connections as never,
+      s.templates as never,
+    );
+    const adapter = new WhatsAppService(
+      s.http as never,
+      { get: (name: string) => s.values[name] } as never,
+      reader,
+    );
+    expect((await adapter.sendFreeFormText(freeForm)).outcome).not.toBe(
+      'accepted',
+    );
+    expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('maps a closed window without retry or fallback', async () => {
+    const s = setup();
+    s.http.post.mockReturnValue(
+      throwError(() => ({
+        isAxiosError: true,
+        response: { status: 400, data: { error: { code: 131047 } } },
+      })),
+    );
+    await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toEqual({
+      outcome: 'window_closed',
+    });
+    expect(s.http.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts merchant and shared tokens from uncertain free-form errors', async () => {
+    const s = setup();
+    const logs = jest.spyOn(Logger.prototype, 'error');
+    s.http.post.mockReturnValue(
+      throwError(
+        () =>
+          new Error(
+            `${merchantToken} ${encodeURIComponent(merchantToken)} shared-secret`,
+          ),
+      ),
+    );
+    await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toEqual({
+      outcome: 'failed',
+      code: 'provider_error',
+    });
+    const output = JSON.stringify(logs.mock.calls);
+    expect(output).not.toContain(merchantToken);
+    expect(output).not.toContain(encodeURIComponent(merchantToken));
+    expect(output).not.toContain('shared-secret');
+    expect(s.http.post).toHaveBeenCalledTimes(1);
   });
 });

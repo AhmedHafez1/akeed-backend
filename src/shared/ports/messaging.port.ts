@@ -1,5 +1,12 @@
 import type { ResolvedSender } from './sender-resolver.port';
 import type { MerchantAttemptContext } from './sender-recovery.port';
+import type { MerchantReplySender } from '../messaging/merchant-reply-sender';
+
+export interface MerchantFreeFormSender extends MerchantReplySender {
+  kind: 'merchant_own';
+  orgId: string;
+  serviceMessageId: string;
+}
 import type {
   SelectedCodTemplate,
   SentTemplateIdentity,
@@ -61,6 +68,7 @@ export interface MessagingPort {
     body: string;
     /** For logs only. */
     verificationId: string;
+    sender?: MerchantFreeFormSender;
   }): Promise<FreeFormTextOutcome>;
 }
 

@@ -1,4 +1,10 @@
-import { type ExecutionContext, type INestApplication } from '@nestjs/common';
+import {
+  ValidationPipe,
+  type ExecutionContext,
+  type INestApplication,
+} from '@nestjs/common';
+import { WhatsappConnectionSettingsService } from './whatsapp-connection-settings.service';
+import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -42,6 +48,7 @@ describe('/api/whatsapp-sender', () => {
   const connect = { issueTicket: jest.fn() };
   const status = { forOrganization: jest.fn() };
   const disconnect = { disconnect: jest.fn() };
+  const connections = { updateThankYouEnabled: jest.fn() };
 
   async function start(env: Record<string, string>) {
     const parsed = parseWhatsappOwnNumberConfig(env);
@@ -49,6 +56,8 @@ describe('/api/whatsapp-sender', () => {
       controllers: [WhatsappSenderController],
       providers: [
         WhatsappSenderService,
+        WhatsappConnectionSettingsService,
+        { provide: WhatsappConnectionsRepository, useValue: connections },
         { provide: WhatsappConnectService, useValue: connect },
         { provide: ConnectionStatusService, useValue: status },
         { provide: WhatsappDisconnectService, useValue: disconnect },
@@ -71,6 +80,9 @@ describe('/api/whatsapp-sender', () => {
       })
       .compile();
     app = module.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     return app;
   }
@@ -79,6 +91,11 @@ describe('/api/whatsapp-sender', () => {
     connect.issueTicket.mockReset();
     status.forOrganization.mockReset();
     disconnect.disconnect.mockReset();
+    connections.updateThankYouEnabled.mockReset();
+    connections.updateThankYouEnabled.mockImplementation(
+      (_orgId: string, thankYouEnabled: boolean) =>
+        Promise.resolve({ thankYouEnabled }),
+    );
     user = {
       userId: 'user-1',
       orgId: ORG,
@@ -115,6 +132,85 @@ describe('/api/whatsapp-sender', () => {
       const server = await start(connectOn);
       await http(server).get(`${ROUTE}/connection`).expect(403);
       expect(status.forOrganization).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PATCH connection', () => {
+    it.each(['owner', 'admin'] as const)(
+      'lets %s update either value while switches are off',
+      async (role) => {
+        user!.role = role;
+        const server = await start({});
+        for (const thankYouEnabled of [false, true]) {
+          const response = await http(server)
+            .patch(`${ROUTE}/connection`)
+            .send({ thankYouEnabled })
+            .expect(200)
+            .expect('Cache-Control', 'no-store');
+          expect(response.body).toEqual({ thankYouEnabled });
+          expect(connections.updateThankYouEnabled).toHaveBeenLastCalledWith(
+            ORG,
+            thankYouEnabled,
+          );
+        }
+      },
+    );
+
+    it('refuses viewers before a write', async () => {
+      user!.role = 'viewer';
+      const server = await start({});
+      const response = await http(server)
+        .patch(`${ROUTE}/connection`)
+        .send({ thankYouEnabled: false })
+        .expect(403);
+      expect(response.body).toMatchObject({
+        code: 'WHATSAPP_CONNECTION_WRITE_REQUIRED',
+      });
+      expect(connections.updateThankYouEnabled).not.toHaveBeenCalled();
+    });
+
+    it('requires authentication', async () => {
+      user = null;
+      const server = await start({});
+      await http(server)
+        .patch(`${ROUTE}/connection`)
+        .send({ thankYouEnabled: false })
+        .expect(403);
+      expect(connections.updateThankYouEnabled).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {},
+      { thankYouEnabled: 'false' },
+      { thankYouEnabled: null },
+      { thankYouEnabled: 1 },
+      { thankYouEnabled: false, orgId: OTHER_ORG },
+    ])(
+      'returns a stable validation code for %o without echoing values',
+      async (body) => {
+        const server = await start({});
+        const response = await http(server)
+          .patch(`${ROUTE}/connection`)
+          .send(body)
+          .expect(400);
+        expect(response.body).toMatchObject({
+          code: 'WHATSAPP_CONNECTION_SETTINGS_INVALID',
+        });
+        expect(JSON.stringify(response.body)).not.toContain(OTHER_ORG);
+        expect(connections.updateThankYouEnabled).not.toHaveBeenCalled();
+      },
+    );
+
+    it('returns a coded 404 when the caller has no connection', async () => {
+      connections.updateThankYouEnabled.mockResolvedValue(null);
+      const server = await start({});
+      const response = await http(server)
+        .patch(`${ROUTE}/connection`)
+        .send({ thankYouEnabled: true })
+        .expect(404);
+      expect(response.body).toMatchObject({
+        code: 'WHATSAPP_CONNECTION_NOT_FOUND',
+      });
     });
   });
 

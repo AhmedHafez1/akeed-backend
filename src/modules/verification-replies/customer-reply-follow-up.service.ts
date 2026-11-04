@@ -1,4 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
+import { readWhatsappOwnNumberConfig } from '../../shared/config/whatsapp-own-number.config';
+import {
+  merchantReplySenderReady,
+  type MerchantReplySender,
+} from '../../shared/messaging/merchant-reply-sender';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
 import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { UsageAlertService } from '../verification-core/usage-alert.service';
@@ -33,6 +40,7 @@ import { MessageTextsService } from '../message-texts/message-texts.service';
 
 /** What a webhook hands over: no reply text, ever. */
 export interface CustomerReplyFollowUp {
+  receivingSender?: MerchantReplySender;
   kind: ServiceMessageKind;
   verificationId: string;
   orgId: string;
@@ -71,7 +79,8 @@ const TEXT_PURPOSES: Record<'confirmed' | 'canceled', MessageTextPurpose> = {
  * effort, sent once and never retried, and the verification's outcome is
  * final before anything is attempted and never depends on it. The row is
  * claimed before the send, so a replay or a crash never sends twice.
- * Acknowledgments reserve normal message capacity; nudges remain free.
+ * Shared-number acknowledgments reserve normal message capacity; merchant
+ * acknowledgments and nudges do not use Akeed capacity.
  *
  * Reaches the provider only through `MessagingPort`.
  */
@@ -88,6 +97,8 @@ export class CustomerReplyFollowUpService {
     @Inject(MESSAGING_PORT) private readonly messagingPort: MessagingPort,
     @Optional() private readonly switches?: MessageImprovementSwitches,
     @Optional() private readonly usageAlerts?: UsageAlertService,
+    @Optional() private readonly connections?: WhatsappConnectionsRepository,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   /** Whether this kind of message is on at all. */
@@ -140,7 +151,24 @@ export class CustomerReplyFollowUpService {
   private async run(
     request: CustomerReplyFollowUp,
   ): Promise<CustomerReplyFollowUpOutcome> {
-    if (!this.isEnabled(request.kind)) return ineligible('switch_off');
+    const merchantSender = request.receivingSender;
+    if (merchantSender) {
+      if (
+        request.kind !== 'acknowledgment' ||
+        !this.config ||
+        !readWhatsappOwnNumberConfig(this.config).sendingEnabled
+      )
+        return ineligible('switch_off');
+      const connection = await this.connections?.findByOrg(request.orgId);
+      if (
+        !merchantReplySenderReady(
+          connection ?? null,
+          merchantSender,
+          request.orgId,
+        )
+      )
+        return ineligible('merchant_disabled');
+    } else if (!this.isEnabled(request.kind)) return ineligible('switch_off');
 
     const verification = await this.verificationsRepo.findById(
       request.verificationId,
@@ -155,6 +183,7 @@ export class CustomerReplyFollowUpService {
     if (order.isTest === true) return ineligible('test_order');
     if (
       request.kind === 'acknowledgment' &&
+      !merchantSender &&
       !acknowledgmentOptedIn(
         order.integration?.acknowledgmentEnabled,
         order.integration?.acknowledgmentEnabledAt,
@@ -188,6 +217,7 @@ export class CustomerReplyFollowUpService {
       verificationId: verification.id,
       kind: request.kind,
       repliedAt: request.repliedAt,
+      ...(merchantSender ? { sender: merchantSender } : {}),
     });
     if (!claim) return ineligible('already_handled');
 
@@ -233,7 +263,7 @@ export class CustomerReplyFollowUpService {
     const identity = { purpose, language, style: text.style };
 
     let dispatch: DispatchRecord | undefined;
-    if (request.kind === 'acknowledgment') {
+    if (request.kind === 'acknowledgment' && !merchantSender) {
       if (!integration || integration.orgId !== request.orgId)
         return this.notSent(
           claim.id,
@@ -295,6 +325,16 @@ export class CustomerReplyFollowUpService {
         to: order.customerPhone,
         body,
         verificationId: verification.id,
+        ...(merchantSender
+          ? {
+              sender: {
+                ...merchantSender,
+                kind: 'merchant_own' as const,
+                orgId: request.orgId,
+                serviceMessageId: claim.id,
+              },
+            }
+          : {}),
       });
     } catch (error) {
       this.logger.error(

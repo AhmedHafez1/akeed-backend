@@ -89,6 +89,7 @@ function setupView(
 ): Omit<WhatsappConnectionStatusDto, 'templates'> {
   return {
     state: connection.state,
+    thankYouEnabled: connection.thankYouEnabled,
     signupPath: connection.signupPath,
     displayPhoneNumber: connection.displayPhoneNumber,
     setup: {

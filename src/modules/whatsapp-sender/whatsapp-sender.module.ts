@@ -1,4 +1,5 @@
 import { SenderResolverService } from './sender-resolver.service';
+import { WhatsappConnectionSettingsService } from './whatsapp-connection-settings.service';
 import { ConnectionLifecycleService } from './connection-lifecycle.service';
 import { WhatsappDisconnectService } from './whatsapp-disconnect.service';
 import { ConnectionHealthService } from './connection-health.service';
@@ -39,6 +40,7 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
   ],
   controllers: [WhatsappSenderController, WhatsappConnectController],
   providers: [
+    WhatsappConnectionSettingsService,
     ConnectionLifecycleService,
     WhatsappDisconnectService,
     ConnectionHealthService,

@@ -240,6 +240,13 @@ export class MetaWebhookRoutingService {
           await this.messages.processIncomingOrThrow(dto, {
             ...options,
             receivingOrgId: receiver?.orgId ?? undefined,
+            receivingSender: receiver?.connectionId
+              ? {
+                  connectionId: receiver.connectionId,
+                  phoneNumberId: receiver.phoneNumberId,
+                  signupGeneration: receiver.signupGeneration!,
+                }
+              : undefined,
             replyBindings: bindings,
           });
         } else if (Object.hasOwn(META_TEMPLATE_WEBHOOK_FIELDS, field)) {
@@ -313,6 +320,7 @@ export class MetaWebhookRoutingService {
     return {
       orgId: connection.orgId,
       connectionId: connection.id,
+      signupGeneration: connection.signupGeneration,
       phoneNumberId,
       wabaId,
     };

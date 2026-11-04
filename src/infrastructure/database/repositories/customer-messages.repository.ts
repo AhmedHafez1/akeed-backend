@@ -12,6 +12,7 @@ import { withSerializableRetry } from '../../../shared/database/serializable-ret
 export interface ReceivingNumber {
   orgId: string | null;
   connectionId: string | null;
+  signupGeneration?: number;
   phoneNumberId: string;
   wabaId: string;
 }

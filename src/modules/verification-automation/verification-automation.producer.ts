@@ -12,6 +12,7 @@ import {
   VerificationAutomationJobType,
 } from './verification-automation.constants';
 import { DEFAULT_QUEUE_JOB_OPTIONS } from '../../shared/queue/job-options';
+import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
 
 /** Job id suffixes of the reminder and the no-reply escalation. */
 const REMINDER_JOB_SUFFIXES = ['follow-up-1', 'no-reply'] as const;
@@ -33,6 +34,7 @@ interface ScheduleParams {
 }
 
 interface ReplyFollowUpParams {
+  receivingSender?: MerchantReplySender;
   verificationId: string;
   orgId: string;
   /** The provider's time of the customer's message, ISO. */
@@ -297,6 +299,9 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
       reply: {
         repliedAt: params.repliedAt,
         ...(params.intent ? { intent: params.intent } : {}),
+        ...(params.receivingSender
+          ? { receivingSender: params.receivingSender }
+          : {}),
       },
     };
     await this.queue.add(jobType, payload, {

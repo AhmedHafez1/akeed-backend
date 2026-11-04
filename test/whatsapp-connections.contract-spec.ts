@@ -206,6 +206,38 @@ describe('WhatsApp connections contract', () => {
   });
 
   describe('connections', () => {
+    it('defaults thank-yous on, scopes changes by tenant, and preserves opt-out across signup replacement', async () => {
+      const first = await connections.saveForOrg(
+        orgA,
+        connectionInput('200000000000001'),
+      );
+      await connections.saveForOrg(
+        orgB,
+        connectionInput('200000000000002', { wabaId: '100000000000002' }),
+      );
+      expect(first.thankYouEnabled).toBe(true);
+      expect(await connections.updateThankYouEnabled(orgA, false)).toEqual({
+        thankYouEnabled: false,
+      });
+      expect((await connections.findByOrg(orgB))?.thankYouEnabled).toBe(true);
+      const replacement = await connections.saveSignupForOrg(orgA, {
+        wabaId: '100000000000003',
+        phoneNumberId: '200000000000003',
+        displayPhoneNumber: null,
+        signupPath: 'coexistence',
+        businessTokenEncrypted: encryptConnectionSecret(
+          'replacement-synthetic-token',
+          KEY,
+        ),
+      });
+      expect(replacement.saved).toBe(true);
+      if (replacement.saved)
+        expect(replacement.connection.thankYouEnabled).toBe(false);
+      expect(
+        await connections.updateThankYouEnabled(randomUUID(), false),
+      ).toBeNull();
+    });
+
     it('keeps one row per organization: a reconnect replaces it', async () => {
       const first = await connections.saveForOrg(
         orgA,

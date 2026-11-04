@@ -133,6 +133,48 @@ describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
+  describe('receiving merchant number', () => {
+    const routing = {
+      receivingOrgId: 'org-1',
+      receivingSender: {
+        connectionId: 'connection-1',
+        phoneNumberId: 'merchant-phone',
+        signupGeneration: 2,
+      },
+    };
+
+    it('queues a merchant acknowledgment with shared thank-yous disabled', async () => {
+      const s = setup({ merchantEnabled: false });
+      await s.service.processIncomingOrThrow(button('confirm_ver-1'), routing);
+      expect(s.automation.enqueueAcknowledgment).toHaveBeenCalledWith({
+        verificationId: 'ver-1',
+        orgId: 'org-1',
+        repliedAt: REPLIED_AT,
+        intent: 'confirmed',
+        receivingSender: routing.receivingSender,
+      });
+      expect(
+        s.messageDispatches.acknowledgmentEnabledForVerification,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not queue a merchant acknowledgment for a foreign verification', async () => {
+      const s = setup({ verification: { orgId: 'foreign-org' } });
+      await s.service.processIncomingOrThrow(button('confirm_ver-1'), routing);
+      expect(s.automation.enqueueAcknowledgment).not.toHaveBeenCalled();
+    });
+
+    it('does not nudge unrecognized typed replies from the shared number', async () => {
+      const s = setup({ switches: { unresolvedReplyNudge: true } });
+      await s.service.processIncomingOrThrow(
+        text('when will it arrive?', 'wamid.sent-1'),
+        routing,
+      );
+      expect(s.automation.enqueueUnresolvedReplyNudge).not.toHaveBeenCalled();
+      expect(s.serviceMessages.recordUnresolvedReply).not.toHaveBeenCalled();
+    });
+  });
+
   describe('b. acknowledgment', () => {
     it('does not enqueue while the merchant is opted out', async () => {
       const { service, automation, verificationsRepo } = setup({

@@ -12,6 +12,7 @@ import type {
   ServiceMessageSkipReason,
 } from '../../../shared/messaging/message-texts.types';
 import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
+import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 
 /**
  * Acknowledgments and nudges, and the unresolved replies a
@@ -36,6 +37,7 @@ export class VerificationServiceMessagesRepository {
     verificationId: string;
     kind: ServiceMessageKind;
     repliedAt: string;
+    sender?: MerchantReplySender;
   }): Promise<{ id: string } | null> {
     const [claimed] = await this.db
       .insert(verificationServiceMessages)
@@ -44,10 +46,14 @@ export class VerificationServiceMessagesRepository {
         verificationId: params.verificationId,
         kind: params.kind,
         repliedAt: params.repliedAt,
-        senderKind: 'akeed_system',
-        senderReason: 'service_message',
+        senderKind: params.sender ? 'merchant_own' : 'akeed_system',
+        senderReason: params.sender
+          ? 'own_number_thank_you'
+          : 'service_message',
         senderPhoneNumberId:
-          this.config?.get<string>('WA_PHONE_NUMBER_ID') ?? null,
+          params.sender?.phoneNumberId ??
+          this.config?.get<string>('WA_PHONE_NUMBER_ID') ??
+          null,
       })
       .onConflictDoNothing({
         target: [
@@ -57,6 +63,34 @@ export class VerificationServiceMessagesRepository {
       })
       .returning({ id: verificationServiceMessages.id });
     return claimed ?? null;
+  }
+
+  async isClaimedMerchantAcknowledgment(params: {
+    orgId: string;
+    serviceMessageId: string;
+    verificationId: string;
+    phoneNumberId: string;
+  }): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: verificationServiceMessages.id })
+      .from(verificationServiceMessages)
+      .where(
+        and(
+          eq(verificationServiceMessages.id, params.serviceMessageId),
+          eq(verificationServiceMessages.orgId, params.orgId),
+          eq(verificationServiceMessages.verificationId, params.verificationId),
+          eq(verificationServiceMessages.kind, 'acknowledgment'),
+          eq(verificationServiceMessages.state, 'claimed'),
+          eq(verificationServiceMessages.senderKind, 'merchant_own'),
+          eq(
+            verificationServiceMessages.senderPhoneNumberId,
+            params.phoneNumberId,
+          ),
+          isNull(verificationServiceMessages.dispatchId),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   async linkDispatch(

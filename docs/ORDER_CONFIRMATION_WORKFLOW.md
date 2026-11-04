@@ -339,16 +339,25 @@ suite pins.
   through `MessagingPort.sendFreeFormText`.
   - The acknowledgment follows a customer confirm or cancel (button or a
     recognized typed answer) that changed the row. Never after a merchant
-    cancellation, an automatic `no_reply` or a test order. Both the global
+    cancellation, an automatic `no_reply` or a test order. On Akeed's number, both the global
     switch and the merchant’s **Settings › Message › Thank-you messages**
     opt-in must be enabled; every store starts off. The worker rechecks the
     current preference and reserves normal message capacity before sending.
+  - On a merchant's number, the acknowledgment follows that connection's
+    `thank_you_enabled` preference (default on), independently of the global
+    acknowledgment switch and the integration's paid opt-in. The receiving
+    phone, connection and signup generation travel with the job. Sending
+    requires the own-number sending switch and the same active, healthy
+    connection; a disconnect, replacement or disabled preference stops it.
+    Credentials are checked again immediately before HTTP. It uses no Akeed
+    credits or plan capacity, and never falls back to Akeed.
   - The nudge follows a typed reply that quotes (`context.id`) an open
     verification's message, by `wa_message_id` or by the dispatch that sent
     it, and reads as no answer. The reply is stored in
     `verification_reply_events` without its text. Without `context.id` nothing
     is stored or sent. The verification still runs out to `no_reply` if the
-    customer never taps a button.
+    customer never taps a button. Unrecognized typed replies received on
+    merchant numbers do not trigger nudges.
   - One row per verification and kind in `verification_service_messages`,
     claimed before the send, so a replay or a crash never sends twice. Outside
     the 24-hour window, or when Meta answers 131047, the row is `skipped`
@@ -357,7 +366,7 @@ suite pins.
     send, else the language's `default` text.
   - A paid acknowledgment receipt settles its billing dispatch and records the
     service-message result, without changing the order’s outcome. A delivery
-    receipt for a nudge or historical free acknowledgment touches only its own row; a
+    receipt for a nudge, merchant-number acknowledgment or historical free acknowledgment touches only its own row; a
     `failed` receipt marks it `failed` (`delivery_failed`).
 - **Preview.** The settings response carries `template.messages` and
   `message` on each style, and the onboarding test carries `message`: lines of
@@ -502,7 +511,8 @@ Usage principles:
 - Follow-up messages consume included monthly confirmations.
 - Follow-up failure does not fail the overall verification.
 - A send from the merchant's own number draws the own-number pool on a plan and costs 1 displayed credit on prepaid; releases and reversals return it to the pool it came from ([Own-number billing](ONBOARDING_AND_BILLING.md#own-number-billing)).
-- Acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
+- Akeed-number acknowledgments cost one normal message (two displayed prepaid credits or one plan message), only after merchant opt-in. Their service-message row links to an `acknowledgment` billing dispatch. Confirmed non-sends and valid delivery failures release or reverse the charge exactly once. An unclear provider answer releases periodic-plan usage while unresolved and keeps a prepaid credit held, as for initial sends; an expired send lease keeps either reserved. Both wait for audited reconciliation and are never retried. No acknowledgment send or receipt changes the verification’s status, message identity or attempts.
+- Merchant-number acknowledgments have no billing dispatch and use no Akeed credits or plan capacity. Their service-message row records `merchant_own` and the receiving `sender_phone_number_id`; failures affect that row only. Meta bills the merchant separately under its service-message pricing.
 - Nudges remain free and are recorded only in `verification_service_messages`. Historical unlinked acknowledgments are never billed retroactively.
 - Dashboard usage shows consumed count and included limit for the current billing period.
 - Plans have no usage-based Shopify billing line item; when the included limit is reached, sending stops until renewal or upgrade. New orders wait at `blocked` and are sent automatically when capacity returns (see [Orders blocked by capacity](#orders-blocked-by-capacity)).

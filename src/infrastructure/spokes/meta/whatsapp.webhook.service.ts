@@ -27,6 +27,7 @@ import { VerificationAutoCancellationsRepository } from '../../database/reposito
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.policy';
 import { CustomerMessagesRepository } from '../../database/repositories/customer-messages.repository';
+import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
@@ -34,6 +35,7 @@ export interface WebhookRunOptions {
   isRetry?: boolean;
   receivedAt?: string;
   receivingOrgId?: string;
+  receivingSender?: MerchantReplySender;
   replyBindings?: Readonly<Record<string, string>>;
 }
 
@@ -178,17 +180,20 @@ export class WhatsAppWebhookService {
     verificationId: string,
     intent: CustomerReplyIntent,
     message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
   ): Promise<void> {
     try {
       const verification =
         await this.verificationsRepo.findById(verificationId);
       if (
         !verification ||
-        !(await this.messageDispatches.acknowledgmentEnabledForVerification(
-          verificationId,
-          verification.orgId,
-          this.messageTime(message),
-        ))
+        (options.receivingSender
+          ? verification.orgId !== options.receivingOrgId
+          : !(await this.messageDispatches.acknowledgmentEnabledForVerification(
+              verificationId,
+              verification.orgId,
+              this.messageTime(message),
+            )))
       )
         return;
       await this.automation?.enqueueAcknowledgment({
@@ -196,6 +201,9 @@ export class WhatsAppWebhookService {
         orgId: verification.orgId,
         repliedAt: this.messageTime(message),
         intent,
+        ...(options.receivingSender
+          ? { receivingSender: options.receivingSender }
+          : {}),
       });
     } catch (error) {
       this.logger.error(
@@ -366,7 +374,7 @@ export class WhatsAppWebhookService {
             reason: 'unresolved_reply',
           }),
         );
-        if (this.switches().unresolvedReplyNudge) {
+        if (this.switches().unresolvedReplyNudge && !options.receivingSender) {
           await this.followUpUnresolvedReply(message, options);
         }
         continue;
@@ -469,8 +477,13 @@ export class WhatsAppWebhookService {
             ? new Date(Number(message.timestamp) * 1000).toISOString()
             : undefined,
         });
-        if (this.switches().acknowledgment) {
-          await this.queueAcknowledgment(verificationId, newStatus, message);
+        if (options.receivingSender || this.switches().acknowledgment) {
+          await this.queueAcknowledgment(
+            verificationId,
+            newStatus,
+            message,
+            options,
+          );
         }
       } else {
         this.logger.warn(

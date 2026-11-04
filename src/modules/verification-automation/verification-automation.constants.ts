@@ -30,6 +30,8 @@ export enum VerificationAutomationJobType {
   UNRESOLVED_REPLY_NUDGE = 'verification.unresolved_reply_nudge',
 }
 
+import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
+
 export interface VerificationAutomationJobPayload {
   dispatchId?: string;
   verificationId: string;
@@ -42,5 +44,6 @@ export interface VerificationAutomationJobPayload {
   reply?: {
     repliedAt: string;
     intent?: 'confirmed' | 'canceled';
+    receivingSender?: MerchantReplySender;
   };
 }

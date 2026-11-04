@@ -3894,7 +3894,8 @@ export const whatsappMessageTextEvents = pgTable(
 /**
  * Each acknowledgment and nudge. The unique (verification, kind)
  * is the once-per-verification rule; the row is claimed before the send.
- * Free at the provider: no usage, dispatch or credit row is written.
+ * Shared-number acknowledgments link a billing dispatch. Merchant-number
+ * acknowledgments and nudges are unlinked and use no Akeed capacity.
  */
 export const verificationServiceMessages = pgTable(
   'verification_service_messages',

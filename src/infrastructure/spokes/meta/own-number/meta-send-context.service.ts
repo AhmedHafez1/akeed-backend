@@ -13,6 +13,8 @@ import { resolveSender } from '../../../../modules/whatsapp-sender/sender-resolu
 import { readBusinessToken } from './whatsapp-connection-credentials';
 import { MerchantMessageFailure } from '../../../../shared/ports/sender-recovery.port';
 import { classifyOwnNumberFailure } from './own-number-send-failure.policy';
+import { VerificationServiceMessagesRepository } from '../../../database/repositories/verification-service-messages.repository';
+import { merchantReplySenderReady } from '../../../../shared/messaging/merchant-reply-sender';
 
 export interface MetaSendContext {
   url: string;
@@ -27,7 +29,46 @@ export class MetaSendContextService {
     private readonly dispatches: VerificationMessageDispatchesRepository,
     private readonly connections: WhatsappConnectionsRepository,
     private readonly templates: WhatsappConnectionTemplatesRepository,
+    private readonly serviceMessages?: VerificationServiceMessagesRepository,
   ) {}
+
+  /** Free-form replies use their claimed service message, never a billing dispatch. */
+  async resolveFreeForm(
+    params: Parameters<NonNullable<MessagingPort['sendFreeFormText']>>[0],
+  ): Promise<MetaSendContext> {
+    const sender = params.sender;
+    const refuse = (): never => {
+      throw new ConfirmedMessageRejection('service_message_sender_unavailable');
+    };
+    if (
+      !sender ||
+      sender.kind !== 'merchant_own' ||
+      !readWhatsappOwnNumberConfig(this.config).sendingEnabled
+    )
+      return refuse();
+    if (
+      !(await this.serviceMessages?.isClaimedMerchantAcknowledgment({
+        orgId: sender.orgId,
+        serviceMessageId: sender.serviceMessageId,
+        verificationId: params.verificationId,
+        phoneNumberId: sender.phoneNumberId,
+      }))
+    )
+      return refuse();
+    const connection = await this.connections.findByOrg(sender.orgId);
+    if (!merchantReplySenderReady(connection, sender, sender.orgId))
+      return refuse();
+    const token = readBusinessToken(
+      connection!,
+      this.config.get<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY') ?? '',
+    );
+    if (!token) return refuse();
+    return {
+      url: `${readMetaGraphConfig(this.config).baseUrl}/${sender.phoneNumberId}/messages`,
+      token,
+      timeout: 15_000,
+    };
+  }
 
   async resolve(
     params: Parameters<MessagingPort['sendVerificationTemplate']>[0],

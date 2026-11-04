@@ -11,6 +11,7 @@ import type {
  * Named safe fields only: never a token, PIN, ciphertext or provider message.
  */
 export interface WhatsappConnectionStatusDto {
+  thankYouEnabled: boolean;
   state: WhatsappConnectionState;
   signupPath: WhatsappSignupPath;
   displayPhoneNumber: string | null;

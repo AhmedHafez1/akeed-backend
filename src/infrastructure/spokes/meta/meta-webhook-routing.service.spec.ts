@@ -100,6 +100,11 @@ describe('signed Meta webhook routing', () => {
       }),
       expect.objectContaining({
         receivingOrgId: 'org-a',
+        receivingSender: {
+          connectionId: 'connection-a',
+          phoneNumberId: '200',
+          signupGeneration: 1,
+        },
         replyBindings: { 'incoming-1': 'verification-a' },
       }),
     );

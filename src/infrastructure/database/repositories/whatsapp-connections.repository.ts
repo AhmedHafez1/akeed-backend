@@ -425,6 +425,18 @@ export class WhatsappConnectionsRepository {
     return row ?? null;
   }
 
+  async updateThankYouEnabled(
+    orgId: string,
+    thankYouEnabled: boolean,
+  ): Promise<{ thankYouEnabled: boolean } | null> {
+    const [row] = await this.db
+      .update(whatsappConnections)
+      .set({ thankYouEnabled, updatedAt: sql`now()` })
+      .where(eq(whatsappConnections.orgId, orgId))
+      .returning({ thankYouEnabled: whatsappConnections.thankYouEnabled });
+    return row ?? null;
+  }
+
   /**
    * The live connection that holds a phone number, for routing an inbound
    * event to its organization. A disconnected row never matches.
