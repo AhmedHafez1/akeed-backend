@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { SenderAlertService } from './sender-alert.service';
 import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import {
@@ -13,11 +14,15 @@ const UNAVAILABLE: WhatsappSenderAvailabilityDto = {
   appId: null,
   configId: null,
   canConnect: false,
+  alerts: [],
 };
 
 @Injectable()
 export class WhatsappSenderService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly alerts: SenderAlertService,
+  ) {}
 
   /**
    * Whether this organization may connect its own number, from the connect
@@ -25,7 +30,10 @@ export class WhatsappSenderService {
    * tells the screen whether to offer the owner-only connect action; the
    * connect endpoints check the role again.
    */
-  getAvailability(user: AuthenticatedUser): WhatsappSenderAvailabilityDto {
+  async getAvailability(
+    user: AuthenticatedUser,
+  ): Promise<WhatsappSenderAvailabilityDto> {
+    const alerts = await this.alerts.read(user.orgId);
     const config = readWhatsappOwnNumberConfig(this.config);
     if (
       !isOwnNumberConnectAllowed(config) ||
@@ -33,8 +41,9 @@ export class WhatsappSenderService {
       !config.embeddedSignupConfigId ||
       !config.connectPageBaseUrl
     )
-      return { ...UNAVAILABLE };
+      return { ...UNAVAILABLE, alerts };
     return {
+      alerts,
       available: true,
       appId: config.metaAppId,
       configId: config.embeddedSignupConfigId,

@@ -638,6 +638,13 @@
       "when": 1794700800000,
       "tag": "0090_merchant_webhook_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1794787200000,
+      "tag": "0091_whatsapp_sender_alerts",
+      "breakpoints": true
     }
   ]
 }

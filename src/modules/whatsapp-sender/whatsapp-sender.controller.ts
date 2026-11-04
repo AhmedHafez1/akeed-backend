@@ -72,7 +72,7 @@ export class WhatsappSenderController {
   @Header('Cache-Control', 'no-store')
   getAvailability(
     @CurrentUser() user: AuthenticatedUser,
-  ): WhatsappSenderAvailabilityDto {
+  ): Promise<WhatsappSenderAvailabilityDto> {
     return this.sender.getAvailability(user);
   }
 

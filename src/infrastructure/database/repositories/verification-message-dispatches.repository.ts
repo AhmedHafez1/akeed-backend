@@ -1401,6 +1401,7 @@ export class VerificationMessageDispatchesRepository {
       .select({
         failure: verificationSenderAttempts.failure,
         connectionId: verificationSenderAttempts.connectionId,
+        signupGeneration: verificationSenderAttempts.signupGeneration,
         version: verificationMessageDispatches.senderRecoveryVersion,
       })
       .from(verificationSenderAttempts)
@@ -1428,6 +1429,7 @@ export class VerificationMessageDispatchesRepository {
     return {
       orgId,
       connectionId: row.connectionId,
+      signupGeneration: row.signupGeneration,
       kind:
         row.failure.class === 'template'
           ? ('template_failed' as const)

@@ -1,3 +1,4 @@
+import { SenderAlertService } from './sender-alert.service';
 import {
   ValidationPipe,
   type ExecutionContext,
@@ -47,6 +48,7 @@ describe('/api/whatsapp-sender', () => {
   let user: AuthenticatedUser | null;
   const connect = { issueTicket: jest.fn() };
   const status = { forOrganization: jest.fn() };
+  const senderAlerts = { read: jest.fn().mockResolvedValue([]) };
   const disconnect = { disconnect: jest.fn() };
   const connections = { updateThankYouEnabled: jest.fn() };
 
@@ -56,6 +58,10 @@ describe('/api/whatsapp-sender', () => {
       controllers: [WhatsappSenderController],
       providers: [
         WhatsappSenderService,
+        {
+          provide: SenderAlertService,
+          useValue: senderAlerts,
+        },
         WhatsappConnectionSettingsService,
         { provide: WhatsappConnectionsRepository, useValue: connections },
         { provide: WhatsappConnectService, useValue: connect },
@@ -88,6 +94,7 @@ describe('/api/whatsapp-sender', () => {
   }
 
   beforeEach(() => {
+    senderAlerts.read.mockReset().mockResolvedValue([]);
     connect.issueTicket.mockReset();
     status.forOrganization.mockReset();
     disconnect.disconnect.mockReset();
@@ -107,6 +114,30 @@ describe('/api/whatsapp-sender', () => {
   afterEach(async () => {
     await app?.close();
     app = undefined;
+  });
+
+  it('returns tenant banners to a viewer while connect and email are disabled, without a write', async () => {
+    user!.role = 'viewer';
+    user!.orgId = OTHER_ORG;
+    const banners = [
+      {
+        kind: 'payment',
+        reason: 'payment',
+        severity: 'critical',
+        action: 'whatsapp_manager',
+        templates: [],
+      },
+    ];
+    senderAlerts.read.mockResolvedValue(banners);
+    const server = await start({});
+    const response = await http(server)
+      .get(ROUTE)
+      .expect(200)
+      .expect('Cache-Control', 'no-store');
+    expect(response.body).toMatchObject({ available: false, alerts: banners });
+    expect(senderAlerts.read).toHaveBeenCalledWith(OTHER_ORG);
+    expect(connections.updateThankYouEnabled).not.toHaveBeenCalled();
+    expect(connect.issueTicket).not.toHaveBeenCalled();
   });
 
   describe('GET connection', () => {
@@ -269,6 +300,7 @@ describe('/api/whatsapp-sender', () => {
       appId: null,
       configId: null,
       canConnect: false,
+      alerts: [],
     });
   });
 
@@ -283,6 +315,7 @@ describe('/api/whatsapp-sender', () => {
       appId: '9876543210',
       configId: '1234567890',
       canConnect: true,
+      alerts: [],
     });
     expect(JSON.stringify(response.body)).not.toContain(ENCRYPTION_KEY);
   });
@@ -306,6 +339,7 @@ describe('/api/whatsapp-sender', () => {
         appId: '9876543210',
         configId: '1234567890',
         canConnect: true,
+        alerts: [],
       });
     },
   );
@@ -330,6 +364,7 @@ describe('/api/whatsapp-sender', () => {
         appId: '9876543210',
         configId: '1234567890',
         canConnect: role === 'owner',
+        alerts: [],
       });
     },
   );

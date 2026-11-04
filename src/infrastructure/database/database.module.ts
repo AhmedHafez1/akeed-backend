@@ -1,3 +1,4 @@
+import { WhatsappSenderAlertsRepository } from './repositories/whatsapp-sender-alerts.repository';
 import { PeriodicPlanAccounting } from './repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accounting';
 import { UsageAccountingRouter } from './repositories/usage-accounting.router';
@@ -78,11 +79,13 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
+    WhatsappSenderAlertsRepository,
     UsageAlertsRepository,
     TipsCampaignsRepository,
     MetaWebhookEventsRepository,
   ],
   exports: [
+    WhatsappSenderAlertsRepository,
     CustomerMessagesRepository,
     CreditAccountingRepository,
     PeriodicPlanAccounting,

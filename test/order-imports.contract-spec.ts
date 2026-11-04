@@ -154,6 +154,7 @@ describe('order imports PostgreSQL contract', () => {
     await client.unsafe(`
       DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      DO $$ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       CREATE FUNCTION get_user_org_id() RETURNS uuid LANGUAGE sql STABLE
         AS $fn$ SELECT nullif(current_setting('akeed.test_org', true), '')::uuid $fn$;
       CREATE TABLE organizations (
@@ -255,6 +256,9 @@ describe('order imports PostgreSQL contract', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id uuid,
         verification_id uuid,
+        state text NOT NULL DEFAULT 'ready',
+        accepted_at timestamptz,
+        failed_at timestamptz,
         sender_kind text NOT NULL DEFAULT 'akeed_system',
         accounting_mode text NOT NULL DEFAULT 'periodic_plan',
         usage_reserved boolean NOT NULL DEFAULT false,
@@ -358,6 +362,7 @@ describe('order imports PostgreSQL contract', () => {
         '0088_own_number_billing.sql',
         '0089_sender_recovery.sql',
         '0090_merchant_webhook_routing.sql',
+        '0091_whatsapp_sender_alerts.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

@@ -1,8 +1,10 @@
+import type { SenderAlert } from '../../../shared/notifications/sender-alert.policy';
 /**
  * What the connect screen needs to launch Embedded Signup. Public Meta ids
  * only: never a token, PIN, ticket or ciphertext.
  */
 export interface WhatsappSenderAvailabilityDto {
+  alerts: SenderAlert[];
   /** Connect is on and this organization is allowed. */
   available: boolean;
   /** Meta app id; null unless `available`. */

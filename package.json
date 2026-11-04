@@ -87,7 +87,8 @@
     "docs:order-api-guide": "node scripts/order-api-guide.js",
     "docs:order-api-guide:check": "node scripts/order-api-guide.js --check",
     "test:contract:merchant-webhook-routing": "jest --config ./test/jest-merchant-webhook-routing-contract.json --runInBand",
-    "test:contract:sender-recovery": "jest --config ./test/jest-sender-recovery-contract.json --runInBand"
+    "test:contract:sender-recovery": "jest --config ./test/jest-sender-recovery-contract.json --runInBand",
+    "test:contract:whatsapp-sender-alerts": "jest --config ./test/jest-whatsapp-sender-alerts-contract.json --runInBand"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
