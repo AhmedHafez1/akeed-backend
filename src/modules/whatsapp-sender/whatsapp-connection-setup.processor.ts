@@ -1,11 +1,14 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ConnectionHealthService } from './connection-health.service';
 import type { Job } from 'bullmq';
 import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
 import { ConnectionSetupService } from './connection-setup.service';
 import { ConnectionTemplatesService } from './connection-templates.service';
 import {
   CONNECTION_SETUP_JOB,
+  CONNECTION_HEALTH_JOB,
+  CONNECTION_HEALTH_SWEEP_JOB,
   CONNECTION_SETUP_SWEEP_JOB,
   CONNECTION_TEMPLATE_SYNC_ALL_JOB,
   CONNECTION_TEMPLATE_SYNC_JOB,
@@ -28,6 +31,7 @@ export class WhatsappConnectionSetupProcessor extends WorkerHost {
     private readonly templates: ConnectionTemplatesService,
     private readonly connections: WhatsappConnectionsRepository,
     private readonly producer: WhatsappConnectionSetupProducer,
+    @Optional() private readonly health?: ConnectionHealthService,
   ) {
     super();
   }
@@ -37,6 +41,31 @@ export class WhatsappConnectionSetupProcessor extends WorkerHost {
       case CONNECTION_SETUP_JOB: {
         const data = job.data as ConnectionSetupJob;
         await this.setup.run(data.connectionId, data.signupGeneration);
+        if (this.health) {
+          const row = await this.connections.findById(data.connectionId);
+          if (row)
+            await this.producer.requestHealth(
+              row.orgId,
+              row.id,
+              row.signupGeneration,
+            );
+        }
+        return;
+      }
+      case CONNECTION_HEALTH_SWEEP_JOB:
+        await this.health?.sweep();
+        return;
+      case CONNECTION_HEALTH_JOB: {
+        const data = job.data as {
+          orgId: string;
+          connectionId: string;
+          signupGeneration: number;
+        };
+        await this.health?.run(
+          data.orgId,
+          data.connectionId,
+          data.signupGeneration,
+        );
         return;
       }
       case CONNECTION_SETUP_SWEEP_JOB:

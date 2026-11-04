@@ -5,6 +5,10 @@ export const META_WEBHOOK_SWEEP_JOB = 'sweep';
 export const META_WEBHOOK_PURGE_JOB = 'purge';
 export const META_WEBHOOK_SWEEP_SCHEDULER = 'meta-webhook-sweep';
 export const META_WEBHOOK_PURGE_SCHEDULER = 'meta-webhook-purge';
+export const CUSTOMER_MESSAGES_PURGE_JOB = 'customer-messages-purge';
+export const CUSTOMER_MESSAGES_PURGE_SCHEDULER =
+  'customer-messages-daily-purge';
+export const CUSTOMER_MESSAGES_PURGE_EVERY_MS = 24 * 60 * 60_000;
 
 export const META_WEBHOOK_SWEEP_EVERY_MS = 60_000;
 export const META_WEBHOOK_PURGE_EVERY_MS = 60 * 60_000;

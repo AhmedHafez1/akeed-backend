@@ -5,6 +5,7 @@ import type {
   PurchaseFact,
   ReconciliationReport,
   ReservationFact,
+  SpareFact,
 } from './standalone-billing-operations.types';
 
 /**
@@ -73,6 +74,25 @@ export function findContradictions(
       add('purchase_reversal_exceeds_grant');
   }
   return found;
+}
+
+/**
+ * The spare must equal what the own-number charges imply: every net pack put
+ * two displayed credits on the account and every open charge used one, so
+ * `2 x packs - open charges` is the spare, and it is only ever 0 or 1. A
+ * mismatch cannot be repaired by rebuilding the projection, because nothing
+ * says whether the spare, a pack or a dispatch is wrong.
+ */
+export function spareContradiction(fact: SpareFact): Contradiction | null {
+  const expectedSpare = 2 * fact.netPacks - fact.openCharges;
+  return expectedSpare === fact.spareCredit &&
+    (expectedSpare === 0 || expectedSpare === 1)
+    ? null
+    : {
+        code: 'spare_credit_mismatch',
+        expectedSpare,
+        spareCredit: fact.spareCredit,
+      };
 }
 
 export function buildReconciliationReport(input: {

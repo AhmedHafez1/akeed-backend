@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   ValidationPipe,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
@@ -23,6 +24,7 @@ import type { RequestWithRawBody } from '../../../shared/models/request-with-raw
 import { MetaTemplateWebhookHandler } from './meta-template-webhook.handler';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { MetaWebhookIntakeInterceptor } from './meta-webhook-intake.interceptor';
+import { MetaWebhookRoutingService } from './meta-webhook-routing.service';
 
 @SkipThrottle()
 @Controller('webhooks/whatsapp')
@@ -39,6 +41,7 @@ export class WhatsAppWebhookController {
     private readonly service: WhatsAppWebhookService,
     private readonly configService: ConfigService,
     private readonly templateWebhook: MetaTemplateWebhookHandler,
+    @Optional() private readonly routing?: MetaWebhookRoutingService,
   ) {}
 
   @Get()
@@ -88,6 +91,11 @@ export class WhatsAppWebhookController {
     @Body() payload: WhatsAppWebhookPayloadDto,
     @Req() request: RequestWithRawBody,
   ): Promise<{ status: string; message?: string }> {
+    if (this.routing) {
+      // Signature verification precedes this privacy filter; validation cannot strip routing keys.
+      await this.routing.process(await this.routing.prepare(request.rawBody));
+      return { status: 'success' };
+    }
     const result = await this.service.processIncoming(payload);
     // Template fields are read from the signed raw body: the DTO above is
     // shaped for messages and statuses only. The handler never throws.

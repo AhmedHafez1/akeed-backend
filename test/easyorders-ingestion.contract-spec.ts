@@ -627,6 +627,9 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       tables.webhookEvents,
       tables.memberships,
       tables.billingFreePlanClaims,
+      tables.whatsappConnections,
+      tables.whatsappTemplates,
+      tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
     // What the scaffold cannot derive from the Drizzle tables: the partial
@@ -650,6 +653,11 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       '0045_provider_message_receipts.sql',
       '0053_dispatch_template_identity.sql',
       '0056_dispatch_template_fallback.sql',
+      '0060_whatsapp_service_messages.sql',
+      '0087_whatsapp_dispatch_senders.sql',
+      '0088_own_number_billing.sql',
+      '0089_sender_recovery.sql',
+      '0090_merchant_webhook_routing.sql',
     ])
       await migrate(name);
     // The story's own migrations, twice: both must be re-runnable.

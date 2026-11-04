@@ -243,6 +243,15 @@ describe('credit foundation on disposable PostgreSQL', () => {
     expect(afterRollback.account_table).toBeNull();
     await db.transaction(applyMigration);
     await db.transaction(applyMigration);
+    // 0088 brings the credit tables to the shape the schema describes: the
+    // spare credit and the own-number ledger types and checks.
+    await db.transaction(async (tx) => {
+      for (const statement of readFileSync(
+        resolve(__dirname, '../drizzle/0088_own_number_billing.sql'),
+        'utf8',
+      ).split('--> statement-breakpoint'))
+        if (/"credit_/.test(statement)) await tx.execute(sql.raw(statement));
+    });
   });
 
   afterAll(async () => {

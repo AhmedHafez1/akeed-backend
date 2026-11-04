@@ -30,6 +30,8 @@ function setup(
     billingOutcome?: string;
     send?: FreeFormTextOutcome | Error;
     texts?: Record<string, string>;
+    connection?: Record<string, unknown> | null;
+    ownNumberSending?: boolean;
   } = {},
 ) {
   const verification = {
@@ -122,6 +124,29 @@ function setup(
     messageTexts as never,
     messagingPort as never,
     { current: () => switches } as never,
+    undefined,
+    {
+      findByOrg: jest.fn().mockResolvedValue(
+        options.connection === null
+          ? null
+          : {
+              id: 'connection-1',
+              orgId: 'org-1',
+              phoneNumberId: 'merchant-phone',
+              signupGeneration: 2,
+              state: 'active',
+              degradedClass: null,
+              thankYouEnabled: true,
+              ...options.connection,
+            },
+      ),
+    } as never,
+    {
+      get: (name: string) =>
+        name === 'whatsappOwnNumber'
+          ? { sendingEnabled: options.ownNumberSending !== false }
+          : undefined,
+    } as never,
   );
   return { service, serviceMessages, messagingPort, messageTexts, dispatches };
 }
@@ -140,6 +165,15 @@ const NUDGE: CustomerReplyFollowUp = {
   repliedAt: new Date(NOW - 60_000).toISOString(),
 };
 
+const MERCHANT_ACK: CustomerReplyFollowUp = {
+  ...ACK,
+  receivingSender: {
+    connectionId: 'connection-1',
+    phoneNumberId: 'merchant-phone',
+    signupGeneration: 2,
+  },
+};
+
 describe('CustomerReplyFollowUpService', () => {
   beforeEach(() => {
     jest.spyOn(Date, 'now').mockReturnValue(NOW);
@@ -147,6 +181,129 @@ describe('CustomerReplyFollowUpService', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
   });
   afterEach(() => jest.restoreAllMocks());
+
+  describe('merchant-number thank-yous', () => {
+    it('uses the receiving number despite shared opt-out and acknowledgment switch off, without billing', async () => {
+      const s = setup({
+        switches: { acknowledgment: false },
+        integration: { acknowledgmentEnabled: false },
+      });
+      await expect(s.service.handle(MERCHANT_ACK)).resolves.toEqual({
+        outcome: 'sent',
+        providerMessageId: 'wamid.text-1',
+      });
+      expect(s.messagingPort.sendFreeFormText).toHaveBeenCalledWith({
+        to: '+201001112223',
+        body: 'طلبك رقم #1117 من Nour اتأكد.',
+        verificationId: 'ver-1',
+        sender: {
+          ...MERCHANT_ACK.receivingSender,
+          kind: 'merchant_own',
+          orgId: 'org-1',
+          serviceMessageId: 'msg-1',
+        },
+      });
+      expect(s.serviceMessages.claim).toHaveBeenCalledWith(
+        expect.objectContaining({ sender: MERCHANT_ACK.receivingSender }),
+      );
+      expect(s.dispatches.claim).not.toHaveBeenCalled();
+      expect(s.serviceMessages.linkDispatch).not.toHaveBeenCalled();
+      expect(s.dispatches.markAccepted).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { thankYouEnabled: false },
+      { id: 'other-connection' },
+      { orgId: 'other-org' },
+      { phoneNumberId: 'other-phone' },
+      { signupGeneration: 3 },
+      { state: 'disconnected' },
+      { state: 'offboarded' },
+      { state: 'connecting' },
+      { degradedClass: 'payment' },
+      null,
+    ])(
+      'does not send with unavailable or changed connection %o',
+      async (connection) => {
+        const s = setup({ connection });
+        await expect(s.service.handle(MERCHANT_ACK)).resolves.toMatchObject({
+          outcome: 'ineligible',
+        });
+        expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+        expect(s.serviceMessages.claim).not.toHaveBeenCalled();
+        expect(s.dispatches.claim).not.toHaveBeenCalled();
+      },
+    );
+
+    it('honors the own-number kill switch', async () => {
+      const s = setup({ ownNumberSending: false });
+      await expect(s.service.handle(MERCHANT_ACK)).resolves.toEqual({
+        outcome: 'ineligible',
+        reason: 'switch_off',
+      });
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { order: { isTest: true } },
+      { verification: { merchantCanceledAt: '2026-10-06' } },
+      { verification: { orgId: 'other-org' } },
+      { order: { orgId: 'other-org' } },
+      { verification: { confirmationSource: 'merchant' } },
+      { claimed: false },
+    ])(
+      'retains order eligibility and once-only guards: %o',
+      async (options) => {
+        const s = setup(options);
+        await expect(s.service.handle(MERCHANT_ACK)).resolves.toMatchObject({
+          outcome: 'ineligible',
+        });
+        expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      [{ outcome: 'window_closed' }, 'skipped', 'window_closed'],
+      [{ outcome: 'rejected', code: '131042' }, 'failed', 'provider_rejected'],
+      [{ outcome: 'failed', code: 'timeout' }, 'failed', 'provider_error'],
+      [new Error('network'), 'failed', 'provider_error'],
+    ] as const)(
+      'records %o without fallback, retry, or accounting',
+      async (send, outcome, reason) => {
+        const s = setup({ send });
+        await expect(s.service.handle(MERCHANT_ACK)).resolves.toEqual({
+          outcome,
+          reason,
+        });
+        expect(s.serviceMessages.markNotSent).toHaveBeenCalledWith(
+          expect.objectContaining({ state: outcome, reason }),
+        );
+        expect(s.messagingPort.sendFreeFormText).toHaveBeenCalledTimes(1);
+        expect(s.messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
+        expect(s.dispatches.claim).not.toHaveBeenCalled();
+        expect(s.dispatches.resolveNotAccepted).not.toHaveBeenCalled();
+        expect(s.dispatches.markFailedProviderOutcome).not.toHaveBeenCalled();
+      },
+    );
+
+    it('records an expired reply without a provider call', async () => {
+      const s = setup();
+      await expect(
+        s.service.handle({
+          ...MERCHANT_ACK,
+          repliedAt: new Date(NOW - 24 * 60 * 60_000).toISOString(),
+        }),
+      ).resolves.toEqual({ outcome: 'skipped', reason: 'outside_window' });
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      expect(s.serviceMessages.markNotSent).toHaveBeenCalled();
+    });
+
+    it('never sends an unresolved-reply nudge from a merchant job', async () => {
+      const s = setup();
+      await s.service.handle({ ...MERCHANT_ACK, kind: 'nudge' });
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+    });
+  });
 
   describe('merchant opt-in and paid accounting', () => {
     it('does not charge for an older reply replayed after opt-in', async () => {

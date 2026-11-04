@@ -315,6 +315,7 @@ export class OrderImportReleaseService {
       },
       startDeadlineAt: batch.startDeadlineAt,
       blockers,
+      ...(snapshot.ownNumber ? { ownNumber: snapshot.ownNumber } : {}),
       quoteToken: signQuoteToken(
         { batchId: batch.id, orders: held, balance, expiresAt },
         quoteSecret,

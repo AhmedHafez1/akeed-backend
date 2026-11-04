@@ -8,6 +8,7 @@ const reply = (answer: 'confirm' | 'cancel' = 'confirm') => ({
     {
       changes: [
         {
+          field: 'messages',
           value: {
             messages: [
               {

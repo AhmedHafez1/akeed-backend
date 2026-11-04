@@ -50,6 +50,7 @@ describe('ConnectionStatusService', () => {
     const { service } = setup();
     await expect(service.forOrganization('org-1')).resolves.toMatchObject({
       state: 'connecting',
+      thankYouEnabled: true,
       setup: {
         status: 'failed',
         step: 'register',
@@ -58,6 +59,12 @@ describe('ConnectionStatusService', () => {
       },
       templates: { total: 1, rejected: 1, ready: 0 },
     });
+  });
+
+  it('exposes the saved disabled thank-you preference', async () => {
+    await expect(
+      setup({ thankYouEnabled: false }).service.forOrganization('org-1'),
+    ).resolves.toMatchObject({ thankYouEnabled: false });
   });
 
   it('answers null for an organization without a connection', async () => {

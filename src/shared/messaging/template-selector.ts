@@ -321,6 +321,7 @@ export function toSelectedTemplate(
   template: RegistryTemplate,
 ): SelectedCodTemplate {
   return {
+    registryKey: template.key,
     variantKey: `${template.language}.${template.style}`,
     language: template.language,
     templateName: template.templateName,

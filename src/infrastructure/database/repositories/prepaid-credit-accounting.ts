@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { CreditTransaction } from '../credit-transaction';
 import { creditLedgerEntries, verificationMessageDispatches } from '../schema';
 import {
@@ -8,6 +8,11 @@ import {
   CreditVersionConflictError,
 } from './credit-accounting.repository';
 import { creditDenial } from '../../../shared/billing/credit-eligibility';
+import {
+  holdsSpareCharge,
+  refundOwnNumberCredit,
+  usesCreditReservation,
+} from '../../../shared/billing/own-number-billing.policy';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 
 type Dispatch = typeof verificationMessageDispatches.$inferSelect;
@@ -200,7 +205,98 @@ export class PrepaidCreditAccounting {
     });
   }
 
+  /**
+   * Charges one displayed credit for an own-number send, at claim time and
+   * with no reservation. With no spare it posts one stored credit as
+   * `own_number_pack` and leaves a spare; with a spare it spends it and
+   * writes nothing to the ledger. The caller has already checked, under this
+   * same lock, that the account may be charged.
+   */
+  async chargeSpare(
+    tx: CreditTransaction,
+    dispatch: Dispatch,
+    action: 'pack' | 'use_spare',
+  ) {
+    const account = await this.lock(tx, dispatch.orgId);
+    if (
+      action === 'pack' ? account.spareCredit !== 0 : account.spareCredit !== 1
+    )
+      reconciliationRequired();
+    const quantity = action === 'pack' ? -1 : 0;
+    if (quantity)
+      await this.repository.insertLedgerEntry(tx, {
+        orgId: dispatch.orgId,
+        type: 'own_number_pack',
+        quantity,
+        idempotencyKey: `own_number_pack:${dispatch.dispatchKey}`,
+        dispatchId: dispatch.id,
+        reason: 'own_number_send',
+        postedBalanceBefore: account.postedBalance,
+        postedBalanceAfter: account.postedBalance + quantity,
+      });
+    await this.repository.updateProjection(tx, {
+      orgId: dispatch.orgId,
+      expectedVersion: account.version,
+      postedBalance: account.postedBalance + quantity,
+      heldCredits: account.heldCredits,
+      spareCredit: action === 'pack' ? 1 : 0,
+    });
+  }
+
+  /**
+   * Returns an own-number charge, once. A spare comes back; two spares become
+   * one stored credit again through `own_number_pack_reversal`, recorded
+   * against the dispatch whose refund completed the pair. The dispatch's
+   * `billing_refunded_at` is the replay guard, because a spare-only refund
+   * leaves no ledger row to find.
+   */
+  async refundSpare(
+    tx: CreditTransaction,
+    dispatch: Dispatch,
+    occurredAt: string,
+  ): Promise<boolean> {
+    if (!holdsSpareCharge(dispatch)) return false;
+    const account = await this.lock(tx, dispatch.orgId);
+    const refund = refundOwnNumberCredit(account.spareCredit);
+    const quantity = refund.reversal ? 1 : 0;
+    if (quantity)
+      await this.repository.insertLedgerEntry(tx, {
+        orgId: dispatch.orgId,
+        type: 'own_number_pack_reversal',
+        quantity,
+        idempotencyKey: `own_number_pack_reversal:${dispatch.dispatchKey}`,
+        dispatchId: dispatch.id,
+        reason: 'own_number_send_returned',
+        postedBalanceBefore: account.postedBalance,
+        postedBalanceAfter: account.postedBalance + quantity,
+      });
+    await this.repository.updateProjection(tx, {
+      orgId: dispatch.orgId,
+      expectedVersion: account.version,
+      postedBalance: account.postedBalance + quantity,
+      heldCredits: account.heldCredits,
+      spareCredit: refund.spare,
+    });
+    const [marked] = await tx
+      .update(verificationMessageDispatches)
+      .set({ billingRefundedAt: occurredAt, updatedAt: occurredAt })
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, dispatch.id),
+          eq(verificationMessageDispatches.orgId, dispatch.orgId),
+          isNull(verificationMessageDispatches.billingRefundedAt),
+        ),
+      )
+      .returning({ id: verificationMessageDispatches.id });
+    if (!marked) reconciliationRequired();
+    return true;
+  }
+
   async assertReleased(tx: CreditTransaction, dispatch: Dispatch) {
+    if (!usesCreditReservation(dispatch)) {
+      if (holdsSpareCharge(dispatch)) reconciliationRequired();
+      return;
+    }
     const reservation = await this.reservation(tx, dispatch);
     if (!reservation || reservation.status !== 'released')
       reconciliationRequired();

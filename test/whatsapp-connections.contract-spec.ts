@@ -114,6 +114,26 @@ describe('WhatsApp connections contract', () => {
         }
       }
     }
+    for (const statement of readFileSync(
+      resolve(__dirname, '../drizzle/0089_sender_recovery.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (
+        /^\s*(ALTER TABLE whatsapp_connections|CREATE INDEX.*whatsapp_connection_health_due)/.test(
+          statement,
+        )
+      )
+        await client.unsafe(statement);
+    }
+    await client.unsafe(
+      `CREATE TABLE verifications (id uuid PRIMARY KEY, org_id uuid NOT NULL, UNIQUE(id, org_id))`,
+    );
+    for (const part of readFileSync(
+      resolve(__dirname, '../drizzle/0090_merchant_webhook_routing.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (part.trim()) await client.unsafe(part);
+    }
     [{ id: orgA }, { id: orgB }] = await client<{ id: string }[]>`
       INSERT INTO organizations (name) VALUES ('A'), ('B') RETURNING id`;
     [{ id: templateOne }, { id: templateTwo }] = await client<{ id: string }[]>`
@@ -186,6 +206,38 @@ describe('WhatsApp connections contract', () => {
   });
 
   describe('connections', () => {
+    it('defaults thank-yous on, scopes changes by tenant, and preserves opt-out across signup replacement', async () => {
+      const first = await connections.saveForOrg(
+        orgA,
+        connectionInput('200000000000001'),
+      );
+      await connections.saveForOrg(
+        orgB,
+        connectionInput('200000000000002', { wabaId: '100000000000002' }),
+      );
+      expect(first.thankYouEnabled).toBe(true);
+      expect(await connections.updateThankYouEnabled(orgA, false)).toEqual({
+        thankYouEnabled: false,
+      });
+      expect((await connections.findByOrg(orgB))?.thankYouEnabled).toBe(true);
+      const replacement = await connections.saveSignupForOrg(orgA, {
+        wabaId: '100000000000003',
+        phoneNumberId: '200000000000003',
+        displayPhoneNumber: null,
+        signupPath: 'coexistence',
+        businessTokenEncrypted: encryptConnectionSecret(
+          'replacement-synthetic-token',
+          KEY,
+        ),
+      });
+      expect(replacement.saved).toBe(true);
+      if (replacement.saved)
+        expect(replacement.connection.thankYouEnabled).toBe(false);
+      expect(
+        await connections.updateThankYouEnabled(randomUUID(), false),
+      ).toBeNull();
+    });
+
     it('keeps one row per organization: a reconnect replaces it', async () => {
       const first = await connections.saveForOrg(
         orgA,
@@ -864,7 +916,12 @@ describe('WhatsApp connections contract', () => {
 
   describe('template provisioning', () => {
     async function connection(orgId = orgA, phone = '500000000000001') {
-      return connections.saveForOrg(orgId, connectionInput(phone));
+      return connections.saveForOrg(
+        orgId,
+        connectionInput(phone, {
+          wabaId: orgId === orgB ? '100000000000002' : '100000000000001',
+        }),
+      );
     }
 
     it('adds each template once, however often rows are ensured', async () => {

@@ -1,3 +1,8 @@
+import {
+  SENDER_RESOLVER_PORT,
+  FEATURE_OFF_SENDER,
+  type SenderResolverPort,
+} from '../../shared/ports/sender-resolver.port';
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -51,7 +56,17 @@ import {
 import {
   VerificationMessageDispatchesRepository,
   type DispatchAcceptanceResult,
+  type DispatchRecord,
 } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import {
+  MerchantMessageFailure,
+  UNKNOWN_SENDER_OUTCOME,
+} from '../../shared/ports/sender-recovery.port';
+import {
+  SENDER_EVENT_PORT,
+  type SenderEventPort,
+} from '../../shared/ports/sender-recovery.port';
+import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
 
 export type SendKind = 'initial' | 'follow_up';
 
@@ -62,10 +77,12 @@ export interface SendOutcome {
     | 'failed'
     | 'plan_limit_reached'
     | 'skipped'
-    | 'outcome_unknown';
+    | 'outcome_unknown'
+    | 'recovery_pending';
   reason?: string;
   waMessageId?: string;
   sentAt?: string;
+  recoveryKind?: SendKind;
 }
 
 /**
@@ -168,6 +185,14 @@ export class VerificationSendService {
     private readonly messageTexts?: MessageTextsService,
     @Optional()
     private readonly usageAlerts?: UsageAlertService,
+    @Inject(SENDER_RESOLVER_PORT)
+    private readonly senderResolver: SenderResolverPort = {
+      resolve: () => Promise.resolve(FEATURE_OFF_SENDER),
+    },
+    @Optional() private readonly automation?: VerificationAutomationProducer,
+    @Optional()
+    @Inject(SENDER_EVENT_PORT)
+    private readonly senderEvents?: SenderEventPort,
   ) {}
 
   private switches() {
@@ -238,6 +263,7 @@ export class VerificationSendService {
   private async loadContext(
     verificationId: string,
     requestBillingExempt = false,
+    retainedCharge = false,
   ): Promise<ContextLoadResult> {
     const verification = await this.verificationsRepo.findById(verificationId);
     if (!verification) {
@@ -286,8 +312,9 @@ export class VerificationSendService {
       return { context: null, reason: access.reason };
     }
 
-    const creditDenial =
-      await this.creditEligibility.resolveDenial(integration);
+    const creditDenial = retainedCharge
+      ? null
+      : await this.creditEligibility.resolveDenial(integration);
     if (creditDenial) {
       this.logger.warn(
         buildBackendLog('VerificationSendService', {
@@ -307,32 +334,185 @@ export class VerificationSendService {
     };
   }
 
+  async enqueueRecovery(orgId: string, dispatchId: string): Promise<void> {
+    const dispatch = await this.messageDispatches.findSenderRecovery(
+      orgId,
+      dispatchId,
+    );
+    if (
+      !dispatch ||
+      !dispatch.senderRecoveryDueAt ||
+      (!['retry', 'fallback'].includes(dispatch.senderRecoveryState ?? '') &&
+        !dispatch.senderAutomationPending)
+    )
+      return;
+    try {
+      const event = await this.messageDispatches.senderFailureEvent(
+        orgId,
+        dispatchId,
+      );
+      if (event) await this.senderEvents?.emit(event);
+      await this.automation?.cancelPendingReminders({
+        orgId,
+        verificationId: dispatch.verificationId,
+      });
+      await this.automation?.enqueueSenderRecovery({
+        orgId,
+        dispatchId,
+        verificationId: dispatch.verificationId,
+        action: dispatch.senderRecoveryState === 'retry' ? 'retry' : 'fallback',
+        dueAt: dispatch.senderRecoveryDueAt,
+        version: dispatch.senderRecoveryVersion,
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(VerificationSendService.name, {
+          action: 'sender-recovery-enqueue',
+          outcome: 'retry',
+          orgId,
+          dispatchId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
+  async hasSenderRecovery(verificationId: string, orgId: string) {
+    return this.messageDispatches.hasSenderRecovery(verificationId, orgId);
+  }
+
+  async acknowledgeRecoveryAutomation(orgId: string, dispatchId: string) {
+    await this.messageDispatches.acknowledgeRecoveryAutomation(
+      orgId,
+      dispatchId,
+    );
+  }
+
+  async sweepSenderRecovery(): Promise<void> {
+    for (const work of await this.messageDispatches.dueSenderRecovery())
+      await this.enqueueRecovery(work.orgId, work.dispatchId);
+  }
+
+  async resumeSenderRecovery(
+    orgId: string,
+    dispatchId: string,
+  ): Promise<SendOutcome> {
+    const dispatch = await this.messageDispatches.findSenderRecovery(
+      orgId,
+      dispatchId,
+    );
+    if (
+      !dispatch ||
+      (!['retry', 'fallback'].includes(dispatch.senderRecoveryState ?? '') &&
+        !dispatch.senderAutomationPending)
+    )
+      return { status: 'skipped', reason: 'recovery_finished' };
+    const loaded = await this.loadContext(
+      dispatch.verificationId,
+      (dispatch.metadata as { billingExempt?: boolean })?.billingExempt ===
+        true,
+      true,
+    );
+    if (
+      !loaded.context ||
+      loaded.context.verification.orgId !== orgId ||
+      [
+        'confirmed',
+        'canceled',
+        'expired',
+        'no_reply',
+        'no_whatsapp',
+        'blocked',
+      ].includes(loaded.context.verification.status)
+    ) {
+      await this.messageDispatches.finishSenderRecovery(
+        orgId,
+        dispatchId,
+        true,
+      );
+      await this.acknowledgeRecoveryAutomation(orgId, dispatchId);
+      return { status: 'skipped', reason: 'verification_closed' };
+    }
+    if (
+      dispatch.senderRecoveryState === 'complete' &&
+      dispatch.senderAutomationPending
+    ) {
+      const accepted = await this.messageDispatches.recoveryAcceptance(
+        orgId,
+        dispatchId,
+      );
+      if (!accepted?.providerMessageId)
+        await this.acknowledgeRecoveryAutomation(orgId, dispatchId);
+      return accepted?.providerMessageId
+        ? {
+            status: 'sent',
+            waMessageId: accepted.providerMessageId,
+            sentAt: accepted.acceptedAt ?? undefined,
+            recoveryKind: dispatch.kind as SendKind,
+          }
+        : { status: 'skipped', reason: 'recovery_finished' };
+    }
+    const result = await this.sendOnce(
+      loaded.context,
+      dispatch.kind as SendKind,
+      {
+        ...(dispatch.senderRecoveryState === 'retry'
+          ? {
+              retryDispatch: dispatch,
+              template: dispatch.senderRecoveryTemplate ?? undefined,
+            }
+          : { fallbackFrom: dispatch }),
+      },
+    );
+    if (
+      dispatch.senderRecoveryState === 'fallback' &&
+      !['recovery_pending'].includes(result.status) &&
+      !(result.status === 'skipped' && result.reason === 'dispatch_in_progress')
+    )
+      await this.messageDispatches.finishSenderRecovery(
+        orgId,
+        dispatchId,
+        false,
+        result.status === 'sent',
+      );
+    return { ...result, recoveryKind: dispatch.kind as SendKind };
+  }
+
   private async sendOnce(
     ctx: ResolvedContext,
     kind: SendKind,
+    recovery: {
+      retryDispatch?: DispatchRecord;
+      fallbackFrom?: DispatchRecord;
+      template?: SelectedCodTemplate;
+    } = {},
   ): Promise<SendOutcome> {
     const { verification, order, integration } = ctx;
     const switches = this.switches();
     // Selected before the claim, so the ledger row and the message are built
     // from the same values and a send whose outcome is never learned still
     // says which template it carried.
-    const selection = selectTemplateForSend(
-      await this.templateRegistry.listTemplates(),
-      {
-        preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
-        phoneNumber: order.customerPhone,
-        ...storeTemplateKeys(integration),
-        guardrail: {
-          enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
-        },
-        kind,
-        arAuto: integration.codTemplateArAuto,
-        switches,
-        // A template that shows items or an address is sent only to an order
-        // that has them; any other order gets the language default.
-        canFill: (variables) => canFillTemplate(variables, order),
-      },
-    );
+    const selection = recovery.template
+      ? {
+          template: recovery.template,
+          language: recovery.template.language,
+          storedKey: null,
+          fallbackReason: null,
+        }
+      : selectTemplateForSend(await this.templateRegistry.listTemplates(), {
+          preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
+          phoneNumber: order.customerPhone,
+          ...storeTemplateKeys(integration),
+          guardrail: {
+            enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+          },
+          kind,
+          arAuto: integration.codTemplateArAuto,
+          switches,
+          // A template that shows items or an address is sent only to an order
+          // that has them; any other order gets the language default.
+          canFill: (variables) => canFillTemplate(variables, order),
+        });
     if (!selection.template) {
       // No default to fall back to: skipped before the claim, so no usage is
       // reserved and no other template is guessed.
@@ -353,7 +533,26 @@ export class VerificationSendService {
     }
     // A store with the logo header on sends the image twin of the same
     // template when one exists; the text template stays the recorded identity.
-    const template = await this.withLogoHeader(selection.template, integration);
+    let template = await this.withLogoHeader(selection.template, integration);
+    const sender = recovery.fallbackFrom
+      ? {
+          ...FEATURE_OFF_SENDER,
+          reason:
+            recovery.fallbackFrom.lastErrorCode === 'outcome_unknown'
+              ? 'outcome_unknown'
+              : `send_failed:${recovery.fallbackFrom.lastErrorCode ?? 'unknown'}`,
+        }
+      : recovery.retryDispatch
+        ? {
+            kind: 'merchant_own' as const,
+            connectionId: recovery.retryDispatch.senderConnectionId,
+            reason: recovery.retryDispatch.senderReason ?? 'own_number',
+            units: 1 as const,
+          }
+        : await this.senderResolver.resolve({
+            orgId: order.orgId,
+            template,
+          });
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
     const recordedFallback =
@@ -386,22 +585,35 @@ export class VerificationSendService {
       kind,
       isTestOrder: order.isTest === true,
     });
-    const dispatchClaim = await this.messageDispatches.claim({
-      orgId: order.orgId,
-      integrationId: integration.id,
-      verificationId: verification.id,
-      kind,
-      templateName: template.templateName,
-      languageCode: template.languageCode,
-      identity: {
-        variantKey: template.variantKey,
-        purpose,
-        language: template.language,
-        ...recordedFallback,
-      },
-      leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
-      billingExempt: ctx.billingExempt,
-    });
+    const dispatchClaim = recovery.retryDispatch
+      ? {
+          outcome: 'claimed' as const,
+          dispatch: recovery.retryDispatch,
+          usage: undefined,
+        }
+      : await this.messageDispatches.claim({
+          orgId: order.orgId,
+          integrationId: integration.id,
+          verificationId: verification.id,
+          kind,
+          templateName: template.templateName,
+          languageCode: template.languageCode,
+          identity: {
+            variantKey: template.variantKey,
+            purpose,
+            language: template.language,
+            ...recordedFallback,
+          },
+          leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+          billingExempt: ctx.billingExempt,
+          sender,
+          ...(recovery.fallbackFrom
+            ? {
+                fallbackForDispatchId: recovery.fallbackFrom.id,
+                chargeRule: 'fallback' as const,
+              }
+            : {}),
+        });
     if (dispatchClaim.outcome === 'blocked') {
       if (dispatchClaim.reason !== 'plan_limit_reached') {
         this.logger.warn(
@@ -491,6 +703,30 @@ export class VerificationSendService {
       return { status: 'outcome_unknown', reason: 'provider_outcome_unknown' };
     }
 
+    // Reclaims retain the sender the first attempt recorded, even when the
+    // resolver now chooses differently. A new message gets a fresh decision.
+    const claimedSender = dispatchClaim.dispatch.senderKind
+      ? {
+          kind: dispatchClaim.dispatch.senderKind,
+          connectionId: dispatchClaim.dispatch.senderConnectionId ?? null,
+          reason: dispatchClaim.dispatch.senderReason ?? 'feature_off',
+          units: 1 as const,
+        }
+      : sender;
+    if (claimedSender.kind === 'merchant_own') {
+      template = { ...template, imageHeader: undefined };
+    }
+    const merchantAttempt =
+      claimedSender.kind === 'merchant_own'
+        ? await this.messageDispatches.beginMerchantAttempt(
+            order.orgId,
+            dispatchClaim.dispatch.id,
+            template,
+            !!recovery.retryDispatch,
+          )
+        : null;
+    if (claimedSender.kind === 'merchant_own' && !merchantAttempt)
+      return { status: 'skipped', reason: 'dispatch_in_progress' };
     let response: Awaited<
       ReturnType<MessagingPort['sendVerificationTemplate']>
     > | null = null;
@@ -520,6 +756,12 @@ export class VerificationSendService {
           : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
         template,
+        sender: claimedSender,
+        dispatchContext: {
+          orgId: order.orgId,
+          dispatchId: dispatchClaim.dispatch.id,
+          ...(merchantAttempt ? { merchantAttempt } : {}),
+        },
         ...(Object.keys(detailValues).length ? { detailValues } : {}),
         ...(switches.localizedFallbacks
           ? await this.localizedFallbacks({
@@ -531,6 +773,36 @@ export class VerificationSendService {
           : {}),
       });
     } catch (error) {
+      if (claimedSender.kind === 'merchant_own') {
+        const failure =
+          error instanceof MerchantMessageFailure
+            ? error.failure
+            : UNKNOWN_SENDER_OUTCOME;
+        await this.messageDispatches.failMerchantAttempt(
+          order.orgId,
+          dispatchClaim.dispatch.id,
+          merchantAttempt,
+          failure,
+        );
+        await this.enqueueRecovery(order.orgId, dispatchClaim.dispatch.id);
+        if (failure.action === 'fail')
+          return {
+            status: 'failed',
+            reason:
+              failure.code === '131026'
+                ? NO_WHATSAPP_SEND_REASON
+                : 'provider_not_accepted',
+          };
+        if (
+          failure.action === 'fallback' ||
+          dispatchClaim.dispatch.senderRetryCount >= 2
+        )
+          return this.resumeSenderRecovery(
+            order.orgId,
+            dispatchClaim.dispatch.id,
+          );
+        return { status: 'recovery_pending' };
+      }
       const errInfo = normalizeError(error);
       this.logger.error(
         buildBackendLog('VerificationSendService', {
@@ -577,6 +849,18 @@ export class VerificationSendService {
 
     const waMessageId = response?.messages?.[0]?.id;
     if (!waMessageId) {
+      if (merchantAttempt) {
+        await this.messageDispatches.failMerchantAttempt(
+          order.orgId,
+          dispatchClaim.dispatch.id,
+          merchantAttempt,
+          UNKNOWN_SENDER_OUTCOME,
+        );
+        return this.resumeSenderRecovery(
+          order.orgId,
+          dispatchClaim.dispatch.id,
+        );
+      }
       this.logger.error(
         buildBackendLog('VerificationSendService', {
           action: 'sendOnce.missingWamid',
@@ -625,6 +909,33 @@ export class VerificationSendService {
     const salvageTemplate = toSentTemplateIdentity(
       reportedTemplate ?? template,
     );
+
+    if (merchantAttempt) {
+      try {
+        const accepted = await this.messageDispatches.acceptMerchantAttempt(
+          order.orgId,
+          dispatchClaim.dispatch.id,
+          merchantAttempt,
+          waMessageId,
+          sentAt,
+        );
+        if (!accepted) {
+          await this.enqueueRecovery(order.orgId, dispatchClaim.dispatch.id);
+          return { status: 'recovery_pending' };
+        }
+        return { status: 'sent', waMessageId, sentAt };
+      } catch (error) {
+        this.logger.warn(
+          buildBackendLog(VerificationSendService.name, {
+            action: 'merchant-acceptance-persistence',
+            outcome: 'retry',
+            ...sendIdentity,
+            ...normalizeError(error),
+          }),
+        );
+        return this.salvageAcceptance(sendIdentity, sentAt, salvageTemplate);
+      }
+    }
 
     try {
       // A deadlock or serialization failure rolls the whole acceptance back,

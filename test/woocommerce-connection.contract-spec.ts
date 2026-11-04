@@ -681,6 +681,17 @@ describe('WooCommerce connection PostgreSQL contract', () => {
       });
     });
 
+    it('accepts the store calling itself by the same address over plain HTTP', async () => {
+      const tenant = await createTenant();
+      const store = newStore('/shop');
+      store.homeUrl = store.url.replace('https://', 'http://');
+      const started = await start(tenant, store);
+
+      await expect(callback(started, approve(store))).resolves.toEqual({
+        status: 200,
+      });
+    });
+
     it('accepts user_id coming back as a JSON number', async () => {
       const tenant = await createTenant();
       const store = newStore();
@@ -1305,9 +1316,8 @@ describe('WooCommerce connection PostgreSQL contract', () => {
 
     it.each([
       [
-        'plain HTTP',
-        (store: FakeWooCommerceStore) =>
-          store.url.replace('https://', 'http://'),
+        'another host over plain HTTP',
+        (store: FakeWooCommerceStore) => `http://www.${store.host}`,
       ],
       ['a subdirectory', (store: FakeWooCommerceStore) => `${store.url}/blog`],
       ['something that is not a URL', () => 'not a url'],

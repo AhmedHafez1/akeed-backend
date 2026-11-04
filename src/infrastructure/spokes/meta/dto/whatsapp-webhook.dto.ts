@@ -36,6 +36,9 @@ export class WhatsAppContextDto {
 export class WhatsAppMessageDto {
   @IsOptional()
   @IsString()
+  from_user_id?: string;
+  @IsOptional()
+  @IsString()
   id?: string;
 
   /** Sender's phone number in E.164 without the leading `+`. */
@@ -86,6 +89,9 @@ export class WhatsAppStatusErrorDto {
 export class WhatsAppStatusDto {
   @IsOptional()
   @IsString()
+  biz_opaque_callback_data?: string;
+  @IsOptional()
+  @IsString()
   id?: string;
 
   @IsOptional()
@@ -106,6 +112,8 @@ export class WhatsAppStatusDto {
 
 export class WhatsAppChangeValueDto {
   @IsOptional()
+  metadata?: { phone_number_id?: string };
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WhatsAppMessageDto)
@@ -120,12 +128,20 @@ export class WhatsAppChangeValueDto {
 
 export class WhatsAppChangeDto {
   @IsOptional()
+  @IsString()
+  field?: string;
+  @IsOptional()
   @ValidateNested()
   @Type(() => WhatsAppChangeValueDto)
   value?: WhatsAppChangeValueDto;
 }
 
 export class WhatsAppEntryDto {
+  @IsOptional()
+  time?: number;
+  @IsOptional()
+  @IsString()
+  id?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

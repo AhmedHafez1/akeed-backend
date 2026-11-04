@@ -6,6 +6,7 @@ import {
   SIGNUP_REPLACEABLE_STATES,
   WhatsappConnectionsRepository,
   WhatsappPhoneNumberInUseError,
+  WhatsappAccountInUseError,
 } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
 import {
   OwnNumberGraphClient,
@@ -251,6 +252,12 @@ export class WhatsappConnectService {
         ),
       });
     } catch (error) {
+      if (error instanceof WhatsappAccountInUseError)
+        throw this.fail(
+          'complete',
+          orgId,
+          'WHATSAPP_ACCOUNT_ALREADY_CONNECTED',
+        );
       if (error instanceof WhatsappPhoneNumberInUseError)
         throw this.fail('complete', orgId, 'WHATSAPP_NUMBER_ALREADY_CONNECTED');
       throw error;

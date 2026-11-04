@@ -20,7 +20,7 @@ import {
   usageAlertLanguage,
   type UsageAlertFacts,
 } from '../../shared/notifications/usage-alert-copy';
-import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
+import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
 import { EMAIL_PORT, type EmailPort } from '../../shared/ports/email.port';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { readUsageAlertsConfig } from '../../shared/config/usage-alerts.config';
@@ -137,21 +137,39 @@ export class UsageAlertService {
     const threshold = readStandaloneCreditBillingConfig(
       this.config,
     ).lowBalanceThreshold;
+    // The entitlement priced the next send for its likely sender, so with no
+    // stored credit left it is only allowed when a spare pays for it.
+    const spareCoversNextSend =
+      credits.availableCredits < 1 &&
+      credits.spareCredit === 1 &&
+      'creditDenial' in entitlement &&
+      entitlement.creditDenial === null;
     await this.alerts.resolveOpenCreditAlerts(
       source.orgId,
-      recoveredCreditLevels(credits.availableCredits, threshold),
+      recoveredCreditLevels(
+        credits.availableCredits,
+        threshold,
+        spareCoversNextSend,
+      ),
     );
     const alert = await this.claimHighest(
       source,
       'credit_balance',
-      creditAlertLevels(credits.availableCredits, threshold),
+      creditAlertLevels(
+        credits.availableCredits,
+        threshold,
+        spareCoversNextSend,
+      ),
       CREDIT_ALERT_CYCLE_KEY,
     );
     if (!alert) return;
     await this.deliver(alert, source, {
       level: alert.level,
       storeName: source.storeName ?? null,
-      availableCredits: toDisplayedCredits(credits.availableCredits),
+      availableCredits: toDisplayedBalance(
+        credits.availableCredits,
+        credits.spareCredit,
+      ),
       blockedCount: await blocked(),
       action: 'recharge',
       resetDate: null,

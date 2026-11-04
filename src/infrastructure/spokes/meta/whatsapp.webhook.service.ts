@@ -24,11 +24,19 @@ import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../../shared/config/whatsap
 import { VerificationServiceMessagesRepository } from '../../database/repositories/verification-service-messages.repository';
 import { VerificationAutomationProducer } from '../../../modules/verification-automation/verification-automation.producer';
 import { VerificationAutoCancellationsRepository } from '../../database/repositories/verification-auto-cancellations.repository';
+import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
+import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.policy';
+import { CustomerMessagesRepository } from '../../database/repositories/customer-messages.repository';
+import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
   /** An earlier run of this event started and did not finish. */
   isRetry?: boolean;
+  receivedAt?: string;
+  receivingOrgId?: string;
+  receivingSender?: MerchantReplySender;
+  replyBindings?: Readonly<Record<string, string>>;
 }
 
 @Injectable()
@@ -49,6 +57,8 @@ export class WhatsAppWebhookService {
     private readonly automation?: VerificationAutomationProducer,
     @Optional()
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
+    @Optional() private readonly senderRecovery?: VerificationSendService,
+    @Optional() private readonly customerMessages?: CustomerMessagesRepository,
   ) {}
 
   /**
@@ -103,6 +113,10 @@ export class WhatsAppWebhookService {
    * also found through the dispatch that sent it.
    */
   private async findRepliedVerification(contextWamid: string) {
+    if (this.customerMessages) {
+      const target = await this.customerMessages.findQuoted(contextWamid);
+      return target ? this.verificationsRepo.findById(target.id) : undefined;
+    }
     const direct = await this.verificationsRepo.findByWaMessageId(contextWamid);
     if (direct) return direct;
     const dispatch =
@@ -121,6 +135,7 @@ export class WhatsAppWebhookService {
    */
   private async followUpUnresolvedReply(
     message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
   ): Promise<void> {
     const body = message.text?.body;
     const contextWamid = message.context?.id;
@@ -130,6 +145,8 @@ export class WhatsAppWebhookService {
       const verification = await this.findRepliedVerification(contextWamid);
       if (
         !verification ||
+        (options.receivingOrgId &&
+          verification.orgId !== options.receivingOrgId) ||
         verification.merchantCanceledAt ||
         AUTOMATION_FINAL_STATUSES.includes(verification.status)
       ) {
@@ -163,17 +180,20 @@ export class WhatsAppWebhookService {
     verificationId: string,
     intent: CustomerReplyIntent,
     message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
   ): Promise<void> {
     try {
       const verification =
         await this.verificationsRepo.findById(verificationId);
       if (
         !verification ||
-        !(await this.messageDispatches.acknowledgmentEnabledForVerification(
-          verificationId,
-          verification.orgId,
-          this.messageTime(message),
-        ))
+        (options.receivingSender
+          ? verification.orgId !== options.receivingOrgId
+          : !(await this.messageDispatches.acknowledgmentEnabledForVerification(
+              verificationId,
+              verification.orgId,
+              this.messageTime(message),
+            )))
       )
         return;
       await this.automation?.enqueueAcknowledgment({
@@ -181,6 +201,9 @@ export class WhatsAppWebhookService {
         orgId: verification.orgId,
         repliedAt: this.messageTime(message),
         intent,
+        ...(options.receivingSender
+          ? { receivingSender: options.receivingSender }
+          : {}),
       });
     } catch (error) {
       this.logger.error(
@@ -253,11 +276,15 @@ export class WhatsAppWebhookService {
     for (const entry of entries) {
       const changes = entry.changes ?? [];
       for (const change of changes) {
+        if (change.field !== 'messages') continue;
         const value = change.value;
         if (!value) continue;
 
         await this.handleMessages(value.messages ?? [], options);
-        await this.handleStatuses(value.statuses ?? []);
+        await this.handleStatuses(value.statuses ?? [], {
+          phoneNumberId: value.metadata?.phone_number_id,
+          wabaId: entry.id,
+        });
       }
     }
   }
@@ -274,7 +301,10 @@ export class WhatsAppWebhookService {
    * Anything that resolves to neither is returned as `null` and logged by the
    * caller, so an unhandled reply shape stops being invisible.
    */
-  private async resolveReply(message: WhatsAppMessageDto): Promise<{
+  private async resolveReply(
+    message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
+  ): Promise<{
     verificationId: string;
     intent: CustomerReplyIntent;
     via: 'button' | 'text';
@@ -294,10 +324,14 @@ export class WhatsAppWebhookService {
 
     const body = message.text?.body;
     const contextWamid = message.context?.id;
-    if (!body || !contextWamid) return null;
+    if (!body) return null;
 
     const intent = resolveReplyText(body);
     if (!intent) return null;
+
+    const bound = message.id ? options.replyBindings?.[message.id] : undefined;
+    if (bound) return { verificationId: bound, intent, via: 'text' };
+    if (!contextWamid) return null;
 
     const verification = await this.findRepliedVerification(contextWamid);
     if (!verification) return null;
@@ -325,7 +359,7 @@ export class WhatsAppWebhookService {
     options: WebhookRunOptions,
   ) {
     for (const message of messages) {
-      const resolved = await this.resolveReply(message);
+      const resolved = await this.resolveReply(message, options);
       if (!resolved) {
         this.logger.warn(
           buildBackendLog(WhatsAppWebhookService.name, {
@@ -340,8 +374,8 @@ export class WhatsAppWebhookService {
             reason: 'unresolved_reply',
           }),
         );
-        if (this.switches().unresolvedReplyNudge) {
-          await this.followUpUnresolvedReply(message);
+        if (this.switches().unresolvedReplyNudge && !options.receivingSender) {
+          await this.followUpUnresolvedReply(message, options);
         }
         continue;
       }
@@ -350,6 +384,20 @@ export class WhatsAppWebhookService {
 
       // Block customer reply if merchant already canceled (no_reply escalation)
       const existing = await this.verificationsRepo.findById(verificationId);
+      if (
+        options.receivingOrgId &&
+        existing?.orgId !== options.receivingOrgId
+      ) {
+        this.logger.warn(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            orgId: options.receivingOrgId,
+            reason: 'foreign_verification',
+          }),
+        );
+        continue;
+      }
       if (existing?.merchantCanceledAt) {
         this.logger.log(
           buildBackendLog(WhatsAppWebhookService.name, {
@@ -429,8 +477,13 @@ export class WhatsAppWebhookService {
             ? new Date(Number(message.timestamp) * 1000).toISOString()
             : undefined,
         });
-        if (this.switches().acknowledgment) {
-          await this.queueAcknowledgment(verificationId, newStatus, message);
+        if (options.receivingSender || this.switches().acknowledgment) {
+          await this.queueAcknowledgment(
+            verificationId,
+            newStatus,
+            message,
+            options,
+          );
         }
       } else {
         this.logger.warn(
@@ -472,7 +525,10 @@ export class WhatsAppWebhookService {
     return matched;
   }
 
-  private async handleStatuses(statuses: WhatsAppStatusDto[]) {
+  private async handleStatuses(
+    statuses: WhatsAppStatusDto[],
+    routing: { phoneNumberId?: string; wabaId?: string } = {},
+  ) {
     const allowedStatuses: VerificationStatus[] = [
       'delivered',
       'read',
@@ -483,6 +539,48 @@ export class WhatsAppWebhookService {
       const wamid = statusObj.id;
       const status = statusObj.status;
       if (!wamid || !status) continue;
+
+      if (
+        ['sent', 'delivered', 'read', 'failed'].includes(status) &&
+        this.messageDispatches.recordMerchantReceipt
+      ) {
+        const seconds = Number(statusObj.timestamp);
+        const occurredAt =
+          Number.isFinite(seconds) && seconds > 0
+            ? new Date(seconds * 1000).toISOString()
+            : new Date().toISOString();
+        const merchant = await this.messageDispatches.recordMerchantReceipt({
+          providerMessageId: wamid,
+          attemptId: statusObj.biz_opaque_callback_data,
+          ...routing,
+          status: status as 'sent' | 'delivered' | 'read' | 'failed',
+          occurredAt,
+          ...(status === 'failed'
+            ? {
+                failure: classifyOwnNumberFailure({
+                  code: statusObj.errors?.[0]?.code,
+                }),
+              }
+            : {}),
+        });
+        if (merchant) {
+          await this.senderRecovery?.enqueueRecovery(
+            merchant.orgId,
+            merchant.dispatchId,
+          );
+          if (
+            status === 'failed' &&
+            String(statusObj.errors?.[0]?.code) === '131026' &&
+            (await this.verificationsRepo.findById(merchant.verificationId))
+              ?.status === 'no_whatsapp'
+          )
+            await this.verificationHub.markNoWhatsApp(
+              merchant.verificationId,
+              'receipt',
+            );
+          continue;
+        }
+      }
 
       const typedStatus = status as VerificationStatus;
       if (!allowedStatuses.includes(typedStatus)) continue;
@@ -505,6 +603,20 @@ export class WhatsAppWebhookService {
       // A receipt can beat the commit that records its wamid. It is parked
       // rather than dropped, and the acceptance applies it when it lands.
       const resolution = await this.messageDispatches.resolveOrParkReceipt({
+        ...(routing.phoneNumberId && routing.wabaId
+          ? {
+              senderReceiptContext: {
+                ...routing,
+                ...(typedStatus === 'failed'
+                  ? {
+                      failure: classifyOwnNumberFailure({
+                        code: failureInfo?.code,
+                      }),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
         providerMessageId: wamid,
         status: typedStatus as 'delivered' | 'read' | 'failed',
         occurredAt,

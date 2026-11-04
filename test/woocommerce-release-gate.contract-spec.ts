@@ -128,9 +128,11 @@ defineSourceConformance({
             { source: 'https://elsewhere.example.com/' },
           ],
           [
-            'the store over plain HTTP',
+            'another store over plain HTTP',
             bytes,
-            { source: `${merchant.store.url.replace('https:', 'http:')}/` },
+            {
+              source: `${merchant.store.url.replace('https://', 'http://www.')}/`,
+            },
           ],
           [
             'the store with a path it does not have',

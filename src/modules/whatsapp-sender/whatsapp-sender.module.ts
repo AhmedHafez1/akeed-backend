@@ -1,3 +1,14 @@
+import { SenderResolverService } from './sender-resolver.service';
+import { WhatsappConnectionSettingsService } from './whatsapp-connection-settings.service';
+import { ConnectionLifecycleService } from './connection-lifecycle.service';
+import { WhatsappDisconnectService } from './whatsapp-disconnect.service';
+import { ConnectionHealthService } from './connection-health.service';
+import { SenderEventsService } from './sender-events.service';
+import { MetaSenderHealthAdapter } from '../../infrastructure/spokes/meta/own-number/meta-sender-health.adapter';
+import {
+  SENDER_HEALTH_PORT,
+  SENDER_EVENT_PORT,
+} from '../../shared/ports/sender-recovery.port';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
@@ -29,6 +40,15 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
   ],
   controllers: [WhatsappSenderController, WhatsappConnectController],
   providers: [
+    WhatsappConnectionSettingsService,
+    ConnectionLifecycleService,
+    WhatsappDisconnectService,
+    ConnectionHealthService,
+    SenderEventsService,
+    MetaSenderHealthAdapter,
+    { provide: SENDER_HEALTH_PORT, useExisting: MetaSenderHealthAdapter },
+    { provide: SENDER_EVENT_PORT, useExisting: SenderEventsService },
+    SenderResolverService,
     WhatsappSenderService,
     WhatsappConnectService,
     ConnectionSetupService,
@@ -45,6 +65,9 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
     WhatsappTemplatesRepository,
   ],
   exports: [
+    ConnectionLifecycleService,
+    SENDER_EVENT_PORT,
+    SenderResolverService,
     WhatsappConnectionsRepository,
     WhatsappConnectTicketsRepository,
     WhatsappConnectionTemplatesRepository,

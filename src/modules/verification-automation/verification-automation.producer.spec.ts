@@ -1,4 +1,7 @@
-import { VerificationAutomationJobType } from './verification-automation.constants';
+import {
+  VerificationAutomationJobType,
+  type VerificationAutomationJobPayload,
+} from './verification-automation.constants';
 import { VerificationAutomationProducer } from './verification-automation.producer';
 
 describe('VerificationAutomationProducer', () => {
@@ -98,6 +101,29 @@ describe('VerificationAutomationProducer', () => {
       expect(options).not.toHaveProperty('delay');
     },
   );
+
+  it('preserves the receiving merchant identity in an acknowledgment job', async () => {
+    const receivingSender = {
+      connectionId: 'connection',
+      phoneNumberId: 'phone',
+      signupGeneration: 3,
+    };
+    await producer.enqueueAcknowledgment({
+      verificationId: 'ver-1',
+      orgId: 'org-1',
+      repliedAt: '2026-11-03T12:00:00.000Z',
+      intent: 'confirmed',
+      receivingSender,
+    });
+    const [name, payload, options] = queue.add.mock.calls[0] as [
+      VerificationAutomationJobType,
+      VerificationAutomationJobPayload,
+      { attempts: number },
+    ];
+    expect(name).toBe(VerificationAutomationJobType.ACKNOWLEDGMENT);
+    expect(payload.reply?.receivingSender).toEqual(receivingSender);
+    expect(options.attempts).toBe(1);
+  });
 
   describe('enqueueInitialSend after an earlier send ran', () => {
     const params = {

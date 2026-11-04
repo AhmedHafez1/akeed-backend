@@ -19,7 +19,9 @@ export type CreditLedgerType =
   | 'refund_reversal'
   | 'chargeback_reversal'
   | 'chargeback_reinstatement'
-  | 'staff_adjustment';
+  | 'staff_adjustment'
+  | 'own_number_pack'
+  | 'own_number_pack_reversal';
 
 export interface CreditSummary {
   orgId: string;
@@ -28,6 +30,11 @@ export interface CreditSummary {
   heldCredits: number;
   availableCredits: number;
   debtCredits: number;
+  /**
+   * 0 or 1: an own-number send already paid for, worth half a stored credit.
+   * Absent is read as 0.
+   */
+  spareCredit?: number;
   version: number;
 }
 

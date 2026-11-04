@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { buildBackendLog } from '../../../shared/logging/backend-log.util';
 import { MetaWebhookEventsService } from './meta-webhook-events.service';
 import {
+  CUSTOMER_MESSAGES_PURGE_JOB,
   META_WEBHOOK_PROCESS_JOB,
   META_WEBHOOK_PURGE_JOB,
   META_WEBHOOK_QUEUE,
@@ -31,6 +32,9 @@ export class MetaWebhookEventsProcessor extends WorkerHost {
         return;
       case META_WEBHOOK_PURGE_JOB:
         await this.events.purge();
+        return;
+      case CUSTOMER_MESSAGES_PURGE_JOB:
+        await this.events.purgeCustomerMessages();
         return;
       default:
         this.logger.warn(

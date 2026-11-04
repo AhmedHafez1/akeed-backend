@@ -59,6 +59,7 @@ import {
 } from './woocommerce-install-token';
 import {
   canonicalizeWooCommerceStoreUrl,
+  isSameWooCommerceStore,
   wooCommerceStoreHost,
 } from './woocommerce-store-url';
 import {
@@ -536,8 +537,7 @@ export class WooCommerceAuthService {
     if (proof.kind === 'failed') return refused(restFailureCode(proof.reason));
     // The store has to call itself by the address the merchant entered. Its
     // own value is compared and then dropped: never stored, logged or shown.
-    const reported = canonicalizeWooCommerceStoreUrl(proof.homeUrl);
-    if (!reported.ok || reported.url !== storeUrl)
+    if (!isSameWooCommerceStore(proof.homeUrl, storeUrl))
       return refused('WOOCOMMERCE_STORE_URL_MISMATCH');
 
     // A newer install may have retired this one while the store was being

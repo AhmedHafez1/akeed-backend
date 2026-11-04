@@ -21,6 +21,7 @@ import {
   displayedPurchaseTerms,
   displayedUnitPriceMinor,
   OddDisplayedCreditsError,
+  toDisplayedBalance,
   toDisplayedCredits,
   toStoredCredits,
 } from '../../shared/billing/merchant-credits';
@@ -88,6 +89,9 @@ const LEDGER_REASON_CODES: Record<LedgerEntryDto['type'], LedgerReasonCode> = {
   chargeback_reversal: 'chargeback_reversed',
   chargeback_reinstatement: 'chargeback_reinstated',
   staff_adjustment: 'staff_adjustment',
+  // One stored credit paid for two messages from the merchant's own number.
+  own_number_pack: 'own_number_messages',
+  own_number_pack_reversal: 'own_number_messages_returned',
 };
 
 /**
@@ -176,9 +180,15 @@ export class BillingService {
         user.orgId,
       ),
       status: summary?.status ?? 'not_provisioned',
-      postedBalance: toDisplayedCredits(summary?.postedBalance ?? 0),
+      postedBalance: toDisplayedBalance(
+        summary?.postedBalance ?? 0,
+        summary?.spareCredit,
+      ),
       heldCredits: toDisplayedCredits(summary?.heldCredits ?? 0),
-      availableCredits: toDisplayedCredits(summary?.availableCredits ?? 0),
+      availableCredits: toDisplayedBalance(
+        summary?.availableCredits ?? 0,
+        summary?.spareCredit,
+      ),
       debtCredits: toDisplayedCredits(summary?.debtCredits ?? 0),
       lowBalanceThreshold: toDisplayedCredits(pricing.lowBalanceThreshold),
       freeGrant: {
@@ -226,7 +236,10 @@ export class BillingService {
             ? entry.actorId
               ? 'akeed_staff'
               : 'system'
-            : entry.type === 'consumption' || entry.type === 'failure_reversal'
+            : entry.type === 'consumption' ||
+                entry.type === 'failure_reversal' ||
+                entry.type === 'own_number_pack' ||
+                entry.type === 'own_number_pack_reversal'
               ? 'meta'
               : 'paymob',
         reasonCode: LEDGER_REASON_CODES[entry.type],

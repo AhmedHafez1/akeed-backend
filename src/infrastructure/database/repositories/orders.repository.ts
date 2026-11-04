@@ -10,6 +10,8 @@ import {
   verificationMessageDispatches,
   verifications,
   webhookEvents,
+  customerMessages,
+  metaWebhookEvents,
 } from '../schema';
 import {
   BLOCKED_EVENT_REASONS as blockedEventReasons,
@@ -446,7 +448,7 @@ export class OrdersRepository {
 
     return this.db.transaction(async (tx) => {
       const matchedOrders = await tx
-        .select({ id: orders.id })
+        .select({ id: orders.id, customerPhone: orders.customerPhone })
         .from(orders)
         .where(
           and(
@@ -493,6 +495,106 @@ export class OrdersRepository {
       }
 
       const now = new Date().toISOString();
+      const phones = [
+        ...new Set(
+          [...keys.phones, ...matchedOrders.map((order) => order.customerPhone)]
+            .map((phone) => phone.replace(/[^0-9]/g, ''))
+            .filter(Boolean),
+        ),
+      ];
+      const customerMessageMatch = and(
+        eq(customerMessages.orgId, orgId),
+        or(
+          phones.length
+            ? inArray(customerMessages.customerPhone, phones)
+            : undefined,
+          orderIds.length
+            ? sql`${customerMessages.verificationId} IN (SELECT v.id FROM verifications v WHERE v.org_id = ${orgId} AND v.order_id IN (${sql.join(
+                orderIds.map((id) => sql`${id}::uuid`),
+                sql`, `,
+              )}))`
+            : undefined,
+        ) ?? sql`false`,
+      );
+      // Keep only provider identities to refuse a replay of the erased content.
+      const erasedMessages = await tx
+        .update(customerMessages)
+        .set({
+          body: null,
+          customerPhone: null,
+          customerUserId: null,
+          redactedAt: now,
+        })
+        .where(customerMessageMatch)
+        .returning({ providerMessageId: customerMessages.providerMessageId });
+      const erasedIds = erasedMessages.map(
+        (message) => message.providerMessageId,
+      );
+      const phoneArray = sql`ARRAY[${sql.join(
+        phones.map((value) => sql`${value}`),
+        sql`, `,
+      )}]::text[]`;
+      const messageArray = sql`ARRAY[${sql.join(
+        erasedIds.map((value) => sql`${value}`),
+        sql`, `,
+      )}]::text[]`;
+      if (phones.length || erasedIds.length) {
+        const retainedEvents = await tx
+          .select({
+            id: metaWebhookEvents.id,
+            payload: metaWebhookEvents.payload,
+          })
+          .from(metaWebhookEvents)
+          .where(
+            and(
+              eq(metaWebhookEvents.field, 'messages'),
+              sql`${metaWebhookEvents.payload} IS NOT NULL`,
+              sql`EXISTS (SELECT 1 FROM jsonb_array_elements((${metaWebhookEvents.payload}::jsonb)->'entry') e
+            CROSS JOIN LATERAL jsonb_array_elements(e->'changes') c
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c->'value'->'messages', '[]'::jsonb)) m
+            WHERE (m->>'id' = ANY(${messageArray}) OR regexp_replace(m->>'from', '[^0-9]', '', 'g') = ANY(${phoneArray}))
+              AND (e->>'id' IN (SELECT wc.waba_id FROM whatsapp_connections wc WHERE wc.org_id = ${orgId})
+                   OR m->>'id' = ANY(${messageArray})))`,
+            ),
+          )
+          .for('update');
+        const ownedWabas = new Set(
+          (
+            await tx
+              .select({ wabaId: schema.whatsappConnections.wabaId })
+              .from(schema.whatsappConnections)
+              .where(eq(schema.whatsappConnections.orgId, orgId))
+          ).map((row) => row.wabaId),
+        );
+        for (const event of retainedEvents) {
+          const payload = JSON.parse(event.payload!) as {
+            entry: {
+              id: string;
+              changes: {
+                value?: { messages?: { id?: string; from?: string }[] };
+              }[];
+            }[];
+          };
+          for (const entry of payload.entry)
+            for (const change of entry.changes) {
+              if (change.value?.messages)
+                change.value.messages = change.value.messages.filter(
+                  (message) =>
+                    !erasedIds.includes(message.id ?? '') &&
+                    !(
+                      ownedWabas.has(entry.id) &&
+                      phones.includes(
+                        (message.from ?? '').replace(/[^0-9]/g, ''),
+                      )
+                    ),
+                );
+            }
+          await tx
+            .update(metaWebhookEvents)
+            .set({ payload: JSON.stringify(payload) })
+            .where(eq(metaWebhookEvents.id, event.id));
+        }
+      }
       if (orderIds.length > 0) {
         await tx
           .update(orders)

@@ -111,6 +111,7 @@ describe('selectTemplateForSend', () => {
 
       expect(selection).toEqual({
         template: {
+          registryKey: key,
           variantKey: `${expected.language}.${expected.style}`,
           language: expected.language,
           templateName: expected.templateName,

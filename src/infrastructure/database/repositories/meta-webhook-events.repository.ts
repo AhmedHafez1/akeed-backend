@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { metaWebhookEvents } from '../schema';
+import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 
 export type MetaWebhookEvent = typeof metaWebhookEvents.$inferSelect;
 
@@ -30,6 +31,30 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 @Injectable()
 export class MetaWebhookEventsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+
+  /** Intake admission and event persistence share the locks used by customer redaction. */
+  async insertManyPrepared(
+    events: readonly NewMetaWebhookEvent[],
+    nextAttemptAt: string,
+    prepare: (payload: string, db: DrizzleDB) => Promise<string>,
+  ): Promise<{ id: string }[]> {
+    return withSerializableRetry(() =>
+      this.db.transaction(async (tx) => {
+        const prepared: NewMetaWebhookEvent[] = [];
+        for (const event of events)
+          prepared.push({
+            ...event,
+            payload:
+              event.field === null
+                ? '{"entry":[]}'
+                : await prepare(event.payload, tx as unknown as DrizzleDB),
+          });
+        return new MetaWebhookEventsRepository(
+          tx as unknown as DrizzleDB,
+        ).insertMany(prepared, nextAttemptAt);
+      }),
+    );
+  }
 
   /**
    * One statement, so a POST is either fully stored or not at all. Answers the

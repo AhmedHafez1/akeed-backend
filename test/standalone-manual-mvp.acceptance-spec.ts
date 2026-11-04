@@ -839,6 +839,7 @@ describe('Standalone manual MVP acceptance composition', () => {
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 messages: [
                   {
@@ -863,6 +864,7 @@ describe('Standalone manual MVP acceptance composition', () => {
         {
           changes: [
             {
+              field: 'messages',
               value: {
                 messages: [
                   {

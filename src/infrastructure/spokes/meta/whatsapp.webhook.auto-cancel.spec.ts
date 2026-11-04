@@ -10,6 +10,7 @@ function message(fields: Record<string, unknown>): WhatsAppWebhookPayloadDto {
       {
         changes: [
           {
+            field: 'messages',
             value: {
               messages: [
                 { from: '201012345678', timestamp: '1700000000', ...fields },

@@ -13,7 +13,7 @@ import type {
 function wrap(value: WhatsAppChangeValueDto): WhatsAppWebhookPayloadDto {
   return {
     object: 'whatsapp_business_account',
-    entry: [{ changes: [{ value }] }],
+    entry: [{ changes: [{ field: 'messages', value }] }],
   };
 }
 
@@ -600,6 +600,7 @@ describe('WhatsAppWebhookService', () => {
           {
             changes: [
               {
+                field: 'messages',
                 value: {
                   statuses: [
                     { id: 'wamid_a', status: 'delivered', timestamp: '100' },
@@ -607,6 +608,7 @@ describe('WhatsAppWebhookService', () => {
                 },
               },
               {
+                field: 'messages',
                 value: {
                   statuses: [
                     { id: 'wamid_b', status: 'read', timestamp: '200' },
@@ -618,6 +620,7 @@ describe('WhatsAppWebhookService', () => {
           {
             changes: [
               {
+                field: 'messages',
                 value: {
                   statuses: [
                     { id: 'wamid_c', status: 'delivered', timestamp: '300' },
@@ -699,7 +702,7 @@ describe('WhatsAppWebhookService', () => {
       const { service, verificationsRepo } = createMocks();
 
       await service.processIncoming({
-        entry: [{ changes: [{ value: undefined }] }],
+        entry: [{ changes: [{ field: 'messages', value: undefined }] }],
       } as any);
 
       expect(verificationsRepo.updateStatusByWamid).not.toHaveBeenCalled();

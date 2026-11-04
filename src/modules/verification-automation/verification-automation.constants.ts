@@ -20,6 +20,9 @@
 export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';
 
 export enum VerificationAutomationJobType {
+  SENDER_RETRY = 'verification.sender_retry',
+  SENDER_FALLBACK = 'verification.sender_fallback',
+  SENDER_RECOVERY_SWEEP = 'verification.sender_recovery_sweep',
   INITIAL_SEND = 'verification.initial_send',
   FOLLOW_UP = 'verification.follow_up',
   ESCALATE_NO_REPLY = 'verification.escalate_no_reply',
@@ -27,7 +30,10 @@ export enum VerificationAutomationJobType {
   UNRESOLVED_REPLY_NUDGE = 'verification.unresolved_reply_nudge',
 }
 
+import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
+
 export interface VerificationAutomationJobPayload {
+  dispatchId?: string;
   verificationId: string;
   orgId: string;
   scheduledAt: string;
@@ -38,5 +44,6 @@ export interface VerificationAutomationJobPayload {
   reply?: {
     repliedAt: string;
     intent?: 'confirmed' | 'canceled';
+    receivingSender?: MerchantReplySender;
   };
 }

@@ -12,6 +12,7 @@ function failedReceipt(
       {
         changes: [
           {
+            field: 'messages',
             value: {
               statuses: [
                 {

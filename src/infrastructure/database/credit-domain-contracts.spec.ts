@@ -32,6 +32,8 @@ describe('credit domain contracts', () => {
       'chargeback_reversal',
       'chargeback_reinstatement',
       'staff_adjustment',
+      'own_number_pack',
+      'own_number_pack_reversal',
     ]);
     expect(paymentPurchaseStatus.enumValues).toEqual([
       'pending',

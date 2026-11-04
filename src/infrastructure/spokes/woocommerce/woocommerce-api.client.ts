@@ -12,7 +12,7 @@ import {
   readWooCommerceOutcomeMarkers,
   readWooCommerceStatus,
 } from './woocommerce-outcome.mapping';
-import { canonicalizeWooCommerceStoreUrl } from './woocommerce-store-url';
+import { isSameWooCommerceStore } from './woocommerce-store-url';
 
 export const WOOCOMMERCE_HTTP = Symbol('WOOCOMMERCE_HTTP');
 
@@ -261,8 +261,8 @@ function readOrderOf(
   const href = isRecord(self) ? self.href : undefined;
   const path = `${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}`;
   if (typeof href !== 'string' || !href.endsWith(path)) return null;
-  const base = canonicalizeWooCommerceStoreUrl(href.slice(0, -path.length));
-  if (!base.ok || base.url !== storeUrl) return null;
+  if (!isSameWooCommerceStore(href.slice(0, -path.length), storeUrl))
+    return null;
   return {
     status: readWooCommerceStatus(body.status),
     markers: readWooCommerceOutcomeMarkers(body.meta_data),

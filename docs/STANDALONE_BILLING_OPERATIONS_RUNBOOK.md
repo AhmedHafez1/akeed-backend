@@ -39,8 +39,9 @@ Settlement evidence is access-controlled at its referenced location; the console
 Open **Open** on a row, or filter first: *Balance* (low, no credits, debt), *Account status* and *Reconciliation → Needs reconciliation* (flagged purchases, unresolved sends, or a projection that no longer matches its ledger).
 
 - **Ledger reconciliation** compares the posted balance with the ledger total, and held credits with held reservations. Both must match.
+- **Spare credit** is half a stored credit already paid for by an own-number send. It must equal twice the net own-number packs (`own_number_pack` minus `own_number_pack_reversal`) minus the own-number charges not yet returned, and it is only ever 0 or 1. The merchant sees it as one credit on top of the displayed balance.
 - A **yellow alert** means the projection drifted. Every write except projection repair is refused with `CREDIT_PROJECTION_MISMATCH` until it is repaired. Callbacks for the account are frozen too.
-- A **red alert** names contradictory records (for example, a credit still held for a send that was already settled). Every write, including repair, is refused. Escalate to engineering with the organization id and the listed references; do not try to work around it.
+- A **red alert** names contradictory records (for example, a credit still held for a send that was already settled, or `spare_credit_mismatch`: a spare that disagrees with its own-number charges). Every write, including repair, is refused. Escalate to engineering with the organization id and the listed references; do not try to work around it.
 
 ## Procedures
 
@@ -183,3 +184,9 @@ Run in a non-production environment with the switch on and one operator named:
 | `BILLING_DISPATCH_NOT_CREDIT_BILLED` | The send is on periodic accounting; use the generic resolver |
 | `BILLING_PURCHASE_NOT_ELIGIBLE` | Inquiry cannot change this purchase |
 | `MESSAGE_DISPATCH_RESOLUTION_CONFLICT` | The send was already resolved differently |
+
+## Merchant sender recovery
+
+Merchant-number attempts with no clear provider outcome automatically return their charge and attempt Akeed fallback. Inspect `verification_sender_attempts`, the original dispatch refund timestamp, and the fallback dispatch linked by `fallback_for_dispatch_id`. Late receipts update the original attempt audit without charging it again. Retryable merchant failures retain one charge across their two delayed retries.
+
+An `outcome_unknown` row that already has a provider message ID is evidence of acceptance with incomplete bookkeeping, not an unknown provider send. Preserve its repair/staff-resolution workflow. Shared Akeed ambiguous sends and staff resolution are unchanged.

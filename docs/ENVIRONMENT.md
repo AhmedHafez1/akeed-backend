@@ -433,15 +433,15 @@ template metrics (Admin › Templates) before enabling the next.
 | Variable | Item | What `true` does |
 | --- | --- | --- |
 | `WHATSAPP_REMINDER_TEMPLATE_ENABLED` | a | The Message tab offers a reminder style per language, among active `cod_reminder` templates. A store that chose one sends it as the reminder; a store that chose none sends its first-send template. A chosen reminder that cannot be sent falls back to the language's reminder default, then to the first-send template, recorded on the dispatch as `template_fallback_reason = reminder_unavailable`. |
-| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | Offers paid thank-you messages in Settings › Message. Only stores with `acknowledgment_enabled = true` send one free-form text after a customer confirms or cancels (a button or a recognized typed answer), in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. |
+| `WHATSAPP_ACKNOWLEDGMENT_ENABLED` | b | Offers paid Akeed-number thank-you messages in Settings › Message. Only stores with `acknowledgment_enabled = true` send one free-form text after a customer confirms or cancels (a button or a recognized typed answer), in the language and dialect of the verification's latest send. Never after a merchant cancellation, an automatic `no_reply` or a test order. Needs the `ack_confirmed` and `ack_canceled` texts. Merchant-number thank-yous follow their connection preference and the own-number sending switch instead. |
 | `WHATSAPP_UNRESOLVED_REPLY_NUDGE_ENABLED` | c | A typed reply to an open verification's message that Akeed could not read gets one free-form nudge, at most once per verification. The reply is stored in `verification_reply_events` without its text; this is stored only while the switch is on. A reply without `context.id` gets nothing. Needs the `unresolved_reply_nudge` texts. |
 | `WHATSAPP_ARABIC_STYLE_AUTO_ENABLED` | d | The Message tab offers `auto` as the Arabic style. A store on `auto` sends the Egyptian style to `+20`, the Gulf style to `+966`, `+971`, `+973`, `+974`, `+965` and `+968`, and the standard style to every other Arabic code. A mapped style that cannot be sent falls back to the Arabic default with `auto_style_unavailable`. Turning it off sends the store's stored Arabic style again. |
 | `WHATSAPP_LOCALIZED_FALLBACKS_ENABLED` | e | A missing customer or store name is filled from the `fallback_customer_name` and `fallback_store_name` texts of the send's language, not `Customer` and `Akeed Store`. A missing text keeps the old word for that value and logs `message_text_unavailable`, so add all four texts first. |
 | `WHATSAPP_AMOUNT_FORMATTING_ENABLED` | f | The `total` value is written per language and currency (`1,250.00 ج.م`, `EGP 1,250.00`), with the currency's minor units and Western digits. The amount itself never changes. |
 | `WHATSAPP_SNAPSHOT_PREVIEW_ENABLED` | g | The Settings preview and the onboarding test phone are built from the template text Meta returned at the last sync. A template without a snapshot keeps the stored preview. The staff text check on Admin › Templates follows it: for a template previewed from the snapshot it reports only differences in what is sent, not the stored preview's wording. |
 
-Thank-you messages are opt-in per integration and off for all new and existing
-stores. Each accepted acknowledgment uses one normal billable message: two
+Akeed-number thank-you messages are opt-in per integration and off for all new and existing
+stores. Each accepted Akeed-number acknowledgment uses one normal billable message: two
 merchant-visible credits for prepaid stores, or one plan message. The global
 switch is an availability control and never opts a store in. Acknowledgments
 reserve capacity through a linked `acknowledgment` dispatch; a confirmed
@@ -471,7 +471,7 @@ every organization. No organization allow-list is required:
 | Variable | Notes |
 | --- | --- |
 | `WHATSAPP_OWN_NUMBER_CONNECT_ENABLED` | `true` or `false` (default). Offers connecting a number. Needs `META_EMBEDDED_SIGNUP_CONFIG_ID`, `META_APP_ID`, `WHATSAPP_CONNECT_PAGE_BASE_URL` and `SHOPIFY_TOKEN_ENCRYPTION_KEY`; startup fails without them. Signup also uses `META_APP_SECRET`. |
-| `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` sends every message from Akeed's number and leaves connections as they are. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. |
+| `WHATSAPP_OWN_NUMBER_SENDING_ENABLED` | `true` or `false` (default). The kill switch: `false` resolves new confirmation messages to Akeed and stops already-claimed merchant retries before HTTP, preserving their recorded sender. It also stops merchant-number thank-yous, which never fall back. Leaves connections as they are. Enabled template sends require an active, healthy connection and the exact approved UTILITY text template; free-form thank-yous require the connection preference and an open service window. Needs `SHOPIFY_TOKEN_ENCRYPTION_KEY`. Keep disabled until sender-aware billing, fallback, activation and live checks are ready. |
 | `WHATSAPP_OWN_NUMBER_TEMPLATE_SUBMIT_INTERVAL_MS` | Optional, default `2000`, `0` to `60000`. Akeed's pause between two template submissions to one merchant's account. Meta documents no creation limit; this only spreads the requests out. Startup fails on a value out of range. |
 | `WHATSAPP_OWN_NUMBER_TEMPLATE_BATCH_SIZE` | Optional, default `10`, `1` to `50`. Template submissions per setup or sync run before it yields and queues the next. Startup fails on a value out of range. |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | The numeric Embedded Signup configuration ID (Facebook Login for Business › Configurations). Required while connect is on; ignored while it is off. Startup fails on a value that is not digits. |
@@ -523,6 +523,28 @@ role and the existing connection. A signup replaces only a `connecting` or
 `WHATSAPP_SIGNUP_PROVIDER_UNAVAILABLE` (503). After a failed completion the
 merchant starts again from settings. Logs carry the step, the code and Meta's
 numeric error code, never a ticket, code, token or Meta's error text.
+
+### Merchant-number thank-you preference
+
+`GET /api/whatsapp-sender/connection` includes `thankYouEnabled` in its
+connection object. `PATCH /api/whatsapp-sender/connection` accepts exactly
+`{ "thankYouEnabled": true }` or `{ "thankYouEnabled": false }` and returns
+the saved `{ thankYouEnabled }`. Both responses are `no-store`. Session
+authentication supplies the organization; owners and admins can update the
+preference, viewers cannot. The preference defaults on, survives reconnects,
+and can be updated with the connect and sending switches off.
+
+Codes: `WHATSAPP_CONNECTION_SETTINGS_INVALID` (400, including non-boolean,
+missing or unknown fields), `WHATSAPP_CONNECTION_WRITE_REQUIRED` (403), and
+`WHATSAPP_CONNECTION_NOT_FOUND` (404). Connection changes such as signup and
+disconnect remain owner-only.
+
+Merchant-number thank-yous ignore `WHATSAPP_ACKNOWLEDGMENT_ENABLED` and the
+integration's paid opt-in. They require `WHATSAPP_OWN_NUMBER_SENDING_ENABLED`
+and the receiving connection to remain active, healthy and enabled. They
+use no Akeed credits or plan capacity and are attempted once, within the
+existing 24-hour service window. Meta may charge the merchant separately.
+The visible merchant control is not yet available.
 
 ## Meta Ad Conversions (Conversions API)
 

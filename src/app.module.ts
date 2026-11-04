@@ -1,3 +1,5 @@
+import { SENDER_RESOLVER_PORT } from './shared/ports/sender-resolver.port';
+import { SenderResolverService } from './modules/whatsapp-sender/sender-resolver.service';
 import { ShopifyOrderEligibilityStrategy } from './infrastructure/spokes/shopify/services/shopify-order-eligibility.strategy';
 import { StandaloneOrderEligibilityStrategy } from './infrastructure/spokes/standalone/services/standalone-order-eligibility.strategy';
 import { EasyOrdersOrderEligibilityStrategy } from './infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
@@ -96,6 +98,7 @@ const billingModule = BillingModule.register({
       // Standalone has no module, so its strategy is provided here.
       imports: [
         MetaModule,
+        WhatsappSenderModule,
         ShopifyModule,
         EasyOrdersIngestionModule,
         WooCommerceIngestionModule,
@@ -118,6 +121,7 @@ const billingModule = BillingModule.register({
           ) => [shopify, standalone, easyOrders, wooCommerce],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },
+        { provide: SENDER_RESOLVER_PORT, useExisting: SenderResolverService },
         ResendEmailAdapter,
         { provide: EMAIL_PORT, useExisting: ResendEmailAdapter },
         TemplateRegistryService,

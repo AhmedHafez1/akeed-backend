@@ -7,7 +7,7 @@ import { isIP } from 'net';
  * only in one shape and stored in one form, `https://<host>` or
  * `https://<host>/<path>`, and every later request to the store is built from
  * that stored form. The same rules canonicalize what the store reports about
- * itself, so the two can be compared for equality.
+ * itself, so the two can be compared (`isSameWooCommerceStore`).
  */
 export const WOOCOMMERCE_STORE_URL_MAX_LENGTH = 255;
 
@@ -92,6 +92,24 @@ export function canonicalizeWooCommerceStoreUrl(
   return canonical.length > WOOCOMMERCE_STORE_URL_MAX_LENGTH
     ? INVALID
     : { ok: true, url: canonical };
+}
+
+/**
+ * Whether an address the store reports about itself names the connected
+ * store. Only the scheme is relaxed: WordPress may keep `http://` in its
+ * settings, and in its background jobs, while the site is served over HTTPS,
+ * and Akeed only ever calls the stored `https://` form. The host and path
+ * must match exactly.
+ */
+export function isSameWooCommerceStore(
+  reported: unknown,
+  storeUrl: string,
+): boolean {
+  if (typeof reported !== 'string') return false;
+  const canonical = canonicalizeWooCommerceStoreUrl(
+    reported.trim().replace(/^http:\/\//i, 'https://'),
+  );
+  return canonical.ok && canonical.url === storeUrl;
 }
 
 /** The host of a canonical store URL: the only part of it that is logged. */

@@ -2,6 +2,17 @@ import { UsageAccountingRouter } from '../../infrastructure/database/repositorie
 import { usageAccountingFixture } from '../../../test/contracts/usage-accounting-fixture';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+function productionFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = resolve(directory, entry.name);
+    return entry.isDirectory()
+      ? productionFiles(file)
+      : entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')
+        ? [file]
+        : [];
+  });
+}
 import { Test } from '@nestjs/testing';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { OrdersRepository } from '../../infrastructure/database/repositories/orders.repository';
@@ -20,15 +31,13 @@ import { VerificationSendService } from './verification-send.service';
 import { VerificationHubService } from './verification-hub.service';
 
 describe('platform-neutral verification core release gate', () => {
-  it('keeps production verification-core files free of Shopify service imports', () => {
+  it('keeps production verification-core files free of Shopify and Meta spoke imports', () => {
     const directory = resolve(__dirname);
-    const productionFiles = readdirSync(directory).filter(
-      (name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'),
-    );
-
-    for (const file of productionFiles) {
+    for (const file of productionFiles(directory)) {
       const source = readFileSync(resolve(directory, file), 'utf8');
-      expect(source).not.toMatch(/ShopifyApiService|spokes\/shopify/);
+      expect(source).not.toMatch(
+        /ShopifyApiService|spokes[\\/](?:shopify|meta)/,
+      );
     }
   });
 

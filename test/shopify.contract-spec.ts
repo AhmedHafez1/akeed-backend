@@ -603,6 +603,9 @@ describe('Shopify isolated PostgreSQL contract', () => {
         schema.orders,
         schema.verifications,
         schema.webhookEvents,
+        schema.customerMessages,
+        schema.metaWebhookEvents,
+        schema.whatsappConnections,
       ])
         await scaffold(table);
       await redactClient.unsafe(

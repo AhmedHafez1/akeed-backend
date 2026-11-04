@@ -70,6 +70,17 @@ export const STANDALONE_DEFAULT_PLAN_ID: BillingPlanId = 'starter';
  */
 export const ONE_TIME_BILLING_PLAN_IDS: readonly BillingPlanId[] = ['starter'];
 
+/**
+ * A connected own number adds a separate pool of this many messages per
+ * included Akeed message (Basic: 300 Akeed + 900 own number). The pool shares
+ * the plan's period, so Starter's one-time 30 become 30 + 90.
+ */
+export const ownNumberMultiplier = 3;
+
+export function ownNumberLimit(includedLimit: number): number {
+  return includedLimit * ownNumberMultiplier;
+}
+
 export function isOneTimeBillingPlan(planId: BillingPlanId | null): boolean {
   return planId !== null && ONE_TIME_BILLING_PLAN_IDS.includes(planId);
 }
