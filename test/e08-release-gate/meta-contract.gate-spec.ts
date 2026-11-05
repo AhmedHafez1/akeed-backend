@@ -537,6 +537,7 @@ describe('Meta contract gate', () => {
       );
       const serviceMessages = {
         claim: jest.fn().mockResolvedValue({ id: 'msg-1' }),
+        linkDispatch: jest.fn().mockResolvedValue(undefined),
         markSent: jest.fn().mockResolvedValue(undefined),
         markNotSent: jest.fn().mockResolvedValue(undefined),
       };
@@ -560,10 +561,22 @@ describe('Meta contract gate', () => {
             customerPhone: PHONE,
             orderNumber: '1117',
             externalOrderId: 'ext-1',
-            integration: { defaultLanguage: 'auto', storeName: 'Nour' },
+            integration: {
+              id: 'int-1',
+              orgId: 'org-1',
+              acknowledgmentEnabled: true,
+              defaultLanguage: 'auto',
+              storeName: 'Nour',
+            },
           }),
         } as never,
         {
+          claim: jest.fn().mockResolvedValue({
+            outcome: 'claimed',
+            dispatch: { id: 'dispatch-1', generation: 1 },
+          }),
+          markAccepted: jest.fn().mockResolvedValue({ outcome: 'accepted' }),
+          resolveNotAccepted: jest.fn().mockResolvedValue(undefined),
           findLatestAcceptedIdentity: jest.fn().mockResolvedValue({
             resolvedLanguage: 'en',
             variantKey: 'en.friendly',
