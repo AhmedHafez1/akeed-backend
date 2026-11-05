@@ -415,6 +415,11 @@ export interface OnboardingBillingPlanDto {
   amount: number;
   currencyCode: string;
   includedVerifications: number;
+  /**
+   * The separate allowance of messages from the merchant's own number, once
+   * connected: three per included Akeed message.
+   */
+  ownNumberIncludedVerifications: number;
 }
 
 export interface OnboardingBillingPlansResponseDto {

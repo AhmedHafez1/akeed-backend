@@ -434,6 +434,44 @@ describe('BillingService', () => {
     });
   });
 
+  describe('getBillingPlans — own-number allowance', () => {
+    it('lists each plan with its separate own-number allowance', async () => {
+      const mocks = createMocks();
+      mocks.billingConfig.resolveAllPlans.mockReturnValue(
+        [
+          ['starter', 30],
+          ['basic', 300],
+          ['pro', 1000],
+          ['business', 2500],
+        ].map(([id, includedVerifications]) => ({
+          id,
+          name: `Akeed ${id}`,
+          amount: 0,
+          currencyCode: 'USD',
+          testMode: true,
+          includedVerifications,
+        })),
+      );
+
+      const result = await mocks.service.getBillingPlans(
+        makeIntegration({ billingPlanId: 'basic' }) as any,
+      );
+
+      expect(
+        result.plans.map((plan) => [
+          plan.id,
+          plan.includedVerifications,
+          plan.ownNumberIncludedVerifications,
+        ]),
+      ).toEqual([
+        ['starter', 30, 90],
+        ['basic', 300, 900],
+        ['pro', 1000, 3000],
+        ['business', 2500, 7500],
+      ]);
+    });
+  });
+
   describe('getBillingPlans — current plan', () => {
     it('names the active plan', async () => {
       const { service } = createMocks();
