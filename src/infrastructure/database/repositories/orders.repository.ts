@@ -219,6 +219,31 @@ export class OrdersRepository {
     return rows.length > 0;
   }
 
+  /**
+   * The currency of the integration's most recent real order, or null when it
+   * has none. Messages write each order's own currency, so this is the one a
+   * message preview should show.
+   */
+  async findLatestOrderCurrency(
+    orgId: string,
+    integrationId: string,
+  ): Promise<string | null> {
+    const [row] = await this.db
+      .select({ currency: orders.currency })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.orgId, orgId),
+          eq(orders.integrationId, integrationId),
+          eq(orders.isTest, false),
+          sql`${orders.currency} IS NOT NULL`,
+        ),
+      )
+      .orderBy(desc(orders.createdAt), desc(orders.id))
+      .limit(1);
+    return row?.currency ?? null;
+  }
+
   async findById(orderId: string) {
     return await this.db.query.orders.findFirst({
       where: eq(orders.id, orderId),

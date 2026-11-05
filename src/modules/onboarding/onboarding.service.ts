@@ -532,14 +532,20 @@ export class OnboardingService {
       ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
 
-    const [activation, usage, sourceSetup] = await Promise.all([
-      this.readActivation(integration, state.isOnboardingComplete),
-      this.readUsage(integration),
-      this.readSourceSetup(integration, accountStatus),
-    ]);
+    const [activation, usage, sourceSetup, latestOrderCurrency] =
+      await Promise.all([
+        this.readActivation(integration, state.isOnboardingComplete),
+        this.readUsage(integration),
+        this.readSourceSetup(integration, accountStatus),
+        this.ordersRepo?.findLatestOrderCurrency(
+          integration.orgId,
+          integration.id,
+        ) ?? null,
+      ]);
 
     return {
       ...state,
+      messageCurrency: latestOrderCurrency ?? state.shippingCurrency,
       activation,
       usage,
       permissions: {

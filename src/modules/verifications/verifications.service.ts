@@ -565,6 +565,7 @@ export class VerificationsService {
     const [
       counts,
       confirmedValue,
+      canceledValue,
       replyTiming,
       topRows,
       entitlement,
@@ -572,6 +573,7 @@ export class VerificationsService {
     ] = await Promise.all([
       this.verificationsRepo.getOverviewCounts(orgId, period),
       this.verificationsRepo.getConfirmedValueByCurrency(orgId, period),
+      this.verificationsRepo.getCanceledValueByCurrency(orgId, period),
       this.verificationsRepo.getReplyTiming(orgId, period),
       this.verificationsRepo.findNeedsActionTop(
         orgId,
@@ -604,7 +606,10 @@ export class VerificationsService {
           : null,
       kpis: {
         confirmed: { count: counts.confirmed, value: confirmedValue },
-        canceled_before_shipping: { count: counts.customerCanceled },
+        canceled_before_shipping: {
+          count: counts.customerCanceled,
+          value: canceledValue,
+        },
         confirmation_rate: {
           rate: rateOfSent(counts.confirmedAfterSend, counts.sent),
           confirmed: Math.min(counts.confirmedAfterSend, counts.sent),

@@ -45,6 +45,7 @@ function setup(
     integration?: Record<string, unknown>;
     starter?: string;
     hasRealOrders?: boolean;
+    latestOrderCurrency?: string | null;
   } = {},
 ) {
   const integration = makeIntegration(options.integration);
@@ -56,6 +57,7 @@ function setup(
     toState: jest.fn().mockReturnValue({
       isOnboardingComplete: true,
       onboardingStatus: 'completed',
+      shippingCurrency: 'USD',
     }),
   };
   const billingService = {
@@ -82,6 +84,9 @@ function setup(
   };
   const ordersRepo = {
     hasRealOrders: jest.fn().mockResolvedValue(options.hasRealOrders ?? false),
+    findLatestOrderCurrency: jest
+      .fn()
+      .mockResolvedValue(options.latestOrderCurrency ?? null),
   };
   const service = new OnboardingService(
     onboardingState as never,
@@ -205,5 +210,27 @@ describe('OnboardingService activation.hasRealOrders', () => {
     const state = await service.getState(owner);
 
     expect(state.activation.hasRealOrders).toBe(true);
+  });
+});
+
+describe('OnboardingService messageCurrency', () => {
+  it("previews in the currency of the store's latest real order", async () => {
+    const { service, ordersRepo } = setup({ latestOrderCurrency: 'EGP' });
+
+    const state = await service.getState(owner);
+
+    expect(ordersRepo.findLatestOrderCurrency).toHaveBeenCalledWith(
+      'org-1',
+      'int-1',
+    );
+    expect(state.messageCurrency).toBe('EGP');
+  });
+
+  it('falls back to the shipping currency before the first order', async () => {
+    const { service } = setup({ latestOrderCurrency: null });
+
+    const state = await service.getState(owner);
+
+    expect(state.messageCurrency).toBe('USD');
   });
 });

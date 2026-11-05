@@ -361,6 +361,11 @@ export interface OnboardingStateDto {
   assumeCodWhenPaymentMissing: boolean;
   acknowledgmentEnabled: boolean;
   shippingCurrency: OnboardingShippingCurrency;
+  /**
+   * The currency a message preview writes: the latest real order's, else the
+   * shipping currency. Absent where the state is built without order lookup.
+   */
+  messageCurrency?: string;
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
   billingStatus: string | null;

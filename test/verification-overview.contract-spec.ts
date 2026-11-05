@@ -528,13 +528,22 @@ describe('overview aggregate', () => {
     ).resolves.toEqual([{ currency: 'USD', amount: '150.00' }]);
   });
 
+  it('sums the value of customer-canceled orders like the count', async () => {
+    await expect(
+      repository.getCanceledValueByCurrency(orgA, period()),
+    ).resolves.toEqual([{ currency: 'USD', amount: '30.00' }]);
+  });
+
   it('composes the dashboard for one shop', async () => {
     const overview = await service.getOverview(orgA, {
       date_range: 'last_30_days',
     });
     expect(overview.kpis).toEqual({
       confirmed: { count: 2, value: [{ currency: 'USD', amount: '150.00' }] },
-      canceled_before_shipping: { count: 1 },
+      canceled_before_shipping: {
+        count: 1,
+        value: [{ currency: 'USD', amount: '30.00' }],
+      },
       confirmation_rate: { rate: 25, confirmed: 2, sent: 8 },
     });
     expect(overview.usage).toEqual({
