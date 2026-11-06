@@ -544,7 +544,7 @@ integration's paid opt-in. They require `WHATSAPP_OWN_NUMBER_SENDING_ENABLED`
 and the receiving connection to remain active, healthy and enabled. They
 use no Akeed credits or plan capacity and are attempted once, within the
 existing 24-hour service window. Meta may charge the merchant separately.
-The visible merchant control is not yet available.
+They are turned on or off in the WhatsApp settings tab.
 
 ## Meta Ad Conversions (Conversions API)
 
