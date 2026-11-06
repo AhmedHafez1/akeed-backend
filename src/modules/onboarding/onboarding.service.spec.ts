@@ -117,6 +117,10 @@ describe('OnboardingService', () => {
       expect(result.billing.plans).toHaveLength(1);
       expect(result.billing.isFreePlanClaimed).toBe(true);
       expect(result.billing.usage).toEqual({
+        pools: {
+          akeed: { used: 42, limit: 300, remaining: 258 },
+          ownNumber: { used: 0, limit: 900, remaining: 900 },
+        },
         used: 42,
         limit: 300,
         periodStart,
@@ -173,7 +177,9 @@ describe('OnboardingService', () => {
       toState: jest.fn().mockReturnValue({ timezone: 'Asia/Riyadh' }),
     };
     const messageDispatches = {
-      countAcceptedSince: jest.fn().mockResolvedValue(28),
+      countAcceptedSince: jest
+        .fn()
+        .mockResolvedValue({ total: 28, akeed: 19, ownNumber: 9 }),
     };
     const service = new OnboardingService(
       onboardingState as any,
@@ -206,6 +212,10 @@ describe('OnboardingService', () => {
     });
 
     expect(result.billing.messagesSentLast30Days).toBe(28);
+    expect(result.billing.messagesSentLast30DaysByPool).toEqual({
+      akeed: 19,
+      ownNumber: 9,
+    });
     expect(messageDispatches.countAcceptedSince).toHaveBeenCalledWith({
       orgId: 'org-7',
       integrationId: 'int-7',

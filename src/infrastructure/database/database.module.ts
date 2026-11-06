@@ -1,3 +1,6 @@
+import { WhatsappSenderAlertsRepository } from './repositories/whatsapp-sender-alerts.repository';
+import { WhatsappSenderReadRepository } from './repositories/whatsapp-sender-read.repository';
+import { CreditUsageRepository } from './repositories/credit-usage.repository';
 import { PeriodicPlanAccounting } from './repositories/periodic-plan-accounting';
 import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accounting';
 import { UsageAccountingRouter } from './repositories/usage-accounting.router';
@@ -43,6 +46,8 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
 @Module({
   imports: [ConfigModule],
   providers: [
+    CreditUsageRepository,
+    WhatsappSenderReadRepository,
     CustomerMessagesRepository,
     CreditAccountingRepository,
     PeriodicPlanAccounting,
@@ -78,11 +83,15 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
+    WhatsappSenderAlertsRepository,
     UsageAlertsRepository,
     TipsCampaignsRepository,
     MetaWebhookEventsRepository,
   ],
   exports: [
+    CreditUsageRepository,
+    WhatsappSenderReadRepository,
+    WhatsappSenderAlertsRepository,
     CustomerMessagesRepository,
     CreditAccountingRepository,
     PeriodicPlanAccounting,

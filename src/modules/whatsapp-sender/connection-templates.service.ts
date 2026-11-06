@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   TEMPLATE_SYNC_STATES,
@@ -43,6 +43,7 @@ import {
   providerPatch,
   templateRetryDelayMs,
 } from './template-provisioning.policy';
+import { SenderAlertProducer } from './sender-alert-queue';
 import { WhatsappConnectionSetupProducer } from './whatsapp-connection-setup.producer';
 
 /** One submission holds its row this long at most. */
@@ -86,6 +87,7 @@ export class ConnectionTemplatesService {
     private readonly registry: WhatsappTemplatesRepository,
     private readonly graph: OwnNumberGraphClient,
     private readonly producer: WhatsappConnectionSetupProducer,
+    @Optional() private readonly alerts?: SenderAlertProducer,
   ) {}
 
   /** The scheduled or webhook-requested sync of one connection. */
@@ -220,6 +222,7 @@ export class ConnectionTemplatesService {
       }
     }
 
+    this.alerts?.request(connection.orgId, connection.signupGeneration);
     const after = (
       await this.rows.listForConnection(connection.orgId, connection.id)
     ).filter((row) => eligibleIds.has(row.templateId));

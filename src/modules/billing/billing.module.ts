@@ -8,6 +8,8 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { BillingController } from './billing.controller';
+import { CreditUsageController } from './credit-usage.controller';
+import { CreditUsageService } from './credit-usage.service';
 import { BillingRepository } from './billing.repository';
 import { BillingService } from './billing.service';
 import { PaymentCallbackService } from './payment-callback.service';
@@ -42,8 +44,13 @@ export class BillingModule {
         AuthModule,
         ...(options.imports ?? []),
       ],
-      controllers: [BillingController, PaymentsCallbackController],
+      controllers: [
+        BillingController,
+        CreditUsageController,
+        PaymentsCallbackController,
+      ],
       providers: [
+        CreditUsageService,
         BillingService,
         BillingRepository,
         PaymentCallbackService,

@@ -18,6 +18,7 @@ import {
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import {
   CREDITS_PER_AKEED_MESSAGE,
+  CREDITS_PER_OWN_NUMBER_MESSAGE,
   displayedPurchaseTerms,
   displayedUnitPriceMinor,
   OddDisplayedCreditsError,
@@ -202,6 +203,7 @@ export class BillingService {
         unitPriceMinor: displayedUnitPriceMinor(pricing.priceMinor),
         messagePriceMinor: pricing.priceMinor,
         creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
+        ownNumberCreditsPerMessage: CREDITS_PER_OWN_NUMBER_MESSAGE,
         currency: 'EGP',
       },
       range: {

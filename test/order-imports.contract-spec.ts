@@ -256,6 +256,9 @@ describe('order imports PostgreSQL contract', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id uuid,
         verification_id uuid,
+        state text NOT NULL DEFAULT 'ready',
+        accepted_at timestamptz,
+        failed_at timestamptz,
         sender_kind text NOT NULL DEFAULT 'akeed_system',
         accounting_mode text NOT NULL DEFAULT 'periodic_plan',
         usage_reserved boolean NOT NULL DEFAULT false,
@@ -370,6 +373,7 @@ describe('order imports PostgreSQL contract', () => {
         '0088_own_number_billing.sql',
         '0089_sender_recovery.sql',
         '0090_merchant_webhook_routing.sql',
+        '0091_whatsapp_sender_alerts.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

@@ -158,6 +158,7 @@ describe('BillingService.readCredits', () => {
         unitPriceMinor: 100,
         messagePriceMinor: 200,
         creditsPerMessage: 2,
+        ownNumberCreditsPerMessage: 1,
         currency: 'EGP',
       },
       range: { min: 200, max: 10000, step: 100 },

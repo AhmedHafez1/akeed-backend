@@ -79,6 +79,8 @@ try {
     Invoke-ContractStep 'US-04.5-07 reconciliation, monitoring and finance metrics' 'test:contract:billing-observability'
     Invoke-ContractStep 'Displayed credits from purchase to refund' 'test:contract:credit-display-cycle'
 
+    Invoke-ContractStep 'Merchant own WhatsApp flow and per-message usage' 'test:contract:merchant-own-whatsapp-flow'
+
     $testExitCode = 0
 }
 catch {

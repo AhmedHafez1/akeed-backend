@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { WhatsappConnectionTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-connection-templates.repository';
 import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import type { TemplateProviderEvent } from '../../shared/messaging/template-provider.types';
+import { SenderAlertProducer } from './sender-alert-queue';
 import { WhatsappConnectionSetupProducer } from './whatsapp-connection-setup.producer';
 
 /**
@@ -20,6 +21,7 @@ export class ConnectionTemplateHintsService {
     private readonly connections: WhatsappConnectionsRepository,
     private readonly rows: WhatsappConnectionTemplatesRepository,
     private readonly producer: WhatsappConnectionSetupProducer,
+    @Optional() private readonly alerts?: SenderAlertProducer,
   ) {}
 
   async apply(
@@ -58,6 +60,7 @@ export class ConnectionTemplateHintsService {
       );
       if (written) applied += 1;
     }
+    this.alerts?.request(connection.orgId, connection.signupGeneration);
     await this.producer.requestTemplateSync(connection.id);
     this.logger.log(
       buildBackendLog(ConnectionTemplateHintsService.name, {

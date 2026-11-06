@@ -1,3 +1,8 @@
+import {
+  SenderAlertQueueModule,
+  SenderAlertProcessor,
+} from './sender-alert-queue';
+import { SenderAlertService } from './sender-alert.service';
 import { SenderResolverService } from './sender-resolver.service';
 import { WhatsappConnectionSettingsService } from './whatsapp-connection-settings.service';
 import { ConnectionLifecycleService } from './connection-lifecycle.service';
@@ -33,6 +38,7 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
 
 @Module({
   imports: [
+    SenderAlertQueueModule,
     ConfigModule,
     DatabaseModule,
     AuthModule,
@@ -40,6 +46,8 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
   ],
   controllers: [WhatsappSenderController, WhatsappConnectController],
   providers: [
+    SenderAlertService,
+    SenderAlertProcessor,
     WhatsappConnectionSettingsService,
     ConnectionLifecycleService,
     WhatsappDisconnectService,

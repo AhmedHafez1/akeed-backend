@@ -42,6 +42,7 @@ export class ConnectionLifecycleService {
     await this.events.emit({
       orgId: row.orgId,
       connectionId: row.id,
+      signupGeneration: row.signupGeneration,
       kind:
         row.state === 'disconnected'
           ? 'disconnected'

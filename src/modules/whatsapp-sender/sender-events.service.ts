@@ -3,11 +3,13 @@ import type {
   SenderEvent,
   SenderEventPort,
 } from '../../shared/ports/sender-recovery.port';
+import { SenderAlertProducer } from './sender-alert-queue';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 
-/** Replace this binding with the alert consumer when alert delivery is added. */
+/** Notifications schedule background work and never wait for email. */
 @Injectable()
 export class SenderEventsService implements SenderEventPort {
+  constructor(private readonly alerts: SenderAlertProducer) {}
   private readonly logger = new Logger(SenderEventsService.name);
   emit(event: SenderEvent): Promise<void> {
     this.logger.log(
@@ -17,6 +19,7 @@ export class SenderEventsService implements SenderEventPort {
         ...event,
       }),
     );
+    this.alerts.request(event.orgId, event.signupGeneration);
     return Promise.resolve();
   }
 }

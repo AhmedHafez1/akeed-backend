@@ -50,11 +50,12 @@ export class ConnectionHealthService {
             ? 'degraded'
             : 'recovered'
           : null;
-    if (kind)
+    if (kind || claim.qualityRating !== row.qualityRating)
       await this.events.emit({
         orgId,
         connectionId: id,
-        kind,
+        signupGeneration: generation,
+        kind: kind ?? 'changed',
         dedupeKey: `health:${id}:${generation}:${claim.healthRevision}:${row.lastHealthAt}`,
         ...(row.degradedClass ? { failureClass: row.degradedClass } : {}),
       });

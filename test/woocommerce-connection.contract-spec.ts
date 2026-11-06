@@ -370,6 +370,7 @@ describe('WooCommerce connection PostgreSQL contract', () => {
         status text NOT NULL DEFAULT 'active',
         posted_balance integer NOT NULL DEFAULT 0,
         held_credits integer NOT NULL DEFAULT 0,
+        spare_credit integer NOT NULL DEFAULT 0 CHECK (spare_credit IN (0, 1)),
         version integer NOT NULL DEFAULT 0,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
@@ -461,6 +462,8 @@ describe('WooCommerce connection PostgreSQL contract', () => {
         auto_cancel_enabled boolean DEFAULT false NOT NULL,
         auto_cancel_restock boolean DEFAULT true NOT NULL,
         auto_cancel_notify_customer boolean DEFAULT false NOT NULL,
+        acknowledgment_enabled boolean DEFAULT false NOT NULL,
+        acknowledgment_enabled_at timestamptz,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE (platform_type, platform_store_url),

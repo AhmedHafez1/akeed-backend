@@ -35,7 +35,10 @@ import {
 import { BillingConfigService } from './billing-config.service';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { renewableSubscriptionPlanId } from '../../shared/billing/usage-alert.policy';
-import { isOneTimeBillingPlan } from '../../shared/billing/billing-plan';
+import {
+  isOneTimeBillingPlan,
+  ownNumberLimit,
+} from '../../shared/billing/billing-plan';
 import { getOneTimePeriodStart } from '../../shared/billing/billing-period';
 import {
   buildBackendLog,
@@ -108,6 +111,9 @@ export class BillingService {
         amount: plan.amount,
         currencyCode: plan.currencyCode,
         includedVerifications: plan.includedVerifications,
+        ownNumberIncludedVerifications: ownNumberLimit(
+          plan.includedVerifications,
+        ),
       })),
       isFreePlanClaimed,
       currentPlanId: isBillingStatusActive(integration.billingStatus)

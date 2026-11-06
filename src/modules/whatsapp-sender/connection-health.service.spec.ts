@@ -51,6 +51,19 @@ describe('connection health orchestration', () => {
     await s.service.run('org-1', 'conn-1', 1);
     expect(s.events.emit).not.toHaveBeenCalled();
   });
+  it('requests alert evaluation when only the quality rating changes', async () => {
+    const s = setup();
+    s.claim.state = 'active';
+    s.claim.qualityRating = 'GREEN';
+    s.connections.completeHealth.mockResolvedValue({
+      ...s.claim,
+      qualityRating: 'RED',
+    });
+    await s.service.run('org-1', 'conn-1', 1);
+    expect(s.events.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'changed', signupGeneration: 1 }),
+    );
+  });
   it('transport failures persist an unknown check', async () => {
     const s = setup();
     s.provider.check.mockRejectedValue(new Error('synthetic timeout'));

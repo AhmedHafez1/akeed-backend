@@ -393,6 +393,10 @@ beforeAll(async () => {
         includedLimit: 30,
         planId: 'pro',
         periodEnd: '2026-11-01T00:00:00.000Z',
+        pools: {
+          akeed: { used: 27, limit: 30, remaining: 3 },
+          ownNumber: { used: 4, limit: 90, remaining: 86 },
+        },
       }),
       accountingModeFor: () => 'periodic_plan',
     } as never,
@@ -551,6 +555,11 @@ describe('overview aggregate', () => {
       limit: 30,
       percent: 90,
       state: 'warning',
+      // Each pool exactly as persisted; the headline stays the Akeed pool.
+      pools: {
+        akeed: { used: 27, limit: 30, remaining: 3 },
+        ownNumber: { used: 4, limit: 90, remaining: 86 },
+      },
     });
     expect(overview.capacity).toEqual({
       blocked_count: 0,

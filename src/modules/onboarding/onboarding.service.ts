@@ -252,7 +252,11 @@ export class OnboardingService {
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
         currentPlanId: billingPlans.currentPlanId,
         usage,
-        messagesSentLast30Days,
+        messagesSentLast30Days: messagesSentLast30Days.total,
+        messagesSentLast30DaysByPool: {
+          akeed: messagesSentLast30Days.akeed,
+          ownNumber: messagesSentLast30Days.ownNumber,
+        },
       },
       template,
       branding: toMerchantBrandingDto(hydratedIntegration),
@@ -385,14 +389,15 @@ export class OnboardingService {
       limit,
       periodStart: entitlement.periodStart,
       periodEnd: entitlement.periodEnd,
+      pools: entitlement.pools,
     };
   }
 
   /** Sizes the plan recommendation on the Plan tab; 0 when unavailable. */
   private async countMessagesSentLast30Days(
     integration: IntegrationRecord,
-  ): Promise<number> {
-    if (!this.messageDispatches) return 0;
+  ): Promise<{ total: number; akeed: number; ownNumber: number }> {
+    if (!this.messageDispatches) return { total: 0, akeed: 0, ownNumber: 0 };
     return this.messageDispatches.countAcceptedSince({
       orgId: integration.orgId,
       integrationId: integration.id,
@@ -633,7 +638,7 @@ export class OnboardingService {
     if (!integration.billingPlanId) return null;
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
-    return displayedUsage(entitlement);
+    return { ...displayedUsage(entitlement), pools: entitlement.pools };
   }
 
   private getStandaloneBlockedReasons(

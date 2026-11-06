@@ -4,6 +4,8 @@ Guidelines for AI coding agents operating in this repository.
 
 ## Shared workspace skills
 
+For new features and implementation stories, automatically load the shared [feature-delivery skill](../.agents/skills/feature-delivery/SKILL.md) alongside the development skills. It defines compact handoffs, contract readiness and independent delivery evidence. Use its verification-by-impact guidance without reducing repository-required checks. Small fixes need no feature record.
+
 Read the parent [AGENTS.md](../AGENTS.md) and [CLAUDE.md](../CLAUDE.md) for shared product context and constraints. Before backend edits, load [backend-dev](../.agents/skills/backend-dev/SKILL.md); its maintained implementation is shared with Claude. Load the database, localization, or design skills from that parent guide when relevant. If this repository is checked out alone, report missing shared resources rather than inventing their contents.
 
 Preserve CRLF and existing user edits. Format only touched files, with `--end-of-line crlf`; do not reformat hand-written Markdown docs. Inspect the current branch; commit only when requested and never on `main`.

@@ -7,6 +7,7 @@ import {
   recoveredCreditLevels,
   renewablePlanId,
   renewableSubscriptionPlanId,
+  reportedUsagePools,
 } from './usage-alert.policy';
 
 describe('planUsageAlertLevels', () => {
@@ -134,5 +135,33 @@ describe('highestLevel', () => {
   it('is the last reached level', () => {
     expect(highestLevel(['80', '95'])).toBe('95');
     expect(highestLevel([])).toBeNull();
+  });
+});
+
+describe('reportedUsagePools', () => {
+  const pools = (akeedUsed: number, ownUsed: number) => ({
+    akeed: { used: akeedUsed, limit: 100, remaining: 100 - akeedUsed },
+    ownNumber: { used: ownUsed, limit: 300, remaining: 300 - ownUsed },
+  });
+
+  it('reports nothing without pools, as for prepaid credits', () => {
+    expect(reportedUsagePools({ consumedCount: 5, pools: null })).toBeNull();
+    expect(reportedUsagePools({ consumedCount: 5 })).toBeNull();
+  });
+
+  it('reports nothing while only the Akeed pool has been used', () => {
+    expect(
+      reportedUsagePools({ consumedCount: 40, pools: pools(40, 0) }),
+    ).toBeNull();
+  });
+
+  it('reports both once the own-number pool has been used', () => {
+    const both = pools(40, 1);
+    expect(reportedUsagePools({ consumedCount: 40, pools: both })).toBe(both);
+  });
+
+  it('reports both when the figures already combine the pools', () => {
+    const both = pools(40, 0);
+    expect(reportedUsagePools({ consumedCount: 41, pools: both })).toBe(both);
   });
 });

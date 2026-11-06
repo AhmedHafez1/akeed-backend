@@ -544,7 +544,7 @@ integration's paid opt-in. They require `WHATSAPP_OWN_NUMBER_SENDING_ENABLED`
 and the receiving connection to remain active, healthy and enabled. They
 use no Akeed credits or plan capacity and are attempted once, within the
 existing 24-hour service window. Meta may charge the merchant separately.
-The visible merchant control is not yet available.
+They are turned on or off in the WhatsApp settings tab.
 
 ## Meta Ad Conversions (Conversions API)
 
@@ -595,6 +595,8 @@ When a store's plan allowance or prepaid credits run out, new orders are kept at
 | `BLOCKED_ORDER_MAX_AGE_HOURS` | Default `24`, from 1 to 720. A blocked order older than this, counted from when the order was created, is not sent automatically: it moves to the merchant's needs-action list. |
 
 Startup fails when `EMAIL_ALERTS_ENABLED=true` is set without `RESEND_API_KEY` and `EMAIL_FROM`, or when the age is out of range. Alerts go to the store's own email when the platform reports one (Shopify's shop email, read at install and on each token exchange) and otherwise to the organization owner's sign-in email.
+
+The same email settings govern merchant WhatsApp sender incidents. The `whatsapp-sender-alerts` queue evaluates them in the background and sweeps connections every two minutes. With email disabled, incidents record a skipped delivery and `GET /api/whatsapp-sender` still returns derived alert facts. Fallback emails are limited to one per organization per rolling 24 hours; no additional environment variables are needed. See [Merchant WhatsApp Sender Alerts](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#merchant-whatsapp-sender-alerts).
 
 ## Redis (Job Queue)
 

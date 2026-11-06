@@ -2,6 +2,7 @@ import type {
   CapacityAction,
   UsageAlertLevel,
 } from '../billing/usage-alert.policy';
+import type { UsagePools } from '../billing/usage-pools';
 
 /**
  * The text of a usage alert email, in the store's language.
@@ -26,6 +27,11 @@ export interface UsageAlertFacts {
   /** Plan alerts: confirmations used and included this period. */
   used?: number;
   limit?: number;
+  /**
+   * Plan alerts: each pool as persisted, when both are worth reporting. Shown
+   * in place of `used` and `limit`.
+   */
+  pools?: UsagePools | null;
   /** Credit alerts: credits left to send with. */
   availableCredits?: number;
   blockedCount: number;
@@ -45,6 +51,10 @@ interface Copy {
   subject: Record<UsageAlertLevel, string>;
   greeting: (store: string | null) => string;
   usage: (used: number, limit: number) => string;
+  poolsIntro: string;
+  akeedPool: (used: number, limit: number) => string;
+  ownPool: (used: number, limit: number) => string;
+  metaCharges: string;
   credits: (available: number) => string;
   blocked: (count: number) => string;
   upgrade: string;
@@ -66,6 +76,13 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `Hello ${store},` : 'Hello,'),
     usage: (used, limit) =>
       `You have used ${used} of ${limit} WhatsApp confirmations in this period.`,
+    poolsIntro: 'Here is where your two pools stand this period:',
+    akeedPool: (used, limit) =>
+      `Messages from Akeed: ${used} of ${limit} used.`,
+    ownPool: (used, limit) =>
+      `Messages from your number: ${used} of ${limit} used.`,
+    metaCharges:
+      'Meta bills your business separately for messages from your number.',
     credits: (available) => `You have ${available} credits left.`,
     blocked: (count) =>
       `${count} orders are waiting. Akeed sends them automatically once you can send again.`,
@@ -86,6 +103,12 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `مرحبًا ${store}،` : 'مرحبًا،'),
     usage: (used, limit) =>
       `استخدمت ${used} من ${limit} تأكيدًا عبر واتساب في هذه الفترة.`,
+    poolsIntro: 'إليك وضع رصيدَي باقتك في هذه الفترة:',
+    akeedPool: (used, limit) =>
+      `رسائل من رقم أكيد: استخدمت ${used} من ${limit}.`,
+    ownPool: (used, limit) => `رسائل من رقمك: استخدمت ${used} من ${limit}.`,
+    metaCharges:
+      'تحاسب Meta نشاطك التجاري بشكل منفصل على الرسائل المرسلة من رقمك.',
     credits: (available) => `تبقى لديك ${available} رصيدًا.`,
     blocked: (count) =>
       `عدد الطلبات المنتظرة ${count}. يرسلها أكيد تلقائيًا عندما يصبح الإرسال متاحًا من جديد.`,
@@ -106,6 +129,13 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `السلام علیکم ${store}،` : 'السلام علیکم،'),
     usage: (used, limit) =>
       `اس مدت میں آپ ${limit} میں سے ${used} واٹس ایپ تصدیقات استعمال کر چکے ہیں۔`,
+    poolsIntro: 'اس مدت میں آپ کے دونوں کوٹے یہ ہیں:',
+    akeedPool: (used, limit) =>
+      `اکید کے نمبر سے پیغامات: ${limit} میں سے ${used} استعمال ہوئے۔`,
+    ownPool: (used, limit) =>
+      `آپ کے نمبر سے پیغامات: ${limit} میں سے ${used} استعمال ہوئے۔`,
+    metaCharges:
+      'آپ کے نمبر سے بھیجے گئے پیغامات کا بل Meta آپ کے کاروبار کو الگ سے بھیجتا ہے۔',
     credits: (available) => `آپ کے پاس ${available} کریڈٹس باقی ہیں۔`,
     blocked: (count) =>
       `${count} آرڈرز انتظار میں ہیں۔ دوبارہ بھیجنا ممکن ہوتے ہی اکید انہیں خود بھیج دے گا۔`,
@@ -127,6 +157,13 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `Hola, ${store}:` : 'Hola:'),
     usage: (used, limit) =>
       `Has usado ${used} de ${limit} confirmaciones por WhatsApp en este periodo.`,
+    poolsIntro: 'Así están tus dos cupos en este periodo:',
+    akeedPool: (used, limit) =>
+      `Mensajes desde Akeed: ${used} de ${limit} usados.`,
+    ownPool: (used, limit) =>
+      `Mensajes desde tu número: ${used} de ${limit} usados.`,
+    metaCharges:
+      'Meta factura a tu empresa por separado los mensajes enviados desde tu número.',
     credits: (available) => `Te quedan ${available} créditos.`,
     blocked: (count) =>
       `Hay ${count} pedidos en espera. Akeed los enviará automáticamente en cuanto puedas volver a enviar.`,
@@ -147,6 +184,13 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `Bonjour ${store},` : 'Bonjour,'),
     usage: (used, limit) =>
       `Vous avez utilisé ${used} confirmations WhatsApp sur ${limit} pendant cette période.`,
+    poolsIntro: 'Voici où en sont vos deux quotas pour cette période :',
+    akeedPool: (used, limit) =>
+      `Messages envoyés par Akeed : ${used} sur ${limit} utilisés.`,
+    ownPool: (used, limit) =>
+      `Messages envoyés depuis votre numéro : ${used} sur ${limit} utilisés.`,
+    metaCharges:
+      'Meta facture séparément à votre entreprise les messages envoyés depuis votre numéro.',
     credits: (available) => `Il vous reste ${available} crédits.`,
     blocked: (count) =>
       `${count} commandes sont en attente. Akeed les enverra automatiquement dès que l’envoi sera de nouveau possible.`,
@@ -169,6 +213,13 @@ const COPY: Record<UsageAlertLanguage, Copy> = {
     greeting: (store) => (store ? `Merhaba ${store},` : 'Merhaba,'),
     usage: (used, limit) =>
       `Bu dönemde ${limit} WhatsApp onayından ${used} tanesini kullandınız.`,
+    poolsIntro: 'Bu dönemde iki kotanızın durumu:',
+    akeedPool: (used, limit) =>
+      `Akeed numarasından mesajlar: ${limit} mesajdan ${used} tanesi kullanıldı.`,
+    ownPool: (used, limit) =>
+      `Kendi numaranızdan mesajlar: ${limit} mesajdan ${used} tanesi kullanıldı.`,
+    metaCharges:
+      'Meta, kendi numaranızdan gönderilen mesajlar için işletmenizi ayrıca faturalandırır.',
     credits: (available) => `${available} krediniz kaldı.`,
     blocked: (count) =>
       `${count} sipariş bekliyor. Gönderim yeniden mümkün olduğunda Akeed bunları otomatik olarak gönderir.`,
@@ -208,7 +259,15 @@ export function buildUsageAlertEmail(
 ): UsageAlertEmail {
   const copy = COPY[language];
   const lines: string[] = [copy.greeting(facts.storeName)];
-  if (facts.used !== undefined && facts.limit !== undefined) {
+  if (facts.pools) {
+    const { akeed, ownNumber } = facts.pools;
+    lines.push(
+      copy.poolsIntro,
+      copy.akeedPool(akeed.used, akeed.limit),
+      copy.ownPool(ownNumber.used, ownNumber.limit),
+      copy.metaCharges,
+    );
+  } else if (facts.used !== undefined && facts.limit !== undefined) {
     lines.push(copy.usage(facts.used, facts.limit));
   }
   if (facts.availableCredits !== undefined) {
