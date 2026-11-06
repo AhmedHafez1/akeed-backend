@@ -142,6 +142,8 @@ export interface AdminStoreDetailView extends AdminStoreView {
     follow_up_enabled: boolean;
     follow_up_delay_minutes: number;
     escalation_enabled: boolean;
+    acknowledgment_enabled: boolean;
+    auto_cancel_enabled: boolean;
     quiet_hours_enabled: boolean;
     quiet_hours_start: string | null;
     quiet_hours_end: string | null;
@@ -519,6 +521,8 @@ export class AdminStoresService {
         follow_up_enabled: row.follow_up_enabled,
         follow_up_delay_minutes: row.follow_up_delay_minutes,
         escalation_enabled: row.escalation_enabled,
+        acknowledgment_enabled: row.acknowledgment_enabled,
+        auto_cancel_enabled: row.auto_cancel_enabled,
         quiet_hours_enabled: row.quiet_hours_enabled,
         quiet_hours_start: row.quiet_hours_start,
         quiet_hours_end: row.quiet_hours_end,
