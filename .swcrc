@@ -1,0 +1,9 @@
+{
+  "$schema": "https://swc.rs/schema.json",
+  "jsc": {
+    "target": "es2022",
+    "transform": {
+      "useDefineForClassFields": true
+    }
+  }
+}

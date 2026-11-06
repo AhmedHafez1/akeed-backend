@@ -121,6 +121,8 @@ function detailRow(row: AdminStorePageRow): AdminStoreDetailQueryRow {
     follow_up_enabled: false,
     follow_up_delay_minutes: 120,
     escalation_enabled: true,
+    acknowledgment_enabled: false,
+    auto_cancel_enabled: false,
     quiet_hours_enabled: false,
     quiet_hours_start: null,
     quiet_hours_end: null,
@@ -310,6 +312,56 @@ describe('AdminStoresService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(findStorePage).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    'exposes saved thank-you=%s and auto-cancellation=%s per store',
+    async (acknowledgmentEnabled, autoCancelEnabled) => {
+      const shopify = {
+        ...detailRow(shopifyRow()),
+        acknowledgment_enabled: acknowledgmentEnabled,
+        auto_cancel_enabled: autoCancelEnabled,
+      };
+      const standalone = {
+        ...detailRow(standaloneRow()),
+        acknowledgment_enabled: !acknowledgmentEnabled,
+        auto_cancel_enabled: !autoCancelEnabled,
+      };
+      const findStoreById = jest
+        .fn()
+        .mockImplementation((integrationId: string) =>
+          Promise.resolve(integrationId === SHOPIFY_ID ? shopify : standalone),
+        );
+      const service = createService({
+        findStoreById,
+        findStoreVerificationTotals: jest.fn().mockResolvedValue([]),
+      });
+      const [first, second] = await Promise.all([
+        service.getStore(SHOPIFY_ID),
+        service.getStore(STANDALONE_ID),
+      ]);
+      expect(first.store.settings).toMatchObject({
+        acknowledgment_enabled: acknowledgmentEnabled,
+        auto_cancel_enabled: autoCancelEnabled,
+      });
+      expect(second.store.settings).toMatchObject({
+        acknowledgment_enabled: !acknowledgmentEnabled,
+        auto_cancel_enabled: !autoCancelEnabled,
+      });
+      expect(findStoreById).toHaveBeenCalledWith(
+        SHOPIFY_ID,
+        expect.any(Object),
+      );
+      expect(findStoreById).toHaveBeenCalledWith(
+        STANDALONE_ID,
+        expect.any(Object),
+      );
+    },
+  );
 
   it('returns store details with verification totals and milestones', async () => {
     const service = createService({

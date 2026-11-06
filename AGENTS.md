@@ -13,7 +13,7 @@ This file includes Copilot instructions from `.github/copilot-instructions.md`.
 ## Build / Lint / Format / Test / Dev
 
 ```bash
-npm run start:dev      # Start NestJS dev server (watch mode)
+npm run start:dev      # Start NestJS dev server (watch mode, SWC build in seconds; tsc type-checks alongside and reports errors without blocking)
 npm run build          # Build (nest build)
 npm run start:prod     # Run production server (dist/src/main)
 npx eslint <files>     # Check touched files; npm run lint fixes the whole tree

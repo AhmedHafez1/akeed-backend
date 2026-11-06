@@ -80,6 +80,8 @@ export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
   follow_up_enabled: boolean;
   follow_up_delay_minutes: number;
   escalation_enabled: boolean;
+  acknowledgment_enabled: boolean;
+  auto_cancel_enabled: boolean;
   quiet_hours_enabled: boolean;
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
@@ -389,6 +391,8 @@ export class AdminQueryRepository {
         i.follow_up_enabled,
         i.follow_up_delay_minutes,
         i.escalation_enabled,
+        i.acknowledgment_enabled,
+        i.auto_cancel_enabled,
         i.quiet_hours_enabled,
         i.quiet_hours_start,
         i.quiet_hours_end,
