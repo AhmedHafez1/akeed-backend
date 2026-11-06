@@ -10,13 +10,21 @@ import {
 } from '../../../test/fixtures/whatsapp-connection-setup.fakes';
 import { inspected } from '../../../test/fixtures/whatsapp-connection-setup.fixtures';
 import { ConnectionStatusService } from './connection-status.service';
+import { ConfigService } from '@nestjs/config';
+import {
+  parseWhatsappOwnNumberConfig,
+  WHATSAPP_OWN_NUMBER_CONFIG,
+} from '../../shared/config/whatsapp-own-number.config';
 
 const KEY = 'k'.repeat(32);
 const TOKEN = 'EAAG-business-token-never-real';
 const PIN = '482913';
 
 describe('ConnectionStatusService', () => {
-  function setup(row: Parameters<typeof connectionRow>[0] = {}) {
+  function setup(
+    row: Parameters<typeof connectionRow>[0] = {},
+    sendingEnabled = false,
+  ) {
     const connections = new InMemoryConnections();
     const rows = new InMemoryConnectionTemplates();
     connections.add(
@@ -42,8 +50,18 @@ describe('ConnectionStatusService', () => {
       connections as unknown as WhatsappConnectionsRepository,
       rows as unknown as WhatsappConnectionTemplatesRepository,
       registryFake([inspected()]) as unknown as WhatsappTemplatesRepository,
+      new ConfigService({
+        [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(
+          sendingEnabled
+            ? {
+                WHATSAPP_OWN_NUMBER_SENDING_ENABLED: 'true',
+                SHOPIFY_TOKEN_ENCRYPTION_KEY: KEY,
+              }
+            : {},
+        ),
+      }),
     );
-    return { service };
+    return { service, rows };
   }
 
   it('shows setup progress, the retry time and template counts', async () => {
@@ -58,6 +76,37 @@ describe('ConnectionStatusService', () => {
         retryAt: '2026-11-03T11:00:00.000Z',
       },
       templates: { total: 1, rejected: 1, ready: 0 },
+    });
+  });
+
+  it('lists a missing live template instead of implying the language is ready', async () => {
+    const { service, rows } = setup({ state: 'active' }, true);
+    rows.rows.splice(0);
+    expect((await service.forOrganization('org-1'))?.templateDetails).toEqual([
+      {
+        key: 'cod_confirm.en.friendly',
+        language: 'en',
+        languageCode: 'en',
+        status: 'missing',
+        category: null,
+        readiness: { kind: 'akeed_system', reason: 'template_missing' },
+      },
+    ]);
+  });
+
+  it('exposes safe per-template readiness and persisted health without provider I/O', async () => {
+    const { service } = setup(
+      { state: 'active', qualityRating: 'RED', degradedClass: 'payment' },
+      true,
+    );
+    const view = await service.forOrganization('org-1');
+    expect(view?.health).toMatchObject({
+      qualityRating: 'RED',
+      degradedClass: 'payment',
+    });
+    expect(view?.templateDetails[0]).toMatchObject({
+      status: 'rejected',
+      readiness: { kind: 'akeed_system', reason: 'degraded:payment' },
     });
   });
 

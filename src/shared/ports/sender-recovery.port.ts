@@ -57,8 +57,10 @@ export interface SenderHealthPort {
 }
 export const SENDER_EVENT_PORT = Symbol('SENDER_EVENT_PORT');
 export interface SenderEvent {
+  signupGeneration?: number;
   orgId: string;
-  connectionId: string;
+  /** Null for an org-level refresh after a shared-number fallback. */
+  connectionId: string | null;
   kind:
     | 'activated'
     | 'degraded'
@@ -66,7 +68,8 @@ export interface SenderEvent {
     | 'template_failed'
     | 'disconnected'
     | 'offboarded'
-    | 'reconnecting';
+    | 'reconnecting'
+    | 'changed';
   reason?: string;
   dedupeKey: string;
   failureClass?: SenderFailureClass;

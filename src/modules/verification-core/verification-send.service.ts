@@ -923,6 +923,14 @@ export class VerificationSendService {
           await this.enqueueRecovery(order.orgId, dispatchClaim.dispatch.id);
           return { status: 'recovery_pending' };
         }
+        void this.senderEvents?.emit({
+          orgId: order.orgId,
+          connectionId: claimedSender.connectionId,
+          signupGeneration:
+            dispatchClaim.dispatch.senderConnectionGeneration ?? undefined,
+          kind: 'changed',
+          dedupeKey: `accepted:${dispatchClaim.dispatch.id}`,
+        });
         return { status: 'sent', waMessageId, sentAt };
       } catch (error) {
         this.logger.warn(
@@ -962,6 +970,18 @@ export class VerificationSendService {
           sentTemplate: reportedTemplate,
         });
       });
+      if (
+        accepted.outcome === 'accepted' &&
+        claimedSender.reason !== 'feature_off' &&
+        claimedSender.reason !== 'no_connection'
+      ) {
+        void this.senderEvents?.emit({
+          orgId: order.orgId,
+          connectionId: claimedSender.connectionId,
+          kind: 'changed',
+          dedupeKey: `accepted:${dispatchClaim.dispatch.id}`,
+        });
+      }
       if (accepted.outcome !== 'accepted') {
         this.logger.error(
           buildBackendLog('VerificationSendService', {

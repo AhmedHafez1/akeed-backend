@@ -22,6 +22,7 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { SenderAlertKind } from '../../shared/notifications/sender-alert.policy';
 import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
 import type { SenderFailure } from '../../shared/ports/sender-recovery.port';
 import type { OrderLineItem } from '../../shared/interfaces/order.interface';
@@ -1371,6 +1372,9 @@ export const verificationMessageDispatches = pgTable(
       'dispatch_resolved_language_check',
       sql`resolved_language IS NULL OR resolved_language IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
+    index('dispatch_sender_alert_activity')
+      .on(table.orgId, table.acceptedAt.desc())
+      .where(sql`${table.state} = 'accepted' AND ${table.failedAt} IS NULL`),
     index('idx_verification_message_dispatches_accepted_at')
       .on(table.acceptedAt)
       .where(sql`${table.acceptedAt} IS NOT NULL`),
@@ -2085,6 +2089,79 @@ export const reviewPromptStates = pgTable(
       sql`${table.snoozeCount} >= 0 AND ${table.shownCount} >= 0`,
     ),
     pgPolicy('Service role manages review prompt states', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const whatsappSenderAlerts = pgTable(
+  'whatsapp_sender_alerts',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    signupGeneration: bigint('signup_generation', { mode: 'number' }).notNull(),
+    kind: text('kind').$type<SenderAlertKind>().notNull(),
+    reason: text('reason').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    emailStatus: text('email_status')
+      .$type<'pending' | 'sending' | 'sent' | 'skipped' | 'failed'>()
+      .notNull()
+      .default('pending'),
+    emailError: text('email_error'),
+    emailClaimedAt: timestamp('email_claimed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    emailedAt: timestamp('emailed_at', { withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [organizations.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.connectionId, table.orgId],
+      foreignColumns: [whatsappConnections.id, whatsappConnections.orgId],
+      name: 'whatsapp_sender_alerts_connection_fkey',
+    }).onDelete('cascade'),
+    uniqueIndex('whatsapp_sender_alerts_open_key')
+      .on(table.orgId, table.connectionId, table.signupGeneration, table.kind)
+      .where(sql`${table.resolvedAt} IS NULL`),
+    index('whatsapp_sender_alerts_fallback_claim')
+      .on(table.orgId, table.emailClaimedAt.desc())
+      .where(
+        sql`${table.kind} = 'fallback' AND ${table.emailClaimedAt} IS NOT NULL`,
+      ),
+    index('whatsapp_sender_alerts_pending')
+      .on(table.orgId)
+      .where(
+        sql`${table.emailStatus} = 'pending' AND ${table.resolvedAt} IS NULL`,
+      ),
+    check(
+      'whatsapp_sender_alerts_generation_check',
+      sql`${table.signupGeneration} >= 1`,
+    ),
+    check(
+      'whatsapp_sender_alerts_kind_check',
+      sql`${table.kind} IN ('fallback','disconnect','template_rejection','quality_drop','payment')`,
+    ),
+    check(
+      'whatsapp_sender_alerts_email_status_check',
+      sql`${table.emailStatus} IN ('pending','sending','sent','skipped','failed')`,
+    ),
+    pgPolicy('Service role manages whatsapp sender alerts', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

@@ -165,7 +165,15 @@ describe('OnboardingService.completeSetup', () => {
     const state = await service.completeSetup(owner, payload);
 
     expect(state.activation).toMatchObject({ isLive: true, needsPlan: false });
-    expect(state.usage).toEqual({ used: 0, limit: 30, remaining: 30 });
+    expect(state.usage).toEqual({
+      used: 0,
+      limit: 30,
+      remaining: 30,
+      pools: {
+        akeed: { used: 0, limit: 30, remaining: 30 },
+        ownNumber: { used: 0, limit: 90, remaining: 90 },
+      },
+    });
   });
 
   it('refuses setup without a WhatsApp number to test with', async () => {

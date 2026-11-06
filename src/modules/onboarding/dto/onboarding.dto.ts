@@ -1,4 +1,5 @@
 import type { CreditAccountStatus } from '../../../shared/ports/credit-accounting.port';
+import type { UsagePools } from '../../../shared/billing/usage-pools';
 import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
 import type { BillingManagement } from '../../../shared/billing/entitlement';
 import type { SourceSetupDto } from '../../../shared/commerce/source-setup';
@@ -342,6 +343,7 @@ export interface OnboardingActivationDto {
 }
 
 export interface OnboardingUsageDto {
+  pools?: UsagePools | null;
   used: number;
   limit: number;
   remaining: number;
@@ -418,6 +420,11 @@ export interface OnboardingBillingPlanDto {
   amount: number;
   currencyCode: string;
   includedVerifications: number;
+  /**
+   * The separate allowance of messages from the merchant's own number, once
+   * connected: three per included Akeed message.
+   */
+  ownNumberIncludedVerifications: number;
 }
 
 export interface OnboardingBillingPlansResponseDto {
@@ -446,6 +453,7 @@ export interface SettingsResponseDto {
     /** The plan the store pays for now; null while no plan is active. */
     currentPlanId: OnboardingBillingPlanId | null;
     usage: {
+      pools?: UsagePools | null;
       used: number;
       limit: number;
       periodStart: string;
@@ -453,6 +461,8 @@ export interface SettingsResponseDto {
     };
     /** Accepted customer messages in the last 30 days (tests excluded). */
     messagesSentLast30Days: number;
+    /** The same messages by the plan pool that paid for each. */
+    messagesSentLast30DaysByPool: { akeed: number; ownNumber: number };
   };
   template: {
     /** Every message language, live or not, in display order. */

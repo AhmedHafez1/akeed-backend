@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { SenderAlertProducer } from './sender-alert-queue';
 import { ConfigService } from '@nestjs/config';
 import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
 import { OwnNumberGraphClient } from '../../infrastructure/spokes/meta/own-number/own-number-graph.client';
@@ -20,6 +21,7 @@ export class WhatsappDisconnectService {
     private readonly connections: WhatsappConnectionsRepository,
     private readonly graph: OwnNumberGraphClient,
     private readonly config: ConfigService,
+    @Optional() private readonly alerts?: SenderAlertProducer,
   ) {}
 
   async disconnect(
@@ -72,6 +74,7 @@ export class WhatsappDisconnectService {
         cleanup,
       );
     }
+    this.alerts?.request(user.orgId, row.signupGeneration);
     this.logger.log(
       buildBackendLog(WhatsappDisconnectService.name, {
         action: 'whatsapp-disconnect',

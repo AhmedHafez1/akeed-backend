@@ -5,12 +5,27 @@ import type {
   WhatsappSignupPath,
   WhatsappTemplateDriftReason,
 } from '../../../infrastructure/database/schema';
+import type { ResolvedSender } from '../../../shared/ports/sender-resolver.port';
 
 /**
  * A connection's setup and templates, for a member of the organization.
  * Named safe fields only: never a token, PIN, ciphertext or provider message.
  */
 export interface WhatsappConnectionStatusDto {
+  health: {
+    stateReason: string | null;
+    qualityRating: string | null;
+    degradedClass: string | null;
+    lastCheckedAt: string | null;
+  };
+  templateDetails: {
+    key: string;
+    language: string;
+    languageCode: string;
+    status: string;
+    category: string | null;
+    readiness: Pick<ResolvedSender, 'kind' | 'reason'>;
+  }[];
   thankYouEnabled: boolean;
   state: WhatsappConnectionState;
   signupPath: WhatsappSignupPath;

@@ -391,7 +391,11 @@ export class WhatsappConnectionsRepository {
         degradedSince: degraded ? (claim.degradedSince ?? sql`now()`) : null,
         ...(result.status !== 'unknown'
           ? {
-              qualityRating: result.qualityRating ?? claim.qualityRating,
+              qualityRating: ['GREEN', 'YELLOW', 'RED'].includes(
+                result.qualityRating ?? '',
+              )
+                ? result.qualityRating
+                : claim.qualityRating,
               nameStatus: result.nameStatus ?? claim.nameStatus,
             }
           : {}),

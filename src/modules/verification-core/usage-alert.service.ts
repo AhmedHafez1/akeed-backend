@@ -12,6 +12,7 @@ import {
   planUsageAlertLevels,
   planUsageCycleKey,
   recoveredCreditLevels,
+  reportedUsagePools,
   type UsageAlertKind,
   type UsageAlertLevel,
 } from '../../shared/billing/usage-alert.policy';
@@ -117,6 +118,7 @@ export class UsageAlertService {
       storeName: source.storeName ?? null,
       used: entitlement.consumedCount,
       limit: entitlement.includedLimit,
+      pools: reportedUsagePools(entitlement),
       blockedCount: await blocked(),
       action: capacityAction({ mode: 'plan', planId: entitlement.planId }),
       resetDate: entitlement.periodEnd,
