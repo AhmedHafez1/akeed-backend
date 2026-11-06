@@ -12,6 +12,7 @@ import {
   notInArray,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import type { OrderLineItem } from '../../../shared/interfaces/order.interface';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
@@ -743,9 +744,37 @@ export class VerificationsRepository {
    * Value of the period's confirmed real orders, one bucket per currency,
    * largest first. Summed in SQL; amounts come back as exact decimal strings.
    */
-  async getConfirmedValueByCurrency(
+  getConfirmedValueByCurrency(
     orgId: string,
     period: { startAt: string; endAt: string },
+  ): Promise<Array<{ currency: string; amount: string }>> {
+    return this.getValueByCurrency(
+      orgId,
+      period,
+      sql`${verifications.confirmedAt} IS NOT NULL`,
+    );
+  }
+
+  /**
+   * Value of the period's real orders the customer canceled, one bucket per
+   * currency, largest first. Same rule as `customerCanceled` in
+   * `getOverviewCounts`, so the amount describes the orders the count counts.
+   */
+  getCanceledValueByCurrency(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+  ): Promise<Array<{ currency: string; amount: string }>> {
+    return this.getValueByCurrency(
+      orgId,
+      period,
+      sql`${verifications.canceledAt} IS NOT NULL AND (${verifications.cancellationSource} IS NULL OR ${verifications.cancellationSource} = 'customer')`,
+    );
+  }
+
+  private async getValueByCurrency(
+    orgId: string,
+    period: { startAt: string; endAt: string },
+    outcome: SQL,
   ): Promise<Array<{ currency: string; amount: string }>> {
     const total = sql<string>`COALESCE(sum(${orders.totalPrice}), 0)`;
     const rows = await this.db
@@ -766,7 +795,7 @@ export class VerificationsRepository {
           eq(verifications.orgId, orgId),
           gte(verifications.createdAt, period.startAt),
           lt(verifications.createdAt, period.endAt),
-          sql`${verifications.confirmedAt} IS NOT NULL`,
+          outcome,
           eq(orders.isTest, false),
           sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
         ),

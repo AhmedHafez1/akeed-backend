@@ -402,7 +402,11 @@ export interface VerificationOverviewDto {
       /** Largest currency first; one entry per currency seen. */
       value: Array<{ currency: string; amount: string }>;
     };
-    canceled_before_shipping: { count: number };
+    canceled_before_shipping: {
+      count: number;
+      /** What the canceled orders were worth; largest currency first. */
+      value: Array<{ currency: string; amount: string }>;
+    };
     confirmation_rate: {
       /** Percent of sent, one decimal; null when nothing was sent. */
       rate: number | null;
