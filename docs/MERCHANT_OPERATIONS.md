@@ -154,6 +154,14 @@ Each row displays:
 | Follow-up attempts | `follow_up_attempts`       |
 | Follow-up sent at  | `follow_up_sent_at`        |
 
+#### Order details in the list response
+
+Every `GET /api/verifications` row also includes `line_items`, `shipping_region`, and `shipping_address`. These are selected from the stored order, including held orders, so the details sheet opens without another request. `line_items` is an array of `{ name, quantity, unit_price, options: [{ name?, value }] }`, or `null`; `unit_price` is a decimal string or `null`. Both shipping fields are strings or `null`. At most 50 product lines are stored. The response never includes `raw_payload`.
+
+The standalone details sheet and embedded Shopify modal show Products and Delivery address after the customer and total. Missing sections are hidden. Product amounts are unit price multiplied by quantity in the order currency; a missing unit price shows no amount. Region precedes the street address, whose line breaks are preserved.
+
+Shopify and EasyOrders orders show the details when their source supplied them and they were saved. Test verifications have synthetic products but no delivery address. WooCommerce, Order API, CSV/Excel import and manual orders do not yet save these fields on the order row. API/import addresses remain in envelope extras and are not returned here. Older orders are not backfilled. Customer-data redaction continues to clear all three stored fields.
+
 #### Pagination
 
 - Default page size: 50 rows.

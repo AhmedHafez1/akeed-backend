@@ -50,7 +50,10 @@ Do not use `db:generate` or `db:push`: the `drizzle/meta` snapshots stop at
 migration 0015, so generate diffs against a stale baseline, and push must never
 target a shared database. Write migrations by hand as the next numbered
 `drizzle/NNNN_name.sql` plus a `drizzle/meta/_journal.json` entry; they run at
-boot via `runMigrations()` in `main.ts`.
+boot via `runMigrations()` in `main.ts`. Set the entry's `when` to the previous
+entry's plus `86400000`, never the current time: the journal runs ahead of the
+calendar, and Drizzle silently skips an entry dated before the newest one a
+database has applied. `migration-journal.spec.ts` fails on such an entry.
 
 ## Architecture Conventions
 
