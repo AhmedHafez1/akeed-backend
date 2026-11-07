@@ -180,6 +180,15 @@ export function buildVerificationLifecyclePayload(
   return payload;
 }
 
+/** No change request of this verification is open. */
+export function noOpenChangeRequest() {
+  return sql`NOT EXISTS (
+    SELECT 1 FROM verification_change_requests open_change_request
+    WHERE open_change_request.verification_id = ${verifications.id}
+      AND open_change_request.status = 'open'
+  )`;
+}
+
 /**
  * A capacity-recovery handoff that never reached the send path: reopened
  * (`capacity_resumed_at`) before `olderThan`, still pending and unsent, no
@@ -951,6 +960,10 @@ export class VerificationsRepository {
         and(
           eq(verifications.id, id),
           notInArray(verifications.status, blockedStatuses),
+          // An open change request keeps the order awaiting the merchant. The
+          // check is part of the write, so an escalation queued before the
+          // request, or racing it, cannot move the order to no reply.
+          status === 'no_reply' ? noOpenChangeRequest() : undefined,
         ),
       )
       .returning();
@@ -1127,7 +1140,9 @@ export class VerificationsRepository {
    * Atomically record a merchant's manual confirmation.
    *
    * Guards on `id + orgId + status` so a customer reply or a cancellation that
-   * lands first wins and this affects zero rows. Delivered/read are left as
+   * lands first wins and this affects zero rows. An order with an open change
+   * request is confirmed through the change request instead, which closes it
+   * in the same transaction; here it matches no row. Delivered/read are left as
    * WhatsApp reported them: the merchant confirming is not a read receipt.
    *
    * Returns the updated row, or null if no row matched.
@@ -1152,6 +1167,7 @@ export class VerificationsRepository {
           eq(verifications.id, verificationId),
           eq(verifications.orgId, orgId),
           inArray(verifications.status, MANUALLY_CONFIRMABLE_STATUSES),
+          noOpenChangeRequest(),
         ),
       )
       .returning();

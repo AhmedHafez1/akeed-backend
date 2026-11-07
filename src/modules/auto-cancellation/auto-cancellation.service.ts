@@ -70,6 +70,7 @@ export function factsOf(snapshot: AutoCancelSnapshot): AutoCancelFacts {
       Boolean(verification.followUpSentAt),
     followUpBlockedReason: typeof blocked === 'string' ? blocked : null,
     followUpDeliveredAt: snapshot.followUpDeliveredAt,
+    changeRequestOpen: snapshot.changeRequestOpen,
   };
 }
 
@@ -80,6 +81,8 @@ function stopReasonOf(reason: AutoCancelSkipReason): AutoCancelStopReason {
       return 'feature_disabled';
     case 'excluded':
       return 'excluded';
+    case 'change_requested':
+      return 'change_requested';
     default:
       return 'status_changed';
   }

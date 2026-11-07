@@ -7,6 +7,8 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  * The one definition of "this order needs the merchant".
  *
  * Returns the reason for the first rule that matches, or NULL:
+ * -. `change_requested`: the customer asked for a change; the order must not
+ *    ship until the merchant contacted them and settled it.
  * -. `late_reply_after_auto_cancel`: Akeed canceled the order in its store
  *    and the customer confirmed afterwards; contact them.
  * 0. `no_whatsapp`: the customer number cannot receive WhatsApp; call them.
@@ -38,6 +40,11 @@ export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
       WHERE test_order.id = ${verifications.orderId}
         AND (test_order.is_test = true OR test_order.external_order_id LIKE 'akeed-test-%')
     ) THEN NULL
+    WHEN ${verifications.id} IN (
+      SELECT open_change_request.verification_id
+      FROM verification_change_requests open_change_request
+      WHERE open_change_request.status = 'open'
+    ) THEN 'change_requested'
     WHEN ${verifications.status} = 'canceled'
       AND ${verifications.cancellationSource} = ${AUTOMATIC_CANCELLATION_SOURCE}
       AND ${verifications.id} IN (

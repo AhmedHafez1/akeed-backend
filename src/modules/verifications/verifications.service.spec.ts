@@ -1443,3 +1443,91 @@ describe('Customer track record and export', () => {
     });
   });
 });
+
+describe('Manual confirmation of an order with an open change request', () => {
+  const user = {
+    userId: 'user-1',
+    orgId: 'org-1',
+    role: 'owner',
+  } as never;
+
+  function buildService(openRequest: unknown, resolution: unknown) {
+    const verificationsRepo = {
+      findByIdForOrg: jest.fn().mockResolvedValue({
+        id: 'ver-1',
+        orgId: 'org-1',
+        status: 'delivered',
+      }),
+      markMerchantConfirmed: jest.fn().mockResolvedValue({ id: 'ver-1' }),
+    };
+    const changeRequests = {
+      findOpenForVerification: jest.fn().mockResolvedValue(openRequest),
+      resolveByMerchantConfirmation: jest.fn().mockResolvedValue(resolution),
+    };
+    const verificationHub = { finalizeVerification: jest.fn() };
+    const service = new VerificationsService(
+      verificationsRepo as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      verificationHub as never,
+      undefined,
+      undefined,
+      changeRequests as never,
+    );
+    return { service, verificationsRepo, changeRequests, verificationHub };
+  }
+
+  it('confirms through the request, which closes it with the merchant as actor', async () => {
+    const { service, verificationsRepo, changeRequests, verificationHub } =
+      buildService(
+        { id: 'cr-1', status: 'open' },
+        { outcome: 'resolved', request: {}, verification: { id: 'ver-1' } },
+      );
+
+    await expect(service.confirmManually(user, 'ver-1')).resolves.toEqual({
+      success: true,
+      verificationId: 'ver-1',
+      status: 'confirmed',
+    });
+    expect(changeRequests.resolveByMerchantConfirmation).toHaveBeenCalledWith({
+      orgId: 'org-1',
+      verificationId: 'ver-1',
+      actorUserId: 'user-1',
+    });
+    expect(verificationsRepo.markMerchantConfirmed).not.toHaveBeenCalled();
+    expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
+      'ver-1',
+      'confirmed',
+    );
+  });
+
+  it('reports a conflict when the customer settled the request first', async () => {
+    const { service, verificationHub } = buildService(
+      { id: 'cr-1', status: 'open' },
+      {
+        outcome: 'already_resolved',
+        request: null,
+        verificationStatus: 'canceled',
+      },
+    );
+
+    await expect(service.confirmManually(user, 'ver-1')).rejects.toMatchObject({
+      response: { code: 'VERIFICATION_NOT_CONFIRMABLE' },
+    });
+    expect(verificationHub.finalizeVerification).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain manual confirmation when no request is open', async () => {
+    const { service, verificationsRepo } = buildService(undefined, undefined);
+
+    await service.confirmManually(user, 'ver-1');
+
+    expect(verificationsRepo.markMerchantConfirmed).toHaveBeenCalledWith(
+      'ver-1',
+      'org-1',
+      'user-1',
+    );
+  });
+});

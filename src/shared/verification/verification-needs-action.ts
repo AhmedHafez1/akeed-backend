@@ -8,6 +8,7 @@
  * same vocabulary.
  */
 export const NEEDS_ACTION_REASONS = [
+  'change_requested',
   'late_reply_after_auto_cancel',
   'no_whatsapp',
   'delivery_failed',
@@ -43,13 +44,15 @@ export const NO_REPLY_CANCELLABLE_STATUSES = [
 
 /**
  * `cancellation_source` of an order the merchant canceled from Akeed: after
- * the customer never answered, or after calling a customer whose number is not
- * on WhatsApp. Both cancel the order in the store the same way; the source
+ * the customer never answered, after calling a customer whose number is not
+ * on WhatsApp, or after contacting a customer who asked for a change. Both cancel the order in the store the same way; the source
  * only says why.
  */
 export const MERCHANT_CANCELLATION_SOURCES = [
   'merchant_no_reply',
   'merchant_no_whatsapp',
+  // After contacting a customer who asked for a change.
+  'merchant_change_request',
 ] as const;
 
 export type MerchantCancellationSource =

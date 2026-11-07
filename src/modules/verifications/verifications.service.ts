@@ -49,6 +49,7 @@ import {
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { CommerceOutcomeSyncsRepository } from '../../infrastructure/database/repositories/commerce-outcome-syncs.repository';
 import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
+import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
 import {
   selectOutcomeSync,
   toRemoteSync,
@@ -311,6 +312,8 @@ export class VerificationsService {
     private readonly outcomeSyncs?: CommerceOutcomeSyncsRepository,
     @Optional()
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
+    @Optional()
+    private readonly changeRequests?: VerificationChangeRequestsRepository,
   ) {}
 
   async listByOrg(
@@ -830,11 +833,24 @@ export class VerificationsService {
       });
     }
 
-    const updated = await this.verificationsRepo.markMerchantConfirmed(
+    // A customer who asked for a change is confirmed by the merchant after
+    // contact: the request closes with the confirmation, in one transaction.
+    const openRequest = await this.changeRequests?.findOpenForVerification(
       verificationId,
       orgId,
-      user.userId,
     );
+    const updated =
+      openRequest && this.changeRequests
+        ? await this.confirmOpenChangeRequest(
+            this.changeRequests,
+            user,
+            verificationId,
+          )
+        : await this.verificationsRepo.markMerchantConfirmed(
+            verificationId,
+            orgId,
+            user.userId,
+          );
     if (!updated) {
       throw new ConflictException({
         message: 'The verification changed before it could be confirmed',
@@ -855,6 +871,19 @@ export class VerificationsService {
       'confirmed',
     );
     return { success: true, verificationId, status: 'confirmed' };
+  }
+
+  private async confirmOpenChangeRequest(
+    changeRequests: VerificationChangeRequestsRepository,
+    user: AuthenticatedUser,
+    verificationId: string,
+  ): Promise<{ id: string } | null> {
+    const result = await changeRequests.resolveByMerchantConfirmation({
+      orgId: user.orgId,
+      verificationId,
+      actorUserId: user.userId,
+    });
+    return result.outcome === 'resolved' ? result.verification : null;
   }
 
   private toNeedsActionItem(
