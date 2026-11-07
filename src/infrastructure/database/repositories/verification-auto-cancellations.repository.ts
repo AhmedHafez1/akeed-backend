@@ -5,6 +5,7 @@ import {
   integrations,
   orders,
   verificationAutoCancellationEvents,
+  verificationChangeRequests,
   verificationAutoCancellations,
   verificationMessageDispatches,
   verifications,
@@ -73,6 +74,8 @@ export interface AutoCancelSnapshot {
   /** First delivery or read receipt of the reminder. */
   followUpDeliveredAt: string | null;
   row: AutoCancellationRow | null;
+  /** A change request of this verification is open. */
+  changeRequestOpen: boolean;
 }
 
 export interface AutoCancelEventInput {
@@ -521,6 +524,19 @@ export class VerificationAutoCancellationsRepository {
       .where(eq(verificationAutoCancellations.verificationId, verificationId));
     const [row] = lock ? await rowQuery.for('update') : await rowQuery;
 
+    // Read under the verification lock, which every change-request
+    // transition takes first, so it cannot change before this step commits.
+    const [openChangeRequest] = await tx
+      .select({ id: verificationChangeRequests.id })
+      .from(verificationChangeRequests)
+      .where(
+        and(
+          eq(verificationChangeRequests.verificationId, verificationId),
+          eq(verificationChangeRequests.status, 'open'),
+        ),
+      )
+      .limit(1);
+
     return {
       verification,
       order: {
@@ -533,6 +549,7 @@ export class VerificationAutoCancellationsRepository {
       initialDeliveredAt,
       followUpDeliveredAt,
       row: row ?? null,
+      changeRequestOpen: Boolean(openChangeRequest),
     };
   }
 

@@ -59,6 +59,14 @@ import type {
 } from '../../shared/review-prompt/review-prompt.types';
 import type { InterfaceLocale } from '../../shared/i18n/interface-locales';
 import type {
+  ChangeRequestActorKind,
+  ChangeRequestEffectKind,
+  ChangeRequestEffectStatus,
+  ChangeRequestEvent,
+  ChangeRequestResolution,
+  ChangeRequestStatus,
+} from '../../shared/verification/change-request.policy';
+import type {
   TipsAudienceFilters,
   TipsCampaignStatus,
   TipsCampaignType,
@@ -704,6 +712,11 @@ export const integrations = pgTable(
     autoCancelNotifyCustomer: boolean('auto_cancel_notify_customer')
       .default(false)
       .notNull(),
+    // The merchant's opt-in to the "Request a change" button. Decides only
+    // what future messages carry: buttons already sent stay valid.
+    changeRequestsEnabled: boolean('change_requests_enabled')
+      .default(false)
+      .notNull(),
     countryCode: varchar('country_code', { length: 2 }),
     shopTimezone: text('shop_timezone'),
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
@@ -1160,6 +1173,9 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     autoCancelExcludedBy: uuid('auto_cancel_excluded_by'),
+    // Which confirmation message set is current. An updated confirmation
+    // moves the order to the next cycle and retires the earlier buttons.
+    confirmationCycle: integer('confirmation_cycle').default(1).notNull(),
     metadata: jsonb().default({}),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -1210,6 +1226,10 @@ export const verifications = pgTable(
       foreignColumns: [organizations.id],
       name: 'verifications_org_id_fkey',
     }).onDelete('cascade'),
+    check(
+      'verifications_confirmation_cycle_check',
+      sql`confirmation_cycle > 0`,
+    ),
     check(
       'verifications_confirmation_source_check',
       sql`confirmation_source IS NULL OR confirmation_source IN ('customer', 'merchant_manual')`,
@@ -1340,9 +1360,12 @@ export const verificationMessageDispatches = pgTable(
     senderAutomationPending: boolean('sender_automation_pending')
       .notNull()
       .default(false),
+    // The confirmation cycle the message was sent in.
+    confirmationCycle: integer('confirmation_cycle').default(1).notNull(),
   },
   (table) => [
     check('dispatch_generation_positive', sql`generation > 0`),
+    check('dispatch_confirmation_cycle_check', sql`confirmation_cycle > 0`),
     check(
       'sender_recovery_state_check',
       sql`${table.senderRecoveryState} IS NULL OR ${table.senderRecoveryState} IN ('retry','fallback','complete','canceled')`,
@@ -4195,6 +4218,252 @@ export const verificationAutoCancellations = pgTable(
       sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 64`,
     ),
     pgPolicy('Service role manages verification auto cancellations', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * A customer's request to change an order, one row per request. At most one
+ * is open per verification and one exists per verification and cycle. The
+ * row binds the request to the merchant, order, source, sender, outbound
+ * message and confirmation cycle it answers, and records its resolution.
+ */
+export const verificationChangeRequests = pgTable(
+  'verification_change_requests',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    orderId: uuid('order_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    confirmationCycle: integer('confirmation_cycle').notNull(),
+    sourceDispatchId: uuid('source_dispatch_id').notNull(),
+    sourceProviderMessageId: text('source_provider_message_id').notNull(),
+    senderKind: text('sender_kind')
+      .$type<'akeed_system' | 'merchant_own'>()
+      .notNull(),
+    senderPhoneNumberId: text('sender_phone_number_id'),
+    senderConnectionId: uuid('sender_connection_id'),
+    openedEventId: text('opened_event_id').notNull(),
+    openedAt: timestamp('opened_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    status: text('status')
+      .$type<ChangeRequestStatus>()
+      .default('open')
+      .notNull(),
+    resolution: text('resolution').$type<ChangeRequestResolution>(),
+    resolvedAt: timestamp('resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    resolvedByUserId: uuid('resolved_by_user_id'),
+    lastReconfirmationError: text('last_reconfirmation_error'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('verification_change_requests_id_org_key').on(table.id, table.orgId),
+    unique('verification_change_requests_cycle_key').on(
+      table.verificationId,
+      table.confirmationCycle,
+    ),
+    uniqueIndex('verification_change_requests_one_open')
+      .on(table.verificationId)
+      .where(sql`${table.status} = 'open'`),
+    index('idx_verification_change_requests_org_open')
+      .on(table.orgId, table.openedAt)
+      .where(sql`${table.status} = 'open'`),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_change_requests_verification_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.orderId, table.orgId],
+      foreignColumns: [orders.id, orders.orgId],
+      name: 'verification_change_requests_order_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'verification_change_requests_integration_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.sourceDispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+      name: 'verification_change_requests_dispatch_fkey',
+    }).onDelete('cascade'),
+    check(
+      'verification_change_requests_cycle_check',
+      sql`${table.confirmationCycle} > 0`,
+    ),
+    check(
+      'verification_change_requests_sender_kind_check',
+      sql`${table.senderKind} IN ('akeed_system', 'merchant_own')`,
+    ),
+    check(
+      'verification_change_requests_status_check',
+      sql`${table.status} IN ('open', 'resolved')`,
+    ),
+    check(
+      'verification_change_requests_resolution_check',
+      sql`(${table.status} = 'open' AND ${table.resolution} IS NULL AND ${table.resolvedAt} IS NULL) OR (${table.status} = 'resolved' AND ${table.resolvedAt} IS NOT NULL AND ${table.resolution} IN ('customer_confirmed', 'customer_canceled', 'merchant_confirmed', 'merchant_canceled', 'reconfirmation_sent'))`,
+    ),
+    check(
+      'verification_change_requests_event_id_check',
+      sql`char_length(${table.openedEventId}) BETWEEN 1 AND 256`,
+    ),
+    check(
+      'verification_change_requests_error_check',
+      sql`${table.lastReconfirmationError} IS NULL OR char_length(${table.lastReconfirmationError}) BETWEEN 1 AND 64`,
+    ),
+    pgPolicy('Service role manages verification change requests', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * Append-only history of change requests: who did what and when. A provider
+ * event replayed against the same request is recorded once.
+ */
+export const verificationChangeRequestEvents = pgTable(
+  'verification_change_request_events',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    changeRequestId: uuid('change_request_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    event: text('event').$type<ChangeRequestEvent>().notNull(),
+    actorKind: text('actor_kind').$type<ChangeRequestActorKind>().notNull(),
+    actorUserId: uuid('actor_user_id'),
+    sourceEventId: text('source_event_id'),
+    detail: jsonb('detail').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.changeRequestId, table.orgId],
+      foreignColumns: [
+        verificationChangeRequests.id,
+        verificationChangeRequests.orgId,
+      ],
+      name: 'verification_change_request_events_request_fkey',
+    }).onDelete('cascade'),
+    uniqueIndex('verification_change_request_events_source_event_key')
+      .on(table.changeRequestId, table.sourceEventId)
+      .where(sql`${table.sourceEventId} IS NOT NULL`),
+    index('idx_verification_change_request_events_request').on(
+      table.changeRequestId,
+      table.createdAt,
+    ),
+    check(
+      'verification_change_request_events_event_check',
+      sql`${table.event} IN ('opened', 'repeat_ignored', 'resolved', 'reconfirmation_failed')`,
+    ),
+    check(
+      'verification_change_request_events_actor_check',
+      sql`${table.actorKind} IN ('customer', 'merchant', 'system')`,
+    ),
+    check(
+      'verification_change_request_events_source_event_check',
+      sql`${table.sourceEventId} IS NULL OR char_length(${table.sourceEventId}) BETWEEN 1 AND 256`,
+    ),
+    pgPolicy('Service role manages verification change request events', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * The side-effect outbox of change requests, written in the transaction of
+ * the transition that owes the effect: one row per request and kind.
+ */
+export const verificationChangeRequestEffects = pgTable(
+  'verification_change_request_effects',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    changeRequestId: uuid('change_request_id').notNull(),
+    kind: text('kind').$type<ChangeRequestEffectKind>().notNull(),
+    status: text('status')
+      .$type<ChangeRequestEffectStatus>()
+      .default('pending')
+      .notNull(),
+    reason: text('reason'),
+    attempts: integer().default(0).notNull(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    completedAt: timestamp('completed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('verification_change_request_effects_kind_key').on(
+      table.changeRequestId,
+      table.kind,
+    ),
+    foreignKey({
+      columns: [table.changeRequestId, table.orgId],
+      foreignColumns: [
+        verificationChangeRequests.id,
+        verificationChangeRequests.orgId,
+      ],
+      name: 'verification_change_request_effects_request_fkey',
+    }).onDelete('cascade'),
+    index('idx_verification_change_request_effects_due')
+      .on(table.kind, table.status, table.createdAt)
+      .where(sql`${table.status} IN ('pending', 'in_progress')`),
+    check(
+      'verification_change_request_effects_kind_check',
+      sql`${table.kind} IN ('customer_acknowledgment', 'merchant_email', 'platform_marker_set', 'platform_marker_clear')`,
+    ),
+    check(
+      'verification_change_request_effects_status_check',
+      sql`${table.status} IN ('pending', 'in_progress', 'done', 'skipped', 'failed')`,
+    ),
+    check(
+      'verification_change_request_effects_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'verification_change_request_effects_reason_check',
+      sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 64`,
+    ),
+    pgPolicy('Service role manages verification change request effects', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

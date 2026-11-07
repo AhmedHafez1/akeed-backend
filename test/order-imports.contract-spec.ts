@@ -374,6 +374,7 @@ describe('order imports PostgreSQL contract', () => {
         '0089_sender_recovery.sql',
         '0090_merchant_webhook_routing.sql',
         '0091_whatsapp_sender_alerts.sql',
+        '0092_change_requests.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

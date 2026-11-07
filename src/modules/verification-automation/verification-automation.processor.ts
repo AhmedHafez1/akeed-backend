@@ -26,6 +26,11 @@ import { NO_WHATSAPP_SEND_REASON } from '../../shared/verification/delivery-fail
 import { CustomerReplyFollowUpService } from '../verification-replies/customer-reply-follow-up.service';
 import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 import { VerificationAutomationProducer } from './verification-automation.producer';
+import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
+import {
+  CHANGE_REQUEST_OPEN_REASON,
+  LEGACY_CONFIRMATION_CYCLE,
+} from '../../shared/verification/change-request.policy';
 
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
 
@@ -46,6 +51,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly replyFollowUps?: CustomerReplyFollowUpService,
     @Optional()
     private readonly autoCancellation?: AutoCancellationService,
+    @Optional()
+    private readonly changeRequests?: VerificationChangeRequestsRepository,
   ) {
     super();
   }
@@ -271,6 +278,15 @@ export class VerificationAutomationProcessor extends WorkerHost {
       return;
     }
 
+    if (
+      await this.isHeldByChangeRequest(
+        job,
+        verification,
+        'verification-automation-follow-up',
+      )
+    )
+      return;
+
     if ((verification.followUpAttempts ?? 0) > 0) {
       this.logger.log(
         buildBackendLog(VerificationAutomationProcessor.name, {
@@ -380,6 +396,15 @@ export class VerificationAutomationProcessor extends WorkerHost {
       );
       return;
     }
+
+    if (
+      await this.isHeldByChangeRequest(
+        job,
+        verification,
+        'verification-automation-no-reply-escalate',
+      )
+    )
+      return;
 
     if (await this.skipUnavailableIntegration(ctx, 'escalation')) return;
 
@@ -589,6 +614,46 @@ export class VerificationAutomationProcessor extends WorkerHost {
         ? (verification.metadata as Record<string, unknown>)
         : {};
     return !(metadata.follow_up_skipped || metadata.follow_up_failed);
+  }
+
+  /**
+   * A reminder or an escalation that must not act: it belongs to a cycle an
+   * updated confirmation retired, or the customer asked for a change and the
+   * merchant has not settled it. Checked when the job runs, so a job queued
+   * before the request does nothing; the no-reply write and the reminder
+   * claim check the request again atomically.
+   */
+  private async isHeldByChangeRequest(
+    job: Job<VerificationAutomationJobPayload>,
+    verification: NonNullable<
+      Awaited<ReturnType<VerificationsRepository['findById']>>
+    >,
+    action: string,
+  ): Promise<boolean> {
+    const jobCycle = job.data.confirmationCycle ?? LEGACY_CONFIRMATION_CYCLE;
+    const currentCycle =
+      verification.confirmationCycle ?? LEGACY_CONFIRMATION_CYCLE;
+    const reason =
+      jobCycle !== currentCycle
+        ? 'stale_confirmation_cycle'
+        : (await this.changeRequests?.findOpenForVerification(
+              verification.id,
+              verification.orgId,
+            ))
+          ? CHANGE_REQUEST_OPEN_REASON
+          : null;
+    if (!reason) return false;
+    this.logger.log(
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action,
+        outcome: 'skipped',
+        jobId: String(job.id),
+        verificationId: verification.id,
+        orgId: verification.orgId,
+        reason,
+      }),
+    );
+    return true;
   }
 
   private async loadContext(

@@ -126,6 +126,49 @@ The sweep (every 5 minutes) enqueues due rows whose job was lost, resumes expire
 
 **Stores.** Shopify reads `cancelledAt`, `displayFinancialStatus` (only `PENDING`), `displayFulfillmentStatus` (only `UNFULFILLED`) and `closed`, and applies the restock and notify choices. WooCommerce cancels from `processing` or `on-hold` with no `date_paid`; EasyOrders from `pending`. Both follow the store's own stock and email settings and need their outcome-sync switch. Standalone records it in Akeed.
 
+### Customer change requests (domain layer)
+
+"Request a change" lets a customer who is waiting to confirm a COD order ask for a change instead of confirming or canceling. Akeed records the request, stops the no-reply automation and the merchant contacts the customer; Akeed never edits the order. This release ships the domain layer only: no message carries the third button yet and no endpoint opens a request, so nothing changes for merchants. The switch `integrations.change_requests_enabled` is off for every store (migration `0092_change_requests.sql`).
+
+**Model.** A request is an attention task kept apart from the verification's outcome. The verification stays at its awaiting status (`sent`, `delivered`, `read`, `no_reply`, `no_whatsapp`), so it is not confirmed and not ready to ship. `verification_change_requests` holds one row per request: at most one `open` per verification (partial unique index) and one per verification and confirmation cycle. It is bound by composite tenant keys to the organization, source, order, verification and the outbound dispatch the customer answered, with the sender (`sender_kind`, `sender_phone_number_id`, `sender_connection_id`), the cycle, the provider event that opened it, and how, when and by whom it was resolved. `verification_change_request_events` is its append-only history (`opened`, `repeat_ignored`, `resolved`, `reconfirmation_failed`); a replayed provider event is recorded once. `verification_change_request_effects` is the outbox written in the same transaction as each transition (`customer_acknowledgment`, `merchant_email`, `platform_marker_set` on open; `platform_marker_clear` on resolution), consumed later by their own workers with a lease (`claimEffect` / `settleEffect`).
+
+**Confirmation cycles.** `verifications.confirmation_cycle` and `verification_message_dispatches.confirmation_cycle` start at 1 for every existing row. A claim stamps the verification's current cycle on a new dispatch unless its caller names one. A successful updated confirmation moves the verification to the next cycle; buttons, dispatches and reminder or escalation jobs (`confirmationCycle` in the job payload; absent means 1) of an earlier cycle then change nothing.
+
+**Opening** (`VerificationChangeRequestsRepository.open`, called through `ChangeRequestLifecycleService.openFromCustomer`). The store is read first, outside the transaction (`inspectForCancellation`): only `not_cancellable/fulfilled` is known shipped; a failed or unsupported read is unknown and does not block. Then, with the verification row locked first and the automatic cancellation second, as every writer here does:
+
+| Check | Answer |
+| --- | --- |
+| The quoted message is an accepted `initial` or `follow_up` dispatch of the same verification, source and tenant | otherwise `message_mismatch`; a receiving tenant that is not the order's is `tenant_mismatch` |
+| The sender that received the tap is the one that sent the message | otherwise `sender_mismatch` |
+| The message's cycle is the current one | otherwise `stale_cycle` |
+| A request is already open | `already_open`: no new row, effect or charge |
+| Test order, merchant-canceled, not awaiting confirmation, automatic cancellation already reaching the store, known shipped | rejected with that reason |
+
+A new request stops a `scheduled` or `paused` automatic cancellation (`stopped`, reason `change_requested`) in the same transaction; the queued reminder and escalation jobs are removed after the commit, best effort.
+
+**Automation guards.** Each is checked when the work runs, so a job queued before the request does nothing:
+
+- the escalation and reminder jobs skip with `change_request_open` (or `stale_confirmation_cycle`);
+- the `no_reply` write itself carries `NOT EXISTS (open request)`;
+- the reminder's dispatch claim locks the verification after the source and refuses with `change_request_open`;
+- the automatic cancellation reads the open request in its locked snapshot and stops with `change_requested` at scheduling, at the claim and just before the store is asked.
+
+An open request is the first `needs_action` reason (`change_requested`).
+
+**Resolution.** Only an outcome closes a request; an order update or tag change never does (the order-update handlers do not write verifications).
+
+| Event | Result |
+| --- | --- |
+| Customer Confirm or Cancel from the current cycle | The answer applies through the normal path; `resolveByCustomerAnswer` then closes the request as `customer_confirmed` / `customer_canceled`, also on a webhook retry. A button of a retired cycle is skipped (`stale_confirmation_cycle`). |
+| Merchant confirms after contact | `resolveByMerchantConfirmation`: `confirmed`, `confirmation_source = merchant_manual`, closed as `merchant_confirmed` with the merchant as actor. |
+| Merchant cancels after contact | `resolveByMerchantCancellation`, after the store accepted: `canceled`, `cancellation_source = merchant_change_request`, closed as `merchant_canceled`. |
+| Updated confirmation not sent | `recordReconfirmationFailure`: the request stays open and the automation stays stopped. |
+| Updated confirmation accepted | `completeReconfirmation(expectedCycle)`: next cycle, `sent`, the new `wa_message_id`, the previous cycle's receipts, reminder and escalation state cleared, a non-committed automatic cancellation removed, closed as `reconfirmation_sent`. A second or stale call changes nothing. |
+
+A merchant command on a request the customer settled first answers `already_resolved`; other refusals are `no_open_request`, `request_mismatch`, `stale_cycle`, `not_awaiting_confirmation`, `auto_cancel_committed`. Merchant commands are scoped by `orgId` and need the owner or admin role. Sending the outcome to the store and the customer is the caller's job after the commit.
+
+Tests: `test/change-requests.contract-spec.ts` (`npm run test:contract:change-requests`, PostgreSQL via `E01_TEST_DATABASE_URL`) and the unit specs next to each file.
+
 ### Held orders (bulk import)
 
 A bulk import creates its orders **held** before any verification exists. A held order has no verification row and no message, and it is invisible to dispatch and reconciliation until the merchant starts the import. The dashboard shows these pre-verification stages next to the lifecycle statuses above:
@@ -478,7 +521,7 @@ Primary tables:
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `integrations`   | `platformType`, `platformStoreUrl`, `accessToken`, `isActive` (installation state), `storeName`, `defaultLanguage`, `codTemplateArKey`, `codTemplateEnKey`, `codTemplateUrKey`, `codTemplateEsKey`, `codTemplateFrKey` (with the old `codTemplateArVariant`, `codTemplateEnVariant` kept in step), `shippingCurrency`, `avgShippingCost`, `isAutoVerifyEnabled`, `billingPlanId`, `billingStatus` (entitlement state), `followUpEnabled`, `followUpDelayMinutes`, `escalationEnabled`, `escalationDelayMinutes`, `quietHoursEnabled`, `quietHoursStart`, `quietHoursEnd`, `timezone`, `sendDelayMinutes` |
 | `orders`         | `orgId`, `integrationId`, `externalOrderId`, `orderNumber`, `customerPhone`, `customerName`, `totalPrice`, `currency`, `paymentMethod`, `rawPayload`; source identity/deduplication is `(orgId, integrationId, externalOrderId)` and the database verifies integration ownership                                                                                                                                                                                               |
-| `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `metadata`                                                                                                                                                                                                    |
+| `verifications`  | `orgId`, `orderId`, `status`, `waMessageId`, `templateName`, `languageCode`, `attempts`, `lastSentAt`, `confirmedAt`, `canceledAt`, `deliveredAt`, `readAt`, `followUpSentAt`, `noReplyAt`, `followUpAttempts`, `merchantCanceledAt`, `cancellationSource`, `confirmationCycle`, `metadata`                                                                                                                                                                                                    |
 | `usage_alerts`   | `orgId`, `integrationId`, `kind` (`plan_usage`, `credit_balance`), `level`, `cycleKey`, `emailStatus`, `emailError`, `sentAt`, `resolvedAt`; one row per alert, deduplicated by a unique index per billing period (plans) or per open incident (credits) |
 | `webhook_events` | `platform`, `jobType`, `idempotencyKey`, `storeDomain`, `orgId`, `integrationId`, `status`, `rawPayload`, `attempts`, `lastError`, `processedAt`                                                                                                                                                                                                                                                                                                                          |
 

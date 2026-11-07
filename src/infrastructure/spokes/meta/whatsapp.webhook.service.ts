@@ -28,6 +28,8 @@ import { VerificationSendService } from '../../../modules/verification-core/veri
 import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.policy';
 import { CustomerMessagesRepository } from '../../database/repositories/customer-messages.repository';
 import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
+import { VerificationChangeRequestsRepository } from '../../database/repositories/verification-change-requests.repository';
+import { LEGACY_CONFIRMATION_CYCLE } from '../../../shared/verification/change-request.policy';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
@@ -59,7 +61,49 @@ export class WhatsAppWebhookService {
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
     @Optional() private readonly senderRecovery?: VerificationSendService,
     @Optional() private readonly customerMessages?: CustomerMessagesRepository,
+    @Optional()
+    private readonly changeRequests?: VerificationChangeRequestsRepository,
   ) {}
+
+  /**
+   * The customer's own answer settles an open change request of the current
+   * cycle, before any merchant contact. Runs after the answer was written,
+   * and again on a retry of the event. Never throws: the answer is saved.
+   */
+  private async resolveChangeRequest(
+    verificationId: string,
+    intent: CustomerReplyIntent,
+    message: WhatsAppMessageDto,
+  ): Promise<void> {
+    if (!this.changeRequests) return;
+    try {
+      const resolved = await this.changeRequests.resolveByCustomerAnswer({
+        verificationId,
+        intent,
+        eventId: message.id,
+        occurredAt: this.messageTime(message),
+      });
+      if (resolved) {
+        this.logger.log(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-change-request-resolve',
+            outcome: 'success',
+            verificationId,
+            resolution: resolved.request.resolution ?? 'unknown',
+          }),
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-change-request-resolve',
+          outcome: 'failure',
+          verificationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
 
   /**
    * Record a confirm or cancel against the order's automatic cancellation.
@@ -308,6 +352,8 @@ export class WhatsAppWebhookService {
     verificationId: string;
     intent: CustomerReplyIntent;
     via: 'button' | 'text';
+    /** The confirmation cycle the button belongs to; legacy buttons have none. */
+    cycle?: number;
   } | null> {
     const buttonPayload =
       message.button?.payload ?? message.interactive?.button_reply?.id;
@@ -398,6 +444,23 @@ export class WhatsAppWebhookService {
         );
         continue;
       }
+      // A button of a cycle an updated confirmation retired changes nothing.
+      if (
+        via === 'button' &&
+        existing &&
+        (resolved.cycle ?? LEGACY_CONFIRMATION_CYCLE) !==
+          (existing.confirmationCycle ?? LEGACY_CONFIRMATION_CYCLE)
+      ) {
+        this.logger.log(
+          buildBackendLog(WhatsAppWebhookService.name, {
+            action: 'whatsapp-webhook-handle-message',
+            outcome: 'skipped',
+            verificationId,
+            reason: 'stale_confirmation_cycle',
+          }),
+        );
+        continue;
+      }
       if (existing?.merchantCanceledAt) {
         this.logger.log(
           buildBackendLog(WhatsAppWebhookService.name, {
@@ -465,6 +528,7 @@ export class WhatsAppWebhookService {
             ...(finishing ? { reason: 'finishing_saved_answer' } : {}),
           }),
         );
+        await this.resolveChangeRequest(verificationId, newStatus, message);
         await this.verificationHub.finalizeVerification(
           verificationId,
           newStatus,

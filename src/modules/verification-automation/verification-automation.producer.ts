@@ -31,6 +31,8 @@ interface ScheduleParams {
   verificationId: string;
   orgId: string;
   dueAt: Date;
+  /** The confirmation cycle the job belongs to. */
+  confirmationCycle?: number;
 }
 
 interface ReplyFollowUpParams {
@@ -334,6 +336,9 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
       verificationId: params.verificationId,
       orgId: params.orgId,
       scheduledAt: params.dueAt.toISOString(),
+      ...(params.confirmationCycle !== undefined
+        ? { confirmationCycle: params.confirmationCycle }
+        : {}),
     };
 
     await this.queue.add(jobType, payload, {
