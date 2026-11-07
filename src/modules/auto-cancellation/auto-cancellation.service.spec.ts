@@ -48,6 +48,7 @@ function baseSnapshot(): AutoCancelSnapshot {
     initialDeliveredAt: DELIVERED,
     followUpDeliveredAt: '2026-10-01T14:01:00.000Z',
     row: null,
+    changeRequestOpen: false,
   };
 }
 
@@ -593,6 +594,51 @@ describe('AutoCancellationService', () => {
           'ver-1',
         ),
       ).rejects.toThrow('Verification not found');
+    });
+  });
+
+  describe('open change request', () => {
+    it('never schedules an order whose customer asked for a change', async () => {
+      const harness = setup({ snapshot: { changeRequestOpen: true } });
+      await harness.service.scheduleAfterNoReply('ver-1');
+      expect(harness.state.snapshot.row).toMatchObject({
+        status: 'skipped',
+        reason: 'change_requested',
+      });
+      expect(harness.producer.enqueueExecute).not.toHaveBeenCalled();
+    });
+
+    it('stops a job queued before the request when it runs', async () => {
+      const harness = setup();
+      await scheduledAndDue(harness);
+      harness.state.snapshot.changeRequestOpen = true;
+
+      await harness.service.execute('row-1');
+
+      expect(harness.cancelCalls()).toHaveLength(0);
+      expect(harness.state.snapshot.row).toMatchObject({
+        status: 'stopped',
+        reason: 'change_requested',
+      });
+      expect(harness.state.snapshot.verification.status).toBe('no_reply');
+    });
+
+    it('stops before the store is asked when the request lands after the claim', async () => {
+      const harness = setup({
+        inspect: () => {
+          harness.state.snapshot.changeRequestOpen = true;
+          return { state: 'cancellable' };
+        },
+      });
+      await scheduledAndDue(harness);
+
+      await harness.service.execute('row-1');
+
+      expect(harness.cancelCalls()).toHaveLength(0);
+      expect(harness.state.snapshot.row).toMatchObject({
+        status: 'stopped',
+        reason: 'change_requested',
+      });
     });
   });
 });

@@ -73,7 +73,8 @@ export type AutoCancelSkipReason =
   | 'test_order'
   | 'excluded'
   | 'not_no_reply'
-  | 'already_resolved';
+  | 'already_resolved'
+  | 'change_requested';
 
 export type AutoCancelPauseReason =
   | 'initial_not_delivered'
@@ -85,7 +86,8 @@ export type AutoCancelStopReason =
   | 'customer_reply'
   | 'excluded'
   | 'feature_disabled'
-  | 'status_changed';
+  | 'status_changed'
+  | 'change_requested';
 
 export type AutoCancelDecision =
   | { kind: 'schedule'; dueAt: Date }
@@ -109,6 +111,11 @@ export interface AutoCancelFacts {
   followUpBlockedReason?: string | null;
   /** First delivery or read receipt of the reminder. */
   followUpDeliveredAt?: string | null;
+  /**
+   * The customer asked for a change and the merchant has not settled it.
+   * The order then waits for the merchant, whatever else holds.
+   */
+  changeRequestOpen?: boolean;
 }
 
 function timeOf(iso: string | null | undefined): number | null {
@@ -130,6 +137,9 @@ export function evaluateAutoCancel(
   if (facts.excludedAt) return { kind: 'skip', reason: 'excluded' };
   if (facts.confirmedAt || facts.canceledAt || facts.merchantCanceledAt) {
     return { kind: 'skip', reason: 'already_resolved' };
+  }
+  if (facts.changeRequestOpen) {
+    return { kind: 'skip', reason: 'change_requested' };
   }
   if (facts.status !== 'no_reply') {
     return { kind: 'skip', reason: 'not_no_reply' };

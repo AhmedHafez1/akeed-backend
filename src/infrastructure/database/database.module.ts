@@ -13,6 +13,7 @@ import { PaymentPurchasesRepository } from './repositories/payment-purchases.rep
 import { OrdersRepository } from './repositories/orders.repository';
 import { VerificationsRepository } from './repositories/verifications.repository';
 import { VerificationAutoCancellationsRepository } from './repositories/verification-auto-cancellations.repository';
+import { VerificationChangeRequestsRepository } from './repositories/verification-change-requests.repository';
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
 import { MembershipsRepository } from './repositories/memberships.repository';
@@ -58,6 +59,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     OrdersRepository,
     VerificationsRepository,
     VerificationAutoCancellationsRepository,
+    VerificationChangeRequestsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
@@ -102,6 +104,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     OrdersRepository,
     VerificationsRepository,
     VerificationAutoCancellationsRepository,
+    VerificationChangeRequestsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,

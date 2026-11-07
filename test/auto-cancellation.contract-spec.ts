@@ -198,6 +198,8 @@ beforeAll(async () => {
     tables.verifications,
     tables.verificationMessageDispatches,
     tables.commerceOutcomeSyncs,
+    // Read by the snapshot and the Needs action rule (migration 0092).
+    tables.verificationChangeRequests,
   ])
     await scaffold(table);
   // The new columns came from the scaffold; drop them so the migration adds

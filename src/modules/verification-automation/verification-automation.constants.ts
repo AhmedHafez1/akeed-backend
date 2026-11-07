@@ -38,6 +38,12 @@ export interface VerificationAutomationJobPayload {
   orgId: string;
   scheduledAt: string;
   /**
+   * The confirmation cycle a reminder or escalation was scheduled for. A job
+   * of an earlier cycle does nothing once an updated confirmation started a
+   * new one. Absent on jobs queued before cycles existed: cycle 1.
+   */
+  confirmationCycle?: number;
+  /**
    * The customer's message an acknowledgment or a nudge answers: when it was
    * sent and, for an acknowledgment, what it said. Never its text.
    */

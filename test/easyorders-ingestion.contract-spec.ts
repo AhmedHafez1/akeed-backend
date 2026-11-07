@@ -658,6 +658,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       '0088_own_number_billing.sql',
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
+      '0092_change_requests.sql',
     ])
       await migrate(name);
     // The story's own migrations, twice: both must be re-runnable.

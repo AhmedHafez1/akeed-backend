@@ -693,6 +693,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       '0088_own_number_billing.sql',
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
+      '0092_change_requests.sql',
       // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
     ])

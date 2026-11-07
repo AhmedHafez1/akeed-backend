@@ -102,6 +102,9 @@ function build(
         return Promise.resolve({ rows: [['org-1']] });
       if (query.includes('from "verifications"'))
         return Promise.resolve({ rows: [['verification-1']] });
+      // No change request is open, so the reminder claim goes ahead.
+      if (query.includes('from "verification_change_requests"'))
+        return Promise.resolve({ rows: [] });
       return Promise.resolve({
         rows: options.dispatch === null ? [] : [dispatchRow(options.dispatch)],
       });

@@ -45,6 +45,7 @@ import {
   WEBHOOK_PROTECTED_STATUSES,
 } from '../../../shared/verification/verification-lifecycle';
 import { classifyDeliveryFailure } from '../../../shared/verification/delivery-failure.policy';
+import { CHANGE_REQUEST_OPEN_REASON } from '../../../shared/verification/change-request.policy';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
@@ -52,6 +53,7 @@ import {
   orders,
   integrations,
   providerMessageReceipts,
+  verificationChangeRequests,
   verificationMessageDispatches,
   verificationSenderAttempts,
   whatsappConnectionTemplates,
@@ -170,6 +172,22 @@ function claimTemplateColumns(params: {
             : null,
         }
       : {}),
+  };
+}
+
+/**
+ * The confirmation cycle a new dispatch belongs to: the one its caller names
+ * (an updated confirmation is claimed for the cycle it will start), else the
+ * verification's current cycle, read in the claim's own statement.
+ */
+function claimCycleColumns(params: {
+  verificationId: string;
+  confirmationCycle?: number;
+}) {
+  return {
+    confirmationCycle:
+      params.confirmationCycle ??
+      sql<number>`(SELECT ${verifications.confirmationCycle} FROM ${verifications} WHERE ${verifications.id} = ${params.verificationId})`,
   };
 }
 
@@ -365,6 +383,11 @@ export class VerificationMessageDispatchesRepository {
      */
     billingExempt?: boolean;
     fallbackForDispatchId?: string;
+    /**
+     * The confirmation cycle the message belongs to. Absent, the
+     * verification's current cycle.
+     */
+    confirmationCycle?: number;
   }): Promise<DispatchClaimResult> {
     const dispatchKey = buildDispatchKey(params.verificationId, params.kind);
     const now = new Date().toISOString();
@@ -380,6 +403,22 @@ export class VerificationMessageDispatchesRepository {
           ),
         )
         .for('update');
+
+      // An open change request stops the reminder. The verification is locked
+      // after the source, as every writer here does, and opening a request
+      // locks it too, so a request committed during this claim is seen.
+      if (
+        params.kind === 'follow_up' &&
+        (await this.hasOpenChangeRequest(
+          tx,
+          params.verificationId,
+          params.orgId,
+        ))
+      )
+        return {
+          outcome: 'blocked' as const,
+          reason: CHANGE_REQUEST_OPEN_REASON,
+        };
 
       if (params.fallbackForDispatchId) {
         const [verification] = await tx
@@ -485,6 +524,7 @@ export class VerificationMessageDispatchesRepository {
             ),
             fallbackForDispatchId: previous.id,
             ...claimTemplateColumns(params),
+            ...claimCycleColumns(params),
           })
           .returning();
         const entitlement = resolveEntitlement(source, {
@@ -569,6 +609,7 @@ export class VerificationMessageDispatchesRepository {
           kind: params.kind,
           state: 'ready',
           ...claimTemplateColumns(params),
+          ...claimCycleColumns(params),
         })
         .onConflictDoNothing({
           target: verificationMessageDispatches.dispatchKey,
@@ -875,6 +916,35 @@ export class VerificationMessageDispatchesRepository {
       senderPhoneNumberId: phoneNumberId,
       senderReason: sender.reason,
     };
+  }
+
+  private async hasOpenChangeRequest(
+    tx: CreditTransaction,
+    verificationId: string,
+    orgId: string,
+  ): Promise<boolean> {
+    const [locked] = await tx
+      .select({ id: verifications.id })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.id, verificationId),
+          eq(verifications.orgId, orgId),
+        ),
+      )
+      .for('update');
+    if (!locked) return false;
+    const [open] = await tx
+      .select({ id: verificationChangeRequests.id })
+      .from(verificationChangeRequests)
+      .where(
+        and(
+          eq(verificationChangeRequests.verificationId, verificationId),
+          eq(verificationChangeRequests.status, 'open'),
+        ),
+      )
+      .limit(1);
+    return Boolean(open);
   }
 
   private recoveryClosed(status: string | null): boolean {
@@ -2824,6 +2894,7 @@ export class VerificationMessageDispatchesRepository {
           kind: params.kind,
           state: 'ready',
           ...claimTemplateColumns(params),
+          ...claimCycleColumns(params),
         })
         .returning();
     } else if (previous.accountingMode !== 'prepaid_credit') {

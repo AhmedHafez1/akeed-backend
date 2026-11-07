@@ -230,6 +230,11 @@ export class VerificationHubService {
     }
     const { integration, baselineSentAt } = params;
     const baseMs = baselineSentAt.getTime();
+    // Jobs carry the cycle they were scheduled for, so they retire with it.
+    const cycle =
+      typeof current?.confirmationCycle === 'number'
+        ? { confirmationCycle: current.confirmationCycle }
+        : {};
 
     const quietConfig = {
       enabled: integration.quietHoursEnabled,
@@ -252,6 +257,7 @@ export class VerificationHubService {
         verificationId: params.verificationId,
         orgId: params.orgId,
         dueAt: followUpDueAt,
+        ...cycle,
       });
       await this.recordFollowUpDueAt(
         params.verificationId,
@@ -279,6 +285,7 @@ export class VerificationHubService {
         verificationId: params.verificationId,
         orgId: params.orgId,
         dueAt: escalationDueAt,
+        ...cycle,
       });
     }
   }

@@ -13,7 +13,10 @@ import {
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
-function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
+function createMocks(
+  autoCancellation?: { scheduleAfterNoReply: jest.Mock },
+  changeRequests?: { findOpenForVerification: jest.Mock },
+) {
   const verificationsRepo = {
     findById: jest.fn(),
     updateStatus: jest.fn(),
@@ -68,6 +71,7 @@ function createMocks(autoCancellation?: { scheduleAfterNoReply: jest.Mock }) {
     automationProducer as never,
     undefined,
     autoCancellation as never,
+    changeRequests as never,
   );
 
   return {
@@ -1079,6 +1083,120 @@ describe('VerificationAutomationProcessor', () => {
         verificationHub.scheduleFollowUpAndEscalation,
       ).not.toHaveBeenCalled();
       expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('change request guards', () => {
+    function setup(
+      kind: VerificationAutomationJobType,
+      options: { openRequest?: boolean; jobCycle?: number; cycle?: number },
+    ) {
+      const autoCancellation = { scheduleAfterNoReply: jest.fn() };
+      const changeRequests = {
+        findOpenForVerification: jest
+          .fn()
+          .mockResolvedValue(
+            options.openRequest ? { id: 'cr-1', status: 'open' } : undefined,
+          ),
+      };
+      const mocks = createMocks(autoCancellation, changeRequests);
+      mocks.verificationsRepo.findById.mockResolvedValue({
+        id: 'ver-1',
+        orderId: 'order-1',
+        orgId: 'org-1',
+        status: 'delivered',
+        followUpAttempts:
+          kind === VerificationAutomationJobType.FOLLOW_UP ? 0 : 1,
+        merchantCanceledAt: null,
+        confirmationCycle: options.cycle ?? 1,
+      });
+      mocks.ordersRepo.findById.mockResolvedValue({
+        integrationId: 'int-1',
+        orgId: 'org-1',
+        id: 'order-1',
+        externalOrderId: 'ext-1',
+        integration: baseIntegration,
+      });
+      mocks.verificationsRepo.updateStatus.mockResolvedValue([{ id: 'ver-1' }]);
+      mocks.verificationSendService.sendFollowUp.mockResolvedValue({
+        status: 'sent',
+        waMessageId: 'wamid-2',
+      });
+      const job = buildJob(kind);
+      if (options.jobCycle !== undefined)
+        job.data.confirmationCycle = options.jobCycle;
+      return { ...mocks, autoCancellation, changeRequests, job };
+    }
+
+    it('lets an escalation queued before the request do nothing', async () => {
+      const harness = setup(VerificationAutomationJobType.ESCALATE_NO_REPLY, {
+        openRequest: true,
+      });
+
+      await harness.processor.process(harness.job);
+
+      expect(
+        harness.changeRequests.findOpenForVerification,
+      ).toHaveBeenCalledWith('ver-1', 'org-1');
+      expect(harness.verificationsRepo.updateStatus).not.toHaveBeenCalled();
+      expect(harness.orderTaggingPort.addOrderTag).not.toHaveBeenCalled();
+      expect(
+        harness.autoCancellation.scheduleAfterNoReply,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('sends no reminder while a request is open', async () => {
+      const harness = setup(VerificationAutomationJobType.FOLLOW_UP, {
+        openRequest: true,
+      });
+
+      await harness.processor.process(harness.job);
+
+      expect(
+        harness.verificationSendService.sendFollowUp,
+      ).not.toHaveBeenCalled();
+      expect(harness.verificationsRepo.mergeMetadata).not.toHaveBeenCalled();
+    });
+
+    it('retires the jobs of a cycle an updated confirmation replaced', async () => {
+      // A legacy job carries no cycle and belongs to cycle 1.
+      const legacy = setup(VerificationAutomationJobType.ESCALATE_NO_REPLY, {
+        cycle: 2,
+      });
+      await legacy.processor.process(legacy.job);
+      expect(legacy.verificationsRepo.updateStatus).not.toHaveBeenCalled();
+
+      const reminder = setup(VerificationAutomationJobType.FOLLOW_UP, {
+        cycle: 3,
+        jobCycle: 2,
+      });
+      await reminder.processor.process(reminder.job);
+      expect(
+        reminder.verificationSendService.sendFollowUp,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('runs the current cycle as before when no request is open', async () => {
+      const escalation = setup(
+        VerificationAutomationJobType.ESCALATE_NO_REPLY,
+        { cycle: 2, jobCycle: 2 },
+      );
+      await escalation.processor.process(escalation.job);
+      expect(escalation.verificationsRepo.updateStatus).toHaveBeenCalledWith(
+        'ver-1',
+        'no_reply',
+        undefined,
+        undefined,
+      );
+      expect(
+        escalation.autoCancellation.scheduleAfterNoReply,
+      ).toHaveBeenCalledWith('ver-1');
+
+      const reminder = setup(VerificationAutomationJobType.FOLLOW_UP, {});
+      await reminder.processor.process(reminder.job);
+      expect(
+        reminder.verificationSendService.sendFollowUp,
+      ).toHaveBeenCalledWith('ver-1');
     });
   });
 });

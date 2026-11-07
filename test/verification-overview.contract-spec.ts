@@ -194,6 +194,8 @@ beforeAll(async () => {
     tables.orders,
     tables.verifications,
     tables.verificationAutoCancellations,
+    // Read by the Needs action rule (migration 0092).
+    tables.verificationChangeRequests,
     tables.webhookEvents,
     tables.orderImportBatches,
     tables.orderImportRows,

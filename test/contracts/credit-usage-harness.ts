@@ -178,6 +178,7 @@ export function creditUsageHarness() {
     await migrate('0088_own_number_billing.sql');
     await migrate('0089_sender_recovery.sql');
     await migrate('0090_merchant_webhook_routing.sql');
+    await migrate('0092_change_requests.sql');
     await client.unsafe(
       'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
     );
