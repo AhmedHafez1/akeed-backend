@@ -1,6 +1,6 @@
 # WooCommerce support runbook
 
-For Akeed support and on-call staff: what a disconnect does, how to recover a disabled webhook, how a merchant reconnects, how to read the health card, and when to escalate. How the integration works is in [Integrations, Webhooks, And Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#woocommerce-connection); the switches are in [ENVIRONMENT.md](ENVIRONMENT.md#woocommerce-connection).
+For Akeed support and on-call staff: what a disconnect does, how to recover a disabled webhook, how a merchant reconnects, how to read the health card, when to escalate, and why an order shows no products or address. How the integration works is in [Integrations, Webhooks, And Automation](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#woocommerce-connection); the switches are in [ENVIRONMENT.md](ENVIRONMENT.md#woocommerce-connection).
 
 Some WooCommerce behavior is not documented by WooCommerce. Section 8 lists it with the rule Akeed follows meanwhile. Do not fill those gaps from memory of WooCommerce or from its source code.
 
@@ -205,3 +205,15 @@ None of these is assumed in code or in merchant-facing copy.
 | The real failure threshold on a store | The fifth failure in a row is assumed; the store may set another. |
 | The exact `X-WC-Webhook-Source` value, and how `home_url` and `site_url` differ | Strict equality. A store that spells it differently has its deliveries refused, visibly. |
 | Which hosts refuse `PUT` or `DELETE` | A refused re-enable is `WOOCOMMERCE_WEBHOOK_ENABLE_FAILED`; a refused deletion at disconnect is reported as `failed`. |
+
+## 9. Products and delivery address in order details
+
+Orders Akeed creates from a WooCommerce delivery show Products and Delivery address in the order details when the store sent them. Products are the order's line items: name, quantity, unit price and up to five options such as size or colour. The address is the order's shipping address: the state (else the city), then the street lines.
+
+An order shows no products or no address when:
+
+- it was created before this change (older deliveries were stored without them, and there is no backfill or replay);
+- the store sent no shipping address, or only a billing address (the billing address is never shown);
+- a line had no unit price (the line shows without an amount) or no name (the line is left out).
+
+Options are left out when they are private plugin data (keys starting with `_`), nested values, or have no plain-text label and value; markup is never shown. Only the first 50 product lines are kept. A later delivery of the same order, duplicate or `order.updated`, does not change the details of an order Akeed already has. Do not replay deliveries to fill them in.

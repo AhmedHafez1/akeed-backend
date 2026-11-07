@@ -37,6 +37,7 @@ import {
   type WooCommerceDeliveryHeaders,
 } from '../src/infrastructure/spokes/woocommerce/woocommerce-webhook.service';
 import type { AuthenticatedUser } from '../src/modules/auth/guards/dual-auth.guard';
+import { VerificationsService } from '../src/modules/verifications/verifications.service';
 import { CommerceOutcomeRegistryService } from '../src/modules/commerce-outcomes/commerce-outcome-registry.service';
 import { BillingEntitlementService } from '../src/modules/verification-core/billing-entitlement.service';
 import { CreditEligibilityService } from '../src/modules/verification-core/credit-eligibility.service';
@@ -613,6 +614,12 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       tables.whatsappConnections,
       tables.whatsappTemplates,
       tables.whatsappConnectionTemplates,
+      // Read by the verification list in the order-details cases.
+      tables.verificationAutoCancellations,
+      tables.orderImportBatches,
+      tables.orderImportRows,
+      tables.customerMessages,
+      tables.metaWebhookEvents,
     ])
       await scaffold(table);
     // What the scaffold cannot derive from the Drizzle tables: the partial
@@ -2197,6 +2204,255 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
     });
   });
 
+  describe('products and delivery address', () => {
+    /** The verification list as the dashboard reads it. */
+    const listService = new VerificationsService(
+      verificationsRepo,
+      {
+        readEntitlement: () =>
+          Promise.resolve({
+            consumedCount: 0,
+            includedLimit: 30,
+            planId: 'pro',
+            periodEnd: '2027-01-01T00:00:00.000Z',
+            pools: {
+              akeed: { used: 0, limit: 30, remaining: 30 },
+              ownNumber: { used: 0, limit: 0, remaining: 0 },
+            },
+          }),
+        accountingModeFor: () => 'periodic_plan',
+      } as never,
+      integrations,
+      ordersRepo,
+      { supports: () => true } as never,
+      {} as never,
+    );
+
+    function detailsOf(merchant: Merchant) {
+      return client<
+        {
+          line_items: unknown;
+          shipping_region: string | null;
+          shipping_address: string | null;
+        }[]
+      >`
+        SELECT line_items, shipping_region, shipping_address FROM orders
+        WHERE integration_id = ${merchant.integrationId} ORDER BY created_at`;
+    }
+
+    const detailed = () =>
+      placed({
+        shipping: {
+          first_name: 'Test',
+          last_name: 'Customer',
+          state: '',
+          city: 'Giza',
+          address_1: '12 Synthetic Street',
+          address_2: 'Floor 3',
+          postcode: '12511',
+          country: 'EG',
+        },
+        line_items: [
+          {
+            id: 2001,
+            name: 'Synthetic shirt',
+            product_id: 3001,
+            variation_id: 3002,
+            quantity: 2,
+            subtotal: '250.00',
+            total: '250.00',
+            sku: 'SYNTHETIC-SHIRT',
+            price: 125,
+            meta_data: [
+              {
+                id: 1,
+                key: 'pa_colour',
+                value: 'red',
+                display_key: 'Colour',
+                display_value: 'Red',
+              },
+              { id: 2, key: '_reduced_stock', value: '2' },
+              {
+                id: 3,
+                key: 'engraving',
+                value: 'x',
+                display_key: 'Engraving',
+                display_value: '<p>x</p>',
+              },
+            ],
+          },
+          {
+            id: 2002,
+            name: 'Synthetic gift card',
+            quantity: 1,
+            total: '0.00',
+            price: '0',
+          },
+          { id: 2003, name: 'Synthetic sample', quantity: 1, total: '200.00' },
+        ],
+      });
+
+    it('stores them on the order and returns them on the verification list', async () => {
+      const merchant = await connectMerchant();
+
+      expect(await deliver(merchant, detailed())).toEqual({ status: 200 });
+      await drain();
+
+      expect(await detailsOf(merchant)).toEqual([
+        {
+          line_items: [
+            {
+              name: 'Synthetic shirt',
+              quantity: 2,
+              unitPrice: '125',
+              // The markup display value gives way to the plain value.
+              options: [
+                { name: 'Colour', value: 'Red' },
+                { name: 'Engraving', value: 'x' },
+              ],
+            },
+            {
+              name: 'Synthetic gift card',
+              quantity: 1,
+              unitPrice: '0',
+              options: [],
+            },
+            {
+              name: 'Synthetic sample',
+              quantity: 1,
+              unitPrice: null,
+              options: [],
+            },
+          ],
+          shipping_region: 'Giza',
+          shipping_address: '12 Synthetic Street\nFloor 3',
+        },
+      ]);
+      // The total and the confirmation are what they were before.
+      expect(await ordersOf(merchant)).toMatchObject([
+        { total_price: '450.00', customer_phone: '+201000000000' },
+      ]);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+
+      const list = await listService.listByOrg(merchant.orgId, {});
+      expect(list.data).toHaveLength(1);
+      expect(list.data[0]).toMatchObject({
+        line_items: [
+          {
+            name: 'Synthetic shirt',
+            quantity: 2,
+            unit_price: '125',
+            options: [
+              { name: 'Colour', value: 'Red' },
+              { name: 'Engraving', value: 'x' },
+            ],
+          },
+          {
+            name: 'Synthetic gift card',
+            quantity: 1,
+            unit_price: '0',
+            options: [],
+          },
+          {
+            name: 'Synthetic sample',
+            quantity: 1,
+            unit_price: null,
+            options: [],
+          },
+        ],
+        shipping_region: 'Giza',
+        shipping_address: '12 Synthetic Street\nFloor 3',
+      });
+      expect(list.data[0]).not.toHaveProperty('raw_payload');
+      const shown = JSON.stringify(list);
+      for (const dropped of [
+        'SYNTHETIC-SHIRT',
+        '_reduced_stock',
+        '<p>',
+        '12511',
+      ])
+        expect(shown).not.toContain(dropped);
+    });
+
+    it('returns null fields for an order that came without them', async () => {
+      const merchant = await connectMerchant();
+      const bare: Record<string, unknown> = { ...placed() };
+      delete bare.shipping;
+      delete bare.line_items;
+
+      await deliver(merchant, bare);
+      await drain();
+
+      expect(await detailsOf(merchant)).toEqual([
+        { line_items: null, shipping_region: null, shipping_address: null },
+      ]);
+      const list = await listService.listByOrg(merchant.orgId, {});
+      expect(list.data[0]).toMatchObject({
+        line_items: null,
+        shipping_region: null,
+        shipping_address: null,
+      });
+    });
+
+    it('keeps each tenant’s details on its own list', async () => {
+      const first = await connectMerchant();
+      const second = await connectMerchant();
+      await deliver(first, detailed());
+      await deliver(
+        second,
+        placed({
+          shipping: {
+            state: 'Synthetic second region',
+            address_1: 'Second street',
+          },
+          line_items: [{ name: 'Second shop item', quantity: 1, price: '9' }],
+        }),
+      );
+      await drain();
+
+      const firstList = JSON.stringify(
+        await listService.listByOrg(first.orgId, {}),
+      );
+      const secondList = JSON.stringify(
+        await listService.listByOrg(second.orgId, {}),
+      );
+      expect(firstList).toContain('Synthetic shirt');
+      expect(firstList).not.toContain('Second shop item');
+      expect(firstList).not.toContain('Second street');
+      expect(secondList).toContain('Second shop item');
+      expect(secondList).toContain('Synthetic second region');
+      expect(secondList).not.toContain('Synthetic shirt');
+      expect(secondList).not.toContain('12 Synthetic Street');
+    });
+
+    it('does not refresh them from a later delivery of the same order', async () => {
+      const merchant = await connectMerchant();
+      await deliver(merchant, detailed());
+      await drain();
+      const before = await detailsOf(merchant);
+
+      const changed = placed({
+        shipping: { city: 'Alexandria', address_1: 'Changed street' },
+        line_items: [{ name: 'Changed item', quantity: 9, price: '1' }],
+      });
+      await deliver(merchant, changed);
+      await deliver(
+        merchant,
+        {
+          ...changed,
+          status: 'completed',
+          date_modified_gmt: '2026-01-02T07:30:00',
+        },
+        { topic: 'order.updated' },
+      );
+      await drain();
+
+      expect(await detailsOf(merchant)).toEqual(before);
+      expect(await verificationsOf(merchant)).toHaveLength(1);
+      expect(sends).toHaveLength(1);
+    });
+  });
+
   describe('secrets and stored data', () => {
     it('keeps the delivery identifiers and only the order fields Akeed reads', async () => {
       const merchant = await connectMerchant();
@@ -2206,6 +2462,12 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
         merchant,
         {
           ...payload,
+          billing: {
+            ...payload.billing,
+            address_1: 'Synthetic billing street',
+          },
+          customer_ip_address: '203.0.113.9',
+          customer_user_agent: 'Synthetic agent',
           meta_data: [
             { id: 1, key: '_other_plugin_token', value: 'sk_synthetic_plugin' },
             { id: 2, key: 'akeed_outcome', value: 'customer_confirmation:x' },
@@ -2240,6 +2502,15 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
             phone: '01000000000',
             country: 'EG',
           },
+          shipping: {
+            state: '',
+            city: 'Cairo',
+            address_1: 'Synthetic address 1',
+            address_2: '',
+          },
+          line_items: [
+            { name: 'Sample item 1', quantity: 2, price: '200', options: [] },
+          ],
           meta_data: [
             { key: 'akeed_outcome', value: 'customer_confirmation:x' },
           ],
@@ -2249,8 +2520,10 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       const kept = `${JSON.stringify(event.raw_payload)}${JSON.stringify(order.raw_payload)}`;
       for (const dropped of [
         'test.customer@example.com',
-        'Synthetic address 1',
-        'Sample item 1',
+        'Synthetic billing street',
+        '203.0.113.9',
+        'Synthetic agent',
+        'SYNTHETIC-0001',
         'wc_order_SYNTHETIC0001',
         'sk_synthetic_plugin',
       ])
