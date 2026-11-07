@@ -416,6 +416,9 @@ export class VerificationsRepository {
           | 'customerPhone'
           | 'totalPrice'
           | 'currency'
+          | 'lineItems'
+          | 'shippingRegion'
+          | 'shippingAddress'
           | 'isTest'
         > | null;
       }
@@ -463,6 +466,9 @@ export class VerificationsRepository {
             customerPhone: true,
             totalPrice: true,
             currency: true,
+            lineItems: true,
+            shippingRegion: true,
+            shippingAddress: true,
             isTest: true,
           },
         },
@@ -1424,6 +1430,9 @@ export class VerificationsRepository {
         integrationId: orders.integrationId,
         externalOrderId: orders.externalOrderId,
         stage: preVerificationStage(orgId),
+        lineItems: orders.lineItems,
+        shippingRegion: orders.shippingRegion,
+        shippingAddress: orders.shippingAddress,
       })
       .from(orders)
       .innerJoin(webhookEvents, eq(webhookEvents.orderId, orders.id))
@@ -1602,6 +1611,9 @@ export interface HeldOrderListRow {
   customerPhone: string;
   totalPrice: string | null;
   currency: string | null;
+  lineItems: OrderLineItem[] | null;
+  shippingRegion: string | null;
+  shippingAddress: string | null;
   isTest: boolean;
   orgId: string;
   integrationId: string;

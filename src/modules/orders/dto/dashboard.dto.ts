@@ -132,6 +132,16 @@ export interface VerificationListItemDto {
   is_test: boolean;
   customer_name: string | null;
   customer_phone: string | null;
+  line_items:
+    | {
+        name: string;
+        quantity: number;
+        unit_price: string | null;
+        options: { name?: string; value: string }[];
+      }[]
+    | null;
+  shipping_region: string | null;
+  shipping_address: string | null;
   total_price: string | null;
   currency: string | null;
   created_at: string | null;

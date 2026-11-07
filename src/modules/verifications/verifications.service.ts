@@ -226,6 +226,9 @@ function toHeldListRow(row: HeldOrderListRow) {
       customerPhone: row.customerPhone,
       totalPrice: row.totalPrice,
       currency: row.currency,
+      lineItems: row.lineItems,
+      shippingRegion: row.shippingRegion,
+      shippingAddress: row.shippingAddress,
       isTest: row.isTest,
     },
   };
@@ -449,6 +452,18 @@ export class VerificationsService {
           is_test: isSyntheticOrder(verification.order),
           customer_name: verification.order?.customerName ?? null,
           customer_phone: verification.order?.customerPhone ?? null,
+          line_items:
+            verification.order?.lineItems?.map((item) => ({
+              name: item.name,
+              quantity: item.quantity,
+              unit_price: item.unitPrice,
+              options: (item.options ?? []).map((option) => ({
+                ...(option.name !== undefined ? { name: option.name } : {}),
+                value: option.value,
+              })),
+            })) ?? null,
+          shipping_region: verification.order?.shippingRegion ?? null,
+          shipping_address: verification.order?.shippingAddress ?? null,
           total_price: verification.order?.totalPrice
             ? verification.order.totalPrice.toString()
             : null,

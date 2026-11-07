@@ -13,6 +13,7 @@ import * as tables from '../src/infrastructure/database/schema';
 import * as schema from '../src/infrastructure/database';
 import { IntegrationsRepository } from '../src/infrastructure/database/repositories/integrations.repository';
 import { VerificationsRepository } from '../src/infrastructure/database/repositories/verifications.repository';
+import { OrdersRepository } from '../src/infrastructure/database/repositories/orders.repository';
 import { VerificationsService } from '../src/modules/verifications/verifications.service';
 import type { AuthenticatedUser } from '../src/modules/auth/guards/dual-auth.guard';
 
@@ -196,6 +197,9 @@ beforeAll(async () => {
     tables.webhookEvents,
     tables.orderImportBatches,
     tables.orderImportRows,
+    tables.customerMessages,
+    tables.metaWebhookEvents,
+    tables.whatsappConnections,
   ])
     await scaffold(table);
   await client.unsafe(
@@ -1068,3 +1072,81 @@ sqlBenchmark(
   },
   120_000,
 );
+
+describe('stored order details on verification lists', () => {
+  const lineItems = [
+    {
+      name: 'Synthetic cotton shirt',
+      quantity: 2,
+      unitPrice: '125.50',
+      options: [{ name: 'Colour', value: 'Red' }, { value: 'XL' }],
+    },
+  ];
+
+  it('reads the stored columns and keeps other shops out of the response', async () => {
+    await client`UPDATE orders SET shipping_region = 'Synthetic Cairo', shipping_address = ${'12 Synthetic Street\nFloor 3'}, line_items = ${JSON.stringify(lineItems)}::jsonb, raw_payload = ${JSON.stringify({ private: 'synthetic payload must stay private' })}::jsonb WHERE id = (SELECT order_id FROM verifications WHERE id = ${ids.confirmed})`;
+    await client`UPDATE orders SET shipping_region = 'Other shop region', shipping_address = 'Other shop address', line_items = ${JSON.stringify(lineItems)}::jsonb WHERE id = (SELECT order_id FROM verifications WHERE id = ${ids.otherShop})`;
+
+    const result = await service.listByOrg(orgA, { q: '1132' });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: ids.confirmed,
+      line_items: [
+        {
+          name: 'Synthetic cotton shirt',
+          quantity: 2,
+          unit_price: '125.50',
+          options: [{ name: 'Colour', value: 'Red' }, { value: 'XL' }],
+        },
+      ],
+      shipping_region: 'Synthetic Cairo',
+      shipping_address: '12 Synthetic Street\nFloor 3',
+    });
+    expect(JSON.stringify(result)).not.toContain(
+      'synthetic payload must stay private',
+    );
+    expect(JSON.stringify(result)).not.toContain('Other shop');
+    expect(result.data[0]).not.toHaveProperty('raw_payload');
+
+    const foreignResult = await service.listByOrg(orgB, { q: '1132' });
+    expect(foreignResult.data).toEqual([]);
+    const ownResult = await service.listByOrg(orgB, { q: '1138' });
+    expect(ownResult.data[0]).toMatchObject({
+      shipping_region: 'Other shop region',
+      shipping_address: 'Other shop address',
+    });
+  });
+
+  it('returns null fields for stored orders without details', async () => {
+    const result = await service.listByOrg(orgA, { q: '1136' });
+    expect(result.data[0]).toMatchObject({
+      line_items: null,
+      shipping_region: null,
+      shipping_address: null,
+    });
+  });
+
+  it('returns null fields after the existing customer-redaction operation', async () => {
+    const [order] = await client<
+      { external_order_id: string }[]
+    >`SELECT external_order_id FROM orders WHERE id = (SELECT order_id FROM verifications WHERE id = ${ids.confirmed})`;
+    const result = await new OrdersRepository(db).redactShopifyCustomer(
+      orgA,
+      integrationA,
+      {
+        phones: [],
+        externalOrderIds: [order.external_order_id],
+      },
+    );
+    expect(result.orders).toBe(1);
+
+    const list = await service.listByOrg(orgA, { q: '1132' });
+    expect(list.data[0]).toMatchObject({
+      line_items: null,
+      shipping_region: null,
+      shipping_address: null,
+    });
+    const foreignList = await service.listByOrg(orgB, { q: '1138' });
+    expect(foreignList.data[0].shipping_address).toBe('Other shop address');
+  });
+});
