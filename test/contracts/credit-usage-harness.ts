@@ -150,6 +150,9 @@ export function creditUsageHarness() {
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
+      tables.verificationAutoCancellations,
+      tables.verificationAutoCancellationEvents,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -183,6 +186,7 @@ export function creditUsageHarness() {
       'ALTER TABLE integrations DROP COLUMN acknowledgment_enabled, DROP COLUMN acknowledgment_enabled_at',
     );
     await migrate('0083_merchant_acknowledgments.sql');
+    await migrate('0093_change_request_messaging.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {

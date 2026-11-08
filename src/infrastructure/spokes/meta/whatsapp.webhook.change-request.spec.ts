@@ -109,7 +109,12 @@ describe('WhatsAppWebhookService and change requests', () => {
   it('finishes the close on a retry of an answer that was already saved', async () => {
     const { service, changeRequests } = setup({
       updatedRows: [],
-      existing: { status: 'confirmed', confirmationSource: 'customer' },
+      existing: {
+        status: 'confirmed',
+        confirmationSource: 'customer',
+        customerActionAt: '2023-11-14T22:13:20.000Z',
+        customerActionEventId: 'wamid.customer-1',
+      },
     });
 
     await service.processIncomingOrThrow(

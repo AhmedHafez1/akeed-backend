@@ -108,6 +108,8 @@ export function toDraftContent(row: TemplateDraftRow): TemplateDraftContent {
     body: row.body,
     confirmLabel: row.confirmLabel,
     cancelLabel: row.cancelLabel,
+    changeLabel: row.changeLabel,
+    changeRequestOfKey: row.changeRequestOfKey,
     samples: row.samples,
   };
 }
@@ -487,7 +489,13 @@ export class WhatsappTemplateDraftsRepository {
               current.parameterFormat,
               params.variables,
             ),
-            preview: toPreview(current),
+            preview: {
+              ...toPreview(current),
+              ...(current.changeLabel
+                ? { changeButton: current.changeLabel }
+                : {}),
+            },
+            changeRequestOfKey: current.changeRequestOfKey,
             metaTemplateId: params.result.providerTemplateId,
             reviewStatus: params.result.status,
             category: params.result.category,

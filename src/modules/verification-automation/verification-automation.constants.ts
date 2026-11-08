@@ -20,6 +20,7 @@
 export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';
 
 export enum VerificationAutomationJobType {
+  CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP = 'verification.change_request_acknowledgment_sweep',
   SENDER_RETRY = 'verification.sender_retry',
   SENDER_FALLBACK = 'verification.sender_fallback',
   SENDER_RECOVERY_SWEEP = 'verification.sender_recovery_sweep',

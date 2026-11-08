@@ -114,6 +114,7 @@ export interface TemplatePreview {
   ending: string;
   confirmButton: string;
   cancelButton: string;
+  changeButton?: string;
 }
 
 /**
@@ -122,6 +123,8 @@ export interface TemplatePreview {
  * registry repository interpret them.
  */
 export interface RegistryTemplate {
+  /** The exact two-button predecessor. Absent on legacy templates. */
+  changeRequestOfKey?: string | null;
   /** Stable identity, for example `cod_confirm.ar.egyptian`. */
   key: string;
   purpose: TemplatePurpose;

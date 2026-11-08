@@ -629,6 +629,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -659,6 +660,7 @@ describe('EasyOrders webhook ingestion PostgreSQL contract', () => {
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
       '0092_change_requests.sql',
+      '0093_change_request_messaging.sql',
     ])
       await migrate(name);
     // The story's own migrations, twice: both must be re-runnable.

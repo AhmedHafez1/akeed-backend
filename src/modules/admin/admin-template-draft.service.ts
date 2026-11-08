@@ -97,6 +97,7 @@ export interface AdminTemplateDraftView {
   body: string;
   confirm_label: string;
   cancel_label: string;
+  change_label?: string | null;
   samples: Partial<Record<TemplateVariableKey, string>>;
   state: TemplateDraftState;
   state_changed_at: string;
@@ -155,6 +156,9 @@ function previewOf(content: TemplateDraftContent): RenderedTemplateMessage {
     buttons: [
       { label: content.confirmLabel, kind: 'quick_reply' },
       { label: content.cancelLabel, kind: 'quick_reply' },
+      ...(content.changeLabel
+        ? [{ label: content.changeLabel, kind: 'quick_reply' as const }]
+        : []),
     ],
     direction: templateDirection(content.language),
   };
@@ -647,6 +651,7 @@ export class AdminTemplateDraftService {
       body: row.body,
       confirm_label: row.confirmLabel,
       cancel_label: row.cancelLabel,
+      change_label: row.changeLabel,
       samples: row.samples,
       state,
       state_changed_at: row.stateChangedAt,

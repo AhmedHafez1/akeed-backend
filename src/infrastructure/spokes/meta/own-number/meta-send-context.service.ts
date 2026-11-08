@@ -40,6 +40,55 @@ export class MetaSendContextService {
     const refuse = (): never => {
       throw new ConfirmedMessageRejection('service_message_sender_unavailable');
     };
+    if (params.dispatchContext) {
+      const dispatch = await this.dispatches.findForSender(
+        params.dispatchContext.orgId,
+        params.dispatchContext.dispatchId,
+        params.verificationId,
+      );
+      if (
+        !dispatch ||
+        dispatch.state !== 'sending' ||
+        dispatch.kind !== 'change_acknowledgment'
+      )
+        return refuse();
+      if (dispatch.senderKind === 'akeed_system') {
+        if (
+          sender ||
+          !dispatch.senderPhoneNumberId ||
+          dispatch.senderPhoneNumberId !==
+            this.config.get<string>('WA_PHONE_NUMBER_ID')
+        )
+          return refuse();
+        return {
+          url: `${readMetaGraphConfig(this.config).baseUrl}/${dispatch.senderPhoneNumberId}/messages`,
+          token: this.config.getOrThrow<string>('WA_ACCESS_TOKEN'),
+          timeout: 15_000,
+        };
+      }
+      if (
+        !sender ||
+        sender.orgId !== dispatch.orgId ||
+        sender.phoneNumberId !== dispatch.senderPhoneNumberId ||
+        sender.connectionId !== dispatch.senderConnectionId ||
+        sender.signupGeneration !== dispatch.senderConnectionGeneration ||
+        !readWhatsappOwnNumberConfig(this.config).sendingEnabled
+      )
+        return refuse();
+      const connection = await this.connections.findByOrg(sender.orgId);
+      if (!merchantReplySenderReady(connection, sender, sender.orgId, false))
+        return refuse();
+      const token = readBusinessToken(
+        connection!,
+        this.config.get<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY') ?? '',
+      );
+      if (!token) return refuse();
+      return {
+        url: `${readMetaGraphConfig(this.config).baseUrl}/${sender.phoneNumberId}/messages`,
+        token,
+        timeout: 15_000,
+      };
+    }
     if (
       !sender ||
       sender.kind !== 'merchant_own' ||

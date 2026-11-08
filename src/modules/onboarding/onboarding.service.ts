@@ -551,6 +551,11 @@ export class OnboardingService {
     return {
       ...state,
       messageCurrency: latestOrderCurrency ?? state.shippingCurrency,
+      changeRequestReadiness:
+        (await this.onboardingState.changeRequestReadiness?.(integration)) ?? {
+          ready: false,
+          variants: [],
+        },
       activation,
       usage,
       permissions: {

@@ -1,3 +1,4 @@
+import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
 import { getBillingManagement } from '../../shared/billing/entitlement';
 import {
   BadRequestException,
@@ -97,6 +98,8 @@ export class OnboardingStateService {
     private readonly improvementSwitches?: MessageImprovementSwitches,
     @Optional()
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
+    @Optional()
+    private readonly changeTemplates?: ChangeRequestTemplatesService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -105,7 +108,21 @@ export class OnboardingStateService {
     });
     const hydratedIntegration =
       await this.prefillStoreNameIfMissing(integration);
-    return this.toState(hydratedIntegration);
+    return {
+      ...this.toState(hydratedIntegration),
+      changeRequestReadiness: this.changeTemplates
+        ? await this.changeTemplates.readiness(
+            hydratedIntegration,
+            this.switches(),
+          )
+        : { ready: false, variants: [] },
+    };
+  }
+
+  async changeRequestReadiness(integration: IntegrationRecord) {
+    return this.changeTemplates
+      ? this.changeTemplates.readiness(integration, this.switches())
+      : { ready: false, variants: [] };
   }
 
   async updateSettings(
@@ -258,6 +275,19 @@ export class OnboardingStateService {
       updates.codTemplateArAuto = payload.codTemplateArAuto;
     }
 
+    if (payload.changeRequestsEnabled !== undefined)
+      updates.changeRequestsEnabled = payload.changeRequestsEnabled;
+    if (updates.changeRequestsEnabled ?? integration.changeRequestsEnabled) {
+      if (!this.changeTemplates)
+        throw new BadRequestException({
+          code: 'CHANGE_REQUEST_TEMPLATES_UNAVAILABLE',
+          message: 'Change-request readiness is unavailable.',
+        });
+      await this.changeTemplates.assertReady(
+        { ...integration, ...updates },
+        this.switches(),
+      );
+    }
     // Cross-field validation: followUpDelayMinutes < escalationDelayMinutes
     const resolvedFollowUpDelay =
       updates.followUpDelayMinutes ?? integration.followUpDelayMinutes;
@@ -351,7 +381,10 @@ export class OnboardingStateService {
       { onboarding_started: 'captured_exact' },
     );
 
-    return this.toState(updated);
+    return {
+      ...this.toState(updated),
+      changeRequestReadiness: await this.changeRequestReadiness(updated),
+    };
   }
 
   private switches() {
@@ -603,6 +636,7 @@ export class OnboardingStateService {
       billingStatus: integration.billingStatus ?? null,
       billingManagement: getBillingManagement(integration),
       acknowledgmentEnabled: integration.acknowledgmentEnabled === true,
+      changeRequestsEnabled: integration.changeRequestsEnabled === true,
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,

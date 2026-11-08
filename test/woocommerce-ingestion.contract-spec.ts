@@ -613,6 +613,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
       // Read by the verification list in the order-details cases.
       tables.verificationAutoCancellations,
@@ -649,6 +650,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
       '0092_change_requests.sql',
+      '0093_change_request_messaging.sql',
     ])
       await migrate(name);
     // The WooCommerce tables as the migrations leave them. Applied twice,

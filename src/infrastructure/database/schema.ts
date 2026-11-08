@@ -88,6 +88,7 @@ export const verificationStatus = pgEnum('verification_status', [
 ]);
 
 export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
+  'change_acknowledgment',
   'initial',
   'follow_up',
   'legacy_unknown',
@@ -301,6 +302,7 @@ export const whatsappTemplates = pgTable(
       .default('none')
       .notNull(),
     imageTwinOfKey: text('image_twin_of_key'),
+    changeRequestOfKey: text('change_request_of_key'),
   },
   (table) => [
     unique('whatsapp_templates_key_key').on(table.key),
@@ -377,6 +379,8 @@ export const whatsappTemplateDrafts = pgTable(
     body: text('body').notNull(),
     confirmLabel: text('confirm_label').notNull(),
     cancelLabel: text('cancel_label').notNull(),
+    changeLabel: text('change_label'),
+    changeRequestOfKey: text('change_request_of_key'),
     samples: jsonb('samples')
       .$type<Partial<Record<TemplateVariableKey, string>>>()
       .default({})
@@ -1155,6 +1159,11 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     deliveryErrorCode: text('delivery_error_code'),
+    customerActionAt: timestamp('customer_action_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    customerActionEventId: text('customer_action_event_id'),
     merchantCanceledAt: timestamp('merchant_canceled_at', {
       withTimezone: true,
       mode: 'string',
@@ -1321,6 +1330,10 @@ export const verificationMessageDispatches = pgTable(
     // Which template this send carried. NULL on rows written before
     // it was recorded; those are never backfilled.
     templateVariantKey: text('template_variant_key'),
+    changeRequestButtons: boolean('change_request_buttons')
+      .default(false)
+      .notNull(),
+    recipientHash: text('recipient_hash'),
     templatePurpose: text('template_purpose').$type<
       'initial' | 'reminder' | 'test'
     >(),
@@ -2527,7 +2540,7 @@ export const creditReservations = pgTable(
     }),
     check(
       'credit_reservations_kind_check',
-      sql`kind::text IN ('initial', 'follow_up', 'acknowledgment')`,
+      sql`kind::text IN ('initial', 'follow_up', 'acknowledgment', 'change_acknowledgment')`,
     ),
     check('credit_reservations_generation_check', sql`generation > 0`),
     check('credit_reservations_quantity_check', sql`quantity > 0`),

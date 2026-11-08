@@ -27,6 +27,7 @@ import { CustomerReplyFollowUpService } from '../verification-replies/customer-r
 import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 import { VerificationAutomationProducer } from './verification-automation.producer';
 import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
+import { ChangeRequestAcknowledgmentService } from '../change-requests/change-request-acknowledgment.service';
 import {
   CHANGE_REQUEST_OPEN_REASON,
   LEGACY_CONFIRMATION_CYCLE,
@@ -53,6 +54,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly autoCancellation?: AutoCancellationService,
     @Optional()
     private readonly changeRequests?: VerificationChangeRequestsRepository,
+    @Optional()
+    private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
   ) {
     super();
   }
@@ -85,6 +88,9 @@ export class VerificationAutomationProcessor extends WorkerHost {
     )
       return;
     switch (name as VerificationAutomationJobType) {
+      case VerificationAutomationJobType.CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP:
+        await this.changeAcknowledgments?.drain();
+        return;
       case VerificationAutomationJobType.SENDER_RECOVERY_SWEEP:
         await this.verificationSendService.sweepSenderRecovery();
         return;

@@ -36,6 +36,8 @@ import {
 } from '../../../shared/verification/change-request.policy';
 import type { CustomerReplyIntent } from '../../../shared/verification/customer-reply-intent';
 import { isTerminalStatus } from '../../../shared/verification/verification-lifecycle';
+import { customerRecipientHash } from '../../../shared/messaging/change-request-messaging';
+import { buildVerificationLifecyclePayload } from './verifications.repository';
 
 type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 type Writer = DrizzleDB | Transaction;
@@ -55,9 +57,14 @@ export interface ChangeRequestSender {
   kind: 'akeed_system' | 'merchant_own';
   /** The business phone number that received the customer's tap. */
   phoneNumberId?: string | null;
+  connectionId?: string | null;
+  signupGeneration?: number;
 }
 
 export interface OpenChangeRequestInput {
+  /** Required by the customer transport; omitted only by internal domain callers. */
+  recipientHash?: string | null;
+  requireChangeButton?: boolean;
   /** The verification the button names. Never inferred from a phone. */
   verificationId: string;
   /** The tenant the receiving number belongs to, when routing knows it. */
@@ -79,7 +86,10 @@ export type OpenRejectReason =
   | 'verification_not_found'
   | 'tenant_mismatch'
   | 'message_mismatch'
-  | 'sender_mismatch';
+  | 'sender_mismatch'
+  | 'recipient_mismatch'
+  | 'older_customer_choice'
+  | 'button_unavailable';
 
 export type OpenChangeRequestResult =
   | {
@@ -346,6 +356,22 @@ export class VerificationChangeRequestsRepository {
         return { outcome: 'rejected', reason: 'message_mismatch' };
       if (!senderMatches(dispatch, input.sender))
         return { outcome: 'rejected', reason: 'sender_mismatch' };
+      if (input.requireChangeButton) {
+        if (
+          !input.sender.phoneNumberId ||
+          dispatch.senderPhoneNumberId !== input.sender.phoneNumberId
+        )
+          return { outcome: 'rejected', reason: 'sender_mismatch' };
+        if (!dispatch.changeRequestButtons)
+          return { outcome: 'rejected', reason: 'button_unavailable' };
+        if (
+          !input.recipientHash ||
+          input.recipientHash !== dispatch.recipientHash
+        )
+          return { outcome: 'rejected', reason: 'recipient_mismatch' };
+        if (this.olderChoice(verification, input))
+          return { outcome: 'rejected', reason: 'older_customer_choice' };
+      }
 
       const [autoCancel] = await tx
         .select()
@@ -375,6 +401,8 @@ export class VerificationChangeRequestsRepository {
       if (decision.kind === 'reject')
         return { outcome: 'rejected', reason: decision.reason };
       if (decision.kind === 'already_open' && openRequest) {
+        if (input.requireChangeButton)
+          await this.saveChoice(tx, verification.id, input);
         if (input.eventId !== openRequest.openedEventId) {
           await this.appendEvent(tx, {
             request: openRequest,
@@ -447,6 +475,8 @@ export class VerificationChangeRequestsRepository {
         },
       });
       await this.addEffects(tx, request, CHANGE_REQUEST_OPEN_EFFECTS);
+      if (input.requireChangeButton)
+        await this.saveChoice(tx, verification.id, input);
       return {
         outcome: 'opened',
         request,
@@ -454,6 +484,187 @@ export class VerificationChangeRequestsRepository {
         stoppedAutoCancellation,
       };
     });
+  }
+
+  /** A bound current-cycle answer and request closure commit under the same verification lock. */
+  async applyCustomerAnswer(
+    input: Omit<OpenChangeRequestInput, 'shipping'> & {
+      intent: CustomerReplyIntent;
+    },
+  ): Promise<{
+    outcome: 'applied' | 'already_applied' | 'rejected';
+    reason?: string;
+    orgId?: string;
+  }> {
+    return this.db.transaction(async (tx) => {
+      const [verification] = await tx
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, input.verificationId))
+        .for('update');
+      if (
+        !verification ||
+        (input.expectedOrgId && verification.orgId !== input.expectedOrgId)
+      )
+        return { outcome: 'rejected', reason: 'tenant_mismatch' };
+      const [dispatch] = await tx
+        .select()
+        .from(verificationMessageDispatches)
+        .where(
+          and(
+            eq(
+              verificationMessageDispatches.providerMessageId,
+              input.sourceProviderMessageId,
+            ),
+            eq(verificationMessageDispatches.orgId, verification.orgId),
+          ),
+        );
+      if (
+        !dispatch ||
+        dispatch.verificationId !== verification.id ||
+        dispatch.state !== 'accepted' ||
+        !ANSWERABLE_DISPATCH_KINDS.includes(
+          dispatch.kind as 'initial' | 'follow_up',
+        )
+      )
+        return { outcome: 'rejected', reason: 'message_mismatch' };
+      if (
+        dispatch.confirmationCycle !== verification.confirmationCycle ||
+        (input.cycle !== undefined &&
+          input.cycle !== dispatch.confirmationCycle)
+      )
+        return { outcome: 'rejected', reason: 'stale_cycle' };
+      if (!senderMatches(dispatch, input.sender))
+        return { outcome: 'rejected', reason: 'sender_mismatch' };
+      if (
+        dispatch.changeRequestButtons &&
+        (!input.sender.phoneNumberId ||
+          input.sender.phoneNumberId !== dispatch.senderPhoneNumberId)
+      )
+        return { outcome: 'rejected', reason: 'sender_mismatch' };
+      const [order] = await tx
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.id, verification.orderId),
+            eq(orders.orgId, verification.orgId),
+            eq(orders.integrationId, dispatch.integrationId),
+          ),
+        );
+      if (
+        !order ||
+        !input.recipientHash ||
+        input.recipientHash !==
+          (dispatch.recipientHash ?? customerRecipientHash(order.customerPhone))
+      )
+        return { outcome: 'rejected', reason: 'recipient_mismatch' };
+      if (
+        verification.customerActionEventId === input.eventId &&
+        verification.status === input.intent
+      )
+        return { outcome: 'already_applied', orgId: verification.orgId };
+      if (this.olderChoice(verification, input))
+        return { outcome: 'rejected', reason: 'older_customer_choice' };
+      if (
+        verification.merchantCanceledAt ||
+        isTerminalStatus(verification.status)
+      )
+        return { outcome: 'rejected', reason: 'already_terminal' };
+      const [autoCancel] = await tx
+        .select()
+        .from(verificationAutoCancellations)
+        .where(
+          eq(verificationAutoCancellations.verificationId, verification.id),
+        )
+        .for('update');
+      if (
+        autoCancel &&
+        (AUTO_CANCEL_COMMITTED_STATUSES as readonly string[]).includes(
+          autoCancel.status,
+        )
+      )
+        return { outcome: 'rejected', reason: 'auto_cancel_committed' };
+      if (
+        autoCancel &&
+        (AUTO_CANCEL_STOPPABLE_STATUSES as readonly string[]).includes(
+          autoCancel.status,
+        )
+      ) {
+        await tx
+          .update(verificationAutoCancellations)
+          .set({
+            status: 'stopped',
+            reason: 'customer_replied',
+            dueAt: null,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(verificationAutoCancellations.id, autoCancel.id));
+        await tx.insert(verificationAutoCancellationEvents).values({
+          orgId: verification.orgId,
+          verificationId: verification.id,
+          event: 'stopped',
+          detail: { reason: 'customer_replied', intent: input.intent },
+        });
+      }
+      await tx
+        .update(verifications)
+        .set({
+          status: input.intent,
+          ...buildVerificationLifecyclePayload(
+            input.intent,
+            input.occurredAt,
+            new Date().toISOString(),
+          ),
+          ...(input.intent === 'confirmed'
+            ? { confirmedAt: input.occurredAt, confirmationSource: 'customer' }
+            : { canceledAt: input.occurredAt, cancellationSource: 'customer' }),
+          customerActionAt: input.occurredAt,
+          customerActionEventId: input.eventId,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(verifications.id, verification.id));
+      const request = await this.lockOpenRequest(tx, verification.id);
+      if (
+        request &&
+        request.confirmationCycle === verification.confirmationCycle
+      )
+        await this.close(tx, request, {
+          resolution: customerResolutionOf(input.intent),
+          actorKind: 'customer',
+          sourceEventId: input.eventId,
+          resolvedAt: input.occurredAt,
+        });
+      return { outcome: 'applied', orgId: verification.orgId };
+    });
+  }
+
+  private olderChoice(
+    verification: VerificationRow,
+    input: { occurredAt: string; eventId: string },
+  ): boolean {
+    if (!verification.customerActionAt) return false;
+    const difference =
+      Date.parse(input.occurredAt) - Date.parse(verification.customerActionAt);
+    return (
+      difference < 0 ||
+      (difference === 0 &&
+        input.eventId <= (verification.customerActionEventId ?? ''))
+    );
+  }
+
+  private async saveChoice(
+    tx: Transaction,
+    id: string,
+    input: { occurredAt: string; eventId: string },
+  ): Promise<void> {
+    await tx
+      .update(verifications)
+      .set({
+        customerActionAt: input.occurredAt,
+        customerActionEventId: input.eventId,
+      })
+      .where(eq(verifications.id, id));
   }
 
   /**
@@ -672,6 +883,8 @@ export class VerificationChangeRequestsRepository {
         .set({
           status: 'sent',
           confirmationCycle: nextCycle,
+          customerActionAt: null,
+          customerActionEventId: null,
           waMessageId: input.providerMessageId,
           lastSentAt: input.sentAt,
           deliveredAt: null,
@@ -711,6 +924,7 @@ export class VerificationChangeRequestsRepository {
     kind: ChangeRequestEffectKind,
     leaseMs: number,
     now: Date = new Date(),
+    changeRequestId?: string,
   ): Promise<ChangeRequestEffectRow | null> {
     return this.db.transaction(async (tx) => {
       const nowIso = now.toISOString();
@@ -720,6 +934,14 @@ export class VerificationChangeRequestsRepository {
         .where(
           and(
             eq(verificationChangeRequestEffects.kind, kind),
+            ...(changeRequestId
+              ? [
+                  eq(
+                    verificationChangeRequestEffects.changeRequestId,
+                    changeRequestId,
+                  ),
+                ]
+              : []),
             or(
               eq(verificationChangeRequestEffects.status, 'pending'),
               and(
@@ -983,7 +1205,10 @@ export class VerificationChangeRequestsRepository {
 function senderMatches(
   dispatch: Pick<
     typeof verificationMessageDispatches.$inferSelect,
-    'senderKind' | 'senderPhoneNumberId'
+    | 'senderKind'
+    | 'senderPhoneNumberId'
+    | 'senderConnectionId'
+    | 'senderConnectionGeneration'
   >,
   sender: ChangeRequestSender,
 ): boolean {
@@ -991,7 +1216,11 @@ function senderMatches(
   if (dispatch.senderKind === 'merchant_own')
     return (
       Boolean(sender.phoneNumberId) &&
-      sender.phoneNumberId === dispatch.senderPhoneNumberId
+      sender.phoneNumberId === dispatch.senderPhoneNumberId &&
+      (sender.connectionId === undefined ||
+        sender.connectionId === dispatch.senderConnectionId) &&
+      (sender.signupGeneration === undefined ||
+        sender.signupGeneration === dispatch.senderConnectionGeneration)
     );
   return (
     !dispatch.senderPhoneNumberId ||

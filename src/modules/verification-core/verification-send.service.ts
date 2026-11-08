@@ -3,6 +3,8 @@ import {
   FEATURE_OFF_SENDER,
   type SenderResolverPort,
 } from '../../shared/ports/sender-resolver.port';
+import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
+import { customerRecipientHash } from '../../shared/messaging/change-request-messaging';
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -193,6 +195,8 @@ export class VerificationSendService {
     @Optional()
     @Inject(SENDER_EVENT_PORT)
     private readonly senderEvents?: SenderEventPort,
+    @Optional()
+    private readonly changeTemplates?: ChangeRequestTemplatesService,
   ) {}
 
   private switches() {
@@ -553,6 +557,19 @@ export class VerificationSendService {
             orgId: order.orgId,
             template,
           });
+    if (
+      integration.changeRequestsEnabled &&
+      !recovery.retryDispatch &&
+      this.changeTemplates &&
+      (!selection.fallbackReason || selection.fallbackReason === 'key_missing')
+    ) {
+      const counterpart = await this.changeTemplates.counterpart(
+        selection.template,
+        order.orgId,
+        sender,
+      );
+      if (counterpart) template = counterpart;
+    }
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
     const recordedFallback =
@@ -596,6 +613,8 @@ export class VerificationSendService {
           integrationId: integration.id,
           verificationId: verification.id,
           kind,
+          changeRequestButtons: Boolean(template.changeRequestOfKey),
+          recipientHash: customerRecipientHash(order.customerPhone),
           templateName: template.templateName,
           languageCode: template.languageCode,
           identity: {
@@ -755,6 +774,7 @@ export class VerificationSendService {
             )
           : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
+        confirmationCycle: dispatchClaim.dispatch.confirmationCycle,
         template,
         sender: claimedSender,
         dispatchContext: {

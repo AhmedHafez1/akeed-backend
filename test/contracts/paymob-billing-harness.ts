@@ -188,6 +188,7 @@ export function paymobBillingHarness(
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
       ...(options.extraTables ?? []).filter(
         (table) =>
@@ -195,6 +196,7 @@ export function paymobBillingHarness(
           table !== tables.billingFreePlanClaims &&
           table !== tables.whatsappConnections &&
           table !== tables.whatsappTemplates &&
+          table !== tables.whatsappTemplateDrafts &&
           table !== tables.whatsappConnectionTemplates,
       ),
     ])
@@ -228,6 +230,7 @@ export function paymobBillingHarness(
     await migrate('0089_sender_recovery.sql');
     await migrate('0090_merchant_webhook_routing.sql');
     await migrate('0092_change_requests.sql');
+    await migrate('0093_change_request_messaging.sql');
   }
 
   /** An active Standalone merchant holding `quantity` granted credits. */

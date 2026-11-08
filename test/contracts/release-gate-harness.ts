@@ -459,6 +459,7 @@ export function releaseGateHarness(
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -489,6 +490,7 @@ export function releaseGateHarness(
     await migrate('0089_sender_recovery.sql');
     await migrate('0090_merchant_webhook_routing.sql');
     await migrate('0092_change_requests.sql');
+    await migrate('0093_change_request_messaging.sql');
     for (const name of [
       '0037_order_import_batches.sql',
       '0038_order_import_validation_version.sql',

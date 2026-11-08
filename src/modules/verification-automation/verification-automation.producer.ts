@@ -64,6 +64,25 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {
     void this.queue
       .upsertJobScheduler(
+        'change-request-acknowledgments',
+        { every: 60_000 },
+        {
+          name: VerificationAutomationJobType.CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP,
+          data: { verificationId: '', orgId: '', scheduledAt: '' },
+          opts: DEFAULT_QUEUE_JOB_OPTIONS,
+        },
+      )
+      .catch((error) =>
+        this.logger.warn(
+          buildBackendLog(VerificationAutomationProducer.name, {
+            action: 'change-request-acknowledgment-scheduler',
+            outcome: 'retry',
+            ...normalizeError(error),
+          }),
+        ),
+      );
+    void this.queue
+      .upsertJobScheduler(
         'verification-sender-recovery',
         { every: 60_000 },
         {

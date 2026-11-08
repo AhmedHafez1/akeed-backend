@@ -929,6 +929,7 @@ export class VerificationsRepository {
     eventTimestamp?: string,
     extraUpdates?: Record<string, unknown>,
     failureInfo?: { code?: number | string; title?: string },
+    expectedConfirmationCycle?: number,
   ) {
     const now = new Date().toISOString();
     const eventTs = toIsoTimestamp(eventTimestamp);
@@ -949,6 +950,10 @@ export class VerificationsRepository {
     // For confirmed/canceled (customer replies), also allow overriding
     // no_reply and no_whatsapp: the customer answered after all.
     const isCustomerReply = status === 'confirmed' || status === 'canceled';
+    const customerActionEventId =
+      typeof extraUpdates?.customerActionEventId === 'string'
+        ? extraUpdates.customerActionEventId
+        : '';
     const blockedStatuses = isCustomerReply
       ? TERMINAL_STATUSES
       : WEBHOOK_PROTECTED_STATUSES;
@@ -960,6 +965,14 @@ export class VerificationsRepository {
         and(
           eq(verifications.id, id),
           notInArray(verifications.status, blockedStatuses),
+          ...(expectedConfirmationCycle !== undefined
+            ? [eq(verifications.confirmationCycle, expectedConfirmationCycle)]
+            : []),
+          ...(expectedConfirmationCycle !== undefined && isCustomerReply
+            ? [
+                sql`(${verifications.customerActionAt} IS NULL OR ${eventTs}::timestamptz > ${verifications.customerActionAt} OR (${eventTs}::timestamptz = ${verifications.customerActionAt} AND ${customerActionEventId}::text COLLATE "C" > COALESCE(${verifications.customerActionEventId}, '') COLLATE "C"))`,
+              ]
+            : []),
           // An open change request keeps the order awaiting the merchant. The
           // check is part of the write, so an escalation queued before the
           // request, or racing it, cannot move the order to no reply.
