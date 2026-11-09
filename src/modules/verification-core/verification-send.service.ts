@@ -100,6 +100,7 @@ interface SendIdentity {
   dispatchId: string;
   dispatchKey: string;
   generation: number;
+  confirmationCycle: number;
   waMessageId: string;
   variantKey: string;
   templateName: string;
@@ -126,11 +127,19 @@ export interface InitialSendOptions {
    * orders.
    */
   testLanguage?: TemplateLanguage;
+  /**
+   * An updated confirmation names the cycle it will start. It is a new
+   * message of that cycle, charged and sent like any confirmation; its
+   * acceptance starts the cycle, and until then nothing about it is written
+   * onto the verification.
+   */
+  confirmationCycle?: number;
 }
 
 interface ResolvedContext {
   billingExempt: boolean;
   testLanguage?: TemplateLanguage;
+  confirmationCycle?: number;
   verification: NonNullable<
     Awaited<ReturnType<VerificationsRepository['findById']>>
   >;
@@ -218,9 +227,15 @@ export class VerificationSendService {
     }
     const { context } = result;
     return this.sendOnce(
-      options.testLanguage && context.order.isTest === true
-        ? { ...context, testLanguage: options.testLanguage }
-        : context,
+      {
+        ...context,
+        ...(options.testLanguage && context.order.isTest === true
+          ? { testLanguage: options.testLanguage }
+          : {}),
+        ...(options.confirmationCycle !== undefined
+          ? { confirmationCycle: options.confirmationCycle }
+          : {}),
+      },
       'initial',
     );
   }
@@ -625,6 +640,9 @@ export class VerificationSendService {
           },
           leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
           billingExempt: ctx.billingExempt,
+          ...(ctx.confirmationCycle !== undefined
+            ? { confirmationCycle: ctx.confirmationCycle }
+            : {}),
           sender,
           ...(recovery.fallbackFrom
             ? {
@@ -922,6 +940,7 @@ export class VerificationSendService {
       dispatchId: dispatchClaim.dispatch.id,
       dispatchKey: dispatchClaim.dispatch.dispatchKey,
       generation: dispatchClaim.dispatch.generation,
+      confirmationCycle: dispatchClaim.dispatch.confirmationCycle,
       waMessageId,
       ...this.templateLogFields(reportedTemplate ?? template, purpose),
     };
@@ -1162,6 +1181,7 @@ export class VerificationSendService {
           providerMessageId: identity.waMessageId,
           sentAt,
           template,
+          confirmationCycle: identity.confirmationCycle,
         });
     } catch (error) {
       this.logger.error(

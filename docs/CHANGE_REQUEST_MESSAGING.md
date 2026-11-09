@@ -22,6 +22,10 @@ Opening a request commits its history and durable side effects before delivery. 
 
 The existing verification-automation queue sweeps recoverable acknowledgement effects once per minute. Immediate handling runs after request capture; the sweep covers process/queue interruption. Both paths share the same effect lease and logical dispatch identity.
 
+## Merchant handling
+
+The merchant's outcomes, the dashboard queue and the updated confirmation are described in [Order Confirmation Workflow](ORDER_CONFIRMATION_WORKFLOW.md#merchant-handling-of-a-change-request). An updated confirmation is an ordinary confirmation of the next cycle: it uses the three-button template only while the store is opted in and ready, it is charged as one confirmation, and it waits for quiet hours.
+
 ## Local verification and rollout
 
 Run `scripts/test-change-request-messaging-contract.ps1` for synthetic PostgreSQL transport/billing contracts. It creates and removes its own database container and never reads application database configuration. Keep future three-button use off until the complete merchant handling, notification and synchronization workflow is ready. Disabling future selection is the rollback control; retain the schema and consumers needed by already-sent messages and open requests.

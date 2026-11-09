@@ -15,6 +15,9 @@
  *                            cancels. Attempted once, never retried.
  *   5. UNRESOLVED_REPLY_NUDGE — one free-form nudge after a typed reply Akeed
  *                            could not read. Attempted once.
+ *   6. CHANGE_REQUEST_RECONFIRMATION — the merchant's updated confirmation for
+ *                            an open change request, built from the order's
+ *                            current details; held until quiet hours end.
  */
 
 export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';
@@ -29,6 +32,7 @@ export enum VerificationAutomationJobType {
   ESCALATE_NO_REPLY = 'verification.escalate_no_reply',
   ACKNOWLEDGMENT = 'verification.acknowledgment',
   UNRESOLVED_REPLY_NUDGE = 'verification.unresolved_reply_nudge',
+  CHANGE_REQUEST_RECONFIRMATION = 'verification.change_request_reconfirmation',
 }
 
 import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
@@ -44,6 +48,11 @@ export interface VerificationAutomationJobPayload {
    * new one. Absent on jobs queued before cycles existed: cycle 1.
    */
   confirmationCycle?: number;
+  /**
+   * An updated confirmation: the request it is for and the merchant's
+   * attempt. A job of an earlier attempt does nothing.
+   */
+  reconfirmation?: { changeRequestId: string; attempt: number };
   /**
    * The customer's message an acknowledgment or a nudge answers: when it was
    * sent and, for an acknowledgment, what it said. Never its text.

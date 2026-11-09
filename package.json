@@ -56,6 +56,7 @@
     "test:contract:auto-cancellation": "jest --config ./test/jest-auto-cancellation-contract.json --runInBand",
     "test:contract:change-request-messaging": "jest --config ./test/jest-change-request-messaging-contract.json --runInBand",
     "test:contract:change-requests": "jest --config ./test/jest-change-requests-contract.json --runInBand",
+    "test:contract:change-request-reconfirmation": "jest --config ./test/jest-change-request-reconfirmation-contract.json --runInBand",
     "test:contract:billing-operations": "jest --config ./test/jest-standalone-billing-operations-contract.json --runInBand",
     "test:contract:billing-observability": "jest --config ./test/jest-billing-observability-contract.json --runInBand",
     "test:contract:template-identity": "jest --config ./test/jest-template-identity-contract.json --runInBand",

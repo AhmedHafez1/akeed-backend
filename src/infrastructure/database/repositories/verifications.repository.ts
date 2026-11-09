@@ -544,6 +544,7 @@ export class VerificationsRepository {
         canceled: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'canceled')::int`,
         failed: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'failed')::int`,
         noWhatsapp: sql<number>`count(*) FILTER (WHERE ${verifications.status} = 'no_whatsapp')::int`,
+        changeRequested: sql<number>`count(*) FILTER (WHERE ${openChangeRequestSql()})::int`,
       })
       .from(verifications)
       .where(
@@ -564,6 +565,7 @@ export class VerificationsRepository {
       canceled: row?.canceled ?? 0,
       failed: row?.failed ?? 0,
       no_whatsapp: row?.noWhatsapp ?? 0,
+      change_requested: row?.changeRequested ?? 0,
     };
   }
 
@@ -1578,10 +1580,26 @@ export interface NeedsActionRow {
   };
 }
 
+/**
+ * The verification has an open change request. Its own tenant only: the
+ * request carries the verification's organization. Raw names for the inner
+ * table, so a relational query cannot re-alias them.
+ */
+function openChangeRequestSql() {
+  return sql`EXISTS (
+    SELECT 1 FROM verification_change_requests ocr
+    WHERE ocr.verification_id = ${verifications.id}
+      AND ocr.org_id = ${verifications.orgId}
+      AND ocr.status = 'open'
+  )`;
+}
+
 function tabCondition(tab: VerificationListTab) {
   switch (tab) {
     case 'needs_action':
       return sql`${needsActionReasonSql()} IS NOT NULL`;
+    case 'change_requested':
+      return openChangeRequestSql();
     case 'confirmed':
     case 'canceled':
     case 'failed':

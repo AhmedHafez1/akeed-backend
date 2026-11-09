@@ -6,6 +6,7 @@ import { PhoneService } from '../../../shared/services/phone.service';
 import { ShopifyApiService } from './services/shopify-api.service';
 import { ShopifyOrderNormalizer } from './services/shopify-order.normalizer';
 import { ShopifyOutcomeAdapter } from './services/shopify-outcome.adapter';
+import { ShopifyCurrentOrderSource } from './services/shopify-current-order.source';
 
 /**
  * What the workers and the registries need from the Shopify spoke: the API
@@ -22,6 +23,7 @@ import { ShopifyOutcomeAdapter } from './services/shopify-outcome.adapter';
     ShopifyOutcomeAdapter,
     ShopifyOrderEligibilityStrategy,
     ShopifyOrderNormalizer,
+    ShopifyCurrentOrderSource,
     PhoneService,
   ],
   exports: [
@@ -30,6 +32,7 @@ import { ShopifyOutcomeAdapter } from './services/shopify-outcome.adapter';
     ShopifyOutcomeAdapter,
     ShopifyOrderEligibilityStrategy,
     ShopifyOrderNormalizer,
+    ShopifyCurrentOrderSource,
   ],
 })
 export class ShopifyCommerceModule {}

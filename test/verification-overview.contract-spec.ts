@@ -473,6 +473,7 @@ describe('tab counts and list filters', () => {
       canceled: 1,
       failed: 2,
       no_whatsapp: 0,
+      change_requested: 0,
     });
 
     for (const tab of [
@@ -690,6 +691,7 @@ describe('shop isolation', () => {
       canceled: 0,
       failed: 0,
       no_whatsapp: 0,
+      change_requested: 0,
     });
   });
 

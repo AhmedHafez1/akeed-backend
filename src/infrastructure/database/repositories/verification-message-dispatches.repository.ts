@@ -48,6 +48,10 @@ import { classifyDeliveryFailure } from '../../../shared/verification/delivery-f
 import { CHANGE_REQUEST_OPEN_REASON } from '../../../shared/verification/change-request.policy';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
+  completeReconfirmationInTx,
+  type Transaction as ChangeRequestTransaction,
+} from './verification-change-requests.repository';
+import {
   adminAccessAudit,
   creditAccounts,
   orders,
@@ -189,6 +193,32 @@ function claimTemplateColumns(params: {
         }
       : {}),
   };
+}
+
+/**
+ * Whether a claim names its cycle: an acknowledgment always does, and an
+ * updated confirmation names the cycle it will start. Such a message has its
+ * own row per cycle.
+ */
+function isCycleTargeted(params: {
+  kind: DispatchKind;
+  confirmationCycle?: number;
+}): boolean {
+  return (
+    params.kind === 'change_acknowledgment' ||
+    params.confirmationCycle !== undefined
+  );
+}
+
+/**
+ * Whether a message's outcome may still be projected onto its verification:
+ * only while the verification is in the cycle the message was sent in. A
+ * failure, receipt or late outcome of a replaced cycle, or of an updated
+ * confirmation that has not started its cycle, never rewrites the current
+ * one.
+ */
+function sameCycle(dispatch: { confirmationCycle: number }) {
+  return eq(verifications.confirmationCycle, dispatch.confirmationCycle);
 }
 
 /**
@@ -408,13 +438,6 @@ export class VerificationMessageDispatchesRepository {
      */
     confirmationCycle?: number;
   }): Promise<DispatchClaimResult> {
-    const dispatchKey = buildDispatchKey(
-      params.verificationId,
-      params.kind,
-      params.kind === 'change_acknowledgment'
-        ? (params.confirmationCycle ?? 1)
-        : 1,
-    );
     const now = new Date().toISOString();
 
     const result = await this.db.transaction(async (tx) => {
@@ -565,6 +588,11 @@ export class VerificationMessageDispatchesRepository {
             reconciliationRequired();
           if (previous.accountingMode === 'prepaid_credit')
             return this.claimPrepaid(tx, params);
+          const fallbackGeneration = await this.nextGeneration(
+            tx,
+            params.verificationId,
+            params.kind,
+          );
           const [fresh] = await tx
             .insert(verificationMessageDispatches)
             .values({
@@ -572,15 +600,19 @@ export class VerificationMessageDispatchesRepository {
               integrationId: params.integrationId,
               verificationId: params.verificationId,
               kind: params.kind,
-              generation: previous.generation + 1,
+              generation: fallbackGeneration,
               dispatchKey: buildDispatchKey(
                 params.verificationId,
                 params.kind,
-                previous.generation + 1,
+                fallbackGeneration,
               ),
               fallbackForDispatchId: previous.id,
               ...claimTemplateColumns(params),
-              ...claimCycleColumns(params),
+              ...claimCycleColumns({
+                verificationId: params.verificationId,
+                confirmationCycle:
+                  params.confirmationCycle ?? previous.confirmationCycle,
+              }),
               changeRequestButtons: params.changeRequestButtons ?? false,
               recipientHash: params.recipientHash,
             })
@@ -661,6 +693,24 @@ export class VerificationMessageDispatchesRepository {
           return this.claimPrepaid(tx, params);
         }
 
+        // A message of a named cycle (an acknowledgment, an updated
+        // confirmation) has its own row per cycle; anything else is the
+        // verification's one message of its kind. Resolved after the source
+        // lock, which every claim of this verification takes first.
+        const { dispatchKey, generation } = isCycleTargeted(params)
+          ? await this.cycleDispatchIdentity(tx, {
+              verificationId: params.verificationId,
+              kind: params.kind,
+              confirmationCycle: params.confirmationCycle ?? 1,
+            })
+          : {
+              dispatchKey: buildDispatchKey(
+                params.verificationId,
+                params.kind,
+                1,
+              ),
+              generation: 1,
+            };
         await tx
           .insert(verificationMessageDispatches)
           .values({
@@ -668,10 +718,7 @@ export class VerificationMessageDispatchesRepository {
             integrationId: params.integrationId,
             verificationId: params.verificationId,
             dispatchKey,
-            generation:
-              params.kind === 'change_acknowledgment'
-                ? (params.confirmationCycle ?? 1)
-                : 1,
+            generation,
             kind: params.kind,
             state: 'ready',
             ...claimTemplateColumns(params),
@@ -1313,6 +1360,7 @@ export class VerificationMessageDispatchesRepository {
         .where(
           and(
             eq(verifications.id, dispatch.verificationId),
+            sameCycle(dispatch),
             eq(verifications.orgId, dispatch.orgId),
             notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
           ),
@@ -1864,6 +1912,7 @@ export class VerificationMessageDispatchesRepository {
               .where(
                 and(
                   eq(verifications.id, dispatch.verificationId),
+                  sameCycle(dispatch),
                   eq(verifications.orgId, dispatch.orgId),
                   notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
                 ),
@@ -2218,7 +2267,25 @@ export class VerificationMessageDispatchesRepository {
     providerMessageId: string;
     sentAt: string;
     template?: SentTemplateIdentity;
+    /** The cycle the message was claimed for, when known. */
+    confirmationCycle?: number;
   }): Promise<number> {
+    if (params.confirmationCycle !== undefined)
+      return this.db.transaction((tx) =>
+        this.projectAcceptedVerification(
+          tx,
+          {
+            verificationId: params.verificationId,
+            kind: params.kind,
+            confirmationCycle: params.confirmationCycle,
+          },
+          {
+            providerMessageId: params.providerMessageId,
+            sentAt: params.sentAt,
+            template: params.template,
+          },
+        ),
+      );
     return this.projectAcceptedVerification(
       this.db,
       { verificationId: params.verificationId, kind: params.kind },
@@ -2339,7 +2406,12 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_outcome_unknown', kind: 'initial' })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       } else if (dispatch.kind === 'follow_up') {
         await tx
           .update(verifications)
@@ -2347,7 +2419,12 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ follow_up_failed: 'provider_outcome_unknown', follow_up_failed_at: now })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       }
 
       return updated ? 1 : 0;
@@ -2531,6 +2608,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
               notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
             ),
           );
@@ -2878,6 +2956,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
               notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
             ),
           );
@@ -2889,12 +2968,89 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_not_accepted', kind: dispatch.kind })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       }
       if (staffAudit)
         await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
       return updated;
     });
+  }
+
+  /**
+   * The next free generation of a verification's messages of one kind. A
+   * generation is unique per verification and kind across every cycle.
+   */
+  private async nextGeneration(
+    tx: CreditTransaction,
+    verificationId: string,
+    kind: DispatchKind,
+  ): Promise<number> {
+    const [row] = await tx
+      .select({
+        max: sql<number>`COALESCE(MAX(${verificationMessageDispatches.generation}), 0)::int`,
+      })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.verificationId, verificationId),
+          eq(verificationMessageDispatches.kind, kind),
+        ),
+      );
+    return Number(row?.max ?? 0) + 1;
+  }
+
+  /**
+   * The identity of a message of a named cycle: the latest row of that cycle
+   * when one exists (a retry claims it again), else the next generation.
+   */
+  private async cycleDispatchIdentity(
+    tx: CreditTransaction,
+    params: {
+      verificationId: string;
+      kind: DispatchKind;
+      confirmationCycle: number;
+    },
+  ): Promise<{ dispatchKey: string; generation: number }> {
+    const [existing] = await tx
+      .select({
+        dispatchKey: verificationMessageDispatches.dispatchKey,
+        generation: verificationMessageDispatches.generation,
+      })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(
+            verificationMessageDispatches.verificationId,
+            params.verificationId,
+          ),
+          eq(verificationMessageDispatches.kind, params.kind),
+          eq(
+            verificationMessageDispatches.confirmationCycle,
+            params.confirmationCycle,
+          ),
+        ),
+      )
+      .orderBy(desc(verificationMessageDispatches.generation))
+      .limit(1);
+    if (existing) return existing;
+    const generation = await this.nextGeneration(
+      tx,
+      params.verificationId,
+      params.kind,
+    );
+    return {
+      dispatchKey: buildDispatchKey(
+        params.verificationId,
+        params.kind,
+        generation,
+      ),
+      generation,
+    };
   }
 
   private async claimPrepaid(
@@ -2932,7 +3088,7 @@ export class VerificationMessageDispatchesRepository {
             params.verificationId,
           ),
           eq(verificationMessageDispatches.kind, params.kind),
-          ...(params.kind === 'change_acknowledgment'
+          ...(isCycleTargeted(params)
             ? [
                 eq(
                   verificationMessageDispatches.confirmationCycle,
@@ -3039,12 +3195,11 @@ export class VerificationMessageDispatchesRepository {
       else if (previous.usageReserved) reconciliationRequired();
     }
     const generation =
-      previous && previous.state !== 'ready'
-        ? previous.generation + 1
-        : (previous?.generation ??
-          (params.kind === 'change_acknowledgment'
-            ? (params.confirmationCycle ?? 1)
-            : 1));
+      previous?.state === 'ready'
+        ? previous.generation
+        : previous || isCycleTargeted(params)
+          ? await this.nextGeneration(tx, params.verificationId, params.kind)
+          : 1;
     const dispatchKey = buildDispatchKey(
       params.verificationId,
       params.kind,
@@ -3195,7 +3350,8 @@ export class VerificationMessageDispatchesRepository {
 
   private async projectAcceptedVerification(
     tx: DispatchWriter,
-    dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'>,
+    dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'> &
+      Partial<Pick<DispatchRecord, 'id' | 'orgId' | 'confirmationCycle'>>,
     params: {
       providerMessageId: string;
       sentAt: string;
@@ -3204,6 +3360,47 @@ export class VerificationMessageDispatchesRepository {
     },
   ): Promise<number> {
     if (isServiceDispatchKind(dispatch.kind)) return 0;
+    if (dispatch.confirmationCycle !== undefined) {
+      const [current] = await tx
+        .select({
+          orgId: verifications.orgId,
+          confirmationCycle: verifications.confirmationCycle,
+        })
+        .from(verifications)
+        .where(eq(verifications.id, dispatch.verificationId))
+        .for('update');
+      if (!current) return 0;
+      if (dispatch.confirmationCycle > current.confirmationCycle) {
+        // An updated confirmation: its acceptance is what starts the new
+        // cycle and closes the request, in this same transaction. Superseded
+        // (the customer or the merchant settled the request first), it
+        // changes nothing; its buttons belong to a cycle that never starts.
+        if (dispatch.kind !== 'initial') return 0;
+        // Every caller that names the cycle runs inside a transaction.
+        const result = await completeReconfirmationInTx(
+          tx as ChangeRequestTransaction,
+          {
+            orgId: current.orgId,
+            verificationId: dispatch.verificationId,
+            expectedCycle: dispatch.confirmationCycle - 1,
+            providerMessageId: params.providerMessageId,
+            sentAt: params.sentAt,
+            ...(dispatch.id ? { dispatchId: dispatch.id } : {}),
+            ...(params.template
+              ? {
+                  template: {
+                    templateName: params.template.templateName,
+                    languageCode: params.template.languageCode,
+                  },
+                }
+              : {}),
+          },
+        );
+        return result.outcome === 'completed' ? 1 : 0;
+      }
+      // A message of a cycle an updated confirmation already replaced.
+      if (dispatch.confirmationCycle < current.confirmationCycle) return 0;
+    }
     const common = {
       waMessageId: params.providerMessageId,
       ...(params.template

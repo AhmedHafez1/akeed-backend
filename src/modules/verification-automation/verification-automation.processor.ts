@@ -1,3 +1,4 @@
+import { ChangeRequestReconfirmationService } from '../verification-core/change-request-reconfirmation.service';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DelayedError, Job } from 'bullmq';
@@ -56,6 +57,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly changeRequests?: VerificationChangeRequestsRepository,
     @Optional()
     private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
+    @Optional()
+    private readonly reconfirmations?: ChangeRequestReconfirmationService,
   ) {
     super();
   }
@@ -94,12 +97,26 @@ export class VerificationAutomationProcessor extends WorkerHost {
       case VerificationAutomationJobType.SENDER_RECOVERY_SWEEP:
         await this.verificationSendService.sweepSenderRecovery();
         return;
+      case VerificationAutomationJobType.CHANGE_REQUEST_RECONFIRMATION:
+        if (data.reconfirmation)
+          await this.reconfirmations?.run({
+            verificationId: data.verificationId,
+            orgId: data.orgId,
+            changeRequestId: data.reconfirmation.changeRequestId,
+            attempt: data.reconfirmation.attempt,
+          });
+        return;
       case VerificationAutomationJobType.SENDER_RETRY:
       case VerificationAutomationJobType.SENDER_FALLBACK: {
         if (!data.dispatchId) return;
         const outcome = await this.verificationSendService.resumeSenderRecovery(
           data.orgId,
           data.dispatchId,
+        );
+        await this.reconfirmations?.afterSenderRecovery(
+          data.orgId,
+          data.verificationId,
+          outcome,
         );
         if (outcome.status === 'sent') {
           const ctx = await this.loadContext(data.verificationId, data.orgId);

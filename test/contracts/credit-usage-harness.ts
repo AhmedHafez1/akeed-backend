@@ -187,6 +187,7 @@ export function creditUsageHarness() {
     );
     await migrate('0083_merchant_acknowledgments.sql');
     await migrate('0093_change_request_messaging.sql');
+    await migrate('0094_change_request_reconfirmation.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {
