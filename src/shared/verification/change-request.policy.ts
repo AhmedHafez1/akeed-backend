@@ -38,6 +38,8 @@ export const CHANGE_REQUEST_EVENTS = [
   'repeat_ignored',
   'resolved',
   'reconfirmation_failed',
+  'reconfirmation_requested',
+  'reconfirmation_scheduled',
 ] as const;
 export type ChangeRequestEvent = (typeof CHANGE_REQUEST_EVENTS)[number];
 
@@ -194,3 +196,41 @@ export const CYCLE_SCOPED_METADATA_KEYS = [
   'escalation_skipped',
   'escalation_skipped_at',
 ] as const;
+
+/**
+ * Where the merchant's updated confirmation stands while the request is
+ * open. `requested` is queued, `scheduled` waits for quiet hours to end,
+ * `sending` is with the provider and `failed` did not go (the reason is
+ * `last_reconfirmation_error`). Success closes the request instead.
+ */
+export const RECONFIRMATION_STATES = [
+  'requested',
+  'scheduled',
+  'sending',
+  'failed',
+] as const;
+export type ReconfirmationState = (typeof RECONFIRMATION_STATES)[number];
+
+/** A send in flight: asking again joins it instead of sending twice. */
+export function reconfirmationInFlight(
+  state: ReconfirmationState | null | undefined,
+): boolean {
+  return state === 'requested' || state === 'scheduled' || state === 'sending';
+}
+
+/**
+ * Why an updated confirmation did not go. Stable codes: the dashboard
+ * translates them, so never rename one.
+ */
+export const RECONFIRMATION_FAILURE_CODES = [
+  'order_source_unavailable',
+  'order_not_found',
+  'order_not_eligible',
+  'no_allowance',
+  'template_unavailable',
+  'sending_failed',
+  'provider_outcome_unknown',
+  'sending_unavailable',
+] as const;
+export type ReconfirmationFailureCode =
+  (typeof RECONFIRMATION_FAILURE_CODES)[number];

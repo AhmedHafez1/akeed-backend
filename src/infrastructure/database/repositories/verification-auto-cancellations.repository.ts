@@ -356,13 +356,26 @@ export class VerificationAutoCancellationsRepository {
     verificationId: string;
     intent: CustomerReplyIntent;
     receivedAt: string;
+    expectedConfirmationCycle?: number;
   }): Promise<{ committed: boolean }> {
     return this.db.transaction(async (tx) => {
       // The verification first, in the same order as the cancellation job.
       const [locked] = await tx
         .select({ id: verifications.id, orgId: verifications.orgId })
         .from(verifications)
-        .where(eq(verifications.id, input.verificationId))
+        .where(
+          and(
+            eq(verifications.id, input.verificationId),
+            ...(input.expectedConfirmationCycle !== undefined
+              ? [
+                  eq(
+                    verifications.confirmationCycle,
+                    input.expectedConfirmationCycle,
+                  ),
+                ]
+              : []),
+          ),
+        )
         .for('update');
       if (!locked) return { committed: false };
 

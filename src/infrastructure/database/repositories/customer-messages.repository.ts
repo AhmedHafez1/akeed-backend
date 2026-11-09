@@ -2,10 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { customerMessages, orders } from '../schema';
-import {
-  resolveButtonPayload,
-  resolveReplyText,
-} from '../../../shared/verification/customer-reply-intent';
+import { resolveReplyText } from '../../../shared/verification/customer-reply-intent';
+import { resolveCustomerActionPayload as resolveButtonPayload } from '../../../shared/messaging/change-request-messaging';
 import type { WhatsAppMessageDto } from '../../spokes/meta/dto/whatsapp-webhook.dto';
 import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 
@@ -59,6 +57,11 @@ export class CustomerMessagesRepository {
       SELECT d.sender_phone_number_id, NULL
         FROM verification_message_dispatches d
         WHERE d.provider_message_id = ${wamid} AND d.sender_kind = 'akeed_system'
+      UNION ALL
+      SELECT d.sender_phone_number_id, c.waba_id
+        FROM verification_message_dispatches d
+        JOIN whatsapp_connections c ON c.id = d.sender_connection_id AND c.org_id = d.org_id
+        WHERE d.provider_message_id = ${wamid} AND d.sender_kind = 'merchant_own' AND d.kind::text = 'change_acknowledgment'
       UNION ALL
       SELECT s.sender_phone_number_id, NULL FROM verification_service_messages s WHERE s.provider_message_id = ${wamid}
       UNION ALL

@@ -128,9 +128,9 @@ The sweep (every 5 minutes) enqueues due rows whose job was lost, resumes expire
 
 ### Customer change requests (domain layer)
 
-"Request a change" lets a customer who is waiting to confirm a COD order ask for a change instead of confirming or canceling. Akeed records the request, stops the no-reply automation and the merchant contacts the customer; Akeed never edits the order. This release ships the domain layer only: no message carries the third button yet and no endpoint opens a request, so nothing changes for merchants. The switch `integrations.change_requests_enabled` is off for every store (migration `0092_change_requests.sql`).
+"Request a change" lets a customer who is waiting to confirm a COD order ask for a change instead of confirming or canceling. Akeed records the request, stops the no-reply automation and the merchant contacts the customer; Akeed never edits the order. Future messages carry the third button only after merchant opt-in and sender-specific approval/readiness checks. The switch `integrations.change_requests_enabled` defaults off. Versioned button handling and the billable service acknowledgement are described in [Customer change-request messaging](CHANGE_REQUEST_MESSAGING.md). The complete merchant controls, email and platform-marker workflow must be ready before production activation.
 
-**Model.** A request is an attention task kept apart from the verification's outcome. The verification stays at its awaiting status (`sent`, `delivered`, `read`, `no_reply`, `no_whatsapp`), so it is not confirmed and not ready to ship. `verification_change_requests` holds one row per request: at most one `open` per verification (partial unique index) and one per verification and confirmation cycle. It is bound by composite tenant keys to the organization, source, order, verification and the outbound dispatch the customer answered, with the sender (`sender_kind`, `sender_phone_number_id`, `sender_connection_id`), the cycle, the provider event that opened it, and how, when and by whom it was resolved. `verification_change_request_events` is its append-only history (`opened`, `repeat_ignored`, `resolved`, `reconfirmation_failed`); a replayed provider event is recorded once. `verification_change_request_effects` is the outbox written in the same transaction as each transition (`customer_acknowledgment`, `merchant_email`, `platform_marker_set` on open; `platform_marker_clear` on resolution), consumed later by their own workers with a lease (`claimEffect` / `settleEffect`).
+**Model.** A request is an attention task kept apart from the verification's outcome. The verification stays at its awaiting status (`sent`, `delivered`, `read`, `no_reply`, `no_whatsapp`), so it is not confirmed and not ready to ship. `verification_change_requests` holds one row per request: at most one `open` per verification (partial unique index) and one per verification and confirmation cycle. It is bound by composite tenant keys to the organization, source, order, verification and the outbound dispatch the customer answered, with the sender (`sender_kind`, `sender_phone_number_id`, `sender_connection_id`), the cycle, the provider event that opened it, and how, when and by whom it was resolved. `verification_change_request_events` is its append-only history (`opened`, `repeat_ignored`, `resolved`, `reconfirmation_requested`, `reconfirmation_scheduled`, `reconfirmation_failed`); a replayed provider event is recorded once. `verification_change_request_effects` is the outbox written in the same transaction as each transition (`customer_acknowledgment`, `merchant_email`, `platform_marker_set` on open; `platform_marker_clear` on resolution), consumed later by their own workers with a lease (`claimEffect` / `settleEffect`).
 
 **Confirmation cycles.** `verifications.confirmation_cycle` and `verification_message_dispatches.confirmation_cycle` start at 1 for every existing row. A claim stamps the verification's current cycle on a new dispatch unless its caller names one. A successful updated confirmation moves the verification to the next cycle; buttons, dispatches and reminder or escalation jobs (`confirmationCycle` in the job payload; absent means 1) of an earlier cycle then change nothing.
 
@@ -162,12 +162,40 @@ An open request is the first `needs_action` reason (`change_requested`).
 | Customer Confirm or Cancel from the current cycle | The answer applies through the normal path; `resolveByCustomerAnswer` then closes the request as `customer_confirmed` / `customer_canceled`, also on a webhook retry. A button of a retired cycle is skipped (`stale_confirmation_cycle`). |
 | Merchant confirms after contact | `resolveByMerchantConfirmation`: `confirmed`, `confirmation_source = merchant_manual`, closed as `merchant_confirmed` with the merchant as actor. |
 | Merchant cancels after contact | `resolveByMerchantCancellation`, after the store accepted: `canceled`, `cancellation_source = merchant_change_request`, closed as `merchant_canceled`. |
-| Updated confirmation not sent | `recordReconfirmationFailure`: the request stays open and the automation stays stopped. |
-| Updated confirmation accepted | `completeReconfirmation(expectedCycle)`: next cycle, `sent`, the new `wa_message_id`, the previous cycle's receipts, reminder and escalation state cleared, a non-committed automatic cancellation removed, closed as `reconfirmation_sent`. A second or stale call changes nothing. |
+| Updated confirmation not sent | `recordReconfirmationFailure`: the request stays open, the automation stays stopped, and `reconfirmation_state = failed` with the reason in `last_reconfirmation_error`. |
+| Updated confirmation accepted | `completeReconfirmationInTx(expectedCycle)`, run by the dispatch ledger in the transaction that records the acceptance: next cycle, `sent`, the new `wa_message_id`, the previous cycle's receipts, reminder and escalation state cleared, a non-committed automatic cancellation removed, closed as `reconfirmation_sent` with the merchant who asked as actor. A second or stale call changes nothing. |
 
 A merchant command on a request the customer settled first answers `already_resolved`; other refusals are `no_open_request`, `request_mismatch`, `stale_cycle`, `not_awaiting_confirmation`, `auto_cancel_committed`. Merchant commands are scoped by `orgId` and need the owner or admin role. Sending the outcome to the store and the customer is the caller's job after the commit.
 
 Tests: `test/change-requests.contract-spec.ts` (`npm run test:contract:change-requests`, PostgreSQL via `E01_TEST_DATABASE_URL`) and the unit specs next to each file.
+
+### Merchant handling of a change request
+
+The merchant settles an open request from the dashboard with one of three outcomes; there is no generic "resolved" action, no editing form and no inbox. Every endpoint is under `/api/verifications/:id/change-request`, scoped by the caller's organization, and every write needs the owner or admin role. Each write names the `changeRequestId` the page showed, so an action on a page that went stale is refused with the coded 409s above (`CHANGE_REQUEST_ALREADY_RESOLVED` carries the outcome that won and the verification's status) instead of overwriting a newer outcome.
+
+| Action | Path |
+| --- | --- |
+| Confirmed after contacting customer | `confirmAfterContact`, then `finalizeVerification(confirmed)`: the store hears it exactly as it hears a manual confirmation, by the merchant's outcome-sync settings. |
+| Cancelled after contacting customer | The store is asked first through the merchant cancel action (`merchant_no_reply_cancellation`, the same restock and store rules as the dashboard's Cancel order); only once it accepted is the order recorded `canceled` (`merchant_change_request`) and the request closed, then tagged with `merchant_cancellation_tagging`. A store refusal records nothing. |
+| Send updated confirmation | Queued; see below. |
+
+The dashboard's open requests come from the `change_requested` needs-action reason and the `change_requested` confirmations tab (an open request exists). List rows and needs-action items carry `change_request`: when it opened, its cycle, the customer acknowledgment's outcome (`done`, `skipped` with `skipped_no_allowance`, `failed`, pending) and the updated confirmation's state.
+
+**Updated confirmation.** `ChangeRequestReconfirmationService`:
+
+1. Asking records an attempt on the request (`reconfirmation_state = requested`, `reconfirmation_attempt + 1`, who and when). A click while an attempt is `requested`, `scheduled` or `sending` joins it. One `verification.change_request_reconfirmation` job per attempt, never retried by the queue.
+2. The job does nothing unless its attempt is still the request's current one. Inside quiet hours it moves to `scheduled` and waits for the window to end, as any confirmation does; only the customer acknowledgment bypasses quiet hours.
+3. `beginReconfirmationSend` takes the attempt to `sending` (one worker only). The store is read for shipping evidence: a fulfilled or canceled order is `order_not_eligible`.
+4. The order's current details are read through `CURRENT_ORDER_SOURCES` (one source per platform, bound in `app.module.ts`): Shopify through a read-only Admin GraphQL order query restated for the webhook normalizer (current quantities and total after an order edit), WooCommerce and EasyOrders with their stored keys through their own normalizers, standalone from Akeed's order record, which is its source of truth. A failed read is `order_source_unavailable` or `order_not_found`, and nothing is sent: stored details are never sent as current ones. Otherwise the order's message details (phone, name, total, currency, items, address) are refreshed; its identity, number and stored payload stay.
+5. The message goes through `VerificationSendService.sendInitial` with `confirmationCycle = cycle + 1`: the same template selection, three-button readiness, sender choice, claim, charge and own-number recovery as a first confirmation. It is a new `initial` dispatch of the next cycle.
+6. Until the provider accepts it nothing about it is written onto the verification: failures, receipts and late outcomes are projected only onto a verification in the dispatch's own cycle. Its acceptance commits the next cycle and closes the request in one transaction, on every acceptance path (direct, own-number recovery, staff resolution). The service then clears the earlier cycle's reminder and no-reply jobs and schedules the new cycle's normal ones.
+7. A refusal (`no_allowance`, `sending_failed`, `template_unavailable`, `provider_outcome_unknown`, `sending_unavailable`) records `failed` with that code; the request stays open, the automation stays stopped and the old buttons stay valid. The merchant may ask again.
+
+If the customer or the merchant settles the request before the acceptance, the accepted message changes nothing: its cycle never starts and its buttons are refused as stale.
+
+**Dispatch ledger.** `dispatch_one_active_generation` is per verification, kind and cycle. A cycle-targeted claim (an updated confirmation or an acknowledgment) has its own row per cycle and takes the next free generation of its kind. The `guard_dispatch_generation` trigger keeps every retry rule within a cycle (a new generation only after a confirmed, released failure) and admits the first message of the current or next cycle once.
+
+Tests: `test/change-request-reconfirmation.contract-spec.ts` (`scripts/test-change-request-reconfirmation-contract.ps1`, disposable PostgreSQL via `E045_TEST_DATABASE_URL`) and the unit specs next to each service and source.
 
 ### Held orders (bulk import)
 
@@ -502,6 +530,10 @@ Cross-field rules:
 | `POST`  | `/api/verifications/:id/cancel`   | `DualAuthGuard`      | Merchant cancellation for `no_reply` verifications.  |
 | `POST`  | `/api/verifications/:id/auto-cancel/exclude` | `DualAuthGuard` | Keep one order out of the automatic cancellation. |
 | `POST`  | `/api/verifications/:id/auto-cancel/include` | `DualAuthGuard` | Let the automatic cancellation decide the order again. |
+| `GET`   | `/api/verifications/:id/change-request` | `DualAuthGuard` | The open (else latest) change request with its acknowledgment outcome and history. |
+| `POST`  | `/api/verifications/:id/change-request/confirm` | `DualAuthGuard` | Confirmed after contacting the customer. |
+| `POST`  | `/api/verifications/:id/change-request/cancel` | `DualAuthGuard` | Cancelled after contacting the customer. |
+| `POST`  | `/api/verifications/:id/change-request/resend` | `DualAuthGuard` | Queue an updated confirmation from the order's current details (202). |
 | `POST`  | `/api/orders`                     | `DualAuthGuard`      | Create a manual (Standalone) order for verification. |
 | `POST`  | `/api/orders/:id/verification/retry` | `DualAuthGuard`   | Re-send a retryable failed verification.             |
 

@@ -84,6 +84,7 @@ export const VERIFICATION_LIST_TABS = [
   'canceled',
   'failed',
   'no_whatsapp',
+  'change_requested',
 ] as const;
 
 export type VerificationListTab = (typeof VERIFICATION_LIST_TABS)[number];

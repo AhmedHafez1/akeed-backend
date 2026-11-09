@@ -54,6 +54,8 @@ export const WHATSAPP_TEMPLATE_LIFECYCLE_AUDIT_ACTIONS: Record<
 };
 
 const REFUSAL_CODES: Record<TemplateLifecycleRefusal, string> = {
+  change_request_not_selectable:
+    'WHATSAPP_TEMPLATE_CHANGE_REQUEST_NOT_SELECTABLE',
   retired: WHATSAPP_TEMPLATE_ERROR_CODES.retired,
   not_approved: WHATSAPP_TEMPLATE_ERROR_CODES.notApproved,
   not_active: WHATSAPP_TEMPLATE_ERROR_CODES.notActive,
@@ -64,6 +66,8 @@ const REFUSAL_CODES: Record<TemplateLifecycleRefusal, string> = {
 };
 
 const REFUSAL_MESSAGES: Record<TemplateLifecycleRefusal, string> = {
+  change_request_not_selectable:
+    'A change-request counterpart cannot be an ordinary default or replacement.',
   retired: 'This template is retired.',
   not_approved: 'Only a template the provider has approved can be used.',
   not_active: 'Only an active template can be the default.',

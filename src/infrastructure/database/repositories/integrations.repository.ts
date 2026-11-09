@@ -13,6 +13,12 @@ import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 @Injectable()
 export class IntegrationsRepository {
+  /** Staff-only lookup; merchant entrypoints use authenticated org-scoped reads. */
+  async findById(id: string) {
+    return this.db.query.integrations.findFirst({
+      where: eq(integrations.id, id),
+    });
+  }
   constructor(
     @Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>,
     @Inject(ConfigService)

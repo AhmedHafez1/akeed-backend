@@ -60,6 +60,14 @@ export class CommerceOutcomeSyncTracker {
     }
   }
 
+  claimReconciliation(
+    command: CommerceOutcomeDispatchCommand,
+    orderId: string,
+    revision: string,
+  ) {
+    return this.syncs.claimReconciliation(toTarget(command, orderId), revision);
+  }
+
   /**
    * Whether this outcome already reached the store or has a try on the way.
    * A failed read answers no: the adapters read the order before writing.
@@ -119,14 +127,21 @@ export class CommerceOutcomeSyncTracker {
       const plan = planOutcomeSync(result, sync);
       const dueAt =
         plan.retryDelayMs === null ? null : Date.now() + plan.retryDelayMs;
-      const settled = await this.syncs.settle(sync.id, sync.orgId, {
-        state: plan.state,
-        errorCode: plan.errorCode,
-        providerStatus: plan.providerStatus,
-        requiresAssistance: plan.requiresAssistance,
-        spent: plan.spent,
-        nextAttemptAt: dueAt === null ? null : new Date(dueAt).toISOString(),
-      });
+      const settled = await this.syncs.settle(
+        sync.id,
+        sync.orgId,
+        {
+          state: plan.state,
+          errorCode: plan.errorCode,
+          providerStatus: plan.providerStatus,
+          requiresAssistance: plan.requiresAssistance,
+          spent: plan.spent,
+          nextAttemptAt: dueAt === null ? null : new Date(dueAt).toISOString(),
+        },
+        command.action === 'change_request_reconciliation'
+          ? { revision: sync.revision, claimToken: sync.claimToken }
+          : undefined,
+      );
       if (!settled || plan.retryDelayMs === null || dueAt === null) return;
       try {
         await this.producer.scheduleRetry({

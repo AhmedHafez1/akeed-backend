@@ -80,6 +80,8 @@ class InMemoryDrafts {
     const now = new Date().toISOString();
     const row: TemplateDraftRow = {
       id: randomUUID(),
+      changeRequestOfKey: null,
+      changeLabel: null,
       key: buildDraftKey(input.purpose, input.language, input.style, version),
       purpose: input.purpose,
       language: input.language,

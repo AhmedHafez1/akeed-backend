@@ -1,3 +1,5 @@
+import { AdminChangePreparationController } from './admin-change-preparation.controller';
+import { AdminChangePreparationService } from './admin-change-preparation.service';
 import {
   Module,
   type DynamicModule,
@@ -72,6 +74,7 @@ export class AdminModule {
         StandaloneBillingController,
         // Before AdminTemplatesController: its literal `drafts` routes must
         // be matched before that controller's `:key` routes.
+        AdminChangePreparationController,
         AdminTemplateAuthoringController,
         AdminTemplatesController,
         AdminMessageTextsController,
@@ -99,6 +102,7 @@ export class AdminModule {
         AdminTemplatesService,
         AdminTemplateInspectionService,
         AdminTemplateTestSendService,
+        AdminChangePreparationService,
         AdminTemplateDraftService,
         AdminTemplateLifecycleService,
         AdminImageTwinsService,

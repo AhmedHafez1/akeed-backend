@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -97,6 +98,8 @@ export interface AdminTemplateDraftView {
   body: string;
   confirm_label: string;
   cancel_label: string;
+  change_label?: string | null;
+  change_request_of_key?: string | null;
   samples: Partial<Record<TemplateVariableKey, string>>;
   state: TemplateDraftState;
   state_changed_at: string;
@@ -155,6 +158,9 @@ function previewOf(content: TemplateDraftContent): RenderedTemplateMessage {
     buttons: [
       { label: content.confirmLabel, kind: 'quick_reply' },
       { label: content.cancelLabel, kind: 'quick_reply' },
+      ...(content.changeLabel
+        ? [{ label: content.changeLabel, kind: 'quick_reply' as const }]
+        : []),
     ],
     direction: templateDirection(content.language),
   };
@@ -311,6 +317,17 @@ export class AdminTemplateDraftService {
     dto: AdminTemplateDraftUpdateDto,
     requestId?: string,
   ): Promise<{ draft: AdminTemplateDraftView }> {
+    const original = await this.require(id);
+    if (
+      original.changeRequestOfKey &&
+      (original.metaLanguageCode !== dto.language_code ||
+        original.parameterFormat !== dto.parameter_format)
+    )
+      throw new BadRequestException({
+        code: 'WHATSAPP_TEMPLATE_DRAFT_IDENTITY_FIXED',
+        message:
+          'The counterpart language code and parameter format are fixed to its original template.',
+      });
     const result = await this.drafts.update(
       id,
       {
@@ -647,6 +664,8 @@ export class AdminTemplateDraftService {
       body: row.body,
       confirm_label: row.confirmLabel,
       cancel_label: row.cancelLabel,
+      change_label: row.changeLabel,
+      change_request_of_key: row.changeRequestOfKey,
       samples: row.samples,
       state,
       state_changed_at: row.stateChangedAt,

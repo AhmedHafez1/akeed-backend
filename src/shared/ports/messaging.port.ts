@@ -35,8 +35,11 @@ export interface MessagingPort {
     orderNumber: string;
     totalPrice: string;
     verificationId: string;
+    confirmationCycle?: number;
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
+    /** Persist the actual attempt before provider I/O, including a confirmed media fallback. */
+    beforeTemplateAttempt?: (identity: SentTemplateIdentity) => Promise<void>;
     sender?: ResolvedSender;
     dispatchContext?: {
       orgId: string;
@@ -69,6 +72,8 @@ export interface MessagingPort {
     /** For logs only. */
     verificationId: string;
     sender?: MerchantFreeFormSender;
+    /** A paid change-request reply is authorized by its immutable dispatch. */
+    dispatchContext?: { orgId: string; dispatchId: string };
   }): Promise<FreeFormTextOutcome>;
 }
 

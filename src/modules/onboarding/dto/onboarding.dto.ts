@@ -113,6 +113,10 @@ export class UpdateOnboardingSettingsDto {
   acknowledgmentEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  changeRequestsEnabled?: boolean;
+
+  @IsOptional()
   @IsString()
   @IsIn(ONBOARDING_SHIPPING_CURRENCIES)
   shippingCurrency?: OnboardingShippingCurrency;
@@ -362,6 +366,8 @@ export interface OnboardingStateDto {
   isAutoVerifyEnabled: boolean;
   assumeCodWhenPaymentMissing: boolean;
   acknowledgmentEnabled: boolean;
+  changeRequestsEnabled?: boolean;
+  changeRequestReadiness?: import('../../change-requests/change-request-templates.service').ChangeRequestReadiness;
   shippingCurrency: OnboardingShippingCurrency;
   /**
    * The currency a message preview writes: the latest real order's, else the

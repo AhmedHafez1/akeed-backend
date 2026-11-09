@@ -76,6 +76,20 @@ function setup(testOrder = false, overrides: Record<string, unknown> = {}) {
       .fn()
       .mockResolvedValue({ messages: [{ id: 'wamid' }] }),
   };
+  const changeTemplates = {
+    counterpart: jest.fn().mockResolvedValue(null),
+    selectVariant: jest.fn(),
+  };
+  changeTemplates.selectVariant.mockImplementation(
+    async (base: Record<string, unknown>) => {
+      const counterpart = await changeTemplates.counterpart(base);
+      return {
+        template: counterpart ?? base,
+        ready: Boolean(counterpart),
+        reason: counterpart ? null : 'change_text_unavailable',
+      };
+    },
+  );
   const service = new VerificationSendService(
     {
       findById: () =>
@@ -113,11 +127,50 @@ function setup(testOrder = false, overrides: Record<string, unknown> = {}) {
     undefined,
     undefined,
     resolver,
+    undefined,
+    undefined,
+    changeTemplates as never,
   );
-  return { service, resolver, claims, messaging };
+  return { service, resolver, claims, messaging, changeTemplates };
 }
 
 describe('sender selection in verification sends', () => {
+  it.each([
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'selects three buttons only with opt-in=%s and readiness=%s',
+    async (enabled, ready) => {
+      const f = setup(false, { changeRequestsEnabled: enabled });
+      if (ready)
+        f.changeTemplates.counterpart.mockImplementation(
+          (base: Record<string, unknown>) =>
+            Promise.resolve({
+              ...base,
+              imageHeader: undefined,
+              changeRequestOfKey: base.registryKey,
+              registryKey: 'change-version',
+              templateName: 'approved-change-version',
+            }),
+        );
+      await f.service.sendInitial('verification');
+      expect(f.claims.claim).toHaveBeenCalledWith(
+        expect.objectContaining({ changeRequestButtons: enabled && ready }),
+      );
+      if (!enabled)
+        expect(f.changeTemplates.counterpart).not.toHaveBeenCalled();
+      expect(f.messaging.sendVerificationTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          template: expect.objectContaining(
+            enabled && ready
+              ? { templateName: 'approved-change-version' }
+              : { templateName: expect.any(String) },
+          ),
+        }),
+      );
+    },
+  );
   it('resolves independently per message after selection, claims before sending, and omits merchant logo headers', async () => {
     const { service, resolver, claims, messaging } = setup();
     await service.sendInitial('verification');
@@ -130,10 +183,13 @@ describe('sender selection in verification sends', () => {
         orgId: 'org',
         template: expect.objectContaining({
           registryKey: 'cod_confirm.ar.standard',
-          imageHeader: expect.anything(),
         }),
       }),
     );
+    const senderCall = resolver.resolve.mock.calls[0] as [
+      { template: unknown },
+    ];
+    expect(senderCall[0].template).not.toHaveProperty('imageHeader');
     expect(claims.claim.mock.invocationCallOrder[0]).toBeLessThan(
       messaging.sendVerificationTemplate.mock.invocationCallOrder[0],
     );

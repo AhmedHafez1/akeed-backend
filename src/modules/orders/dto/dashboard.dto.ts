@@ -190,6 +190,30 @@ export interface VerificationListItemDto {
    * not cancel unanswered orders automatically and nothing was decided.
    */
   auto_cancel: AutoCancelView | null;
+  /**
+   * The customer's open change request, if any: the order must not ship
+   * until the merchant settles it or the customer answers.
+   */
+  change_request: ChangeRequestSummaryDto | null;
+}
+
+/** An open change request, as a list row or a needs-action item shows it. */
+export interface ChangeRequestSummaryDto {
+  id: string;
+  opened_at: string;
+  confirmation_cycle: number;
+  /**
+   * The customer's acknowledgment: `done` sent, `skipped` (with its reason,
+   * `skipped_no_allowance` among them), `failed`, or still `pending` /
+   * `in_progress`. Null when none was owed.
+   */
+  acknowledgment: { status: string; reason: string | null } | null;
+  merchant_email?: { status: string; reason: string | null } | null;
+  reconfirmation: {
+    state: 'requested' | 'scheduled' | 'sending' | 'failed' | null;
+    scheduled_for: string | null;
+    last_error: string | null;
+  };
 }
 
 /**
@@ -373,6 +397,8 @@ export interface NeedsActionItemDto {
   };
   capabilities: VerificationRowCapability[];
   customer_history?: CustomerHistory | null;
+  /** Set for `change_requested`. */
+  change_request?: ChangeRequestSummaryDto | null;
 }
 
 export interface CapacitySummaryDto {

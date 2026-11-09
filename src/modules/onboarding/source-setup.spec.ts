@@ -450,6 +450,7 @@ describe('source setup and health HTTP boundary', () => {
         { action: 'automatic_no_reply_tagging', supported: false },
         { action: 'automatic_no_whatsapp_tagging', supported: false },
         { action: 'automatic_no_reply_cancellation', supported: false },
+        { action: 'change_request_reconciliation', supported: false },
       ]);
 
       supported = [
@@ -466,6 +467,7 @@ describe('source setup and health HTTP boundary', () => {
         'automatic_no_reply_tagging',
         'automatic_no_whatsapp_tagging',
         'automatic_no_reply_cancellation',
+        'change_request_reconciliation',
       ]);
     });
   });

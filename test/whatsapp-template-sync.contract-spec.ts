@@ -1,3 +1,4 @@
+import { ensureChangeRequestTemplateColumns } from './contracts/change-request-template-columns';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -87,6 +88,7 @@ async function migrate(name: string): Promise<void> {
       if (statement.trim()) await tx.unsafe(statement);
     }
   });
+  await ensureChangeRequestTemplateColumns(client);
 }
 
 /** The rollback written in the 0057 header, as one script. */
@@ -699,6 +701,17 @@ describe('WhatsApp template sync against PostgreSQL', () => {
       expect(await registryRepository.findAll()).toHaveLength(8);
       expect(await registryRepository.findImageTwins()).toEqual([
         {
+          key: `${parent.key}_logo`,
+          changeRequestOfKey: null,
+          category: 'utility',
+          lastSyncedAt: null,
+          retired: false,
+          components: null,
+          parentComponents: parent.components,
+          parameterFormat: parent.parameterFormat,
+          parentParameterFormat: parent.parameterFormat,
+          variables: parent.variables,
+          parentVariables: parent.variables,
           imageTwinOfKey: parent.key,
           twinOf: {
             templateName: parent.templateName,

@@ -58,6 +58,11 @@ export class MerchantBrandingService {
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
 
+    await this.onboardingState.assertChangeRequestBranding?.(integration, {
+      logoUrl: 'https://branding.invalid/planned-logo.png',
+      logoBannerUrl: 'https://branding.invalid/planned-banner.jpg',
+    });
+
     let rendered: Awaited<ReturnType<LogoImageService['render']>>;
     try {
       rendered = await this.images.render(file.buffer);
@@ -136,6 +141,10 @@ export class MerchantBrandingService {
     this.assertWriter(user);
     const integration =
       await this.onboardingState.resolveCurrentIntegration(user);
+    await this.onboardingState.assertChangeRequestBranding?.(integration, {
+      logoUrl: null,
+      logoBannerUrl: null,
+    });
     const previous = await this.integrationsRepo.replaceLogo(
       integration.id,
       user.orgId,
