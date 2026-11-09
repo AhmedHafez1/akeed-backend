@@ -212,7 +212,12 @@ describe('sender ledger PostgreSQL contract', () => {
     });
     expect(
       await templates.findForSend(source.orgId, connection.id, selected),
-    ).toEqual({ status: 'approved', category: 'utility' });
+    ).toEqual({
+      status: 'approved',
+      category: 'utility',
+      driftReason: null,
+      lastSyncedAt: null,
+    });
     for (const overrides of [
       { registryKey: 'cod_confirm.ar.egyptian_v2' },
       { languageCode: 'ar' },

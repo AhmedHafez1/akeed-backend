@@ -61,7 +61,48 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
     private readonly queue: Queue<VerificationAutomationJobPayload>,
   ) {}
 
+  async enqueueChangeRequestEffects(params: {
+    changeRequestId: string;
+    orgId: string;
+    dueAt?: Date;
+  }): Promise<void> {
+    const due = params.dueAt ?? new Date();
+    await this.queue.add(
+      VerificationAutomationJobType.CHANGE_REQUEST_EFFECTS,
+      {
+        changeRequestId: params.changeRequestId,
+        orgId: params.orgId,
+        verificationId: '',
+        scheduledAt: due.toISOString(),
+      },
+      {
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
+        jobId: `change-request-${params.changeRequestId}-effects${params.dueAt ? `-${due.getTime()}` : ''}`,
+        delay: Math.max(0, due.getTime() - Date.now()),
+      },
+    );
+  }
+
   onApplicationBootstrap(): void {
+    void this.queue
+      .upsertJobScheduler(
+        'change-request-acknowledgments',
+        { every: 60_000 },
+        {
+          name: VerificationAutomationJobType.CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP,
+          data: { verificationId: '', orgId: '', scheduledAt: '' },
+          opts: DEFAULT_QUEUE_JOB_OPTIONS,
+        },
+      )
+      .catch((error) =>
+        this.logger.warn(
+          buildBackendLog(VerificationAutomationProducer.name, {
+            action: 'change-request-acknowledgment-scheduler',
+            outcome: 'retry',
+            ...normalizeError(error),
+          }),
+        ),
+      );
     void this.queue
       .upsertJobScheduler(
         'verification-sender-recovery',
@@ -285,6 +326,47 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
       params,
       VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE,
       'nudge',
+    );
+  }
+
+  /**
+   * The merchant's updated confirmation for an open change request. One job
+   * per attempt and due time: asking again is a new attempt, and a job that
+   * waits for quiet hours is a new job of the same attempt. Never retried by
+   * the queue; a failure is recorded on the request for the merchant.
+   */
+  async enqueueReconfirmation(params: {
+    verificationId: string;
+    orgId: string;
+    changeRequestId: string;
+    attempt: number;
+    dueAt?: Date;
+  }): Promise<void> {
+    const due = params.dueAt ?? new Date();
+    const delay = Math.max(0, due.getTime() - Date.now());
+    const jobId = `change-request-${params.changeRequestId}-reconfirm-${params.attempt}${params.dueAt ? `-${due.getTime()}` : ''}`;
+    await this.queue.add(
+      VerificationAutomationJobType.CHANGE_REQUEST_RECONFIRMATION,
+      {
+        verificationId: params.verificationId,
+        orgId: params.orgId,
+        scheduledAt: due.toISOString(),
+        reconfirmation: {
+          changeRequestId: params.changeRequestId,
+          attempt: params.attempt,
+        },
+      },
+      { ...DEFAULT_QUEUE_JOB_OPTIONS, jobId, delay, attempts: 1 },
+    );
+    this.logger.log(
+      buildBackendLog('VerificationAutomationProducer', {
+        action: 'enqueue',
+        outcome: 'success',
+        jobType: VerificationAutomationJobType.CHANGE_REQUEST_RECONFIRMATION,
+        verificationId: params.verificationId,
+        delayMs: delay,
+        jobId,
+      }),
     );
   }
 

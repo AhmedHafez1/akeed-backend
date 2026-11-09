@@ -1,0 +1,3950 @@
+{
+  "drafts": [
+    {
+      "key": "cod_confirm.en.detailed_v1",
+      "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+      "state": "submitted",
+      "style": "detailed",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+        "order": "TEST-1",
+        "store": "Akeed Store",
+        "total": "250.00 USD",
+        "region": "Cairo",
+        "address": "12 Nile Street, Maadi",
+        "customer": "Ahmed"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "en",
+      "created_at": "2026-10-11T13:48:10.407293+00:00",
+      "updated_at": "2026-10-11T13:49:28.569+00:00",
+      "template_id": "6bae7ef0-8231-445d-acc0-e3765a7c851b",
+      "cancel_label": "Cancel",
+      "confirm_label": "Confirm",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-11T13:49:28.569+00:00",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_confirm_detailed_v1"
+    },
+    {
+      "key": "cod_confirm.es.short_v1",
+      "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+      "state": "submitted",
+      "style": "short",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Togo",
+        "total": "250.00 USD",
+        "customer": "Carlos"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "es",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:48:13.072+00:00",
+      "template_id": "d512190b-19bd-4092-a929-2f2903b62755",
+      "cancel_label": "Cancelar",
+      "confirm_label": "Confirmar",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:48:13.072+00:00",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_short_v1"
+    },
+    {
+      "key": "cod_confirm.es.standard_v1",
+      "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Tienda Akeed",
+        "total": "250.00 USD",
+        "customer": "Carlos"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "es",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:49:23.493+00:00",
+      "template_id": "3097d3a9-6027-439e-8976-1ef0ddb8beb4",
+      "cancel_label": "Cancelar pedido",
+      "confirm_label": "Confirmar pedido",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:49:23.493+00:00",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_standard_v1"
+    },
+    {
+      "key": "cod_confirm.fr.short_v1",
+      "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+      "state": "submitted",
+      "style": "short",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Togo",
+        "total": "250.00 USD",
+        "customer": "Zidane"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "fr",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:43:34.516+00:00",
+      "template_id": "9bad87c4-1d3a-4ea1-8473-9c9112e35b2d",
+      "cancel_label": "Annuler",
+      "confirm_label": "Confirmer",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:43:34.516+00:00",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_short_v1"
+    },
+    {
+      "key": "cod_confirm.fr.standard_v1",
+      "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Boutique Akeed",
+        "total": "250.00 USD",
+        "customer": "Camille"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "fr",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:45:42.201+00:00",
+      "template_id": "dbfd7baa-e922-4164-9288-49580b6915fb",
+      "cancel_label": "Annuler la commande",
+      "confirm_label": "Confirmer la commande",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:45:42.201+00:00",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1"
+    },
+    {
+      "key": "cod_confirm.tr.short_v1",
+      "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+      "state": "submitted",
+      "style": "short",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "total": "250.00 USD"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "tr",
+      "created_at": "2026-10-16T05:04:31.646468+00:00",
+      "updated_at": "2026-10-16T05:30:42.339+00:00",
+      "template_id": "6668f242-9bf3-4fdb-a7eb-07a96c75d7e8",
+      "cancel_label": "İptal et",
+      "confirm_label": "Onayla",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-16T05:30:42.339+00:00",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_short_v1"
+    },
+    {
+      "key": "cod_confirm.tr.standard_v1",
+      "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Akeed Mağazası",
+        "total": "250.00 USD",
+        "customer": "Ayşe"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "tr",
+      "created_at": "2026-10-16T05:04:31.646468+00:00",
+      "updated_at": "2026-10-16T05:32:57.198+00:00",
+      "template_id": "dd3e4fc0-0450-479b-95be-2e516a4b652e",
+      "cancel_label": "Siparişi iptal et",
+      "confirm_label": "Siparişi onayla",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-16T05:32:57.198+00:00",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1"
+    },
+    {
+      "key": "cod_confirm.ur.short_v1",
+      "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+      "state": "submitted",
+      "style": "short",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Noor",
+        "total": "250.00 USD",
+        "customer": "أحمد"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "ur",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:31:02.065+00:00",
+      "template_id": "7edca8ac-3c31-40c8-b041-0858acf4d1af",
+      "cancel_label": "منسوخ کریں",
+      "confirm_label": "تصدیق کریں",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:31:02.065+00:00",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_short_v1"
+    },
+    {
+      "key": "cod_confirm.ur.standard_v1",
+      "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_confirmation",
+      "samples": {
+        "order": "TEST-1",
+        "store": "اکید اسٹور",
+        "total": "250.00 USD",
+        "customer": "احمد"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "ur",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:21:40.855+00:00",
+      "template_id": "bc77b13d-ef9a-4348-9f60-0bb7e24e3a9b",
+      "cancel_label": "آرڈر منسوخ کریں",
+      "confirm_label": "آرڈر کی تصدیق کریں",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:21:40.855+00:00",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_standard_v1"
+    },
+    {
+      "key": "cod_reminder.ar.professional_v1",
+      "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+      "state": "submitted",
+      "style": "professional",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "متجر أكيد",
+        "total": "250.00 USD",
+        "customer": "أحمد"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "ar",
+      "created_at": "2026-10-09T14:54:05.490127+00:00",
+      "updated_at": "2026-10-09T14:55:21.757+00:00",
+      "template_id": "210340db-e379-47f1-a298-cbfda901c003",
+      "cancel_label": "إلغاء الطلب",
+      "confirm_label": "تأكيد الطلب",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-09T14:55:21.757+00:00",
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_reminder_professional_v1"
+    },
+    {
+      "key": "cod_reminder.en.professional_v1",
+      "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+      "state": "submitted",
+      "style": "professional",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Akeed Store",
+        "total": "250.00 USD",
+        "customer": "Ahmed"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "en",
+      "created_at": "2026-10-10T05:49:30.431391+00:00",
+      "updated_at": "2026-10-10T05:49:49.204+00:00",
+      "template_id": "2f7842af-7b2f-4326-a8df-47bb5247f916",
+      "cancel_label": "Cancel",
+      "confirm_label": "Confirm",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-10T05:49:49.204+00:00",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_reminder_professional_v1"
+    },
+    {
+      "key": "cod_reminder.es.standard_v1",
+      "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Tienda Akeed",
+        "total": "250.00 USD",
+        "customer": "Carlos"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "es",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:36:04.235+00:00",
+      "template_id": "faafbe8a-29dc-4713-a530-ca334bbefd51",
+      "cancel_label": "Cancelar pedido",
+      "confirm_label": "Confirmar pedido",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:36:04.235+00:00",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_reminder_standard_v1"
+    },
+    {
+      "key": "cod_reminder.fr.standard_v1",
+      "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Boutique Akeed",
+        "total": "250.00 USD",
+        "customer": "Zidane"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "fr",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:37:48.038+00:00",
+      "template_id": "4ef63d97-2719-49cd-a18c-a02e4b082ae2",
+      "cancel_label": "Annuler la commande",
+      "confirm_label": "Confirmer la commande",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:37:48.038+00:00",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1"
+    },
+    {
+      "key": "cod_reminder.tr.standard_v1",
+      "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "Akeed Mağazası",
+        "total": "250.00 USD",
+        "customer": "Ayşe"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "tr",
+      "created_at": "2026-10-16T05:04:31.646468+00:00",
+      "updated_at": "2026-10-16T05:39:35.97+00:00",
+      "template_id": "637c061f-f5ba-4601-b81f-b08d79c76c42",
+      "cancel_label": "Siparişi iptal et",
+      "confirm_label": "Siparişi onayla",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-16T05:39:35.97+00:00",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1"
+    },
+    {
+      "key": "cod_reminder.ur.standard_v1",
+      "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+      "state": "submitted",
+      "style": "standard",
+      "purpose": "cod_reminder",
+      "samples": {
+        "order": "TEST-1",
+        "store": "اکید اسٹور",
+        "total": "250.00 USD",
+        "customer": "احمد"
+      },
+      "version": 1,
+      "category": "utility",
+      "language": "ur",
+      "created_at": "2026-10-13T09:09:57.385168+00:00",
+      "updated_at": "2026-10-13T09:34:04.746+00:00",
+      "template_id": "9310c8a3-268c-433e-9056-9370200f43d2",
+      "cancel_label": "آرڈر منسوخ کریں",
+      "confirm_label": "آرڈر کی تصدیق کریں",
+      "last_error_code": null,
+      "parameter_format": "named",
+      "state_changed_at": "2026-10-13T09:34:04.746+00:00",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_reminder_standard_v1"
+    }
+  ],
+  "journal": [
+    {
+      "id": 1,
+      "hash": "402050138dcb8cc6b8b584e0003d1b7553123cf01eb9c3116091bb796d7bfdf5",
+      "created_at": 1768337065120
+    },
+    {
+      "id": 2,
+      "hash": "2e47679d4cbe7609e584017e7421deac4581a2271c89b4251193e8ffca8a0867",
+      "created_at": 1768754842031
+    },
+    {
+      "id": 3,
+      "hash": "7e7b0dc52e411ec92337ac5e0e45d17b1499dabfd2008e78436f746afed5f067",
+      "created_at": 1770076800000
+    },
+    {
+      "id": 4,
+      "hash": "2d5a2115e7753afec94181fc5ad48a46bbc8ecbd5d4eec08b4ce250be83eec76",
+      "created_at": 1770910064302
+    },
+    {
+      "id": 5,
+      "hash": "39228f27d27aea024721e1d7086686c2acee20cc97a58d29d61c20312bc19849",
+      "created_at": 1771128444862
+    },
+    {
+      "id": 6,
+      "hash": "aa4f9b73b2175d952ccfbad9fd749dfab45aa81c3df81c11d7bf917af720a2c7",
+      "created_at": 1771150051580
+    },
+    {
+      "id": 7,
+      "hash": "4de31b46fd529ec3d5997d49d6df2d9667d2ee18bb1f35cd12233eab7e0d61e4",
+      "created_at": 1771236458000
+    },
+    {
+      "id": 8,
+      "hash": "5b8b9d073f89f3044442dfc601d4d6ca07fe2de842de17fe38ce7299e8a14bba",
+      "created_at": 1773861872901
+    },
+    {
+      "id": 9,
+      "hash": "719b9bf03b2fad89db27f66ccaa1bbed0849e8f5c666c276b0543526214e0fa8",
+      "created_at": 1774588800000
+    },
+    {
+      "id": 10,
+      "hash": "5ff3f3c1d68d85f8cfd4056400e89b9e5c5decf20182eba725137016800b4ae9",
+      "created_at": 1774675200000
+    },
+    {
+      "id": 11,
+      "hash": "4ef4ac89bb918b17ff9cc52534587cee24d326dcd5e5f05c1ec0071ba1397b10",
+      "created_at": 1774686807318
+    },
+    {
+      "id": 12,
+      "hash": "1b74c6ef71e05422506114c256bc535684da4cabcf8980f6d2d9eb56a37d422b",
+      "created_at": 1774798800266
+    },
+    {
+      "id": 13,
+      "hash": "5e33a19b3e7911bd0feb98df2446f5d4288f281191cb8b15a31c1ae8976b876b",
+      "created_at": 1776278400000
+    },
+    {
+      "id": 14,
+      "hash": "bfd0e2be860be8518ee160851969de073ca42221b4600f12b0c9e8a6297a1c3a",
+      "created_at": 1776511077072
+    },
+    {
+      "id": 15,
+      "hash": "937f825d7e7e0623de8adbb6d092cb1099e5af0e3f3a7c806c44659528541285",
+      "created_at": 1777207184463
+    },
+    {
+      "id": 16,
+      "hash": "a9bc1bd8704d49b86e6d981cf6c9a41e186acad159041badc6b80cd472b68066",
+      "created_at": 1777900800000
+    },
+    {
+      "id": 17,
+      "hash": "0372eeb1cfd79c42f7c7ea95d5cf818b3110ca90c228aa769c7b2d91e53ef539",
+      "created_at": 1778505600000
+    },
+    {
+      "id": 18,
+      "hash": "e797a3ba4f6eba5ab345a5a4f0aafea69e54996307b65f53ef9bc9e73e23dde5",
+      "created_at": 1779192000000
+    },
+    {
+      "id": 19,
+      "hash": "0dfcbf6300f01243066a41d587438e6d465b2f290cb57f6566d66787bac15411",
+      "created_at": 1780272000000
+    },
+    {
+      "id": 20,
+      "hash": "631cc93b662c57594d8ffb8af76cf6cd54f2a6e737e619baaeeb7152b5ad6b61",
+      "created_at": 1780358400000
+    },
+    {
+      "id": 21,
+      "hash": "8af5e96948f0f37d950dde7ac71441d1264da3f62cf80551756233848a3991f7",
+      "created_at": 1780444800000
+    },
+    {
+      "id": 22,
+      "hash": "57dc519e75f1d47af06a7b0fad51222d4c3a4fd1866611a8bfd45cfa65652697",
+      "created_at": 1780531200000
+    },
+    {
+      "id": 23,
+      "hash": "09d0c1955ebdac122dbd2c4fe75a130e959bd1830c7a230448aa2d93bc56212a",
+      "created_at": 1787702400000
+    },
+    {
+      "id": 24,
+      "hash": "362c665ddc8cf9783cc34ac94b530daf2f19f085842726d766423bf81648f821",
+      "created_at": 1788307200000
+    },
+    {
+      "id": 25,
+      "hash": "ab1ea13ef7a16b2795d7f3effea993825970ed007d1c93b4b296a9ebf4c47f78",
+      "created_at": 1788310800000
+    },
+    {
+      "id": 26,
+      "hash": "454cd5e9f9293e7efcd3c68adfe2ecb55175c518897ebfa18cee930790944f81",
+      "created_at": 1788397200000
+    },
+    {
+      "id": 27,
+      "hash": "5899c009e35867ccb2795c6c26a89c543cafb2481a901d91cad9de9a750a3d94",
+      "created_at": 1788400800000
+    },
+    {
+      "id": 28,
+      "hash": "3dba783dce314c1adf23d102648f84e19c21144677f496a919e63595be9df149",
+      "created_at": 1788454800000
+    },
+    {
+      "id": 29,
+      "hash": "b3bc1d4fada8c7405933157058d2c794302145e4aab16b859410d1a966e60833",
+      "created_at": 1788566400000
+    },
+    {
+      "id": 30,
+      "hash": "f8a90ccaaa74581c3a6e9cac012f36a6f6e265ca1ad4c9f122fe7834835d9dfa",
+      "created_at": 1788652800000
+    },
+    {
+      "id": 31,
+      "hash": "d87587ff287ce9f79c7986f5b2f9785ebede2a5e615fea117aaf197cbb2efee3",
+      "created_at": 1788825600000
+    },
+    {
+      "id": 32,
+      "hash": "22bcb43643c925c884d3def40a092604dd4cc861fff141b6313fdc14ff3daff8",
+      "created_at": 1788912000000
+    },
+    {
+      "id": 33,
+      "hash": "701b8ddc9e56a8306407faffa4e96bf56f3c831b1892dab959136c7156b7c438",
+      "created_at": 1788998400000
+    },
+    {
+      "id": 34,
+      "hash": "3d7760d2136949a3a504d5e369e61caf0a402db1587a18ce0d40d49d5b68c019",
+      "created_at": 1789084800000
+    },
+    {
+      "id": 35,
+      "hash": "c3dde8b00275adc88943bb873d05d9e8f51e75600ab0eba522fb442034f170b7",
+      "created_at": 1789171200000
+    },
+    {
+      "id": 36,
+      "hash": "b8deb497a8ce3fd247f6169b9ead2c114203b52b0704d99a11345b4f826ec6f9",
+      "created_at": 1789257600000
+    },
+    {
+      "id": 37,
+      "hash": "3d2495ce66a9eb6128b9da29aec2d097e72802bd0912d28c999a3ca961b4e6fe",
+      "created_at": 1789344000000
+    },
+    {
+      "id": 38,
+      "hash": "22cc02ff594f30413478c3fd1286fb234b0d4c4a407f24c3fef44306a6bac50f",
+      "created_at": 1789430400000
+    },
+    {
+      "id": 39,
+      "hash": "2f01b79d2961456725a61cd0e7b2d1a0268dd4412b066c8ce51d5e81f877da5d",
+      "created_at": 1789516800000
+    },
+    {
+      "id": 40,
+      "hash": "89f1305d4c20df8969e1be243c95e4d4005d830380fdef879ca616ea18ffec22",
+      "created_at": 1789603200000
+    },
+    {
+      "id": 41,
+      "hash": "8f9cf2975e8f7f22794f4abe8cf04f28ece842efb36809a7241682a4968dc9a6",
+      "created_at": 1789689600000
+    },
+    {
+      "id": 42,
+      "hash": "ac955c4dbdfa988c10e6143d4d886942ee9128280a3f17353c08a57ac10bbf41",
+      "created_at": 1789776000000
+    },
+    {
+      "id": 43,
+      "hash": "fb148651fa81aee353d1035fb1e34222e4530834636d31bafe74c1335465558c",
+      "created_at": 1789862400000
+    },
+    {
+      "id": 44,
+      "hash": "82201df8561b63d78579732762f442e85bc5a082b9aa660feaaf009ff64c938b",
+      "created_at": 1789948800000
+    },
+    {
+      "id": 45,
+      "hash": "00f43a6ff105b33c6d6e645bd7b8afb504ec5b9f3de1aa5df1bbb408674404ab",
+      "created_at": 1790035200000
+    },
+    {
+      "id": 46,
+      "hash": "13f963ff0ed5a93670b2653185421363926e594f9caaa5b1812c2a1c4ef56fdb",
+      "created_at": 1790121600000
+    },
+    {
+      "id": 47,
+      "hash": "c8eadbf7ac34874362a7b1ced5498fcf2835f006c49ba50a52d97b46227dcf0b",
+      "created_at": 1790208000000
+    },
+    {
+      "id": 48,
+      "hash": "33f4511455b51293588352821bea92c1e0c792c27df42a5fe62f8bf0b007d2ff",
+      "created_at": 1790985600000
+    },
+    {
+      "id": 49,
+      "hash": "6e7a1d6bb0cf041c66ff630a6729f69f465cea6c78822222b9461f9799c8505d",
+      "created_at": 1791072000000
+    },
+    {
+      "id": 50,
+      "hash": "7b33286e467ed373bce9ffc544566f2a5998ae6ca4437d0ee3348e31b577d28d",
+      "created_at": 1791158400000
+    },
+    {
+      "id": 51,
+      "hash": "e48b62c258f1134026085701d98addf50922d1fb572496c554d7c7a73ce04c89",
+      "created_at": 1791244800000
+    },
+    {
+      "id": 52,
+      "hash": "b2850d87c1acc4ac9739e189b4a35316c7bde8adb1d6fae9f7dfe5444989dbc6",
+      "created_at": 1791331200000
+    },
+    {
+      "id": 53,
+      "hash": "d37ae22b75c5210cbdb923a1be0f9a4b41d9be47def379479461ff44da9924de",
+      "created_at": 1791417600000
+    },
+    {
+      "id": 54,
+      "hash": "542ab744592dd8676d4e85f3914d43cc15d9d0d3597f272511f7a566dfbf8a60",
+      "created_at": 1791504000000
+    },
+    {
+      "id": 55,
+      "hash": "0c84de69db744ad2e204bc255209f7901d482ecdb86bd0f3f90c4b77841cbb9e",
+      "created_at": 1791590400000
+    },
+    {
+      "id": 56,
+      "hash": "3203fe2a7560580376a71500a5608014f0533333b767cfe7fab48fa4c33393bf",
+      "created_at": 1791676800000
+    },
+    {
+      "id": 57,
+      "hash": "23aff617ae94dabba5f28a913de4f084cb2b75a6f9ea927c8cf44a560db33fc8",
+      "created_at": 1791763200000
+    },
+    {
+      "id": 58,
+      "hash": "1f1b01553785b8c6936c825eea6109a81c6337c2f984af44cecd33db3b9706b5",
+      "created_at": 1791849600000
+    },
+    {
+      "id": 59,
+      "hash": "d356a5109c65730d42322610b6e1340065047b4dec7f10a556fe51b7a4e9d8c7",
+      "created_at": 1791936000000
+    },
+    {
+      "id": 60,
+      "hash": "471fbd8035ee47ec86d3cc8e34010f120c9d57cef494476c72985e1db1257aa4",
+      "created_at": 1792022400000
+    },
+    {
+      "id": 61,
+      "hash": "4334b9739ba5c3282b8221beb41e1bb229e1344850c32f8b722f1caf2f4d7b2e",
+      "created_at": 1792108800000
+    },
+    {
+      "id": 62,
+      "hash": "8b3bbcf285facdffbd929e6cddaba4f09e427d608fe3d846e9d749b22335c5fc",
+      "created_at": 1792195200000
+    },
+    {
+      "id": 63,
+      "hash": "bdad54dc39cd6bbf1b444603b881d32aef880c836e9daa51a5d608f9d8d281d1",
+      "created_at": 1792281600000
+    },
+    {
+      "id": 64,
+      "hash": "22e660e458c7bafedcbe152e9f356096ecb7239baa071403a07cc2619d9e0bb3",
+      "created_at": 1792368000000
+    },
+    {
+      "id": 65,
+      "hash": "bca98acff04d1f41a0edd87c79f975d075711a43a4ee82279146a5e561cf9d3b",
+      "created_at": 1792454400000
+    },
+    {
+      "id": 66,
+      "hash": "c3fe8c927ef25dd82015cfb98d1aff1f5ab94abeb907d62c72c62facd83fc9e1",
+      "created_at": 1792540800000
+    },
+    {
+      "id": 67,
+      "hash": "1a93736d0e557154aa3d0008ae517668134520f1bb9705f54e50e297c2d805f9",
+      "created_at": 1792627200000
+    },
+    {
+      "id": 68,
+      "hash": "44f4eb3538da9484f90e3add060c7bd6e48ad3cb816757a4d9723f68bb3f1532",
+      "created_at": 1792713600000
+    },
+    {
+      "id": 69,
+      "hash": "93774e1c121b029f1a3eeb49906f087594aaed966f193401bd84968eadb39d26",
+      "created_at": 1792800000000
+    },
+    {
+      "id": 70,
+      "hash": "9b338710b005d3afc6c25382f4f90ce1ef1a7424ccb0191c2d0ebf64626b479b",
+      "created_at": 1792886400000
+    },
+    {
+      "id": 71,
+      "hash": "faf73689b81ec08861a40d0a32b9aa8536fc11d34203278b7884381da0dc009b",
+      "created_at": 1792972800000
+    },
+    {
+      "id": 72,
+      "hash": "caa579cca16f280fd21570b449355abeb5bbd95391abcb003366bb984e47cf91",
+      "created_at": 1793059200000
+    },
+    {
+      "id": 73,
+      "hash": "d9e5307ae8684a74c4bbd1a63a73452b879d82b08f5e298e78a427d05a3a970a",
+      "created_at": 1793145600000
+    },
+    {
+      "id": 74,
+      "hash": "afaa8d39afd3908a8cbda0d69a50c45904a1fee7b92b55a066239a0dfa26b889",
+      "created_at": 1793232000000
+    },
+    {
+      "id": 75,
+      "hash": "e1b465a51a160e693e9137cc34982f2a692b3b7abc2afaf8da89fdc75bdf6e5b",
+      "created_at": 1793318400000
+    },
+    {
+      "id": 76,
+      "hash": "588449aaee11122786dea068703a712a3260136dbb196d82b866083e4dd7820b",
+      "created_at": 1793404800000
+    },
+    {
+      "id": 77,
+      "hash": "18fc8f9e9855744636d0bc1bd1f36d7dcb2797e419b0fa07a7558902e5a0d086",
+      "created_at": 1793491200000
+    },
+    {
+      "id": 78,
+      "hash": "4361d079003a0cca8f1c60d05402de8146ed3d8a9eef9c178b8996b97e8e5a96",
+      "created_at": 1793577600000
+    },
+    {
+      "id": 79,
+      "hash": "0e9cd0687d44eafa32bd7786c59acfc1918a8c85fb1aec3a3cea9cb77c4133c3",
+      "created_at": 1793664000000
+    },
+    {
+      "id": 80,
+      "hash": "ed5d014ccf2d9283737af0e78812263645ab2828e93acb17b21d378b212df45a",
+      "created_at": 1793750400000
+    },
+    {
+      "id": 81,
+      "hash": "5a8877ec1f939333815740973634cbdcd9d8e412919e165378808ce0a3316a58",
+      "created_at": 1793836800000
+    },
+    {
+      "id": 82,
+      "hash": "e71682702873a9bdeff55f852c47c8bb5139b6095d00ba5ced72057d40e8d7a5",
+      "created_at": 1793923200000
+    },
+    {
+      "id": 83,
+      "hash": "25d8123935f4eeae6915e2187ef6b69cf3d7d20754af7ef6ccec2d80220f326a",
+      "created_at": 1794009600000
+    },
+    {
+      "id": 84,
+      "hash": "4be5f012c0bbb70f1a6c5993d06284140f48a19e524bcbed3620590785333146",
+      "created_at": 1794096000000
+    },
+    {
+      "id": 85,
+      "hash": "0d8964932817cf6d77e4a196d6ccf385497771047e75ebe4bb057fe7b2907a1d",
+      "created_at": 1794182400000
+    },
+    {
+      "id": 86,
+      "hash": "cab3bcc04b6aef742e088e64de35552d59a8fcdb36e45646618b4c36c82ad203",
+      "created_at": 1794182400001
+    },
+    {
+      "id": 87,
+      "hash": "41d971e626c677e31f0e8280c317df1228295b483bf42ac7ef4ddc7725742da0",
+      "created_at": 1794268800000
+    },
+    {
+      "id": 88,
+      "hash": "763e9c00b3658039ba440f83e9f88fcc005a4081e2a84ba1b5cab44af8f13302",
+      "created_at": 1794355200000
+    },
+    {
+      "id": 89,
+      "hash": "27191b9ddc703d2344721958f07f2b6a75ba817eb37a0da2331d4fa7aba2f523",
+      "created_at": 1794441600000
+    },
+    {
+      "id": 90,
+      "hash": "6040ec47bb73d89a7f57b00fd233c710360f64653206fd87ba3597fab5276d7b",
+      "created_at": 1794528000000
+    },
+    {
+      "id": 91,
+      "hash": "e5464949f3c7a51246b1fd4245313042d7e31193c399fe6b636ee0bff03f35f9",
+      "created_at": 1794614400000
+    },
+    {
+      "id": 92,
+      "hash": "c9c5ee5c4e1c8762a9fdc79334ec98f4eed02f6f60a48db7e4996dc035330813",
+      "created_at": 1794700800000
+    },
+    {
+      "id": 93,
+      "hash": "dbe944ed4a192a61ea6bd695986f6d91fc4b67123548aa51e6a795ea8537f4d3",
+      "created_at": 1794787200000
+    },
+    {
+      "id": 94,
+      "hash": "c09f8ab8b1b205bb4db52519f9ace616a61eeabf09957764c7cf1f39efe4213e",
+      "created_at": 1794873600000
+    }
+  ],
+  "templates": [
+    {
+      "key": "cod_confirm.ar.egyptian",
+      "style": "egyptian",
+      "preview": {
+        "body": "طلبك رقم #{{order}} من {{store}} مستني تأكيدك.",
+        "ending": "ياريت تأكّد الطلب بقيمة {{total}} دلوقتي عشان نشحنهولك فورًا.",
+        "greeting": "أهلًا {{customer}}،",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد وشحن"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 2,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1502674391401632",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ar_EG",
+      "meta_template_name": "akeed_cod_verification_direct_eg",
+      "components_drift_at": "2026-10-09T19:30:37.894+00:00",
+      "components_snapshot": {
+        "body": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ar.egyptian_logo",
+      "style": "egyptian_logo",
+      "preview": {
+        "body": "طلبك رقم #{{order}} من {{store}} مستني تأكيدك.",
+        "ending": "ياريت تأكّد الطلب بقيمة {{total}} دلوقتي عشان نشحنهولك فورًا.",
+        "greeting": "أهلًا {{customer}}،",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد وشحن"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:00.989691+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 2,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "3728068747351037",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ar.egyptian",
+      "meta_language_code": "ar_EG",
+      "meta_template_name": "akeed_cod_verification_direct_eg_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.ar.gulf",
+      "style": "gulf",
+      "preview": {
+        "body": "طلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.",
+        "ending": "ياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فورًا وما يتأخر عليك.",
+        "greeting": "أهلًا {{customer}}،",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء",
+        "confirmButton": "اشحن طلبي"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 3,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "2796907314018535",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification_direct_gulf",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "اشحن طلبي"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ar.gulf_logo",
+      "style": "gulf_logo",
+      "preview": {
+        "body": "طلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.",
+        "ending": "ياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فورًا وما يتأخر عليك.",
+        "greeting": "أهلًا {{customer}}،",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء",
+        "confirmButton": "اشحن طلبي"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:08.256696+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 3,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1485488149769886",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ar.gulf",
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification_direct_gulf_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "اشحن طلبي"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.ar.short",
+      "style": "short",
+      "preview": {
+        "body": "تم استلام طلبك رقم #{{order}} والدفع عند الاستلام",
+        "ending": "من فضلك أكد الطلب.",
+        "greeting": "السلام عليكم",
+        "totalLabel": "إجمالي السعر: {{total}}",
+        "cancelButton": "إلغاء",
+        "confirmButton": "تأكيد"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 4,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1501189521572884",
+      "parameter_format": "positional",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "position": 1
+        },
+        {
+          "key": "total",
+          "position": 2
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ar.short_logo",
+      "style": "short_logo",
+      "preview": {
+        "body": "تم استلام طلبك رقم #{{order}} والدفع عند الاستلام",
+        "ending": "من فضلك أكد الطلب.",
+        "greeting": "السلام عليكم",
+        "totalLabel": "إجمالي السعر: {{total}}",
+        "cancelButton": "إلغاء",
+        "confirmButton": "تأكيد"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:15.407678+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 4,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1151651450869907",
+      "parameter_format": "positional",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "position": 1
+        },
+        {
+          "key": "total",
+          "position": 2
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ar.short",
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.ar.standard",
+      "style": "standard",
+      "preview": {
+        "body": "شكرًا لتسوّقك من {{store}}.\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريبًا للشحن!",
+        "ending": "يرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "greeting": "أهلًا بك {{customer}} 👋",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد الطلب"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 1,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "970954358896593",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification_friendly",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ar.standard_logo",
+      "style": "standard_logo",
+      "preview": {
+        "body": "شكرًا لتسوّقك من {{store}}.\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز تقريبًا للشحن!",
+        "ending": "يرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "greeting": "أهلًا بك {{customer}} 👋",
+        "totalLabel": "إجمالي الطلب: {{total}}",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد الطلب"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-17T03:29:49.133285+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 1,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1106791645068957",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ar.standard",
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_verification_friendly_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من {{store}}\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.en.detailed_v1",
+      "style": "detailed_v1",
+      "preview": {
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-11T13:49:28.337855+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1647028200261919",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "items",
+          "name": "items"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        },
+        {
+          "key": "region",
+          "name": "region"
+        },
+        {
+          "key": "address",
+          "name": "address"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_confirm_detailed_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.en.detailed_v1_logo",
+      "style": "detailed_v1_logo",
+      "preview": {
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:38.704669+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1456489033063208",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "items",
+          "name": "items"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        },
+        {
+          "key": "region",
+          "name": "region"
+        },
+        {
+          "key": "address",
+          "name": "address"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.en.detailed_v1",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_confirm_detailed_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.en.direct",
+      "style": "direct",
+      "preview": {
+        "body": "We are preparing your order #{{order}} at {{store}}.",
+        "ending": "",
+        "greeting": "Hi {{customer}},",
+        "totalLabel": "Please confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "cancelButton": "Cancel",
+        "confirmButton": "Ship My Order"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 3,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1535325801507953",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification_direct_",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Ship My Order"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.en.direct_logo",
+      "style": "direct_logo",
+      "preview": {
+        "body": "We are preparing your order #{{order}} at {{store}}.",
+        "ending": "",
+        "greeting": "Hi {{customer}},",
+        "totalLabel": "Please confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "cancelButton": "Cancel",
+        "confirmButton": "Ship My Order"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:29.352369+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 3,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1103376585839930",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.en.direct",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification_direct__logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Ship My Order"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.en.friendly",
+      "style": "friendly",
+      "preview": {
+        "body": "Thank you for shopping with {{store}}.",
+        "ending": "Please tap the button below to confirm your order so we can ship it immediately.",
+        "greeting": "Hi {{customer}}! 👋",
+        "totalLabel": "Your order #{{order}} for {{total}} is ready to go!",
+        "cancelButton": "Cancel Order",
+        "confirmButton": "Confirm Order"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 1,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1295390495986864",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification_friendly",
+      "components_drift_at": "2026-10-10T19:09:37.636+00:00",
+      "components_snapshot": {
+        "body": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm Order"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel Order"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.en.friendly_logo",
+      "style": "friendly_logo",
+      "preview": {
+        "body": "Thank you for shopping with {{store}}.",
+        "ending": "Please tap the button below to confirm your order so we can ship it immediately.",
+        "greeting": "Hi {{customer}}! 👋",
+        "totalLabel": "Your order #{{order}} for {{total}} is ready to go!",
+        "cancelButton": "Cancel Order",
+        "confirmButton": "Confirm Order"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:19.745349+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 1,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "2788001575065155",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.en.friendly",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification_friendly_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm Order"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel Order"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.en.professional",
+      "style": "professional",
+      "preview": {
+        "body": "Thank you for choosing {{store}}.",
+        "ending": "Once confirmed, we will ship your order.",
+        "greeting": "Hello {{customer}},",
+        "totalLabel": "We have received your Cash on Delivery order #{{order}} for {{total}}.",
+        "cancelButton": "Cancel Order",
+        "confirmButton": "Confirm & Ship"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 2,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "935096232900347",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "_akeed_cod_verification_professional",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm & Ship"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel Order"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.en.professional_logo",
+      "style": "professional_logo",
+      "preview": {
+        "body": "Thank you for choosing {{store}}.",
+        "ending": "Once confirmed, we will ship your order.",
+        "greeting": "Hello {{customer}},",
+        "totalLabel": "We have received your Cash on Delivery order #{{order}} for {{total}}.",
+        "cancelButton": "Cancel Order",
+        "confirmButton": "Confirm & Ship"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:24.706479+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 2,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1630934595099511",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.en.professional",
+      "meta_language_code": "en",
+      "meta_template_name": "_akeed_cod_verification_professional_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm & Ship"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel Order"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.en.short",
+      "style": "short",
+      "preview": {
+        "body": "We have received your order #{{order}} with Cash on Delivery.",
+        "ending": "Please confirm your order.",
+        "greeting": "Hello",
+        "totalLabel": "Total Price: {{total}}",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-08T19:58:04.638984+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 4,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1268131301564775",
+      "parameter_format": "positional",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "position": 1
+        },
+        {
+          "key": "total",
+          "position": 2
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.en.short_logo",
+      "style": "short_logo",
+      "preview": {
+        "body": "We have received your order #{{order}} with Cash on Delivery.",
+        "ending": "Please confirm your order.",
+        "greeting": "Hello",
+        "totalLabel": "Total Price: {{total}}",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:33.79598+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 4,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1546592433885792",
+      "parameter_format": "positional",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "position": 1
+        },
+        {
+          "key": "total",
+          "position": 2
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.en.short",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_verification_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.es.short_v1",
+      "style": "short_v1",
+      "preview": {
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar",
+        "confirmButton": "Confirmar"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-13T09:48:12.860762+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1047300711677511",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_short_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.es.short_v1_logo",
+      "style": "short_v1_logo",
+      "preview": {
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar",
+        "confirmButton": "Confirmar"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:44.87454+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1160271179657885",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.es.short_v1",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_short_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.es.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar pedido",
+        "confirmButton": "Confirmar pedido"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-13T09:49:23.288765+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1965115771074140",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar pedido"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar pedido"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.es.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar pedido",
+        "confirmButton": "Confirmar pedido"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:51.37897+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "990437910766804",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.es.standard_v1",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_confirm_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar pedido"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar pedido"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.fr.short_v1",
+      "style": "short_v1",
+      "preview": {
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler",
+        "confirmButton": "Confirmer"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-13T09:43:34.29912+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "29630752543179036",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_short_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.fr.short_v1_logo",
+      "style": "short_v1_logo",
+      "preview": {
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler",
+        "confirmButton": "Confirmer"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:27:59.316578+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1158090443550673",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.fr.short_v1",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_short_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.fr.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler la commande",
+        "confirmButton": "Confirmer la commande"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-13T09:45:41.986281+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1718692195901492",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer la commande"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler la commande"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.fr.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler la commande",
+        "confirmButton": "Confirmer la commande"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:05.181559+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "869878076150518",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.fr.standard_v1",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer la commande"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler la commande"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.tr.short_v1",
+      "style": "short_v1",
+      "preview": {
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "İptal et",
+        "confirmButton": "Onayla"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-16T05:30:42.110835+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1817870236056754",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_short_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "İptal et"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.tr.short_v1_logo",
+      "style": "short_v1_logo",
+      "preview": {
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "İptal et",
+        "confirmButton": "Onayla"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:13.167697+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "28743057288681508",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.tr.short_v1",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_short_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "İptal et"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.tr.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Siparişi iptal et",
+        "confirmButton": "Siparişi onayla"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-16T05:32:56.959646+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1580771303355669",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi iptal et"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.tr.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Siparişi iptal et",
+        "confirmButton": "Siparişi onayla"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:20.579788+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1141292241877451",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.tr.standard_v1",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_confirm_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi iptal et"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.ur.short_v1",
+      "style": "short_v1",
+      "preview": {
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "منسوخ کریں",
+        "confirmButton": "تصدیق کریں"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-13T09:31:01.838713+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1131997152942939",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_short_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "منسوخ کریں"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ur.short_v1_logo",
+      "style": "short_v1_logo",
+      "preview": {
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "منسوخ کریں",
+        "confirmButton": "تصدیق کریں"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:27.340822+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1992965214726336",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ur.short_v1",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_short_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "منسوخ کریں"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_confirm.ur.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "آرڈر منسوخ کریں",
+        "confirmButton": "آرڈر کی تصدیق کریں"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-13T09:21:40.640542+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1144501224935133",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر کی تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر منسوخ کریں"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_confirm.ur.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "آرڈر منسوخ کریں",
+        "confirmButton": "آرڈر کی تصدیق کریں"
+      },
+      "purpose": "cod_confirmation",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:34.189345+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "4573766946240573",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_confirm.ur.standard_v1",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_confirm_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر کی تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر منسوخ کریں"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.ar.professional_v1",
+      "style": "professional_v1",
+      "preview": {
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد الطلب"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-09T14:55:21.539135+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1056841577401927",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_reminder_professional_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.ar.professional_v1_logo",
+      "style": "professional_v1_logo",
+      "preview": {
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "إلغاء الطلب",
+        "confirmButton": "تأكيد الطلب"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ar",
+      "is_active": true,
+      "created_at": "2026-10-17T03:29:49.133285+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1795495198454435",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.ar.professional_v1",
+      "meta_language_code": "ar",
+      "meta_template_name": "akeed_cod_reminder_professional_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من {{store}} بقيمة {{total}} (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "تأكيد الطلب"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "إلغاء الطلب"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.en.professional_v1",
+      "style": "professional_v1",
+      "preview": {
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-10T05:49:48.976614+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1097005039969851",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_reminder_professional_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.en.professional_v1_logo",
+      "style": "professional_v1_logo",
+      "preview": {
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancel",
+        "confirmButton": "Confirm"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "en",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:39.518063+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1591715722970447",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.en.professional_v1",
+      "meta_language_code": "en",
+      "meta_template_name": "akeed_cod_reminder_professional_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirm"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancel"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.es.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar pedido",
+        "confirmButton": "Confirmar pedido"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-13T09:36:04.022526+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1630851378632599",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_reminder_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar pedido"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar pedido"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.es.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Cancelar pedido",
+        "confirmButton": "Confirmar pedido"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "es",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:45.744847+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1262468822721189",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.es.standard_v1",
+      "meta_language_code": "es",
+      "meta_template_name": "akeed_cod_reminder_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmar pedido"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Cancelar pedido"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.fr.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler la commande",
+        "confirmButton": "Confirmer la commande"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-13T09:37:47.823749+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "2555508584952762",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer la commande"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler la commande"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.fr.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Annuler la commande",
+        "confirmButton": "Confirmer la commande"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "fr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:51.517583+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "2214986432379350",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.fr.standard_v1",
+      "meta_language_code": "fr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Confirmer la commande"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Annuler la commande"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.tr.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Siparişi iptal et",
+        "confirmButton": "Siparişi onayla"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-16T05:39:35.737657+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1113253464994983",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi iptal et"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.tr.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "Siparişi iptal et",
+        "confirmButton": "Siparişi onayla"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "tr",
+      "is_active": true,
+      "created_at": "2026-10-17T12:28:58.320955+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1117816254165426",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.tr.standard_v1",
+      "meta_language_code": "tr",
+      "meta_template_name": "akeed_cod_reminder_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi onayla"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "Siparişi iptal et"
+          }
+        ],
+        "headerImage": true
+      }
+    },
+    {
+      "key": "cod_reminder.ur.standard_v1",
+      "style": "standard_v1",
+      "preview": {
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "آرڈر منسوخ کریں",
+        "confirmButton": "آرڈر کی تصدیق کریں"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-13T09:34:04.532836+00:00",
+      "is_default": true,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "none",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1653985349450987",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": null,
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_reminder_standard_v1",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر کی تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر منسوخ کریں"
+          }
+        ]
+      }
+    },
+    {
+      "key": "cod_reminder.ur.standard_v1_logo",
+      "style": "standard_v1_logo",
+      "preview": {
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "ending": "",
+        "greeting": "",
+        "totalLabel": "",
+        "cancelButton": "آرڈر منسوخ کریں",
+        "confirmButton": "آرڈر کی تصدیق کریں"
+      },
+      "purpose": "cod_reminder",
+      "quality": "pending",
+      "category": "utility",
+      "language": "ur",
+      "is_active": true,
+      "created_at": "2026-10-17T12:29:05.291828+00:00",
+      "is_default": false,
+      "retired_at": null,
+      "sort_order": 100,
+      "updated_at": "2026-11-09T13:58:28.269+00:00",
+      "header_format": "image",
+      "review_status": "approved",
+      "last_synced_at": "2026-11-09T13:58:28.269+00:00",
+      "status_event_at": "2026-11-09T13:58:26.871+00:00",
+      "meta_template_id": "1732079911227850",
+      "parameter_format": "named",
+      "pending_category": null,
+      "quality_event_at": "2026-11-09T13:58:26.871+00:00",
+      "rejection_reason": "none",
+      "variable_mapping": [
+        {
+          "key": "customer",
+          "name": "customer"
+        },
+        {
+          "key": "store",
+          "name": "store"
+        },
+        {
+          "key": "order",
+          "name": "order"
+        },
+        {
+          "key": "total",
+          "name": "total"
+        }
+      ],
+      "category_event_at": "2026-11-09T13:58:26.871+00:00",
+      "image_twin_of_key": "cod_reminder.ur.standard_v1",
+      "meta_language_code": "ur",
+      "meta_template_name": "akeed_cod_reminder_standard_v1_logo",
+      "components_drift_at": null,
+      "components_snapshot": {
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "buttons": [
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر کی تصدیق کریں"
+          },
+          {
+            "kind": "quick_reply",
+            "text": "آرڈر منسوخ کریں"
+          }
+        ],
+        "headerImage": true
+      }
+    }
+  ]
+}

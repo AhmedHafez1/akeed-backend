@@ -1,3 +1,4 @@
+import { EasyOrdersCurrentOrderSource } from './easyorders-current-order.source';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../database/database.module';
@@ -28,6 +29,7 @@ import { EasyOrdersSetupContributor } from './easyorders-setup.contributor';
     EasyOrdersOutcomeAdapter,
     EasyOrdersStatusUpdateHandler,
     EasyOrdersSetupContributor,
+    EasyOrdersCurrentOrderSource,
     PhoneService,
     {
       provide: EASYORDERS_HTTP,
@@ -42,6 +44,7 @@ import { EasyOrdersSetupContributor } from './easyorders-setup.contributor';
     EasyOrdersOutcomeAdapter,
     EasyOrdersStatusUpdateHandler,
     EasyOrdersSetupContributor,
+    EasyOrdersCurrentOrderSource,
   ],
 })
 export class EasyOrdersIngestionModule {}

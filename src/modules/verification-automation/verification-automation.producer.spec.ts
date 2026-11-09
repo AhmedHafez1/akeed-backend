@@ -18,6 +18,24 @@ describe('VerificationAutomationProducer', () => {
     producer = new VerificationAutomationProducer(queue as never);
   });
 
+  it('enqueues initial change-request effects immediately with a stable job identity', async () => {
+    await producer.enqueueChangeRequestEffects({
+      changeRequestId: 'request-1',
+      orgId: 'org-1',
+    });
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(queue.add).toHaveBeenCalledWith(
+      VerificationAutomationJobType.CHANGE_REQUEST_EFFECTS,
+      expect.objectContaining({ changeRequestId: 'request-1', orgId: 'org-1' }),
+      expect.objectContaining({
+        jobId: 'change-request-request-1-effects',
+        delay: 0,
+      }),
+    );
+    const [jobType] = queue.add.mock.calls[0] as [string];
+    expect(jobType).not.toBe(VerificationAutomationJobType.FOLLOW_UP);
+  });
+
   it.each([
     [
       'enqueueInitialSend',

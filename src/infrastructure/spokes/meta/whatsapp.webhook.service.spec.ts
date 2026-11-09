@@ -300,7 +300,9 @@ describe('WhatsAppWebhookService', () => {
         'confirmed',
         undefined,
         '1700000000',
-        { confirmationSource: 'customer' },
+        expect.objectContaining({ confirmationSource: 'customer' }),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v1',
@@ -322,7 +324,9 @@ describe('WhatsAppWebhookService', () => {
         'canceled',
         undefined,
         '1700000000',
-        { cancellationSource: 'customer' },
+        expect.objectContaining({ cancellationSource: 'customer' }),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v1',
@@ -345,7 +349,9 @@ describe('WhatsAppWebhookService', () => {
         'confirmed',
         undefined,
         '1700000000',
-        { confirmationSource: 'customer' },
+        expect.objectContaining({ confirmationSource: 'customer' }),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v1',
@@ -368,7 +374,9 @@ describe('WhatsAppWebhookService', () => {
         'canceled',
         undefined,
         '1700000000',
-        { cancellationSource: 'customer' },
+        expect.objectContaining({ cancellationSource: 'customer' }),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v1',
@@ -390,7 +398,9 @@ describe('WhatsAppWebhookService', () => {
         'confirmed',
         undefined,
         '1700000000',
-        { confirmationSource: 'customer' },
+        expect.objectContaining({ confirmationSource: 'customer' }),
+        undefined,
+        1,
       );
     });
 
@@ -408,7 +418,9 @@ describe('WhatsAppWebhookService', () => {
         'canceled',
         undefined,
         '1700000000',
-        { cancellationSource: 'customer' },
+        expect.objectContaining({ cancellationSource: 'customer' }),
+        undefined,
+        1,
       );
     });
 
@@ -493,9 +505,13 @@ describe('WhatsAppWebhookService', () => {
         status,
         undefined,
         '1700000000',
-        status === 'canceled'
-          ? { cancellationSource: 'customer' }
-          : { confirmationSource: 'customer' },
+        expect.objectContaining(
+          status === 'canceled'
+            ? { cancellationSource: 'customer' }
+            : { confirmationSource: 'customer' },
+        ),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v1',
@@ -561,7 +577,9 @@ describe('WhatsAppWebhookService', () => {
         'confirmed',
         undefined,
         '1700000000',
-        { confirmationSource: 'customer' },
+        expect.objectContaining({ confirmationSource: 'customer' }),
+        undefined,
+        1,
       );
       expect(verificationHub.finalizeVerification).toHaveBeenCalledWith(
         'v2',
@@ -583,7 +601,9 @@ describe('WhatsAppWebhookService', () => {
         'canceled',
         undefined,
         '1700000000',
-        { cancellationSource: 'customer' },
+        expect.objectContaining({ cancellationSource: 'customer' }),
+        undefined,
+        1,
       );
     });
   });

@@ -24,6 +24,19 @@ export type TagsAddResponse = GraphQLResponse<{
   };
 }>;
 
+export type TagsRemoveResponse = GraphQLResponse<{
+  tagsRemove?: { node?: { id: string }; userErrors?: GraphQLUserError[] };
+}>;
+
+export const TAGS_REMOVE_MUTATION = `
+  mutation tagsRemove($id: ID!, $tags: [String!]!) {
+    tagsRemove(id: $id, tags: $tags) {
+      node { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 export type ShopNameResponse = GraphQLResponse<{
   shop?: {
     name?: string;
@@ -41,6 +54,12 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   node?: {
     id?: string;
     status?: string;
+  } | null;
+}>;
+
+export type ActiveAppSubscriptionsResponse = GraphQLResponse<{
+  currentAppInstallation?: {
+    activeSubscriptions?: { id?: string; status?: string }[] | null;
   } | null;
 }>;
 
@@ -155,6 +174,17 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
   query GetAppSubscriptionStatus($id: ID!) {
     node(id: $id) {
       ... on AppSubscription {
+        id
+        status
+      }
+    }
+  }
+`;
+
+export const GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY = `
+  query GetActiveAppSubscriptions {
+    currentAppInstallation {
+      activeSubscriptions {
         id
         status
       }
@@ -348,6 +378,102 @@ export const ORDER_CANCELLATION_STATE_QUERY = `
       closed
       displayFinancialStatus
       displayFulfillmentStatus
+    }
+  }
+`;
+
+interface CurrentOrderMoney {
+  shopMoney?: { amount?: string | null; currencyCode?: string | null } | null;
+}
+
+interface CurrentOrderAddress {
+  phone?: string | null;
+  countryCodeV2?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  province?: string | null;
+}
+
+/** An order as `CURRENT_ORDER_QUERY` reads it. */
+export interface ShopifyCurrentOrder {
+  legacyResourceId?: string | null;
+  phone?: string | null;
+  paymentGatewayNames?: string[] | null;
+  currentTotalPriceSet?: CurrentOrderMoney | null;
+  customer?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+    defaultAddress?: CurrentOrderAddress | null;
+  } | null;
+  billingAddress?: CurrentOrderAddress | null;
+  shippingAddress?: CurrentOrderAddress | null;
+  lineItems?: {
+    nodes?: Array<{
+      title?: string | null;
+      variantTitle?: string | null;
+      currentQuantity?: number | null;
+      originalUnitPriceSet?: CurrentOrderMoney | null;
+    } | null> | null;
+  } | null;
+}
+
+export type CurrentOrderResponse = GraphQLResponse<{
+  order?: ShopifyCurrentOrder | null;
+}>;
+
+/**
+ * The details a confirmation shows, as the order is now: the current total
+ * and quantities after any order edit, the shipping address and the
+ * customer's phone candidates in the order the webhook normalizer tries
+ * them. Read-only; needs only `read_orders` and `read_customers`.
+ */
+export const CURRENT_ORDER_QUERY = `
+  query currentOrder($id: ID!) {
+    order(id: $id) {
+      legacyResourceId
+      phone
+      paymentGatewayNames
+      currentTotalPriceSet {
+        shopMoney {
+          amount
+          currencyCode
+        }
+      }
+      customer {
+        firstName
+        lastName
+        phone
+        defaultAddress {
+          phone
+          countryCodeV2
+        }
+      }
+      billingAddress {
+        phone
+        countryCodeV2
+      }
+      shippingAddress {
+        phone
+        countryCodeV2
+        address1
+        address2
+        city
+        province
+      }
+      lineItems(first: 100) {
+        nodes {
+          title
+          variantTitle
+          currentQuantity
+          originalUnitPriceSet {
+            shopMoney {
+              amount
+            }
+          }
+        }
+      }
     }
   }
 `;

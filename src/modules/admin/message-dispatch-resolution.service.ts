@@ -80,6 +80,7 @@ export class MessageDispatchResolutionService {
     );
     if (
       dispatch.kind !== 'acknowledgment' &&
+      dispatch.kind !== 'change_acknowledgment' &&
       order &&
       event &&
       (await this.dispatches.isLatestGeneration(dispatchId))

@@ -6,6 +6,8 @@ import {
   ForwardReference,
   InjectionToken,
 } from '@nestjs/common';
+import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
+import { ChangeRequestReconfirmationService } from './change-request-reconfirmation.service';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationHubService } from './verification-hub.service';
 import { BillingEntitlementService } from './billing-entitlement.service';
@@ -46,6 +48,8 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
+        ChangeRequestTemplatesService,
+        ChangeRequestReconfirmationService,
         CreditEligibilityService,
         MessageImprovementSwitches,
         MessageTextsService,
@@ -58,6 +62,8 @@ export class VerificationCoreModule {
         BillingEntitlementService,
         OrderEligibilityService,
         VerificationSendService,
+        ChangeRequestTemplatesService,
+        ChangeRequestReconfirmationService,
         CreditEligibilityService,
         MessageImprovementSwitches,
         MessageTextsService,

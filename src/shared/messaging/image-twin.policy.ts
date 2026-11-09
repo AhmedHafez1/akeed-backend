@@ -12,6 +12,7 @@ export const IMAGE_TWIN_SUFFIX = '_logo';
 
 /** Why a text template gets no image twin from the bulk action. */
 export type ImageTwinSkipReason =
+  | 'change_parent_unavailable'
   /** It already has one. */
   | 'has_twin'
   /** Staff retired it for good. */
@@ -26,6 +27,7 @@ export type ImageTwinSkipReason =
   | TemplateCopySkipReason;
 
 export interface ImageTwinParent {
+  changeRequestReady?: boolean;
   template: Pick<
     RegistryTemplate,
     | 'key'
@@ -74,6 +76,8 @@ export function planImageTwin(
   },
 ): ImageTwinPlan {
   const { template } = parent;
+  if (parent.changeRequestReady === false)
+    return { kind: 'skip', reason: 'change_parent_unavailable' };
   if (context.twinParentKeys.has(template.key)) {
     return { kind: 'skip', reason: 'has_twin' };
   }

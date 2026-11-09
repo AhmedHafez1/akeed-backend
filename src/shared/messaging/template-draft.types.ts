@@ -42,6 +42,8 @@ export interface TemplateDraftContent {
   body: string;
   confirmLabel: string;
   cancelLabel: string;
+  changeLabel?: string | null;
+  changeRequestOfKey?: string | null;
   samples: TemplateDraftSamples;
 }
 
@@ -63,7 +65,8 @@ export type TemplateDraftField =
   | 'samples'
   | 'buttons'
   | 'confirm_label'
-  | 'cancel_label';
+  | 'cancel_label'
+  | 'change_label';
 
 /**
  * One validation finding. `rule` is stable and translated by the UI;

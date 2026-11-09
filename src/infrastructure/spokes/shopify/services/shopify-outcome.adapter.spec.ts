@@ -11,6 +11,7 @@ import { CommerceOutcomeModule } from '../../../../modules/commerce-outcomes/com
 import { CommerceOutcomeRegistryService } from '../../../../modules/commerce-outcomes/commerce-outcome-registry.service';
 import { DRIZZLE } from '../../../database/database.provider';
 import { OrdersRepository } from '../../../database/repositories/orders.repository';
+import { VerificationChangeRequestsRepository } from '../../../database/repositories/verification-change-requests.repository';
 import { encryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
   COMMERCE_OUTCOME_ACTIONS,
@@ -34,6 +35,10 @@ function setup() {
               orderCancelUserErrors: [],
             },
             tagsAdd: {
+              node: { id: 'gid://shopify/Order/12345' },
+              userErrors: [],
+            },
+            tagsRemove: {
               node: { id: 'gid://shopify/Order/12345' },
               userErrors: [],
             },
@@ -93,6 +98,7 @@ defineCommerceOutcomeAdapterContract({
     automatic_no_reply_tagging: 'applied',
     automatic_no_whatsapp_tagging: 'applied',
     automatic_no_reply_cancellation: 'pending_provider_operation',
+    change_request_reconciliation: 'applied',
   },
   createFixture: (action) => {
     const { api, order } = setup();
@@ -105,6 +111,12 @@ defineCommerceOutcomeAdapterContract({
         correlationId: 'adapter-contract-verification',
         action,
         connection: order.integration,
+        changeRequestState: {
+          revision: '1:request:open:sent',
+          open: true,
+          status: 'sent',
+          confirmationCycle: 1,
+        },
       },
     };
   },
@@ -325,6 +337,7 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
       [
         'automatic_no_reply_tagging',
         'automatic_no_whatsapp_tagging',
+        'change_request_reconciliation',
         'customer_cancellation',
         'customer_confirmation',
         'merchant_cancellation_tagging',
@@ -344,6 +357,8 @@ describe('Shopify outcome dispatch through the real GraphQL service', () => {
       .useValue({})
       .overrideProvider(OrdersRepository)
       .useValue({ findForOutcomeDispatch: jest.fn().mockResolvedValue(order) })
+      .overrideProvider(VerificationChangeRequestsRepository)
+      .useValue({ platformState: jest.fn().mockResolvedValue(null) })
       .overrideProvider(ShopifyApiService)
       .useValue(api)
       .compile();

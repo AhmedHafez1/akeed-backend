@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { ShopifyController } from './shopify.controller';
 import { WebhookQueueModule } from '../../../modules/webhook-queue/webhook-queue.module';
 import { DatabaseModule } from '../../database/database.module';
@@ -11,6 +13,10 @@ import { ShopifyAuthController } from './shopify-auth.controller.js';
 import { ShopifyOrderWebhookService } from './services/shopify-order-webhook.service';
 import { ShopifyHmacGuard } from './guards/shopify-hmac.guard';
 import { PhoneService } from '../../../shared/services/phone.service';
+import { SHOPIFY_SUBSCRIPTION_SYNC_QUEUE } from './subscription-sync/shopify-subscription-sync.constants';
+import { ShopifySubscriptionSyncProcessor } from './subscription-sync/shopify-subscription-sync.processor';
+import { ShopifySubscriptionSyncScheduler } from './subscription-sync/shopify-subscription-sync.scheduler';
+import { ShopifySubscriptionSyncService } from './subscription-sync/shopify-subscription-sync.service';
 
 @Module({
   imports: [
@@ -18,6 +24,8 @@ import { PhoneService } from '../../../shared/services/phone.service';
     DatabaseModule,
     HttpModule,
     ShopifyCommerceModule,
+    ConfigModule,
+    BullModule.registerQueue({ name: SHOPIFY_SUBSCRIPTION_SYNC_QUEUE }),
   ],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [
@@ -27,6 +35,9 @@ import { PhoneService } from '../../../shared/services/phone.service';
     ShopifyGdprWebhookService,
     ShopifyHmacGuard,
     PhoneService,
+    ShopifySubscriptionSyncService,
+    ShopifySubscriptionSyncProcessor,
+    ShopifySubscriptionSyncScheduler,
   ],
   exports: [ShopifyCommerceModule, ShopifyAuthService],
 })

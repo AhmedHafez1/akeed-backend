@@ -30,6 +30,12 @@ import { CustomerMessagesRepository } from '../../database/repositories/customer
 import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 import { VerificationChangeRequestsRepository } from '../../database/repositories/verification-change-requests.repository';
 import { LEGACY_CONFIRMATION_CYCLE } from '../../../shared/verification/change-request.policy';
+import {
+  resolveCustomerActionPayload,
+  customerRecipientHash,
+} from '../../../shared/messaging/change-request-messaging';
+import { ChangeRequestLifecycleService } from '../../../modules/change-requests/change-request-lifecycle.service';
+import { ChangeRequestAcknowledgmentService } from '../../../modules/change-requests/change-request-acknowledgment.service';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
@@ -37,6 +43,7 @@ export interface WebhookRunOptions {
   isRetry?: boolean;
   receivedAt?: string;
   receivingOrgId?: string;
+  receivingPhoneNumberId?: string;
   receivingSender?: MerchantReplySender;
   replyBindings?: Readonly<Record<string, string>>;
 }
@@ -63,6 +70,10 @@ export class WhatsAppWebhookService {
     @Optional() private readonly customerMessages?: CustomerMessagesRepository,
     @Optional()
     private readonly changeRequests?: VerificationChangeRequestsRepository,
+    @Optional()
+    private readonly changeLifecycle?: ChangeRequestLifecycleService,
+    @Optional()
+    private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
   ) {}
 
   /**
@@ -115,6 +126,7 @@ export class WhatsAppWebhookService {
     verificationId: string,
     intent: CustomerReplyIntent,
     message: WhatsAppMessageDto,
+    expectedConfirmationCycle?: number,
   ): Promise<boolean> {
     if (!this.autoCancellations) return false;
     try {
@@ -122,6 +134,7 @@ export class WhatsAppWebhookService {
         verificationId,
         intent,
         receivedAt: this.messageTime(message),
+        expectedConfirmationCycle,
       });
       return committed;
     } catch (error) {
@@ -324,7 +337,11 @@ export class WhatsAppWebhookService {
         const value = change.value;
         if (!value) continue;
 
-        await this.handleMessages(value.messages ?? [], options);
+        await this.handleMessages(value.messages ?? [], {
+          ...options,
+          receivingPhoneNumberId:
+            value.metadata?.phone_number_id ?? options.receivingPhoneNumberId,
+        });
         await this.handleStatuses(value.statuses ?? [], {
           phoneNumberId: value.metadata?.phone_number_id,
           wabaId: entry.id,
@@ -405,6 +422,103 @@ export class WhatsAppWebhookService {
     options: WebhookRunOptions,
   ) {
     for (const message of messages) {
+      const button = resolveCustomerActionPayload(
+        message.button?.payload ?? message.interactive?.button_reply?.id ?? '',
+      );
+      const boundDispatch =
+        button && message.context?.id
+          ? await this.messageDispatches.findByProviderMessageId(
+              message.context.id,
+            )
+          : undefined;
+      // New buttons always require their original message. Legacy context-bound buttons use the same checks.
+      if (
+        button &&
+        (button.cycle !== undefined || boundDispatch) &&
+        this.changeRequests
+      ) {
+        if (
+          !message.context?.id ||
+          !message.id ||
+          !message.timestamp ||
+          !Number.isFinite(Number(message.timestamp)) ||
+          Number(message.timestamp) <= 0 ||
+          Number(message.timestamp) * 1000 > Date.now() + 60_000
+        )
+          continue;
+        const input = {
+          verificationId: button.verificationId,
+          expectedOrgId: options.receivingOrgId,
+          sourceProviderMessageId: message.context.id,
+          cycle: button.cycle,
+          eventId: message.id,
+          occurredAt: this.messageTime(message),
+          recipientHash: customerRecipientHash(message.from),
+          sender: {
+            connectionId: options.receivingSender?.connectionId,
+            signupGeneration: options.receivingSender?.signupGeneration,
+            kind: options.receivingSender
+              ? ('merchant_own' as const)
+              : ('akeed_system' as const),
+            phoneNumberId:
+              options.receivingSender?.phoneNumberId ??
+              options.receivingPhoneNumberId,
+          },
+        };
+        if (button.intent === 'change_requested') {
+          if (!this.changeLifecycle) continue;
+          const source = boundDispatch;
+          if (
+            !source ||
+            source.verificationId !== button.verificationId ||
+            !source.changeRequestButtons ||
+            source.recipientHash !== input.recipientHash ||
+            source.senderKind !== input.sender.kind ||
+            source.senderPhoneNumberId !== input.sender.phoneNumberId ||
+            source.confirmationCycle !== button.cycle ||
+            (options.receivingOrgId && source.orgId !== options.receivingOrgId)
+          )
+            continue;
+          const result = await this.changeLifecycle.openFromCustomer({
+            ...input,
+            requireChangeButton: true,
+          });
+          if (result.outcome === 'opened' || result.outcome === 'already_open')
+            await this.changeAcknowledgments?.drain(result.request.id);
+        } else {
+          const result = await this.changeRequests.applyCustomerAnswer({
+            ...input,
+            intent: button.intent,
+          });
+          if (
+            result.outcome === 'rejected' &&
+            (result.reason === 'auto_cancel_committed' ||
+              result.reason === 'already_terminal')
+          )
+            await this.recordCustomerAnswer(
+              button.verificationId,
+              button.intent,
+              message,
+            );
+          if (result.outcome !== 'rejected') {
+            await this.verificationHub.finalizeVerification(
+              button.verificationId,
+              button.intent,
+              { skipIfSynced: true },
+            );
+            if (options.receivingSender || this.switches().acknowledgment)
+              await this.queueAcknowledgment(
+                button.verificationId,
+                button.intent,
+                message,
+                options,
+              );
+          }
+        }
+        continue;
+      }
+      if (button?.intent === 'change_requested' || button?.cycle !== undefined)
+        continue;
       const resolved = await this.resolveReply(message, options);
       if (!resolved) {
         this.logger.warn(
@@ -430,6 +544,22 @@ export class WhatsAppWebhookService {
 
       // Block customer reply if merchant already canceled (no_reply escalation)
       const existing = await this.verificationsRepo.findById(verificationId);
+      if (existing?.customerActionAt) {
+        const difference =
+          Date.parse(this.messageTime(message)) -
+          Date.parse(existing.customerActionAt);
+        const finishingSameEvent =
+          options.isRetry === true &&
+          message.id === existing.customerActionEventId &&
+          this.holdsCustomerAnswer(existing, newStatus);
+        if (
+          !finishingSameEvent &&
+          (difference < 0 ||
+            (difference === 0 &&
+              (message.id ?? '') <= (existing.customerActionEventId ?? '')))
+        )
+          continue;
+      }
       if (
         options.receivingOrgId &&
         existing?.orgId !== options.receivingOrgId
@@ -477,6 +607,7 @@ export class WhatsAppWebhookService {
         verificationId,
         newStatus,
         message,
+        existing?.confirmationCycle ?? LEGACY_CONFIRMATION_CYCLE,
       );
 
       // The store is canceling, or canceled, this order on Akeed's request.
@@ -495,6 +626,8 @@ export class WhatsAppWebhookService {
 
       // Set cancellationSource for customer-initiated cancellations
       const extraUpdates: Record<string, unknown> = {};
+      extraUpdates.customerActionAt = this.messageTime(message);
+      extraUpdates.customerActionEventId = message.id ?? null;
       if (newStatus === 'canceled') {
         extraUpdates.cancellationSource = 'customer';
       }
@@ -508,6 +641,8 @@ export class WhatsAppWebhookService {
         undefined,
         message.timestamp,
         extraUpdates,
+        undefined,
+        existing?.confirmationCycle ?? LEGACY_CONFIRMATION_CYCLE,
       );
 
       // A retry finishes what the run before it left: the answer is saved, so

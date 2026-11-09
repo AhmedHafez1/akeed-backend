@@ -46,7 +46,7 @@ Core order outcomes use CommerceOutcomeRegistryService. It reloads the source-sc
 
 ORDER_ADMIN_PORT and ORDER_TAGGING_PORT remain legacy interface files, with no runtime global bindings or core consumers. ShopifyCommerceModule provides the API and outcome adapter without importing webhook ingestion.
 
-EasyOrders and WooCommerce are spokes on the same boundaries: each adds a normalizer to `WEBHOOK_ORDER_NORMALIZERS`, an eligibility strategy to `ORDER_ELIGIBILITY_STRATEGIES`, an outcome adapter to `COMMERCE_OUTCOME_ADAPTERS`, an update handler to `WEBHOOK_ORDER_UPDATE_HANDLERS` and a setup contributor to `SOURCE_SETUP_CONTRIBUTORS`. Their sections are below.
+EasyOrders and WooCommerce are spokes on the same boundaries: each adds a normalizer to `WEBHOOK_ORDER_NORMALIZERS`, an eligibility strategy to `ORDER_ELIGIBILITY_STRATEGIES`, an outcome adapter to `COMMERCE_OUTCOME_ADAPTERS`, an update handler to `WEBHOOK_ORDER_UPDATE_HANDLERS`, a current-order source to `CURRENT_ORDER_SOURCES` (read only when the merchant sends an updated confirmation for a change request) and a setup contributor to `SOURCE_SETUP_CONTRIBUTORS`. Their sections are below.
 
 ## Shopify Webhooks
 

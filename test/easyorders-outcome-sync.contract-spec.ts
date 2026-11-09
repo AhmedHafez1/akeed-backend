@@ -582,6 +582,11 @@ describe('EasyOrders outcome synchronization PostgreSQL contract', () => {
     // The credentials become nullable for a disconnect.
     await migrate('0050_easyorders_disconnect.sql');
     await migrate('0062_easyorders_webhook_cleanup.sql');
+    await client.unsafe(`ALTER TABLE commerce_outcome_syncs
+      ADD COLUMN IF NOT EXISTS revision integer DEFAULT 0 NOT NULL,
+      ADD COLUMN IF NOT EXISTS desired_revision text,
+      ADD COLUMN IF NOT EXISTS claim_token uuid,
+      ADD COLUMN IF NOT EXISTS lease_until timestamp with time zone;`);
   });
 
   afterAll(async () => {

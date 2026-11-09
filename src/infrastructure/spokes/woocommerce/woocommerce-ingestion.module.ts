@@ -1,3 +1,4 @@
+import { WooCommerceCurrentOrderSource } from './woocommerce-current-order.source';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../database/database.module';
@@ -34,6 +35,7 @@ import { WooCommerceSetupContributor } from './woocommerce-setup.contributor';
     WooCommerceOutcomeAdapter,
     WooCommerceConnectionHealthService,
     WooCommerceSetupContributor,
+    WooCommerceCurrentOrderSource,
     PhoneService,
     { provide: WOOCOMMERCE_HTTP, useFactory: () => createRestrictedHttp() },
   ],
@@ -45,6 +47,7 @@ import { WooCommerceSetupContributor } from './woocommerce-setup.contributor';
     WooCommerceOutcomeAdapter,
     WooCommerceConnectionHealthService,
     WooCommerceSetupContributor,
+    WooCommerceCurrentOrderSource,
   ],
 })
 export class WooCommerceIngestionModule {}

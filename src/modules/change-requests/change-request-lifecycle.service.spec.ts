@@ -62,6 +62,7 @@ function setup(
           .mockResolvedValue(options.inspection ?? { state: 'cancellable' }),
   };
   const automation = {
+    enqueueChangeRequestEffects: jest.fn().mockResolvedValue(undefined),
     cancelPendingReminders: jest.fn().mockResolvedValue(2),
   };
   const service = new ChangeRequestLifecycleService(
@@ -75,6 +76,20 @@ function setup(
 
 describe('ChangeRequestLifecycleService', () => {
   describe('openFromCustomer', () => {
+    it('enqueues the committed notification effects immediately and survives queue failure', async () => {
+      const f = setup();
+      f.automation.enqueueChangeRequestEffects.mockRejectedValue(
+        new Error('synthetic queue unavailable'),
+      );
+      expect(await f.service.openFromCustomer(tapInput)).toMatchObject({
+        outcome: 'opened',
+      });
+      expect(f.automation.enqueueChangeRequestEffects).toHaveBeenCalledWith({
+        changeRequestId: 'cr-1',
+        orgId: 'org-1',
+      });
+      expect(f.automation.cancelPendingReminders).toHaveBeenCalled();
+    });
     it('reads the store before opening and passes what it learned', async () => {
       const { service, repo, commerceOutcomes } = setup({
         inspection: { state: 'not_cancellable', reason: 'fulfilled' },

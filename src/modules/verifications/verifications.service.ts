@@ -49,10 +49,15 @@ import {
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { CommerceOutcomeSyncsRepository } from '../../infrastructure/database/repositories/commerce-outcome-syncs.repository';
 import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
-import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
+import {
+  VerificationChangeRequestsRepository,
+  type ChangeRequestEffectRow,
+  type ChangeRequestRow,
+} from '../../infrastructure/database/repositories/verification-change-requests.repository';
 import {
   selectOutcomeSync,
   toRemoteSync,
+  changeRequestSyncRevision,
   type RemoteSyncDto,
 } from '../../shared/verification/outcome-sync';
 import type {
@@ -105,6 +110,7 @@ import type {
   ExportVerificationsQueryDto,
   GetVerificationOverviewQueryDto,
   NeedsActionItemDto,
+  ChangeRequestSummaryDto,
   VerificationOverviewDto,
   CapacitySummaryDto,
 } from '../orders/dto/dashboard.dto';
@@ -417,12 +423,14 @@ export class VerificationsService {
     const verificationIds = items
       .filter((item) => !isHeldRow(item))
       .map((item) => item.id);
-    const [syncRows, historyOf, autoCancelRows] = await Promise.all([
-      this.outcomeSyncs?.findByCorrelationIds(orgId, verificationIds) ?? [],
-      this.loadCustomerHistory(orgId, items),
-      this.autoCancellations?.findByVerificationIds(orgId, verificationIds) ??
-        [],
-    ]);
+    const [syncRows, historyOf, autoCancelRows, changeRequestOf] =
+      await Promise.all([
+        this.outcomeSyncs?.findByCorrelationIds(orgId, verificationIds) ?? [],
+        this.loadCustomerHistory(orgId, items),
+        this.autoCancellations?.findByVerificationIds(orgId, verificationIds) ??
+          [],
+        this.loadChangeRequests(orgId, verificationIds),
+      ]);
     const autoCancelOf = (verificationId: string) =>
       autoCancelRows.find((row) => row.verificationId === verificationId);
 
@@ -446,7 +454,11 @@ export class VerificationsService {
           cancellation_operation: this.readCancellationOperation(
             verification.metadata,
           ),
-          remote_sync: this.readRemoteSync(verification, syncRows),
+          remote_sync: this.readRemoteSync(
+            verification,
+            syncRows,
+            changeRequestOf(verification.id),
+          ),
           id: verification.id,
           status: verification.status as VerificationStatus,
           reason: readVerificationReason(verification.metadata),
@@ -529,6 +541,9 @@ export class VerificationsService {
                 isSyntheticOrder(verification.order),
                 now,
               ),
+          change_request: isHeldRow(verification)
+            ? null
+            : changeRequestOf(verification.id),
         }))
         .map((item) => this.withAutoCancelCapability(item)),
       next_cursor: nextCursor,
@@ -601,7 +616,13 @@ export class VerificationsService {
       source ? this.billingEntitlements.readEntitlement(source) : null,
       this.verificationsRepo.countBlocked(orgId),
     ]);
-    const historyOf = await this.loadCustomerHistory(orgId, topRows);
+    const [historyOf, changeRequestOf] = await Promise.all([
+      this.loadCustomerHistory(orgId, topRows),
+      this.loadChangeRequests(
+        orgId,
+        topRows.map((row) => row.id),
+      ),
+    ]);
 
     return {
       date_range: dateRange,
@@ -654,6 +675,7 @@ export class VerificationsService {
             activeIntegrations,
             integrations,
             now,
+            changeRequestOf(row.id),
           ),
           customer_history: historyOf(row),
         })),
@@ -886,20 +908,42 @@ export class VerificationsService {
     return result.outcome === 'resolved' ? result.verification : null;
   }
 
+  /**
+   * The open change requests of a page of rows, as a lookup. Without the
+   * repository (a narrow test module) every row reads as having none.
+   */
+  private async loadChangeRequests(
+    orgId: string,
+    verificationIds: string[],
+  ): Promise<(verificationId: string) => ChangeRequestSummaryDto | null> {
+    const rows =
+      (await this.changeRequests?.findOpenSummaries(orgId, verificationIds)) ??
+      [];
+    return (verificationId) => {
+      const row = rows.find(
+        (entry) => entry.request.verificationId === verificationId,
+      );
+      return row ? toChangeRequestSummary(row) : null;
+    };
+  }
+
   private toNeedsActionItem(
     row: NeedsActionRow,
     orgId: string,
     activeIntegrations: IntegrationRecord[],
     integrations: IntegrationRecord[],
     now: string,
+    changeRequest: ChangeRequestSummaryDto | null = null,
   ): NeedsActionItemDto {
     const type = row.actionReason ?? 'no_reply';
     const since =
-      type === 'read_no_reply'
-        ? row.readAt
-        : type === 'no_whatsapp'
-          ? (row.noWhatsappAt ?? row.lastSentAt ?? row.createdAt ?? null)
-          : (row.lastSentAt ?? row.createdAt ?? null);
+      type === 'change_requested'
+        ? (changeRequest?.opened_at ?? row.updatedAt ?? null)
+        : type === 'read_no_reply'
+          ? row.readAt
+          : type === 'no_whatsapp'
+            ? (row.noWhatsappAt ?? row.lastSentAt ?? row.createdAt ?? null)
+            : (row.lastSentAt ?? row.createdAt ?? null);
     const hours = since
       ? Math.max(
           Math.floor((Date.parse(now) - Date.parse(since)) / MS_PER_HOUR),
@@ -939,6 +983,7 @@ export class VerificationsService {
             : null,
       },
       capabilities: this.resolveRowCapabilities(row, orgId, activeIntegrations),
+      change_request: changeRequest,
     };
   }
 
@@ -1252,7 +1297,14 @@ export class VerificationsService {
     this.logger.log(
       buildBackendLog(VerificationsService.name, {
         action: 'verification-outcome-sync-retry',
-        outcome: current?.state === 'failed' ? 'failure' : 'success',
+        outcome:
+          current?.state === 'succeeded'
+            ? 'success'
+            : current?.state === 'pending'
+              ? 'retry'
+              : current?.state === 'unsupported'
+                ? 'skipped'
+                : 'failure',
         orgId,
         verificationId,
         synchronizationState: current?.state,
@@ -1270,8 +1322,10 @@ export class VerificationsService {
       id: string;
       status: string | null;
       cancellationSource?: string | null;
+      confirmationCycle?: number;
     },
     rows: Parameters<typeof selectOutcomeSync>[1],
+    changeRequest: ChangeRequestSummaryDto | null = null,
   ): RemoteSyncDto | null {
     if (isHeldRow(verification)) return null;
     const row = selectOutcomeSync(
@@ -1282,7 +1336,17 @@ export class VerificationsService {
       },
       rows,
     );
-    return row ? toRemoteSync(row) : null;
+    if (!row) return null;
+    const requestId = changeRequest?.id ?? row.desiredRevision?.split(':')[1];
+    const revision = requestId
+      ? changeRequestSyncRevision({
+          confirmationCycle: verification.confirmationCycle ?? 1,
+          requestId,
+          open: Boolean(changeRequest),
+          status: verification.status,
+        })
+      : undefined;
+    return toRemoteSync(row, revision);
   }
 
   async cancelNoReplyOrder(
@@ -1642,4 +1706,33 @@ export class VerificationsService {
       platform_type: source?.platformType ?? null,
     };
   }
+}
+
+function toChangeRequestSummary(row: {
+  request: ChangeRequestRow;
+  acknowledgment: ChangeRequestEffectRow | null;
+  merchantEmail?: ChangeRequestEffectRow | null;
+}): ChangeRequestSummaryDto {
+  return {
+    id: row.request.id,
+    opened_at: row.request.openedAt,
+    confirmation_cycle: row.request.confirmationCycle,
+    merchant_email: row.merchantEmail
+      ? {
+          status: row.merchantEmail.status,
+          reason: row.merchantEmail.reason ?? null,
+        }
+      : null,
+    acknowledgment: row.acknowledgment
+      ? {
+          status: row.acknowledgment.status,
+          reason: row.acknowledgment.reason ?? null,
+        }
+      : null,
+    reconfirmation: {
+      state: row.request.reconfirmationState ?? null,
+      scheduled_for: row.request.reconfirmationScheduledFor ?? null,
+      last_error: row.request.lastReconfirmationError ?? null,
+    },
+  };
 }

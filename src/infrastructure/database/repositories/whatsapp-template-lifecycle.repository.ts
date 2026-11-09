@@ -43,6 +43,7 @@ import {
 import { STORE_TEMPLATE_FIELDS } from '../../../shared/messaging/store-template-selection';
 
 const LIFECYCLE_COLUMNS = {
+  changeRequestOfKey: whatsappTemplates.changeRequestOfKey,
   id: whatsappTemplates.id,
   key: whatsappTemplates.key,
   purpose: whatsappTemplates.purpose,

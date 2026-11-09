@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
 import { DRIZZLE } from '../database.provider';
@@ -116,12 +117,14 @@ export class CommerceOutcomeSyncsRepository {
     id: string,
     orgId: string,
     settlement: CommerceOutcomeSyncSettlement,
+    claim?: { revision: number; claimToken: string | null },
   ): Promise<CommerceOutcomeSync | undefined> {
     const { spent, ...values } = settlement;
     const [row] = await this.db
       .update(commerceOutcomeSyncs)
       .set({
         ...values,
+        ...(claim ? { claimToken: null, leaseUntil: null } : {}),
         ...(spent === 'attempt'
           ? { attempts: sql`${commerceOutcomeSyncs.attempts} + 1` }
           : { deferrals: sql`${commerceOutcomeSyncs.deferrals} + 1` }),
@@ -131,10 +134,82 @@ export class CommerceOutcomeSyncsRepository {
         and(
           eq(commerceOutcomeSyncs.id, id),
           eq(commerceOutcomeSyncs.orgId, orgId),
+          ...(claim
+            ? [
+                eq(commerceOutcomeSyncs.revision, claim.revision),
+                eq(commerceOutcomeSyncs.claimToken, claim.claimToken!),
+              ]
+            : []),
         ),
       )
       .returning();
     return row;
+  }
+
+  /** Serializes marker writes for an order without keeping a transaction over provider I/O. */
+  async claimReconciliation(
+    target: CommerceOutcomeSyncTarget,
+    desiredRevision: string,
+  ): Promise<
+    | { kind: 'claimed'; row: CommerceOutcomeSync }
+    | { kind: 'settled' }
+    | { kind: 'busy' }
+  > {
+    return this.db.transaction(async (tx) => {
+      await tx
+        .insert(commerceOutcomeSyncs)
+        .values({ ...target, state: 'pending', retryInBackground: true })
+        .onConflictDoNothing();
+      const [prior] = await tx
+        .select()
+        .from(commerceOutcomeSyncs)
+        .where(
+          and(
+            eq(commerceOutcomeSyncs.orgId, target.orgId),
+            eq(commerceOutcomeSyncs.integrationId, target.integrationId),
+            eq(commerceOutcomeSyncs.orderId, target.orderId),
+            eq(commerceOutcomeSyncs.action, 'change_request_reconciliation'),
+          ),
+        )
+        .for('update');
+      if (!prior) throw new Error('Reconciliation identity unavailable');
+      const now = Date.now();
+      if (
+        prior.claimToken &&
+        prior.leaseUntil &&
+        Date.parse(prior.leaseUntil) > now
+      )
+        return { kind: 'busy' };
+      if (
+        prior.desiredRevision === desiredRevision &&
+        prior.state === 'succeeded'
+      )
+        return { kind: 'settled' };
+      const [row] = await tx
+        .update(commerceOutcomeSyncs)
+        .set({
+          state: 'pending',
+          desiredRevision,
+          correlationId: target.correlationId,
+          revision: prior.revision + 1,
+          claimToken: randomUUID(),
+          leaseUntil: new Date(now + 120_000).toISOString(),
+          nextAttemptAt: null,
+          retryInBackground: true,
+          updatedAt: new Date(now).toISOString(),
+          ...(prior.desiredRevision !== desiredRevision
+            ? {
+                attempts: 0,
+                deferrals: 0,
+                errorCode: null,
+                requiresAssistance: false,
+              }
+            : {}),
+        })
+        .where(eq(commerceOutcomeSyncs.id, prior.id))
+        .returning();
+      return { kind: 'claimed', row };
+    });
   }
 
   /** Closes a row that is still waiting; a settled row is left as it is. */

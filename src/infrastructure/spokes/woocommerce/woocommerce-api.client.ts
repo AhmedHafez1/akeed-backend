@@ -106,6 +106,15 @@ export interface WooCommerceOrderState {
 }
 
 /**
+ * One read of an order's full record, for building its current details. The
+ * same answers as `WooCommerceOrderRead`, but `found` carries the record.
+ */
+export type WooCommerceOrderDetailsRead =
+  | { kind: 'found'; payload: Record<string, unknown> }
+  | { kind: 'unverified' }
+  | WooCommerceOrderCallFailure;
+
+/**
  * Why an order call gave no usable answer.
  *
  * - `credentials_rejected`: a 401. `permission_denied`: a 403.
@@ -537,6 +546,43 @@ export class WooCommerceApiClient {
         : { kind: 'unavailable' };
     const order = readOrderOf(storeUrl, orderId, readJson(response));
     return order ? { kind: 'found', order } : { kind: 'unverified' };
+  }
+
+  /**
+   * One read of an order's full record, checked to be this store's order
+   * exactly as `getOrder` checks it. Only the current-details reader asks
+   * for it; the record is handed back in memory and never logged here.
+   */
+  async getOrderDetails(
+    storeUrl: string,
+    credentials: WooCommerceCredentials,
+    orderId: string,
+  ): Promise<WooCommerceOrderDetailsRead> {
+    if (!ORDER_ID_PATTERN.test(orderId)) return { kind: 'not_found' };
+    let response: RestrictedHttpResponse;
+    try {
+      response = await this.http({
+        url: `${storeUrl}${WOOCOMMERCE_REST_BASE_PATH}/orders/${orderId}`,
+        method: 'GET',
+        authorization: basicAuthorization(credentials),
+      });
+    } catch (error) {
+      return error instanceof RestrictedHttpError &&
+        error.code !== 'timeout' &&
+        error.code !== 'network'
+        ? { kind: 'refused' }
+        : { kind: 'unavailable' };
+    }
+    const failure = orderStatusFailure(response);
+    if (failure) return failure;
+    if (response.status !== 200)
+      return response.status >= 200 && response.status < 300
+        ? { kind: 'unverified' }
+        : { kind: 'unavailable' };
+    const body = readJson(response);
+    return readOrderOf(storeUrl, orderId, body) && isRecord(body)
+      ? { kind: 'found', payload: body }
+      : { kind: 'unverified' };
   }
 
   /**

@@ -20,9 +20,9 @@ export type ResendHttp = typeof fetch;
 
 /**
  * Sends merchant email through Resend. Sent once and never retried here: a
- * timed-out request may still have been delivered, so the caller records the
- * failure instead of sending again. The idempotency key lets Resend drop a
- * repeat if one is ever made.
+ * timed-out request may still have been delivered. Durable callers may retry
+ * only with the same envelope and idempotency key inside the provider's replay
+ * window; other callers retain the failure without resending.
  *
  * With `EMAIL_ALERTS_ENABLED` off nothing leaves the app and the result is
  * `skipped`.
@@ -58,7 +58,7 @@ export class ResendEmailAdapter implements EmailPort {
                 : {}),
             },
             body: JSON.stringify({
-              from: settings.emailFrom,
+              from: message.from ?? settings.emailFrom,
               to: [message.to],
               subject: message.subject,
               text: message.text,
@@ -68,7 +68,23 @@ export class ResendEmailAdapter implements EmailPort {
           }),
         { policy: NO_RETRY },
       );
-      if (response.ok) return { status: 'sent' };
+      if (response.ok) {
+        const body: unknown = await response.json();
+        if (
+          body &&
+          typeof body === 'object' &&
+          'id' in body &&
+          typeof body.id === 'string' &&
+          body.id.length > 0
+        )
+          return { status: 'sent' };
+        return {
+          status: 'failed',
+          reason: 'provider_outcome_unknown',
+          retryable: true,
+          uncertain: true,
+        };
+      }
       const reason = `provider_status_${response.status}`;
       this.logger.warn(
         buildBackendLog(ResendEmailAdapter.name, {
@@ -77,7 +93,15 @@ export class ResendEmailAdapter implements EmailPort {
           errorCode: reason,
         }),
       );
-      return { status: 'failed', reason };
+      return {
+        status: 'failed',
+        reason,
+        retryable:
+          response.status === 429 ||
+          response.status >= 500 ||
+          response.status === 409,
+        uncertain: response.status >= 500,
+      };
     } catch (error) {
       this.logger.warn(
         buildBackendLog(ResendEmailAdapter.name, {
@@ -87,7 +111,12 @@ export class ResendEmailAdapter implements EmailPort {
           ...normalizeError(error),
         }),
       );
-      return { status: 'failed', reason: 'provider_unreachable' };
+      return {
+        status: 'failed',
+        reason: 'provider_unreachable',
+        retryable: true,
+        uncertain: true,
+      };
     }
   }
 }

@@ -6,7 +6,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosResponse } from 'axios';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
   buildBackendLog,
@@ -17,6 +17,7 @@ import {
   type AppSubscriptionCreateResponse,
   type AppSubscriptionLineItemsResponse,
   type AppSubscriptionStatusResponse,
+  type ActiveAppSubscriptionsResponse,
   type AppUsageRecordCreateResponse,
   buildSubscriptionLineItems,
   CANCEL_APP_SUBSCRIPTION_MUTATION,
@@ -25,6 +26,7 @@ import {
   CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_USAGE_RECORD_MUTATION,
   GET_APP_SUBSCRIPTION_STATUS_QUERY,
+  GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY,
   GET_SUBSCRIPTION_LINE_ITEMS_QUERY,
   getRequestId,
   type GraphQLErrorItem,
@@ -35,11 +37,16 @@ import {
   ORDER_CANCEL_MUTATION,
   ORDER_CANCELLATION_STATE_QUERY,
   type OrderCancellationStateResponse,
+  type CurrentOrderResponse,
+  CURRENT_ORDER_QUERY,
+  type ShopifyCurrentOrder,
   type OrderCancelResponse,
   type ShopifyOrderCancellationState,
   type ShopNameResponse,
   TAGS_ADD_MUTATION,
   type TagsAddResponse,
+  TAGS_REMOVE_MUTATION,
+  type TagsRemoveResponse,
   type TestCodOrder,
   throwIfGraphQLErrors,
   throwIfUserErrors,
@@ -79,6 +86,7 @@ export class ShopifyApiService {
     integration: CommerceOutcomeConnection,
     orderId: string,
     tag: string,
+    timeoutMs?: number,
   ): Promise<void> {
     const orderGid = toOrderGid(orderId);
 
@@ -90,6 +98,7 @@ export class ShopifyApiService {
           id: orderGid,
           tags: [tag],
         },
+        timeoutMs,
       );
 
       this.logGraphQLResponseIssues({
@@ -107,6 +116,8 @@ export class ShopifyApiService {
         response.data.data?.tagsAdd?.userErrors,
         'Shopify order tagging validation failed',
       );
+      if (timeoutMs && !response.data.data?.tagsAdd?.node?.id)
+        throw new Error('Shopify tag addition outcome unknown');
 
       const reqId = getRequestId(response.headers);
       this.logger.log(
@@ -132,6 +143,36 @@ export class ShopifyApiService {
       );
       throw error;
     }
+  }
+
+  async removeOrderTags(
+    integration: CommerceOutcomeConnection,
+    orderId: string,
+    tags: readonly string[],
+  ): Promise<void> {
+    if (tags.length === 0) return;
+    const response = await this.executeGraphql<TagsRemoveResponse>(
+      integration,
+      TAGS_REMOVE_MUTATION,
+      { id: toOrderGid(orderId), tags },
+      10_000,
+    );
+    this.logGraphQLResponseIssues({
+      operation: 'tagsRemove',
+      graphQLErrors: response.data.errors,
+      userErrors: response.data.data?.tagsRemove?.userErrors,
+      headers: response.headers,
+    });
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify order tag removal failed',
+    );
+    throwIfUserErrors(
+      response.data.data?.tagsRemove?.userErrors,
+      'Shopify order tag removal rejected',
+    );
+    if (!response.data.data?.tagsRemove?.node?.id)
+      throw new Error('Shopify tag removal outcome unknown');
   }
 
   async createTestCodOrder(
@@ -253,6 +294,20 @@ export class ShopifyApiService {
     return response.data.data?.order ?? null;
   }
 
+  /** The order's current details. Null when Shopify has no such order. */
+  async getCurrentOrder(
+    integration: CommerceOutcomeConnection,
+    externalOrderId: string,
+  ): Promise<ShopifyCurrentOrder | null> {
+    const response = await this.executeGraphql<CurrentOrderResponse>(
+      integration,
+      CURRENT_ORDER_QUERY,
+      { id: toOrderGid(externalOrderId) },
+    );
+    throwIfGraphQLErrors(response.data.errors, 'Shopify order read errors');
+    return response.data.data?.order ?? null;
+  }
+
   /** Whether an asynchronous job, such as an order cancellation, finished. */
   async isJobDone(
     integration: CommerceOutcomeConnection,
@@ -347,6 +402,31 @@ export class ShopifyApiService {
       id: node.id,
       status: node.status,
     };
+  }
+
+  /** The subscriptions Shopify currently bills this installation for. */
+  async listActiveAppSubscriptions(
+    integration: CommerceOutcomeConnection,
+  ): Promise<AppSubscriptionStatusResult[]> {
+    const response = await this.executeGraphql<ActiveAppSubscriptionsResponse>(
+      integration,
+      GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY,
+      {},
+    );
+
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify active subscriptions errors',
+    );
+
+    const installation = response.data.data?.currentAppInstallation;
+    if (!installation) {
+      throw new Error('Shopify did not return the app installation');
+    }
+
+    return (installation.activeSubscriptions ?? []).flatMap((node) =>
+      node.id && node.status ? [{ id: node.id, status: node.status }] : [],
+    );
   }
 
   async cancelAppSubscription(
@@ -456,23 +536,26 @@ export class ShopifyApiService {
     integration: CommerceOutcomeConnection,
     query: string,
     variables?: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<AxiosResponse<T>> {
     const accessToken = this.getAccessTokenOrThrow(integration);
 
-    return await firstValueFrom(
-      this._httpService.post<T>(
-        this.getGraphqlUrl(integration.platformStoreUrl),
-        {
-          query,
-          variables,
+    const request = this._httpService.post<T>(
+      this.getGraphqlUrl(integration.platformStoreUrl),
+      {
+        query,
+        variables,
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
         },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
+        ...(timeoutMs ? { timeout: timeoutMs } : {}),
+      },
+    );
+    return firstValueFrom(
+      timeoutMs ? request.pipe(timeout(timeoutMs)) : request,
     );
   }
 

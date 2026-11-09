@@ -5,6 +5,11 @@ import { StandaloneOrderEligibilityStrategy } from './infrastructure/spokes/stan
 import { EasyOrdersOrderEligibilityStrategy } from './infrastructure/spokes/easyorders/easyorders-order-eligibility.strategy';
 import { WooCommerceOrderEligibilityStrategy } from './infrastructure/spokes/woocommerce/woocommerce-order-eligibility.strategy';
 import { ORDER_ELIGIBILITY_STRATEGIES } from './modules/verification-core/strategies/order-eligibility.strategy';
+import { CURRENT_ORDER_SOURCES } from './shared/ports/current-order-source.port';
+import { ShopifyCurrentOrderSource } from './infrastructure/spokes/shopify/services/shopify-current-order.source';
+import { StandaloneCurrentOrderSource } from './infrastructure/spokes/standalone/services/standalone-current-order.source';
+import { EasyOrdersCurrentOrderSource } from './infrastructure/spokes/easyorders/easyorders-current-order.source';
+import { WooCommerceCurrentOrderSource } from './infrastructure/spokes/woocommerce/woocommerce-current-order.source';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
@@ -119,6 +124,22 @@ const billingModule = BillingModule.register({
             standalone: StandaloneOrderEligibilityStrategy,
             easyOrders: EasyOrdersOrderEligibilityStrategy,
             wooCommerce: WooCommerceOrderEligibilityStrategy,
+          ) => [shopify, standalone, easyOrders, wooCommerce],
+        },
+        StandaloneCurrentOrderSource,
+        {
+          provide: CURRENT_ORDER_SOURCES,
+          inject: [
+            ShopifyCurrentOrderSource,
+            StandaloneCurrentOrderSource,
+            EasyOrdersCurrentOrderSource,
+            WooCommerceCurrentOrderSource,
+          ],
+          useFactory: (
+            shopify: ShopifyCurrentOrderSource,
+            standalone: StandaloneCurrentOrderSource,
+            easyOrders: EasyOrdersCurrentOrderSource,
+            wooCommerce: WooCommerceCurrentOrderSource,
           ) => [shopify, standalone, easyOrders, wooCommerce],
         },
         { provide: MESSAGING_PORT, useExisting: WhatsAppService },

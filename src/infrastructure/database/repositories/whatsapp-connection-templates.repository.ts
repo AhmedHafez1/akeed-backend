@@ -70,6 +70,8 @@ export class WhatsappConnectionTemplatesRepository {
     const [row] = await this.db
       .select({
         status: whatsappConnectionTemplates.status,
+        driftReason: whatsappConnectionTemplates.driftReason,
+        lastSyncedAt: whatsappConnectionTemplates.lastSyncedAt,
         category: whatsappConnectionTemplates.category,
       })
       .from(whatsappConnectionTemplates)

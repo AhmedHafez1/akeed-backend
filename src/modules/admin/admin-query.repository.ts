@@ -597,7 +597,7 @@ export class AdminQueryRepository {
         WHERE d.accepted_at >= ${filter.from}::timestamptz
           AND d.accepted_at < ${filter.toExclusive}::timestamptz
           -- A thank-you is free-form text after the outcome, not a template send.
-          AND d.kind::text <> 'acknowledgment'
+          AND d.kind::text NOT IN ('acknowledgment', 'change_acknowledgment')
           ${testFilter}
       ),
       credited AS (

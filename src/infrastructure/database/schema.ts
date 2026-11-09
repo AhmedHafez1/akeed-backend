@@ -65,6 +65,7 @@ import type {
   ChangeRequestEvent,
   ChangeRequestResolution,
   ChangeRequestStatus,
+  ReconfirmationState,
 } from '../../shared/verification/change-request.policy';
 import type {
   TipsAudienceFilters,
@@ -88,6 +89,7 @@ export const verificationStatus = pgEnum('verification_status', [
 ]);
 
 export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
+  'change_acknowledgment',
   'initial',
   'follow_up',
   'legacy_unknown',
@@ -301,6 +303,7 @@ export const whatsappTemplates = pgTable(
       .default('none')
       .notNull(),
     imageTwinOfKey: text('image_twin_of_key'),
+    changeRequestOfKey: text('change_request_of_key'),
   },
   (table) => [
     unique('whatsapp_templates_key_key').on(table.key),
@@ -377,6 +380,8 @@ export const whatsappTemplateDrafts = pgTable(
     body: text('body').notNull(),
     confirmLabel: text('confirm_label').notNull(),
     cancelLabel: text('cancel_label').notNull(),
+    changeLabel: text('change_label'),
+    changeRequestOfKey: text('change_request_of_key'),
     samples: jsonb('samples')
       .$type<Partial<Record<TemplateVariableKey, string>>>()
       .default({})
@@ -1155,6 +1160,11 @@ export const verifications = pgTable(
       mode: 'string',
     }),
     deliveryErrorCode: text('delivery_error_code'),
+    customerActionAt: timestamp('customer_action_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    customerActionEventId: text('customer_action_event_id'),
     merchantCanceledAt: timestamp('merchant_canceled_at', {
       withTimezone: true,
       mode: 'string',
@@ -1321,6 +1331,10 @@ export const verificationMessageDispatches = pgTable(
     // Which template this send carried. NULL on rows written before
     // it was recorded; those are never backfilled.
     templateVariantKey: text('template_variant_key'),
+    changeRequestButtons: boolean('change_request_buttons')
+      .default(false)
+      .notNull(),
+    recipientHash: text('recipient_hash'),
     templatePurpose: text('template_purpose').$type<
       'initial' | 'reminder' | 'test'
     >(),
@@ -1419,7 +1433,7 @@ export const verificationMessageDispatches = pgTable(
       table.generation,
     ),
     uniqueIndex('dispatch_one_active_generation')
-      .on(table.verificationId, table.kind)
+      .on(table.verificationId, table.kind, table.confirmationCycle)
       .where(
         sql`state IN ('ready', 'sending', 'outcome_unknown') OR (state = 'accepted' AND failed_at IS NULL)`,
       ),
@@ -2527,7 +2541,7 @@ export const creditReservations = pgTable(
     }),
     check(
       'credit_reservations_kind_check',
-      sql`kind::text IN ('initial', 'follow_up', 'acknowledgment')`,
+      sql`kind::text IN ('initial', 'follow_up', 'acknowledgment', 'change_acknowledgment')`,
     ),
     check('credit_reservations_generation_check', sql`generation > 0`),
     check('credit_reservations_quantity_check', sql`quantity > 0`),
@@ -3831,6 +3845,13 @@ export const commerceOutcomeSyncs = pgTable(
     state: text().notNull(),
     attempts: integer().default(0).notNull(),
     deferrals: integer().default(0).notNull(),
+    revision: integer().default(0).notNull(),
+    desiredRevision: text('desired_revision'),
+    claimToken: uuid('claim_token'),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     retryInBackground: boolean('retry_in_background').default(false).notNull(),
     requiresAssistance: boolean('requires_assistance').default(false).notNull(),
     providerStatus: text('provider_status'),
@@ -3869,7 +3890,7 @@ export const commerceOutcomeSyncs = pgTable(
     ),
     check(
       'commerce_outcome_syncs_action_check',
-      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text, 'automatic_no_reply_cancellation'::text])`,
+      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text, 'automatic_no_reply_cancellation'::text, 'change_request_reconciliation'::text])`,
     ),
     check(
       'commerce_outcome_syncs_state_check',
@@ -4265,6 +4286,22 @@ export const verificationChangeRequests = pgTable(
     }),
     resolvedByUserId: uuid('resolved_by_user_id'),
     lastReconfirmationError: text('last_reconfirmation_error'),
+    reconfirmationState: text(
+      'reconfirmation_state',
+    ).$type<ReconfirmationState>(),
+    reconfirmationAttempt: integer('reconfirmation_attempt')
+      .default(0)
+      .notNull(),
+    reconfirmationRequestedAt: timestamp('reconfirmation_requested_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    reconfirmationRequestedBy: uuid('reconfirmation_requested_by'),
+    reconfirmationScheduledFor: timestamp('reconfirmation_scheduled_for', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    reconfirmationDispatchId: uuid('reconfirmation_dispatch_id'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4331,6 +4368,14 @@ export const verificationChangeRequests = pgTable(
       'verification_change_requests_error_check',
       sql`${table.lastReconfirmationError} IS NULL OR char_length(${table.lastReconfirmationError}) BETWEEN 1 AND 64`,
     ),
+    check(
+      'verification_change_requests_reconfirmation_state_check',
+      sql`${table.reconfirmationState} IS NULL OR ${table.reconfirmationState} IN ('requested', 'scheduled', 'sending', 'failed')`,
+    ),
+    check(
+      'verification_change_requests_reconfirmation_attempt_check',
+      sql`${table.reconfirmationAttempt} >= 0`,
+    ),
     pgPolicy('Service role manages verification change requests', {
       as: 'permissive',
       for: 'all',
@@ -4379,7 +4424,7 @@ export const verificationChangeRequestEvents = pgTable(
     ),
     check(
       'verification_change_request_events_event_check',
-      sql`${table.event} IN ('opened', 'repeat_ignored', 'resolved', 'reconfirmation_failed')`,
+      sql`${table.event} IN ('opened', 'repeat_ignored', 'resolved', 'reconfirmation_failed', 'reconfirmation_requested', 'reconfirmation_scheduled')`,
     ),
     check(
       'verification_change_request_events_actor_check',
@@ -4416,6 +4461,18 @@ export const verificationChangeRequestEffects = pgTable(
       .notNull(),
     reason: text('reason'),
     attempts: integer().default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstAttemptAt: timestamp('first_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    emailPayload:
+      jsonb('email_payload').$type<
+        import('../../shared/ports/email.port').EmailMessage
+      >(),
     leaseUntil: timestamp('lease_until', {
       withTimezone: true,
       mode: 'string',

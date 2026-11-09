@@ -1,0 +1,1646 @@
+{
+  "source": "production database snapshot; no live Meta lookup",
+  "migration": {
+    "tag": "0093_change_request_messaging",
+    "hash": "9d1190ad9a44c06a588a34b8fbd87b49e4456aabf2f5197f2165daf890fbd3aa",
+    "through": 1794960000000
+  },
+  "provider_submitted": false,
+  "merchant_activated": false,
+  "variants": [
+    {
+      "parentKey": "cod_confirm.ar.egyptian",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ar",
+        "style": "change_bb861ea27ace3d05",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_bb861ea27ace3d05_v1",
+        "languageCode": "ar_EG",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+        "confirmLabel": "تأكيد الطلب",
+        "cancelLabel": "إلغاء الطلب",
+        "changeLabel": "طلب تعديل",
+        "changeRequestOfKey": "cod_confirm.ar.egyptian",
+        "samples": {
+          "customer": "أحمد",
+          "store": "متجر أكيد",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100",
+          "region": "القاهرة",
+          "address": "12 شارع النيل، المعادي"
+        }
+      },
+      "key": "cod_confirm.ar.change_bb861ea27ace3d05_v1",
+      "differences": ["provider_button_labels_differ_from_preview"],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "أحمد"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "متجر أكيد"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+      "imageTwin": {
+        "key": "cod_confirm.ar.change_bb861ea27ace3d05_v1_logo",
+        "templateName": "akeed_cod_confirm_change_bb861ea27ace3d05_v1_logo",
+        "parentKey": "cod_confirm.ar.change_bb861ea27ace3d05_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+        "providerBody": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
+        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "f9185bd0-e007-461a-8a71-c6959a4fdde0"
+    },
+    {
+      "parentKey": "cod_confirm.ar.gulf",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ar",
+        "style": "change_67ccc3266f3e3c56",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_67ccc3266f3e3c56_v1",
+        "languageCode": "ar",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+        "confirmLabel": "اشحن طلبي",
+        "cancelLabel": "إلغاء",
+        "changeLabel": "طلب تعديل",
+        "changeRequestOfKey": "cod_confirm.ar.gulf",
+        "samples": {
+          "customer": "أحمد",
+          "store": "متجر أكيد",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100",
+          "region": "القاهرة",
+          "address": "12 شارع النيل، المعادي"
+        }
+      },
+      "key": "cod_confirm.ar.change_67ccc3266f3e3c56_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "أحمد"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "متجر أكيد"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+      "imageTwin": {
+        "key": "cod_confirm.ar.change_67ccc3266f3e3c56_v1_logo",
+        "templateName": "akeed_cod_confirm_change_67ccc3266f3e3c56_v1_logo",
+        "parentKey": "cod_confirm.ar.change_67ccc3266f3e3c56_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+        "providerBody": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
+        "buttons": ["اشحن طلبي", "إلغاء", "طلب تعديل"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "2b4f762a-7b1e-4aa7-b5e7-19e8fc663f10"
+    },
+    {
+      "parentKey": "cod_confirm.ar.short",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ar",
+        "style": "change_897c6e34f7f6dea0",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_897c6e34f7f6dea0_v1",
+        "languageCode": "ar",
+        "parameterFormat": "positional",
+        "category": "utility",
+        "body": "السلام عليكم\n\nتم استلام طلبك رقم {{order}} والدفع عند الاستلام.\nإجمالي السعر : {{total}}\n\nمن فضلك أكد الطلب.",
+        "confirmLabel": "تأكيد",
+        "cancelLabel": "إلغاء",
+        "changeLabel": "طلب تعديل",
+        "changeRequestOfKey": "cod_confirm.ar.short",
+        "samples": {
+          "customer": "أحمد",
+          "store": "متجر أكيد",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100",
+          "region": "القاهرة",
+          "address": "12 شارع النيل، المعادي"
+        }
+      },
+      "key": "cod_confirm.ar.change_897c6e34f7f6dea0_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "order",
+          "parameter": "1",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "2",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
+      "imageTwin": {
+        "key": "cod_confirm.ar.change_897c6e34f7f6dea0_v1_logo",
+        "templateName": "akeed_cod_confirm_change_897c6e34f7f6dea0_v1_logo",
+        "parentKey": "cod_confirm.ar.change_897c6e34f7f6dea0_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "السلام عليكم\n\nتم استلام طلبك رقم {{order}} والدفع عند الاستلام.\nإجمالي السعر : {{total}}\n\nمن فضلك أكد الطلب.",
+        "providerBody": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
+        "buttons": ["تأكيد", "إلغاء", "طلب تعديل"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "e89f458c-a964-4ce9-b7a4-1d4121f6ceb2"
+    },
+    {
+      "parentKey": "cod_confirm.ar.standard",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ar",
+        "style": "change_47d2a7dcffbca1d4",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_47d2a7dcffbca1d4_v1",
+        "languageCode": "ar",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "confirmLabel": "تأكيد الطلب",
+        "cancelLabel": "إلغاء الطلب",
+        "changeLabel": "طلب تعديل",
+        "changeRequestOfKey": "cod_confirm.ar.standard",
+        "samples": {
+          "customer": "أحمد",
+          "store": "متجر أكيد",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100",
+          "region": "القاهرة",
+          "address": "12 شارع النيل، المعادي"
+        }
+      },
+      "key": "cod_confirm.ar.change_47d2a7dcffbca1d4_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "أحمد"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "متجر أكيد"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+      "imageTwin": {
+        "key": "cod_confirm.ar.change_47d2a7dcffbca1d4_v1_logo",
+        "templateName": "akeed_cod_confirm_change_47d2a7dcffbca1d4_v1_logo",
+        "parentKey": "cod_confirm.ar.change_47d2a7dcffbca1d4_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "providerBody": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
+        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "a3a52eac-afab-4134-af6f-99659576b38d"
+    },
+    {
+      "parentKey": "cod_confirm.en.detailed_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "en",
+        "style": "change_7c5cceb0fa9b08a7",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_7c5cceb0fa9b08a7_v1",
+        "languageCode": "en",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "confirmLabel": "Confirm",
+        "cancelLabel": "Cancel",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_confirm.en.detailed_v1",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_confirm.en.change_7c5cceb0fa9b08a7_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ahmed"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Store"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "items",
+          "parameter": "items",
+          "sample": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        },
+        {
+          "key": "region",
+          "parameter": "region",
+          "sample": "Cairo"
+        },
+        {
+          "key": "address",
+          "parameter": "address",
+          "sample": "12 Nile Street, Maadi"
+        }
+      ],
+      "providerBody": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+      "imageTwin": {
+        "key": "cod_confirm.en.change_7c5cceb0fa9b08a7_v1_logo",
+        "templateName": "akeed_cod_confirm_change_7c5cceb0fa9b08a7_v1_logo",
+        "parentKey": "cod_confirm.en.change_7c5cceb0fa9b08a7_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "providerBody": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
+        "buttons": ["Confirm", "Cancel", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "2e983f8a-985a-48a3-a9a3-4ab7758db5f5"
+    },
+    {
+      "parentKey": "cod_confirm.en.direct",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "en",
+        "style": "change_8cad9e2cd9e9a238",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_8cad9e2cd9e9a238_v1",
+        "languageCode": "en",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "confirmLabel": "Ship My Order",
+        "cancelLabel": "Cancel",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_confirm.en.direct",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_confirm.en.change_8cad9e2cd9e9a238_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ahmed"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Store"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+      "imageTwin": {
+        "key": "cod_confirm.en.change_8cad9e2cd9e9a238_v1_logo",
+        "templateName": "akeed_cod_confirm_change_8cad9e2cd9e9a238_v1_logo",
+        "parentKey": "cod_confirm.en.change_8cad9e2cd9e9a238_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "providerBody": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
+        "buttons": ["Ship My Order", "Cancel", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "9e55e8a8-276b-4a7a-9a52-a6e40e8d7dfe"
+    },
+    {
+      "parentKey": "cod_confirm.en.friendly",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "en",
+        "style": "change_baac0ce0da1bfe0b",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_baac0ce0da1bfe0b_v1",
+        "languageCode": "en",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+        "confirmLabel": "Confirm Order",
+        "cancelLabel": "Cancel Order",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_confirm.en.friendly",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_confirm.en.change_baac0ce0da1bfe0b_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ahmed"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Store"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+      "imageTwin": {
+        "key": "cod_confirm.en.change_baac0ce0da1bfe0b_v1_logo",
+        "templateName": "akeed_cod_confirm_change_baac0ce0da1bfe0b_v1_logo",
+        "parentKey": "cod_confirm.en.change_baac0ce0da1bfe0b_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+        "providerBody": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
+        "buttons": ["Confirm Order", "Cancel Order", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "060e1e1f-2ec7-4e5d-a9c2-161ff3ea9e19"
+    },
+    {
+      "parentKey": "cod_confirm.en.professional",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "en",
+        "style": "change_62f5d4a309be96b9",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_62f5d4a309be96b9_v1",
+        "languageCode": "en",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+        "confirmLabel": "Confirm & Ship",
+        "cancelLabel": "Cancel Order",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_confirm.en.professional",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_confirm.en.change_62f5d4a309be96b9_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ahmed"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Store"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+      "imageTwin": {
+        "key": "cod_confirm.en.change_62f5d4a309be96b9_v1_logo",
+        "templateName": "akeed_cod_confirm_change_62f5d4a309be96b9_v1_logo",
+        "parentKey": "cod_confirm.en.change_62f5d4a309be96b9_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+        "providerBody": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
+        "buttons": ["Confirm & Ship", "Cancel Order", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "1f19a875-96f6-4d84-b7ce-9a01bbc41f85"
+    },
+    {
+      "parentKey": "cod_confirm.en.short",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "en",
+        "style": "change_7baa5bf3c1b104b8",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_7baa5bf3c1b104b8_v1",
+        "languageCode": "en",
+        "parameterFormat": "positional",
+        "category": "utility",
+        "body": "Hello\n\nWe have received your order {{order}} with Cash on Delivery.\nTotal Price : {{total}}\n\nPlease confirm your order.",
+        "confirmLabel": "Confirm",
+        "cancelLabel": "Cancel",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_confirm.en.short",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_confirm.en.change_7baa5bf3c1b104b8_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "order",
+          "parameter": "1",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "2",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
+      "imageTwin": {
+        "key": "cod_confirm.en.change_7baa5bf3c1b104b8_v1_logo",
+        "templateName": "akeed_cod_confirm_change_7baa5bf3c1b104b8_v1_logo",
+        "parentKey": "cod_confirm.en.change_7baa5bf3c1b104b8_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hello\n\nWe have received your order {{order}} with Cash on Delivery.\nTotal Price : {{total}}\n\nPlease confirm your order.",
+        "providerBody": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
+        "buttons": ["Confirm", "Cancel", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "2fe6346e-60ec-4b07-8c81-2398bbcca431"
+    },
+    {
+      "parentKey": "cod_confirm.es.short_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "es",
+        "style": "change_31a73e7d64e3b53d",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_31a73e7d64e3b53d_v1",
+        "languageCode": "es",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "confirmLabel": "Confirmar",
+        "cancelLabel": "Cancelar",
+        "changeLabel": "Solicitar un cambio",
+        "changeRequestOfKey": "cod_confirm.es.short_v1",
+        "samples": {
+          "customer": "Carlos",
+          "store": "Togo",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Camisa de algodón (1x 150) = 150, Color: Azul • 2. Calcetines deportivos (2x 50) = 100",
+          "region": "Madrid",
+          "address": "Calle Mayor 12, Centro"
+        }
+      },
+      "key": "cod_confirm.es.change_31a73e7d64e3b53d_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Carlos"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Togo"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+      "imageTwin": {
+        "key": "cod_confirm.es.change_31a73e7d64e3b53d_v1_logo",
+        "templateName": "akeed_cod_confirm_change_31a73e7d64e3b53d_v1_logo",
+        "parentKey": "cod_confirm.es.change_31a73e7d64e3b53d_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "providerBody": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
+        "buttons": ["Confirmar", "Cancelar", "Solicitar un cambio"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "72681a09-867b-43a8-9770-7f5022c4aa6c"
+    },
+    {
+      "parentKey": "cod_confirm.es.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "es",
+        "style": "change_2b42bac55099f36c",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_2b42bac55099f36c_v1",
+        "languageCode": "es",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "confirmLabel": "Confirmar pedido",
+        "cancelLabel": "Cancelar pedido",
+        "changeLabel": "Solicitar un cambio",
+        "changeRequestOfKey": "cod_confirm.es.standard_v1",
+        "samples": {
+          "customer": "Carlos",
+          "store": "Tienda Akeed",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Camisa de algodón (1x 150) = 150, Color: Azul • 2. Calcetines deportivos (2x 50) = 100",
+          "region": "Madrid",
+          "address": "Calle Mayor 12, Centro"
+        }
+      },
+      "key": "cod_confirm.es.change_2b42bac55099f36c_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Carlos"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Tienda Akeed"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+      "imageTwin": {
+        "key": "cod_confirm.es.change_2b42bac55099f36c_v1_logo",
+        "templateName": "akeed_cod_confirm_change_2b42bac55099f36c_v1_logo",
+        "parentKey": "cod_confirm.es.change_2b42bac55099f36c_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "providerBody": "Hola, {{customer}}:\n\nHemos recibido tu pedido {{order}} en *{{store}}*. El total es de *{{total}}* y lo pagas al recibirlo.\n\nPor favor, confirma tu pedido.",
+        "buttons": [
+          "Confirmar pedido",
+          "Cancelar pedido",
+          "Solicitar un cambio"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "ec33c470-2dfe-4242-99f6-a33a754f09b2"
+    },
+    {
+      "parentKey": "cod_confirm.fr.short_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "fr",
+        "style": "change_289d11d1d5daee9d",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_289d11d1d5daee9d_v1",
+        "languageCode": "fr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "confirmLabel": "Confirmer",
+        "cancelLabel": "Annuler",
+        "changeLabel": "Demander une modification",
+        "changeRequestOfKey": "cod_confirm.fr.short_v1",
+        "samples": {
+          "customer": "Zidane",
+          "store": "Togo",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Chemise en coton (1x 150) = 150, Couleur: Bleu • 2. Chaussettes de sport (2x 50) = 100",
+          "region": "Paris",
+          "address": "12 rue de Rivoli, 75004"
+        }
+      },
+      "key": "cod_confirm.fr.change_289d11d1d5daee9d_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Zidane"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Togo"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+      "imageTwin": {
+        "key": "cod_confirm.fr.change_289d11d1d5daee9d_v1_logo",
+        "templateName": "akeed_cod_confirm_change_289d11d1d5daee9d_v1_logo",
+        "parentKey": "cod_confirm.fr.change_289d11d1d5daee9d_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "providerBody": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
+        "buttons": ["Confirmer", "Annuler", "Demander une modification"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "d9c20b28-0867-4c33-915b-e842636d5253"
+    },
+    {
+      "parentKey": "cod_confirm.fr.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "fr",
+        "style": "change_78e66af78bf22ec6",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_78e66af78bf22ec6_v1",
+        "languageCode": "fr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "confirmLabel": "Confirmer la commande",
+        "cancelLabel": "Annuler la commande",
+        "changeLabel": "Demander une modification",
+        "changeRequestOfKey": "cod_confirm.fr.standard_v1",
+        "samples": {
+          "customer": "Camille",
+          "store": "Boutique Akeed",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Chemise en coton (1x 150) = 150, Couleur: Bleu • 2. Chaussettes de sport (2x 50) = 100",
+          "region": "Paris",
+          "address": "12 rue de Rivoli, 75004"
+        }
+      },
+      "key": "cod_confirm.fr.change_78e66af78bf22ec6_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Camille"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Boutique Akeed"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+      "imageTwin": {
+        "key": "cod_confirm.fr.change_78e66af78bf22ec6_v1_logo",
+        "templateName": "akeed_cod_confirm_change_78e66af78bf22ec6_v1_logo",
+        "parentKey": "cod_confirm.fr.change_78e66af78bf22ec6_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "providerBody": "Bonjour {{customer}},\n\nNous avons bien reçu votre commande {{order}} sur *{{store}}*. Le total est de *{{total}}*, à payer à la livraison.\n\nMerci de confirmer votre commande.",
+        "buttons": [
+          "Confirmer la commande",
+          "Annuler la commande",
+          "Demander une modification"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "f57b3281-1f6b-41bd-b2ac-ca37c8fcbcd2"
+    },
+    {
+      "parentKey": "cod_confirm.tr.short_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "tr",
+        "style": "change_f6b2d208b708eda8",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_f6b2d208b708eda8_v1",
+        "languageCode": "tr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "confirmLabel": "Onayla",
+        "cancelLabel": "İptal et",
+        "changeLabel": "Değişiklik iste",
+        "changeRequestOfKey": "cod_confirm.tr.short_v1",
+        "samples": {
+          "customer": "Ayşe",
+          "store": "Akeed Mağazası",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Pamuklu gömlek (1x 150) = 150, Renk: Mavi • 2. Spor çorap (2x 50) = 100",
+          "region": "İstanbul",
+          "address": "Bağdat Caddesi No: 12, Kadıköy"
+        }
+      },
+      "key": "cod_confirm.tr.change_f6b2d208b708eda8_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+      "imageTwin": {
+        "key": "cod_confirm.tr.change_f6b2d208b708eda8_v1_logo",
+        "templateName": "akeed_cod_confirm_change_f6b2d208b708eda8_v1_logo",
+        "parentKey": "cod_confirm.tr.change_f6b2d208b708eda8_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "providerBody": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
+        "buttons": ["Onayla", "İptal et", "Değişiklik iste"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "73c1ac42-e3b5-4755-8e61-e96c3e91eb92"
+    },
+    {
+      "parentKey": "cod_confirm.tr.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "tr",
+        "style": "change_11e4f3829e38c9a4",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_11e4f3829e38c9a4_v1",
+        "languageCode": "tr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "confirmLabel": "Siparişi onayla",
+        "cancelLabel": "Siparişi iptal et",
+        "changeLabel": "Değişiklik iste",
+        "changeRequestOfKey": "cod_confirm.tr.standard_v1",
+        "samples": {
+          "customer": "Ayşe",
+          "store": "Akeed Mağazası",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Pamuklu gömlek (1x 150) = 150, Renk: Mavi • 2. Spor çorap (2x 50) = 100",
+          "region": "İstanbul",
+          "address": "Bağdat Caddesi No: 12, Kadıköy"
+        }
+      },
+      "key": "cod_confirm.tr.change_11e4f3829e38c9a4_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ayşe"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Mağazası"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+      "imageTwin": {
+        "key": "cod_confirm.tr.change_11e4f3829e38c9a4_v1_logo",
+        "templateName": "akeed_cod_confirm_change_11e4f3829e38c9a4_v1_logo",
+        "parentKey": "cod_confirm.tr.change_11e4f3829e38c9a4_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
+        "buttons": ["Siparişi onayla", "Siparişi iptal et", "Değişiklik iste"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "4bdd130c-1109-4580-aa74-bba427789cd8"
+    },
+    {
+      "parentKey": "cod_confirm.ur.short_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ur",
+        "style": "change_c6eb0ef5ddeae796",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_c6eb0ef5ddeae796_v1",
+        "languageCode": "ur",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "confirmLabel": "تصدیق کریں",
+        "cancelLabel": "منسوخ کریں",
+        "changeLabel": "تبدیلی کی درخواست",
+        "changeRequestOfKey": "cod_confirm.ur.short_v1",
+        "samples": {
+          "customer": "أحمد",
+          "store": "Noor",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. سوتی قمیض (1x 150) = 150، رنگ: نیلا • 2. کھیلوں کی جرابیں (2x 50) = 100",
+          "region": "لاہور",
+          "address": "12 مین بلیوارڈ، گلبرگ"
+        }
+      },
+      "key": "cod_confirm.ur.change_c6eb0ef5ddeae796_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "أحمد"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Noor"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+      "imageTwin": {
+        "key": "cod_confirm.ur.change_c6eb0ef5ddeae796_v1_logo",
+        "templateName": "akeed_cod_confirm_change_c6eb0ef5ddeae796_v1_logo",
+        "parentKey": "cod_confirm.ur.change_c6eb0ef5ddeae796_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "providerBody": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": ["تصدیق کریں", "منسوخ کریں", "تبدیلی کی درخواست"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "61f0a6ab-e358-41dd-83e4-07beb9d7bb95"
+    },
+    {
+      "parentKey": "cod_confirm.ur.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_confirmation",
+        "language": "ur",
+        "style": "change_dcbe1f47925efdd1",
+        "version": 1,
+        "templateName": "akeed_cod_confirm_change_dcbe1f47925efdd1_v1",
+        "languageCode": "ur",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "confirmLabel": "آرڈر کی تصدیق کریں",
+        "cancelLabel": "آرڈر منسوخ کریں",
+        "changeLabel": "تبدیلی کی درخواست",
+        "changeRequestOfKey": "cod_confirm.ur.standard_v1",
+        "samples": {
+          "customer": "احمد",
+          "store": "اکید اسٹور",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. سوتی قمیض (1x 150) = 150، رنگ: نیلا • 2. کھیلوں کی جرابیں (2x 50) = 100",
+          "region": "لاہور",
+          "address": "12 مین بلیوارڈ، گلبرگ"
+        }
+      },
+      "key": "cod_confirm.ur.change_dcbe1f47925efdd1_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "احمد"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "اکید اسٹور"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+      "imageTwin": {
+        "key": "cod_confirm.ur.change_dcbe1f47925efdd1_v1_logo",
+        "templateName": "akeed_cod_confirm_change_dcbe1f47925efdd1_v1_logo",
+        "parentKey": "cod_confirm.ur.change_dcbe1f47925efdd1_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "providerBody": "السلام علیکم {{customer}}،\n\n{{store}} پر آپ کا آرڈر *{{order}}* موصول ہو گیا ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nبراہِ کرم اپنے آرڈر کی تصدیق کریں۔",
+        "buttons": [
+          "آرڈر کی تصدیق کریں",
+          "آرڈر منسوخ کریں",
+          "تبدیلی کی درخواست"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "d5eae0d5-d5e5-4496-9b8e-ef347277a4f7"
+    },
+    {
+      "parentKey": "cod_reminder.ar.professional_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "ar",
+        "style": "change_de47371c09f3f3f0",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_de47371c09f3f3f0_v1",
+        "languageCode": "ar",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "confirmLabel": "تأكيد الطلب",
+        "cancelLabel": "إلغاء الطلب",
+        "changeLabel": "طلب تعديل",
+        "changeRequestOfKey": "cod_reminder.ar.professional_v1",
+        "samples": {
+          "customer": "أحمد",
+          "store": "متجر أكيد",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. قميص قطن (1x 150) = 150، اللون: أزرق • 2. جورب رياضي (2x 50) = 100",
+          "region": "القاهرة",
+          "address": "12 شارع النيل، المعادي"
+        }
+      },
+      "key": "cod_reminder.ar.change_de47371c09f3f3f0_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "أحمد"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "متجر أكيد"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+      "imageTwin": {
+        "key": "cod_reminder.ar.change_de47371c09f3f3f0_v1_logo",
+        "templateName": "akeed_cod_reminder_change_de47371c09f3f3f0_v1_logo",
+        "parentKey": "cod_reminder.ar.change_de47371c09f3f3f0_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "providerBody": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
+        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "5d4a8378-2a42-4140-be43-070c5f763556"
+    },
+    {
+      "parentKey": "cod_reminder.en.professional_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "en",
+        "style": "change_d82cb1bc65fba168",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_d82cb1bc65fba168_v1",
+        "languageCode": "en",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "confirmLabel": "Confirm",
+        "cancelLabel": "Cancel",
+        "changeLabel": "Request a change",
+        "changeRequestOfKey": "cod_reminder.en.professional_v1",
+        "samples": {
+          "customer": "Ahmed",
+          "store": "Akeed Store",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Cotton shirt (1x 150) = 150, Color: Blue • 2. Sport socks (2x 50) = 100",
+          "region": "Cairo",
+          "address": "12 Nile Street, Maadi"
+        }
+      },
+      "key": "cod_reminder.en.change_d82cb1bc65fba168_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ahmed"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Store"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+      "imageTwin": {
+        "key": "cod_reminder.en.change_d82cb1bc65fba168_v1_logo",
+        "templateName": "akeed_cod_reminder_change_d82cb1bc65fba168_v1_logo",
+        "parentKey": "cod_reminder.en.change_d82cb1bc65fba168_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "providerBody": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
+        "buttons": ["Confirm", "Cancel", "Request a change"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "5df1b0b9-c43b-4042-a6d5-fc349460f933"
+    },
+    {
+      "parentKey": "cod_reminder.es.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "es",
+        "style": "change_d20418c9ca288b14",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_d20418c9ca288b14_v1",
+        "languageCode": "es",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "confirmLabel": "Confirmar pedido",
+        "cancelLabel": "Cancelar pedido",
+        "changeLabel": "Solicitar un cambio",
+        "changeRequestOfKey": "cod_reminder.es.standard_v1",
+        "samples": {
+          "customer": "Carlos",
+          "store": "Tienda Akeed",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Camisa de algodón (1x 150) = 150, Color: Azul • 2. Calcetines deportivos (2x 50) = 100",
+          "region": "Madrid",
+          "address": "Calle Mayor 12, Centro"
+        }
+      },
+      "key": "cod_reminder.es.change_d20418c9ca288b14_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Carlos"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Tienda Akeed"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+      "imageTwin": {
+        "key": "cod_reminder.es.change_d20418c9ca288b14_v1_logo",
+        "templateName": "akeed_cod_reminder_change_d20418c9ca288b14_v1_logo",
+        "parentKey": "cod_reminder.es.change_d20418c9ca288b14_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "providerBody": "Hola, {{customer}}:\n\nTu pedido {{order}} en *{{store}}* sigue pendiente de confirmación. El total es de *{{total}}* y lo pagas al recibirlo.\n\nConfírmalo para que podamos enviártelo.",
+        "buttons": [
+          "Confirmar pedido",
+          "Cancelar pedido",
+          "Solicitar un cambio"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "8251ee53-6beb-4082-8e32-bbb4ab9c2215"
+    },
+    {
+      "parentKey": "cod_reminder.fr.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "fr",
+        "style": "change_34d3aad33b9aea2c",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_34d3aad33b9aea2c_v1",
+        "languageCode": "fr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "confirmLabel": "Confirmer la commande",
+        "cancelLabel": "Annuler la commande",
+        "changeLabel": "Demander une modification",
+        "changeRequestOfKey": "cod_reminder.fr.standard_v1",
+        "samples": {
+          "customer": "Zidane",
+          "store": "Boutique Akeed",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Chemise en coton (1x 150) = 150, Couleur: Bleu • 2. Chaussettes de sport (2x 50) = 100",
+          "region": "Paris",
+          "address": "12 rue de Rivoli, 75004"
+        }
+      },
+      "key": "cod_reminder.fr.change_34d3aad33b9aea2c_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Zidane"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Boutique Akeed"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+      "imageTwin": {
+        "key": "cod_reminder.fr.change_34d3aad33b9aea2c_v1_logo",
+        "templateName": "akeed_cod_reminder_change_34d3aad33b9aea2c_v1_logo",
+        "parentKey": "cod_reminder.fr.change_34d3aad33b9aea2c_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "providerBody": "Bonjour {{customer}},\n\nVotre commande {{order}} sur *{{store}}* attend toujours votre confirmation. Le total est de *{{total}}*, à payer à la livraison.\n\nConfirmez-la pour que nous puissions vous l'expédier.",
+        "buttons": [
+          "Confirmer la commande",
+          "Annuler la commande",
+          "Demander une modification"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "fc529626-8ce1-4e57-b764-0a26300e5e63"
+    },
+    {
+      "parentKey": "cod_reminder.tr.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "tr",
+        "style": "change_26ba9baa5bd7ba60",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_26ba9baa5bd7ba60_v1",
+        "languageCode": "tr",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "confirmLabel": "Siparişi onayla",
+        "cancelLabel": "Siparişi iptal et",
+        "changeLabel": "Değişiklik iste",
+        "changeRequestOfKey": "cod_reminder.tr.standard_v1",
+        "samples": {
+          "customer": "Ayşe",
+          "store": "Akeed Mağazası",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. Pamuklu gömlek (1x 150) = 150, Renk: Mavi • 2. Spor çorap (2x 50) = 100",
+          "region": "İstanbul",
+          "address": "Bağdat Caddesi No: 12, Kadıköy"
+        }
+      },
+      "key": "cod_reminder.tr.change_26ba9baa5bd7ba60_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "Ayşe"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "Akeed Mağazası"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+      "imageTwin": {
+        "key": "cod_reminder.tr.change_26ba9baa5bd7ba60_v1_logo",
+        "templateName": "akeed_cod_reminder_change_26ba9baa5bd7ba60_v1_logo",
+        "parentKey": "cod_reminder.tr.change_26ba9baa5bd7ba60_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
+        "buttons": ["Siparişi onayla", "Siparişi iptal et", "Değişiklik iste"]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "459fe11a-b62b-44f2-9e1a-09f6f0b07fc0"
+    },
+    {
+      "parentKey": "cod_reminder.ur.standard_v1",
+      "sourceUpdatedAt": "2026-11-09T13:58:28.269+00:00",
+      "content": {
+        "purpose": "cod_reminder",
+        "language": "ur",
+        "style": "change_cde67dbdd8324986",
+        "version": 1,
+        "templateName": "akeed_cod_reminder_change_cde67dbdd8324986_v1",
+        "languageCode": "ur",
+        "parameterFormat": "named",
+        "category": "utility",
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "confirmLabel": "آرڈر کی تصدیق کریں",
+        "cancelLabel": "آرڈر منسوخ کریں",
+        "changeLabel": "تبدیلی کی درخواست",
+        "changeRequestOfKey": "cod_reminder.ur.standard_v1",
+        "samples": {
+          "customer": "احمد",
+          "store": "اکید اسٹور",
+          "order": "TEST-1",
+          "total": "250.00 USD",
+          "items": "1. سوتی قمیض (1x 150) = 150، رنگ: نیلا • 2. کھیلوں کی جرابیں (2x 50) = 100",
+          "region": "لاہور",
+          "address": "12 مین بلیوارڈ، گلبرگ"
+        }
+      },
+      "key": "cod_reminder.ur.change_cde67dbdd8324986_v1",
+      "differences": [],
+      "issues": [],
+      "variables": [
+        {
+          "key": "customer",
+          "parameter": "customer",
+          "sample": "احمد"
+        },
+        {
+          "key": "store",
+          "parameter": "store",
+          "sample": "اکید اسٹور"
+        },
+        {
+          "key": "order",
+          "parameter": "order",
+          "sample": "TEST-1"
+        },
+        {
+          "key": "total",
+          "parameter": "total",
+          "sample": "250.00 USD"
+        }
+      ],
+      "providerBody": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+      "imageTwin": {
+        "key": "cod_reminder.ur.change_cde67dbdd8324986_v1_logo",
+        "templateName": "akeed_cod_reminder_change_cde67dbdd8324986_v1_logo",
+        "parentKey": "cod_reminder.ur.change_cde67dbdd8324986_v1",
+        "header": "IMAGE",
+        "state": "planned",
+        "body": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "providerBody": "السلام علیکم {{customer}}،\n\n*{{store}}* پر آپ کا آرڈر {{order}} ابھی آپ کی تصدیق کا منتظر ہے۔ کل رقم *{{total}}* ہے، ادائیگی کیش آن ڈیلیوری ہوگی۔\n\nتصدیق کر دیں تاکہ ہم آپ کا آرڈر روانہ کر سکیں۔",
+        "buttons": [
+          "آرڈر کی تصدیق کریں",
+          "آرڈر منسوخ کریں",
+          "تبدیلی کی درخواست"
+        ]
+      },
+      "state": "draft",
+      "merchantOwn": {
+        "text": "independent_approval_required",
+        "image": "unsupported"
+      },
+      "productionDraftId": "e4613bb1-c935-4d4d-81cc-96c626ae6b1c"
+    }
+  ],
+  "production_prepared": true,
+  "verification": {
+    "observedAt": "2026-11-09T16:11:59.886Z",
+    "existingTemplateCount": 46,
+    "existingTemplateFingerprint": "a83801cf11a2c493c962aae333001ed5",
+    "latestDrizzleEntry": {
+      "id": 95,
+      "hash": "9d1190ad9a44c06a588a34b8fbd87b49e4456aabf2f5197f2165daf890fbd3aa",
+      "created_at": 1794960000000
+    },
+    "independentMetaLookup": false,
+    "providerSubmitted": false,
+    "merchantActivated": false,
+    "preExistingDraftsUnchanged": 15
+  }
+}

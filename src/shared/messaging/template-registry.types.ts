@@ -87,6 +87,17 @@ export type TemplateHeaderFormat = 'none' | 'image';
  * parameters, sent with the store's banner in place of the text template.
  */
 export interface ImageTwinTemplate {
+  key?: string;
+  changeRequestOfKey?: string | null;
+  category?: TemplateCategory | null;
+  lastSyncedAt?: string | null;
+  retired?: boolean;
+  components?: TemplateComponentsSnapshot | null;
+  parentComponents?: TemplateComponentsSnapshot | null;
+  parameterFormat?: TemplateParameterFormat;
+  parentParameterFormat?: TemplateParameterFormat;
+  variables?: readonly TemplateVariable[];
+  parentVariables?: readonly TemplateVariable[];
   /** The key of the text template it repeats. */
   imageTwinOfKey: string;
   /** That text template's provider name and language code. */
@@ -114,6 +125,7 @@ export interface TemplatePreview {
   ending: string;
   confirmButton: string;
   cancelButton: string;
+  changeButton?: string;
 }
 
 /**
@@ -122,6 +134,8 @@ export interface TemplatePreview {
  * registry repository interpret them.
  */
 export interface RegistryTemplate {
+  /** The exact two-button predecessor. Absent on legacy templates. */
+  changeRequestOfKey?: string | null;
   /** Stable identity, for example `cod_confirm.ar.egyptian`. */
   key: string;
   purpose: TemplatePurpose;

@@ -1,4 +1,5 @@
 import { EXPECTED_CATEGORY_BY_PURPOSE } from './template-provider.types';
+import { CHANGE_BUTTON_LABELS } from './change-request-messaging';
 import type {
   TemplateLanguage,
   TemplateParameterFormat,
@@ -197,6 +198,9 @@ export function toTemplateSubmission(
     buttons: [
       { kind: 'quick_reply', text: content.confirmLabel },
       { kind: 'quick_reply', text: content.cancelLabel },
+      ...(content.changeLabel
+        ? [{ kind: 'quick_reply' as const, text: content.changeLabel }]
+        : []),
     ],
   };
 }
@@ -386,13 +390,24 @@ export function validateSamples(
 export function validateButtons(
   purpose: TemplatePurpose,
   buttons: TemplateSubmission['buttons'],
-  labels: { confirmLabel: string; cancelLabel: string },
+  labels: {
+    confirmLabel: string;
+    cancelLabel: string;
+    changeLabel?: string | null;
+  },
 ): Issue[] {
   const issues: Issue[] = [];
   const required = TEMPLATE_PURPOSE_BUTTONS[purpose];
   const expected = required.map((role) =>
     role === 'confirm' ? labels.confirmLabel : labels.cancelLabel,
   );
+  if (labels.changeLabel) expected.push(labels.changeLabel);
+  if (
+    labels.changeLabel &&
+    (labels.changeLabel.length > TEMPLATE_BUTTON_LABEL_MAX_LENGTH ||
+      expected.filter((label) => label === labels.changeLabel).length > 1)
+  )
+    issues.push(error('change_label', 'button_label_too_long', '4.7.2'));
   if (labels.confirmLabel.trim().length === 0) {
     issues.push(error('confirm_label', 'button_label_required', '4.7.5'));
   }
@@ -412,7 +427,7 @@ export function validateButtons(
     issues.push(error('buttons', 'button_labels_identical', 'akeed'));
   }
   if (
-    buttons.length !== required.length ||
+    buttons.length !== expected.length ||
     buttons.some((button) => button.kind !== 'quick_reply')
   ) {
     issues.push(error('buttons', 'button_count', '4.7.8'));
@@ -449,6 +464,13 @@ export function validateTemplateDraft(
     ...validateVariables(content.body, content.parameterFormat, variables),
     ...validateSamples(content.body, variables),
     ...validateButtons(content.purpose, submission.buttons, content),
+    ...(content.changeRequestOfKey
+      ? content.changeLabel === CHANGE_BUTTON_LABELS[content.language]
+        ? []
+        : [error('change_label', 'change_label_fixed', 'akeed')]
+      : content.changeLabel
+        ? [error('change_label', 'change_link_required', 'akeed')]
+        : []),
   ];
   return {
     issues,

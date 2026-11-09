@@ -29,6 +29,33 @@ const ENABLED = {
 };
 
 describe('ResendEmailAdapter', () => {
+  it('does not report acceptance for a successful response without a provider reference', async () => {
+    const http = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({}),
+    });
+    expect(await adapter(ENABLED, http).send(MESSAGE)).toMatchObject({
+      status: 'failed',
+      reason: 'provider_outcome_unknown',
+      uncertain: true,
+    });
+  });
+
+  it('retains the frozen sender address on retry', async () => {
+    const http = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'email-1' }),
+    });
+    await adapter(ENABLED, http).send({
+      ...MESSAGE,
+      from: 'frozen@example.test',
+    });
+    const [, init] = http.mock.calls[0] as [string, { body: string }];
+    const body = JSON.parse(init.body) as { from: string };
+    expect(body.from).toBe('frozen@example.test');
+  });
   it('sends nothing while email alerts are off', async () => {
     const http = jest.fn();
 
@@ -40,7 +67,11 @@ describe('ResendEmailAdapter', () => {
   });
 
   it('posts the message once with the idempotency key', async () => {
-    const http = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    const http = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'email-1' }),
+    });
 
     await expect(adapter(ENABLED, http).send(MESSAGE)).resolves.toEqual({
       status: 'sent',
@@ -70,6 +101,8 @@ describe('ResendEmailAdapter', () => {
     await expect(adapter(ENABLED, http).send(MESSAGE)).resolves.toEqual({
       status: 'failed',
       reason: 'provider_status_503',
+      retryable: true,
+      uncertain: true,
     });
     expect(http).toHaveBeenCalledTimes(1);
   });
@@ -80,6 +113,8 @@ describe('ResendEmailAdapter', () => {
     await expect(adapter(ENABLED, http).send(MESSAGE)).resolves.toEqual({
       status: 'failed',
       reason: 'provider_unreachable',
+      retryable: true,
+      uncertain: true,
     });
     expect(http).toHaveBeenCalledTimes(1);
   });

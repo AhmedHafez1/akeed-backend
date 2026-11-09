@@ -153,14 +153,19 @@ export function compareTemplateDrift(params: {
 
   const [confirm, cancel] = model.buttons;
   const twoQuickReplies =
-    model.buttons.length === 2 &&
-    confirm.kind === 'quick_reply' &&
-    cancel.kind === 'quick_reply';
+    model.buttons.length === (template.changeRequestOfKey ? 3 : 2) &&
+    (!template.changeRequestOfKey ||
+      (model.buttons[2]?.kind === 'quick_reply' &&
+        model.buttons[2].text === template.preview.changeButton)) &&
+    confirm?.kind === 'quick_reply' &&
+    cancel?.kind === 'quick_reply';
   if (!twoQuickReplies) {
     differences.push({
       kind: 'buttons',
       severity: 'send',
-      registered: 'quick_reply, quick_reply',
+      registered: template.changeRequestOfKey
+        ? 'quick_reply, quick_reply, quick_reply'
+        : 'quick_reply, quick_reply',
       provider: model.buttons.map((button) => button.kind).join(', '),
     });
   } else if (

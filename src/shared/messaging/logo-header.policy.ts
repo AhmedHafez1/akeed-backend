@@ -22,6 +22,37 @@ export function isHttpsUrl(value: string | null | undefined): value is string {
   }
 }
 
+/** Three-button branding must be an exact, synchronized copy of its text parent. */
+export function changeImageTwinUsable(twin: ImageTwinTemplate): boolean {
+  const image = twin.components;
+  const parent = twin.parentComponents;
+  if (
+    !twin.changeRequestOfKey ||
+    !twin.isActive ||
+    twin.retired ||
+    twin.reviewStatus !== 'approved' ||
+    twin.category !== 'utility' ||
+    !twin.lastSyncedAt ||
+    !image ||
+    !parent ||
+    'unknown' in image ||
+    'unknown' in parent ||
+    !image.headerImage ||
+    image.header ||
+    parent.header ||
+    parent.headerImage
+  )
+    return false;
+  return (
+    image.body === parent.body &&
+    image.footer === parent.footer &&
+    JSON.stringify(image.buttons) === JSON.stringify(parent.buttons) &&
+    image.buttons.length === 3 &&
+    twin.parameterFormat === twin.parentParameterFormat &&
+    JSON.stringify(twin.variables) === JSON.stringify(twin.parentVariables)
+  );
+}
+
 /**
  * The image-header twin of the selected template, when the store may send it:
  * the switch is on, a banner is saved and the twin is active and, under the
@@ -46,6 +77,11 @@ export function applyLogoHeader(
       candidate.twinOf.templateName === template.templateName &&
       candidate.twinOf.languageCode === template.languageCode &&
       candidate.isActive &&
+      (!template.changeRequestOfKey ||
+        (candidate.imageTwinOfKey === template.registryKey &&
+          candidate.languageCode === template.languageCode &&
+          candidate.changeRequestOfKey === template.changeRequestOfKey &&
+          changeImageTwinUsable(candidate))) &&
       (!approvalRequired || isSendableReviewStatus(candidate.reviewStatus)),
   );
   if (!twin) return template;
