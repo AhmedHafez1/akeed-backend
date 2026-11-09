@@ -235,6 +235,66 @@ describe('claimed merchant sender', () => {
     expect(templates.findForSend).not.toHaveBeenCalled();
   });
 
+  describe('the template the claim recorded', () => {
+    const shared = {
+      ...params,
+      sender: {
+        kind: 'akeed_system' as const,
+        connectionId: null,
+        reason: 'feature_off' as const,
+        units: 1 as const,
+      },
+    };
+    function sharedSetup(templateName: string, languageCode = 'ar_EG') {
+      const context = setup();
+      context.dispatch.senderKind = 'akeed_system';
+      context.dispatch.senderConnectionId = null as never;
+      context.dispatch.senderReason = 'feature_off';
+      context.dispatch.senderPhoneNumberId = 'recorded-shared-phone';
+      context.dispatch.templateName = templateName;
+      context.dispatch.languageCode = languageCode;
+      return context;
+    }
+
+    // The send service claims a branded message under its image twin.
+    it('sends a branded template whose dispatch recorded the image twin', async () => {
+      const { adapter, http } = sharedSetup('confirm_eg_image');
+
+      await adapter.sendVerificationTemplate(shared);
+
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('/recorded-shared-phone/messages'),
+        expect.objectContaining({
+          template: expect.objectContaining({ name: 'confirm_eg_image' }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it.each([
+      ['an unrelated template', 'other_template', 'ar_EG'],
+      ['the twin in another language', 'confirm_eg_image', 'en'],
+    ])(
+      'refuses a dispatch that recorded %s',
+      async (_case, templateName, languageCode) => {
+        const { adapter, http } = sharedSetup(templateName, languageCode);
+
+        await expect(
+          adapter.sendVerificationTemplate(shared),
+        ).rejects.toThrow();
+        expect(http.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not let a merchant number match through an image twin', async () => {
+      const { adapter, http, dispatch } = setup();
+      dispatch.templateName = 'confirm_eg_image';
+
+      await expect(adapter.sendVerificationTemplate(params)).rejects.toThrow();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(['network', 'provider'])(
     'redacts both tokens, encoded tokens and nested causes from %s errors',
     async (mode) => {

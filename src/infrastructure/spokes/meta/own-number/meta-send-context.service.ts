@@ -22,6 +22,31 @@ export interface MetaSendContext {
   timeout?: number;
 }
 
+/**
+ * The claim records the template the shared number actually attempts: the
+ * image-header twin of a branded template, otherwise the text template. A
+ * merchant's own number never sends the twin.
+ */
+function recordsSelectedTemplate(
+  dispatch: { templateName: string | null; languageCode: string | null },
+  template: Parameters<
+    MessagingPort['sendVerificationTemplate']
+  >[0]['template'],
+  senderKind: string,
+): boolean {
+  const candidates = [
+    template,
+    ...(senderKind !== 'merchant_own' && template.imageHeader
+      ? [template.imageHeader]
+      : []),
+  ];
+  return candidates.some(
+    (candidate) =>
+      dispatch.templateName === candidate.templateName &&
+      dispatch.languageCode === candidate.languageCode,
+  );
+}
+
 @Injectable()
 export class MetaSendContextService {
   constructor(
@@ -151,8 +176,7 @@ export class MetaSendContextService {
       dispatch.senderConnectionId !== sender.connectionId ||
       (dispatch.senderReason !== null &&
         dispatch.senderReason !== sender.reason) ||
-      dispatch.templateName !== params.template.templateName ||
-      dispatch.languageCode !== params.template.languageCode
+      !recordsSelectedTemplate(dispatch, params.template, sender.kind)
     )
       return refuse('sender_dispatch_mismatch');
     let token = this.config.get<string>('WA_ACCESS_TOKEN') ?? '';
