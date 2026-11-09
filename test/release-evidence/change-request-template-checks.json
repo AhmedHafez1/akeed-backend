@@ -8,7 +8,8 @@
     "throughMigration": "0093",
     "providerSubmitted": false,
     "deployed": false,
-    "merchantActivated": false
+    "merchantActivated": false,
+    "preExistingDraftsUnchanged": 15
   },
   "checks": [
     {
@@ -91,6 +92,12 @@
     {
       "command": "frontend npm run build / npm run typecheck / npm run lint / touched prettier / git diff --check",
       "result": "passed"
+    },
+    {
+      "command": "Final unsupported-source preparation unit / bounded PostgreSQL rerun / backend build / TypeScript / targeted lint",
+      "result": "passed",
+      "unitTests": 1,
+      "postgresTests": 5
     }
   ],
   "backendFilesChanged": [
@@ -110,6 +117,7 @@
     "src/infrastructure/spokes/meta/whatsapp.service.spec.ts",
     "src/infrastructure/spokes/meta/whatsapp.service.ts",
     "src/modules/admin/admin-change-preparation.controller.ts",
+    "src/modules/admin/admin-change-preparation.service.spec.ts",
     "src/modules/admin/admin-change-preparation.service.ts",
     "src/modules/admin/admin-image-twins.service.ts",
     "src/modules/admin/admin-stores.service.ts",
@@ -286,7 +294,7 @@
     },
     {
       "path": "src/modules/admin/admin-change-preparation.service.ts",
-      "sha256": "341fe9492cc9be38d55a8e19a833a238defd4c4e874953a31dba5217349a2bb9"
+      "sha256": "8424bd81eaeceb2f12c7e39c68dce3f2fd8948c518e950fbef020fb0e5f982c4"
     },
     {
       "path": "src/shared/messaging/change-request-preparation.policy.ts",
@@ -295,6 +303,10 @@
     {
       "path": "test/change-request-preparation.contract-spec.ts",
       "sha256": "2e56fa02fe1d2cc8cd22c6303ea8ec27cfb60d1c854287ca5e9c5c45722913d1"
+    },
+    {
+      "path": "src/modules/admin/admin-change-preparation.service.spec.ts",
+      "sha256": "fddab7293a3258b805d8dba022d5fea8bfe9480ec9ac88112d1ec661a6166d3d"
     }
   ],
   "frontendFilesChanged": [

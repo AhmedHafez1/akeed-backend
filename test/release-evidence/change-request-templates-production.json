@@ -36,7 +36,9 @@
         }
       },
       "key": "cod_confirm.ar.change_bb861ea27ace3d05_v1",
-      "differences": ["provider_button_labels_differ_from_preview"],
+      "differences": [
+        "provider_button_labels_differ_from_preview"
+      ],
       "issues": [],
       "variables": [
         {
@@ -69,7 +71,11 @@
         "state": "planned",
         "body": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
         "providerBody": "أهلاً {{customer}} 👋\n\nشكراً إنك اخترت *{{store}}*!\nطلبك مستني تأكيدك عشان نشحنه.\n\nرقم الطلب: {{order}}\nالإجمالي: *{{total}}* (الدفع عند الاستلام)\n\nاضغط \"تأكيد الطلب\" وهنشحنه على طول.",
-        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+        "buttons": [
+          "تأكيد الطلب",
+          "إلغاء الطلب",
+          "طلب تعديل"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -139,7 +145,11 @@
         "state": "planned",
         "body": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
         "providerBody": "أهلاً {{customer}}،\n\nطلبك رقم #{{order}} من {{store}} بانتظار تأكيدك.\n\nياليت تأكد الدفع عند الاستلام بقيمة {{total}} الحين عشان نطلعه للشحن فوراً وما يتأخر عليك.",
-        "buttons": ["اشحن طلبي", "إلغاء", "طلب تعديل"]
+        "buttons": [
+          "اشحن طلبي",
+          "إلغاء",
+          "طلب تعديل"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -199,7 +209,11 @@
         "state": "planned",
         "body": "السلام عليكم\n\nتم استلام طلبك رقم {{order}} والدفع عند الاستلام.\nإجمالي السعر : {{total}}\n\nمن فضلك أكد الطلب.",
         "providerBody": "السلام عليكم\n\nتم استلام طلبك رقم {{1}} والدفع عند الاستلام.\nإجمالي السعر : {{2}}\n\nمن فضلك أكد الطلب.",
-        "buttons": ["تأكيد", "إلغاء", "طلب تعديل"]
+        "buttons": [
+          "تأكيد",
+          "إلغاء",
+          "طلب تعديل"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -269,7 +283,11 @@
         "state": "planned",
         "body": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
         "providerBody": "أهلاً بك {{customer}}! 👋\n\nشكراً لتسوقك من *{{store}}*\n\n طلبك رقم #{{order}} بقيمة {{total}} جاهز للشحن.\n\nيرجى تأكيد الطلب لنتمكن من إرساله إليك بأسرع وقت.",
-        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+        "buttons": [
+          "تأكيد الطلب",
+          "إلغاء الطلب",
+          "طلب تعديل"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -354,7 +372,11 @@
         "state": "planned",
         "body": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
         "providerBody": "Hello {{customer}},\n\nThanks for shopping with {{store}}!\n\nOrder Summary:\n\nOrder ID: #{{order}}\nCart Items: {{items}}\nTotal: {{total}}\n\nGovernorate or region: {{region}}\nAddress: {{address}}\n\nPlease confirm your order.",
-        "buttons": ["Confirm", "Cancel", "Request a change"]
+        "buttons": [
+          "Confirm",
+          "Cancel",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -424,7 +446,11 @@
         "state": "planned",
         "body": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
         "providerBody": "Hi {{customer}}, \n\nWe are preparing your order #{{order}} at {{store}}. \n\nPlease confirm your COD total of {{total}} right now so we ship your order immediately.",
-        "buttons": ["Ship My Order", "Cancel", "Request a change"]
+        "buttons": [
+          "Ship My Order",
+          "Cancel",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -494,7 +520,11 @@
         "state": "planned",
         "body": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
         "providerBody": "Hi {{customer}}! 👋\n\nThank you for shopping with *{{store}}*. \n\nYour order {{order}} for the total amount of *{{total}}* is ready to go! \n\nPlease tap \"Confirm Order\" so we can ship it immediately.",
-        "buttons": ["Confirm Order", "Cancel Order", "Request a change"]
+        "buttons": [
+          "Confirm Order",
+          "Cancel Order",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -564,7 +594,11 @@
         "state": "planned",
         "body": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
         "providerBody": "Hello {{customer}},\n\nThank you for choosing {{store}}. \n\nWe have received your Cash on Delivery order #{{order}}. \n\nTo ensure a smooth delivery, please confirm your order for the total amount of {{total}}. \n\nOnce confirmed, We will ship your order.",
-        "buttons": ["Confirm & Ship", "Cancel Order", "Request a change"]
+        "buttons": [
+          "Confirm & Ship",
+          "Cancel Order",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -624,7 +658,11 @@
         "state": "planned",
         "body": "Hello\n\nWe have received your order {{order}} with Cash on Delivery.\nTotal Price : {{total}}\n\nPlease confirm your order.",
         "providerBody": "Hello\n\nWe have received your order {{1}} with Cash on Delivery.\nTotal Price : {{2}}\n\nPlease confirm your order.",
-        "buttons": ["Confirm", "Cancel", "Request a change"]
+        "buttons": [
+          "Confirm",
+          "Cancel",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -694,7 +732,11 @@
         "state": "planned",
         "body": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
         "providerBody": "¡Hola {{customer}}!\n\n*{{store}}* ha recibido tu pedido n.º {{order}}.\nEl total es de *{{total}}*, que pagarás en efectivo al recibirlo.\n\nPor favor, confirma tu pedido pulsando el botón de abajo.",
-        "buttons": ["Confirmar", "Cancelar", "Solicitar un cambio"]
+        "buttons": [
+          "Confirmar",
+          "Cancelar",
+          "Solicitar un cambio"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -838,7 +880,11 @@
         "state": "planned",
         "body": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
         "providerBody": "Hello {{customer}} !\n\n*{{store}}* a bien reçu votre commande n° {{order}}.\nLe montant total est de *{{total}}*, à régler en espèces à la livraison.\n\nMerci de confirmer votre commande en cliquant sur le bouton ci-dessous.",
-        "buttons": ["Confirmer", "Annuler", "Demander une modification"]
+        "buttons": [
+          "Confirmer",
+          "Annuler",
+          "Demander une modification"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -972,7 +1018,11 @@
         "state": "planned",
         "body": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
         "providerBody": "Merhaba, \n{{order}} numaralı siparişiniz alındı. \nToplam tutar {{total}}; ödeme kapıda yapılacaktır. \nLütfen onaylayın.",
-        "buttons": ["Onayla", "İptal et", "Değişiklik iste"]
+        "buttons": [
+          "Onayla",
+          "İptal et",
+          "Değişiklik iste"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1042,7 +1092,11 @@
         "state": "planned",
         "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
         "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz alındı. \nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nLütfen siparişinizi onaylayın.",
-        "buttons": ["Siparişi onayla", "Siparişi iptal et", "Değişiklik iste"]
+        "buttons": [
+          "Siparişi onayla",
+          "Siparişi iptal et",
+          "Değişiklik iste"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1112,7 +1166,11 @@
         "state": "planned",
         "body": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
         "providerBody": "السلام علیکم {{customer}}!\n\n*{{store}}* پر آپ کا آرڈر نمبر {{order}} موصول ہو گیا ہے۔\nکل رقم *{{total}}* ہے اور ادائیگی کیش آن ڈیلیوری کے ذریعے ہو گی۔\n\nبراہِ کرم نیچے دیے گئے بٹن پر کلک کر کے اپنے آرڈر کی تصدیق کریں۔",
-        "buttons": ["تصدیق کریں", "منسوخ کریں", "تبدیلی کی درخواست"]
+        "buttons": [
+          "تصدیق کریں",
+          "منسوخ کریں",
+          "تبدیلی کی درخواست"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1256,7 +1314,11 @@
         "state": "planned",
         "body": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
         "providerBody": "مرحباً {{customer}}\n\nنذكّرك بطلبك رقم {{order}} من *{{store}}* بقيمة *{{total}}* (الدفع عند الاستلام).\n\nاضغط «تأكيد الطلب» ليبدأ المتجر بتجهيزه وشحنه، أو «إلغاء الطلب» إذا لم تعد ترغب به.",
-        "buttons": ["تأكيد الطلب", "إلغاء الطلب", "طلب تعديل"]
+        "buttons": [
+          "تأكيد الطلب",
+          "إلغاء الطلب",
+          "طلب تعديل"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1326,7 +1388,11 @@
         "state": "planned",
         "body": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
         "providerBody": "Hi {{customer}},\n\nA quick reminder about your order {{order}} from *{{store}}*, total *{{total}}*, payable on delivery.\n\nWe haven't received your confirmation yet. \n\nTap \"Confirm\" so the store can prepare and ship it, or \"Cancel\" if you've changed your mind.",
-        "buttons": ["Confirm", "Cancel", "Request a change"]
+        "buttons": [
+          "Confirm",
+          "Cancel",
+          "Request a change"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1544,7 +1610,11 @@
         "state": "planned",
         "body": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
         "providerBody": "Merhaba {{customer}},\n\n*{{store}}* üzerinden verdiğiniz {{order}} numaralı siparişiniz hâlâ onayınızı bekliyor.\nToplam tutar *{{total}}*; ödeme kapıda yapılacaktır.\n\nSiparişinizi gönderebilmemiz için lütfen onaylayın.",
-        "buttons": ["Siparişi onayla", "Siparişi iptal et", "Değişiklik iste"]
+        "buttons": [
+          "Siparişi onayla",
+          "Siparişi iptal et",
+          "Değişiklik iste"
+        ]
       },
       "state": "draft",
       "merchantOwn": {
@@ -1640,6 +1710,7 @@
     },
     "independentMetaLookup": false,
     "providerSubmitted": false,
-    "merchantActivated": false
+    "merchantActivated": false,
+    "preExistingDraftsUnchanged": 15
   }
 }

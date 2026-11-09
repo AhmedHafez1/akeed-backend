@@ -19,7 +19,7 @@ Original migration 0093 was applied under the migration advisory lock and record
 
 An exact final comparison caught CRLF conversion inside SQL string literals. The generator now escapes literal line endings separately from source-file CRLF, covered by a byte-for-byte contract assertion. Only this run's fresh unchanged drafts were corrected under identity/state/timestamp/body guards. All 23 actual production drafts subsequently matched reviewed content byte-for-byte and passed the real authoring validator.
 
-The existing 46 template rows, including mappings, content, defaults, activation and status metadata, retained fingerprint `a83801cf11a2c493c962aae333001ed5` before and after maintenance. No provider IDs/approval, new live twins, merchant provisioning, activation or deployment were fabricated or performed.
+The existing 46 template rows, including mappings, content, defaults, activation and status metadata, retained fingerprint `a83801cf11a2c493c962aae333001ed5` before and after maintenance. All 15 pre-existing ordinary draft records also remain unchanged, excluding only the newly added null capability columns. No provider IDs/approval, new live twins, merchant provisioning, activation or deployment were fabricated or performed.
 
 - [Readable review and manual Meta fallback](change-request-templates-production.md)
 - [Exact content, parameter mappings, production draft IDs and verification metadata](change-request-templates-production.json)

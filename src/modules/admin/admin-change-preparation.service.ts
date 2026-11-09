@@ -167,6 +167,8 @@ export class AdminChangePreparationService {
 
   async prepare(userId: string, requestId?: string) {
     const { templates, drafts } = await this.repository.inventory();
+    const blocked: { parent_key: string; outcome: string; reason: string }[] =
+      [];
     const plans = templates
       .filter(
         (t) =>
@@ -181,6 +183,12 @@ export class AdminChangePreparationService {
           parent.updatedAt,
           drafts.find((d) => d.templateId === parent.id)?.samples,
         );
+        if (!plan)
+          blocked.push({
+            parent_key: parent.key,
+            outcome: 'blocked',
+            reason: 'source_unreadable_or_unsupported',
+          });
         return plan ? [plan] : [];
       });
     for (const source of drafts.filter(
@@ -192,7 +200,14 @@ export class AdminChangePreparationService {
         source.updatedAt,
       );
       if (plan) plans.push(plan);
+      else
+        blocked.push({
+          parent_key: source.key,
+          outcome: 'blocked',
+          reason: 'source_unreadable_or_unsupported',
+        });
     }
-    return this.repository.prepare(plans, userId, requestId);
+    const prepared = await this.repository.prepare(plans, userId, requestId);
+    return { results: [...prepared.results, ...blocked] };
   }
 }
