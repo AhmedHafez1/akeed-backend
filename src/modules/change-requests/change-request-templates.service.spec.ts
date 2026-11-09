@@ -38,14 +38,114 @@ function setup() {
       driftReason: null,
     }),
   };
+  const registry = seededTemplateRegistry([base, sibling]);
   const service = new ChangeRequestTemplatesService(
-    seededTemplateRegistry([base, sibling]),
+    registry,
     { resolve: jest.fn().mockResolvedValue(FEATURE_OFF_SENDER) },
     connectionTemplates as never,
   );
-  return { service, base, sibling, connectionTemplates };
+  return { service, base, sibling, connectionTemplates, registry };
 }
 describe('sender-specific change-request template readiness', () => {
+  it('requires a matching approved three-button image twin and retains the ordinary logo fallback', async () => {
+    const f = setup();
+    const ordinary = {
+      key: f.base.key + '_logo',
+      imageTwinOfKey: f.base.key,
+      twinOf: {
+        templateName: f.base.templateName,
+        languageCode: f.base.languageCode,
+      },
+      templateName: 'ordinary_logo',
+      languageCode: f.base.languageCode,
+      isActive: true,
+      reviewStatus: 'approved' as const,
+    };
+    const image = {
+      ...ordinary,
+      key: f.sibling.key + '_logo',
+      changeRequestOfKey: f.base.key,
+      imageTwinOfKey: f.sibling.key,
+      twinOf: {
+        templateName: f.sibling.templateName,
+        languageCode: f.sibling.languageCode,
+      },
+      templateName: 'change_logo',
+      category: 'utility' as const,
+      lastSyncedAt: new Date().toISOString(),
+      retired: false,
+      parentComponents: f.sibling.components,
+      components: { ...f.sibling.components, headerImage: true as const },
+      parameterFormat: f.base.parameterFormat,
+      parentParameterFormat: f.base.parameterFormat,
+      variables: f.base.variables,
+      parentVariables: f.base.variables,
+    };
+    const twins = [ordinary];
+    f.registry.listImageTwins = () => Promise.resolve(twins);
+    const integration = {
+      orgId: 'org',
+      logoUrl: 'https://test.invalid/logo.png',
+      logoBannerUrl: 'https://test.invalid/banner.jpg',
+      logoHeaderEnabled: true,
+    } as never;
+    expect(
+      await f.service.selectVariant(
+        toSelectedTemplate(f.base),
+        integration,
+        FEATURE_OFF_SENDER,
+      ),
+    ).toMatchObject({
+      ready: false,
+      reason: 'change_image_twin_unavailable',
+      template: { imageHeader: { templateName: 'ordinary_logo' } },
+    });
+    twins.push(image);
+    expect(
+      await f.service.selectVariant(
+        toSelectedTemplate(f.base),
+        integration,
+        FEATURE_OFF_SENDER,
+      ),
+    ).toMatchObject({
+      ready: true,
+      template: {
+        changeRequestOfKey: f.base.key,
+        imageHeader: { templateName: 'change_logo' },
+      },
+    });
+    image.components.body = 'drifted';
+    expect(
+      await f.service.selectVariant(
+        toSelectedTemplate(f.base),
+        integration,
+        FEATURE_OFF_SENDER,
+      ),
+    ).toMatchObject({
+      ready: false,
+      template: { imageHeader: { templateName: 'ordinary_logo' } },
+    });
+  });
+  it('allows own-number three-button text with a logo configured and reports no image header', async () => {
+    const f = setup();
+    const result = await f.service.selectVariant(
+      toSelectedTemplate(f.base),
+      {
+        orgId: 'org',
+        logoHeaderEnabled: true,
+        logoBannerUrl: 'https://test.invalid/banner.jpg',
+      } as never,
+      {
+        kind: 'merchant_own',
+        connectionId: 'connection',
+        reason: 'own_number',
+        units: 1,
+      },
+    );
+    expect(result.ready).toBe(true);
+    expect(result.template.changeRequestOfKey).toBe(f.base.key);
+    expect(result.template.imageHeader).toBeUndefined();
+  });
   it('returns a specific activation block when the selected version becomes unusable', async () => {
     const f = setup();
     const integration = {

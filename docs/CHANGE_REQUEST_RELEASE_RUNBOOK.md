@@ -2,6 +2,20 @@
 
 Change requests are merchant opt-in and default off. Shipping protection is an attention warning and, on Shopify, an Akeed-owned tag; it is not a fulfillment hold. This runbook does not authorize deployment, template submission, production changes or real notifications.
 
+## Draft preparation and review
+
+Use the target environment's registry and synchronized provider content as the source of truth. A dev inventory does not establish production coverage. In Admin > Templates, Request a change preparation reviews each exact predecessor, preserves existing drafts and uncertain submissions, prepares missing text drafts, and exports content, sample values and image-twin plans. Missing, draft, submitting, uncertain, pending, rejected, approved, inactive and drifted states are distinct; preparation and provider acceptance do not establish readiness.
+
+For authorized draft-only database maintenance before deploying application changes, `node scripts/prepare-change-request-production.cjs <snapshot.json> <output-directory>` is an offline authoring command. It reads no environment files, connects to no database and calls no provider. It requires a verified journal through migration 0092, then produces `prepare-through-0093.sql`, `review.json` and `review.md`. Validate the exact batch with `pwsh -NoProfile -File scripts/test-change-request-preparation-contract.ps1` against disposable PostgreSQL. Execute the reviewed SQL as one transaction through the authorized maintenance channel. It holds the existing migration advisory lock, verifies the source fingerprint and journal, applies original migration 0093 only, corrects only newly seeded unchanged drafts, verifies preservation of existing templates, and records the original LF migration hash in Drizzle history. A changed fingerprint or journal aborts the batch; refresh and review rather than bypassing the guard. Never run the unrestricted application migrator for this bounded step.
+
+After maintenance, verify exact content and counts, unchanged old templates/defaults/statuses, and no later migration entry. Preserve the export with release evidence. Migration 0094/0095 and application deployment remain separate prerequisites before feature activation.
+
+Review and submit selected text drafts through the existing operator workflow. Sync actual provider results and activate usable counterparts without making them ordinary defaults. Review the matching image-twin plans before separately authorizing **Create missing twins**: this uploads a neutral approval sample and submits live templates to Meta. Sync and activate only approved compatible twins. Runtime merchant images continue using the existing banner URL; a new merchant logo does not require a new shared template.
+
+Shared-number readiness requires the exact selected three-button text counterpart and, when branding is enabled, its usable matching image twin. Settings and branding changes revalidate this. Later degradation retains the established safe ordinary confirmation fallback, including a working ordinary branded path, and exposes a readiness reason. Media rejection may use one bounded fallback to the corresponding text parent with identical buttons; unknown outcomes are reconciled rather than resent blindly.
+
+Merchant-owned numbers support independently approved text copies only. Image twins are not provisioned to merchant accounts. A configured logo neither makes that sender branded nor blocks its three-button text activation.
+
 ## Prerequisites and delivery order
 
 1. Deliver additive migrations through the normal migration mechanism, in journal order: `0092_change_requests.sql`, `0093_change_request_messaging.sql`, `0094_change_request_reconfirmation.sql`, then `0095_change_request_notifications.sql`. No additional migration is needed for the release verification tooling. Do not edit/revert applied migrations.

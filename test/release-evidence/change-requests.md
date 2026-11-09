@@ -1,5 +1,9 @@
 # Change-request verification evidence
 
+## Production template preparation follow-up
+
+Production-based authoring, admin review/export, shared-number logo fixes, bounded database preparation and verification are recorded in [template preparation evidence](change-request-template-preparation.md). The [readable review](change-request-templates-production.md) and [verified definitions/production draft IDs](change-request-templates-production.json) cover all 23 production predecessors. Provider submission, deployment and merchant activation remain separate.
+
 Observed: 9 November 2026, Africa/Cairo. Scope: CR05 and the approved D01–D24/lifecycle contract. Starting snapshots: backend `a49e3ec506a22378ece08b626a4a8118bd3ec289`, frontend `2de7592f5db53a63aa163133d4b9b38a46dcead2`. Final task changes are the commit containing this record and the corresponding frontend verification commit; the workspace handoff records both final identifiers.
 
 ## Evidence boundaries

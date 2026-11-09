@@ -552,7 +552,7 @@ export class VerificationSendService {
     }
     // A store with the logo header on sends the image twin of the same
     // template when one exists; the text template stays the recorded identity.
-    let template = await this.withLogoHeader(selection.template, integration);
+    let template = selection.template;
     const sender = recovery.fallbackFrom
       ? {
           ...FEATURE_OFF_SENDER,
@@ -578,12 +578,25 @@ export class VerificationSendService {
       this.changeTemplates &&
       (!selection.fallbackReason || selection.fallbackReason === 'key_missing')
     ) {
-      const counterpart = await this.changeTemplates.counterpart(
+      const variant = await this.changeTemplates.selectVariant(
         selection.template,
-        order.orgId,
+        integration,
         sender,
       );
-      if (counterpart) template = counterpart;
+      template = variant.template;
+      if (!variant.ready)
+        this.logger.warn(
+          buildBackendLog('VerificationSendService', {
+            action: 'sendOnce.changeRequestFallback',
+            outcome: 'skipped',
+            orgId: order.orgId,
+            integrationId: integration.id,
+            verificationId: verification.id,
+            reason: variant.reason,
+          }),
+        );
+    } else if (sender.kind === 'akeed_system') {
+      template = await this.withLogoHeader(template, integration);
     }
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
@@ -630,8 +643,10 @@ export class VerificationSendService {
           kind,
           changeRequestButtons: Boolean(template.changeRequestOfKey),
           recipientHash: customerRecipientHash(order.customerPhone),
-          templateName: template.templateName,
-          languageCode: template.languageCode,
+          templateName:
+            template.imageHeader?.templateName ?? template.templateName,
+          languageCode:
+            template.imageHeader?.languageCode ?? template.languageCode,
           identity: {
             variantKey: template.variantKey,
             purpose,
@@ -775,6 +790,17 @@ export class VerificationSendService {
 
     try {
       response = await this.messagingPort.sendVerificationTemplate({
+        beforeTemplateAttempt:
+          claimedSender.kind === 'akeed_system'
+            ? async (identity) => {
+                await this.messageDispatches.recordTemplateAttempt(
+                  order.orgId,
+                  dispatchClaim.dispatch.id,
+                  dispatchClaim.dispatch.generation,
+                  identity,
+                );
+              }
+            : undefined,
         to: order.customerPhone,
         customerName: order.customerName,
         storeName: integration.storeName,

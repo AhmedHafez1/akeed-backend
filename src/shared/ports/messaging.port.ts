@@ -38,6 +38,8 @@ export interface MessagingPort {
     confirmationCycle?: number;
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
+    /** Persist the actual attempt before provider I/O, including a confirmed media fallback. */
+    beforeTemplateAttempt?: (identity: SentTemplateIdentity) => Promise<void>;
     sender?: ResolvedSender;
     dispatchContext?: {
       orgId: string;

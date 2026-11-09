@@ -125,6 +125,17 @@ export class OnboardingStateService {
       : { ready: false, variants: [] };
   }
 
+  async assertChangeRequestBranding(
+    integration: IntegrationRecord,
+    logo: Partial<IntegrationRecord>,
+  ): Promise<void> {
+    if (integration.changeRequestsEnabled && this.changeTemplates)
+      await this.changeTemplates.assertReady(
+        { ...integration, ...logo },
+        this.switches(),
+      );
+  }
+
   async updateSettings(
     user: AuthenticatedUser,
     payload: UpdateOnboardingSettingsDto,

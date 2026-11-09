@@ -284,6 +284,7 @@ async function sendThrough(
         outcome: 'claimed',
         dispatch: { id: 'dispatch-1' },
       }),
+      recordTemplateAttempt: jest.fn().mockResolvedValue(undefined),
       markAccepted: jest.fn().mockResolvedValue({
         outcome: 'accepted',
         dispatch: { id: 'dispatch-1', state: 'accepted' },

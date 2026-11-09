@@ -27,6 +27,10 @@ import {
 } from '../../shared/messaging/template-selector';
 import { storeTemplateKeys } from '../../shared/messaging/store-template-selection';
 import { changeTemplateUsable } from '../../shared/messaging/change-request-messaging';
+import {
+  applyLogoHeader,
+  isHttpsUrl,
+} from '../../shared/messaging/logo-header.policy';
 import type { integrations } from '../../infrastructure/database/schema';
 import type { TemplateSelectionSwitches } from '../../shared/messaging/template-selector';
 
@@ -39,6 +43,9 @@ export interface ChangeRequestReadiness {
     sender: string;
     ready: boolean;
     reason: string | null;
+    template_key?: string | null;
+    branding_supported?: boolean;
+    header_format?: 'none' | 'image';
   }[];
 }
 
@@ -169,13 +176,9 @@ export class ChangeRequestTemplatesService {
           orgId: integration.orgId,
           template: base,
         });
-        const counterpart = await this.counterpart(
-          base,
-          integration.orgId,
-          sender,
-        );
+        const variant = await this.selectVariant(base, integration, sender);
         const ready =
-          Boolean(counterpart) &&
+          variant.ready &&
           (!selection.fallbackReason ||
             selection.fallbackReason === 'key_missing');
         variants.push({
@@ -183,15 +186,67 @@ export class ChangeRequestTemplatesService {
           style: base.variantKey,
           sender: sender.kind,
           ready,
+          template_key: variant.template.registryKey ?? null,
+          branding_supported: sender.kind === 'akeed_system',
+          header_format: variant.template.imageHeader ? 'image' : 'none',
           reason: ready
             ? null
-            : 'Approve and enable the matching three-button template for this sender, language and style.',
+            : (variant.reason ?? 'confirmation_template_unavailable'),
         });
       }
     return {
       ready: variants.length > 0 && variants.every((variant) => variant.ready),
       variants,
     };
+  }
+
+  /** Uses the same sender-specific decision for settings and each new send. */
+  async selectVariant(
+    base: SelectedCodTemplate,
+    integration: Integration,
+    sender: ResolvedSender,
+  ) {
+    const twins =
+      sender.kind === 'akeed_system'
+        ? await (this.templates?.findImageTwins() ??
+            this.registry.listImageTwins?.() ??
+            Promise.resolve([]))
+        : [];
+    const branded =
+      sender.kind === 'akeed_system' &&
+      integration.logoHeaderEnabled &&
+      Boolean(integration.logoUrl || integration.logoBannerUrl);
+    const withLogo = (template: SelectedCodTemplate) =>
+      applyLogoHeader(template, {
+        enabled:
+          sender.kind === 'akeed_system' && integration.logoHeaderEnabled,
+        bannerUrl: integration.logoBannerUrl,
+        twins,
+        guardrail: { enabled: this.registry.sendGuardrailEnabled?.() === true },
+      });
+    const fallback = withLogo(base);
+    const counterpart = await this.counterpart(base, integration.orgId, sender);
+    if (!counterpart)
+      return {
+        template: fallback,
+        ready: false,
+        reason: 'change_text_unavailable',
+      };
+    if (!branded) return { template: counterpart, ready: true, reason: null };
+    if (!isHttpsUrl(integration.logoBannerUrl))
+      return {
+        template: fallback,
+        ready: false,
+        reason: 'logo_banner_unavailable',
+      };
+    const template = withLogo(counterpart);
+    return template.imageHeader
+      ? { template, ready: true, reason: null }
+      : {
+          template: fallback,
+          ready: false,
+          reason: 'change_image_twin_unavailable',
+        };
   }
 
   async assertReady(

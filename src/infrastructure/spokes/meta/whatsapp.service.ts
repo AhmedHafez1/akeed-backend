@@ -105,6 +105,7 @@ export class WhatsAppService {
     totalPrice: string;
     verificationId: string;
     template: SelectedCodTemplate;
+    beforeTemplateAttempt?: (identity: SentTemplateIdentity) => Promise<void>;
     confirmationCycle?: number;
     sender?: ResolvedSender;
     dispatchContext?: {
@@ -258,6 +259,7 @@ export class WhatsAppService {
         languageCode: image.languageCode,
       };
       try {
+        await params.beforeTemplateAttempt?.(sent);
         const response = await this.postMessage(
           buildPayload(image.templateName, image.languageCode, image.imageUrl),
           context,
@@ -287,6 +289,7 @@ export class WhatsAppService {
     }
 
     try {
+      await params.beforeTemplateAttempt?.(toSentTemplateIdentity(template));
       const response = await this.postMessage(
         buildPayload(template.templateName, template.languageCode),
         context,

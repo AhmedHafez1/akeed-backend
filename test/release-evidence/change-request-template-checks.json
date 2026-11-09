@@ -1,0 +1,330 @@
+{
+  "observedAt": "2026-11-09T16:23:38.200Z",
+  "boundary": "Synthetic local providers and disposable PostgreSQL; production database draft preparation independently verified; no live Meta submission or messaging",
+  "production": {
+    "drafts": 23,
+    "imagePlans": 23,
+    "existingTemplatesUnchanged": 46,
+    "throughMigration": "0093",
+    "providerSubmitted": false,
+    "deployed": false,
+    "merchantActivated": false
+  },
+  "checks": [
+    {
+      "command": "npm test -- --runInBand",
+      "result": "passed",
+      "suites": 384,
+      "tests": 8510
+    },
+    {
+      "command": "npm run test:core:platform-neutral",
+      "result": "passed",
+      "suites": 25,
+      "tests": 341
+    },
+    {
+      "command": "pwsh -NoProfile -File scripts/test-e045-contracts.ps1",
+      "result": "passed",
+      "tests": 314
+    },
+    {
+      "command": "pwsh -NoProfile -File scripts/test-change-request-preparation-contract.ps1",
+      "result": "passed",
+      "tests": 5
+    },
+    {
+      "command": "template registry / sync / authoring PostgreSQL runners",
+      "result": "passed",
+      "tests": [
+        28,
+        24,
+        37
+      ]
+    },
+    {
+      "command": "change-request messaging / reconfirmation PostgreSQL runners",
+      "result": "passed",
+      "tests": [
+        25,
+        13
+      ]
+    },
+    {
+      "command": "pwsh -NoProfile -File scripts/test-change-request-release-contract.ps1 -Browser",
+      "result": "passed",
+      "tests": 37
+    },
+    {
+      "command": "backend final focused Jest",
+      "result": "passed",
+      "tests": 109
+    },
+    {
+      "command": "backend build / tsc / targeted eslint / touched prettier / log:check / git diff --check / node --check",
+      "result": "passed"
+    },
+    {
+      "command": "frontend npm test -- --maxWorkers=2",
+      "result": "passed",
+      "files": 194,
+      "tests": 2336
+    },
+    {
+      "command": "frontend final focused Vitest",
+      "result": "passed",
+      "files": 6,
+      "tests": 89
+    },
+    {
+      "command": "frontend npx playwright test --config playwright.template-preparation.config.ts",
+      "result": "passed",
+      "tests": 6,
+      "includes": [
+        "Arabic RTL mobile dark",
+        "six message languages",
+        "saved content and third label",
+        "review export download",
+        "one synthetic submission"
+      ]
+    },
+    {
+      "command": "frontend npm run build / npm run typecheck / npm run lint / touched prettier / git diff --check",
+      "result": "passed"
+    }
+  ],
+  "backendFilesChanged": [
+    "docs/CHANGE_REQUEST_MESSAGING.md",
+    "docs/CHANGE_REQUEST_RELEASE_RUNBOOK.md",
+    "docs/WHATSAPP_TEMPLATE_SUPPORT_RUNBOOK.md",
+    "scripts/prepare-change-request-production.cjs",
+    "scripts/test-change-request-preparation-contract.ps1",
+    "src/infrastructure/database/database.module.ts",
+    "src/infrastructure/database/repositories/change-request-preparation.repository.ts",
+    "src/infrastructure/database/repositories/integrations.repository.ts",
+    "src/infrastructure/database/repositories/verification-message-dispatches.repository.ts",
+    "src/infrastructure/database/repositories/whatsapp-template-lifecycle.repository.ts",
+    "src/infrastructure/database/repositories/whatsapp-templates.repository.ts",
+    "src/infrastructure/spokes/meta/whatsapp-send-payload.characterization.spec.ts",
+    "src/infrastructure/spokes/meta/whatsapp.service.image-header.spec.ts",
+    "src/infrastructure/spokes/meta/whatsapp.service.spec.ts",
+    "src/infrastructure/spokes/meta/whatsapp.service.ts",
+    "src/modules/admin/admin-change-preparation.controller.ts",
+    "src/modules/admin/admin-change-preparation.service.ts",
+    "src/modules/admin/admin-image-twins.service.ts",
+    "src/modules/admin/admin-stores.service.ts",
+    "src/modules/admin/admin-template-authoring.controller.spec.ts",
+    "src/modules/admin/admin-template-draft.service.ts",
+    "src/modules/admin/admin-template-lifecycle.service.ts",
+    "src/modules/admin/admin.module.ts",
+    "src/modules/change-requests/change-request-templates.service.spec.ts",
+    "src/modules/change-requests/change-request-templates.service.ts",
+    "src/modules/merchant-branding/merchant-branding.service.ts",
+    "src/modules/onboarding/onboarding-state.service.ts",
+    "src/modules/verification-core/verification-send.sender.spec.ts",
+    "src/modules/verification-core/verification-send.service.ts",
+    "src/shared/messaging/change-request-preparation.policy.ts",
+    "src/shared/messaging/cod-template-selector.ts",
+    "src/shared/messaging/image-twin.policy.ts",
+    "src/shared/messaging/logo-header.policy.ts",
+    "src/shared/messaging/template-draft.validation.ts",
+    "src/shared/messaging/template-drift.ts",
+    "src/shared/messaging/template-lifecycle.policy.ts",
+    "src/shared/messaging/template-registry.types.ts",
+    "src/shared/ports/messaging.port.ts",
+    "test/change-request-messaging.contract-spec.ts",
+    "test/change-request-preparation.contract-spec.ts",
+    "test/fixtures/change-request-preparation/production-before.json",
+    "test/jest-change-request-preparation-contract.json",
+    "test/release-evidence/change-request-template-checks.json",
+    "test/release-evidence/change-request-template-preparation.md",
+    "test/release-evidence/change-request-templates-production.json",
+    "test/release-evidence/change-request-templates-production.md",
+    "test/release-evidence/change-requests.md",
+    "test/whatsapp-template-sync.contract-spec.ts"
+  ],
+  "sourceFingerprints": [
+    {
+      "path": "src/infrastructure/database/database.module.ts",
+      "sha256": "c77749b43204effcc3647b498be49560741a064c03c2a9cf94997a471ad48026"
+    },
+    {
+      "path": "src/infrastructure/database/repositories/integrations.repository.ts",
+      "sha256": "a20546193e7e84bdd7d622ead1f3101ee5b9161a9c3bd9e15fab23cf3a78bf0c"
+    },
+    {
+      "path": "src/infrastructure/database/repositories/verification-message-dispatches.repository.ts",
+      "sha256": "f8a448856ae5b52f703752c5592afd6df5feef2e7e61178f6096d3ef3ba98c09"
+    },
+    {
+      "path": "src/infrastructure/database/repositories/whatsapp-template-lifecycle.repository.ts",
+      "sha256": "21264fd2b1e20e60124c96c2cdb17c7d38863dbb0a0efcc930c3f70056b6b26a"
+    },
+    {
+      "path": "src/infrastructure/database/repositories/whatsapp-templates.repository.ts",
+      "sha256": "831acbcbe004ad6696251d1821cddd20c3571ec5116f259da3d097ca8a24935f"
+    },
+    {
+      "path": "src/infrastructure/spokes/meta/whatsapp-send-payload.characterization.spec.ts",
+      "sha256": "8232db4b201b78f7bfd31b95369d361f65f5310a41906acbe054db15e21418cc"
+    },
+    {
+      "path": "src/infrastructure/spokes/meta/whatsapp.service.image-header.spec.ts",
+      "sha256": "eb8e96eb17ca5232d257965d87808eecba402d3793f354d308ac6db1e4f7a53a"
+    },
+    {
+      "path": "src/infrastructure/spokes/meta/whatsapp.service.spec.ts",
+      "sha256": "1f6321853597c8d423e86d96fb4c5dc5a82d43e487e770e7e46a8d1a7a2737ec"
+    },
+    {
+      "path": "src/infrastructure/spokes/meta/whatsapp.service.ts",
+      "sha256": "040fffc5beb92893838187a4adb668366f45a3a36d29c6c279ddb94e808e7611"
+    },
+    {
+      "path": "src/modules/admin/admin-image-twins.service.ts",
+      "sha256": "1fec403bdf8b2d6c68dec1ee24caf90b9fe0f3051ea220fca9030b82fe81543e"
+    },
+    {
+      "path": "src/modules/admin/admin-stores.service.ts",
+      "sha256": "0a25a39322447ca034fd64e96cc577c751b2712b36113a5e58d068c347468f7f"
+    },
+    {
+      "path": "src/modules/admin/admin-template-authoring.controller.spec.ts",
+      "sha256": "2475b8fc219db0bf8f04b262e7098510b6f56622c9c2741165bb81c71a0303c5"
+    },
+    {
+      "path": "src/modules/admin/admin-template-draft.service.ts",
+      "sha256": "64835380c4bf198bf395aae9088c3a5133bd72ba58cd134ac50dfe5aee04ab93"
+    },
+    {
+      "path": "src/modules/admin/admin-template-lifecycle.service.ts",
+      "sha256": "160a380e6d119b4540fa81f1b1803a26c69883413f1b9b55765fc867ba0e689f"
+    },
+    {
+      "path": "src/modules/admin/admin.module.ts",
+      "sha256": "a555026e2be6d97dadaffb6ad422fda6da3f045a8aa717437edf5fe9394c90ec"
+    },
+    {
+      "path": "src/modules/change-requests/change-request-templates.service.spec.ts",
+      "sha256": "a1e5704b5b6d0b020f74ebf7826ab7c0f8f79c8f43fa2bfd4665134dff9541a6"
+    },
+    {
+      "path": "src/modules/change-requests/change-request-templates.service.ts",
+      "sha256": "208c3e814cff385f06c97fa3e1025a691d4211e66c4addb372c8d3338f9f31a6"
+    },
+    {
+      "path": "src/modules/merchant-branding/merchant-branding.service.ts",
+      "sha256": "9dd6b0160388683787e71e8a5d47968f2c647ea9d7de628a772fa4cbcefc87b1"
+    },
+    {
+      "path": "src/modules/onboarding/onboarding-state.service.ts",
+      "sha256": "b26ce9abb5a58acab04e73a9c0214d0deb455d9161776680ccbfe51c720a700e"
+    },
+    {
+      "path": "src/modules/verification-core/verification-send.sender.spec.ts",
+      "sha256": "f58b2e7e15844bcc706c1c3f1e7c1ea6b7369c040214a80ee5a884fe70a49842"
+    },
+    {
+      "path": "src/modules/verification-core/verification-send.service.ts",
+      "sha256": "c3d4ff1002a042b18c153c856703a0d9f6133318d58e512f520356263deed0ad"
+    },
+    {
+      "path": "src/shared/messaging/cod-template-selector.ts",
+      "sha256": "a1a0bd3c45d2ca78efaf2325966efc63a663f8076edc097e9c628cd97ce54ee9"
+    },
+    {
+      "path": "src/shared/messaging/image-twin.policy.ts",
+      "sha256": "a8ce221350918592c97058bb5ccf16d99ec877ddb17e3e4ed418eb8a7fba98c4"
+    },
+    {
+      "path": "src/shared/messaging/logo-header.policy.ts",
+      "sha256": "5c377c6ad57ed7e36752ef7f9213592bd98e3d182aa6f558fb0ed0e9936e4ba8"
+    },
+    {
+      "path": "src/shared/messaging/template-draft.validation.ts",
+      "sha256": "9c44f7f554aa175120b9ea0629488057a2b8a16509aa1cb3595227b2745723d3"
+    },
+    {
+      "path": "src/shared/messaging/template-drift.ts",
+      "sha256": "6e3bea7c2aeca019b330464563d4c476fe0c59cfa22b44ad0d654aa0de1a5675"
+    },
+    {
+      "path": "src/shared/messaging/template-lifecycle.policy.ts",
+      "sha256": "fea67fb719ea2ffec14281f42745980723e8dd82405ebf18e25dc8e44fb7dee9"
+    },
+    {
+      "path": "src/shared/messaging/template-registry.types.ts",
+      "sha256": "24fa0a33a9f12da11220852158145b962bcee63ec48acfcde7e30f44ba511739"
+    },
+    {
+      "path": "src/shared/ports/messaging.port.ts",
+      "sha256": "f5d46287c645bab8f2745952ccc6117d8c9e4a6d59d255399c78be05aba33ae0"
+    },
+    {
+      "path": "test/change-request-messaging.contract-spec.ts",
+      "sha256": "2ef75bcefcf1e9ec1aff5b3f644ee69b407578168befa0cc6d61dfb3ee201651"
+    },
+    {
+      "path": "test/whatsapp-template-sync.contract-spec.ts",
+      "sha256": "976021d26e8f88c54c03f582a287eb10319f43c17ef554aed6e058c71830be7a"
+    },
+    {
+      "path": "scripts/prepare-change-request-production.cjs",
+      "sha256": "5e9d62939feb4987888e9cc146a5c97c81b8211fccfdcfe8d1025c9bc1527f7b"
+    },
+    {
+      "path": "scripts/test-change-request-preparation-contract.ps1",
+      "sha256": "08b772e7286721d6000d7f398fe6551d5299cee40eb0a2cbadcc16f471ae245e"
+    },
+    {
+      "path": "src/infrastructure/database/repositories/change-request-preparation.repository.ts",
+      "sha256": "f58d13d4979ae27ff365c365ba01c791c964e6e98b803bfe883bf37ecec6825d"
+    },
+    {
+      "path": "src/modules/admin/admin-change-preparation.controller.ts",
+      "sha256": "de132b8ea7f66dd038924dba969ef7bc8dbfda8d520e893a4fe88c1f5fcbc126"
+    },
+    {
+      "path": "src/modules/admin/admin-change-preparation.service.ts",
+      "sha256": "341fe9492cc9be38d55a8e19a833a238defd4c4e874953a31dba5217349a2bb9"
+    },
+    {
+      "path": "src/shared/messaging/change-request-preparation.policy.ts",
+      "sha256": "65d50c3aed150c70517ff9fced60ad6056b687723a8a3211c2c0d671014f2c7c"
+    },
+    {
+      "path": "test/change-request-preparation.contract-spec.ts",
+      "sha256": "2e56fa02fe1d2cc8cd22c6303ea8ec27cfb60d1c854287ca5e9c5c45722913d1"
+    }
+  ],
+  "frontendFilesChanged": [
+    "playwright.template-preparation.config.ts",
+    "public/messages/ar.json",
+    "public/messages/en.json",
+    "public/messages/es.json",
+    "public/messages/fr.json",
+    "public/messages/tr.json",
+    "public/messages/ur.json",
+    "src/features/admin/ChangePreparationPanel.test.tsx",
+    "src/features/admin/ChangePreparationPanel.tsx",
+    "src/features/admin/ImageTwinsPanel.tsx",
+    "src/features/admin/TemplateDraftEditorPage.test.tsx",
+    "src/features/admin/TemplateDraftEditorPage.tsx",
+    "src/features/admin/TemplateDraftForm.tsx",
+    "src/features/admin/TemplatesAdminPage.test.tsx",
+    "src/features/admin/TemplatesAdminPage.tsx",
+    "src/features/admin/admin-image-twins.model.ts",
+    "src/features/admin/admin-template-drafts.model.ts",
+    "src/features/admin/adminChangePreparationApi.ts",
+    "src/features/admin/adminTemplates.messages.test.tsx",
+    "src/features/onboarding/domain/onboarding.types.ts",
+    "src/features/settings/skins/embedded/settings-page/ChangeRequestsCard.tsx",
+    "src/features/settings/skins/embedded/settings-page/MessageTab.tsx",
+    "src/features/settings/skins/standalone/settings-page/ChangeRequestsCard.tsx",
+    "src/features/settings/skins/standalone/settings-page/MessageTab.tsx",
+    "test/e01-smoke/app/[locale]/admin-template-preparation/page.tsx",
+    "test/e01-smoke/app/[locale]/fixtureApi.ts",
+    "test/e2e/CHANGE_REQUEST_VERIFICATION.md",
+    "test/e2e/template-preparation.spec.ts"
+  ]
+}
