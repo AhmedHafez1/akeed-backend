@@ -153,7 +153,10 @@ export function compareTemplateDrift(params: {
 
   const [confirm, cancel] = model.buttons;
   const twoQuickReplies =
-    model.buttons.length === 2 &&
+    model.buttons.length === (template.changeRequestOfKey ? 3 : 2) &&
+    (!template.changeRequestOfKey ||
+      (model.buttons[2]?.kind === 'quick_reply' &&
+        model.buttons[2].text === template.preview.changeButton)) &&
     confirm.kind === 'quick_reply' &&
     cancel.kind === 'quick_reply';
   if (!twoQuickReplies) {

@@ -279,9 +279,13 @@ describe('VerificationHubService', () => {
         status,
         undefined,
         '1778803200',
-        action === 'cancel'
-          ? { cancellationSource: 'customer' }
-          : { confirmationSource: 'customer' },
+        expect.objectContaining(
+          action === 'cancel'
+            ? { cancellationSource: 'customer' }
+            : { confirmationSource: 'customer' },
+        ),
+        undefined,
+        1,
       );
       expect(verification.status).toBe(status);
       expect(orderTaggingPort.addOrderTag).toHaveBeenCalledWith(

@@ -659,6 +659,20 @@
       "when": 1794873600000,
       "tag": "0092_change_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1794960000000,
+      "tag": "0093_change_request_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795046400000,
+      "tag": "0094_change_request_reconfirmation",
+      "breakpoints": true
     }
   ]
 }

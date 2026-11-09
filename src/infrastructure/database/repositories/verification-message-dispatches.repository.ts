@@ -48,12 +48,17 @@ import { classifyDeliveryFailure } from '../../../shared/verification/delivery-f
 import { CHANGE_REQUEST_OPEN_REASON } from '../../../shared/verification/change-request.policy';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
+  completeReconfirmationInTx,
+  type Transaction as ChangeRequestTransaction,
+} from './verification-change-requests.repository';
+import {
   adminAccessAudit,
   creditAccounts,
   orders,
   integrations,
   providerMessageReceipts,
   verificationChangeRequests,
+  verificationChangeRequestEffects,
   verificationMessageDispatches,
   verificationSenderAttempts,
   whatsappConnectionTemplates,
@@ -110,7 +115,14 @@ export interface StaffResolutionAudit {
   requestId?: string;
 }
 
-export type DispatchKind = 'initial' | 'follow_up' | 'acknowledgment';
+export type DispatchKind =
+  | 'initial'
+  | 'follow_up'
+  | 'acknowledgment'
+  | 'change_acknowledgment';
+function isServiceDispatchKind(kind: string): boolean {
+  return kind === 'acknowledgment' || kind === 'change_acknowledgment';
+}
 
 /**
  * The logical identity of one send: a verification, a kind, and an attempt
@@ -155,10 +167,18 @@ function claimTemplateColumns(params: {
   templateName: string | null;
   languageCode: string;
   identity?: DispatchTemplateClaim;
+  recipientHash?: string | null;
+  changeRequestButtons?: boolean;
 }) {
   return {
     templateName: params.templateName,
     languageCode: params.languageCode,
+    ...(params.recipientHash !== undefined
+      ? { recipientHash: params.recipientHash }
+      : {}),
+    ...(params.changeRequestButtons !== undefined
+      ? { changeRequestButtons: params.changeRequestButtons }
+      : {}),
     ...(params.identity
       ? {
           templateVariantKey: params.identity.variantKey,
@@ -173,6 +193,32 @@ function claimTemplateColumns(params: {
         }
       : {}),
   };
+}
+
+/**
+ * Whether a claim names its cycle: an acknowledgment always does, and an
+ * updated confirmation names the cycle it will start. Such a message has its
+ * own row per cycle.
+ */
+function isCycleTargeted(params: {
+  kind: DispatchKind;
+  confirmationCycle?: number;
+}): boolean {
+  return (
+    params.kind === 'change_acknowledgment' ||
+    params.confirmationCycle !== undefined
+  );
+}
+
+/**
+ * Whether a message's outcome may still be projected onto its verification:
+ * only while the verification is in the cycle the message was sent in. A
+ * failure, receipt or late outcome of a replaced cycle, or of an updated
+ * confirmation that has not started its cycle, never rewrites the current
+ * one.
+ */
+function sameCycle(dispatch: { confirmationCycle: number }) {
+  return eq(verifications.confirmationCycle, dispatch.confirmationCycle);
 }
 
 /**
@@ -358,6 +404,9 @@ export class VerificationMessageDispatchesRepository {
     integrationId: string;
     verificationId: string;
     kind: DispatchKind;
+    recipientHash?: string | null;
+    changeRequestButtons?: boolean;
+    changeRequestEffect?: { id: string; attempts: number };
     repliedAt?: string;
     templateName: string | null;
     languageCode: string;
@@ -389,441 +438,548 @@ export class VerificationMessageDispatchesRepository {
      */
     confirmationCycle?: number;
   }): Promise<DispatchClaimResult> {
-    const dispatchKey = buildDispatchKey(params.verificationId, params.kind);
     const now = new Date().toISOString();
 
-    return this.db.transaction(async (tx) => {
-      const [source] = await tx
-        .select()
-        .from(integrations)
-        .where(
-          and(
-            eq(integrations.id, params.integrationId),
-            eq(integrations.orgId, params.orgId),
-          ),
-        )
-        .for('update');
-
-      // An open change request stops the reminder. The verification is locked
-      // after the source, as every writer here does, and opening a request
-      // locks it too, so a request committed during this claim is seen.
-      if (
-        params.kind === 'follow_up' &&
-        (await this.hasOpenChangeRequest(
-          tx,
-          params.verificationId,
-          params.orgId,
-        ))
-      )
-        return {
-          outcome: 'blocked' as const,
-          reason: CHANGE_REQUEST_OPEN_REASON,
-        };
-
-      if (params.fallbackForDispatchId) {
-        const [verification] = await tx
-          .select()
-          .from(verifications)
-          .where(
-            and(
-              eq(verifications.id, params.verificationId),
-              eq(verifications.orgId, params.orgId),
-            ),
-          )
-          .for('update');
-        if (!verification || this.recoveryClosed(verification.status))
-          return { outcome: 'blocked' as const, reason: 'verification_closed' };
-        const [previous] = await tx
-          .select()
-          .from(verificationMessageDispatches)
-          .where(
-            and(
-              eq(
-                verificationMessageDispatches.id,
-                params.fallbackForDispatchId,
+    const result = await this.db.transaction(async (tx) => {
+      const work = async (): Promise<DispatchClaimResult> => {
+        if (params.kind === 'change_acknowledgment') {
+          if (!params.changeRequestEffect)
+            throw new ConflictException('Change-request effect required');
+          const [effect] = await tx
+            .select()
+            .from(verificationChangeRequestEffects)
+            .where(
+              and(
+                eq(
+                  verificationChangeRequestEffects.id,
+                  params.changeRequestEffect.id,
+                ),
+                eq(verificationChangeRequestEffects.orgId, params.orgId),
+                eq(
+                  verificationChangeRequestEffects.kind,
+                  'customer_acknowledgment',
+                ),
               ),
-              eq(verificationMessageDispatches.orgId, params.orgId),
+            )
+            .for('update');
+          if (
+            !effect ||
+            effect.status !== 'in_progress' ||
+            effect.attempts !== params.changeRequestEffect.attempts
+          )
+            return { outcome: 'blocked', reason: 'effect_claim_expired' };
+        }
+        const [source] = await tx
+          .select()
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.id, params.integrationId),
+              eq(integrations.orgId, params.orgId),
             ),
           )
           .for('update');
+
+        // An open change request stops the reminder. The verification is locked
+        // after the source, as every writer here does, and opening a request
+        // locks it too, so a request committed during this claim is seen.
         if (
-          !previous ||
-          previous.verificationId !== params.verificationId ||
-          previous.kind !== params.kind ||
-          previous.senderKind !== 'merchant_own' ||
-          previous.senderRecoveryState !== 'fallback' ||
-          params.sender?.kind !== 'akeed_system' ||
-          params.chargeRule !== 'fallback'
+          params.kind === 'follow_up' &&
+          (await this.hasOpenChangeRequest(
+            tx,
+            params.verificationId,
+            params.orgId,
+          ))
         )
           return {
             outcome: 'blocked' as const,
-            reason: 'sender_fallback_not_authorized',
+            reason: CHANGE_REQUEST_OPEN_REASON,
           };
-        const [successor] = await tx
-          .select()
-          .from(verificationMessageDispatches)
-          .where(
-            eq(
-              verificationMessageDispatches.fallbackForDispatchId,
-              previous.id,
-            ),
-          );
-        if (successor) {
-          if (successor.state === 'rejected' || successor.failedAt)
+
+        if (params.fallbackForDispatchId) {
+          const [verification] = await tx
+            .select()
+            .from(verifications)
+            .where(
+              and(
+                eq(verifications.id, params.verificationId),
+                eq(verifications.orgId, params.orgId),
+              ),
+            )
+            .for('update');
+          if (!verification || this.recoveryClosed(verification.status))
             return {
               outcome: 'blocked' as const,
-              reason: 'sender_fallback_failed',
+              reason: 'verification_closed',
             };
+          const [previous] = await tx
+            .select()
+            .from(verificationMessageDispatches)
+            .where(
+              and(
+                eq(
+                  verificationMessageDispatches.id,
+                  params.fallbackForDispatchId,
+                ),
+                eq(verificationMessageDispatches.orgId, params.orgId),
+              ),
+            )
+            .for('update');
           if (
-            successor.state === 'sending' &&
-            successor.leaseUntil &&
-            new Date(successor.leaseUntil) < new Date()
-          ) {
-            const [unknown] = await tx
-              .update(verificationMessageDispatches)
-              .set({
-                state: 'outcome_unknown',
-                leaseUntil: null,
-                lastErrorCode: 'dispatch_lease_expired',
-              })
-              .where(eq(verificationMessageDispatches.id, successor.id))
-              .returning();
-            return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+            !previous ||
+            previous.verificationId !== params.verificationId ||
+            previous.kind !== params.kind ||
+            previous.senderKind !== 'merchant_own' ||
+            previous.senderRecoveryState !== 'fallback' ||
+            params.sender?.kind !== 'akeed_system' ||
+            params.chargeRule !== 'fallback'
+          )
+            return {
+              outcome: 'blocked' as const,
+              reason: 'sender_fallback_not_authorized',
+            };
+          const [successor] = await tx
+            .select()
+            .from(verificationMessageDispatches)
+            .where(
+              eq(
+                verificationMessageDispatches.fallbackForDispatchId,
+                previous.id,
+              ),
+            );
+          if (successor) {
+            if (successor.state === 'rejected' || successor.failedAt)
+              return {
+                outcome: 'blocked' as const,
+                reason: 'sender_fallback_failed',
+              };
+            if (
+              successor.state === 'sending' &&
+              successor.leaseUntil &&
+              new Date(successor.leaseUntil) < new Date()
+            ) {
+              const [unknown] = await tx
+                .update(verificationMessageDispatches)
+                .set({
+                  state: 'outcome_unknown',
+                  leaseUntil: null,
+                  lastErrorCode: 'dispatch_lease_expired',
+                })
+                .where(eq(verificationMessageDispatches.id, successor.id))
+                .returning();
+              return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+            }
+            return {
+              outcome:
+                successor.state === 'accepted'
+                  ? ('accepted' as const)
+                  : successor.state === 'outcome_unknown'
+                    ? ('outcome_unknown' as const)
+                    : ('busy' as const),
+              dispatch: successor,
+            };
           }
+          if (
+            previous.usageReserved ||
+            (previous.accountingMode === 'prepaid_credit' &&
+              previous.billingCost &&
+              !previous.billingRefundedAt)
+          )
+            reconciliationRequired();
+          if (previous.accountingMode === 'prepaid_credit')
+            return this.claimPrepaid(tx, params);
+          const fallbackGeneration = await this.nextGeneration(
+            tx,
+            params.verificationId,
+            params.kind,
+          );
+          const [fresh] = await tx
+            .insert(verificationMessageDispatches)
+            .values({
+              orgId: params.orgId,
+              integrationId: params.integrationId,
+              verificationId: params.verificationId,
+              kind: params.kind,
+              generation: fallbackGeneration,
+              dispatchKey: buildDispatchKey(
+                params.verificationId,
+                params.kind,
+                fallbackGeneration,
+              ),
+              fallbackForDispatchId: previous.id,
+              ...claimTemplateColumns(params),
+              ...claimCycleColumns({
+                verificationId: params.verificationId,
+                confirmationCycle:
+                  params.confirmationCycle ?? previous.confirmationCycle,
+              }),
+              changeRequestButtons: params.changeRequestButtons ?? false,
+              recipientHash: params.recipientHash,
+            })
+            .returning();
+          const entitlement = resolveEntitlement(source, {
+            id: params.integrationId,
+            orgId: params.orgId,
+          });
+          if (!params.billingExempt && !entitlement.allowed)
+            throw new ConflictException('Fallback integration is not eligible');
+          const senderColumns = await this.claimSenderColumns(
+            tx,
+            params,
+            fresh,
+          );
+          const reservation = params.billingExempt
+            ? null
+            : await this.accounting.periodic.reserve(
+                tx,
+                {
+                  ...params,
+                  id: params.integrationId,
+                  senderKind: 'akeed_system',
+                  chargeRule: 'fallback',
+                },
+                entitlement,
+                now,
+              );
+          if (reservation && !reservation.allowed)
+            throw new ConflictException('Fallback accounting refused');
+          const [claimed] = await tx
+            .update(verificationMessageDispatches)
+            .set({
+              state: 'sending',
+              ...senderColumns,
+              leaseUntil: params.leaseUntil,
+              attemptCount: 1,
+              usageReserved: !params.billingExempt,
+              usagePeriodStart: params.billingExempt
+                ? null
+                : entitlement.periodStart,
+              billingPool: reservation?.allowed ? reservation.pool : null,
+              billingCost: reservation?.allowed ? reservation.cost : null,
+              metadata: params.billingExempt ? { billingExempt: true } : {},
+              updatedAt: now,
+            })
+            .where(eq(verificationMessageDispatches.id, fresh.id))
+            .returning();
+          return { outcome: 'claimed' as const, dispatch: claimed };
+        }
+
+        if (
+          params.kind === 'acknowledgment' &&
+          (!source?.isActive ||
+            !params.repliedAt ||
+            !acknowledgmentOptedIn(
+              source.acknowledgmentEnabled,
+              source.acknowledgmentEnabledAt,
+              params.repliedAt,
+            ))
+        ) {
           return {
-            outcome:
-              successor.state === 'accepted'
-                ? ('accepted' as const)
-                : successor.state === 'outcome_unknown'
-                  ? ('outcome_unknown' as const)
-                  : ('busy' as const),
-            dispatch: successor,
+            outcome: 'blocked' as const,
+            reason: 'acknowledgment_disabled',
           };
         }
+
         if (
-          previous.usageReserved ||
-          (previous.accountingMode === 'prepaid_credit' &&
-            previous.billingCost &&
-            !previous.billingRefundedAt)
-        )
-          reconciliationRequired();
-        if (previous.accountingMode === 'prepaid_credit')
+          source &&
+          !params.billingExempt &&
+          this.accounting.mode(source.platformType) === 'prepaid_credit'
+        ) {
+          if (!source.isActive)
+            return {
+              outcome: 'blocked' as const,
+              reason: 'integration_inactive',
+            };
           return this.claimPrepaid(tx, params);
-        const [fresh] = await tx
+        }
+
+        // A message of a named cycle (an acknowledgment, an updated
+        // confirmation) has its own row per cycle; anything else is the
+        // verification's one message of its kind. Resolved after the source
+        // lock, which every claim of this verification takes first.
+        const { dispatchKey, generation } = isCycleTargeted(params)
+          ? await this.cycleDispatchIdentity(tx, {
+              verificationId: params.verificationId,
+              kind: params.kind,
+              confirmationCycle: params.confirmationCycle ?? 1,
+            })
+          : {
+              dispatchKey: buildDispatchKey(
+                params.verificationId,
+                params.kind,
+                1,
+              ),
+              generation: 1,
+            };
+        await tx
           .insert(verificationMessageDispatches)
           .values({
             orgId: params.orgId,
             integrationId: params.integrationId,
             verificationId: params.verificationId,
+            dispatchKey,
+            generation,
             kind: params.kind,
-            generation: previous.generation + 1,
-            dispatchKey: buildDispatchKey(
-              params.verificationId,
-              params.kind,
-              previous.generation + 1,
-            ),
-            fallbackForDispatchId: previous.id,
+            state: 'ready',
             ...claimTemplateColumns(params),
             ...claimCycleColumns(params),
+            changeRequestButtons: params.changeRequestButtons ?? false,
+            recipientHash: params.recipientHash,
           })
-          .returning();
+          .onConflictDoNothing({
+            target: verificationMessageDispatches.dispatchKey,
+          });
+
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.dispatchKey, dispatchKey))
+          .for('update');
+        if (
+          !dispatch ||
+          dispatch.orgId !== params.orgId ||
+          dispatch.integrationId !== params.integrationId ||
+          dispatch.verificationId !== params.verificationId
+        ) {
+          throw new Error('Dispatch identity mismatch');
+        }
+        if (dispatch.state === 'accepted') {
+          if (
+            dispatch.senderKind === 'merchant_own' &&
+            dispatch.billingRefundedAt
+          )
+            return { outcome: 'busy' as const, dispatch };
+          return { outcome: 'accepted' as const, dispatch };
+        }
+        if (
+          dispatch.senderKind === 'merchant_own' &&
+          !isServiceDispatchKind(dispatch.kind) &&
+          ((dispatch.state === 'outcome_unknown' &&
+            !dispatch.providerMessageId) ||
+            (dispatch.state === 'sending' &&
+              dispatch.leaseUntil &&
+              new Date(dispatch.leaseUntil) < new Date()))
+        ) {
+          const [attempt] = await tx
+            .select()
+            .from(verificationSenderAttempts)
+            .where(
+              and(
+                eq(verificationSenderAttempts.dispatchId, dispatch.id),
+                eq(verificationSenderAttempts.orgId, dispatch.orgId),
+              ),
+            )
+            .orderBy(desc(verificationSenderAttempts.attemptNumber))
+            .limit(1);
+          await this.merchantFailure(
+            tx,
+            dispatch,
+            attempt,
+            UNKNOWN_SENDER_OUTCOME,
+            now,
+          );
+          return { outcome: 'busy' as const, dispatch };
+        }
+        if (dispatch.state === 'outcome_unknown') {
+          return { outcome: 'outcome_unknown' as const, dispatch };
+        }
+        if (
+          dispatch.senderKind === 'merchant_own' &&
+          dispatch.senderRecoveryState &&
+          dispatch.senderRecoveryState !== 'complete'
+        )
+          return { outcome: 'busy' as const, dispatch };
+        // A row already bound to prepaid credits owns a reservation and a ledger
+        // identity. Reaching here means credit billing was switched off after the
+        // row was created, and re-claiming it would reserve monthly usage for a
+        // send the credit system is still accounting for. Park it for staff
+        // instead of billing it twice on two systems.
+        if (dispatch.accountingMode === 'prepaid_credit') {
+          return {
+            outcome: 'blocked' as const,
+            reason: 'PAYMENT_PENDING_RECONCILIATION',
+          };
+        }
+        // An expired lease is the only signal that the worker holding this send
+        // died before it could record an acceptance. Re-claiming it here is what
+        // lets the verification leave `pending`: parking it at `outcome_unknown`
+        // stranded the row for good, because every later claim then returned
+        // early without sending and only staff resolution could free it.
+        let reclaimedFromExpiredLease = false;
+        if (dispatch.state === 'sending') {
+          if (
+            !dispatch.leaseUntil ||
+            new Date(dispatch.leaseUntil) > new Date()
+          ) {
+            return { outcome: 'busy' as const, dispatch };
+          }
+          if (
+            isServiceDispatchKind(dispatch.kind) ||
+            dispatch.attemptCount >= MAX_LEASE_RECLAIM_ATTEMPTS
+          ) {
+            const [unknown] = await tx
+              .update(verificationMessageDispatches)
+              .set({
+                state: 'outcome_unknown',
+                lastErrorCode: 'dispatch_lease_expired',
+                leaseUntil: null,
+                updatedAt: now,
+              })
+              .where(eq(verificationMessageDispatches.id, dispatch.id))
+              .returning();
+            return { outcome: 'outcome_unknown' as const, dispatch: unknown };
+          }
+          // Falls through to the claim below. `usageReserved` is already true, so
+          // the reservation block is skipped and the merchant is not charged
+          // twice for the same logical send.
+          reclaimedFromExpiredLease = true;
+        }
+
+        if (isServiceDispatchKind(dispatch.kind) && dispatch.attemptCount > 0)
+          return { outcome: 'busy' as const, dispatch };
+
+        if (params.billingExempt) {
+          if (!source?.isActive)
+            return {
+              outcome: 'blocked' as const,
+              reason: 'integration_inactive',
+            };
+          const [claimedExempt] = await tx
+            .update(verificationMessageDispatches)
+            .set({
+              state: 'sending',
+              ...(await this.claimSenderColumns(tx, params, dispatch)),
+              ...claimTemplateColumns(params),
+              attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
+              lastErrorCode: reclaimedFromExpiredLease
+                ? 'dispatch_lease_expired'
+                : null,
+              leaseUntil: params.leaseUntil,
+              metadata: sql`${verificationMessageDispatches.metadata} || '{"billingExempt":true}'::jsonb`,
+              updatedAt: now,
+            })
+            .where(eq(verificationMessageDispatches.id, dispatch.id))
+            .returning();
+          return { outcome: 'claimed' as const, dispatch: claimedExempt };
+        }
+
         const entitlement = resolveEntitlement(source, {
           id: params.integrationId,
           orgId: params.orgId,
         });
-        if (!params.billingExempt && !entitlement.allowed)
-          throw new ConflictException('Fallback integration is not eligible');
-        const senderColumns = await this.claimSenderColumns(tx, params, fresh);
-        const reservation = params.billingExempt
-          ? null
-          : await this.accounting.periodic.reserve(
-              tx,
-              {
-                ...params,
-                id: params.integrationId,
-                senderKind: 'akeed_system',
-                chargeRule: 'fallback',
-              },
-              entitlement,
-              now,
-            );
-        if (reservation && !reservation.allowed)
-          throw new ConflictException('Fallback accounting refused');
+        if (!entitlement.allowed) {
+          return {
+            outcome: 'blocked' as const,
+            reason: entitlement.reason ?? 'billing_not_active',
+          };
+        }
+
+        let usage:
+          | {
+              consumedBefore: number;
+              consumedAfter: number;
+              includedLimit: number;
+            }
+          | undefined;
+        // The sender decides the pool, so it is settled before usage is taken.
+        const senderColumns = await this.claimSenderColumns(
+          tx,
+          params,
+          dispatch,
+        );
+        let billing: {
+          billingPool?: 'akeed' | 'own_number';
+          billingCost?: number;
+        } = {};
+        if (!dispatch.usageReserved) {
+          const reservation = await this.accounting.periodic.reserve(
+            tx,
+            {
+              ...params,
+              id: params.integrationId,
+              senderKind: senderColumns.senderKind ?? dispatch.senderKind,
+              chargeRule: params.chargeRule,
+            },
+            entitlement,
+            now,
+          );
+          if (!reservation.allowed)
+            return {
+              outcome: 'blocked' as const,
+              reason: reservation.reason,
+              consumedCount: reservation.consumedCount,
+              includedLimit: reservation.includedLimit,
+            };
+          usage = {
+            consumedBefore: reservation.consumedBefore,
+            consumedAfter: reservation.consumedAfter,
+            includedLimit: reservation.includedLimit,
+          };
+          billing = {
+            billingPool: reservation.pool,
+            billingCost: reservation.cost,
+          };
+        }
+
         const [claimed] = await tx
           .update(verificationMessageDispatches)
           .set({
             state: 'sending',
             ...senderColumns,
-            leaseUntil: params.leaseUntil,
-            attemptCount: 1,
-            usageReserved: !params.billingExempt,
-            usagePeriodStart: params.billingExempt
-              ? null
-              : entitlement.periodStart,
-            billingPool: reservation?.allowed ? reservation.pool : null,
-            billingCost: reservation?.allowed ? reservation.cost : null,
-            metadata: params.billingExempt ? { billingExempt: true } : {},
-            updatedAt: now,
-          })
-          .where(eq(verificationMessageDispatches.id, fresh.id))
-          .returning();
-        return { outcome: 'claimed' as const, dispatch: claimed };
-      }
-
-      if (
-        params.kind === 'acknowledgment' &&
-        (!source?.isActive ||
-          !params.repliedAt ||
-          !acknowledgmentOptedIn(
-            source.acknowledgmentEnabled,
-            source.acknowledgmentEnabledAt,
-            params.repliedAt,
-          ))
-      ) {
-        return {
-          outcome: 'blocked' as const,
-          reason: 'acknowledgment_disabled',
-        };
-      }
-
-      if (
-        source &&
-        !params.billingExempt &&
-        this.accounting.mode(source.platformType) === 'prepaid_credit'
-      ) {
-        if (!source.isActive)
-          return {
-            outcome: 'blocked' as const,
-            reason: 'integration_inactive',
-          };
-        return this.claimPrepaid(tx, params);
-      }
-
-      await tx
-        .insert(verificationMessageDispatches)
-        .values({
-          orgId: params.orgId,
-          integrationId: params.integrationId,
-          verificationId: params.verificationId,
-          dispatchKey,
-          kind: params.kind,
-          state: 'ready',
-          ...claimTemplateColumns(params),
-          ...claimCycleColumns(params),
-        })
-        .onConflictDoNothing({
-          target: verificationMessageDispatches.dispatchKey,
-        });
-
-      const [dispatch] = await tx
-        .select()
-        .from(verificationMessageDispatches)
-        .where(eq(verificationMessageDispatches.dispatchKey, dispatchKey))
-        .for('update');
-      if (
-        !dispatch ||
-        dispatch.orgId !== params.orgId ||
-        dispatch.integrationId !== params.integrationId ||
-        dispatch.verificationId !== params.verificationId
-      ) {
-        throw new Error('Dispatch identity mismatch');
-      }
-      if (dispatch.state === 'accepted') {
-        if (
-          dispatch.senderKind === 'merchant_own' &&
-          dispatch.billingRefundedAt
-        )
-          return { outcome: 'busy' as const, dispatch };
-        return { outcome: 'accepted' as const, dispatch };
-      }
-      if (
-        dispatch.senderKind === 'merchant_own' &&
-        ((dispatch.state === 'outcome_unknown' &&
-          !dispatch.providerMessageId) ||
-          (dispatch.state === 'sending' &&
-            dispatch.leaseUntil &&
-            new Date(dispatch.leaseUntil) < new Date()))
-      ) {
-        const [attempt] = await tx
-          .select()
-          .from(verificationSenderAttempts)
-          .where(
-            and(
-              eq(verificationSenderAttempts.dispatchId, dispatch.id),
-              eq(verificationSenderAttempts.orgId, dispatch.orgId),
-            ),
-          )
-          .orderBy(desc(verificationSenderAttempts.attemptNumber))
-          .limit(1);
-        await this.merchantFailure(
-          tx,
-          dispatch,
-          attempt,
-          UNKNOWN_SENDER_OUTCOME,
-          now,
-        );
-        return { outcome: 'busy' as const, dispatch };
-      }
-      if (dispatch.state === 'outcome_unknown') {
-        return { outcome: 'outcome_unknown' as const, dispatch };
-      }
-      if (
-        dispatch.senderKind === 'merchant_own' &&
-        dispatch.senderRecoveryState &&
-        dispatch.senderRecoveryState !== 'complete'
-      )
-        return { outcome: 'busy' as const, dispatch };
-      // A row already bound to prepaid credits owns a reservation and a ledger
-      // identity. Reaching here means credit billing was switched off after the
-      // row was created, and re-claiming it would reserve monthly usage for a
-      // send the credit system is still accounting for. Park it for staff
-      // instead of billing it twice on two systems.
-      if (dispatch.accountingMode === 'prepaid_credit') {
-        return {
-          outcome: 'blocked' as const,
-          reason: 'PAYMENT_PENDING_RECONCILIATION',
-        };
-      }
-      // An expired lease is the only signal that the worker holding this send
-      // died before it could record an acceptance. Re-claiming it here is what
-      // lets the verification leave `pending`: parking it at `outcome_unknown`
-      // stranded the row for good, because every later claim then returned
-      // early without sending and only staff resolution could free it.
-      let reclaimedFromExpiredLease = false;
-      if (dispatch.state === 'sending') {
-        if (
-          !dispatch.leaseUntil ||
-          new Date(dispatch.leaseUntil) > new Date()
-        ) {
-          return { outcome: 'busy' as const, dispatch };
-        }
-        if (
-          dispatch.kind === 'acknowledgment' ||
-          dispatch.attemptCount >= MAX_LEASE_RECLAIM_ATTEMPTS
-        ) {
-          const [unknown] = await tx
-            .update(verificationMessageDispatches)
-            .set({
-              state: 'outcome_unknown',
-              lastErrorCode: 'dispatch_lease_expired',
-              leaseUntil: null,
-              updatedAt: now,
-            })
-            .where(eq(verificationMessageDispatches.id, dispatch.id))
-            .returning();
-          return { outcome: 'outcome_unknown' as const, dispatch: unknown };
-        }
-        // Falls through to the claim below. `usageReserved` is already true, so
-        // the reservation block is skipped and the merchant is not charged
-        // twice for the same logical send.
-        reclaimedFromExpiredLease = true;
-      }
-
-      if (dispatch.kind === 'acknowledgment' && dispatch.attemptCount > 0)
-        return { outcome: 'busy' as const, dispatch };
-
-      if (params.billingExempt) {
-        if (!source?.isActive)
-          return {
-            outcome: 'blocked' as const,
-            reason: 'integration_inactive',
-          };
-        const [claimedExempt] = await tx
-          .update(verificationMessageDispatches)
-          .set({
-            state: 'sending',
-            ...(await this.claimSenderColumns(tx, params, dispatch)),
+            ...billing,
             ...claimTemplateColumns(params),
+            usagePeriodStart:
+              dispatch.usagePeriodStart ?? entitlement.periodStart,
+            usageReserved: true,
             attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
+            // Keep the reason the previous attempt was abandoned; it is the only
+            // trace that this send is a reclaim rather than a first try.
             lastErrorCode: reclaimedFromExpiredLease
               ? 'dispatch_lease_expired'
               : null,
             leaseUntil: params.leaseUntil,
-            metadata: sql`${verificationMessageDispatches.metadata} || '{"billingExempt":true}'::jsonb`,
             updatedAt: now,
           })
           .where(eq(verificationMessageDispatches.id, dispatch.id))
           .returning();
-        return { outcome: 'claimed' as const, dispatch: claimedExempt };
+        return { outcome: 'claimed' as const, dispatch: claimed, usage };
+      };
+      const result = await work();
+      if (
+        params.kind === 'change_acknowledgment' &&
+        result.outcome === 'blocked' &&
+        params.changeRequestEffect
+      ) {
+        await tx
+          .update(verificationChangeRequestEffects)
+          .set({
+            status: 'skipped',
+            reason: ['INSUFFICIENT_CREDITS', 'plan_limit_reached'].includes(
+              result.reason,
+            )
+              ? 'skipped_no_allowance'
+              : result.reason.slice(0, 64),
+            completedAt: new Date().toISOString(),
+            leaseUntil: null,
+          })
+          .where(
+            and(
+              eq(
+                verificationChangeRequestEffects.id,
+                params.changeRequestEffect.id,
+              ),
+              eq(verificationChangeRequestEffects.orgId, params.orgId),
+              eq(
+                verificationChangeRequestEffects.attempts,
+                params.changeRequestEffect.attempts,
+              ),
+              eq(verificationChangeRequestEffects.status, 'in_progress'),
+            ),
+          );
       }
-
-      const entitlement = resolveEntitlement(source, {
-        id: params.integrationId,
-        orgId: params.orgId,
-      });
-      if (!entitlement.allowed) {
-        return {
-          outcome: 'blocked' as const,
-          reason: entitlement.reason ?? 'billing_not_active',
-        };
-      }
-
-      let usage:
-        | {
-            consumedBefore: number;
-            consumedAfter: number;
-            includedLimit: number;
-          }
-        | undefined;
-      // The sender decides the pool, so it is settled before usage is taken.
-      const senderColumns = await this.claimSenderColumns(tx, params, dispatch);
-      let billing: {
-        billingPool?: 'akeed' | 'own_number';
-        billingCost?: number;
-      } = {};
-      if (!dispatch.usageReserved) {
-        const reservation = await this.accounting.periodic.reserve(
-          tx,
-          {
-            ...params,
-            id: params.integrationId,
-            senderKind: senderColumns.senderKind ?? dispatch.senderKind,
-            chargeRule: params.chargeRule,
-          },
-          entitlement,
-          now,
-        );
-        if (!reservation.allowed)
-          return {
-            outcome: 'blocked' as const,
-            reason: reservation.reason,
-            consumedCount: reservation.consumedCount,
-            includedLimit: reservation.includedLimit,
-          };
-        usage = {
-          consumedBefore: reservation.consumedBefore,
-          consumedAfter: reservation.consumedAfter,
-          includedLimit: reservation.includedLimit,
-        };
-        billing = {
-          billingPool: reservation.pool,
-          billingCost: reservation.cost,
-        };
-      }
-
-      const [claimed] = await tx
-        .update(verificationMessageDispatches)
-        .set({
-          state: 'sending',
-          ...senderColumns,
-          ...billing,
-          ...claimTemplateColumns(params),
-          usagePeriodStart:
-            dispatch.usagePeriodStart ?? entitlement.periodStart,
-          usageReserved: true,
-          attemptCount: sql`${verificationMessageDispatches.attemptCount} + 1`,
-          // Keep the reason the previous attempt was abandoned; it is the only
-          // trace that this send is a reclaim rather than a first try.
-          lastErrorCode: reclaimedFromExpiredLease
-            ? 'dispatch_lease_expired'
-            : null,
-          leaseUntil: params.leaseUntil,
-          updatedAt: now,
-        })
-        .where(eq(verificationMessageDispatches.id, dispatch.id))
-        .returning();
-      return { outcome: 'claimed' as const, dispatch: claimed, usage };
+      return result;
     });
+    return result;
   }
 
   /**
@@ -1204,6 +1360,7 @@ export class VerificationMessageDispatchesRepository {
         .where(
           and(
             eq(verifications.id, dispatch.verificationId),
+            sameCycle(dispatch),
             eq(verifications.orgId, dispatch.orgId),
             notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
           ),
@@ -1755,6 +1912,7 @@ export class VerificationMessageDispatchesRepository {
               .where(
                 and(
                   eq(verifications.id, dispatch.verificationId),
+                  sameCycle(dispatch),
                   eq(verifications.orgId, dispatch.orgId),
                   notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
                 ),
@@ -1792,6 +1950,10 @@ export class VerificationMessageDispatchesRepository {
         and(
           eq(verificationMessageDispatches.senderKind, 'merchant_own'),
           sql`((${verificationMessageDispatches.state} = 'sending' AND ${verificationMessageDispatches.leaseUntil} < now()) OR (${verificationMessageDispatches.state} = 'outcome_unknown' AND ${verificationMessageDispatches.providerMessageId} IS NULL))`,
+          notInArray(verificationMessageDispatches.kind, [
+            'acknowledgment',
+            'change_acknowledgment',
+          ]),
         ),
       )
       .limit(100);
@@ -1843,7 +2005,7 @@ export class VerificationMessageDispatchesRepository {
     const rows = await this.db.execute(sql`
       WITH expired AS (
         SELECT id FROM verification_message_dispatches
-        WHERE kind::text = 'acknowledgment' AND state = 'sending' AND lease_until < now()
+        WHERE kind::text IN ('acknowledgment', 'change_acknowledgment') AND state = 'sending' AND lease_until < now()
         ORDER BY lease_until LIMIT 100 FOR UPDATE SKIP LOCKED
       )
       UPDATE verification_message_dispatches dispatch
@@ -2021,7 +2183,7 @@ export class VerificationMessageDispatchesRepository {
           );
         }
         if (
-          dispatch.kind === 'acknowledgment' &&
+          isServiceDispatchKind(dispatch.kind) &&
           dispatch.accountingMode === 'prepaid_credit' &&
           dispatch.failedAt &&
           !dispatch.deliveredAt &&
@@ -2040,7 +2202,7 @@ export class VerificationMessageDispatchesRepository {
           dispatch.state === 'outcome_unknown' &&
           !dispatch.usageReserved &&
           dispatch.usagePeriodStart !== null &&
-          !(dispatch.kind === 'acknowledgment' && dispatch.failedAt);
+          !(isServiceDispatchKind(dispatch.kind) && dispatch.failedAt);
         if (restoreReleasedUsage) {
           await this.accounting.periodic.restore(tx, dispatch, params.sentAt);
         }
@@ -2105,7 +2267,25 @@ export class VerificationMessageDispatchesRepository {
     providerMessageId: string;
     sentAt: string;
     template?: SentTemplateIdentity;
+    /** The cycle the message was claimed for, when known. */
+    confirmationCycle?: number;
   }): Promise<number> {
+    if (params.confirmationCycle !== undefined)
+      return this.db.transaction((tx) =>
+        this.projectAcceptedVerification(
+          tx,
+          {
+            verificationId: params.verificationId,
+            kind: params.kind,
+            confirmationCycle: params.confirmationCycle,
+          },
+          {
+            providerMessageId: params.providerMessageId,
+            sentAt: params.sentAt,
+            template: params.template,
+          },
+        ),
+      );
     return this.projectAcceptedVerification(
       this.db,
       { verificationId: params.verificationId, kind: params.kind },
@@ -2226,7 +2406,12 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_outcome_unknown', kind: 'initial' })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       } else if (dispatch.kind === 'follow_up') {
         await tx
           .update(verifications)
@@ -2234,7 +2419,12 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ follow_up_failed: 'provider_outcome_unknown', follow_up_failed_at: now })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       }
 
       return updated ? 1 : 0;
@@ -2260,7 +2450,10 @@ export class VerificationMessageDispatchesRepository {
         and(
           eq(verificationMessageDispatches.verificationId, verificationId),
           isNotNull(verificationMessageDispatches.acceptedAt),
-          notInArray(verificationMessageDispatches.kind, ['acknowledgment']),
+          notInArray(verificationMessageDispatches.kind, [
+            'acknowledgment',
+            'change_acknowledgment',
+          ]),
         ),
       )
       .orderBy(desc(verificationMessageDispatches.acceptedAt))
@@ -2415,6 +2608,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
               notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
             ),
           );
@@ -2448,7 +2642,7 @@ export class VerificationMessageDispatchesRepository {
   ): Promise<ReceiptProjection> {
     if (
       dispatch.accountingMode === 'prepaid_credit' ||
-      dispatch.kind === 'acknowledgment'
+      isServiceDispatchKind(dispatch.kind)
     ) {
       // `outcome_unknown` is reachable *with* a provider message id: a send
       // whose acceptance could not be persisted is salvaged there by
@@ -2503,7 +2697,28 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, dispatch.id));
     }
-    if (dispatch.kind === 'acknowledgment') {
+    if (isServiceDispatchKind(dispatch.kind)) {
+      if (status === 'failed' && dispatch.kind === 'change_acknowledgment') {
+        await tx
+          .update(verificationChangeRequestEffects)
+          .set({
+            status: 'failed',
+            reason: 'delivery_failed',
+            completedAt: occurredAt,
+            leaseUntil: null,
+            updatedAt: occurredAt,
+          })
+          .where(
+            and(
+              eq(verificationChangeRequestEffects.orgId, dispatch.orgId),
+              eq(
+                verificationChangeRequestEffects.kind,
+                'customer_acknowledgment',
+              ),
+              sql`${verificationChangeRequestEffects.changeRequestId} IN (SELECT id FROM verification_change_requests WHERE verification_id = ${dispatch.verificationId} AND org_id = ${dispatch.orgId} AND confirmation_cycle = ${dispatch.confirmationCycle})`,
+            ),
+          );
+      }
       if (status === 'failed')
         await tx
           .update(verificationServiceMessages)
@@ -2658,6 +2873,26 @@ export class VerificationMessageDispatchesRepository {
     });
   }
 
+  async findChangeAcknowledgment(
+    verificationId: string,
+    orgId: string,
+    cycle: number,
+  ) {
+    const [row] = await this.db
+      .select()
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.verificationId, verificationId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationMessageDispatches.kind, 'change_acknowledgment'),
+          eq(verificationMessageDispatches.confirmationCycle, cycle),
+        ),
+      )
+      .limit(1);
+    return row;
+  }
+
   async resolveNotAccepted(
     id: string,
     staffAudit?: StaffResolutionAudit,
@@ -2704,7 +2939,7 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, id))
         .returning();
-      if (dispatch.kind === 'acknowledgment') {
+      if (isServiceDispatchKind(dispatch.kind)) {
         if (staffAudit)
           await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
         return updated;
@@ -2721,6 +2956,7 @@ export class VerificationMessageDispatchesRepository {
           .where(
             and(
               eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
               notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
             ),
           );
@@ -2732,12 +2968,89 @@ export class VerificationMessageDispatchesRepository {
             metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify({ reason: 'provider_not_accepted', kind: dispatch.kind })}::jsonb`,
             updatedAt: now,
           })
-          .where(eq(verifications.id, dispatch.verificationId));
+          .where(
+            and(
+              eq(verifications.id, dispatch.verificationId),
+              sameCycle(dispatch),
+            ),
+          );
       }
       if (staffAudit)
         await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
       return updated;
     });
+  }
+
+  /**
+   * The next free generation of a verification's messages of one kind. A
+   * generation is unique per verification and kind across every cycle.
+   */
+  private async nextGeneration(
+    tx: CreditTransaction,
+    verificationId: string,
+    kind: DispatchKind,
+  ): Promise<number> {
+    const [row] = await tx
+      .select({
+        max: sql<number>`COALESCE(MAX(${verificationMessageDispatches.generation}), 0)::int`,
+      })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(verificationMessageDispatches.verificationId, verificationId),
+          eq(verificationMessageDispatches.kind, kind),
+        ),
+      );
+    return Number(row?.max ?? 0) + 1;
+  }
+
+  /**
+   * The identity of a message of a named cycle: the latest row of that cycle
+   * when one exists (a retry claims it again), else the next generation.
+   */
+  private async cycleDispatchIdentity(
+    tx: CreditTransaction,
+    params: {
+      verificationId: string;
+      kind: DispatchKind;
+      confirmationCycle: number;
+    },
+  ): Promise<{ dispatchKey: string; generation: number }> {
+    const [existing] = await tx
+      .select({
+        dispatchKey: verificationMessageDispatches.dispatchKey,
+        generation: verificationMessageDispatches.generation,
+      })
+      .from(verificationMessageDispatches)
+      .where(
+        and(
+          eq(
+            verificationMessageDispatches.verificationId,
+            params.verificationId,
+          ),
+          eq(verificationMessageDispatches.kind, params.kind),
+          eq(
+            verificationMessageDispatches.confirmationCycle,
+            params.confirmationCycle,
+          ),
+        ),
+      )
+      .orderBy(desc(verificationMessageDispatches.generation))
+      .limit(1);
+    if (existing) return existing;
+    const generation = await this.nextGeneration(
+      tx,
+      params.verificationId,
+      params.kind,
+    );
+    return {
+      dispatchKey: buildDispatchKey(
+        params.verificationId,
+        params.kind,
+        generation,
+      ),
+      generation,
+    };
   }
 
   private async claimPrepaid(
@@ -2775,6 +3088,14 @@ export class VerificationMessageDispatchesRepository {
             params.verificationId,
           ),
           eq(verificationMessageDispatches.kind, params.kind),
+          ...(isCycleTargeted(params)
+            ? [
+                eq(
+                  verificationMessageDispatches.confirmationCycle,
+                  params.confirmationCycle ?? 1,
+                ),
+              ]
+            : []),
         ),
       )
       .orderBy(desc(verificationMessageDispatches.generation))
@@ -2784,6 +3105,7 @@ export class VerificationMessageDispatchesRepository {
       throw new Error('Dispatch identity mismatch');
     if (
       dispatch?.senderKind === 'merchant_own' &&
+      !isServiceDispatchKind(dispatch.kind) &&
       ((dispatch.state === 'outcome_unknown' && !dispatch.providerMessageId) ||
         (dispatch.state === 'sending' &&
           dispatch.leaseUntil &&
@@ -2812,6 +3134,7 @@ export class VerificationMessageDispatchesRepository {
     if (
       !params.fallbackForDispatchId &&
       dispatch?.senderKind === 'merchant_own' &&
+      !isServiceDispatchKind(dispatch.kind) &&
       ['retry', 'fallback', 'canceled'].includes(
         dispatch.senderRecoveryState ?? '',
       )
@@ -2837,7 +3160,7 @@ export class VerificationMessageDispatchesRepository {
       return { outcome: 'outcome_unknown', dispatch: unknown };
     }
     if (
-      params.kind === 'acknowledgment' &&
+      isServiceDispatchKind(params.kind) &&
       dispatch &&
       dispatch.attemptCount > 0
     )
@@ -2872,9 +3195,11 @@ export class VerificationMessageDispatchesRepository {
       else if (previous.usageReserved) reconciliationRequired();
     }
     const generation =
-      previous && previous.state !== 'ready'
-        ? previous.generation + 1
-        : (previous?.generation ?? 1);
+      previous?.state === 'ready'
+        ? previous.generation
+        : previous || isCycleTargeted(params)
+          ? await this.nextGeneration(tx, params.verificationId, params.kind)
+          : 1;
     const dispatchKey = buildDispatchKey(
       params.verificationId,
       params.kind,
@@ -2895,6 +3220,8 @@ export class VerificationMessageDispatchesRepository {
           state: 'ready',
           ...claimTemplateColumns(params),
           ...claimCycleColumns(params),
+          changeRequestButtons: params.changeRequestButtons ?? false,
+          recipientHash: params.recipientHash,
         })
         .returning();
     } else if (previous.accountingMode !== 'prepaid_credit') {
@@ -3023,7 +3350,8 @@ export class VerificationMessageDispatchesRepository {
 
   private async projectAcceptedVerification(
     tx: DispatchWriter,
-    dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'>,
+    dispatch: Pick<DispatchRecord, 'kind' | 'verificationId'> &
+      Partial<Pick<DispatchRecord, 'id' | 'orgId' | 'confirmationCycle'>>,
     params: {
       providerMessageId: string;
       sentAt: string;
@@ -3031,7 +3359,48 @@ export class VerificationMessageDispatchesRepository {
       template?: SentTemplateIdentity;
     },
   ): Promise<number> {
-    if (dispatch.kind === 'acknowledgment') return 0;
+    if (isServiceDispatchKind(dispatch.kind)) return 0;
+    if (dispatch.confirmationCycle !== undefined) {
+      const [current] = await tx
+        .select({
+          orgId: verifications.orgId,
+          confirmationCycle: verifications.confirmationCycle,
+        })
+        .from(verifications)
+        .where(eq(verifications.id, dispatch.verificationId))
+        .for('update');
+      if (!current) return 0;
+      if (dispatch.confirmationCycle > current.confirmationCycle) {
+        // An updated confirmation: its acceptance is what starts the new
+        // cycle and closes the request, in this same transaction. Superseded
+        // (the customer or the merchant settled the request first), it
+        // changes nothing; its buttons belong to a cycle that never starts.
+        if (dispatch.kind !== 'initial') return 0;
+        // Every caller that names the cycle runs inside a transaction.
+        const result = await completeReconfirmationInTx(
+          tx as ChangeRequestTransaction,
+          {
+            orgId: current.orgId,
+            verificationId: dispatch.verificationId,
+            expectedCycle: dispatch.confirmationCycle - 1,
+            providerMessageId: params.providerMessageId,
+            sentAt: params.sentAt,
+            ...(dispatch.id ? { dispatchId: dispatch.id } : {}),
+            ...(params.template
+              ? {
+                  template: {
+                    templateName: params.template.templateName,
+                    languageCode: params.template.languageCode,
+                  },
+                }
+              : {}),
+          },
+        );
+        return result.outcome === 'completed' ? 1 : 0;
+      }
+      // A message of a cycle an updated confirmation already replaced.
+      if (dispatch.confirmationCycle < current.confirmationCycle) return 0;
+    }
     const common = {
       waMessageId: params.providerMessageId,
       ...(params.template

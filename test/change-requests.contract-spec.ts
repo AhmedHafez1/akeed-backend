@@ -281,6 +281,8 @@ beforeAll(async () => {
 
   await migrate('0092_change_requests.sql');
   await migrate('0092_change_requests.sql');
+  await migrate('0094_change_request_reconfirmation.sql');
+  await migrate('0094_change_request_reconfirmation.sql');
 });
 
 afterAll(async () => {

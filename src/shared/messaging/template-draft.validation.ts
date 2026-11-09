@@ -197,6 +197,9 @@ export function toTemplateSubmission(
     buttons: [
       { kind: 'quick_reply', text: content.confirmLabel },
       { kind: 'quick_reply', text: content.cancelLabel },
+      ...(content.changeLabel
+        ? [{ kind: 'quick_reply' as const, text: content.changeLabel }]
+        : []),
     ],
   };
 }
@@ -386,13 +389,24 @@ export function validateSamples(
 export function validateButtons(
   purpose: TemplatePurpose,
   buttons: TemplateSubmission['buttons'],
-  labels: { confirmLabel: string; cancelLabel: string },
+  labels: {
+    confirmLabel: string;
+    cancelLabel: string;
+    changeLabel?: string | null;
+  },
 ): Issue[] {
   const issues: Issue[] = [];
   const required = TEMPLATE_PURPOSE_BUTTONS[purpose];
   const expected = required.map((role) =>
     role === 'confirm' ? labels.confirmLabel : labels.cancelLabel,
   );
+  if (labels.changeLabel) expected.push(labels.changeLabel);
+  if (
+    labels.changeLabel &&
+    (labels.changeLabel.length > TEMPLATE_BUTTON_LABEL_MAX_LENGTH ||
+      expected.filter((label) => label === labels.changeLabel).length > 1)
+  )
+    issues.push(error('change_label', 'button_label_too_long', '4.7.2'));
   if (labels.confirmLabel.trim().length === 0) {
     issues.push(error('confirm_label', 'button_label_required', '4.7.5'));
   }
@@ -412,7 +426,7 @@ export function validateButtons(
     issues.push(error('buttons', 'button_labels_identical', 'akeed'));
   }
   if (
-    buttons.length !== required.length ||
+    buttons.length !== expected.length ||
     buttons.some((button) => button.kind !== 'quick_reply')
   ) {
     issues.push(error('buttons', 'button_count', '4.7.8'));

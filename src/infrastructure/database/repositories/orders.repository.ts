@@ -18,6 +18,7 @@ import {
   RETRYABLE_VERIFICATION_REASONS as retryableVerificationReasons,
 } from '../../../shared/verification/verification-lifecycle';
 import { phoneRegion } from '../../../shared/services/phone.service';
+import type { CurrentOrderDetails } from '../../../shared/ports/current-order-source.port';
 
 const dispatchCount = sql<number>`(
   SELECT count(*)::int
@@ -203,6 +204,38 @@ export class OrdersRepository {
       })
       .returning();
     return result;
+  }
+
+  /**
+   * Restates an order's message details as its source holds them now, before
+   * an updated confirmation is built from them. Only the details a message
+   * shows change; the order's identity, number and captured payload stay.
+   * Scoped by tenant: an order of another organization is not touched.
+   */
+  async refreshCurrentDetails(
+    orderId: string,
+    orgId: string,
+    details: CurrentOrderDetails,
+  ) {
+    const [row] = await this.db
+      .update(orders)
+      .set({
+        customerPhone: details.customerPhone,
+        customerCountry: phoneRegion(details.customerPhone),
+        customerName: details.customerName ?? null,
+        totalPrice: details.totalPrice,
+        currency: details.currency,
+        ...(details.paymentMethod
+          ? { paymentMethod: details.paymentMethod }
+          : {}),
+        lineItems: details.lineItems?.length ? details.lineItems : null,
+        shippingRegion: details.shippingRegion ?? null,
+        shippingAddress: details.shippingAddress ?? null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(and(eq(orders.id, orderId), eq(orders.orgId, orgId)))
+      .returning({ id: orders.id });
+    return row ?? null;
   }
 
   /**

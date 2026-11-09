@@ -111,7 +111,12 @@ export class MetaWebhookRoutingService {
               }
               if (!admission.retainText) {
                 message.text = undefined;
-                message.from = undefined;
+                // A bound button retains its recipient identity for dispatch validation after durable intake.
+                if (
+                  !message.button?.payload &&
+                  !message.interactive?.button_reply?.id
+                )
+                  message.from = undefined;
                 message.from_user_id = undefined;
               }
               admitted.push(message);

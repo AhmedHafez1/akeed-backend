@@ -1,3 +1,4 @@
+import { ChangeRequestReconfirmationService } from '../verification-core/change-request-reconfirmation.service';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DelayedError, Job } from 'bullmq';
@@ -27,6 +28,7 @@ import { CustomerReplyFollowUpService } from '../verification-replies/customer-r
 import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.service';
 import { VerificationAutomationProducer } from './verification-automation.producer';
 import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
+import { ChangeRequestAcknowledgmentService } from '../change-requests/change-request-acknowledgment.service';
 import {
   CHANGE_REQUEST_OPEN_REASON,
   LEGACY_CONFIRMATION_CYCLE,
@@ -53,6 +55,10 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly autoCancellation?: AutoCancellationService,
     @Optional()
     private readonly changeRequests?: VerificationChangeRequestsRepository,
+    @Optional()
+    private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
+    @Optional()
+    private readonly reconfirmations?: ChangeRequestReconfirmationService,
   ) {
     super();
   }
@@ -85,8 +91,20 @@ export class VerificationAutomationProcessor extends WorkerHost {
     )
       return;
     switch (name as VerificationAutomationJobType) {
+      case VerificationAutomationJobType.CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP:
+        await this.changeAcknowledgments?.drain();
+        return;
       case VerificationAutomationJobType.SENDER_RECOVERY_SWEEP:
         await this.verificationSendService.sweepSenderRecovery();
+        return;
+      case VerificationAutomationJobType.CHANGE_REQUEST_RECONFIRMATION:
+        if (data.reconfirmation)
+          await this.reconfirmations?.run({
+            verificationId: data.verificationId,
+            orgId: data.orgId,
+            changeRequestId: data.reconfirmation.changeRequestId,
+            attempt: data.reconfirmation.attempt,
+          });
         return;
       case VerificationAutomationJobType.SENDER_RETRY:
       case VerificationAutomationJobType.SENDER_FALLBACK: {
@@ -94,6 +112,11 @@ export class VerificationAutomationProcessor extends WorkerHost {
         const outcome = await this.verificationSendService.resumeSenderRecovery(
           data.orgId,
           data.dispatchId,
+        );
+        await this.reconfirmations?.afterSenderRecovery(
+          data.orgId,
+          data.verificationId,
+          outcome,
         );
         if (outcome.status === 'sent') {
           const ctx = await this.loadContext(data.verificationId, data.orgId);

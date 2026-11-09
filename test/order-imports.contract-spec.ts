@@ -291,30 +291,40 @@ describe('order imports PostgreSQL contract', () => {
     // the status enum this base leaves out; only its store column applies.
     // 0081 backfills from credit accounts, which this base does not have.
     const appliesToBase = (migration: string, statement: string) =>
-      migration.startsWith('0073_')
-        ? statement.includes('ADD COLUMN IF NOT EXISTS "notification_email"')
-        : migration.startsWith('0081_')
-          ? !statement.includes('"credit_accounts"')
-          : // 0083 also extends dispatch and service-message tables the base
-            // does not have; only its store columns apply.
-            migration.startsWith('0083_')
-            ? statement.includes('ALTER TABLE "integrations"')
-            : // The base has no template registry, so the per-number template
-              // table is left out; the connection and ticket tables apply.
-              migration.startsWith('0085_') || migration.startsWith('0086_')
-              ? !statement
-                  .replace(/--.*$/gm, '')
-                  .includes('whatsapp_connection_templates')
-              : // The base has no credit or usage tables; only the dispatch
-                // billing columns, checks and triggers of 0088 apply.
-                migration.startsWith('0089_')
-                ? !statement.includes('verification_sender_attempts') &&
-                  !statement.includes('provider_message_receipts')
-                : migration.startsWith('0088_')
-                  ? !/"credit_|"integration_monthly_usage"/.test(statement)
-                  : // The cancellation tables reference columns the base does not have.
-                    !migration.startsWith('0075_') ||
-                    !statement.includes('verification_auto_cancellation');
+      // The base dispatch table has no kind or ledger, so only the change
+      // request columns of 0094 apply.
+      migration.startsWith('0094_')
+        ? /"verification_change_request/.test(statement)
+        : migration.startsWith('0093_')
+          ? /ALTER TABLE verifications|ALTER TABLE verification_message_dispatches/.test(
+              statement,
+            )
+          : migration.startsWith('0073_')
+            ? statement.includes(
+                'ADD COLUMN IF NOT EXISTS "notification_email"',
+              )
+            : migration.startsWith('0081_')
+              ? !statement.includes('"credit_accounts"')
+              : // 0083 also extends dispatch and service-message tables the base
+                // does not have; only its store columns apply.
+                migration.startsWith('0083_')
+                ? statement.includes('ALTER TABLE "integrations"')
+                : // The base has no template registry, so the per-number template
+                  // table is left out; the connection and ticket tables apply.
+                  migration.startsWith('0085_') || migration.startsWith('0086_')
+                  ? !statement
+                      .replace(/--.*$/gm, '')
+                      .includes('whatsapp_connection_templates')
+                  : // The base has no credit or usage tables; only the dispatch
+                    // billing columns, checks and triggers of 0088 apply.
+                    migration.startsWith('0089_')
+                    ? !statement.includes('verification_sender_attempts') &&
+                      !statement.includes('provider_message_receipts')
+                    : migration.startsWith('0088_')
+                      ? !/"credit_|"integration_monthly_usage"/.test(statement)
+                      : // The cancellation tables reference columns the base does not have.
+                        !migration.startsWith('0075_') ||
+                        !statement.includes('verification_auto_cancellation');
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -375,6 +385,8 @@ describe('order imports PostgreSQL contract', () => {
         '0090_merchant_webhook_routing.sql',
         '0091_whatsapp_sender_alerts.sql',
         '0092_change_requests.sql',
+        '0093_change_request_messaging.sql',
+        '0094_change_request_reconfirmation.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

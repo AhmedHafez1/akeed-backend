@@ -3,6 +3,8 @@ import {
   FEATURE_OFF_SENDER,
   type SenderResolverPort,
 } from '../../shared/ports/sender-resolver.port';
+import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
+import { customerRecipientHash } from '../../shared/messaging/change-request-messaging';
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -98,6 +100,7 @@ interface SendIdentity {
   dispatchId: string;
   dispatchKey: string;
   generation: number;
+  confirmationCycle: number;
   waMessageId: string;
   variantKey: string;
   templateName: string;
@@ -124,11 +127,19 @@ export interface InitialSendOptions {
    * orders.
    */
   testLanguage?: TemplateLanguage;
+  /**
+   * An updated confirmation names the cycle it will start. It is a new
+   * message of that cycle, charged and sent like any confirmation; its
+   * acceptance starts the cycle, and until then nothing about it is written
+   * onto the verification.
+   */
+  confirmationCycle?: number;
 }
 
 interface ResolvedContext {
   billingExempt: boolean;
   testLanguage?: TemplateLanguage;
+  confirmationCycle?: number;
   verification: NonNullable<
     Awaited<ReturnType<VerificationsRepository['findById']>>
   >;
@@ -193,6 +204,8 @@ export class VerificationSendService {
     @Optional()
     @Inject(SENDER_EVENT_PORT)
     private readonly senderEvents?: SenderEventPort,
+    @Optional()
+    private readonly changeTemplates?: ChangeRequestTemplatesService,
   ) {}
 
   private switches() {
@@ -214,9 +227,15 @@ export class VerificationSendService {
     }
     const { context } = result;
     return this.sendOnce(
-      options.testLanguage && context.order.isTest === true
-        ? { ...context, testLanguage: options.testLanguage }
-        : context,
+      {
+        ...context,
+        ...(options.testLanguage && context.order.isTest === true
+          ? { testLanguage: options.testLanguage }
+          : {}),
+        ...(options.confirmationCycle !== undefined
+          ? { confirmationCycle: options.confirmationCycle }
+          : {}),
+      },
       'initial',
     );
   }
@@ -553,6 +572,19 @@ export class VerificationSendService {
             orgId: order.orgId,
             template,
           });
+    if (
+      integration.changeRequestsEnabled &&
+      !recovery.retryDispatch &&
+      this.changeTemplates &&
+      (!selection.fallbackReason || selection.fallbackReason === 'key_missing')
+    ) {
+      const counterpart = await this.changeTemplates.counterpart(
+        selection.template,
+        order.orgId,
+        sender,
+      );
+      if (counterpart) template = counterpart;
+    }
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
     const recordedFallback =
@@ -596,6 +628,8 @@ export class VerificationSendService {
           integrationId: integration.id,
           verificationId: verification.id,
           kind,
+          changeRequestButtons: Boolean(template.changeRequestOfKey),
+          recipientHash: customerRecipientHash(order.customerPhone),
           templateName: template.templateName,
           languageCode: template.languageCode,
           identity: {
@@ -606,6 +640,9 @@ export class VerificationSendService {
           },
           leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
           billingExempt: ctx.billingExempt,
+          ...(ctx.confirmationCycle !== undefined
+            ? { confirmationCycle: ctx.confirmationCycle }
+            : {}),
           sender,
           ...(recovery.fallbackFrom
             ? {
@@ -755,6 +792,7 @@ export class VerificationSendService {
             )
           : legacyOrderTotal(order.totalPrice, order.currency),
         verificationId: verification.id,
+        confirmationCycle: dispatchClaim.dispatch.confirmationCycle,
         template,
         sender: claimedSender,
         dispatchContext: {
@@ -902,6 +940,7 @@ export class VerificationSendService {
       dispatchId: dispatchClaim.dispatch.id,
       dispatchKey: dispatchClaim.dispatch.dispatchKey,
       generation: dispatchClaim.dispatch.generation,
+      confirmationCycle: dispatchClaim.dispatch.confirmationCycle,
       waMessageId,
       ...this.templateLogFields(reportedTemplate ?? template, purpose),
     };
@@ -1142,6 +1181,7 @@ export class VerificationSendService {
           providerMessageId: identity.waMessageId,
           sentAt,
           template,
+          confirmationCycle: identity.confirmationCycle,
         });
     } catch (error) {
       this.logger.error(

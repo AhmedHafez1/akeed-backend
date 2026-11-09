@@ -1,3 +1,4 @@
+import { ensureChangeRequestTemplateColumns } from './contracts/change-request-template-columns';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -88,6 +89,7 @@ async function migrate(name: string): Promise<void> {
       if (statement.trim()) await tx.unsafe(statement);
     }
   });
+  await ensureChangeRequestTemplateColumns(client);
 }
 
 /** The rollback written in a migration header, as one script. */

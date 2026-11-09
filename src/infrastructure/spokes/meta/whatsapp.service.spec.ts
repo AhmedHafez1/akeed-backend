@@ -9,6 +9,7 @@ import { selectTemplateForSend } from '../../../shared/messaging/template-select
 import { seededRegistryTemplates } from '../../../shared/messaging/testing/seeded-template-registry';
 import { VerificationSendService } from '../../../modules/verification-core/verification-send.service';
 import { seededTemplateRegistry } from '../../../shared/messaging/testing/seeded-template-registry';
+import { customerButtonPayload } from '../../../shared/messaging/change-request-messaging';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -31,6 +32,40 @@ function selectCodTemplate(params: {
 }
 
 describe('WhatsAppService', () => {
+  it('sends Confirm, Cancel and Request a change with the originating confirmation cycle', async () => {
+    const { service, httpService } = createService();
+    const id = '00000000-0000-4000-8000-000000000001';
+    const base = selectCodTemplate({
+      preferredLanguage: 'en',
+      phoneNumber: '+12025550100',
+    });
+    await service.sendVerificationTemplate({
+      to: '+12025550100',
+      orderNumber: '42',
+      totalPrice: '100',
+      verificationId: id,
+      confirmationCycle: 2,
+      template: { ...base, changeRequestOfKey: base.registryKey },
+    });
+    const payload = httpService.post.mock.calls[0][1] as {
+      template: {
+        components: {
+          type: string;
+          index?: number;
+          parameters: { payload?: string }[];
+        }[];
+      };
+    };
+    expect(
+      payload.template.components
+        .filter((component) => component.type === 'button')
+        .map((component) => [component.index, component.parameters[0].payload]),
+    ).toEqual([
+      [0, customerButtonPayload('confirmed', id, 2)],
+      [1, customerButtonPayload('canceled', id, 2)],
+      [2, customerButtonPayload('change_requested', id, 2)],
+    ]);
+  });
   function createService() {
     const httpService = {
       post: jest.fn().mockReturnValue(

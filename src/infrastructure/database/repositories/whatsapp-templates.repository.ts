@@ -23,6 +23,7 @@ import { IMAGE_TWIN_SUFFIX } from '../../../shared/messaging/image-twin.policy';
  */
 const REGISTRY_COLUMNS = {
   key: whatsappTemplates.key,
+  changeRequestOfKey: whatsappTemplates.changeRequestOfKey,
   purpose: whatsappTemplates.purpose,
   language: whatsappTemplates.language,
   style: whatsappTemplates.style,
@@ -108,6 +109,9 @@ function toVariables(row: WhatsappTemplateRow): TemplateVariable[] {
 export function toRegistryTemplate(row: WhatsappTemplateRow): RegistryTemplate {
   return {
     key: row.key,
+    ...(row.changeRequestOfKey
+      ? { changeRequestOfKey: row.changeRequestOfKey }
+      : {}),
     purpose: row.purpose,
     language: row.language,
     style: row.style,
@@ -124,6 +128,9 @@ export function toRegistryTemplate(row: WhatsappTemplateRow): RegistryTemplate {
       ending: row.preview.ending,
       confirmButton: row.preview.confirmButton,
       cancelButton: row.preview.cancelButton,
+      ...(row.preview.changeButton
+        ? { changeButton: row.preview.changeButton }
+        : {}),
     },
     isActive: row.isActive,
     isDefault: row.isDefault,

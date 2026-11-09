@@ -1,3 +1,4 @@
+import { customerButtonPayload } from '../../../shared/messaging/change-request-messaging';
 import {
   MetaSendContextService,
   type MetaSendContext,
@@ -104,6 +105,7 @@ export class WhatsAppService {
     totalPrice: string;
     verificationId: string;
     template: SelectedCodTemplate;
+    confirmationCycle?: number;
     sender?: ResolvedSender;
     dispatchContext?: {
       orgId: string;
@@ -197,7 +199,13 @@ export class WhatsAppService {
             parameters: [
               {
                 type: 'payload',
-                payload: `confirm_${params.verificationId}`,
+                payload: template.changeRequestOfKey
+                  ? customerButtonPayload(
+                      'confirmed',
+                      params.verificationId,
+                      params.confirmationCycle ?? 1,
+                    )
+                  : `confirm_${params.verificationId}`,
               },
             ],
           },
@@ -208,10 +216,35 @@ export class WhatsAppService {
             parameters: [
               {
                 type: 'payload',
-                payload: `cancel_${params.verificationId}`,
+                payload: template.changeRequestOfKey
+                  ? customerButtonPayload(
+                      'canceled',
+                      params.verificationId,
+                      params.confirmationCycle ?? 1,
+                    )
+                  : `cancel_${params.verificationId}`,
               },
             ],
           },
+          ...(template.changeRequestOfKey
+            ? [
+                {
+                  type: 'button',
+                  sub_type: 'quick_reply',
+                  index: 2,
+                  parameters: [
+                    {
+                      type: 'payload',
+                      payload: customerButtonPayload(
+                        'change_requested',
+                        params.verificationId,
+                        params.confirmationCycle ?? 1,
+                      ),
+                    },
+                  ],
+                },
+              ]
+            : []),
         ],
       },
     });
@@ -373,7 +406,7 @@ export class WhatsAppService {
       token: this.accessToken,
     };
     try {
-      if (params.sender) {
+      if (params.sender || params.dispatchContext) {
         if (!this.sendContext)
           return { outcome: 'rejected', code: 'sender_context_unavailable' };
         context = await this.sendContext.resolveFreeForm(params);
@@ -393,6 +426,8 @@ export class WhatsAppService {
         ? { outcome: 'accepted', providerMessageId }
         : { outcome: 'failed', code: 'missing_provider_message_id' };
     } catch (error) {
+      if (error instanceof ConfirmedMessageRejection)
+        return { outcome: 'rejected', code: error.code };
       const metaCode = isAxiosError<{ error?: { code?: number } }>(error)
         ? error.response?.data?.error?.code
         : undefined;

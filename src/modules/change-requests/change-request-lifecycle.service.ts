@@ -234,41 +234,7 @@ export class ChangeRequestLifecycleService {
     result: MerchantResolutionResult,
   ): Extract<MerchantResolutionResult, { outcome: 'resolved' }> {
     if (result.outcome === 'resolved') return result;
-    if (result.outcome === 'already_resolved')
-      throw new ConflictException({
-        message: 'This change request was already resolved.',
-        code: 'CHANGE_REQUEST_ALREADY_RESOLVED',
-        resolution: result.request?.resolution ?? null,
-        verificationStatus: result.verificationStatus,
-      });
-    switch (result.reason) {
-      case 'verification_not_found':
-        throw new NotFoundException({
-          message: 'Verification not found',
-          code: 'VERIFICATION_NOT_FOUND',
-        });
-      case 'auto_cancel_committed':
-        throw new ConflictException({
-          message: 'The store is already canceling this order.',
-          code: 'AUTO_CANCEL_ALREADY_IN_PROGRESS',
-        });
-      case 'no_open_request':
-        throw new ConflictException({
-          message: 'This order has no open change request.',
-          code: 'CHANGE_REQUEST_NOT_OPEN',
-        });
-      case 'request_mismatch':
-      case 'stale_cycle':
-        throw new ConflictException({
-          message: 'This change request was replaced by a newer one.',
-          code: 'CHANGE_REQUEST_STALE',
-        });
-      case 'not_awaiting_confirmation':
-        throw new ConflictException({
-          message: 'The order is no longer awaiting confirmation.',
-          code: 'CHANGE_REQUEST_NOT_ACTIONABLE',
-        });
-    }
+    return throwMerchantRejection(result);
   }
 
   /**
@@ -331,5 +297,51 @@ export class ChangeRequestLifecycleService {
         }),
       );
     }
+  }
+}
+
+/**
+ * The coded HTTP error for a merchant command that could not act. The
+ * dashboard translates by code, so never rename one: a request settled first
+ * (by the customer, another tab or a resend) reads as already resolved, with
+ * the outcome that won, so the page can refresh instead of overwriting it.
+ */
+export function throwMerchantRejection(
+  result: Exclude<MerchantResolutionResult, { outcome: 'resolved' }>,
+): never {
+  if (result.outcome === 'already_resolved')
+    throw new ConflictException({
+      message: 'This change request was already resolved.',
+      code: 'CHANGE_REQUEST_ALREADY_RESOLVED',
+      resolution: result.request?.resolution ?? null,
+      verificationStatus: result.verificationStatus,
+    });
+  switch (result.reason) {
+    case 'verification_not_found':
+      throw new NotFoundException({
+        message: 'Verification not found',
+        code: 'VERIFICATION_NOT_FOUND',
+      });
+    case 'auto_cancel_committed':
+      throw new ConflictException({
+        message: 'The store is already canceling this order.',
+        code: 'AUTO_CANCEL_ALREADY_IN_PROGRESS',
+      });
+    case 'no_open_request':
+      throw new ConflictException({
+        message: 'This order has no open change request.',
+        code: 'CHANGE_REQUEST_NOT_OPEN',
+      });
+    case 'request_mismatch':
+    case 'stale_cycle':
+      throw new ConflictException({
+        message: 'This change request was replaced by a newer one.',
+        code: 'CHANGE_REQUEST_STALE',
+      });
+    case 'not_awaiting_confirmation':
+      throw new ConflictException({
+        message: 'The order is no longer awaiting confirmation.',
+        code: 'CHANGE_REQUEST_NOT_ACTIONABLE',
+      });
   }
 }

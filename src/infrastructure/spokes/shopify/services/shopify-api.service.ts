@@ -35,6 +35,9 @@ import {
   ORDER_CANCEL_MUTATION,
   ORDER_CANCELLATION_STATE_QUERY,
   type OrderCancellationStateResponse,
+  type CurrentOrderResponse,
+  CURRENT_ORDER_QUERY,
+  type ShopifyCurrentOrder,
   type OrderCancelResponse,
   type ShopifyOrderCancellationState,
   type ShopNameResponse,
@@ -247,6 +250,20 @@ export class ShopifyApiService {
     const response = await this.executeGraphql<OrderCancellationStateResponse>(
       integration,
       ORDER_CANCELLATION_STATE_QUERY,
+      { id: toOrderGid(externalOrderId) },
+    );
+    throwIfGraphQLErrors(response.data.errors, 'Shopify order read errors');
+    return response.data.data?.order ?? null;
+  }
+
+  /** The order's current details. Null when Shopify has no such order. */
+  async getCurrentOrder(
+    integration: CommerceOutcomeConnection,
+    externalOrderId: string,
+  ): Promise<ShopifyCurrentOrder | null> {
+    const response = await this.executeGraphql<CurrentOrderResponse>(
+      integration,
+      CURRENT_ORDER_QUERY,
       { id: toOrderGid(externalOrderId) },
     );
     throwIfGraphQLErrors(response.data.errors, 'Shopify order read errors');

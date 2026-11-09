@@ -664,6 +664,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -694,6 +695,8 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
       '0092_change_requests.sql',
+      '0093_change_request_messaging.sql',
+      '0094_change_request_reconfirmation.sql',
       // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
     ])

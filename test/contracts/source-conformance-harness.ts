@@ -1250,6 +1250,7 @@ export function assembleConformanceWorld(
       tables.billingFreePlanClaims,
       tables.whatsappConnections,
       tables.whatsappTemplates,
+      tables.whatsappTemplateDrafts,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -1278,6 +1279,8 @@ export function assembleConformanceWorld(
       '0089_sender_recovery.sql',
       '0090_merchant_webhook_routing.sql',
       '0092_change_requests.sql',
+      '0093_change_request_messaging.sql',
+      '0094_change_request_reconfirmation.sql',
       ...options.migrations,
     ])
       await migrate(name);

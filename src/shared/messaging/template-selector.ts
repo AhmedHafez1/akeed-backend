@@ -111,6 +111,7 @@ export function selectableTemplates(
   return templates.filter(
     (template) =>
       template.isActive &&
+      !template.changeRequestOfKey &&
       template.purpose === purpose &&
       template.language === language,
   );
@@ -141,6 +142,7 @@ export function templatesAwaitingLaunch(
   return templates.flatMap((template) => {
     if (
       template.isActive ||
+      template.changeRequestOfKey ||
       retiredKeys.includes(template.key) ||
       template.purpose !== purpose ||
       template.language !== language
@@ -243,7 +245,7 @@ export function resolveTemplate(
     stored.purpose !== purpose
   ) {
     fallbackReason = 'wrong_language';
-  } else if (!stored.isActive) {
+  } else if (!stored.isActive || stored.changeRequestOfKey) {
     fallbackReason = 'key_inactive';
   } else if (!isSendableTemplate(stored, guardrailOn)) {
     fallbackReason = 'not_approved';
@@ -322,6 +324,9 @@ export function toSelectedTemplate(
 ): SelectedCodTemplate {
   return {
     registryKey: template.key,
+    ...(template.changeRequestOfKey
+      ? { changeRequestOfKey: template.changeRequestOfKey }
+      : {}),
     variantKey: `${template.language}.${template.style}`,
     language: template.language,
     templateName: template.templateName,

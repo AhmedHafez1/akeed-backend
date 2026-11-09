@@ -81,6 +81,7 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
       verificationId: 'v1',
       intent: 'confirmed',
       receivedAt: new Date(1700000000 * 1000).toISOString(),
+      expectedConfirmationCycle: 1,
     });
   });
 
@@ -115,7 +116,9 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
       'confirmed',
       undefined,
       '1700000000',
-      { confirmationSource: 'customer' },
+      expect.objectContaining({ confirmationSource: 'customer' }),
+      undefined,
+      1,
     );
   });
 
@@ -146,7 +149,9 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
       'confirmed',
       undefined,
       '1700000000',
-      { confirmationSource: 'customer' },
+      expect.objectContaining({ confirmationSource: 'customer' }),
+      undefined,
+      1,
     );
   });
 
@@ -176,7 +181,9 @@ describe('WhatsAppWebhookService and automatic cancellation', () => {
       'canceled',
       undefined,
       '1700000000',
-      { cancellationSource: 'customer' },
+      expect.objectContaining({ cancellationSource: 'customer' }),
+      undefined,
+      1,
     );
   });
 });
