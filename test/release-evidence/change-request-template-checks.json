@@ -15,8 +15,8 @@
     {
       "command": "npm test -- --runInBand",
       "result": "passed",
-      "suites": 384,
-      "tests": 8510
+      "suites": 385,
+      "tests": 8518
     },
     {
       "command": "npm run test:core:platform-neutral",
@@ -91,6 +91,12 @@
       "result": "passed",
       "unitTests": 1,
       "postgresTests": 5
+    },
+    {
+      "command": "Final full backend rerun after fallback/header checks",
+      "result": "passed",
+      "suites": 385,
+      "tests": 8518
     }
   ],
   "backendFilesChanged": [
@@ -124,6 +130,7 @@
     "src/modules/onboarding/onboarding-state.service.ts",
     "src/modules/verification-core/verification-send.sender.spec.ts",
     "src/modules/verification-core/verification-send.service.ts",
+    "src/shared/messaging/change-request-messaging.ts",
     "src/shared/messaging/change-request-preparation.policy.ts",
     "src/shared/messaging/cod-template-selector.ts",
     "src/shared/messaging/image-twin.policy.ts",
@@ -207,11 +214,11 @@
     },
     {
       "path": "src/modules/change-requests/change-request-templates.service.spec.ts",
-      "sha256": "a1e5704b5b6d0b020f74ebf7826ab7c0f8f79c8f43fa2bfd4665134dff9541a6"
+      "sha256": "87b6142b036df381e1b7e2cd7b4c3e7b09e796f872b1dcbf39d23dc9e93b57d8"
     },
     {
       "path": "src/modules/change-requests/change-request-templates.service.ts",
-      "sha256": "208c3e814cff385f06c97fa3e1025a691d4211e66c4addb372c8d3338f9f31a6"
+      "sha256": "e0734b2d391c940886c7eaa22ffdfcf6bdd835d3a6e34154171c8929db6134b0"
     },
     {
       "path": "src/modules/merchant-branding/merchant-branding.service.ts",
@@ -227,7 +234,7 @@
     },
     {
       "path": "src/modules/verification-core/verification-send.service.ts",
-      "sha256": "c3d4ff1002a042b18c153c856703a0d9f6133318d58e512f520356263deed0ad"
+      "sha256": "b0b1ddbfd4fb5313b32413dfb48a5bd501018b9bd8d32d6d25bfddbb24896c55"
     },
     {
       "path": "src/shared/messaging/cod-template-selector.ts",
@@ -300,6 +307,10 @@
     {
       "path": "src/modules/admin/admin-change-preparation.service.spec.ts",
       "sha256": "fddab7293a3258b805d8dba022d5fea8bfe9480ec9ac88112d1ec661a6166d3d"
+    },
+    {
+      "path": "src/shared/messaging/change-request-messaging.ts",
+      "sha256": "a2829d9037b227a150b9989ff0dbc8f9cb9917adc6b9c664ecc35f65e862e809"
     }
   ],
   "frontendFilesChanged": [

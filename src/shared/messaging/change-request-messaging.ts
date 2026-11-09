@@ -97,6 +97,8 @@ export function changeTemplateUsable(
         template.lastSyncedAt)) &&
     snapshot &&
     !('unknown' in snapshot) &&
+    !snapshot.headerImage &&
+    !snapshot.header &&
     snapshot.buttons.length === 3 &&
     snapshot.buttons.every(
       (button) => button.kind === 'quick_reply' && button.text.length <= 25,

@@ -595,6 +595,8 @@ export class VerificationSendService {
             reason: variant.reason,
           }),
         );
+      if (variant.sendable === false)
+        return { status: 'skipped', reason: 'template_unavailable' };
     } else if (sender.kind === 'akeed_system') {
       template = await this.withLogoHeader(template, integration);
     }

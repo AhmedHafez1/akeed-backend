@@ -222,31 +222,68 @@ export class ChangeRequestTemplatesService {
           sender.kind === 'akeed_system' && integration.logoHeaderEnabled,
         bannerUrl: integration.logoBannerUrl,
         twins,
-        guardrail: { enabled: this.registry.sendGuardrailEnabled?.() === true },
+        guardrail: { enabled: true },
       });
     const fallback = withLogo(base);
+    const unavailable = async (reason: string) => {
+      let sendable = false;
+      if (sender.kind === 'merchant_own' && sender.connectionId) {
+        const own = await this.connectionTemplates.findForSend(
+          integration.orgId,
+          sender.connectionId,
+          base,
+        );
+        sendable = Boolean(
+          own &&
+          own.status === 'approved' &&
+          own.category === 'utility' &&
+          own.lastSyncedAt &&
+          !own.driftReason,
+        );
+      } else if (sender.kind === 'akeed_system') {
+        const original = (
+          await (this.templates?.findAll() ?? this.registry.listTemplates())
+        ).find((row) => row.key === base.registryKey);
+        sendable = Boolean(
+          original?.isActive &&
+          original.reviewStatus === 'approved' &&
+          original.category === 'utility' &&
+          original.lastSyncedAt,
+        );
+        if (sendable && original && this.catalog) {
+          const drift = compareTemplateDrift({
+            template: original,
+            reviewStatus: original.reviewStatus,
+            model: this.catalog.describeComponents(original.components ?? null),
+            previewSource: 'provider',
+          });
+          sendable =
+            drift.state !== 'unreadable' &&
+            !drift.differences.some((d) => d.severity === 'send');
+        }
+      }
+      return {
+        template: fallback,
+        ready: false,
+        sendable,
+        reason: sendable ? reason : 'ordinary_fallback_unavailable',
+      };
+    };
     const counterpart = await this.counterpart(base, integration.orgId, sender);
-    if (!counterpart)
+    if (!counterpart) return unavailable('change_text_unavailable');
+    if (!branded)
       return {
-        template: fallback,
-        ready: false,
-        reason: 'change_text_unavailable',
+        template: counterpart,
+        ready: true,
+        sendable: true,
+        reason: null,
       };
-    if (!branded) return { template: counterpart, ready: true, reason: null };
     if (!isHttpsUrl(integration.logoBannerUrl))
-      return {
-        template: fallback,
-        ready: false,
-        reason: 'logo_banner_unavailable',
-      };
+      return unavailable('logo_banner_unavailable');
     const template = withLogo(counterpart);
     return template.imageHeader
-      ? { template, ready: true, reason: null }
-      : {
-          template: fallback,
-          ready: false,
-          reason: 'change_image_twin_unavailable',
-        };
+      ? { template, ready: true, sendable: true, reason: null }
+      : unavailable('change_image_twin_unavailable');
   }
 
   async assertReady(

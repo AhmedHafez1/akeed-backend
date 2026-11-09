@@ -7,7 +7,7 @@ Observed 9 November 2026, Africa/Cairo. The owner authorized develop commits/pus
 - Existing draft authoring carries immutable predecessor linkage and the fixed localized third label through API reads, editing, validation, preview and submission review. Ordinary drafts retain two buttons. Submission review uses the saved response rather than stale loaded content.
 - Admin preparation reconciles registered and draft-only sources, preserves operator work and uncertain submissions, creates missing drafts transactionally, and exports identities, content, samples and image plans. Changed sources, duplicate counterparts and identity conflicts are blocked.
 - Three-button image twins are distinct from ordinary twins. Registration retains capability; projections derive it from the text parent. Readiness checks approval, activation, synchronization, header, variables, body/footer and buttons against the actual selected sender.
-- Shared-number sends preserve ordinary text/logo flows when off and use matching three-button text/logo variants when opted in and ready. Later degradation retains the established safe ordinary path and exposes a reason. Own-number sending remains independently approved text only, including merchants with configured logos.
+- Shared-number sends preserve ordinary text/logo flows when off and use matching three-button text/logo variants when opted in and ready. Later degradation retains the established safe ordinary path and exposes a reason. Opted-in sends require an approved usable fallback even when ordinary guardrails are off; if no eligible fallback remains, the new send is withheld before claiming usage. A registered three-button text counterpart with a provider header is rejected as incompatible. Own-number sending remains independently approved text only, including merchants with configured logos.
 - Initial, follow-up and reconfirmation selection share the same decision. Actual attempt identity is persisted before I/O, including bounded media fallback. Unknown outcomes, late receipts and accounting retain existing recovery rules.
 - Settings and branding changes revalidate readiness. Counterparts cannot become ordinary defaults/replacements. Admin mutations retain staff/operator guards and transactional audit.
 
@@ -27,7 +27,7 @@ The existing 46 template rows, including mappings, content, defaults, activation
 
 ## Verification
 
-- Backend full unit suite: 384 suites / 8,510 tests passed. Core boundary suite: 25 suites / 341 tests passed. Subsequent focused checks cover final controller, editor, logo and attempt-persistence changes.
+- Backend full unit suite: 385 suites / 8,518 tests passed. Core boundary suite: 25 suites / 341 tests passed. Subsequent focused checks cover final controller, editor, logo and attempt-persistence changes.
 - Frontend full suite: 194 files / 2,336 tests passed. Admin/message follow-up: 21 files / 209 tests passed.
 - Disposable preparation contracts: five passed, covering exact content/counts, bounded history, concurrent/idempotent preservation, positional variables, twin identity and draft-only sources.
 - Template registry/sync/authoring: 28 / 24 / 37 passed. Change-request messaging/reconfirmation: 25 / 13 passed. Integrated release/browser bridge: 37 passed. E04.5 billing contracts: 314 passed.

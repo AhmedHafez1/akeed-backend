@@ -47,8 +47,60 @@ function setup() {
   return { service, base, sibling, connectionTemplates, registry };
 }
 describe('sender-specific change-request template readiness', () => {
+  it.each([{ headerImage: true }, { header: 'Unexpected header' }])(
+    'rejects a provider header on a registered text counterpart: %j',
+    async (header) => {
+      const f = setup();
+      Object.assign(f.sibling.components, header);
+      expect(
+        await f.service.counterpart(
+          toSelectedTemplate(f.base),
+          'org',
+          FEATURE_OFF_SENDER,
+        ),
+      ).toBeNull();
+    },
+  );
+  it('never falls back to an unapproved shared template even when ordinary guardrails are off', async () => {
+    const f = setup();
+    f.sibling.isActive = false;
+    Object.assign(f.base, {
+      reviewStatus: 'paused',
+      category: 'utility',
+      lastSyncedAt: new Date().toISOString(),
+    });
+    const integration = { orgId: 'org', logoHeaderEnabled: false } as never;
+    expect(
+      await f.service.selectVariant(
+        toSelectedTemplate(f.base),
+        integration,
+        FEATURE_OFF_SENDER,
+      ),
+    ).toMatchObject({
+      ready: false,
+      sendable: false,
+      reason: 'ordinary_fallback_unavailable',
+    });
+    Object.assign(f.base, { reviewStatus: 'approved' });
+    expect(
+      await f.service.selectVariant(
+        toSelectedTemplate(f.base),
+        integration,
+        FEATURE_OFF_SENDER,
+      ),
+    ).toMatchObject({
+      ready: false,
+      sendable: true,
+      reason: 'change_text_unavailable',
+    });
+  });
   it('requires a matching approved three-button image twin and retains the ordinary logo fallback', async () => {
     const f = setup();
+    Object.assign(f.base, {
+      reviewStatus: 'approved',
+      category: 'utility',
+      lastSyncedAt: new Date().toISOString(),
+    });
     const ordinary = {
       key: f.base.key + '_logo',
       imageTwinOfKey: f.base.key,
