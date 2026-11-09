@@ -192,6 +192,8 @@ export interface AdminStoreVerificationView {
   currency: string | null;
   attempts: number;
   follow_up_attempts: number;
+  /** A first confirmation staff may mark not sent and resend. */
+  resend_dispatch_id: string | null;
   template_name: string | null;
   language_code: string | null;
   cancellation_source: string | null;
@@ -639,6 +641,10 @@ export class AdminStoresService {
       currency: row.currency,
       attempts: Number(row.attempts ?? 0),
       follow_up_attempts: Number(row.follow_up_attempts ?? 0),
+      resend_dispatch_id:
+        row.status === 'confirmed' || row.status === 'canceled'
+          ? null
+          : (row.resend_dispatch_id ?? null),
       template_name: row.template_name,
       language_code: row.language_code,
       cancellation_source: row.cancellation_source,

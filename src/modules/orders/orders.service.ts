@@ -116,8 +116,19 @@ export class OrdersService {
       code: 'MANUAL_ORDER_RETRY_ROLE_REQUIRED',
       message: 'Owner or admin role is required to retry verification.',
     });
+    return this.retryVerificationForOrg(user.orgId, orderId);
+  }
+
+  /**
+   * The merchant retry without its role check, for staff acting on an order:
+   * the same lifecycle, readiness and redispatch rules apply.
+   */
+  async retryVerificationForOrg(
+    orgId: string,
+    orderId: string,
+  ): Promise<RetryManualOrderVerificationResponseDto> {
     const order = await this.ordersRepo.findById(orderId);
-    if (!order || order.orgId !== user.orgId) {
+    if (!order || order.orgId !== orgId) {
       throw new NotFoundException({
         code: 'MANUAL_ORDER_NOT_FOUND',
         message: 'Manual order not found.',
@@ -132,7 +143,7 @@ export class OrdersService {
     }
     const projected = await this.ordersRepo.findDashboardOrderById(
       orderId,
-      user.orgId,
+      orgId,
     );
     const lifecycle: RetryGuardStateDto = {
       status: (projected?.retryGuardStatus ??
@@ -191,7 +202,7 @@ export class OrdersService {
             action: 'manual-order-retry-dispatch',
             outcome: 'failure',
             reason: outcome,
-            orgId: user.orgId,
+            orgId: orgId,
             integrationId: integration.id,
             orderId: order.id,
             webhookEventId: event.id,

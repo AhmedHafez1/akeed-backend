@@ -15,6 +15,7 @@ describe('MessageDispatchResolutionService', () => {
         orgId: 'org-1',
         order: {
           id: 'order-1',
+          orgId: 'org-1',
           integration: { id: 'int-1', orgId: 'org-1' },
           webhookEvents: [
             {
@@ -41,11 +42,17 @@ describe('MessageDispatchResolutionService', () => {
     const webhookDispatcher = { dispatchById: jest.fn() };
     const verificationHub = { scheduleFollowUpAndEscalation: jest.fn() };
     const audit = { record: jest.fn() };
+    const orders = {
+      retryVerificationForOrg: jest
+        .fn()
+        .mockResolvedValue({ orderId: 'order-1', duplicate: false }),
+    };
     const service = new MessageDispatchResolutionService(
       dispatches as never,
       events as never,
       webhookDispatcher as never,
       verificationHub as never,
+      orders as never,
     );
     return {
       service,
@@ -55,6 +62,7 @@ describe('MessageDispatchResolutionService', () => {
       webhookDispatcher,
       verificationHub,
       audit,
+      orders,
     };
   }
 
@@ -127,5 +135,70 @@ describe('MessageDispatchResolutionService', () => {
         reason: 'Conflicting reconciliation request',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  describe('resending a first confirmation that was not sent', () => {
+    const input = { reason: 'Refused locally before the provider call' };
+
+    it('resolves it not accepted as staff, then runs the merchant retry', async () => {
+      const { service, dispatch, dispatches, orders, events } = setup();
+      dispatch.verification.order.webhookEvents[0].platform = 'shopify';
+
+      await expect(
+        service.resendNotSent('staff-1', 'dispatch-1', input),
+      ).resolves.toEqual({
+        dispatchId: 'dispatch-1',
+        state: 'rejected',
+        retry: { orderId: 'order-1', duplicate: false },
+      });
+      expect(dispatches.resolveNotAccepted).toHaveBeenCalledWith('dispatch-1', {
+        userId: 'staff-1',
+        reason: input.reason,
+      });
+      expect(orders.retryVerificationForOrg).toHaveBeenCalledWith(
+        'org-1',
+        'order-1',
+      );
+      // The retry owns the redispatch; resolution does not start another.
+      expect(events.resetForRedispatch).not.toHaveBeenCalled();
+    });
+
+    it('only retries a dispatch already resolved not accepted', async () => {
+      const { service, dispatches, orders } = setup('rejected');
+
+      await service.resendNotSent('staff-1', 'dispatch-1', input);
+
+      expect(dispatches.resolveNotAccepted).not.toHaveBeenCalled();
+      expect(orders.retryVerificationForOrg).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['has a provider message id', { providerMessageId: 'wamid-1' }],
+      ['is a follow-up', { kind: 'follow_up' }],
+      ['was accepted', { state: 'accepted' }],
+      ['is still sending', { state: 'sending' }],
+    ])(
+      'refuses a dispatch that %s',
+      async (_label, overrides: Record<string, unknown>) => {
+        const { service, dispatch, dispatches, orders } = setup();
+        Object.assign(dispatch, overrides);
+
+        await expect(
+          service.resendNotSent('staff-1', 'dispatch-1', input),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(dispatches.resolveNotAccepted).not.toHaveBeenCalled();
+        expect(orders.retryVerificationForOrg).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not retry when the dispatch could not be resolved', async () => {
+      const { service, dispatches, orders } = setup();
+      dispatches.resolveNotAccepted.mockResolvedValue(undefined);
+
+      await expect(
+        service.resendNotSent('staff-1', 'dispatch-1', input),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(orders.retryVerificationForOrg).not.toHaveBeenCalled();
+    });
   });
 });
