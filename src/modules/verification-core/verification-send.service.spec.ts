@@ -4,6 +4,10 @@ import {
 } from '../../shared/billing/entitlement';
 import type { DispatchAcceptanceResult } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { VerificationSendService } from './verification-send.service';
+import {
+  ConfirmedMessageRejection,
+  LocalMessageRefusal,
+} from '../../shared/ports/messaging.port';
 import { seededTemplateRegistry } from '../../shared/messaging/testing/seeded-template-registry';
 
 const baseIntegration = {
@@ -444,6 +448,83 @@ describe('VerificationSendService', () => {
       expect(verificationsRepo.updateByIdForOrg).not.toHaveBeenCalled();
     },
   );
+
+  describe('a send Akeed refused before calling the provider', () => {
+    function refused(
+      error: Error,
+      dispatch: Record<string, unknown> = { attemptCount: 1 },
+    ) {
+      const mocks = createMocks();
+      const resolveNotAccepted = jest.fn().mockResolvedValue({});
+      Object.assign(mocks.messageDispatches, { resolveNotAccepted });
+      mocks.messageDispatches.claim.mockResolvedValue({
+        outcome: 'claimed',
+        dispatch: {
+          id: 'dispatch-1',
+          providerMessageId: null,
+          acceptedAt: null,
+          ...dispatch,
+        },
+      });
+      mocks.messagingPort.sendVerificationTemplate.mockRejectedValue(error);
+      return { ...mocks, resolveNotAccepted };
+    }
+
+    it('marks a first confirmation not sent, so the order can be retried', async () => {
+      const { service, resolveNotAccepted, messageDispatches } = refused(
+        new LocalMessageRefusal('sender_dispatch_mismatch'),
+      );
+
+      await expect(service.sendInitial('ver-1')).resolves.toEqual({
+        status: 'failed',
+        reason: 'provider_not_accepted',
+      });
+      expect(resolveNotAccepted).toHaveBeenCalledWith(
+        'dispatch-1',
+        undefined,
+        true,
+      );
+      expect(
+        messageDispatches.markFailedProviderOutcome,
+      ).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'a follow-up, whose order was already reached',
+        'sendFollowUp' as const,
+        new LocalMessageRefusal('sender_dispatch_mismatch'),
+        { attemptCount: 1 },
+      ],
+      [
+        'a reclaimed attempt, whose earlier try may have gone out',
+        'sendInitial' as const,
+        new LocalMessageRefusal('sender_dispatch_mismatch'),
+        { attemptCount: 2 },
+      ],
+      [
+        "a provider's rejection",
+        'sendInitial' as const,
+        new ConfirmedMessageRejection('provider_rejected', '131000'),
+        { attemptCount: 1 },
+      ],
+    ])('still parks %s for review', async (_label, method, error, dispatch) => {
+      const { service, resolveNotAccepted, messageDispatches } = refused(
+        error,
+        dispatch,
+      );
+
+      await expect(service[method]('ver-1')).resolves.toEqual({
+        status: 'outcome_unknown',
+        reason: 'provider_outcome_unknown',
+      });
+      expect(resolveNotAccepted).not.toHaveBeenCalled();
+      expect(messageDispatches.markFailedProviderOutcome).toHaveBeenCalledWith(
+        'dispatch-1',
+        'provider_exception',
+      );
+    });
+  });
 
   it('does not retry an unknown or actively claimed dispatch', async () => {
     const { service, messageDispatches, messagingPort } = createMocks();
