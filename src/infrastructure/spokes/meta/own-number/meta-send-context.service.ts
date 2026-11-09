@@ -6,7 +6,7 @@ import { WhatsappConnectionTemplatesRepository } from '../../../database/reposit
 import { readWhatsappOwnNumberConfig } from '../../../../shared/config/whatsapp-own-number.config';
 import { readMetaGraphConfig } from '../../../../shared/config/meta-graph.config';
 import {
-  ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type MessagingPort,
 } from '../../../../shared/ports/messaging.port';
 import { resolveSender } from '../../../../modules/whatsapp-sender/sender-resolution.policy';
@@ -63,7 +63,7 @@ export class MetaSendContextService {
   ): Promise<MetaSendContext> {
     const sender = params.sender;
     const refuse = (): never => {
-      throw new ConfirmedMessageRejection('service_message_sender_unavailable');
+      throw new LocalMessageRefusal('service_message_sender_unavailable');
     };
     if (params.dispatchContext) {
       const dispatch = await this.dispatches.findForSender(
@@ -152,7 +152,7 @@ export class MetaSendContextService {
         throw new MerchantMessageFailure(
           classifyOwnNumberFailure({ localCode: code }),
         );
-      throw new ConfirmedMessageRejection(code);
+      throw new LocalMessageRefusal(code);
     };
     const sender = params.sender;
     const context = params.dispatchContext;

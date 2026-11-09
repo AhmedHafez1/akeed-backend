@@ -60,6 +60,7 @@ export function billingOperationsHarness() {
     events as never,
     webhookDispatcher as never,
     verificationHub as never,
+    {} as never,
   );
   const operations = new StandaloneBillingOperationsService(
     db,

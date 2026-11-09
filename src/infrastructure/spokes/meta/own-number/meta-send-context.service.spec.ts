@@ -4,7 +4,10 @@ import { of, throwError } from 'rxjs';
 import { MetaSendContextService } from './meta-send-context.service';
 import { encryptConnectionSecret } from './whatsapp-connection-credentials';
 import { WhatsAppService } from '../whatsapp.service';
-import type { MessagingPort } from '../../../../shared/ports/messaging.port';
+import {
+  LocalMessageRefusal,
+  type MessagingPort,
+} from '../../../../shared/ports/messaging.port';
 
 const key = 'a'.repeat(64);
 const merchantToken = 'merchant-secret+/value';
@@ -279,9 +282,11 @@ describe('claimed merchant sender', () => {
       async (_case, templateName, languageCode) => {
         const { adapter, http } = sharedSetup(templateName, languageCode);
 
+        // Refused before the provider call, so the send service knows it
+        // was not sent.
         await expect(
           adapter.sendVerificationTemplate(shared),
-        ).rejects.toThrow();
+        ).rejects.toBeInstanceOf(LocalMessageRefusal);
         expect(http.post).not.toHaveBeenCalled();
       },
     );

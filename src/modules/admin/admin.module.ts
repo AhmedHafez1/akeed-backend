@@ -23,6 +23,7 @@ import { StandaloneBillingRepository } from './standalone-billing.repository';
 import { StandaloneBillingService } from './standalone-billing.service';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
+import { OrdersModule } from '../orders/orders.module';
 import { BillingReconciliationQueueModule } from './billing-reconciliation-queue.module';
 import { BillingObservabilityRepository } from './billing-observability.repository';
 import { BillingObservabilityService } from './billing-observability.service';
@@ -64,6 +65,7 @@ export class AdminModule {
         AuthModule,
         DatabaseModule,
         WebhookQueueModule,
+        OrdersModule,
         BillingReconciliationQueueModule,
         WhatsappTemplateSyncModule,
         WhatsappSenderModule,
