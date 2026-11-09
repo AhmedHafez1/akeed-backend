@@ -550,8 +550,9 @@ export class VerificationSendService {
       );
       return { status: 'skipped', reason: 'template_unavailable' };
     }
-    // A store with the logo header on sends the image twin of the same
-    // template when one exists; the text template stays the recorded identity.
+    // The selected template may still become its change-request counterpart
+    // or its image-header twin below; the dispatch records whichever template
+    // is actually attempted, before the provider call.
     let template = selection.template;
     const sender = recovery.fallbackFrom
       ? {

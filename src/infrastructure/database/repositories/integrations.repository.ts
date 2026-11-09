@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNotNull, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   adminAccessAudit,
@@ -86,6 +86,17 @@ export class IntegrationsRepository {
         eq(integrations.orgId, orgId),
         eq(integrations.platformType, platformType),
         eq(integrations.isActive, true),
+      ),
+    });
+  }
+
+  /** Installed Shopify stores billed through a Shopify app subscription. */
+  async findActiveShopifySubscriptions() {
+    return await this.db.query.integrations.findMany({
+      where: and(
+        eq(integrations.platformType, 'shopify'),
+        eq(integrations.isActive, true),
+        isNotNull(integrations.shopifySubscriptionId),
       ),
     });
   }

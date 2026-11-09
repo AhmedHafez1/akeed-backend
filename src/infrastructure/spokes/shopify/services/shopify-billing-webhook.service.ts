@@ -9,6 +9,17 @@ import {
   ShopifyAppUninstalledDto,
 } from '../dto/shopify-webhooks.dto';
 
+type ShopifyIntegration = NonNullable<
+  Awaited<ReturnType<IntegrationsRepository['findByPlatformDomain']>>
+>;
+
+export type SubscriptionStatusSource = 'webhook' | 'reconciliation';
+
+export type SubscriptionStatusOutcome =
+  | 'updated'
+  | 'ignored_non_current'
+  | 'ignored_status';
+
 interface WebhookAck {
   received: boolean;
   duplicate?: boolean;
@@ -163,6 +174,28 @@ export class ShopifyBillingWebhookService {
       return { received: true };
     }
 
+    await this.applySubscriptionStatus(
+      integration,
+      incomingSubscriptionId,
+      normalizedStatus,
+      'webhook',
+    );
+    return { received: true };
+  }
+
+  /**
+   * Applies a Shopify subscription status to the installed store that holds
+   * that subscription. The webhook and the daily reconciliation both go
+   * through here, so a missed webhook is repaired by exactly the same rules.
+   */
+  async applySubscriptionStatus(
+    integration: ShopifyIntegration,
+    subscriptionId: string,
+    status: string,
+    source: SubscriptionStatusSource,
+  ): Promise<SubscriptionStatusOutcome> {
+    const shopDomain = integration.platformStoreUrl;
+    const normalizedStatus = this.normalizeBillingStatus(status);
     const now = new Date().toISOString();
     const isBlockedStatus = this.isBlockedBillingStatus(normalizedStatus);
     const isActiveStatus = normalizedStatus === 'active';
@@ -172,18 +205,19 @@ export class ShopifyBillingWebhookService {
     // callback cancel it as the "existing" subscription. A failed upgrade's
     // webhook must not disable the live plan, or a free store with no
     // subscription.
-    if (integration.shopifySubscriptionId !== incomingSubscriptionId) {
+    if (integration.shopifySubscriptionId !== subscriptionId) {
       this.logger.warn(
         buildBackendLog('ShopifyBillingWebhookService', {
           action: 'handleAppSubscriptionUpdate.ignoredNonCurrent',
           outcome: 'skipped',
           shopDomain,
-          incomingSubscriptionId,
+          incomingSubscriptionId: subscriptionId,
+          source,
           currentSubscriptionId: integration.shopifySubscriptionId,
           billingStatus: normalizedStatus,
         }),
       );
-      return { received: true };
+      return 'ignored_non_current';
     }
 
     if (!isActiveStatus && !isBlockedStatus) {
@@ -192,10 +226,11 @@ export class ShopifyBillingWebhookService {
           action: 'handleAppSubscriptionUpdate.ignoredStatus',
           outcome: 'skipped',
           shopDomain,
+          source,
           billingStatus: normalizedStatus,
         }),
       );
-      return { received: true };
+      return 'ignored_status';
     }
 
     // billingActivatedAt anchors the store's 30-day allowance periods, so a
@@ -220,12 +255,13 @@ export class ShopifyBillingWebhookService {
           action: 'handleAppSubscriptionUpdate.nonBillable',
           outcome: 'failure',
           shopDomain,
+          source,
           billingStatus: normalizedStatus,
         }),
       );
     }
 
-    return { received: true };
+    return 'updated';
   }
 
   private isBlockedBillingStatus(status?: string | null): boolean {
