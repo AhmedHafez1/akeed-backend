@@ -18,6 +18,7 @@ import { VerificationsRepository } from '../../infrastructure/database/repositor
 import {
   MESSAGING_PORT,
   ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type MessagingPort,
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
@@ -894,6 +895,23 @@ export class VerificationSendService {
           error.providerErrorCode,
         );
         return { status: 'failed', reason: NO_WHATSAPP_SEND_REASON };
+      }
+      // Akeed refused the first message before calling the provider, and no
+      // earlier attempt of it can have gone out: it was not sent, so the
+      // order becomes retryable instead of waiting for staff review.
+      if (
+        error instanceof LocalMessageRefusal &&
+        kind === 'initial' &&
+        !recovery.retryDispatch &&
+        !recovery.fallbackFrom &&
+        dispatchClaim.dispatch.attemptCount === 1
+      ) {
+        await this.messageDispatches.resolveNotAccepted(
+          dispatchClaim.dispatch.id,
+          undefined,
+          true,
+        );
+        return { status: 'failed', reason: 'provider_not_accepted' };
       }
       if (
         error instanceof ConfirmedMessageRejection &&

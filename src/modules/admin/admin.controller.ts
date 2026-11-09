@@ -29,6 +29,7 @@ import {
   AdminTemplateMetricsQueryDto,
 } from './dto/admin-query.dto';
 import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
+import { MessageDispatchResendDto } from './dto/message-dispatch-resend.dto';
 import { AdminLogoHeaderDto } from './dto/admin-logo-header.dto';
 import { AdminReviewPromptDto } from './dto/admin-review-prompt.dto';
 import { readRequestId } from './standalone-billing-operator.guard';
@@ -148,6 +149,20 @@ export class AdminController {
     @Body() body: MessageDispatchResolutionDto,
   ) {
     return this.dispatchResolution.resolve(
+      request.admin.userId,
+      dispatchId,
+      body,
+    );
+  }
+
+  @Post('message-dispatches/:dispatchId/resend')
+  @Header('Cache-Control', 'private, no-store')
+  resendMessageDispatch(
+    @Req() request: RequestWithAdmin,
+    @Param('dispatchId') dispatchId: string,
+    @Body() body: MessageDispatchResendDto,
+  ) {
+    return this.dispatchResolution.resendNotSent(
       request.admin.userId,
       dispatchId,
       body,

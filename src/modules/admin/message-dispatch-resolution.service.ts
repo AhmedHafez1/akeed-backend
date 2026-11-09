@@ -7,7 +7,9 @@ import { VerificationMessageDispatchesRepository } from '../../infrastructure/da
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import { WebhookDispatchService } from '../webhook-queue/webhook-dispatch.service';
+import { OrdersService } from '../orders/orders.service';
 import type { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.dto';
+import type { MessageDispatchResendDto } from './dto/message-dispatch-resend.dto';
 
 @Injectable()
 export class MessageDispatchResolutionService {
@@ -16,7 +18,53 @@ export class MessageDispatchResolutionService {
     private readonly events: WebhookEventsRepository,
     private readonly webhookDispatcher: WebhookDispatchService,
     private readonly verificationHub: VerificationHubService,
+    private readonly orders: OrdersService,
   ) {}
+
+  /**
+   * Staff confirm a first confirmation never reached the provider, then send
+   * it again through the merchant's own retry, for every order source.
+   *
+   * Only a dispatch with no provider message id qualifies. Calling it again
+   * after the dispatch was already resolved not accepted just retries, so a
+   * resend that failed its readiness checks can be repeated.
+   */
+  async resendNotSent(
+    staffUserId: string,
+    dispatchId: string,
+    input: MessageDispatchResendDto,
+    context: { requestId?: string } = {},
+  ) {
+    const dispatch = await this.dispatches.findById(dispatchId);
+    if (!dispatch) throw new NotFoundException('Message dispatch not found');
+    const order = dispatch.verification?.order;
+    if (
+      dispatch.kind !== 'initial' ||
+      dispatch.providerMessageId ||
+      !order ||
+      !['outcome_unknown', 'rejected'].includes(dispatch.state)
+    ) {
+      throw new ConflictException({
+        code: 'MESSAGE_DISPATCH_RESEND_UNSUPPORTED',
+        message:
+          'Only a first confirmation with no provider message id, awaiting review, can be resent.',
+      });
+    }
+    if (dispatch.state === 'outcome_unknown') {
+      const resolved = await this.dispatches.resolveNotAccepted(dispatchId, {
+        userId: staffUserId,
+        reason: input.reason,
+        ...context,
+      });
+      if (!resolved)
+        throw new ConflictException('Dispatch could not be resolved');
+    }
+    const retry = await this.orders.retryVerificationForOrg(
+      order.orgId,
+      order.id,
+    );
+    return { dispatchId, state: 'rejected' as const, retry };
+  }
 
   async resolve(
     staffUserId: string,

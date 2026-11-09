@@ -105,3 +105,9 @@ export class ConfirmedMessageRejection extends Error {
     super('The messaging provider confirmed rejection.');
   }
 }
+
+/**
+ * Akeed refused the send itself, before any request reached the provider, so
+ * the message certainly did not go out.
+ */
+export class LocalMessageRefusal extends ConfirmedMessageRejection {}

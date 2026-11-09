@@ -11,6 +11,7 @@ import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.p
 import type { ResolvedSender } from '../../../shared/ports/sender-resolver.port';
 import {
   ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type FreeFormTextOutcome,
   type MessagingSenderStatus,
   type MessagingPort,
@@ -118,7 +119,7 @@ export class WhatsAppService {
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     if (params.sender?.kind === 'merchant_own' && !this.sendContext)
-      throw new ConfirmedMessageRejection('sender_context_unavailable');
+      throw new LocalMessageRefusal('sender_context_unavailable');
     const context =
       params.sender && this.sendContext
         ? await this.sendContext.resolve(params)
