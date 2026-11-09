@@ -70,7 +70,10 @@ export class AdminChangePreparationService {
       const draft = linked[0];
       const content = draft ? toDraftContent(draft) : (plan?.content ?? null);
       const key = draft?.key ?? counterpart?.key ?? plan?.key ?? null;
-      const twin = templates.find((t) => t.imageTwinOfKey === key);
+      // Ordinary rows have a null twin key too, so a source with no key has no twin.
+      const twin = key
+        ? templates.find((t) => t.imageTwinOfKey === key)
+        : undefined;
       return {
         parent_key: parent.key,
         language: parent.language,
