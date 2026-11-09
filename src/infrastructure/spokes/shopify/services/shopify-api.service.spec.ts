@@ -3,6 +3,7 @@ import { ShopifyApiService } from './shopify-api.service';
 import {
   CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_TEST_COD_ORDER_MUTATION,
+  GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY,
   ORDER_CANCEL_MUTATION,
 } from './shopify-api.service.helpers';
 import { encryptToken } from '../../../../shared/utils/token-encryption.util';
@@ -253,4 +254,53 @@ describe('ShopifyApiService subscription replacement', () => {
       expect(body.variables.replacementBehavior).toBe(replacementBehavior);
     },
   );
+});
+
+describe('ShopifyApiService active subscriptions', () => {
+  const encryptionKey = 'a'.repeat(64);
+  const integration = {
+    platformStoreUrl: 'synthetic.myshopify.com',
+    accessToken: encryptToken('synthetic-shop-token', encryptionKey),
+  } as typeof integrations.$inferSelect;
+
+  function setup(response: unknown) {
+    const post = jest.fn().mockReturnValue(of({ data: response, headers: {} }));
+    const config = {
+      get: (key: string) =>
+        key === 'SHOPIFY_TOKEN_ENCRYPTION_KEY' ? encryptionKey : undefined,
+    };
+    return {
+      post,
+      service: new ShopifyApiService({ post } as never, config as never),
+    };
+  }
+
+  it('lists the installation subscriptions Shopify still bills', async () => {
+    const { service, post } = setup({
+      data: {
+        currentAppInstallation: {
+          activeSubscriptions: [
+            { id: 'gid://shopify/AppSubscription/2', status: 'ACTIVE' },
+            { id: null, status: 'ACTIVE' },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      service.listActiveAppSubscriptions(integration),
+    ).resolves.toEqual([
+      { id: 'gid://shopify/AppSubscription/2', status: 'ACTIVE' },
+    ]);
+    const [, body] = post.mock.calls[0] as [string, { query: string }];
+    expect(body.query).toBe(GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY);
+  });
+
+  it('fails rather than report no subscriptions when Shopify omits the installation', async () => {
+    const { service } = setup({ data: {} });
+
+    await expect(
+      service.listActiveAppSubscriptions(integration),
+    ).rejects.toThrow('Shopify did not return the app installation');
+  });
 });

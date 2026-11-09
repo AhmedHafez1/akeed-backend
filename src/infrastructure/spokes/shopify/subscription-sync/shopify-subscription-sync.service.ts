@@ -8,6 +8,14 @@ import { ShopifyBillingAdapter } from '../services/shopify-billing.adapter';
 import { ShopifyBillingWebhookService } from '../services/shopify-billing-webhook.service';
 import type { ShopifySubscriptionSyncSummary } from './shopify-subscription-sync.constants';
 
+const BLOCKED_STATUSES = new Set([
+  'cancelled',
+  'canceled',
+  'declined',
+  'expired',
+  'frozen',
+]);
+
 function normalize(status: string | null | undefined): string {
   return status?.trim().toLowerCase() ?? '';
 }
@@ -33,6 +41,7 @@ export class ShopifySubscriptionSyncService {
       unchanged: 0,
       corrected: 0,
       ignored: 0,
+      held: 0,
       failed: 0,
     };
     const stores = await this.integrationsRepo.findActiveShopifySubscriptions();
@@ -61,6 +70,35 @@ export class ShopifySubscriptionSyncService {
         if (!current?.isActive || current.id !== store.id) {
           summary.ignored += 1;
           continue;
+        }
+
+        // A plan change whose billing callback never ran leaves the old id
+        // stored: Shopify reports it cancelled while the store pays for the
+        // new one. Blocking it would stop a paying store, so it is held for a
+        // person to look at instead.
+        if (BLOCKED_STATUSES.has(remoteStatus)) {
+          const live = (
+            await this.billing.listActiveAppSubscriptions(current)
+          ).filter(
+            (sub) =>
+              sub.id !== subscriptionId && normalize(sub.status) === 'active',
+          );
+          if (live.length > 0) {
+            summary.held += 1;
+            this.logger.warn(
+              buildBackendLog(ShopifySubscriptionSyncService.name, {
+                action: 'shopify-subscription-reconcile.held',
+                outcome: 'skipped',
+                orgId: store.orgId,
+                integrationId: store.id,
+                shopDomain: store.platformStoreUrl,
+                storedSubscriptionId: subscriptionId,
+                storedSubscriptionStatus: remoteStatus,
+                activeSubscriptionIds: live.map((sub) => sub.id).join(','),
+              }),
+            );
+            continue;
+          }
         }
 
         const outcome = await this.billingWebhook.applySubscriptionStatus(
@@ -104,7 +142,7 @@ export class ShopifySubscriptionSyncService {
     this.logger.log(
       buildBackendLog(ShopifySubscriptionSyncService.name, {
         action: 'shopify-subscription-reconcile.run',
-        outcome: summary.failed > 0 ? 'failure' : 'success',
+        outcome: summary.failed > 0 || summary.held > 0 ? 'failure' : 'success',
         ...summary,
       }),
     );

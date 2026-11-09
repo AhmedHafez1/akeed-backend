@@ -17,6 +17,7 @@ import {
   type AppSubscriptionCreateResponse,
   type AppSubscriptionLineItemsResponse,
   type AppSubscriptionStatusResponse,
+  type ActiveAppSubscriptionsResponse,
   type AppUsageRecordCreateResponse,
   buildSubscriptionLineItems,
   CANCEL_APP_SUBSCRIPTION_MUTATION,
@@ -25,6 +26,7 @@ import {
   CREATE_APP_SUBSCRIPTION_MUTATION,
   CREATE_USAGE_RECORD_MUTATION,
   GET_APP_SUBSCRIPTION_STATUS_QUERY,
+  GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY,
   GET_SUBSCRIPTION_LINE_ITEMS_QUERY,
   getRequestId,
   type GraphQLErrorItem,
@@ -400,6 +402,31 @@ export class ShopifyApiService {
       id: node.id,
       status: node.status,
     };
+  }
+
+  /** The subscriptions Shopify currently bills this installation for. */
+  async listActiveAppSubscriptions(
+    integration: CommerceOutcomeConnection,
+  ): Promise<AppSubscriptionStatusResult[]> {
+    const response = await this.executeGraphql<ActiveAppSubscriptionsResponse>(
+      integration,
+      GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY,
+      {},
+    );
+
+    throwIfGraphQLErrors(
+      response.data.errors,
+      'Shopify active subscriptions errors',
+    );
+
+    const installation = response.data.data?.currentAppInstallation;
+    if (!installation) {
+      throw new Error('Shopify did not return the app installation');
+    }
+
+    return (installation.activeSubscriptions ?? []).flatMap((node) =>
+      node.id && node.status ? [{ id: node.id, status: node.status }] : [],
+    );
   }
 
   async cancelAppSubscription(

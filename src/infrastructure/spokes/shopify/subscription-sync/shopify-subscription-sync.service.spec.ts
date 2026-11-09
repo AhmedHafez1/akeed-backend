@@ -31,7 +31,10 @@ function setup(stores: Array<Record<string, unknown>>) {
     ),
     updateById: jest.fn(),
   };
-  const billing = { getAppSubscriptionStatus: jest.fn() };
+  const billing = {
+    getAppSubscriptionStatus: jest.fn(),
+    listActiveAppSubscriptions: jest.fn().mockResolvedValue([]),
+  };
   const capacityRecovery = { request: jest.fn() };
   // The real webhook rules, so the reconciliation is tested against them.
   const webhookService = new ShopifyBillingWebhookService(
@@ -76,6 +79,38 @@ describe('ShopifySubscriptionSyncService', () => {
     );
     expect(capacityRecovery.request).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ checked: 1, corrected: 1, failed: 0 });
+  });
+
+  it('holds a store that Shopify bills through a newer subscription', async () => {
+    const { service, integrationsRepo, billing } = setup([makeStore()]);
+    billing.getAppSubscriptionStatus.mockResolvedValue({
+      id: SUB,
+      status: 'CANCELLED',
+    });
+    billing.listActiveAppSubscriptions.mockResolvedValue([
+      { id: 'gid://shopify/AppSubscription/NEWER', status: 'ACTIVE' },
+    ]);
+
+    const summary = await service.reconcileAll();
+
+    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ checked: 1, corrected: 0, held: 1 });
+  });
+
+  it('leaves a store untouched when its active subscriptions cannot be read', async () => {
+    const { service, integrationsRepo, billing } = setup([makeStore()]);
+    billing.getAppSubscriptionStatus.mockResolvedValue({
+      id: SUB,
+      status: 'CANCELLED',
+    });
+    billing.listActiveAppSubscriptions.mockRejectedValue(
+      new Error('Shopify unavailable'),
+    );
+
+    const summary = await service.reconcileAll();
+
+    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ corrected: 0, failed: 1 });
   });
 
   it('restores a frozen store that Shopify reports as active again', async () => {

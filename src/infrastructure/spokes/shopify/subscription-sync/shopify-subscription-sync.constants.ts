@@ -25,5 +25,7 @@ export interface ShopifySubscriptionSyncSummary {
   unchanged: number;
   corrected: number;
   ignored: number;
+  /** Not blocked: Shopify bills the store through a different subscription. */
+  held: number;
   failed: number;
 }
