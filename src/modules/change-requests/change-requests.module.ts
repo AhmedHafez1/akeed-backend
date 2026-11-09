@@ -4,6 +4,7 @@ import { CommerceOutcomeModule } from '../commerce-outcomes/commerce-outcome.mod
 import { VerificationAutomationQueueModule } from '../verification-automation/verification-automation-queue.module';
 import { ChangeRequestLifecycleService } from './change-request-lifecycle.service';
 import { ChangeRequestAcknowledgmentService } from './change-request-acknowledgment.service';
+import { ChangeRequestEffectsService } from './change-request-effects.service';
 
 /**
  * Customer change requests: the domain commands later stories call from the
@@ -19,7 +20,12 @@ import { ChangeRequestAcknowledgmentService } from './change-request-acknowledgm
   providers: [
     ChangeRequestLifecycleService,
     ChangeRequestAcknowledgmentService,
+    ChangeRequestEffectsService,
   ],
-  exports: [ChangeRequestLifecycleService, ChangeRequestAcknowledgmentService],
+  exports: [
+    ChangeRequestLifecycleService,
+    ChangeRequestAcknowledgmentService,
+    ChangeRequestEffectsService,
+  ],
 })
 export class ChangeRequestsModule {}

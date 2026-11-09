@@ -699,6 +699,7 @@ describe('WooCommerce outcome synchronization PostgreSQL contract', () => {
       '0094_change_request_reconfirmation.sql',
       // The shared outcome-sync table.
       '0049_commerce_outcome_syncs.sql',
+      '0095_change_request_notifications.sql',
     ])
       await migrate(name);
     // Outcome sync has no migration of its own: it runs on the connection

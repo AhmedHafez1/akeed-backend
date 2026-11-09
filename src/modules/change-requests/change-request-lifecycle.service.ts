@@ -78,6 +78,21 @@ export class ChangeRequestLifecycleService {
       }),
     );
     if (result.outcome === 'opened') {
+      try {
+        await this.automation?.enqueueChangeRequestEffects({
+          changeRequestId: result.request.id,
+          orgId: result.request.orgId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          buildBackendLog(ChangeRequestLifecycleService.name, {
+            action: 'change-request-effects-enqueue',
+            outcome: 'retry',
+            orgId: result.request.orgId,
+            ...normalizeError(error),
+          }),
+        );
+      }
       await this.stopPendingAutomation(result.request);
     }
     return result;

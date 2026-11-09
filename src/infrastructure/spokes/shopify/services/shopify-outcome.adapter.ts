@@ -25,6 +25,11 @@ const OUTCOME_TAGS = {
 } as const satisfies Partial<Record<CommerceOutcomeAction, string>>;
 
 type TaggingAction = keyof typeof OUTCOME_TAGS;
+export const CHANGE_REQUEST_TAG = 'Akeed: Change Requested';
+const OWNED_STATUS_TAGS = [
+  ...new Set<string>(Object.values(OUTCOME_TAGS)),
+  CHANGE_REQUEST_TAG,
+];
 
 /** Read when Shopify names a wait in seconds or as a date. */
 function retryAfterMs(header: unknown): number | undefined {
@@ -133,9 +138,10 @@ export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
   // that automatic cancellation resolves itself, so a sync row for it would
   // stay pending.
   readonly tracksSynchronization = true;
-  readonly trackedActions: ReadonlySet<CommerceOutcomeAction> = new Set(
-    Object.keys(OUTCOME_TAGS) as TaggingAction[],
-  );
+  readonly trackedActions: ReadonlySet<CommerceOutcomeAction> = new Set([
+    ...(Object.keys(OUTCOME_TAGS) as TaggingAction[]),
+    'change_request_reconciliation',
+  ]);
 
   constructor(private readonly shopify: ShopifyApiService) {}
 
@@ -169,6 +175,38 @@ export class ShopifyOutcomeAdapter implements CommerceOutcomeAdapter {
         : { status: 'accepted_without_reference' };
     }
     try {
+      if (action === 'change_request_reconciliation') {
+        const current = request.changeRequestState;
+        if (!current)
+          return {
+            status: 'permanent_failure',
+            errorCode: 'change_request_context_unavailable',
+          };
+        const tag = current.open
+          ? CHANGE_REQUEST_TAG
+          : current.status === 'confirmed'
+            ? OUTCOME_TAGS.customer_confirmation
+            : current.status === 'canceled'
+              ? OUTCOME_TAGS.customer_cancellation
+              : current.status === 'no_reply'
+                ? OUTCOME_TAGS.automatic_no_reply_tagging
+                : current.status === 'no_whatsapp'
+                  ? OUTCOME_TAGS.automatic_no_whatsapp_tagging
+                  : null;
+        await this.shopify.removeOrderTags(
+          connection,
+          externalOrderId,
+          OWNED_STATUS_TAGS.filter((owned) => owned !== tag),
+        );
+        if (tag)
+          await this.shopify.addOrderTag(
+            connection,
+            externalOrderId,
+            tag,
+            10_000,
+          );
+        return { status: 'applied' };
+      }
       await this.shopify.addOrderTag(
         connection,
         externalOrderId,

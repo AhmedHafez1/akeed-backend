@@ -24,6 +24,7 @@ export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';
 
 export enum VerificationAutomationJobType {
   CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP = 'verification.change_request_acknowledgment_sweep',
+  CHANGE_REQUEST_EFFECTS = 'verification.change_request_effects',
   SENDER_RETRY = 'verification.sender_retry',
   SENDER_FALLBACK = 'verification.sender_fallback',
   SENDER_RECOVERY_SWEEP = 'verification.sender_recovery_sweep',
@@ -38,6 +39,7 @@ export enum VerificationAutomationJobType {
 import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
 
 export interface VerificationAutomationJobPayload {
+  changeRequestId?: string;
   dispatchId?: string;
   verificationId: string;
   orgId: string;

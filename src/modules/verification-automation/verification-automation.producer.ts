@@ -61,6 +61,28 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
     private readonly queue: Queue<VerificationAutomationJobPayload>,
   ) {}
 
+  async enqueueChangeRequestEffects(params: {
+    changeRequestId: string;
+    orgId: string;
+    dueAt?: Date;
+  }): Promise<void> {
+    const due = params.dueAt ?? new Date();
+    await this.queue.add(
+      VerificationAutomationJobType.CHANGE_REQUEST_EFFECTS,
+      {
+        changeRequestId: params.changeRequestId,
+        orgId: params.orgId,
+        verificationId: '',
+        scheduledAt: due.toISOString(),
+      },
+      {
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
+        jobId: `change-request-${params.changeRequestId}-effects${params.dueAt ? `-${due.getTime()}` : ''}`,
+        delay: Math.max(0, due.getTime() - Date.now()),
+      },
+    );
+  }
+
   onApplicationBootstrap(): void {
     void this.queue
       .upsertJobScheduler(

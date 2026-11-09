@@ -57,6 +57,7 @@ import {
 import {
   selectOutcomeSync,
   toRemoteSync,
+  changeRequestSyncRevision,
   type RemoteSyncDto,
 } from '../../shared/verification/outcome-sync';
 import type {
@@ -453,7 +454,11 @@ export class VerificationsService {
           cancellation_operation: this.readCancellationOperation(
             verification.metadata,
           ),
-          remote_sync: this.readRemoteSync(verification, syncRows),
+          remote_sync: this.readRemoteSync(
+            verification,
+            syncRows,
+            changeRequestOf(verification.id),
+          ),
           id: verification.id,
           status: verification.status as VerificationStatus,
           reason: readVerificationReason(verification.metadata),
@@ -1292,7 +1297,14 @@ export class VerificationsService {
     this.logger.log(
       buildBackendLog(VerificationsService.name, {
         action: 'verification-outcome-sync-retry',
-        outcome: current?.state === 'failed' ? 'failure' : 'success',
+        outcome:
+          current?.state === 'succeeded'
+            ? 'success'
+            : current?.state === 'pending'
+              ? 'retry'
+              : current?.state === 'unsupported'
+                ? 'skipped'
+                : 'failure',
         orgId,
         verificationId,
         synchronizationState: current?.state,
@@ -1310,8 +1322,10 @@ export class VerificationsService {
       id: string;
       status: string | null;
       cancellationSource?: string | null;
+      confirmationCycle?: number;
     },
     rows: Parameters<typeof selectOutcomeSync>[1],
+    changeRequest: ChangeRequestSummaryDto | null = null,
   ): RemoteSyncDto | null {
     if (isHeldRow(verification)) return null;
     const row = selectOutcomeSync(
@@ -1322,7 +1336,17 @@ export class VerificationsService {
       },
       rows,
     );
-    return row ? toRemoteSync(row) : null;
+    if (!row) return null;
+    const requestId = changeRequest?.id ?? row.desiredRevision?.split(':')[1];
+    const revision = requestId
+      ? changeRequestSyncRevision({
+          confirmationCycle: verification.confirmationCycle ?? 1,
+          requestId,
+          open: Boolean(changeRequest),
+          status: verification.status,
+        })
+      : undefined;
+    return toRemoteSync(row, revision);
   }
 
   async cancelNoReplyOrder(
@@ -1687,11 +1711,18 @@ export class VerificationsService {
 function toChangeRequestSummary(row: {
   request: ChangeRequestRow;
   acknowledgment: ChangeRequestEffectRow | null;
+  merchantEmail?: ChangeRequestEffectRow | null;
 }): ChangeRequestSummaryDto {
   return {
     id: row.request.id,
     opened_at: row.request.openedAt,
     confirmation_cycle: row.request.confirmationCycle,
+    merchant_email: row.merchantEmail
+      ? {
+          status: row.merchantEmail.status,
+          reason: row.merchantEmail.reason ?? null,
+        }
+      : null,
     acknowledgment: row.acknowledgment
       ? {
           status: row.acknowledgment.status,

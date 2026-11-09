@@ -154,6 +154,8 @@ const REDACTED_KEYS = new Set([
   // Where usage alerts are emailed, and the email provider's key.
   'notification_email',
   'notificationemail',
+  'emailpayload',
+  'email_payload',
   'recipient',
   'resend_api_key',
   // What a customer ordered and where it ships (detailed confirmation). A

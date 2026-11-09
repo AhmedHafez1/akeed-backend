@@ -4,6 +4,23 @@ import type {
 } from '../commerce/commerce-outcome';
 import { isMerchantCancellationSource } from './verification-needs-action';
 
+/** Transport receipts do not change the platform marker an open request needs. */
+export function changeRequestSyncRevision(input: {
+  confirmationCycle: number;
+  requestId: string;
+  open: boolean;
+  status: string | null;
+}): string {
+  const marker = input.open
+    ? 'change_requested'
+    : ['confirmed', 'canceled', 'no_reply', 'no_whatsapp'].includes(
+          input.status ?? '',
+        )
+      ? input.status
+      : 'awaiting_confirmation';
+  return `${input.confirmationCycle}:${input.requestId}:${input.open ? 'open' : 'resolved'}:${marker}`;
+}
+
 /** The part of a sync row the dashboard needs. */
 export interface OutcomeSyncRow {
   correlationId: string;
@@ -13,6 +30,7 @@ export interface OutcomeSyncRow {
   requiresAssistance: boolean;
   retryInBackground: boolean;
   updatedAt: string;
+  desiredRevision?: string | null;
 }
 
 /**
@@ -65,6 +83,13 @@ export function selectOutcomeSync<Row extends OutcomeSyncRow>(
   },
   rows: readonly Row[],
 ): Row | undefined {
+  const marker = rows.find(
+    (row) =>
+      row.correlationId === verification.id &&
+      row.action === 'change_request_reconciliation' &&
+      row.state !== 'unsupported',
+  );
+  if (marker) return marker;
   const action = outcomeActionFor(
     verification.status,
     verification.cancellationSource,
@@ -75,7 +100,23 @@ export function selectOutcomeSync<Row extends OutcomeSyncRow>(
   );
 }
 
-export function toRemoteSync(row: OutcomeSyncRow): RemoteSyncDto {
+export function toRemoteSync(
+  row: OutcomeSyncRow,
+  expectedRevision?: string,
+): RemoteSyncDto {
+  if (
+    row.action === 'change_request_reconciliation' &&
+    expectedRevision &&
+    row.desiredRevision !== expectedRevision
+  )
+    return {
+      state: 'pending',
+      action: 'change_request_reconciliation',
+      error_code: null,
+      requires_assistance: false,
+      retryable: false,
+      updated_at: row.updatedAt,
+    };
   return {
     state: row.state as CommerceOutcomeSyncState,
     action: row.action as CommerceOutcomeAction,

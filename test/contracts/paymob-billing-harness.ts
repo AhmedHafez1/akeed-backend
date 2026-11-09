@@ -232,6 +232,7 @@ export function paymobBillingHarness(
     await migrate('0092_change_requests.sql');
     await migrate('0093_change_request_messaging.sql');
     await migrate('0094_change_request_reconfirmation.sql');
+    await migrate('0095_change_request_notifications.sql');
   }
 
   /** An active Standalone merchant holding `quantity` granted credits. */

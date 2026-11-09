@@ -1282,6 +1282,7 @@ export function assembleConformanceWorld(
       '0093_change_request_messaging.sql',
       '0094_change_request_reconfirmation.sql',
       ...options.migrations,
+      '0095_change_request_notifications.sql',
     ])
       await migrate(name);
     // Fault injection for the install callback: while the flag row says so,

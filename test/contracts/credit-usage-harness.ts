@@ -153,6 +153,7 @@ export function creditUsageHarness() {
       tables.whatsappTemplateDrafts,
       tables.verificationAutoCancellations,
       tables.verificationAutoCancellationEvents,
+      tables.commerceOutcomeSyncs,
       tables.whatsappConnectionTemplates,
     ])
       await scaffold(table);
@@ -188,6 +189,7 @@ export function creditUsageHarness() {
     await migrate('0083_merchant_acknowledgments.sql');
     await migrate('0093_change_request_messaging.sql');
     await migrate('0094_change_request_reconfirmation.sql');
+    await migrate('0095_change_request_notifications.sql');
   }
 
   async function merchant(quantity = 3, platformType = 'standalone') {

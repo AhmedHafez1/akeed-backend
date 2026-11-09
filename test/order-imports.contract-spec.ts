@@ -387,6 +387,7 @@ describe('order imports PostgreSQL contract', () => {
         '0092_change_requests.sql',
         '0093_change_request_messaging.sql',
         '0094_change_request_reconfirmation.sql',
+        '0095_change_request_notifications.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

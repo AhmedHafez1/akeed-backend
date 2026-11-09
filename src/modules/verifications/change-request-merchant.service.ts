@@ -66,6 +66,14 @@ export interface ChangeRequestView {
     last_error: string | null;
   };
   history: ChangeRequestHistoryItem[];
+  merchant_email: {
+    status: ChangeRequestEffectStatus | null;
+    reason: string | null;
+  };
+  platform_sync: {
+    status: ChangeRequestEffectStatus | null;
+    reason: string | null;
+  };
 }
 
 export interface ChangeRequestResolutionResponse {
@@ -100,6 +108,14 @@ export function toChangeRequestView(
   const ack = effects.find(
     (effect) => effect.kind === 'customer_acknowledgment',
   );
+  const email = effects.find((effect) => effect.kind === 'merchant_email');
+  const marker = effects.find(
+    (effect) =>
+      effect.kind ===
+      (request.status === 'open'
+        ? 'platform_marker_set'
+        : 'platform_marker_clear'),
+  );
   return {
     id: request.id,
     verification_id: request.verificationId,
@@ -111,6 +127,14 @@ export function toChangeRequestView(
     acknowledgment: {
       status: ack?.status ?? null,
       reason: ack?.reason ?? null,
+    },
+    merchant_email: {
+      status: email?.status ?? null,
+      reason: email?.reason ?? null,
+    },
+    platform_sync: {
+      status: marker?.status ?? null,
+      reason: marker?.reason ?? null,
     },
     reconfirmation: {
       state: request.reconfirmationState ?? null,

@@ -24,6 +24,19 @@ export type TagsAddResponse = GraphQLResponse<{
   };
 }>;
 
+export type TagsRemoveResponse = GraphQLResponse<{
+  tagsRemove?: { node?: { id: string }; userErrors?: GraphQLUserError[] };
+}>;
+
+export const TAGS_REMOVE_MUTATION = `
+  mutation tagsRemove($id: ID!, $tags: [String!]!) {
+    tagsRemove(id: $id, tags: $tags) {
+      node { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 export type ShopNameResponse = GraphQLResponse<{
   shop?: {
     name?: string;
