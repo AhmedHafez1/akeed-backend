@@ -67,15 +67,26 @@ Run from `akeed-backend`. Detailed local logs are `.tmp/cr05-*.log`; successful 
 
 The first E04.5 run failed because an exact sender-template response assertion lacked the newly added `driftReason` and `lastSyncedAt` fields. The corrected assertion retains exact equality and explicitly checks their null values for the unsynced fixture. No provider approval is inferred. The subsequent complete billing runner passed.
 
-The existing verification-overview contract was rerun: 32 passed, one skipped, one failed (`capacity.renew_plan_id: null` absent from its exact expected object). This unrelated baseline mismatch existed in the starting implementation and remains a red broader check; it is not reported as passing or silently relaxed.
+The existing verification-overview contract was rerun: 32 passed, one skipped, one failed (`capacity.renew_plan_id: null` absent from its exact expected object). This was a genuine historical failure at the initial snapshot; the authorized follow-up below fixes it and reruns the contract without relaxing exact equality.
 
 ## Conclusions and remaining prerequisites
 
-Implementation evidence covers the approved change-request behavior at the indicated local layers. Passing fake-backed contracts is not a production release certification. Final results: 37 new integrated cases and 20 fixture browser checks passed. Backend typecheck, builds, logs, targeted lint/format and frontend lint/format pass. The standard frontend typecheck remains failed on generated route/layout declarations; its separate application-only check passes. See the associated [machine-readable summary](change-requests-summary.json) and frontend record.
+Implementation evidence covers the approved change-request behavior at the indicated local layers. Passing fake-backed contracts is not a production release certification. Final results: 37 new integrated cases and 20 fixture browser checks passed. Backend typecheck, builds, logs, targeted lint/format and frontend lint/format pass. The initial standard frontend typecheck failure is resolved by the authorized project-boundary fix below; production and smoke projects now both pass their standard checks. See the associated [machine-readable summary](change-requests-summary.json) and frontend record.
 
-- Code/test baseline: the unrelated overview expectation remains unresolved; the standard frontend generated Next typecheck issue is tracked in the frontend record.
+- Code/test baseline: both previously recorded blockers are resolved in the follow-up below. Historical failure logs are retained separately from current passing checks.
 - Unverified behavior: actual external authentication, Shopify Admin frame, live provider acceptance/delivery, real webhook timing and production worker operation. Native proofreading across all languages is still recommended.
 - External prerequisites: real approved sender/language/style counterparts, merchant-owned provisioning, email domain/configuration/recipient, connected store permissions/settings and authorized migration/deployment verification. Provider state was not inspected.
 - Deployment, production migration, feature activation, live template submission and real notifications: **not performed**.
 
 Follow [the release/recovery runbook](../../docs/CHANGE_REQUEST_RELEASE_RUNBOOK.md). Keep future feature use off until these release prerequisites and the environment's smoke checks are satisfied; retain compatible consumers during rollback.
+
+## Authorized follow-up: close the two code blockers
+
+The owner explicitly expanded the task to fix the existing frontend generated-type errors and overview contract mismatch, then commit/push on develop. Production business behavior and billing rules are unchanged.
+
+- Frontend root cause: the production compiler included the independent smoke app's ignored `next-env.d.ts`, which imported fixture route globals into the production `LayoutProps` namespace. The root project now excludes that separate app, while retaining production generated validators. `npm run typecheck` checks both the production compiler and the existing dedicated smoke compiler. File-list inspection verifies separate route declaration graphs. No error suppression, generated-file patch, strictness reduction or production-route exclusion was introduced.
+- Overview root cause: the API correctly includes `renew_plan_id`; the exact contract assertion omitted it. The assertion now includes null for the original unpaid fixture. Three additional PostgreSQL cases verify active Pro renewal, null for cancelled/frozen subscriptions and independence from another tenant. Exact response equality remains.
+- Passed: corrected overview contract **36 passed / 1 optional SQL benchmark skipped**, affected verification/billing policy unit tests **104 passed**, backend TypeScript/targeted lint/log checks, frontend production build/lint, both standard TypeScript projects, and the change-request HTTP/browser integration suite **37 passed**. Fresh full frontend Vitest: **193 files / 2,328 tests passed**. Standard frontend `npx tsc --noEmit` and the combined production/smoke check pass after build and fixture regeneration; final logs are in the summary.
+- Reproduction: `pwsh -NoProfile -File scripts/test-verification-overview-contract.ps1`; `node node_modules/jest/bin/jest.js --runInBand --silent src/modules/verifications/verifications.service.spec.ts src/shared/billing/usage-alert.policy.spec.ts`; backend `npx tsc --noEmit -p tsconfig.json`; frontend `npm run typecheck`, `npm run build`, `npm run lint` and the existing full Vitest command. Exact final logs/checks and source fingerprints are in the [summary](change-requests-summary.json).
+
+The two code blockers no longer prevent release. Actual sender-specific template approvals, environment/worker readiness and provider smoke evidence remain separate external prerequisites; no production deployment or activation was performed.

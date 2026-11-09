@@ -545,6 +545,32 @@ describe('overview aggregate', () => {
     ).resolves.toEqual([{ currency: 'USD', amount: '30.00' }]);
   });
 
+  it.each([
+    ['active', 'pro'],
+    ['cancelled', null],
+    ['frozen', null],
+  ] as const)(
+    'exposes renewal only for the current tenant subscription (%s)',
+    async (billingStatus, expectedPlanId) => {
+      const [before] = await client<
+        { billing_status: string | null }[]
+      >`SELECT billing_status FROM integrations WHERE id = ${integrationA}`;
+      try {
+        await client`UPDATE integrations SET billing_status = ${billingStatus} WHERE id = ${integrationA}`;
+        const overview = await service.getOverview(orgA, {
+          date_range: 'last_30_days',
+        });
+        expect(overview.capacity?.renew_plan_id).toBe(expectedPlanId);
+        const other = await service.getOverview(orgB, {
+          date_range: 'last_30_days',
+        });
+        expect(other.capacity?.renew_plan_id).toBeNull();
+      } finally {
+        await client`UPDATE integrations SET billing_status = ${before.billing_status} WHERE id = ${integrationA}`;
+      }
+    },
+  );
+
   it('composes the dashboard for one shop', async () => {
     const overview = await service.getOverview(orgA, {
       date_range: 'last_30_days',
@@ -573,6 +599,7 @@ describe('overview aggregate', () => {
       mode: 'plan',
       remaining: 3,
       action: 'upgrade',
+      renew_plan_id: null,
       reset_at: '2026-11-01T00:00:00.000Z',
     });
     // Two customer replies are too few to call a typical time.
