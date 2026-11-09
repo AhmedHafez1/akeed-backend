@@ -1,0 +1,326 @@
+{
+  "observedOn": "2026-11-09",
+  "timezone": "Africa/Cairo",
+  "observedAtUtc": "2026-11-09T10:27:59.957Z",
+  "implementationVerification": "Local feature checks passed with explicit broader baseline failures and external limits.",
+  "productionReleaseReadiness": "not established; do not activate based only on this evidence",
+  "snapshots": {
+    "backend": {
+      "branch": "develop",
+      "parentCommit": "a49e3ec506a22378ece08b626a4a8118bd3ec289",
+      "sourceFiles": 1488,
+      "workingTreeSourceSha256": "08fd3b2c38e89dcebc6ce5867404b2d631caa04e4adf51adc342296fe83c3a1b",
+      "hashConvention": "Sorted path + NUL + raw CRLF working-tree bytes; includes tracked/untracked relevant source/tests/config, excludes documentation/release summaries and all environment files."
+    },
+    "frontend": {
+      "branch": "develop",
+      "parentCommit": "2de7592f5db53a63aa163133d4b9b38a46dcead2",
+      "sourceFiles": 1002,
+      "workingTreeSourceSha256": "76b646a12af2e202d0b8892e489f547b6ae92f682fe0dcdfd53cb7be1708bda6",
+      "hashConvention": "Sorted path + NUL + raw CRLF working-tree bytes; includes tracked/untracked relevant source/tests/config, excludes documentation/release summaries and all environment files."
+    }
+  },
+  "checks": [
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-change-requests-contract.ps1",
+      "status": "pass",
+      "passed": 24,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-change-requests-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-change-request-messaging-contract.ps1",
+      "status": "pass",
+      "passed": 24,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-change-request-messaging-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-change-request-reconfirmation-contract.ps1",
+      "status": "pass",
+      "passed": 13,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-change-request-reconfirmation-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-change-request-notifications-contract.ps1",
+      "status": "pass",
+      "passed": 22,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-change-request-notifications-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-easyorders-outcome-sync-contract.ps1",
+      "status": "pass",
+      "passed": 33,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-easyorders-outcome-sync-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-woocommerce-outcome-sync-contract.ps1",
+      "status": "pass",
+      "passed": 68,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-woocommerce-outcome-sync-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-auto-cancellation-contract.ps1",
+      "status": "pass",
+      "passed": 10,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-auto-cancellation-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-merchant-webhook-routing-contract.ps1",
+      "status": "pass",
+      "passed": 21,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-merchant-webhook-routing-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-meta-webhook-events-contract.ps1",
+      "status": "pass",
+      "passed": 20,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-meta-webhook-events-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-manual-order-ingestion-contract.ps1",
+      "status": "pass",
+      "passed": 15,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-manual-order-ingestion-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-order-imports-contract.ps1",
+      "status": "pass",
+      "passed": 65,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-order-imports-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-order-api-contract.ps1",
+      "status": "pass",
+      "passed": 61,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-order-api-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-whatsapp-template-registry-contract.ps1",
+      "status": "pass",
+      "passed": 28,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-whatsapp-template-registry-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-whatsapp-template-sync-contract.ps1",
+      "status": "pass",
+      "passed": 24,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-whatsapp-template-sync-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-whatsapp-template-authoring-contract.ps1",
+      "status": "pass",
+      "passed": 37,
+      "method": "disposable PostgreSQL; synthetic provider/identity boundaries",
+      "log": ".tmp/cr05-test-whatsapp-template-authoring-contract.log"
+    },
+    {
+      "repository": "backend",
+      "command": "node node_modules/jest/bin/jest.js --runInBand --silent --json --outputFile=.tmp/cr05-unit-results.json",
+      "status": "pass",
+      "suites": 384,
+      "passed": 8507,
+      "log": ".tmp/cr05-unit-results.json",
+      "snapshot": "starting production source unchanged; final changes only verification tooling, assertion metadata and documentation"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-change-request-release-contract.ps1 -Browser",
+      "status": "pass",
+      "passed": 37,
+      "httpCases": 36,
+      "integratedBrowserCases": 1,
+      "log": ".tmp/cr05-release-browser-contract-final.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-e045-contracts.ps1",
+      "status": "pass",
+      "steps": 14,
+      "passed": 314,
+      "log": ".tmp/cr05-test-e045-contracts-final.log"
+    },
+    {
+      "repository": "backend",
+      "command": "npm run test:core:platform-neutral",
+      "status": "pass",
+      "suites": 25,
+      "passed": 341,
+      "log": ".tmp/cr05-platform-neutral.log"
+    },
+    {
+      "repository": "backend",
+      "command": "pwsh -NoProfile -File scripts/test-verification-overview-contract.ps1",
+      "status": "fail",
+      "passed": 32,
+      "failed": 1,
+      "skipped": 1,
+      "reason": "Unchanged baseline exact capacity assertion omits renew_plan_id:null; optional SQL benchmark skipped without PERFORMANCE_AUDIT_SQL_OUTPUT.",
+      "log": ".tmp/cr05-test-verification-overview-contract.log"
+    },
+    {
+      "repository": "frontend",
+      "command": "npx vitest run --maxWorkers=2 --reporter=json --outputFile=.tmp/cr05-vitest-results.json",
+      "status": "pass",
+      "files": 193,
+      "passed": 2328,
+      "log": ".tmp/cr05-vitest-results.json",
+      "snapshot": "starting production source unchanged; changes are test tooling and documentation"
+    },
+    {
+      "repository": "frontend",
+      "command": "npm run e2e:change-requests",
+      "status": "pass",
+      "passed": 20,
+      "locales": [
+        "en",
+        "ar",
+        "ur",
+        "es",
+        "fr",
+        "tr"
+      ],
+      "skins": [
+        "standalone",
+        "embedded"
+      ],
+      "log": ".tmp/cr05-browser-final.log",
+      "results": ".tmp/cr05-playwright/results.json"
+    },
+    {
+      "repository": "frontend",
+      "command": "npx tsc --noEmit (also final direct node node_modules/typescript/bin/tsc --noEmit)",
+      "status": "fail",
+      "reason": "Reproduced pre-existing generated Next TS2344 route/layout conflicts in .next/types/validator.ts; not a passing standard typecheck.",
+      "log": ".tmp/cr05-tsc-final.log"
+    },
+    {
+      "repository": "frontend",
+      "command": "PowerShell stdin Node TypeScript API check documented in test/e2e/CHANGE_REQUEST_VERIFICATION.md",
+      "status": "pass",
+      "rootFiles": 978,
+      "errors": 0,
+      "limitation": "Excludes generated Next caches and next-env.d.ts; supplements rather than replaces the failed standard command.",
+      "log": ".tmp/cr05-application-tsc-final.log"
+    },
+    {
+      "repository": "backend",
+      "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+      "status": "pass",
+      "log": ".tmp/cr05-tsc-final.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "repository": "backend",
+      "command": "npm run build",
+      "status": "pass",
+      "log": ".tmp/cr05-build.log",
+      "logSha256": "043b77006d7b6e0bbc240baedc15fb4a36944d1360494958ad9ce8f806840741"
+    },
+    {
+      "repository": "backend",
+      "command": "npm run log:check",
+      "status": "pass",
+      "log": ".tmp/cr05-logs-final.log",
+      "logSha256": "56090d5307f85096823905abfe233b34231c51f6252a20170afd7ed215372285"
+    },
+    {
+      "repository": "backend",
+      "command": "node node_modules/eslint/bin/eslint.js test/change-request-release.contract-spec.ts test/whatsapp-sender.contract-spec.ts",
+      "status": "pass",
+      "log": ".tmp/cr05-eslint-final.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "repository": "backend",
+      "command": "node node_modules/prettier/bin/prettier.cjs --check --end-of-line crlf package.json test/change-request-release.contract-spec.ts test/jest-change-request-release-contract.json test/whatsapp-sender.contract-spec.ts",
+      "status": "pass",
+      "log": ".tmp/cr05-prettier-final.log",
+      "logSha256": "f20510a9da4717c51c4cffee6d0dd88d6c9a723d0a83711d01216f5b48961283"
+    },
+    {
+      "repository": "frontend",
+      "command": "npm run lint",
+      "status": "pass",
+      "log": ".tmp/cr05-lint-final.log",
+      "logSha256": "bffd7ccbf290c986f24fb5e31f18f2929c6046e23b5e19ee2c0e734cd954b1a0"
+    },
+    {
+      "repository": "frontend",
+      "command": "npm run build",
+      "status": "pass",
+      "log": ".tmp/cr05-build.log",
+      "logSha256": "04a2b7e2b4daae6c079ed1b4d961b1d9525e3ec2c63fb9bb5a66b790b2504bb7"
+    },
+    {
+      "repository": "frontend",
+      "command": "node node_modules/eslint/bin/eslint.js playwright.change-requests.config.ts test/e2e/change-request-release.spec.ts test/e01-smoke/next.config.ts 'test/e01-smoke/app/[locale]/fixtureApi.ts'",
+      "status": "pass",
+      "log": ".tmp/cr05-touched-eslint-final.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "repository": "frontend",
+      "command": "node node_modules/prettier/bin/prettier.cjs --check --end-of-line crlf package.json playwright.change-requests.config.ts test/e2e/change-request-release.spec.ts test/e01-smoke/next.config.ts 'test/e01-smoke/app/[locale]/fixtureApi.ts'",
+      "status": "pass",
+      "log": ".tmp/cr05-prettier-final.log",
+      "logSha256": "f20510a9da4717c51c4cffee6d0dd88d6c9a723d0a83711d01216f5b48961283"
+    }
+  ],
+  "notRun": [
+    {
+      "method": "live/test-provider sandbox",
+      "reason": "Live Meta/Shopify/EasyOrders/WooCommerce/email operations and real notifications are excluded from this task; actual provider approvals/configuration were not inspected."
+    },
+    {
+      "method": "production external authentication/Admin frame",
+      "reason": "Synthetic token validator and fixture shell; no authenticated production session used."
+    },
+    {
+      "method": "production queue/migration rehearsal",
+      "reason": "Only disposable predecessor database fixtures and directly invoked/controlled effect consumers; no shared migration or production Redis/worker operation."
+    }
+  ],
+  "remaining": {
+    "featureCodeDefects": [],
+    "baselineFailures": [
+      "Frontend generated Next type declarations",
+      "Verification-overview exact capacity expectation"
+    ],
+    "externalPrerequisites": [
+      "Actual approved/provisioned counterpart per selected sender/language/style",
+      "Usable email domain/configuration/recipient",
+      "Connected store settings and permissions",
+      "Authorized deployment/migration/worker verification and provider smoke tests"
+    ]
+  },
+  "deploymentPerformed": false,
+  "featureActivated": false
+}
