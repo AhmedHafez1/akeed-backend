@@ -57,6 +57,12 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   } | null;
 }>;
 
+export type ActiveAppSubscriptionsResponse = GraphQLResponse<{
+  currentAppInstallation?: {
+    activeSubscriptions?: { id?: string; status?: string }[] | null;
+  } | null;
+}>;
+
 export type AppSubscriptionCancelResponse = GraphQLResponse<{
   appSubscriptionCancel?: {
     appSubscription?: {
@@ -168,6 +174,17 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
   query GetAppSubscriptionStatus($id: ID!) {
     node(id: $id) {
       ... on AppSubscription {
+        id
+        status
+      }
+    }
+  }
+`;
+
+export const GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY = `
+  query GetActiveAppSubscriptions {
+    currentAppInstallation {
+      activeSubscriptions {
         id
         status
       }
