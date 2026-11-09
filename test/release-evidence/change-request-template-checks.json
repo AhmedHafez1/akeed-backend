@@ -37,19 +37,12 @@
     {
       "command": "template registry / sync / authoring PostgreSQL runners",
       "result": "passed",
-      "tests": [
-        28,
-        24,
-        37
-      ]
+      "tests": [28, 24, 37]
     },
     {
       "command": "change-request messaging / reconfirmation PostgreSQL runners",
       "result": "passed",
-      "tests": [
-        25,
-        13
-      ]
+      "tests": [25, 13]
     },
     {
       "command": "pwsh -NoProfile -File scripts/test-change-request-release-contract.ps1 -Browser",
