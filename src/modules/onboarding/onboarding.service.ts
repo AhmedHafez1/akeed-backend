@@ -43,6 +43,7 @@ import {
   templatesAwaitingLaunch,
 } from '../../shared/messaging/template-selector';
 import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
+import { CHANGE_BUTTON_LABELS } from '../../shared/messaging/change-request-messaging';
 import {
   storeFirstSendKey,
   storeReminderKey,
@@ -431,6 +432,13 @@ export class OnboardingService {
     const retiredKeys = TEMPLATE_LANGUAGES.every(isLive)
       ? []
       : ((await this.templateRegistry.retiredTemplateKeys?.()) ?? []);
+    const changeRequestStyles =
+      (await this.onboardingState.changeRequestStyles?.(
+        integration,
+        TEMPLATE_LANGUAGES.filter(isLive).flatMap((language) =>
+          selectableTemplates(templates, language),
+        ),
+      )) ?? new Set<string>();
 
     return {
       languages: [...TEMPLATE_LANGUAGES],
@@ -444,9 +452,10 @@ export class OnboardingService {
       ),
       variants: byTemplateLanguage((language) =>
         isLive(language)
-          ? selectableTemplates(templates, language).map((template) =>
-              toTemplateStyleDto(template, this.templateMessages),
-            )
+          ? selectableTemplates(templates, language).map((template) => ({
+              ...toTemplateStyleDto(template, this.templateMessages),
+              changeRequest: changeRequestStyles.has(template.key),
+            }))
           : templatesAwaitingLaunch(templates, language, retiredKeys).map(
               ({ template, reason }) => ({
                 ...toTemplateStyleDto(template, this.templateMessages),
@@ -461,6 +470,9 @@ export class OnboardingService {
         const template = selected[language];
         return template ? this.templateMessages.linesFor(template) : null;
       }),
+      changeButtons: byTemplateLanguage(
+        (language) => CHANGE_BUTTON_LABELS[language],
+      ),
       ...this.messageImprovementSettings(templates, integration),
     };
   }

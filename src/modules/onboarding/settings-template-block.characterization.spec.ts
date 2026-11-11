@@ -178,7 +178,7 @@ function buildOnboardingTestService(
 
 /**
  * The block as it was recorded: the neutral-message keys (`messages`, and
- * `message` on each style) are left out, in their recorded key order, so the
+ * `message` on each style) and the later `changeButtons` are left out, in their recorded key order, so the
  * legacy keys keep being compared byte for byte until the gate removes them.
  *
  * The recording holds Arabic and English, so only their part of the block is
@@ -196,15 +196,22 @@ function legacyTemplateBlock(
     en: byLanguage.en,
   });
   return {
-    ...without(without(template, 'messages'), 'liveLanguages'),
+    ...without(
+      without(without(template, 'messages'), 'liveLanguages'),
+      'changeButtons',
+    ),
     languages: template.languages.filter((language) =>
       RECORDED_LANGUAGES.includes(language),
     ),
     defaults: recorded(template.defaults),
     selected: recorded(template.selected),
     variants: {
-      ar: template.variants.ar.map((style) => without(style, 'message')),
-      en: template.variants.en.map((style) => without(style, 'message')),
+      ar: template.variants.ar.map((style) =>
+        without(without(style, 'message'), 'changeRequest'),
+      ),
+      en: template.variants.en.map((style) =>
+        without(without(style, 'message'), 'changeRequest'),
+      ),
     },
     previews: recorded(template.previews),
   };

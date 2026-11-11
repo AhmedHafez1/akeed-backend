@@ -64,6 +64,10 @@ describe('OnboardingService', () => {
         resolveCurrentIntegration: jest.fn().mockResolvedValue(integration),
         prefillStoreNameIfMissing: jest.fn().mockResolvedValue(integration),
         toState: jest.fn().mockReturnValue(state),
+        changeRequestStyles: jest.fn(
+          (_integration: unknown, styles: { key: string }[]) =>
+            Promise.resolve(new Set([styles[0].key])),
+        ),
       };
       const billingService = {
         getBillingPlans: jest.fn().mockResolvedValue({
@@ -135,6 +139,8 @@ describe('OnboardingService', () => {
         'tr',
       ]);
       expect(result.template.liveLanguages).toEqual(['ar', 'en']);
+      expect(result.template.changeButtons.ar).toBe('طلب تعديل');
+      expect(result.template.changeButtons.en).toBe('Request a change');
       expect(result.template.defaults).toEqual({
         ar: 'standard',
         en: 'friendly',
@@ -154,6 +160,9 @@ describe('OnboardingService', () => {
       expect(
         result.template.variants.ar.map((variant) => variant.variant),
       ).toEqual(['standard', 'egyptian', 'gulf', 'short']);
+      expect(
+        result.template.variants.ar.map((variant) => variant.changeRequest),
+      ).toEqual([true, false, false, false]);
       expect(
         result.template.variants.en.map((variant) => variant.variant),
       ).toEqual(['friendly', 'professional', 'direct', 'short']);
