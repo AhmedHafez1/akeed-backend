@@ -499,6 +499,11 @@ export interface SettingsResponseDto {
      */
     messages: Record<TemplateLanguage, TemplateMessageLines | null>;
     /**
+     * The "Request a change" button label as each language sends it, for a
+     * preview to add while change requests are on.
+     */
+    changeButtons: Record<TemplateLanguage, string>;
+    /**
      * The reminder styles a merchant may choose. Present only
      * while WHATSAPP_REMINDER_TEMPLATE_ENABLED is on. `selected` is null for
      * "same as the first message".
@@ -537,6 +542,11 @@ export interface TemplateStyleDto {
    * not approved it yet. `not_enabled`: approved, not yet switched on.
    */
   availability?: TemplateAwaitingReason;
+  /**
+   * On a style a merchant may choose: whether it has a usable
+   * change-request version for this store's sender.
+   */
+  changeRequest?: boolean;
 }
 
 /**

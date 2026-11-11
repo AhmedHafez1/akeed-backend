@@ -125,6 +125,16 @@ export class OnboardingStateService {
       : { ready: false, variants: [] };
   }
 
+  /** The styles that have a usable change-request version for this store. */
+  async changeRequestStyles(
+    integration: IntegrationRecord,
+    styles: readonly RegistryTemplate[],
+  ): Promise<Set<string>> {
+    return this.changeTemplates
+      ? this.changeTemplates.stylesWithChangeRequest(integration, styles)
+      : new Set();
+  }
+
   async assertChangeRequestBranding(
     integration: IntegrationRecord,
     logo: Partial<IntegrationRecord>,

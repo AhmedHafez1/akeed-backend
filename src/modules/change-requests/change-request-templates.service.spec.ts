@@ -47,6 +47,18 @@ function setup() {
   return { service, base, sibling, connectionTemplates, registry };
 }
 describe('sender-specific change-request template readiness', () => {
+  it('marks only the styles that have a usable change-request version', async () => {
+    const f = setup();
+    const other = seededRegistryTemplates()[1];
+    const integration = { orgId: 'org', logoHeaderEnabled: false } as never;
+    expect(
+      await f.service.stylesWithChangeRequest(integration, [f.base, other]),
+    ).toEqual(new Set([f.base.key]));
+    f.sibling.isActive = false;
+    expect(
+      await f.service.stylesWithChangeRequest(integration, [f.base]),
+    ).toEqual(new Set());
+  });
   it.each([{ headerImage: true }, { header: 'Unexpected header' }])(
     'rejects a provider header on a registered text counterpart: %j',
     async (header) => {

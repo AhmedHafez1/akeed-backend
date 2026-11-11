@@ -21,6 +21,7 @@ import {
 } from '../../shared/ports/sender-resolver.port';
 import { WhatsappConnectionTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-connection-templates.repository';
 import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
+import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
 import {
   selectTemplateForSend,
   toSelectedTemplate,
@@ -198,6 +199,27 @@ export class ChangeRequestTemplatesService {
       ready: variants.length > 0 && variants.every((variant) => variant.ready),
       variants,
     };
+  }
+
+  /**
+   * The keys of the styles a send to this store would replace with their
+   * change-request version, by the same decision as each new send.
+   */
+  async stylesWithChangeRequest(
+    integration: Integration,
+    styles: readonly RegistryTemplate[],
+  ): Promise<Set<string>> {
+    const keys = new Set<string>();
+    for (const style of styles) {
+      const base = toSelectedTemplate(style);
+      const sender = await this.senders.resolve({
+        orgId: integration.orgId,
+        template: base,
+      });
+      if ((await this.selectVariant(base, integration, sender)).ready)
+        keys.add(style.key);
+    }
+    return keys;
   }
 
   /** Uses the same sender-specific decision for settings and each new send. */
