@@ -3845,6 +3845,13 @@ export const commerceOutcomeSyncs = pgTable(
     state: text().notNull(),
     attempts: integer().default(0).notNull(),
     deferrals: integer().default(0).notNull(),
+    revision: integer().default(0).notNull(),
+    desiredRevision: text('desired_revision'),
+    claimToken: uuid('claim_token'),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     retryInBackground: boolean('retry_in_background').default(false).notNull(),
     requiresAssistance: boolean('requires_assistance').default(false).notNull(),
     providerStatus: text('provider_status'),
@@ -3883,7 +3890,7 @@ export const commerceOutcomeSyncs = pgTable(
     ),
     check(
       'commerce_outcome_syncs_action_check',
-      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text, 'automatic_no_reply_cancellation'::text])`,
+      sql`${table.action} = ANY (ARRAY['customer_confirmation'::text, 'customer_cancellation'::text, 'merchant_no_reply_cancellation'::text, 'merchant_cancellation_tagging'::text, 'automatic_no_reply_tagging'::text, 'automatic_no_whatsapp_tagging'::text, 'automatic_no_reply_cancellation'::text, 'change_request_reconciliation'::text])`,
     ),
     check(
       'commerce_outcome_syncs_state_check',
@@ -4454,6 +4461,18 @@ export const verificationChangeRequestEffects = pgTable(
       .notNull(),
     reason: text('reason'),
     attempts: integer().default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    firstAttemptAt: timestamp('first_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    emailPayload:
+      jsonb('email_payload').$type<
+        import('../../shared/ports/email.port').EmailMessage
+      >(),
     leaseUntil: timestamp('lease_until', {
       withTimezone: true,
       mode: 'string',

@@ -24,6 +24,19 @@ export type TagsAddResponse = GraphQLResponse<{
   };
 }>;
 
+export type TagsRemoveResponse = GraphQLResponse<{
+  tagsRemove?: { node?: { id: string }; userErrors?: GraphQLUserError[] };
+}>;
+
+export const TAGS_REMOVE_MUTATION = `
+  mutation tagsRemove($id: ID!, $tags: [String!]!) {
+    tagsRemove(id: $id, tags: $tags) {
+      node { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 export type ShopNameResponse = GraphQLResponse<{
   shop?: {
     name?: string;
@@ -41,6 +54,12 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   node?: {
     id?: string;
     status?: string;
+  } | null;
+}>;
+
+export type ActiveAppSubscriptionsResponse = GraphQLResponse<{
+  currentAppInstallation?: {
+    activeSubscriptions?: { id?: string; status?: string }[] | null;
   } | null;
 }>;
 
@@ -155,6 +174,17 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
   query GetAppSubscriptionStatus($id: ID!) {
     node(id: $id) {
       ... on AppSubscription {
+        id
+        status
+      }
+    }
+  }
+`;
+
+export const GET_ACTIVE_APP_SUBSCRIPTIONS_QUERY = `
+  query GetActiveAppSubscriptions {
+    currentAppInstallation {
+      activeSubscriptions {
         id
         status
       }

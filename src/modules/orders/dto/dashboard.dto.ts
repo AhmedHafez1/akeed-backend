@@ -208,6 +208,7 @@ export interface ChangeRequestSummaryDto {
    * `in_progress`. Null when none was owed.
    */
   acknowledgment: { status: string; reason: string | null } | null;
+  merchant_email?: { status: string; reason: string | null } | null;
   reconfirmation: {
     state: 'requested' | 'scheduled' | 'sending' | 'failed' | null;
     scheduled_for: string | null;

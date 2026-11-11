@@ -146,6 +146,89 @@ async function fixture(
 }
 
 describe('change-request transport and billing over PostgreSQL', () => {
+  it('records real image/text attempts under tenant and generation fences without another reservation or debit', async () => {
+    const source = await h.merchant(3);
+    const params = await h.verification(source);
+    const claim = await dispatches.claim({
+      ...params,
+      billingExempt: false,
+      changeRequestButtons: true,
+      identity: { variantKey: 'en.short', purpose: 'initial', language: 'en' },
+      sender: {
+        kind: 'akeed_system',
+        connectionId: null,
+        reason: 'fixture',
+        units: 1,
+      },
+    });
+    if (claim.outcome !== 'claimed') throw new Error(claim.outcome);
+    const before = await h.credits.getSummary(source.orgId);
+    const reservations = await db
+      .select()
+      .from(tables.creditReservations)
+      .where(eq(tables.creditReservations.orgId, source.orgId));
+    const image = {
+      variantKey: 'en.short',
+      language: 'en' as const,
+      templateName: 'change_short_logo',
+      languageCode: 'en',
+    };
+    await expect(
+      dispatches.recordTemplateAttempt(
+        randomUUID(),
+        claim.dispatch.id,
+        claim.dispatch.generation,
+        image,
+      ),
+    ).rejects.toThrow('no longer owned');
+    await expect(
+      dispatches.recordTemplateAttempt(
+        source.orgId,
+        claim.dispatch.id,
+        claim.dispatch.generation + 1,
+        image,
+      ),
+    ).rejects.toThrow('no longer owned');
+    await dispatches.recordTemplateAttempt(
+      source.orgId,
+      claim.dispatch.id,
+      claim.dispatch.generation,
+      image,
+    );
+    expect(await dispatches.findById(claim.dispatch.id)).toMatchObject({
+      templateName: 'change_short_logo',
+      changeRequestButtons: true,
+    });
+    await dispatches.recordTemplateAttempt(
+      source.orgId,
+      claim.dispatch.id,
+      claim.dispatch.generation,
+      { ...image, templateName: 'change_short' },
+    );
+    expect(await dispatches.findById(claim.dispatch.id)).toMatchObject({
+      templateName: 'change_short',
+      changeRequestButtons: true,
+    });
+    expect(await h.credits.getSummary(source.orgId)).toEqual(before);
+    expect(
+      await db
+        .select()
+        .from(tables.creditReservations)
+        .where(eq(tables.creditReservations.orgId, source.orgId)),
+    ).toEqual(reservations);
+    await h.acceptance(claim.dispatch, 'wamid.synthetic.media-fallback');
+    const accepted = await h.credits.getSummary(source.orgId);
+    await h.acceptance(claim.dispatch, 'wamid.synthetic.media-fallback');
+    expect(await h.credits.getSummary(source.orgId)).toEqual(accepted);
+    await expect(
+      dispatches.recordTemplateAttempt(
+        source.orgId,
+        claim.dispatch.id,
+        claim.dispatch.generation,
+        image,
+      ),
+    ).rejects.toThrow('no longer owned');
+  });
   it('fences a legacy answer whose initial state read raced with a new cycle', async () => {
     const f = await fixture();
     await db

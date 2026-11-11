@@ -27,6 +27,10 @@ import {
 } from '../../shared/messaging/template-selector';
 import { storeTemplateKeys } from '../../shared/messaging/store-template-selection';
 import { changeTemplateUsable } from '../../shared/messaging/change-request-messaging';
+import {
+  applyLogoHeader,
+  isHttpsUrl,
+} from '../../shared/messaging/logo-header.policy';
 import type { integrations } from '../../infrastructure/database/schema';
 import type { TemplateSelectionSwitches } from '../../shared/messaging/template-selector';
 
@@ -39,6 +43,9 @@ export interface ChangeRequestReadiness {
     sender: string;
     ready: boolean;
     reason: string | null;
+    template_key?: string | null;
+    branding_supported?: boolean;
+    header_format?: 'none' | 'image';
   }[];
 }
 
@@ -169,13 +176,9 @@ export class ChangeRequestTemplatesService {
           orgId: integration.orgId,
           template: base,
         });
-        const counterpart = await this.counterpart(
-          base,
-          integration.orgId,
-          sender,
-        );
+        const variant = await this.selectVariant(base, integration, sender);
         const ready =
-          Boolean(counterpart) &&
+          variant.ready &&
           (!selection.fallbackReason ||
             selection.fallbackReason === 'key_missing');
         variants.push({
@@ -183,15 +186,104 @@ export class ChangeRequestTemplatesService {
           style: base.variantKey,
           sender: sender.kind,
           ready,
+          template_key: variant.template.registryKey ?? null,
+          branding_supported: sender.kind === 'akeed_system',
+          header_format: variant.template.imageHeader ? 'image' : 'none',
           reason: ready
             ? null
-            : 'Approve and enable the matching three-button template for this sender, language and style.',
+            : (variant.reason ?? 'confirmation_template_unavailable'),
         });
       }
     return {
       ready: variants.length > 0 && variants.every((variant) => variant.ready),
       variants,
     };
+  }
+
+  /** Uses the same sender-specific decision for settings and each new send. */
+  async selectVariant(
+    base: SelectedCodTemplate,
+    integration: Integration,
+    sender: ResolvedSender,
+  ) {
+    const twins =
+      sender.kind === 'akeed_system'
+        ? await (this.templates?.findImageTwins() ??
+            this.registry.listImageTwins?.() ??
+            Promise.resolve([]))
+        : [];
+    const branded =
+      sender.kind === 'akeed_system' &&
+      integration.logoHeaderEnabled &&
+      Boolean(integration.logoUrl || integration.logoBannerUrl);
+    const withLogo = (template: SelectedCodTemplate) =>
+      applyLogoHeader(template, {
+        enabled:
+          sender.kind === 'akeed_system' && integration.logoHeaderEnabled,
+        bannerUrl: integration.logoBannerUrl,
+        twins,
+        guardrail: { enabled: true },
+      });
+    const fallback = withLogo(base);
+    const unavailable = async (reason: string) => {
+      let sendable = false;
+      if (sender.kind === 'merchant_own' && sender.connectionId) {
+        const own = await this.connectionTemplates.findForSend(
+          integration.orgId,
+          sender.connectionId,
+          base,
+        );
+        sendable = Boolean(
+          own &&
+          own.status === 'approved' &&
+          own.category === 'utility' &&
+          own.lastSyncedAt &&
+          !own.driftReason,
+        );
+      } else if (sender.kind === 'akeed_system') {
+        const original = (
+          await (this.templates?.findAll() ?? this.registry.listTemplates())
+        ).find((row) => row.key === base.registryKey);
+        sendable = Boolean(
+          original?.isActive &&
+          original.reviewStatus === 'approved' &&
+          original.category === 'utility' &&
+          original.lastSyncedAt,
+        );
+        if (sendable && original && this.catalog) {
+          const drift = compareTemplateDrift({
+            template: original,
+            reviewStatus: original.reviewStatus,
+            model: this.catalog.describeComponents(original.components ?? null),
+            previewSource: 'provider',
+          });
+          sendable =
+            drift.state !== 'unreadable' &&
+            !drift.differences.some((d) => d.severity === 'send');
+        }
+      }
+      return {
+        template: fallback,
+        ready: false,
+        sendable,
+        reason: sendable ? reason : 'ordinary_fallback_unavailable',
+      };
+    };
+    const counterpart = await this.counterpart(base, integration.orgId, sender);
+    if (!counterpart) return unavailable('change_text_unavailable');
+    if (!branded)
+      return {
+        template: counterpart,
+        ready: true,
+        sendable: true,
+        reason: null,
+      };
+    if (!isHttpsUrl(integration.logoBannerUrl))
+      return unavailable('logo_banner_unavailable');
+    const template = withLogo(counterpart);
+    return template.imageHeader
+      ? { template, ready: true, sendable: true, reason: null }
+      : unavailable('change_image_twin_unavailable');
   }
 
   async assertReady(

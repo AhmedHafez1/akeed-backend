@@ -21,6 +21,8 @@ import { AdminController } from './admin.controller';
 import { AdminFunnelService } from './admin-funnel.service';
 import { AdminStoresService } from './admin-stores.service';
 import { AdminTemplateAuthoringController } from './admin-template-authoring.controller';
+import { AdminChangePreparationController } from './admin-change-preparation.controller';
+import { AdminChangePreparationService } from './admin-change-preparation.service';
 import { AdminTemplateDraftService } from './admin-template-draft.service';
 import { AdminTemplateInspectionService } from './admin-template-inspection.service';
 import { AdminTemplateLifecycleService } from './admin-template-lifecycle.service';
@@ -52,6 +54,7 @@ const DRAFT = {
 
 /** Every write route, with a body it accepts. */
 const WRITES: [string, 'post' | 'patch' | 'delete', string, object?][] = [
+  ['prepare change drafts', 'post', '/change-requests/prepare'],
   ['validate a draft', 'post', '/drafts/validate', DRAFT],
   ['create a draft', 'post', '/drafts', DRAFT],
   [
@@ -97,12 +100,17 @@ describe('Admin template write routes', () => {
     createMissing: jest.fn().mockResolvedValue({ results: [] }),
     activateApproved: jest.fn().mockResolvedValue({ activated: [] }),
   };
+  const preparation = {
+    overview: jest.fn().mockResolvedValue({ variants: [] }),
+    prepare: jest.fn().mockResolvedValue({ results: [] }),
+  };
   const inspection = { list: jest.fn(), detail: jest.fn() };
   const calls = () =>
     [
       ...Object.values(drafts),
       ...Object.values(lifecycle),
       ...Object.values(imageTwins),
+      ...Object.values(preparation),
     ].reduce((total, mock) => total + mock.mock.calls.length, 0);
   const http = () =>
     request(app.getHttpServer() as Parameters<typeof request>[0]);
@@ -134,10 +142,12 @@ describe('Admin template write routes', () => {
       // matched before `AdminTemplatesController`'s `:key` routes.
       controllers: [
         AdminController,
+        AdminChangePreparationController,
         AdminTemplateAuthoringController,
         AdminTemplatesController,
       ],
       providers: [
+        { provide: AdminChangePreparationService, useValue: preparation },
         AdminAccessGuard,
         WhatsappTemplateOperatorGuard,
         { provide: AdminTemplateDraftService, useValue: drafts },

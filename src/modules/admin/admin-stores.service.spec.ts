@@ -527,4 +527,28 @@ describe('AdminStoresService', () => {
     });
     expect(data[1]).toMatchObject({ failure_code: null, failure_title: null });
   });
+
+  it('offers a resend only for an unresolved verification', async () => {
+    const row = (id: string, status: string) => ({
+      id,
+      status,
+      metadata: { reason: 'provider_outcome_unknown' },
+      customer_phone: '+966512345123',
+      created_at: '2026-09-01T00:00:00Z',
+      resend_dispatch_id: `dispatch-${id}`,
+    });
+    const service = createService({
+      findStoreById: jest.fn().mockResolvedValue(detailRow(shopifyRow())),
+      findStoreVerifications: jest.fn().mockResolvedValue({
+        rows: [row('v-2', 'failed'), row('v-1', 'confirmed')],
+        totalCount: 2,
+      }),
+    });
+
+    const { data } = await service.getStoreVerifications('store', {});
+
+    expect(data[0].resend_dispatch_id).toBe('dispatch-v-2');
+    // A customer reply is final, so there is nothing to resend.
+    expect(data[1].resend_dispatch_id).toBeNull();
+  });
 });

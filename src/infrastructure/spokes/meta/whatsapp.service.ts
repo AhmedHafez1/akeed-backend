@@ -11,6 +11,7 @@ import { classifyOwnNumberFailure } from './own-number/own-number-send-failure.p
 import type { ResolvedSender } from '../../../shared/ports/sender-resolver.port';
 import {
   ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type FreeFormTextOutcome,
   type MessagingSenderStatus,
   type MessagingPort,
@@ -105,6 +106,7 @@ export class WhatsAppService {
     totalPrice: string;
     verificationId: string;
     template: SelectedCodTemplate;
+    beforeTemplateAttempt?: (identity: SentTemplateIdentity) => Promise<void>;
     confirmationCycle?: number;
     sender?: ResolvedSender;
     dispatchContext?: {
@@ -117,7 +119,7 @@ export class WhatsAppService {
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     if (params.sender?.kind === 'merchant_own' && !this.sendContext)
-      throw new ConfirmedMessageRejection('sender_context_unavailable');
+      throw new LocalMessageRefusal('sender_context_unavailable');
     const context =
       params.sender && this.sendContext
         ? await this.sendContext.resolve(params)
@@ -258,6 +260,7 @@ export class WhatsAppService {
         languageCode: image.languageCode,
       };
       try {
+        await params.beforeTemplateAttempt?.(sent);
         const response = await this.postMessage(
           buildPayload(image.templateName, image.languageCode, image.imageUrl),
           context,
@@ -287,6 +290,7 @@ export class WhatsAppService {
     }
 
     try {
+      await params.beforeTemplateAttempt?.(toSentTemplateIdentity(template));
       const response = await this.postMessage(
         buildPayload(template.templateName, template.languageCode),
         context,

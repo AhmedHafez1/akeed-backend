@@ -121,6 +121,7 @@ export interface AdminStoreVerificationRow {
   currency: string | null;
   attempts: number | null;
   follow_up_attempts: number;
+  resend_dispatch_id: string | null;
   template_name: string | null;
   language_code: string | null;
   cancellation_source: string | null;
@@ -481,7 +482,19 @@ export class AdminQueryRepository {
           v.expired_at,
           v.no_reply_at,
           v.follow_up_sent_at,
-          v.updated_at
+          v.updated_at,
+          -- A first confirmation awaiting review that no provider id shows
+          -- went out: staff may confirm it was not sent and resend it.
+          (
+            SELECT d.id
+            FROM verification_message_dispatches d
+            WHERE d.verification_id = v.id
+              AND d.kind = 'initial'
+              AND d.state = 'outcome_unknown'
+              AND d.provider_message_id IS NULL
+            ORDER BY d.created_at DESC
+            LIMIT 1
+          ) AS resend_dispatch_id
         FROM orders ord
         INNER JOIN verifications v ON v.order_id = ord.id
         WHERE ${baseWhere}${cursorCondition}

@@ -2,6 +2,7 @@ import {
   outcomeActionFor,
   selectOutcomeSync,
   toRemoteSync,
+  changeRequestSyncRevision,
   type OutcomeSyncRow,
 } from './outcome-sync';
 
@@ -19,6 +20,38 @@ function row(overrides: Partial<OutcomeSyncRow> = {}): OutcomeSyncRow {
 }
 
 describe('outcomeActionFor', () => {
+  it('keeps a request marker current when a delivery/read receipt changes only transport status', () => {
+    const revisions = ['sent', 'delivered', 'read'].map((status) =>
+      changeRequestSyncRevision({
+        confirmationCycle: 1,
+        requestId: 'request-1',
+        open: true,
+        status,
+      }),
+    );
+    expect(new Set(revisions).size).toBe(1);
+    expect(
+      changeRequestSyncRevision({
+        confirmationCycle: 1,
+        requestId: 'request-1',
+        open: false,
+        status: 'confirmed',
+      }),
+    ).not.toBe(revisions[0]);
+  });
+  it('does not present a prior cycle marker success as success for a new request', () => {
+    const old = row({
+      action: 'change_request_reconciliation',
+      state: 'succeeded',
+      desiredRevision: '1:old:resolved:sent',
+    });
+    expect(toRemoteSync(old, '2:new:open:sent')).toMatchObject({
+      state: 'pending',
+      retryable: false,
+      error_code: null,
+    });
+    expect(toRemoteSync(old, '1:old:resolved:sent').state).toBe('succeeded');
+  });
   it.each([
     ['confirmed', null, 'customer_confirmation'],
     ['canceled', null, 'customer_cancellation'],

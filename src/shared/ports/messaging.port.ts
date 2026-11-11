@@ -38,6 +38,8 @@ export interface MessagingPort {
     confirmationCycle?: number;
     /** Selected before the dispatch was claimed; the adapter sends this one. */
     template: SelectedCodTemplate;
+    /** Persist the actual attempt before provider I/O, including a confirmed media fallback. */
+    beforeTemplateAttempt?: (identity: SentTemplateIdentity) => Promise<void>;
     sender?: ResolvedSender;
     dispatchContext?: {
       orgId: string;
@@ -103,3 +105,9 @@ export class ConfirmedMessageRejection extends Error {
     super('The messaging provider confirmed rejection.');
   }
 }
+
+/**
+ * Akeed refused the send itself, before any request reached the provider, so
+ * the message certainly did not go out.
+ */
+export class LocalMessageRefusal extends ConfirmedMessageRejection {}

@@ -291,7 +291,11 @@ order by 2 desc;
 
 ## 10. Image-header twins for the logo header
 
-Every store's logo header is on, on every plan and billing, unless staff switch that store off. A store with a saved logo sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same two buttons in the same order and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in the **Admin › Templates** list; the **Image twins** panel on that page shows them.
+Request a change uses separate linked variants: ordinary text, its ordinary image twin, the three-button text counterpart, and that counterpart's image twin. Review exact content and all three quick replies in the preparation export and image-twin panel. Keep counterpart keys linked to their original template and image keys linked to their actual text parent. Three-button twins must remain synchronized with the parent's body, footer, language, variables and labels. Approved but inactive or drifted is not ready. Never register an ordinary two-button twin as a three-button twin.
+
+Use Admin > Templates > Request a change preparation to prepare/reconcile text drafts without calling Meta and export a readable review. Existing edited, submitted and uncertain records are retained. Reconcile uncertain submissions by exact provider name and language before retrying. **Create missing twins** is a live sample upload and provider submission, not draft preparation. For manual creation/adoption, preserve the exact exported provider identity, language, parameter format, body and button order, and use the existing authorized registration/reconciliation process. Provider IDs and approval must come from real provider metadata.
+
+Every store's logo header is on, on every plan and billing, unless staff switch that store off. A store with a saved logo sends its banner as an image header, through the **twin** of the template it already sends: the same body, the same quick replies in the same order (two for ordinary templates, three for Request a change counterparts) and the same variables, plus an IMAGE header. Selection does not change: the store's style, its reminder and Arabic `auto` pick the template as before, and only at send time is the twin sent in its place. A template without an active twin (approved, while the guardrail is on) is sent as text. Twins never appear in store settings or in the **Admin › Templates** list; the **Image twins** panel on that page shows them.
 
 If Meta refuses the image send with a media or template error (`131052`, `131053`, `132000`, `132001`, `132012`, `132015`, `132016`), the text template is sent once instead and `whatsapp-template-send-image-fallback` is logged. Any other failure is handled as for a text send; nothing is sent twice. If Meta accepts the image and reports a media failure later, in the status webhook, the message is not resent.
 
@@ -333,17 +337,17 @@ Operators only, one template at a time:
    insert into whatsapp_templates
      ("key", purpose, language, style, meta_template_name, meta_language_code,
       parameter_format, variable_mapping, preview, is_active, is_default,
-      sort_order, header_format, image_twin_of_key)
+      sort_order, header_format, image_twin_of_key, change_request_of_key)
    select p."key" || '_logo', p.purpose, p.language, p.style || '_logo',
           '<twin name at Meta>', p.meta_language_code, p.parameter_format,
           p.variable_mapping, p.preview, false, false, p.sort_order,
-          'image', p."key"
+          'image', p."key", p.change_request_of_key
    from whatsapp_templates p
    where p."key" = '<parent key>' and p.header_format = 'none';
    ```
 
 4. Press **Sync now** in **Admin › Templates**. Check the twin reads `approved` (the query below). The sync reads twins like any template.
-5. Activate it: `update whatsapp_templates set is_active = true where "key" = '<parent key>_logo' and header_format = 'image';`. Sends pick it up within a minute (registry cache).
+5. Use **Activate approved twins** in Admin. Three-button twins must also be synchronized and compatible with their actual text parent; approval alone does not establish readiness. The ordinary registry cache refreshes within a minute, while change-request readiness reads current persisted state.
 6. Nothing to switch per store: the merchant uploads a logo in **Settings**. In **Admin › Stores**, the store detail shows its logo, its **Logo header** switch and every twin with its review status.
 
 To stop: in **Admin › Stores**, switch the store's **Logo header** off (its messages go back to text at once and the merchant no longer sees the logo card), or deactivate the twin for every store. Removing the logo in Settings also stops it for that store.

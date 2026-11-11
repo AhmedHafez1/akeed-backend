@@ -18,6 +18,7 @@ import { VerificationsRepository } from '../../infrastructure/database/repositor
 import {
   MESSAGING_PORT,
   ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type MessagingPort,
 } from '../../shared/ports/messaging.port';
 import { integrations } from '../../infrastructure/database/schema';
@@ -550,9 +551,10 @@ export class VerificationSendService {
       );
       return { status: 'skipped', reason: 'template_unavailable' };
     }
-    // A store with the logo header on sends the image twin of the same
-    // template when one exists; the text template stays the recorded identity.
-    let template = await this.withLogoHeader(selection.template, integration);
+    // The selected template may still become its change-request counterpart
+    // or its image-header twin below; the dispatch records whichever template
+    // is actually attempted, before the provider call.
+    let template = selection.template;
     const sender = recovery.fallbackFrom
       ? {
           ...FEATURE_OFF_SENDER,
@@ -578,12 +580,27 @@ export class VerificationSendService {
       this.changeTemplates &&
       (!selection.fallbackReason || selection.fallbackReason === 'key_missing')
     ) {
-      const counterpart = await this.changeTemplates.counterpart(
+      const variant = await this.changeTemplates.selectVariant(
         selection.template,
-        order.orgId,
+        integration,
         sender,
       );
-      if (counterpart) template = counterpart;
+      template = variant.template;
+      if (!variant.ready)
+        this.logger.warn(
+          buildBackendLog('VerificationSendService', {
+            action: 'sendOnce.changeRequestFallback',
+            outcome: 'skipped',
+            orgId: order.orgId,
+            integrationId: integration.id,
+            verificationId: verification.id,
+            reason: variant.reason,
+          }),
+        );
+      if (variant.sendable === false)
+        return { status: 'skipped', reason: 'template_unavailable' };
+    } else if (sender.kind === 'akeed_system') {
+      template = await this.withLogoHeader(template, integration);
     }
     // A store with no stored choice is the normal state of a new source, so
     // that is the one fallback neither logged nor recorded on the dispatch.
@@ -630,8 +647,10 @@ export class VerificationSendService {
           kind,
           changeRequestButtons: Boolean(template.changeRequestOfKey),
           recipientHash: customerRecipientHash(order.customerPhone),
-          templateName: template.templateName,
-          languageCode: template.languageCode,
+          templateName:
+            template.imageHeader?.templateName ?? template.templateName,
+          languageCode:
+            template.imageHeader?.languageCode ?? template.languageCode,
           identity: {
             variantKey: template.variantKey,
             purpose,
@@ -775,6 +794,17 @@ export class VerificationSendService {
 
     try {
       response = await this.messagingPort.sendVerificationTemplate({
+        beforeTemplateAttempt:
+          claimedSender.kind === 'akeed_system'
+            ? async (identity) => {
+                await this.messageDispatches.recordTemplateAttempt(
+                  order.orgId,
+                  dispatchClaim.dispatch.id,
+                  dispatchClaim.dispatch.generation,
+                  identity,
+                );
+              }
+            : undefined,
         to: order.customerPhone,
         customerName: order.customerName,
         storeName: integration.storeName,
@@ -865,6 +895,23 @@ export class VerificationSendService {
           error.providerErrorCode,
         );
         return { status: 'failed', reason: NO_WHATSAPP_SEND_REASON };
+      }
+      // Akeed refused the first message before calling the provider, and no
+      // earlier attempt of it can have gone out: it was not sent, so the
+      // order becomes retryable instead of waiting for staff review.
+      if (
+        error instanceof LocalMessageRefusal &&
+        kind === 'initial' &&
+        !recovery.retryDispatch &&
+        !recovery.fallbackFrom &&
+        dispatchClaim.dispatch.attemptCount === 1
+      ) {
+        await this.messageDispatches.resolveNotAccepted(
+          dispatchClaim.dispatch.id,
+          undefined,
+          true,
+        );
+        return { status: 'failed', reason: 'provider_not_accepted' };
       }
       if (
         error instanceof ConfirmedMessageRejection &&

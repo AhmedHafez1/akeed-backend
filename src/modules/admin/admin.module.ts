@@ -1,3 +1,5 @@
+import { AdminChangePreparationController } from './admin-change-preparation.controller';
+import { AdminChangePreparationService } from './admin-change-preparation.service';
 import {
   Module,
   type DynamicModule,
@@ -21,6 +23,7 @@ import { StandaloneBillingRepository } from './standalone-billing.repository';
 import { StandaloneBillingService } from './standalone-billing.service';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 import { WebhookQueueModule } from '../webhook-queue/webhook-queue.module';
+import { OrdersModule } from '../orders/orders.module';
 import { BillingReconciliationQueueModule } from './billing-reconciliation-queue.module';
 import { BillingObservabilityRepository } from './billing-observability.repository';
 import { BillingObservabilityService } from './billing-observability.service';
@@ -62,6 +65,7 @@ export class AdminModule {
         AuthModule,
         DatabaseModule,
         WebhookQueueModule,
+        OrdersModule,
         BillingReconciliationQueueModule,
         WhatsappTemplateSyncModule,
         WhatsappSenderModule,
@@ -72,6 +76,7 @@ export class AdminModule {
         StandaloneBillingController,
         // Before AdminTemplatesController: its literal `drafts` routes must
         // be matched before that controller's `:key` routes.
+        AdminChangePreparationController,
         AdminTemplateAuthoringController,
         AdminTemplatesController,
         AdminMessageTextsController,
@@ -99,6 +104,7 @@ export class AdminModule {
         AdminTemplatesService,
         AdminTemplateInspectionService,
         AdminTemplateTestSendService,
+        AdminChangePreparationService,
         AdminTemplateDraftService,
         AdminTemplateLifecycleService,
         AdminImageTwinsService,

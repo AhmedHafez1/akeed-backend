@@ -652,6 +652,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
       '0092_change_requests.sql',
       '0093_change_request_messaging.sql',
       '0094_change_request_reconfirmation.sql',
+      '0095_change_request_notifications.sql',
     ])
       await migrate(name);
     // The WooCommerce tables as the migrations leave them. Applied twice,

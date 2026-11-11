@@ -36,6 +36,13 @@ export class ShopifyBillingAdapter implements SubscriptionBillingPort {
     return this.api.getAppSubscriptionStatus(integration, chargeId);
   }
 
+  async listActiveAppSubscriptions(
+    integration: BillingConnection,
+  ): Promise<SubscriptionStatusResult[]> {
+    this.assertShopify(integration);
+    return this.api.listActiveAppSubscriptions(integration);
+  }
+
   async cancelAppSubscription(
     integration: BillingConnection,
     subscriptionId: string,

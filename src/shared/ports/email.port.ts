@@ -1,6 +1,8 @@
 export const EMAIL_PORT = Symbol('EMAIL_PORT');
 
 export interface EmailMessage {
+  /** Snapshotted for durable notifications so retries keep the same envelope. */
+  from?: string;
   to: string;
   subject: string;
   text: string;
@@ -18,7 +20,12 @@ export interface EmailMessage {
 export type EmailSendResult =
   | { status: 'sent' }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; reason: string };
+  | {
+      status: 'failed';
+      reason: string;
+      retryable?: boolean;
+      uncertain?: boolean;
+    };
 
 /** Transactional email to a merchant. Never throws. */
 export interface EmailPort {

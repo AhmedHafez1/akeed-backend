@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import sharp from 'sharp';
+import { changeTemplateUsable } from '../../shared/messaging/change-request-messaging';
+import { changeImageTwinUsable } from '../../shared/messaging/logo-header.policy';
 import { AdminAccessAuditRepository } from '../../infrastructure/database/repositories/admin-access-audit.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
 import { readWhatsappTemplateConfig } from '../../shared/config/whatsapp-template.config';
@@ -77,6 +79,9 @@ export interface ImageTwinOverview {
     key: string;
     template_name: string;
     language_code: string;
+    change_request_of_key?: string | null;
+    planned?: unknown;
+    drifted?: boolean;
     twin: {
       template_name: string;
       is_active: boolean;
@@ -148,6 +153,23 @@ export class AdminImageTwinsService {
             key: template.key,
             template_name: template.templateName,
             language_code: template.languageCode,
+            change_request_of_key: template.changeRequestOfKey,
+            planned: planImageTwin(
+              {
+                template,
+                category: template.category,
+                retired: false,
+                changeRequestReady: template.changeRequestOfKey
+                  ? changeTemplateUsable(template)
+                  : undefined,
+              },
+              this.catalog.describeComponents(template.components ?? null),
+              { twinParentKeys: new Set(), providerIdentities: new Set() },
+            ),
+            drifted: Boolean(
+              twin?.changeRequestOfKey &&
+              !changeImageTwinUsable({ ...twin, isActive: true }),
+            ),
             twin: twin
               ? {
                   template_name: twin.templateName,
@@ -191,6 +213,9 @@ export class AdminImageTwinsService {
       plan: planImageTwin(
         {
           template: parent.template,
+          changeRequestReady: parent.template.changeRequestOfKey
+            ? changeTemplateUsable(parent.template)
+            : undefined,
           category: parent.template.category,
           retired: retired.includes(parent.template.key),
         },

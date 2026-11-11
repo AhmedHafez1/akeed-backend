@@ -392,6 +392,26 @@ export type DispatchClaimResult =
 
 @Injectable()
 export class VerificationMessageDispatchesRepository {
+  async recordTemplateAttempt(
+    orgId: string,
+    dispatchId: string,
+    generation: number,
+    template: SentTemplateIdentity,
+  ): Promise<void> {
+    const rows = await this.db
+      .update(verificationMessageDispatches)
+      .set(sentTemplateColumns(template))
+      .where(
+        and(
+          eq(verificationMessageDispatches.id, dispatchId),
+          eq(verificationMessageDispatches.orgId, orgId),
+          eq(verificationMessageDispatches.generation, generation),
+          eq(verificationMessageDispatches.state, 'sending'),
+        ),
+      )
+      .returning({ id: verificationMessageDispatches.id });
+    if (!rows.length) throw new Error('Dispatch attempt no longer owned');
+  }
   constructor(
     @Inject(DRIZZLE)
     private readonly db: DrizzleDB,

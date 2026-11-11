@@ -21,6 +21,7 @@ export type TemplateLifecycleAction =
 
 /** A registry row as the lifecycle rules see it. */
 export interface LifecycleTemplate {
+  changeRequestOfKey?: string | null;
   id: string;
   key: string;
   purpose: TemplatePurpose;
@@ -43,7 +44,8 @@ export type TemplateLifecycleRefusal =
    * A default is what an order without items or an address is sent, so it
    * cannot be a template that shows them.
    */
-  | 'default_shows_order_details';
+  | 'default_shows_order_details'
+  | 'change_request_not_selectable';
 
 export interface LifecycleRowChange {
   id: string;
@@ -69,6 +71,7 @@ export function isEligibleReplacement(
 ): boolean {
   return (
     candidate.id !== target.id &&
+    !candidate.changeRequestOfKey &&
     candidate.purpose === target.purpose &&
     candidate.language === target.language &&
     candidate.isActive &&
@@ -147,6 +150,8 @@ export function decideLifecycle(params: {
         moveStoresTo: null,
       };
     case 'set_default': {
+      if (target.changeRequestOfKey)
+        return { ok: false, reason: 'change_request_not_selectable' };
       if (!isSendableReviewStatus(target.reviewStatus)) {
         return { ok: false, reason: 'not_approved' };
       }

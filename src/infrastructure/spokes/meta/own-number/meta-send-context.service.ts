@@ -6,7 +6,7 @@ import { WhatsappConnectionTemplatesRepository } from '../../../database/reposit
 import { readWhatsappOwnNumberConfig } from '../../../../shared/config/whatsapp-own-number.config';
 import { readMetaGraphConfig } from '../../../../shared/config/meta-graph.config';
 import {
-  ConfirmedMessageRejection,
+  LocalMessageRefusal,
   type MessagingPort,
 } from '../../../../shared/ports/messaging.port';
 import { resolveSender } from '../../../../modules/whatsapp-sender/sender-resolution.policy';
@@ -20,6 +20,31 @@ export interface MetaSendContext {
   url: string;
   token: string;
   timeout?: number;
+}
+
+/**
+ * The claim records the template the shared number actually attempts: the
+ * image-header twin of a branded template, otherwise the text template. A
+ * merchant's own number never sends the twin.
+ */
+function recordsSelectedTemplate(
+  dispatch: { templateName: string | null; languageCode: string | null },
+  template: Parameters<
+    MessagingPort['sendVerificationTemplate']
+  >[0]['template'],
+  senderKind: string,
+): boolean {
+  const candidates = [
+    template,
+    ...(senderKind !== 'merchant_own' && template.imageHeader
+      ? [template.imageHeader]
+      : []),
+  ];
+  return candidates.some(
+    (candidate) =>
+      dispatch.templateName === candidate.templateName &&
+      dispatch.languageCode === candidate.languageCode,
+  );
 }
 
 @Injectable()
@@ -38,7 +63,7 @@ export class MetaSendContextService {
   ): Promise<MetaSendContext> {
     const sender = params.sender;
     const refuse = (): never => {
-      throw new ConfirmedMessageRejection('service_message_sender_unavailable');
+      throw new LocalMessageRefusal('service_message_sender_unavailable');
     };
     if (params.dispatchContext) {
       const dispatch = await this.dispatches.findForSender(
@@ -127,7 +152,7 @@ export class MetaSendContextService {
         throw new MerchantMessageFailure(
           classifyOwnNumberFailure({ localCode: code }),
         );
-      throw new ConfirmedMessageRejection(code);
+      throw new LocalMessageRefusal(code);
     };
     const sender = params.sender;
     const context = params.dispatchContext;
@@ -151,8 +176,7 @@ export class MetaSendContextService {
       dispatch.senderConnectionId !== sender.connectionId ||
       (dispatch.senderReason !== null &&
         dispatch.senderReason !== sender.reason) ||
-      dispatch.templateName !== params.template.templateName ||
-      dispatch.languageCode !== params.template.languageCode
+      !recordsSelectedTemplate(dispatch, params.template, sender.kind)
     )
       return refuse('sender_dispatch_mismatch');
     let token = this.config.get<string>('WA_ACCESS_TOKEN') ?? '';

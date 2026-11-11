@@ -29,6 +29,7 @@ import { AutoCancellationService } from '../auto-cancellation/auto-cancellation.
 import { VerificationAutomationProducer } from './verification-automation.producer';
 import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
 import { ChangeRequestAcknowledgmentService } from '../change-requests/change-request-acknowledgment.service';
+import { ChangeRequestEffectsService } from '../change-requests/change-request-effects.service';
 import {
   CHANGE_REQUEST_OPEN_REASON,
   LEGACY_CONFIRMATION_CYCLE,
@@ -59,6 +60,7 @@ export class VerificationAutomationProcessor extends WorkerHost {
     private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
     @Optional()
     private readonly reconfirmations?: ChangeRequestReconfirmationService,
+    @Optional() private readonly changeEffects?: ChangeRequestEffectsService,
   ) {
     super();
   }
@@ -92,7 +94,13 @@ export class VerificationAutomationProcessor extends WorkerHost {
       return;
     switch (name as VerificationAutomationJobType) {
       case VerificationAutomationJobType.CHANGE_REQUEST_ACKNOWLEDGMENT_SWEEP:
+        // Notification recovery is independent even if customer messaging is unavailable.
+        await this.changeEffects?.drain();
         await this.changeAcknowledgments?.drain();
+        return;
+      case VerificationAutomationJobType.CHANGE_REQUEST_EFFECTS:
+        if (data.changeRequestId)
+          await this.changeEffects?.drain(data.changeRequestId, data.orgId);
         return;
       case VerificationAutomationJobType.SENDER_RECOVERY_SWEEP:
         await this.verificationSendService.sweepSenderRecovery();

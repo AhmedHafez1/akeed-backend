@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, desc, eq, inArray, lte, or, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   integrations,
+  organizations,
   orders,
   verificationAutoCancellationEvents,
   verificationAutoCancellations,
@@ -12,7 +14,12 @@ import {
   verificationMessageDispatches,
   verifications,
 } from '../schema';
-import type { CommerceOutcomeOperationResult } from '../../../shared/commerce/commerce-outcome';
+import type {
+  ChangeRequestPlatformState,
+  CommerceOutcomeOperationResult,
+} from '../../../shared/commerce/commerce-outcome';
+import type { EmailMessage } from '../../../shared/ports/email.port';
+import { changeRequestSyncRevision } from '../../../shared/verification/outcome-sync';
 import { isSyntheticOrder } from '../../../shared/commerce/synthetic-order';
 import {
   AUTO_CANCEL_COMMITTED_STATUSES,
@@ -174,6 +181,43 @@ interface LockedContext {
 export class VerificationChangeRequestsRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
+  /** One statement snapshots the cycle, local outcome and latest request together. */
+  async platformState(
+    verificationId: string,
+    orgId: string,
+    orderId: string,
+  ): Promise<ChangeRequestPlatformState | null> {
+    const rows = await this.db.execute<{
+      cycle: number;
+      status: string;
+      request_id: string;
+      request_status: string;
+    }>(sql`
+      SELECT v.confirmation_cycle AS cycle, v.status, r.id AS request_id, r.status AS request_status
+      FROM verifications v
+      INNER JOIN LATERAL (
+        SELECT id, status FROM verification_change_requests
+        WHERE verification_id = v.id AND org_id = v.org_id
+        ORDER BY confirmation_cycle DESC LIMIT 1
+      ) r ON true
+      WHERE v.id = ${verificationId} AND v.org_id = ${orgId} AND v.order_id = ${orderId}
+    `);
+    const row = rows[0];
+    return row
+      ? {
+          revision: changeRequestSyncRevision({
+            confirmationCycle: row.cycle,
+            requestId: row.request_id,
+            open: row.request_status === 'open',
+            status: row.status,
+          }),
+          open: row.request_status === 'open',
+          status: row.status,
+          confirmationCycle: row.cycle,
+        }
+      : null;
+  }
+
   async findOpenForVerification(
     verificationId: string,
     orgId: string,
@@ -244,6 +288,39 @@ export class VerificationChangeRequestsRepository {
     return row;
   }
 
+  async notificationContext(request: ChangeRequestRow) {
+    const [row] = await this.db
+      .select({
+        orderNumber: orders.orderNumber,
+        externalOrderId: orders.externalOrderId,
+        storeName: integrations.storeName,
+        organizationName: organizations.name,
+        platformType: integrations.platformType,
+        platformStoreUrl: integrations.platformStoreUrl,
+        notificationEmail: integrations.notificationEmail,
+        defaultLanguage: integrations.defaultLanguage,
+        timezone: integrations.timezone,
+      })
+      .from(orders)
+      .innerJoin(organizations, eq(organizations.id, orders.orgId))
+      .innerJoin(
+        integrations,
+        and(
+          eq(integrations.id, orders.integrationId),
+          eq(integrations.orgId, orders.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orders.id, request.orderId),
+          eq(orders.orgId, request.orgId),
+          eq(integrations.id, request.integrationId),
+        ),
+      )
+      .limit(1);
+    return row;
+  }
+
   /** The requests of one page of the confirmations list, open or not. */
   async findByVerificationIds(
     orgId: string,
@@ -275,13 +352,19 @@ export class VerificationChangeRequestsRepository {
     Array<{
       request: ChangeRequestRow;
       acknowledgment: ChangeRequestEffectRow | null;
+      merchantEmail?: ChangeRequestEffectRow | null;
     }>
   > {
     if (verificationIds.length === 0) return [];
+    const merchantEmail = alias(
+      verificationChangeRequestEffects,
+      'merchant_email_effect',
+    );
     const rows = await this.db
       .select({
         request: verificationChangeRequests,
         acknowledgment: verificationChangeRequestEffects,
+        merchantEmail,
       })
       .from(verificationChangeRequests)
       .leftJoin(
@@ -293,6 +376,14 @@ export class VerificationChangeRequestsRepository {
           ),
           eq(verificationChangeRequestEffects.orgId, orgId),
           eq(verificationChangeRequestEffects.kind, 'customer_acknowledgment'),
+        ),
+      )
+      .leftJoin(
+        merchantEmail,
+        and(
+          eq(merchantEmail.changeRequestId, verificationChangeRequests.id),
+          eq(merchantEmail.orgId, orgId),
+          eq(merchantEmail.kind, 'merchant_email'),
         ),
       )
       .where(
@@ -307,6 +398,7 @@ export class VerificationChangeRequestsRepository {
     return rows.map((row) => ({
       request: row.request,
       acknowledgment: row.acknowledgment ?? null,
+      merchantEmail: row.merchantEmail ?? null,
     }));
   }
 
@@ -1047,6 +1139,7 @@ export class VerificationChangeRequestsRepository {
     leaseMs: number,
     now: Date = new Date(),
     changeRequestId?: string,
+    orgId?: string,
   ): Promise<ChangeRequestEffectRow | null> {
     return this.db.transaction(async (tx) => {
       const nowIso = now.toISOString();
@@ -1056,6 +1149,13 @@ export class VerificationChangeRequestsRepository {
         .where(
           and(
             eq(verificationChangeRequestEffects.kind, kind),
+            ...(orgId
+              ? [eq(verificationChangeRequestEffects.orgId, orgId)]
+              : []),
+            or(
+              isNull(verificationChangeRequestEffects.nextAttemptAt),
+              lte(verificationChangeRequestEffects.nextAttemptAt, nowIso),
+            ),
             ...(changeRequestId
               ? [
                   eq(
@@ -1106,6 +1206,7 @@ export class VerificationChangeRequestsRepository {
       'done' | 'skipped' | 'failed' | 'pending'
     >;
     reason?: string | null;
+    nextAttemptAt?: string | null;
   }): Promise<boolean> {
     const now = new Date().toISOString();
     const rows = await this.db
@@ -1114,6 +1215,7 @@ export class VerificationChangeRequestsRepository {
         status: input.status,
         reason: input.reason ? input.reason.slice(0, 64) : null,
         leaseUntil: null,
+        nextAttemptAt: input.nextAttemptAt ?? null,
         completedAt: input.status === 'pending' ? null : now,
         updatedAt: now,
       })
@@ -1126,6 +1228,27 @@ export class VerificationChangeRequestsRepository {
       )
       .returning({ id: verificationChangeRequestEffects.id });
     return rows.length > 0;
+  }
+
+  /** Freeze the envelope before I/O; never overwrite an earlier provider attempt. */
+  async prepareEmail(
+    effect: ChangeRequestEffectRow,
+    payload: EmailMessage,
+  ): Promise<ChangeRequestEffectRow | undefined> {
+    const [row] = await this.db
+      .update(verificationChangeRequestEffects)
+      .set({ emailPayload: payload, firstAttemptAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(verificationChangeRequestEffects.id, effect.id),
+          eq(verificationChangeRequestEffects.orgId, effect.orgId),
+          eq(verificationChangeRequestEffects.status, 'in_progress'),
+          eq(verificationChangeRequestEffects.attempts, effect.attempts),
+          isNull(verificationChangeRequestEffects.emailPayload),
+        ),
+      )
+      .returning();
+    return row;
   }
 }
 

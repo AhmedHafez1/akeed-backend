@@ -682,6 +682,7 @@ describe('template identity PostgreSQL contract', () => {
         gate.repositories.events,
         gate.services.dispatcher,
         gate.services.hub,
+        {} as never,
       );
       await resolution.resolve(randomUUID(), unknown.id, {
         resolution: 'accepted',

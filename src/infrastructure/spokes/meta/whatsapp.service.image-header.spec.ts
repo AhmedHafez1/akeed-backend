@@ -65,6 +65,45 @@ const params = {
 const accepted = of({ data: { messages: [{ id: 'wamid.1' }] } });
 
 describe('WhatsAppService image header', () => {
+  it('persists each actual attempt before I/O and retains three-button capability through a bounded media fallback', async () => {
+    const { service, httpService } = setup();
+    const template = {
+      ...withImage(),
+      changeRequestOfKey: 'cod_confirm.en.parent',
+    };
+    const attempts: string[] = [];
+    httpService.post.mockImplementation(
+      (_url: string, payload: { template: { name: string } }) => {
+        expect(attempts.at(-1)).toBe(payload.template.name);
+        return attempts.length === 1
+          ? throwError(() => providerError(400, 131053))
+          : accepted;
+      },
+    );
+    await service.sendVerificationTemplate({
+      ...params,
+      template,
+      beforeTemplateAttempt: (identity) => {
+        attempts.push(identity.templateName);
+        return Promise.resolve();
+      },
+    });
+    expect(attempts).toEqual([
+      template.imageHeader.templateName,
+      template.templateName,
+    ]);
+    for (const call of httpService.post.mock.calls) {
+      const payload = call[1] as {
+        template: { components: { type: string }[] };
+      };
+      expect(
+        payload.template.components.filter(
+          (c: { type: string }) => c.type === 'button',
+        ),
+      ).toHaveLength(3);
+    }
+    expect(httpService.post).toHaveBeenCalledTimes(2);
+  });
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);

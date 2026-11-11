@@ -1,3 +1,4 @@
+import { ChangeRequestPreparationRepository } from './repositories/change-request-preparation.repository';
 import { WhatsappSenderAlertsRepository } from './repositories/whatsapp-sender-alerts.repository';
 import { WhatsappSenderReadRepository } from './repositories/whatsapp-sender-read.repository';
 import { CreditUsageRepository } from './repositories/credit-usage.repository';
@@ -82,6 +83,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     WhatsappMessageTextsRepository,
     VerificationServiceMessagesRepository,
     WhatsappTemplateSyncRepository,
+    ChangeRequestPreparationRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
@@ -127,6 +129,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     WhatsappMessageTextsRepository,
     VerificationServiceMessagesRepository,
     WhatsappTemplateSyncRepository,
+    ChangeRequestPreparationRepository,
     WhatsappTemplateDraftsRepository,
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,

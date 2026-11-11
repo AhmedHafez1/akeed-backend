@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
 import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
 import { ownNumberLimit } from '../../shared/billing/billing-plan';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
@@ -19,6 +20,7 @@ import {
 } from '../../shared/review-prompt/review-prompt.policy';
 import type { ImageTwinTemplate } from '../../shared/messaging/template-registry.types';
 import { ConfigService } from '@nestjs/config';
+import { readWhatsappTemplateConfig } from '../../shared/config/whatsapp-template.config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
 import { maskPhone } from '../../shared/utils/mask-phone.util';
 import {
@@ -190,6 +192,8 @@ export interface AdminStoreVerificationView {
   currency: string | null;
   attempts: number;
   follow_up_attempts: number;
+  /** A first confirmation staff may mark not sent and resend. */
+  resend_dispatch_id: string | null;
   template_name: string | null;
   language_code: string | null;
   cancellation_source: string | null;
@@ -216,6 +220,8 @@ export class AdminStoresService {
     @Optional() private readonly integrations?: IntegrationsRepository,
     @Optional() private readonly templates?: WhatsappTemplatesRepository,
     @Optional() private readonly reviewPrompts?: ReviewPromptsRepository,
+    @Optional()
+    private readonly changeTemplates?: ChangeRequestTemplatesService,
   ) {}
 
   async getStores(query: AdminStoresQueryDto) {
@@ -413,6 +419,14 @@ export class AdminStoresService {
     integrationId: string,
     enabled: boolean,
   ) {
+    const current = this.integrations?.findById
+      ? await this.integrations.findById(integrationId)
+      : undefined;
+    if (current?.changeRequestsEnabled && this.changeTemplates)
+      await this.changeTemplates.assertReady(
+        { ...current, logoHeaderEnabled: enabled },
+        readWhatsappTemplateConfig(this.config).messageImprovements,
+      );
     const found = await this.integrations?.setLogoHeaderEnabled(
       integrationId,
       enabled,
@@ -627,6 +641,10 @@ export class AdminStoresService {
       currency: row.currency,
       attempts: Number(row.attempts ?? 0),
       follow_up_attempts: Number(row.follow_up_attempts ?? 0),
+      resend_dispatch_id:
+        row.status === 'confirmed' || row.status === 'canceled'
+          ? null
+          : (row.resend_dispatch_id ?? null),
       template_name: row.template_name,
       language_code: row.language_code,
       cancellation_source: row.cancellation_source,

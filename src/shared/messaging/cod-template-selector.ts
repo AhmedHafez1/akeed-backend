@@ -38,8 +38,8 @@ export interface SelectedCodTemplate extends SentTemplateIdentity {
   variables: readonly TemplateVariable[];
   /**
    * Send this template's image-header twin with the store's banner instead.
-   * The identity above stays the text template: the claim records it, the
-   * adapter reports the twin when the image goes out, and it falls back to the
+   * The identity above identifies the text parent. The dispatch records the
+   * actual image attempt before I/O, and it falls back to the
    * text template once when the provider refuses the image.
    */
   imageHeader?: ImageHeaderSend;

@@ -8,6 +8,7 @@ export const COMMERCE_OUTCOME_ACTIONS = [
   'automatic_no_reply_tagging',
   'automatic_no_whatsapp_tagging',
   'automatic_no_reply_cancellation',
+  'change_request_reconciliation',
 ] as const;
 
 export type CommerceOutcomeAction = (typeof COMMERCE_OUTCOME_ACTIONS)[number];
@@ -58,6 +59,15 @@ export interface CommerceOutcomeConnection {
 
 export interface CommerceOutcomeAdapterRequest extends CommerceOutcomeDispatchCommand {
   connection: CommerceOutcomeConnection;
+  /** Read from Akeed immediately before reconciling its own platform markers. */
+  changeRequestState?: ChangeRequestPlatformState;
+}
+
+export interface ChangeRequestPlatformState {
+  revision: string;
+  open: boolean;
+  status: string;
+  confirmationCycle: number;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNotNull, not } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, not, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { whatsappTemplates } from '../schema';
@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/messaging/template-provider.types';
 
 import { IMAGE_TWIN_SUFFIX } from '../../../shared/messaging/image-twin.policy';
+import { changeImageTwinUsable } from '../../../shared/messaging/logo-header.policy';
 
 /**
  * The columns a registry read needs. Reads filter on `header_format`
@@ -222,6 +223,17 @@ export class WhatsappTemplatesRepository {
     const parent = alias(whatsappTemplates, 'parent');
     const rows = await this.db
       .select({
+        key: whatsappTemplates.key,
+        changeRequestOfKey: parent.changeRequestOfKey,
+        category: whatsappTemplates.category,
+        lastSyncedAt: whatsappTemplates.lastSyncedAt,
+        retiredAt: whatsappTemplates.retiredAt,
+        components: whatsappTemplates.componentsSnapshot,
+        parentComponents: parent.componentsSnapshot,
+        parameterFormat: whatsappTemplates.parameterFormat,
+        parentParameterFormat: parent.parameterFormat,
+        variableMapping: whatsappTemplates.variableMapping,
+        parentVariableMapping: parent.variableMapping,
         imageTwinOfKey: parent.key,
         parentTemplateName: parent.metaTemplateName,
         parentLanguageCode: parent.metaLanguageCode,
@@ -240,6 +252,18 @@ export class WhatsappTemplatesRepository {
       )
       .orderBy(asc(whatsappTemplates.key));
     return rows.map((row) => ({
+      key: row.key,
+      changeRequestOfKey: row.changeRequestOfKey,
+      category: row.category as TemplateCategory | null,
+      lastSyncedAt: row.lastSyncedAt,
+      retired: row.retiredAt !== null,
+      components: row.components as TemplateComponentsSnapshot | null,
+      parentComponents:
+        row.parentComponents as TemplateComponentsSnapshot | null,
+      parameterFormat: row.parameterFormat,
+      parentParameterFormat: row.parentParameterFormat,
+      variables: row.variableMapping,
+      parentVariables: row.parentVariableMapping,
       imageTwinOfKey: row.imageTwinOfKey,
       twinOf: {
         templateName: row.parentTemplateName,
@@ -300,6 +324,7 @@ export class WhatsappTemplatesRepository {
           sortOrder: parent.sortOrder,
           headerFormat: 'image',
           imageTwinOfKey: parent.key,
+          changeRequestOfKey: parent.changeRequestOfKey,
         })
         .onConflictDoNothing()
         .returning({ id: whatsappTemplates.id });
@@ -312,12 +337,26 @@ export class WhatsappTemplatesRepository {
    * sync or template webhook recorded it. Returns the keys switched on.
    */
   async activateApprovedImageTwins(): Promise<string[]> {
+    const twins = await this.findImageTwins();
+    const eligibleKeys = twins
+      .filter(
+        (t) =>
+          !t.changeRequestOfKey ||
+          changeImageTwinUsable({ ...t, isActive: true }),
+      )
+      .map((t) => t.key)
+      .filter((key): key is string => Boolean(key));
+    if (!eligibleKeys.length) return [];
     const rows = await this.db
       .update(whatsappTemplates)
       .set({ isActive: true, updatedAt: new Date().toISOString() })
       .where(
         and(
           eq(whatsappTemplates.headerFormat, 'image'),
+          sql`${whatsappTemplates.key} in (${sql.join(
+            eligibleKeys.map((key) => sql`${key}`),
+            sql`, `,
+          )})`,
           eq(whatsappTemplates.reviewStatus, 'approved'),
           not(whatsappTemplates.isActive),
         ),

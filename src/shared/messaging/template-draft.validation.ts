@@ -1,4 +1,5 @@
 import { EXPECTED_CATEGORY_BY_PURPOSE } from './template-provider.types';
+import { CHANGE_BUTTON_LABELS } from './change-request-messaging';
 import type {
   TemplateLanguage,
   TemplateParameterFormat,
@@ -463,6 +464,13 @@ export function validateTemplateDraft(
     ...validateVariables(content.body, content.parameterFormat, variables),
     ...validateSamples(content.body, variables),
     ...validateButtons(content.purpose, submission.buttons, content),
+    ...(content.changeRequestOfKey
+      ? content.changeLabel === CHANGE_BUTTON_LABELS[content.language]
+        ? []
+        : [error('change_label', 'change_label_fixed', 'akeed')]
+      : content.changeLabel
+        ? [error('change_label', 'change_link_required', 'akeed')]
+        : []),
   ];
   return {
     issues,

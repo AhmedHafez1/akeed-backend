@@ -16,6 +16,15 @@ import {
 } from '../../shared/logging/backend-log.util';
 import { isSyntheticOrder } from '../../shared/commerce/synthetic-order';
 import { CommerceOutcomeSyncTracker } from './commerce-outcome-sync-tracker.service';
+import { VerificationChangeRequestsRepository } from '../../infrastructure/database/repositories/verification-change-requests.repository';
+
+const TAGGING_ACTIONS = new Set<CommerceOutcomeAction>([
+  'customer_confirmation',
+  'customer_cancellation',
+  'merchant_cancellation_tagging',
+  'automatic_no_reply_tagging',
+  'automatic_no_whatsapp_tagging',
+]);
 
 type OutcomeOrder = NonNullable<
   Awaited<ReturnType<OrdersRepository['findForOutcomeDispatch']>>
@@ -36,6 +45,8 @@ export class CommerceOutcomeRegistryService {
     // Absent where nothing tracks synchronization; dispatch is then exactly
     // what it was before sync states existed.
     @Optional() private readonly tracker?: CommerceOutcomeSyncTracker,
+    @Optional()
+    private readonly changeRequests?: VerificationChangeRequestsRepository,
   ) {
     const adaptersByPlatform = new Map<string, CommerceOutcomeAdapter>();
     for (const adapter of adapters) {
@@ -114,6 +125,50 @@ export class CommerceOutcomeRegistryService {
 
     if (isSyntheticOrder(order)) {
       return this.complete(command, { status: 'applied' });
+    }
+
+    if (
+      command.action === 'change_request_reconciliation' &&
+      adapter.tracksSynchronization
+    ) {
+      return this.reconcileChangeRequest(command, order, adapter);
+    }
+
+    // An old outcome retry cannot put a retired status back after a change
+    // request or a fresh confirmation cycle. Only capable adapters reconcile markers.
+    if (
+      TAGGING_ACTIONS.has(command.action) &&
+      adapter.capabilities.has('change_request_reconciliation')
+    ) {
+      const current = await this.changeRequests?.platformState(
+        command.correlationId,
+        command.orgId,
+        order.id,
+      );
+      if (current) {
+        const actionMatches =
+          !current.open &&
+          ((command.action === 'customer_confirmation' &&
+            current.status === 'confirmed') ||
+            ([
+              'customer_cancellation',
+              'merchant_cancellation_tagging',
+            ].includes(command.action) &&
+              current.status === 'canceled') ||
+            (command.action === 'automatic_no_reply_tagging' &&
+              current.status === 'no_reply') ||
+            (command.action === 'automatic_no_whatsapp_tagging' &&
+              current.status === 'no_whatsapp'));
+        const result: CommerceOutcomeOperationResult = actionMatches
+          ? await this.dispatch({
+              ...command,
+              action: 'change_request_reconciliation',
+              skipIfSynced: false,
+            })
+          : { status: 'permanent_failure', errorCode: 'outcome_superseded' };
+        await tracker?.recordWithoutAttempt(command, order.id, result);
+        return this.complete(command, result);
+      }
     }
 
     if (
@@ -229,6 +284,90 @@ export class CommerceOutcomeRegistryService {
     }
   }
 
+  private async reconcileChangeRequest(
+    command: CommerceOutcomeDispatchCommand,
+    order: OutcomeOrder,
+    adapter: CommerceOutcomeAdapter,
+  ): Promise<CommerceOutcomeDispatchResult> {
+    const current = await this.changeRequests?.platformState(
+      command.correlationId,
+      command.orgId,
+      order.id,
+    );
+    if (!current || !this.tracker || !order.integration)
+      return this.complete(command, {
+        status: 'permanent_failure',
+        errorCode: 'change_request_context_unavailable',
+      });
+    const claim = await this.tracker.claimReconciliation(
+      command,
+      order.id,
+      current.revision,
+    );
+    if (claim.kind === 'busy')
+      return this.complete(command, {
+        status: 'retryable_failure',
+        errorCode: 'sync_in_progress',
+        retryAfterMs: 3_000,
+      });
+    const beforeWrite = await this.changeRequests!.platformState(
+      command.correlationId,
+      command.orgId,
+      order.id,
+    );
+    if (beforeWrite?.revision !== current.revision) {
+      const superseded: CommerceOutcomeOperationResult = {
+        status: 'retryable_failure',
+        errorCode: 'sync_revision_changed',
+        retryAfterMs: 0,
+      };
+      if (claim.kind === 'claimed')
+        await this.tracker.settle(
+          claim.row,
+          { ...command, retryInBackground: true },
+          superseded,
+        );
+      return this.complete(command, superseded);
+    }
+    if (claim.kind === 'settled')
+      return this.complete(command, { status: 'applied' });
+    let result: CommerceOutcomeOperationResult;
+    try {
+      result = await adapter.execute({
+        ...command,
+        connection: order.integration,
+        changeRequestState: current,
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(CommerceOutcomeRegistryService.name, {
+          action: 'change-request-platform-reconcile',
+          outcome: 'retry',
+          orgId: command.orgId,
+          ...normalizeError(error),
+        }),
+      );
+      result = { status: 'retryable_failure', errorCode: 'source_unavailable' };
+    }
+    const after = await this.changeRequests!.platformState(
+      command.correlationId,
+      command.orgId,
+      order.id,
+    );
+    if (after?.revision !== current.revision)
+      result = {
+        status: 'retryable_failure',
+        errorCode: 'sync_revision_changed',
+        retryAfterMs: 0,
+      };
+    await this.tracker.settle(
+      claim.row,
+      { ...command, retryInBackground: true },
+      result,
+    );
+    return this.complete(command, result);
+  }
+
   private async loadInspectionTarget(
     command: CommerceOutcomeDispatchCommand,
   ): Promise<
@@ -319,6 +458,6 @@ export class CommerceOutcomeRegistryService {
       }),
     );
 
-    return { ...command, ...operation };
+    return { ...operation, ...command };
   }
 }
