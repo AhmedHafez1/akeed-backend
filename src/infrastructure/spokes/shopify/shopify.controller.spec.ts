@@ -181,6 +181,32 @@ describe('Shopify HTTP raw-body boundary', () => {
     ).toEqual({ eligible: false, reason: 'missing_payment_signal' });
   });
 
+  it('keeps financial_status through production validation, so a manual unpaid order is judged COD', async () => {
+    const payload = shopifyOrderFixture({
+      payment_gateway_names: ['manual'],
+      financial_status: 'pending',
+    });
+    await post(JSON.stringify(payload)).expect(200);
+    const [inserted] = events.insertIfNew.mock.calls[0] as [
+      { rawPayload: Record<string, unknown> },
+    ];
+    expect(inserted.rawPayload).toMatchObject({ financial_status: 'pending' });
+    const strategy = new ShopifyOrderEligibilityStrategy();
+    expect(
+      strategy.evaluateOrderForVerification(
+        new ShopifyOrderNormalizer(new PhoneService()).normalizeOrder(
+          inserted.rawPayload,
+          'trusted-int',
+          'trusted-org',
+        )!,
+      ),
+    ).toEqual({
+      eligible: true,
+      reason: 'manual_unpaid_cod',
+      matchedSignal: 'manual',
+    });
+  });
+
   it.each([null, 'bad-signature', Buffer.alloc(32).toString('base64')])(
     'rejects signature %p before ingestion',
     async (signature) => {

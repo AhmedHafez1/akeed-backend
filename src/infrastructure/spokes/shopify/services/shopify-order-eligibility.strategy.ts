@@ -8,7 +8,10 @@ import type { OrderEligibilityResult } from '../../../../modules/verification-co
 import type { OrderEligibilityStrategy } from '../../../../modules/verification-core/strategies/order-eligibility.strategy';
 import { appendPaymentSignal } from '../../../../shared/commerce/payment-signals';
 import type { NormalizedOrder } from '../../../../shared/interfaces/order.interface';
-import { collectShopifyGatewaySignals } from './shopify-payment-signals';
+import {
+  collectShopifyGatewaySignals,
+  isShopifyManualUnpaidCod,
+} from './shopify-payment-signals';
 
 /**
  * Shopify reports payment through gateways and transactions on the raw order
@@ -25,6 +28,16 @@ export class ShopifyOrderEligibilityStrategy implements OrderEligibilityStrategy
   readonly platform = 'shopify' as const;
 
   evaluateOrderForVerification(order: NormalizedOrder): OrderEligibilityResult {
+    // Judged from the payload before the declared status, so an order the
+    // normalizer once classified as `non_cod` meets the same rule.
+    if (isShopifyManualUnpaidCod(order.rawPayload)) {
+      return {
+        eligible: true,
+        reason: 'manual_unpaid_cod',
+        matchedSignal: 'manual',
+      };
+    }
+
     const declared = resolveDeclaredCodStatus(order);
     if (declared) return declared;
 

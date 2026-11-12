@@ -94,4 +94,24 @@ describe('ShopifyOrderWebhookDto under the global pipe', () => {
       line_items: [{ title: 7 }],
     });
   });
+
+  it('keeps the financial status a manual COD order is judged by', async () => {
+    const order = await throughGlobalPipe({
+      ...ORDER,
+      payment_gateway_names: ['manual'],
+      financial_status: 'pending',
+    });
+
+    expect(order).toMatchObject({
+      payment_gateway_names: ['manual'],
+      financial_status: 'pending',
+    });
+  });
+
+  it('drops a financial status that is not text instead of refusing the order', async () => {
+    const order = await throughGlobalPipe({ ...ORDER, financial_status: 3 });
+
+    expect(order.financial_status).toBeUndefined();
+    expect(order.id).toBe('12345');
+  });
 });

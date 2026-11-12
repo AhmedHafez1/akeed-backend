@@ -536,7 +536,11 @@ export class VerificationHubService {
     });
     if (existing) return existing;
 
-    return this.ordersRepo.create(this.toOrderInsertPayload(orderData));
+    return this.ordersRepo.createIfAbsent({
+      ...this.toOrderInsertPayload(orderData),
+      integrationId: orderData.integrationId,
+      externalOrderId: orderData.externalOrderId,
+    });
   }
 
   private async prepareVerification(
