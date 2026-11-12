@@ -377,6 +377,11 @@ export interface OnboardingStateDto {
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
   billingStatus: string | null;
+  /**
+   * While the store uses a resumed paid period (`billingStatus` =
+   * `paid_through`): when it ends. Null otherwise.
+   */
+  paidThroughAt: string | null;
   billingManagement: BillingManagement;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
@@ -439,6 +444,11 @@ export interface OnboardingBillingPlansResponseDto {
   isFreePlanClaimed: boolean;
   /** The plan the store pays for now; null while no plan is active. */
   currentPlanId: OnboardingBillingPlanId | null;
+  /**
+   * While the store uses the days it paid for before an uninstall: when they
+   * end. Subscribing now starts Shopify's first charge then. Null otherwise.
+   */
+  paidThroughAt: string | null;
 }
 
 export interface SettingsResponseDto {
@@ -458,6 +468,8 @@ export interface SettingsResponseDto {
     isFreePlanClaimed: boolean;
     /** The plan the store pays for now; null while no plan is active. */
     currentPlanId: OnboardingBillingPlanId | null;
+    /** End of the paid-through period in use; null otherwise. */
+    paidThroughAt: string | null;
     usage: {
       pools?: UsagePools | null;
       used: number;

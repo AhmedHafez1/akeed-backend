@@ -29,6 +29,7 @@ const entitlementColumns = {
   billingStatus: integrations.billingStatus,
   billingPlanId: integrations.billingPlanId,
   billingActivatedAt: integrations.billingActivatedAt,
+  paidThroughAt: integrations.paidThroughAt,
 };
 
 @Injectable()

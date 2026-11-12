@@ -171,6 +171,7 @@ describe('manual entitlement HTTP boundary', () => {
         plans: [],
         isFreePlanClaimed: false,
         currentPlanId: null,
+        paidThroughAt: null,
         billingManagement: { mode: 'manual', canManageBilling: false },
       });
     for (const call of [

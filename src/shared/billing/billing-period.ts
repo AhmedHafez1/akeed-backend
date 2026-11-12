@@ -38,6 +38,30 @@ export function getBillingPeriodEnd(periodStart: string): string {
 }
 
 /**
+ * The exact end of the 30-day period that contains `at`, as an ISO timestamp:
+ * the activation time plus whole 30-day cycles, the same count
+ * {@link getBillingPeriodStart} uses. Its date equals
+ * `getBillingPeriodEnd(getBillingPeriodStart(billingActivatedAt, at))`; the
+ * time of day is kept so the period does not end hours early. `null` without
+ * a usable activation.
+ */
+export function getBillingPeriodEndAt(
+  billingActivatedAt: string | Date | null | undefined,
+  at = new Date(),
+): string | null {
+  if (!billingActivatedAt) return null;
+  const activation = new Date(billingActivatedAt);
+  if (isNaN(activation.getTime())) return null;
+  const msPerDay = 86_400_000;
+  const elapsedMs = at.getTime() - activation.getTime();
+  const completedCycles =
+    elapsedMs < 0 ? 0 : Math.floor(Math.floor(elapsedMs / msPerDay) / 30);
+  return new Date(
+    activation.getTime() + (completedCycles + 1) * 30 * msPerDay,
+  ).toISOString();
+}
+
+/**
  * Fixed key for a one-time plan with no usable activation date. It must never
  * derive from `now`, or the allowance would renew with the calendar.
  */

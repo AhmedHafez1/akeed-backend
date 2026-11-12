@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { effectiveBillingStatusSql } from '../../shared/utils/billing.util';
 import {
   AdminHealthRuleService,
   type AdminHealthColumns,
@@ -141,5 +142,18 @@ describe('AdminHealthRuleService', () => {
 
     expect(attention.sql).toContain('AND NOT (');
     expect(attention.sql).toMatch(/^array_remove\(ARRAY\[/);
+  });
+
+  it('reads a live paid-through period as not blocked and a lapsed one as cancelled', () => {
+    // Checked against Postgres: live paid_through -> no signal; lapsed or
+    // undated -> 'cancelled' -> subscription_blocked, like any ended plan.
+    const query = new PgDialect().sqlToQuery(
+      effectiveBillingStatusSql(sql`i.billing_status`, sql`i.paid_through_at`),
+    );
+    expect(query.sql).toBe(
+      "(CASE WHEN lower(btrim(COALESCE(i.billing_status, ''))) = $1 AND (i.paid_through_at IS NULL OR i.paid_through_at <= NOW()) THEN 'cancelled' ELSE i.billing_status END)",
+    );
+    expect(query.params).toEqual(['paid_through']);
+    expect(render().critical.params).not.toContain('paid_through');
   });
 });

@@ -746,6 +746,13 @@ export const integrations = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    // End of the period a paid store had paid for when it uninstalled. While
+    // in the future, a reinstall resumes that plan as `paid_through`. Set once
+    // per paid period at uninstall, never moved by a reinstall.
+    paidThroughAt: timestamp('paid_through_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',

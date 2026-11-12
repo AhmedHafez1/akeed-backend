@@ -16,11 +16,19 @@ export interface CreateSubscriptionInput {
    * when the new one is identical (a renewal), instead of at the next cycle.
    */
   replaceImmediately?: boolean;
+  /**
+   * Free days before Shopify's first charge, counted from the merchant's
+   * approval. Used so a store in a paid-through period is not charged twice
+   * for days it already paid for.
+   */
+  trialDays?: number;
 }
 
 export interface SubscriptionStatusResult {
   id: string;
   status: string;
+  /** The subscription's trial length in days, when Shopify returns it. */
+  trialDays?: number;
 }
 
 export interface SubscriptionBillingPort {

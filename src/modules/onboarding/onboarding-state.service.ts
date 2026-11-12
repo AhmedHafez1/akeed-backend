@@ -1,3 +1,7 @@
+import {
+  effectiveBillingStatus,
+  isPaidThroughActive,
+} from '../../shared/utils/billing.util';
 import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
 import { getBillingManagement } from '../../shared/billing/entitlement';
 import {
@@ -654,7 +658,17 @@ export class OnboardingStateService {
       shippingCurrency: resolveShippingCurrency(integration.shippingCurrency),
       avgShippingCost: this.resolveAverageShippingCost(integration),
       billingPlanId: integration.billingPlanId ?? null,
-      billingStatus: integration.billingStatus ?? null,
+      // A lapsed paid-through period reads as `cancelled`, like any ended plan.
+      billingStatus: effectiveBillingStatus(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      ),
+      paidThroughAt: isPaidThroughActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      )
+        ? integration.paidThroughAt
+        : null,
       billingManagement: getBillingManagement(integration),
       acknowledgmentEnabled: integration.acknowledgmentEnabled === true,
       changeRequestsEnabled: integration.changeRequestsEnabled === true,

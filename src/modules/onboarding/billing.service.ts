@@ -33,13 +33,21 @@ import {
   buildPostBillingRedirectUrl,
 } from './onboarding.service.helpers';
 import { BillingConfigService } from './billing-config.service';
-import { isBillingStatusActive } from '../../shared/utils/billing.util';
+import {
+  PAID_THROUGH_BILLING_STATUS,
+  isBillingStatusActive,
+  isPaidThroughActive,
+} from '../../shared/utils/billing.util';
+import { paidThroughTrialDays } from '../../shared/billing/paid-through.policy';
 import { renewableSubscriptionPlanId } from '../../shared/billing/usage-alert.policy';
 import {
   isOneTimeBillingPlan,
   ownNumberLimit,
 } from '../../shared/billing/billing-plan';
-import { getOneTimePeriodStart } from '../../shared/billing/billing-period';
+import {
+  getBillingPeriodStart,
+  getOneTimePeriodStart,
+} from '../../shared/billing/billing-period';
 import {
   buildBackendLog,
   normalizeError,
@@ -57,13 +65,17 @@ export type StarterActivationResult =
   | 'activated'
   | 'already_active'
   | 'resumed'
+  | 'resumed_paid_through'
   | 'already_claimed'
   | 'not_applicable';
 
 interface BillingChargeResolution {
   status: string;
   subscriptionId: string;
+  trialDays?: number;
 }
+
+const MS_PER_DAY = 86_400_000;
 
 @Injectable()
 export class BillingService {
@@ -91,6 +103,7 @@ export class BillingService {
         plans: [],
         isFreePlanClaimed: false,
         currentPlanId: null,
+        paidThroughAt: null,
         billingManagement,
       };
     const plans = this.billingConfig.resolveAllPlans();
@@ -116,9 +129,13 @@ export class BillingService {
         ),
       })),
       isFreePlanClaimed,
-      currentPlanId: isBillingStatusActive(integration.billingStatus)
+      currentPlanId: isBillingStatusActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      )
         ? integration.billingPlanId
         : null,
+      paidThroughAt: this.livePaidThroughAt(integration),
     };
   }
 
@@ -143,9 +160,13 @@ export class BillingService {
 
     // Same-plan guard: skip if already active on the requested plan, unless
     // the merchant asked to buy their recurring paid plan again (a renewal).
+    // A store in a resumed paid-through period has no subscription yet:
+    // choosing its plan subscribes to keep it after that period, so it is
+    // never short-circuited here.
     const isSamePlan =
       planId === integration.billingPlanId &&
-      isBillingStatusActive(integration.billingStatus);
+      isBillingStatusActive(integration.billingStatus) &&
+      !this.isInPaidThrough(integration);
     const isRenewal =
       options.renew === true &&
       renewableSubscriptionPlanId({
@@ -258,9 +279,17 @@ export class BillingService {
     }
     if (
       integration.billingPlanId &&
-      isBillingStatusActive(integration.billingStatus)
+      isBillingStatusActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      )
     ) {
       return 'already_active';
+    }
+    // Before Starter: a store that had never claimed Starter would otherwise
+    // get it, with a usage reset, in place of the plan it paid for.
+    if (await this.resumePaidPlanIfPaidThrough(integration)) {
+      return 'resumed_paid_through';
     }
     const starterPlan = this.billingConfig
       .resolveAllPlans()
@@ -371,7 +400,10 @@ export class BillingService {
     if (
       !getBillingManagement(integration).canManageBilling ||
       !integration.billingActivatedAt ||
-      isBillingStatusActive(integration.billingStatus)
+      isBillingStatusActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      )
     ) {
       return null;
     }
@@ -427,6 +459,91 @@ export class BillingService {
     return true;
   }
 
+  /**
+   * The paid plan a reinstalled store may take up again: it uninstalled with
+   * days left in a period it had paid for (`paidThroughAt`, set once at
+   * uninstall) and that time has not passed.
+   */
+  private findResumablePaidPlan(
+    integration: IntegrationRecord,
+    now = new Date(),
+  ): BillingPlanConfig | null {
+    if (
+      !getBillingManagement(integration).canManageBilling ||
+      !integration.billingPlanId ||
+      !integration.billingActivatedAt ||
+      !integration.paidThroughAt ||
+      new Date(integration.paidThroughAt).getTime() <= now.getTime() ||
+      isBillingStatusActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+        now,
+      )
+    ) {
+      return null;
+    }
+    const plan = this.billingConfig
+      .resolveAllPlans()
+      .find(
+        (candidate) =>
+          candidate.id === integration.billingPlanId && candidate.amount > 0,
+      );
+    return plan ?? null;
+  }
+
+  /**
+   * Gives a reinstalled store back the paid plan it had, without a Shopify
+   * subscription, until `paidThroughAt`. The plan, the activation date and
+   * the usage counters are left alone: together they key the period, so the
+   * store gets back exactly what it had left, never a fresh allowance. The
+   * date itself is never moved here.
+   */
+  private async resumePaidPlanIfPaidThrough(
+    integration: IntegrationRecord,
+  ): Promise<boolean> {
+    const plan = this.findResumablePaidPlan(integration);
+    if (!plan) return false;
+
+    await this.persistBillingState({
+      integrationId: integration.id,
+      pendingBillingPlanId: null,
+      status: PAID_THROUGH_BILLING_STATUS,
+      clearCanceledAt: true,
+      shopifySubscriptionId: null,
+    });
+    // The plan is usable again: orders that waited for capacity can go.
+    await this.capacityRecovery?.request(integration.orgId, 'plan_activated');
+
+    this.logger.log(
+      buildBackendLog(BillingService.name, {
+        action: 'billing-resume-paid-through',
+        outcome: 'success',
+        orgId: integration.orgId,
+        shopDomain: integration.platformStoreUrl,
+        integrationId: integration.id,
+        billingPlanId: plan.id,
+        billingStatus: PAID_THROUGH_BILLING_STATUS,
+        paidThroughAt: integration.paidThroughAt,
+      }),
+    );
+    return true;
+  }
+
+  private isInPaidThrough(
+    integration: IntegrationRecord,
+    now = new Date(),
+  ): boolean {
+    return isPaidThroughActive(
+      integration.billingStatus,
+      integration.paidThroughAt,
+      now,
+    );
+  }
+
+  private livePaidThroughAt(integration: IntegrationRecord): string | null {
+    return this.isInPaidThrough(integration) ? integration.paidThroughAt : null;
+  }
+
   async handleBillingCallback(
     callbackParams: BillingCallbackParams,
   ): Promise<string> {
@@ -468,7 +585,10 @@ export class BillingService {
     // Merchant declined or subscription was not approved.
     // Clear the pending plan. If the merchant already has an active plan,
     // keep it intact so verification processing continues.
-    const hasActivePlan = isBillingStatusActive(integration.billingStatus);
+    const hasActivePlan = isBillingStatusActive(
+      integration.billingStatus,
+      integration.paidThroughAt,
+    );
     const isCanceledStatus = this.isCanceledBillingStatus(
       billingResolution.status,
     );
@@ -498,6 +618,7 @@ export class BillingService {
     callbackParams: BillingCallbackParams,
   ): Promise<string> {
     // Cancel the previous subscription only after the new one is confirmed.
+    // A store in a paid-through period has none (its id is null): no-op.
     await this.cancelExistingSubscriptionIfAny(integration);
 
     // Promote the pending plan to the active plan.
@@ -507,14 +628,36 @@ export class BillingService {
       ? this.billingConfig.resolvePlan(activatedPlanId)
       : null;
 
+    const now = new Date();
+    const paidThrough = this.isInPaidThrough(integration, now);
+    const keepsPaidPeriod =
+      paidThrough && activatedPlanId === integration.billingPlanId;
+    // Subscribing during a paid-through period: Shopify's first charge comes
+    // after the trial days. The same plan keeps its period and counters (the
+    // old anchor ends with the paid days); another plan is anchored at that
+    // first charge, so later periods line up with Shopify's.
+    // A subscription approved with trial days after its paid-through period
+    // ended is anchored the same way: its first charge, not its approval.
+    const trialDays = paidThrough
+      ? (billingResolution.trialDays ??
+        paidThroughTrialDays(integration.paidThroughAt, now))
+      : (billingResolution.trialDays ?? 0);
+    const trialAnchor =
+      !keepsPaidPeriod && trialDays > 0
+        ? new Date(now.getTime() + trialDays * MS_PER_DAY).toISOString()
+        : null;
+
     await this.persistBillingState({
       integrationId: integration.id,
       planId: activatedPlanId ?? undefined,
       pendingBillingPlanId: null,
       status: billingResolution.status,
       shopifySubscriptionId: billingResolution.subscriptionId,
-      markActivatedAt: true,
+      markActivatedAt: !paidThrough,
+      activatedAt: trialAnchor ?? undefined,
       clearCanceledAt: true,
+      // The live subscription governs from now on.
+      clearPaidThroughAt: Boolean(integration.paidThroughAt),
     });
 
     if (activatedPlan && activatedPlan.amount > 0) {
@@ -524,8 +667,10 @@ export class BillingService {
         undefined,
         { paid_subscription_activated: 'captured_exact' },
       );
-      // Buying the live plan again is a renewal, not an upgrade.
+      // Buying the live plan again is a renewal, not an upgrade; so is
+      // subscribing to keep the plan of a paid-through period.
       const isRenewal =
+        keepsPaidPeriod ||
         renewableSubscriptionPlanId({
           planId: integration.billingPlanId,
           billingStatus: integration.billingStatus,
@@ -537,11 +682,42 @@ export class BillingService {
       );
     }
 
-    // Reset usage counters so the new plan starts with a clean slate.
-    await this.resetUsageForPlanChange(
-      integration.id,
-      activatedPlan?.includedVerifications,
-    );
+    if (keepsPaidPeriod) {
+      // Same plan: the store keeps what it had left until the paid days end;
+      // the normal next period starts after that. No fresh allowance.
+      this.logger.log(
+        buildBackendLog(BillingService.name, {
+          action: 'billing-subscribe-during-paid-through',
+          outcome: 'success',
+          orgId: integration.orgId,
+          shopDomain: callbackParams.shop,
+          integrationId: integration.id,
+          billingPlanId: activatedPlanId,
+          usageKept: true,
+        }),
+      );
+    } else {
+      // Reset usage counters so the new plan starts with a clean slate.
+      await this.resetUsageForPlanChange(
+        integration.id,
+        activatedPlan?.includedVerifications,
+        trialAnchor ? getBillingPeriodStart(trialAnchor, now) : undefined,
+      );
+      if (trialAnchor) {
+        this.logger.log(
+          buildBackendLog(BillingService.name, {
+            action: 'billing-subscribe-during-paid-through',
+            outcome: 'success',
+            orgId: integration.orgId,
+            shopDomain: callbackParams.shop,
+            integrationId: integration.id,
+            billingPlanId: activatedPlanId,
+            usageKept: false,
+            billingActivatedAt: trialAnchor,
+          }),
+        );
+      }
+    }
     // A new plan is a fresh allowance: orders blocked on the old one can go.
     await this.capacityRecovery?.request(integration.orgId, 'plan_activated');
 
@@ -624,6 +800,7 @@ export class BillingService {
       return {
         status: subscription.status.toLowerCase(),
         subscriptionId: subscription.id,
+        trialDays: subscription.trialDays,
       };
     } catch (error) {
       this.logger.error(
@@ -665,6 +842,13 @@ export class BillingService {
       ),
       test: params.plan.testMode,
       replaceImmediately: params.replaceImmediately,
+      // During a paid-through period the merchant has paid for the days
+      // left: Shopify's first charge must come after them.
+      ...(this.isInPaidThrough(params.integration)
+        ? {
+            trialDays: paidThroughTrialDays(params.integration.paidThroughAt),
+          }
+        : {}),
     };
   }
 
@@ -804,8 +988,9 @@ export class BillingService {
   private async resetUsageForPlanChange(
     integrationId: string,
     includedLimit?: number,
+    periodStart?: string,
   ): Promise<void> {
-    const newPeriodStart = new Date().toISOString().slice(0, 10);
+    const newPeriodStart = periodStart ?? new Date().toISOString().slice(0, 10);
     try {
       await this.monthlyUsageRepo.resetCountersForPeriod({
         integrationId,
@@ -873,6 +1058,9 @@ export class BillingService {
     markActivatedAt?: boolean;
     markCanceledAt?: boolean;
     clearCanceledAt?: boolean;
+    /** An explicit activation time; wins over `markActivatedAt`. */
+    activatedAt?: string;
+    clearPaidThroughAt?: boolean;
   }): Promise<void> {
     const now = new Date().toISOString();
     const updates: Partial<typeof integrations.$inferInsert> = {};
@@ -900,6 +1088,14 @@ export class BillingService {
 
     if (params.markActivatedAt) {
       updates.billingActivatedAt = now;
+    }
+
+    if (params.activatedAt !== undefined) {
+      updates.billingActivatedAt = params.activatedAt;
+    }
+
+    if (params.clearPaidThroughAt) {
+      updates.paidThroughAt = null;
     }
 
     if (params.markCanceledAt) {

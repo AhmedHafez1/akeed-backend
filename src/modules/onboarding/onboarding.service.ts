@@ -252,6 +252,7 @@ export class OnboardingService {
         plans: billingPlans.plans,
         isFreePlanClaimed: billingPlans.isFreePlanClaimed,
         currentPlanId: billingPlans.currentPlanId,
+        paidThroughAt: billingPlans.paidThroughAt,
         usage,
         messagesSentLast30Days: messagesSentLast30Days.total,
         messagesSentLast30DaysByPool: {
@@ -644,7 +645,10 @@ export class OnboardingService {
         managesBilling &&
         !(
           integration.billingPlanId &&
-          isBillingStatusActive(integration.billingStatus)
+          isBillingStatusActive(
+            integration.billingStatus,
+            integration.paidThroughAt,
+          )
         ),
     };
   }

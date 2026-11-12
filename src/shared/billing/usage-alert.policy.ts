@@ -137,8 +137,11 @@ export function renewablePlanId(params: {
 /**
  * The plan a store can renew right now: its recurring paid plan, while that
  * subscription is live. A canceled, frozen or declined plan is subscribed to
- * again, not renewed. The banner offer, the plan list and the billing
- * endpoint all read this one rule.
+ * again, not renewed. A resumed paid-through period has no subscription to
+ * replace, so it is not renewable either (no paid-through date is passed, and
+ * `isBillingStatusActive` fails `paid_through` closed): buying its plan again
+ * subscribes with trial days instead. The banner offer, the plan list and the
+ * billing endpoint all read this one rule.
  */
 export function renewableSubscriptionPlanId(params: {
   planId: BillingPlanId | null;

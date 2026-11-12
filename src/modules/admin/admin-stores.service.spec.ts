@@ -130,6 +130,7 @@ function detailRow(row: AdminStorePageRow): AdminStoreDetailQueryRow {
     shipping_currency: 'SAR',
     last_synced_at: null,
     billing_activated_at: null,
+    paid_through_at: null,
     created_at: recent,
   };
 }

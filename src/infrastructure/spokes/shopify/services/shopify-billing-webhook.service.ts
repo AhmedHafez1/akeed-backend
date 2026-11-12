@@ -69,10 +69,25 @@ export class ShopifyBillingWebhookService {
     }
 
     const uninstalledAt = new Date().toISOString();
-    await this.integrationsRepo.markShopifyUninstalled(
+    const uninstalled = await this.integrationsRepo.markShopifyUninstalled(
       integration.id,
       uninstalledAt,
     );
+    // A paid store that uninstalls mid-period keeps the days it paid for: a
+    // reinstall before this date resumes the plan (see BillingService).
+    if (uninstalled?.paidThroughAt) {
+      this.logger.log(
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppUninstalled.paidThroughRecorded',
+          outcome: 'success',
+          shopDomain,
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          billingPlanId: uninstalled.billingPlanId,
+          paidThroughAt: uninstalled.paidThroughAt,
+        }),
+      );
+    }
 
     // Shopify's 48-hour rule: nothing is deleted here. A reinstall inside the
     // window gets its history back; the uninstall-retention job (or
