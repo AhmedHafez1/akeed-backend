@@ -1871,6 +1871,13 @@ export const adminStoreLifecycles = pgTable(
       withTimezone: true,
       mode: 'string',
     }),
+    /** The plan the store was on when it uninstalled, kept for admin. */
+    uninstallPlanId: text('uninstall_plan_id'),
+    uninstallBillingStatus: text('uninstall_billing_status'),
+    uninstallPaidThroughAt: timestamp('uninstall_paid_through_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     provenance: jsonb().default({}).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -2297,6 +2304,83 @@ export const planRequiredNotices = pgTable(
     ),
     check('plan_required_notices_attempts_check', sql`${table.attempts} >= 0`),
     pgPolicy('Service role manages plan required notices', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * One row per store order seen by order.create, so a second delivery of the
+ * same order is not counted twice. Order ids only, no customer data.
+ */
+export const integrationOrderIntakeOrders = pgTable(
+  'integration_order_intake_orders',
+  {
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    externalOrderId: text('external_order_id').notNull(),
+    receivedAt: timestamp('received_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    outcome: text('outcome').notNull(),
+    skipReason: text('skip_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.integrationId, table.externalOrderId] }),
+    index('integration_order_intake_orders_received_idx').on(table.receivedAt),
+    check(
+      'integration_order_intake_orders_outcome_check',
+      sql`${table.outcome} IN ('eligible','skipped')`,
+    ),
+    pgPolicy('Service role manages order intake orders', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/** Hourly order.create counts per store: received, eligible and skipped. */
+export const integrationOrderIntake = pgTable(
+  'integration_order_intake',
+  {
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    bucketStart: timestamp('bucket_start', {
+      withTimezone: true,
+      mode: 'string',
+    }).notNull(),
+    received: integer('received').notNull().default(0),
+    eligible: integer('eligible').notNull().default(0),
+    skipped: integer('skipped').notNull().default(0),
+    skippedByReason: jsonb('skipped_by_reason')
+      .$type<Record<string, number>>()
+      .default({})
+      .notNull(),
+    paymentMethods: jsonb('payment_methods')
+      .$type<Record<string, number>>()
+      .default({})
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.integrationId, table.bucketStart] }),
+    index('integration_order_intake_bucket_idx').on(table.bucketStart),
+    pgPolicy('Service role manages order intake', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

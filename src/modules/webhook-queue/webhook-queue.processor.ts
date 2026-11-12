@@ -5,9 +5,15 @@ import { WebhookJobPayload } from './interfaces/webhook-job.interface';
 import {
   WEBHOOK_ORDER_NORMALIZERS,
   WebhookOrderNormalizer,
+  type WebhookOrderIntakeIdentity,
 } from './interfaces/webhook-normalizer.interface';
 import { WebhookEventsRepository } from '../../infrastructure/database/repositories/webhook-events.repository';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { OrderIntakeRepository } from '../../infrastructure/database/repositories/order-intake.repository';
+import {
+  intakeOrderId,
+  type OrderIntakeOutcome,
+} from '../../shared/commerce/order-intake.policy';
 import { VerificationHubService } from '../verification-core/verification-hub.service';
 import { WEBHOOK_QUEUE_NAME, WebhookJobType } from './webhook-queue.constants';
 import type { PlatformType } from '../../shared/interfaces/commerce-source.interface';
@@ -67,6 +73,8 @@ export class WebhookQueueProcessor extends WorkerHost {
     @Optional()
     @Inject(WEBHOOK_ORDER_UPDATE_HANDLERS)
     updateHandlers: WebhookOrderUpdateHandler[] = [],
+    @Optional()
+    private readonly orderIntake?: OrderIntakeRepository,
   ) {
     super();
     this.updateHandlersByPlatform = new Map(
@@ -326,6 +334,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'integration_inactive',
       );
+      await this.recordIntake(data, 'skipped', 'integration_inactive');
       return null;
     }
 
@@ -416,6 +425,11 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         `no_normalizer:${data.platform}`,
       );
+      await this.recordIntake(
+        data,
+        'skipped',
+        `no_normalizer:${data.platform}`,
+      );
       return false;
     }
 
@@ -430,6 +444,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         'normalisation_failed',
       );
+      await this.recordIntake(data, 'skipped', 'normalisation_failed');
       return false;
     }
 
@@ -449,6 +464,7 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         normalizedOrder.reason,
       );
+      await this.recordIntake(data, 'skipped', normalizedOrder.reason);
       return false;
     }
 
@@ -486,8 +502,61 @@ export class WebhookQueueProcessor extends WorkerHost {
         data.webhookEventId,
         result.reason,
       );
+      await this.recordIntake(data, 'skipped', result.reason, normalizedOrder);
       return false;
     }
+    await this.recordIntake(data, 'eligible', null, normalizedOrder);
     return true;
+  }
+
+  /**
+   * Counts a finished order.create for admin order intake. Only events with
+   * a trusted store are counted: a skip before the store is known (no store,
+   * an identity mismatch) has no store to count against. Counting is
+   * diagnostics only, so a failure is logged and never changes the outcome.
+   */
+  private async recordIntake(
+    data: WebhookJobPayload,
+    outcome: OrderIntakeOutcome,
+    skipReason: string | null,
+    order?: WebhookOrderIntakeIdentity,
+  ): Promise<void> {
+    if (
+      !this.orderIntake ||
+      data.jobType !== WebhookJobType.ORDER_CREATE ||
+      !data.integrationId
+    )
+      return;
+    try {
+      const identity =
+        order ??
+        this.normalizersByPlatform
+          .get(data.platform)
+          ?.describeIntake?.(data.rawPayload) ??
+        {};
+      const receivedAt = new Date(data.receivedAt);
+      await this.orderIntake.record({
+        integrationId: data.integrationId,
+        externalOrderId:
+          intakeOrderId(identity.externalOrderId) ??
+          `event:${data.idempotencyKey || data.webhookEventId}`,
+        receivedAt: Number.isNaN(receivedAt.getTime())
+          ? new Date()
+          : receivedAt,
+        outcome,
+        skipReason,
+        paymentMethod: identity.paymentMethod,
+      });
+    } catch (error) {
+      this.logger.warn(
+        buildBackendLog(WebhookQueueProcessor.name, {
+          action: 'order-intake-record',
+          outcome: 'failure',
+          webhookEventId: data.webhookEventId,
+          integrationId: data.integrationId,
+          ...normalizeError(error),
+        }),
+      );
+    }
   }
 }

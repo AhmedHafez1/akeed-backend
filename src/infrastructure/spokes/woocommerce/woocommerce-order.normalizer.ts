@@ -113,6 +113,17 @@ export class WooCommerceOrderNormalizer implements WebhookOrderNormalizer {
     private readonly phones: PhoneService,
   ) {}
 
+  describeIntake(rawPayload: Record<string, unknown>): {
+    externalOrderId: string | null;
+    paymentMethod: string;
+  } {
+    const order = readStoredWooCommerceOrder(rawPayload);
+    return {
+      externalOrderId: order ? readWooCommerceOrderId(order.id) : null,
+      paymentMethod: order ? text(order.payment_method) : '',
+    };
+  }
+
   async normalizeOrder(
     rawPayload: Record<string, unknown>,
     integrationId: string,

@@ -9,7 +9,11 @@ import {
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
 import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
-import { ownNumberLimit } from '../../shared/billing/billing-plan';
+import {
+  isPaidBillingPlan,
+  ownNumberLimit,
+} from '../../shared/billing/billing-plan';
+import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
@@ -35,9 +39,14 @@ import {
 import { resolveIncludedVerificationsLimit } from '../onboarding/onboarding.service.helpers';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import {
+  buildSignalDetails,
+  type AdminSignalDetails,
+} from './admin-signal-details';
+import {
   AdminQueryRepository,
   type AdminStoreDerivation,
   type AdminStoreDetailQueryRow,
+  type AdminStoreOrderIntakeRows,
   type AdminStoreQueryRow,
   type AdminStoreSortKey,
   type AdminStoreVerificationRow,
@@ -51,6 +60,8 @@ import type { AdminHealthStatus, AdminLifecycleStatus } from './admin.types';
 import type { BalanceState } from './standalone-billing-operations.types';
 
 const PLAN_IDS = ['starter', 'basic', 'pro', 'business'] as const;
+/** Days of order intake the store details page shows. */
+const ORDER_INTAKE_DAYS = 7;
 
 export const REVIEW_PROMPT_ADMIN_ERROR_CODES = {
   optedOut: 'REVIEW_PROMPT_OPTED_OUT',
@@ -61,7 +72,7 @@ const UUID_PATTERN =
 
 type PlanId = (typeof PLAN_IDS)[number];
 
-interface AdminUsage {
+export interface AdminUsage {
   pools?: UsagePools;
   used: number;
   limit: number;
@@ -133,8 +144,34 @@ export interface AdminStoreView {
     top_signal: string | null;
     signal_count: number;
     signals: string[];
+    /** Whether each active signal is critical or needs attention. */
+    levels: Record<string, 'critical' | 'attention'>;
+    /** Short facts behind each active signal, keyed by signal. */
+    details: AdminSignalDetails;
   };
   data_quality: string[];
+}
+
+export interface AdminStoreOrderIntakeView {
+  /** The time zone the days are counted in. */
+  time_zone: string;
+  /** Unique orders per local day, oldest first, one entry per day. */
+  days: Array<{
+    day: string;
+    received: number;
+    eligible: number;
+    skipped: number;
+  }>;
+  skip_reasons: Array<{ reason: string; count: number }>;
+  payment_methods: Array<{ name: string; count: number }>;
+}
+
+/** The plan a reinstalled store had before, and what it has now. */
+export interface AdminStoreReinstallView {
+  previous_plan: string | null;
+  lost_at: string | null;
+  reinstalled_at: string;
+  has_active_plan: boolean;
 }
 
 export interface AdminStoreMilestone {
@@ -165,6 +202,8 @@ export interface AdminStoreDetailView extends AdminStoreView {
     send_delay_minutes: number;
   };
   milestones: AdminStoreMilestone[];
+  order_intake: AdminStoreOrderIntakeView;
+  reinstall: AdminStoreReinstallView | null;
   verification_totals: {
     total: number;
     test: number;
@@ -238,6 +277,7 @@ export class AdminStoresService {
         lifecycleStatus: query.lifecycle_status,
         onboardingStatus: query.onboarding_status,
         healthStatus: query.health_status,
+        signal: query.signal,
         country: query.country,
         customerCountry: query.customer_country,
         installedFrom: this.rangeStart(query.installed_from),
@@ -277,10 +317,20 @@ export class AdminStoresService {
 
   async getStore(integrationId: string) {
     const row = await this.requireStore(integrationId);
-    const totals =
-      await this.repository.findStoreVerificationTotals(integrationId);
+    const timeZone = validTimeZone(row.timezone);
+    const [totals, intake] = await Promise.all([
+      this.repository.findStoreVerificationTotals(integrationId),
+      this.repository.findStoreOrderIntake(
+        integrationId,
+        timeZone,
+        ORDER_INTAKE_DAYS,
+      ),
+    ]);
     return {
-      store: this.toDetailView(row, totals),
+      store: {
+        ...this.toDetailView(row, totals),
+        order_intake: toOrderIntakeView(intake, timeZone, new Date()),
+      },
       logo_header: await this.logoHeaderView(integrationId),
       review_prompt: await this.reviewPromptView(integrationId),
       evaluated_at: new Date().toISOString(),
@@ -542,7 +592,7 @@ export class AdminStoresService {
     totals: Awaited<
       ReturnType<AdminQueryRepository['findStoreVerificationTotals']>
     >,
-  ): AdminStoreDetailView {
+  ): Omit<AdminStoreDetailView, 'order_intake'> {
     const view = this.toView(row);
     const byStatus: Record<string, number> = {};
     let total = 0;
@@ -580,6 +630,17 @@ export class AdminStoresService {
         quiet_hours_end: row.quiet_hours_end,
         send_delay_minutes: row.send_delay_minutes,
       },
+      reinstall: row.previous_install_at
+        ? {
+            previous_plan: row.previous_plan_id ?? null,
+            lost_at: row.previous_uninstalled_at ?? null,
+            reinstalled_at: row.installed_at,
+            has_active_plan: isBillingStatusActive(
+              row.subscription_status,
+              row.paid_through_at,
+            ),
+          }
+        : null,
       milestones: [
         {
           key: 'installation_completed',
@@ -695,6 +756,7 @@ export class AdminStoresService {
       planLimits: Object.fromEntries(
         PLAN_IDS.map((plan) => [plan, resolveIncludedVerificationsLimit(plan)]),
       ),
+      paidPlanIds: PLAN_IDS.filter((plan) => isPaidBillingPlan(plan)),
       healthSignals: (columns) => this.healthRules.signalsSql(columns),
     };
   }
@@ -819,10 +881,70 @@ export class AdminStoresService {
         top_signal: signals[0] ?? null,
         signal_count: signals.length,
         signals,
+        levels: Object.fromEntries([
+          ...row.attention_signals.map(
+            (signal) => [signal, 'attention'] as const,
+          ),
+          ...row.critical_signals.map(
+            (signal) => [signal, 'critical'] as const,
+          ),
+        ]),
+        details: buildSignalDetails(row, signals),
       },
       data_quality: row.data_quality_estimated
         ? ['estimated_historical_data']
         : [],
     };
   }
+}
+
+/** A store time zone Postgres and Intl both accept, else UTC. */
+export function validTimeZone(value: string | null | undefined): string {
+  if (!value) return 'UTC';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value });
+    return /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*$/.test(value) ? value : 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** The last `ORDER_INTAKE_DAYS` local days, with zeros for quiet days. */
+export function toOrderIntakeView(
+  rows: AdminStoreOrderIntakeRows,
+  timeZone: string,
+  now: Date,
+): AdminStoreOrderIntakeView {
+  const byDay = new Map(rows.days.map((row) => [row.day, row]));
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const days: AdminStoreOrderIntakeView['days'] = [];
+  for (let offset = ORDER_INTAKE_DAYS - 1; offset >= 0; offset--) {
+    const date = new Date(`${today}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() - offset);
+    const day = date.toISOString().slice(0, 10);
+    const row = byDay.get(day);
+    days.push({
+      day,
+      received: Number(row?.received ?? 0),
+      eligible: Number(row?.eligible ?? 0),
+      skipped: Number(row?.skipped ?? 0),
+    });
+  }
+  return {
+    time_zone: timeZone,
+    days,
+    skip_reasons: rows.reasons.map((row) => ({
+      reason: row.key,
+      count: Number(row.count ?? 0),
+    })),
+    payment_methods: rows.paymentMethods.map((row) => ({
+      name: row.key,
+      count: Number(row.count ?? 0),
+    })),
+  };
 }

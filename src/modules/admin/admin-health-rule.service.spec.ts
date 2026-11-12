@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { effectiveBillingStatusSql } from '../../shared/utils/billing.util';
 import {
+  ADMIN_HEALTH_SIGNALS,
   AdminHealthRuleService,
   type AdminHealthColumns,
 } from './admin-health-rule.service';
@@ -24,6 +25,15 @@ const columns: AdminHealthColumns = {
   creditBalanceState: sql`credit_balance_state`,
   templateUnavailable: sql`template_unavailable`,
   templateDegraded: sql`template_degraded`,
+  intakeReceived24h: sql`intake_received_24h`,
+  intakeEligible24h: sql`intake_eligible_24h`,
+  intakeSkipped24h: sql`intake_skipped_24h`,
+  intakeBaseReceived: sql`intake_base_received`,
+  intakeBaseEligible: sql`intake_base_eligible`,
+  planBilled: sql`plan_billed`,
+  uninstallPlanPaid: sql`uninstall_plan_paid`,
+  uninstallWasActive: sql`uninstall_was_active`,
+  hasPreviousInstall: sql`has_previous_install`,
 };
 
 function render(env: Record<string, string> = {}) {
@@ -37,21 +47,7 @@ function render(env: Record<string, string> = {}) {
 }
 
 function signalOrder(params: unknown[]) {
-  const known = new Set([
-    'store_uninstalled',
-    'onboarding_incomplete',
-    'no_eligible_order',
-    'usage_critical',
-    'usage_attention',
-    'failed_verification_rate',
-    'webhook_failures',
-    'auto_confirmation_disabled',
-    'subscription_blocked',
-    'credits_exhausted',
-    'credits_low',
-    'template_unavailable',
-    'no_recent_activity',
-  ]);
+  const known = new Set<unknown>(ADMIN_HEALTH_SIGNALS);
   return params.filter(
     (param): param is string => typeof param === 'string' && known.has(param),
   );
@@ -62,11 +58,14 @@ describe('AdminHealthRuleService', () => {
     const { critical, attention } = render();
 
     expect(signalOrder(critical.params)).toEqual([
+      'paid_store_uninstalled',
       'onboarding_incomplete',
       'no_eligible_order',
+      'orders_not_eligible',
       'usage_critical',
       'failed_verification_rate',
       'webhook_failures',
+      'reinstalled_without_plan',
       'subscription_blocked',
       'credits_exhausted',
       'template_unavailable',
@@ -76,6 +75,7 @@ describe('AdminHealthRuleService', () => {
       'store_uninstalled',
       'onboarding_incomplete',
       'no_eligible_order',
+      'orders_not_eligible',
       'usage_attention',
       'failed_verification_rate',
       'webhook_failures',
@@ -90,10 +90,10 @@ describe('AdminHealthRuleService', () => {
     const { critical, attention } = render();
 
     expect(critical.params).toEqual(
-      expect.arrayContaining([72, 336, 95, 20, 40, 3]),
+      expect.arrayContaining([72, 336, 95, 20, 40, 3, 5, 90]),
     );
     expect(attention.params).toEqual(
-      expect.arrayContaining([24, 168, 80, 10, 20, 1]),
+      expect.arrayContaining([24, 168, 80, 10, 20, 1, 5, 50]),
     );
   });
 
@@ -109,20 +109,52 @@ describe('AdminHealthRuleService', () => {
     expect(critical.sql).not.toContain('90');
   });
 
-  it('reports only store_uninstalled once a store is uninstalled', () => {
+  it('reports only an uninstall signal once a store is uninstalled', () => {
     const { critical, attention } = render();
     const count = (text: string, pattern: RegExp) =>
       text.match(pattern)?.length ?? 0;
     const signalCases = /::text END/g;
     const gatedCases = /CASE WHEN uninstalled_at IS NULL AND \(/g;
 
-    expect(count(critical.sql, signalCases)).toBe(9);
-    expect(count(critical.sql, gatedCases)).toBe(9);
+    expect(count(critical.sql, signalCases)).toBe(12);
+    expect(count(critical.sql, gatedCases)).toBe(11);
+    expect(critical.sql).toMatch(
+      /^array_remove\(ARRAY\[CASE WHEN NOT \(uninstalled_at IS NULL\) AND COALESCE\(uninstall_plan_paid AND uninstall_was_active, false\) THEN/,
+    );
 
-    expect(count(attention.sql, signalCases)).toBe(10);
-    expect(count(attention.sql, gatedCases)).toBe(9);
+    expect(count(attention.sql, signalCases)).toBe(11);
+    expect(count(attention.sql, gatedCases)).toBe(10);
     expect(attention.sql).toMatch(
-      /^array_remove\(ARRAY\[CASE WHEN NOT \(uninstalled_at IS NULL\) THEN/,
+      /^array_remove\(ARRAY\[CASE WHEN NOT \(uninstalled_at IS NULL\) AND NOT COALESCE\(uninstall_plan_paid AND uninstall_was_active, false\) THEN/,
+    );
+  });
+
+  it('says what happened to a reinstalled store without a plan instead of subscription_blocked', () => {
+    const { critical } = render();
+
+    expect(critical.sql).toContain(
+      "has_previous_install AND plan_billed AND onboarding_status = 'completed'",
+    );
+    expect(critical.sql).toMatch(
+      /AND NOT \(has_previous_install AND plan_billed AND onboarding_status = 'completed'/,
+    );
+  });
+
+  it('needs an eligible baseline and a minimum of orders before orders_not_eligible fires', () => {
+    const { critical, attention } = render({
+      ADMIN_HEALTH_INTAKE_BASELINE_MIN_ELIGIBLE: '8',
+      ADMIN_HEALTH_INTAKE_MINIMUM: '6',
+      ADMIN_HEALTH_INTAKE_CRITICAL_SKIP_RATE: '85',
+      ADMIN_HEALTH_INTAKE_ATTENTION_DROP: '40',
+    });
+
+    expect(critical.sql).toMatch(
+      /intake_base_eligible >= \$\d+::numeric AND intake_received_24h >= \$\d+::numeric AND intake_skipped_24h::numeric \/ NULLIF\(intake_received_24h, 0\) >= \$\d+::numeric \/ 100/,
+    );
+    expect(critical.params).toEqual(expect.arrayContaining([8, 6, 85]));
+    expect(attention.params).toEqual(expect.arrayContaining([8, 6, 40]));
+    expect(attention.sql).toContain(
+      'intake_eligible_24h::numeric / NULLIF(intake_received_24h, 0) < (intake_base_eligible::numeric / NULLIF(intake_base_received, 0)) * (1 - ',
     );
   });
 

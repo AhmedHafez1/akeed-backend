@@ -11,7 +11,11 @@ import type {
   AdminStorePageRow,
   AdminStoreSummaryRow,
 } from './admin-query.repository';
-import { AdminStoresService } from './admin-stores.service';
+import {
+  AdminStoresService,
+  toOrderIntakeView,
+  validTimeZone,
+} from './admin-stores.service';
 
 const recent = '2026-09-14T10:00:00.000000+00';
 const SHOPIFY_ID = '00000000-0000-4000-8000-000000000001';
@@ -62,6 +66,19 @@ function shopifyRow(
     credit_account_status: null,
     credit_posted_balance: null,
     credit_held_credits: null,
+    intake_received_24h: 0,
+    intake_eligible_24h: 0,
+    intake_skipped_24h: 0,
+    intake_base_received: 0,
+    intake_base_eligible: 0,
+    intake_top_skip_reason: null,
+    intake_top_payment_method: null,
+    uninstall_plan_id: null,
+    uninstall_was_active: false,
+    uninstall_paid_through_at: null,
+    previous_install_at: null,
+    previous_uninstalled_at: null,
+    previous_plan_id: null,
     is_credit: false,
     usage_limit_effective: 100,
     usage_percent: 30,
@@ -74,6 +91,7 @@ function shopifyRow(
     first_resolved_estimated: false,
     data_quality_estimated: false,
     lifecycle_status: 'active',
+    uninstall_plan_paid: false,
     critical_signals: [],
     attention_signals: [],
     health_status: 'healthy',
@@ -151,7 +169,12 @@ function createService(repository: Record<string, jest.Mock>) {
     [STANDALONE_CREDIT_BILLING_CONFIG]: parseStandaloneCreditBillingConfig({}),
   });
   return new AdminStoresService(
-    repository as never,
+    {
+      findStoreOrderIntake: jest
+        .fn()
+        .mockResolvedValue({ days: [], reasons: [], paymentMethods: [] }),
+      ...repository,
+    } as never,
     new AdminHealthRuleService(config),
     config,
   );
@@ -254,6 +277,11 @@ describe('AdminStoresService', () => {
       top_signal: 'credits_exhausted',
       signal_count: 2,
       signals: ['credits_exhausted', 'auto_confirmation_disabled'],
+      levels: {
+        credits_exhausted: 'critical',
+        auto_confirmation_disabled: 'attention',
+      },
+      details: { credits_exhausted: { available: 480, debt: 0 } },
     });
   });
 
@@ -423,6 +451,160 @@ describe('AdminStoresService', () => {
     expect(
       store.milestones.find((item) => item.key === 'first_real_cod_resolved'),
     ).toEqual({ key: 'first_real_cod_resolved', at: recent, estimated: true });
+  });
+
+  it('describes each active signal with short, non-personal facts', async () => {
+    const row = {
+      ...shopifyRow(),
+      critical_signals: ['orders_not_eligible', 'reinstalled_without_plan'],
+      attention_signals: ['usage_attention', 'auto_confirmation_disabled'],
+      health_status: 'critical',
+      intake_received_24h: 13,
+      intake_eligible_24h: 1,
+      intake_skipped_24h: 12,
+      intake_top_skip_reason: 'non_cod_payment_method',
+      intake_top_payment_method: 'manual',
+      previous_install_at: '2026-10-01T00:00:00.000Z',
+      previous_uninstalled_at: '2026-11-11T10:00:00.000Z',
+      previous_plan_id: 'pro',
+      installed_at: '2026-11-11T10:07:00.000Z',
+    };
+    const findStorePage = jest.fn().mockResolvedValue({ summary, rows: [row] });
+    const service = createService({ findStorePage });
+
+    const result = await service.getStores({ signal: 'orders_not_eligible' });
+
+    expect(findStorePage).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: 'orders_not_eligible' }),
+      expect.any(Object),
+      expect.any(Object),
+    );
+    const [store] = result.data;
+    expect(store.health.top_signal).toBe('orders_not_eligible');
+    expect(store.health.signals).toEqual([
+      'orders_not_eligible',
+      'reinstalled_without_plan',
+      'usage_attention',
+      'auto_confirmation_disabled',
+    ]);
+    expect(store.health.details).toEqual({
+      orders_not_eligible: {
+        received: 13,
+        eligible: 1,
+        skipped: 12,
+        top_reason: 'non_cod_payment_method',
+        top_payment_method: 'manual',
+      },
+      reinstalled_without_plan: {
+        previous_plan: 'pro',
+        lost_at: '2026-11-11T10:00:00.000Z',
+        reinstalled_at: '2026-11-11T10:07:00.000Z',
+      },
+      usage_attention: { percent: 30, used: 30, limit: 100 },
+    });
+    expect(JSON.stringify(store.health.details)).not.toMatch(
+      /phone|customer|email/i,
+    );
+  });
+
+  it('passes the paid plans to the health rules', async () => {
+    const findStorePage = jest.fn().mockResolvedValue({ summary, rows: [] });
+    await createService({ findStorePage }).getStores({});
+
+    expect(findStorePage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.objectContaining({ paidPlanIds: ['basic', 'pro', 'business'] }),
+    );
+  });
+
+  it('returns seven local days of order intake and the reinstall billing facts', async () => {
+    const findStoreOrderIntake = jest.fn().mockResolvedValue({
+      days: [{ day: '2026-11-10', received: 13, eligible: 0, skipped: 13 }],
+      reasons: [{ key: 'non_cod_payment_method', count: 13 }],
+      paymentMethods: [
+        { key: 'manual', count: 13 },
+        { key: 'Cash on Delivery (COD)', count: 4 },
+      ],
+    });
+    const service = createService({
+      findStoreById: jest.fn().mockResolvedValue(
+        detailRow({
+          ...shopifyRow(),
+          timezone: 'Africa/Cairo',
+          subscription_status: 'cancelled',
+          previous_install_at: '2026-10-01T00:00:00.000Z',
+          previous_uninstalled_at: '2026-11-11T10:00:00.000Z',
+          previous_plan_id: 'pro',
+        }),
+      ),
+      findStoreVerificationTotals: jest.fn().mockResolvedValue([]),
+      findStoreOrderIntake,
+    });
+
+    const { store } = await service.getStore(SHOPIFY_ID);
+
+    expect(findStoreOrderIntake).toHaveBeenCalledWith(
+      SHOPIFY_ID,
+      'Africa/Cairo',
+      7,
+    );
+    expect(store.order_intake.days).toHaveLength(7);
+    expect(store.order_intake.time_zone).toBe('Africa/Cairo');
+    expect(store.order_intake.skip_reasons).toEqual([
+      { reason: 'non_cod_payment_method', count: 13 },
+    ]);
+    expect(store.order_intake.payment_methods[0]).toEqual({
+      name: 'manual',
+      count: 13,
+    });
+    expect(store.reinstall).toEqual({
+      previous_plan: 'pro',
+      lost_at: '2026-11-11T10:00:00.000Z',
+      reinstalled_at: shopifyRow().installed_at,
+      has_active_plan: false,
+    });
+  });
+
+  it('counts intake days in the store time zone and fills quiet days', () => {
+    const view = toOrderIntakeView(
+      {
+        days: [
+          { day: '2026-11-06', received: 3, eligible: 3, skipped: 0 },
+          { day: '2026-11-12', received: '5', eligible: '1', skipped: '4' },
+        ],
+        reasons: [],
+        paymentMethods: [],
+      },
+      'Africa/Cairo',
+      // 23:30 UTC is already the 13th in Cairo.
+      new Date('2026-11-12T23:30:00.000Z'),
+    );
+
+    expect(view.days.map((day) => day.day)).toEqual([
+      '2026-11-07',
+      '2026-11-08',
+      '2026-11-09',
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+      '2026-11-13',
+    ]);
+    expect(view.days[5]).toEqual({
+      day: '2026-11-12',
+      received: 5,
+      eligible: 1,
+      skipped: 4,
+    });
+  });
+
+  it('falls back to UTC for a missing or unknown time zone', () => {
+    expect(validTimeZone(null)).toBe('UTC');
+    expect(validTimeZone('Not/AZone')).toBe('UTC');
+    expect(validTimeZone("UTC'; DROP")).toBe('UTC');
+    expect(validTimeZone('America/Argentina/Buenos_Aires')).toBe(
+      'America/Argentina/Buenos_Aires',
+    );
   });
 
   it('throws when the store does not exist', async () => {

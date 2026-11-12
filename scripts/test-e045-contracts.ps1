@@ -80,6 +80,7 @@ try {
     Invoke-ContractStep 'Displayed credits from purchase to refund' 'test:contract:credit-display-cycle'
 
     Invoke-ContractStep 'Merchant own WhatsApp flow and per-message usage' 'test:contract:merchant-own-whatsapp-flow'
+    Invoke-ContractStep 'Admin store signals: order intake and lost paying stores' 'test:contract:admin-store-signals'
 
     $testExitCode = 0
 }

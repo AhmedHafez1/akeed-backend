@@ -66,16 +66,30 @@ describe('WebhookRetentionService', () => {
       truncated: false,
     };
     const repository = { run: jest.fn().mockResolvedValue(result) };
-    const service = new WebhookRetentionService(repository as never);
+    const intake = {
+      deleteOlderThan: jest
+        .fn()
+        .mockResolvedValue({ orders: 5, buckets: 2, truncated: false }),
+    };
+    const now = new Date('2026-11-12T00:00:00.000Z');
+    const service = new WebhookRetentionService(
+      repository as never,
+      intake as never,
+    );
     const log = jest
       .spyOn(service['logger'], 'log')
       .mockImplementation(() => undefined);
 
-    await expect(service.run()).resolves.toEqual(result);
+    await expect(service.run(now)).resolves.toEqual(result);
+    expect(intake.deleteOlderThan).toHaveBeenCalledWith(
+      new Date('2026-08-14T00:00:00.000Z'),
+    );
 
     const line = String(log.mock.calls[0][0]);
     expect(line).toContain('"deletedUnlinkedFinished":3');
     expect(line).toContain('"scrubbedWooCommerceMarkers":2');
+    expect(line).toContain('"deletedIntakeOrders":5');
+    expect(line).toContain('"deletedIntakeBuckets":2');
     expect(line).not.toMatch(/raw_payload|phone|customer/i);
   });
 });

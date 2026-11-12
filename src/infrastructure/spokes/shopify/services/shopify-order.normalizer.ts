@@ -13,6 +13,7 @@ import {
   classifyCodStatus,
 } from '../../../../shared/commerce/payment-signals';
 import { collectShopifyGatewaySignals } from './shopify-payment-signals';
+import { intakeOrderId } from '../../../../shared/commerce/order-intake.policy';
 
 /**
  * Converts a raw Shopify order webhook payload into a NormalizedOrder.
@@ -27,6 +28,17 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
   private readonly logger = new Logger(ShopifyOrderNormalizer.name);
 
   constructor(private readonly phoneService: PhoneService) {}
+
+  describeIntake(rawPayload: Record<string, unknown>): {
+    externalOrderId: string | null;
+    paymentMethod: string;
+  } {
+    const payload = rawPayload as unknown as ShopifyRawOrder;
+    return {
+      externalOrderId: intakeOrderId(payload.id),
+      paymentMethod: this.resolvePaymentMethod(payload),
+    };
+  }
 
   normalizeOrder(
     rawPayload: Record<string, unknown>,

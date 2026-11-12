@@ -14,6 +14,7 @@ import {
   type OrderLineItemInput,
 } from '../../../shared/commerce/order-line-items';
 import { collectPaymentSignals } from '../../../shared/commerce/payment-signals';
+import { intakeOrderId } from '../../../shared/commerce/order-intake.policy';
 import {
   RetryableProviderError,
   RetryAfterError,
@@ -96,6 +97,16 @@ export class EasyOrdersOrderNormalizer implements WebhookOrderNormalizer {
     private readonly phones: PhoneService,
     private readonly config: ConfigService,
   ) {}
+
+  describeIntake(rawPayload: Record<string, unknown>): {
+    externalOrderId: string | null;
+    paymentMethod: string;
+  } {
+    return {
+      externalOrderId: intakeOrderId(rawPayload.id),
+      paymentMethod: text(rawPayload.payment_method),
+    };
+  }
 
   async normalizeOrder(
     rawPayload: Record<string, unknown>,

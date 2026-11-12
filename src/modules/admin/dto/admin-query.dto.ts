@@ -11,6 +11,10 @@ import {
   Min,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import {
+  ADMIN_HEALTH_SIGNALS,
+  type AdminHealthSignal,
+} from '../admin-health-rule.service';
 
 const PLANS = ['starter', 'basic', 'pro', 'business'] as const;
 const LIFECYCLES = [
@@ -76,6 +80,11 @@ export class AdminStoresQueryDto {
   @IsOptional()
   @IsIn(HEALTH)
   health_status?: (typeof HEALTH)[number];
+
+  /** Stores that currently carry this health signal. */
+  @IsOptional()
+  @IsIn(ADMIN_HEALTH_SIGNALS)
+  signal?: AdminHealthSignal;
 
   @IsOptional()
   @IsString()

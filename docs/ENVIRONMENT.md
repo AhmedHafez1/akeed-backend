@@ -600,6 +600,28 @@ Startup fails when `EMAIL_ALERTS_ENABLED=true` is set without `RESEND_API_KEY` a
 
 The same email settings govern merchant WhatsApp sender incidents. The `whatsapp-sender-alerts` queue evaluates them in the background and sweeps connections every two minutes. With email disabled, incidents record a skipped delivery and `GET /api/whatsapp-sender` still returns derived alert facts. Fallback emails are limited to one per organization per rolling 24 hours; no additional environment variables are needed. See [Merchant WhatsApp Sender Alerts](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#merchant-whatsapp-sender-alerts).
 
+## Admin Store Health
+
+The admin store list and store details page mark each store healthy, needing attention or critical, with the signals behind it. The rules run in SQL over every store, and their thresholds are optional numbers; an unset or invalid value uses the default.
+
+| Variable | Default | Signal |
+| --- | --- | --- |
+| `ADMIN_HEALTH_ONBOARDING_ATTENTION_HOURS` / `_CRITICAL_HOURS` | 24 / 72 | `onboarding_incomplete`: hours since install without finishing setup. |
+| `ADMIN_HEALTH_NO_ORDER_ATTENTION_HOURS` / `_CRITICAL_HOURS` | 168 / 336 | `no_eligible_order`: hours since setup without an eligible order. |
+| `ADMIN_HEALTH_USAGE_ATTENTION` / `_CRITICAL` | 80 / 95 | `usage_attention` / `usage_critical`: percent of the plan allowance used. |
+| `ADMIN_HEALTH_FAILURE_ATTENTION_RATE` / `_MINIMUM` | 20 / 10 | `failed_verification_rate`: failed percent of the last 24h, with a minimum of verifications. |
+| `ADMIN_HEALTH_FAILURE_CRITICAL_RATE` / `_MINIMUM` | 40 / 20 | The same, critical. |
+| `ADMIN_HEALTH_WEBHOOK_ATTENTION_COUNT` / `_CRITICAL_COUNT` | 1 / 3 | `webhook_failures`: failed store webhooks in the last hour. |
+| `ADMIN_HEALTH_INACTIVE_ATTENTION_HOURS` / `_CRITICAL_HOURS` | 168 / 336 | `no_recent_activity`: hours since the last activity of an activated store. |
+| `ADMIN_HEALTH_INTAKE_BASELINE_MIN_ELIGIBLE` | 5 | `orders_not_eligible` fires only for a store with at least this many eligible orders in the 7 days before the last 24h, so a store that never takes COD orders never fires. |
+| `ADMIN_HEALTH_INTAKE_MINIMUM` | 5 | Unique orders the store must have received in the last 24h. |
+| `ADMIN_HEALTH_INTAKE_CRITICAL_SKIP_RATE` | 90 | Critical when at least this percent of the last 24h's orders were skipped. |
+| `ADMIN_HEALTH_INTAKE_ATTENTION_DROP` | 50 | Attention when the eligible share of the last 24h fell by more than this percent against the 7-day baseline. |
+
+`orders_not_eligible` reads hourly counts of unique store orders (`integration_order_intake`), written when an `order.create` event finishes as eligible or skipped. A store order delivered twice is counted once. The counts hold only numbers, skip codes and payment-method names, and are kept for 90 days by the hourly webhook retention job. `npm run backfill:order-intake` fills them from the events still in `webhook_events` (a dry run; add `-- --apply` to write).
+
+Lost paying stores need no settings: `paid_store_uninstalled` (critical) is an uninstalled store that was on an active paid plan, while `store_uninstalled` stays for other stores; `reinstalled_without_plan` (critical) is a reinstalled store that finished setup without a plan, in place of `subscription_blocked`. The plan at uninstall is recorded on the store's installation lifecycle.
+
 ## Redis (Job Queue)
 
 The webhook processing job queue uses BullMQ backed by Redis.

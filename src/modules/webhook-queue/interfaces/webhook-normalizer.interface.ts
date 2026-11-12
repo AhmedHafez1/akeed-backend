@@ -11,6 +11,17 @@ export interface WebhookNormalizationSkip {
   reason: string;
 }
 
+/**
+ * What admin order intake counts for an order.create event: the store's own
+ * order id and payment-method name. Read straight from the payload, without
+ * loading anything, so it also works for an event skipped before it was
+ * normalized and for the backfill.
+ */
+export interface WebhookOrderIntakeIdentity {
+  externalOrderId?: string | null;
+  paymentMethod?: string | null;
+}
+
 export type WebhookNormalizationResult =
   | NormalizedOrder
   | WebhookNormalizationSkip
@@ -44,6 +55,11 @@ export interface WebhookOrderNormalizer {
     integrationId: string,
     orgId: string,
   ): WebhookNormalizationResult | Promise<WebhookNormalizationResult>;
+
+  /** The order id and payment-method name in a raw order.create payload. */
+  describeIntake?(
+    rawPayload: Record<string, unknown>,
+  ): WebhookOrderIntakeIdentity;
 }
 
 /** DI token used for multi-provider injection of normalizers. */
