@@ -20,6 +20,8 @@ import { OrganizationsRepository } from './repositories/organizations.repository
 import { MembershipsRepository } from './repositories/memberships.repository';
 import { IntegrationMonthlyUsageRepository } from './repositories/integration-monthly-usage.repository';
 import { WebhookEventsRepository } from './repositories/webhook-events.repository';
+import { StoreDataDeletionRepository } from './repositories/store-data-deletion.repository';
+import { WebhookEventsRetentionRepository } from './repositories/webhook-events-retention.repository';
 import { BillingFreePlanClaimsRepository } from './repositories/billing-free-plan-claims.repository';
 import { AdminStoreLifecyclesRepository } from './repositories/admin-store-lifecycles.repository';
 import { ProductEventsRepository } from './repositories/product-events.repository';
@@ -66,6 +68,8 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     MembershipsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
+    StoreDataDeletionRepository,
+    WebhookEventsRetentionRepository,
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
     ProductEventsRepository,
@@ -112,6 +116,8 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     MembershipsRepository,
     IntegrationMonthlyUsageRepository,
     WebhookEventsRepository,
+    StoreDataDeletionRepository,
+    WebhookEventsRetentionRepository,
     BillingFreePlanClaimsRepository,
     AdminStoreLifecyclesRepository,
     ProductEventsRepository,

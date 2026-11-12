@@ -56,13 +56,4 @@ export class MembershipsRepository {
         asc(memberships.id),
       );
   }
-
-  async deleteByOrgId(orgId: string): Promise<number> {
-    const results = await this.db
-      .delete(memberships)
-      .where(eq(memberships.orgId, orgId))
-      .returning({ id: memberships.id });
-
-    return results.length;
-  }
 }

@@ -268,13 +268,4 @@ export class IntegrationMonthlyUsageRepository {
         ),
       );
   }
-
-  async deleteByOrgId(orgId: string): Promise<number> {
-    const results = await this.db
-      .delete(integrationMonthlyUsage)
-      .where(eq(integrationMonthlyUsage.orgId, orgId))
-      .returning({ id: integrationMonthlyUsage.id });
-
-    return results.length;
-  }
 }

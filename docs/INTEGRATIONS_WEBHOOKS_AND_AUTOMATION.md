@@ -95,7 +95,7 @@ Smart filtering: ignores blocked-status webhooks for non-current subscriptions. 
 
 ### Uninstall Webhook
 
-`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Historical configuration, plan, subscription, order, verification, and usage records remain until `shop/redact` performs the explicit GDPR wipe. Accepted webhook jobs carry their trusted organization/source identity and are skipped before business processing if the source is disconnected or the relationship no longer matches.
+`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Then `StoreDataDeletionRepository.deleteStoreData` (store scope) deletes the store's customer data in one transaction: orders, verifications and everything that cascades from them, message dispatches, import batches, and every `webhook_events` row of the store, matched by organization/source or by platform and store domain, never only through `order_id`. Retained Meta webhooks and provider receipts that mention the store's messages go too. The integration, organization, plan and usage records remain for a reinstall until `shop/redact`. Accepted webhook jobs carry their trusted organization/source identity and are skipped before business processing if the source is disconnected or the relationship no longer matches.
 
 Queued automation re-checks both installation and billing state at execution time. Pending initial sends become `failed` with an `integration_inactive` or `billing_not_active` reason; follow-up and escalation jobs retain the existing verification status and record skip metadata. No quota is reserved and no WhatsApp send, quiet-hours reschedule, or Shopify tag is attempted for blocked jobs.
 
@@ -107,7 +107,7 @@ Required by Shopify for app listing compliance.
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `handleCustomerDataRequest` | Finds the customer's orders and verifications, filtered by the order IDs in the request.                 |
 | `handleCustomerRedact`      | Anonymises the customer's orders, clears their verification metadata and empties stored order payloads. |
-| `handleShopRedact`          | Deletes all store data (complete uninstall + GDPR wipe).                                                 |
+| `handleShopRedact`          | `deleteStoreData` with organization scope: all store data plus the integration, usage, memberships and organization, in one transaction. |
 
 Customer requests match a customer within the store's own integration by any key Shopify sends: the Shopify order IDs (`orders_to_redact` or `orders_requested`), the customer ID in the stored order payload, the email (case-insensitive) or the phone (as sent and in E.164). Shopify often sends no phone, and an order's phone usually comes from its address, so no single key is required; a request carrying none of them is logged as `noIdentifiers` and skipped.
 
@@ -118,6 +118,26 @@ To re-run stored `customers/redact` requests (for example ones an older handler 
 ```bash
 npm run replay:shopify-customer-redactions -- --store-domain <shop>.myshopify.com [--since 2026-10-01]
 npm run replay:shopify-customer-redactions -- --event-id <webhook_events id> --apply
+```
+
+### Webhook Event Retention
+
+`webhook_events.raw_payload` holds full order payloads, so rows are kept only while a reader needs them. The hourly `webhook-events-retention` job (BullMQ, `WEBHOOK_RETENTION_ENABLED`, on by default) applies `WebhookRetentionRules`:
+
+| Category            | Rows                                                                                                         | Action |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
+| `unlinked_finished` | `order_id IS NULL`, `completed`/`skipped`/`failed`, not held, not dispatch-required, received over 48h ago | delete |
+| `no_store`          | `integration_id IS NULL`, received over 48h ago, any status (they can never be processed)                   | delete |
+| `before_uninstall`  | received before the store's last `admin_store_lifecycles.uninstalled_at` (not under a live processing lease) | delete |
+| WooCommerce marker  | `order.create:<integration>:<order>` rows past the same rules: `holdOf` routes later deliveries on them      | payload set to `{}`, row kept |
+
+Shopify GDPR request rows (`customers/redact`, `customers/data_request`, `shop/redact`) attached to a store are kept: they hold ids only and are the request record the replay script reads. Order-linked rows are kept (merchant retry and the lifecycle projection read them). Inside 48h every row stays, so a Shopify resend is still answered as a duplicate; after it, a resend would be stored again but cannot duplicate the order, because orders are unique per `(integration_id, external_order_id)`.
+
+The existing backlog is cleaned with the same rules by a script that only counts unless given `--apply` (rows and payload bytes per category and per store, no customer data):
+
+```bash
+npm run cleanup:webhook-events
+npm run cleanup:webhook-events -- --apply [--batch-size 1000]
 ```
 
 ## Queue Infrastructure

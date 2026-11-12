@@ -572,12 +572,9 @@ describe('Shopify isolated PostgreSQL contract', () => {
       };
       return new ShopifyGdprWebhookService(
         new OrdersRepository(redactDb),
-        {} as never,
         integrations as never,
-        {} as never,
-        {} as never,
-        {} as never,
         new WebhookEventsRepository(redactDb),
+        {} as never,
         new PhoneService(),
       );
     }

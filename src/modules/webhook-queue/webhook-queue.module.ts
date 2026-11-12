@@ -3,6 +3,10 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { WEBHOOK_QUEUE_NAME } from './webhook-queue.constants';
+import { WEBHOOK_RETENTION_QUEUE } from './retention/webhook-retention.constants';
+import { WebhookRetentionProcessor } from './retention/webhook-retention.processor';
+import { WebhookRetentionScheduler } from './retention/webhook-retention.scheduler';
+import { WebhookRetentionService } from './retention/webhook-retention.service';
 import { WebhookQueueProducer } from './webhook-queue.producer';
 import { WebhookQueueProcessor } from './webhook-queue.processor';
 import { ShopifyCommerceModule } from '../../infrastructure/spokes/shopify/shopify-commerce.module';
@@ -29,12 +33,16 @@ import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/wooco
     WooCommerceIngestionModule,
 
     BullModule.registerQueue({ name: WEBHOOK_QUEUE_NAME }),
+    BullModule.registerQueue({ name: WEBHOOK_RETENTION_QUEUE }),
   ],
   providers: [
     WebhookQueueProducer,
     WebhookQueueProcessor,
     WebhookDispatchService,
     WebhookDispatchReconciler,
+    WebhookRetentionService,
+    WebhookRetentionProcessor,
+    WebhookRetentionScheduler,
     PhoneService,
 
     // --- Normalizers (a store spoke's module provides its own; add new
