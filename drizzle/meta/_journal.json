@@ -701,6 +701,13 @@
       "when": 1795392000000,
       "tag": "0098_plan_required_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795478400000,
+      "tag": "0099_admin_store_signals",
+      "breakpoints": true
     }
   ]
 }

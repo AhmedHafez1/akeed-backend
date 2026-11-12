@@ -25,7 +25,47 @@ export interface AdminHealthColumns {
   templateUnavailable: SQL;
   /** A template the store sends is unhealthy at the provider. */
   templateDegraded: SQL;
+  /** Unique orders received, eligible and skipped in the last 24 hours. */
+  intakeReceived24h: SQL;
+  intakeEligible24h: SQL;
+  intakeSkipped24h: SQL;
+  /** Unique orders received and eligible in the 7 days before that. */
+  intakeBaseReceived: SQL;
+  intakeBaseEligible: SQL;
+  /** The store is billed by plan (not prepaid credits). */
+  planBilled: SQL;
+  /** The plan at uninstall was a paid one. */
+  uninstallPlanPaid: SQL;
+  /** The plan was active (or paid through) when the store uninstalled. */
+  uninstallWasActive: SQL;
+  /** The current installation follows an earlier, uninstalled one. */
+  hasPreviousInstall: SQL;
 }
+
+/**
+ * Every signal a store can carry, critical rules first. The store list
+ * filters on these codes and the dashboard labels them.
+ */
+export const ADMIN_HEALTH_SIGNALS = [
+  'paid_store_uninstalled',
+  'store_uninstalled',
+  'onboarding_incomplete',
+  'no_eligible_order',
+  'orders_not_eligible',
+  'usage_critical',
+  'usage_attention',
+  'failed_verification_rate',
+  'webhook_failures',
+  'reinstalled_without_plan',
+  'subscription_blocked',
+  'credits_exhausted',
+  'credits_low',
+  'template_unavailable',
+  'auto_confirmation_disabled',
+  'no_recent_activity',
+] as const;
+
+export type AdminHealthSignal = (typeof ADMIN_HEALTH_SIGNALS)[number];
 
 const BLOCKED_SUBSCRIPTION_STATUSES = [
   'cancelled',
@@ -77,6 +117,18 @@ export class AdminHealthRuleService {
       sql`, `,
     )})`;
 
+    // A store that reinstalled, finished setup and has no plan: the plan was
+    // lost with the uninstall. It reads as that, not as a blocked plan.
+    const reinstalledWithoutPlan = sql`${columns.hasPreviousInstall} AND ${columns.planBilled} AND ${columns.onboardingStatus} = 'completed' AND lower(btrim(COALESCE(${columns.billingStatus}, ''))) NOT IN ('active', 'paid_through', 'not_required')`;
+
+    // Orders keep arriving but are no longer confirmed, for a store that
+    // normally confirms orders: never-COD stores have no baseline.
+    const intakeBaseline = sql`${columns.intakeBaseEligible} >= ${threshold('ADMIN_HEALTH_INTAKE_BASELINE_MIN_ELIGIBLE', 5)} AND ${columns.intakeReceived24h} >= ${threshold('ADMIN_HEALTH_INTAKE_MINIMUM', 5)}`;
+    const intakeCritical = sql`${intakeBaseline} AND ${columns.intakeSkipped24h}::numeric / NULLIF(${columns.intakeReceived24h}, 0) >= ${threshold('ADMIN_HEALTH_INTAKE_CRITICAL_SKIP_RATE', 90)} / 100`;
+    const intakeAttention = sql`${intakeBaseline} AND ${columns.intakeEligible24h}::numeric / NULLIF(${columns.intakeReceived24h}, 0) < (${columns.intakeBaseEligible}::numeric / NULLIF(${columns.intakeBaseReceived}, 0)) * (1 - ${threshold('ADMIN_HEALTH_INTAKE_ATTENTION_DROP', 50)} / 100)`;
+
+    const paidStoreUninstalled = sql`${columns.uninstallPlanPaid} AND ${columns.uninstallWasActive}`;
+
     const creditsExhausted = sql`${columns.creditBalanceState} IN ('zero', 'debt')`;
     const creditsLow = sql`${columns.creditBalanceState} = 'low'`;
 
@@ -104,21 +156,33 @@ export class AdminHealthRuleService {
       ]);
 
     return {
-      critical: signals(
-        whileInstalled([
+      critical: signals([
+        [
+          sql`NOT (${installed}) AND COALESCE(${paidStoreUninstalled}, false)`,
+          'paid_store_uninstalled',
+        ],
+        ...whileInstalled([
           [onboardingCritical, 'onboarding_incomplete'],
           [noOrderCritical, 'no_eligible_order'],
+          [intakeCritical, 'orders_not_eligible'],
           [usageCritical, 'usage_critical'],
           [failureCritical, 'failed_verification_rate'],
           [webhookCritical, 'webhook_failures'],
-          [subscriptionBlocked, 'subscription_blocked'],
+          [reinstalledWithoutPlan, 'reinstalled_without_plan'],
+          [
+            sql`${subscriptionBlocked} AND NOT (${reinstalledWithoutPlan})`,
+            'subscription_blocked',
+          ],
           [creditsExhausted, 'credits_exhausted'],
           [columns.templateUnavailable, 'template_unavailable'],
           [idleCritical, 'no_recent_activity'],
         ]),
-      ),
+      ]),
       attention: signals([
-        [sql`NOT (${installed})`, 'store_uninstalled'],
+        [
+          sql`NOT (${installed}) AND NOT COALESCE(${paidStoreUninstalled}, false)`,
+          'store_uninstalled',
+        ],
         ...whileInstalled([
           [
             sql`${onboardingAttention} AND NOT (${onboardingCritical})`,
@@ -127,6 +191,10 @@ export class AdminHealthRuleService {
           [
             sql`${noOrderAttention} AND NOT (${noOrderCritical})`,
             'no_eligible_order',
+          ],
+          [
+            sql`COALESCE(${intakeAttention}, false) AND NOT COALESCE(${intakeCritical}, false)`,
+            'orders_not_eligible',
           ],
           [
             sql`${usageAttention} AND NOT (${usageCritical})`,

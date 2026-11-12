@@ -12,6 +12,7 @@ import {
 import type { PlatformType } from '../../../shared/interfaces/commerce-source.interface';
 import type { NormalizedOrder } from '../../../shared/interfaces/order.interface';
 import type { WebhookOrderNormalizer } from '../interfaces/webhook-normalizer.interface';
+import { intakeOrderId } from '../../../shared/commerce/order-intake.policy';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -22,6 +23,18 @@ export class StandaloneManualOrderNormalizer implements WebhookOrderNormalizer {
   readonly platform: PlatformType = 'standalone';
 
   private readonly logger = new Logger(StandaloneManualOrderNormalizer.name);
+
+  describeIntake(rawPayload: Record<string, unknown>): {
+    externalOrderId: string | null;
+    paymentMethod: string | null;
+  } {
+    const order = isRecord(rawPayload.order) ? rawPayload.order : {};
+    return {
+      externalOrderId: intakeOrderId(order.externalOrderId),
+      paymentMethod:
+        typeof order.paymentMethod === 'string' ? order.paymentMethod : null,
+    };
+  }
 
   normalizeOrder(
     rawPayload: Record<string, unknown>,

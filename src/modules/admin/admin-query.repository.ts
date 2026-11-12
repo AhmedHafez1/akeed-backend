@@ -60,6 +60,23 @@ export interface AdminStoreQueryRow {
   credit_account_status: string | null;
   credit_posted_balance: number | string | null;
   credit_held_credits: number | string | null;
+  /** Unique orders over the last 24h and the 7 days before them. */
+  intake_received_24h: number | string;
+  intake_eligible_24h: number | string;
+  intake_skipped_24h: number | string;
+  intake_base_received: number | string;
+  intake_base_eligible: number | string;
+  /** The most frequent skip code and payment-method name in the last 24h. */
+  intake_top_skip_reason: string | null;
+  intake_top_payment_method: string | null;
+  /** The plan at the current installation's uninstall, if it ended. */
+  uninstall_plan_id: string | null;
+  uninstall_was_active: boolean;
+  uninstall_paid_through_at: string | null;
+  /** The earlier installation before a reinstall, if there is one. */
+  previous_install_at: string | null;
+  previous_uninstalled_at: string | null;
+  previous_plan_id: string | null;
 }
 
 export interface AdminStoreViewRow extends AdminStoreQueryRow {
@@ -75,6 +92,7 @@ export interface AdminStoreViewRow extends AdminStoreQueryRow {
   first_resolved_estimated: boolean;
   data_quality_estimated: boolean;
   lifecycle_status: string;
+  uninstall_plan_paid: boolean;
   critical_signals: string[];
   attention_signals: string[];
   health_status: string;
@@ -99,6 +117,27 @@ export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
   /** End of a live paid-through period; null once it has passed. */
   paid_through_at: string | null;
   created_at: string | null;
+}
+
+export interface AdminStoreOrderIntakeDayRow {
+  [key: string]: unknown;
+  /** Local calendar day, YYYY-MM-DD. */
+  day: string;
+  received: number | string;
+  eligible: number | string;
+  skipped: number | string;
+}
+
+export interface AdminStoreOrderIntakeCountRow {
+  [key: string]: unknown;
+  key: string;
+  count: number | string;
+}
+
+export interface AdminStoreOrderIntakeRows {
+  days: AdminStoreOrderIntakeDayRow[];
+  reasons: AdminStoreOrderIntakeCountRow[];
+  paymentMethods: AdminStoreOrderIntakeCountRow[];
 }
 
 export interface AdminStoreVerificationTotalsRow {
@@ -207,6 +246,8 @@ const TEMPLATE_METRIC_COUNTS = sql`
 export interface AdminStoreDerivation {
   lowBalanceThreshold: number;
   planLimits: Record<string, number>;
+  /** Plans with a price above zero. */
+  paidPlanIds: readonly string[];
   healthSignals: (columns: AdminHealthColumns) => {
     critical: SQL;
     attention: SQL;
@@ -228,6 +269,8 @@ export interface AdminStoreListFilter {
   lifecycleStatus?: string;
   onboardingStatus?: string;
   healthStatus?: string;
+  /** A health signal the store currently carries. */
+  signal?: string;
   country?: string;
   customerCountry?: string;
   installedFrom?: string;
@@ -419,6 +462,53 @@ export class AdminQueryRepository {
     `);
 
     return Array.from(result)[0] ?? null;
+  }
+
+  /**
+   * Unique orders received over the last `days` days in `timeZone` (a
+   * validated IANA name): counts per local day, and skip codes and
+   * payment-method names over the whole window.
+   */
+  async findStoreOrderIntake(
+    integrationId: string,
+    timeZone: string,
+    days: number,
+  ): Promise<AdminStoreOrderIntakeRows> {
+    const since = sql`((date_trunc('day', NOW() AT TIME ZONE ${timeZone}) - make_interval(days => ${days - 1}::int)) AT TIME ZONE ${timeZone}::text)`;
+    const window = sql`b.integration_id = ${integrationId} AND b.bucket_start >= ${since}`;
+    const [dayRows, reasonRows, methodRows] = await Promise.all([
+      this.db.execute<AdminStoreOrderIntakeDayRow>(sql`
+        SELECT
+          to_char((b.bucket_start AT TIME ZONE ${timeZone})::date, 'YYYY-MM-DD') AS day,
+          SUM(b.received)::int AS received,
+          SUM(b.eligible)::int AS eligible,
+          SUM(b.skipped)::int AS skipped
+        FROM integration_order_intake b
+        WHERE ${window}
+        GROUP BY 1
+        ORDER BY 1`),
+      this.db.execute<AdminStoreOrderIntakeCountRow>(sql`
+        SELECT entry.key AS key, SUM(entry.value::int)::int AS count
+        FROM integration_order_intake b
+        CROSS JOIN LATERAL jsonb_each_text(b.skipped_by_reason) entry
+        WHERE ${window}
+        GROUP BY entry.key
+        ORDER BY count DESC, entry.key
+        LIMIT 10`),
+      this.db.execute<AdminStoreOrderIntakeCountRow>(sql`
+        SELECT entry.key AS key, SUM(entry.value::int)::int AS count
+        FROM integration_order_intake b
+        CROSS JOIN LATERAL jsonb_each_text(b.payment_methods) entry
+        WHERE ${window}
+        GROUP BY entry.key
+        ORDER BY count DESC, entry.key
+        LIMIT 10`),
+    ]);
+    return {
+      days: Array.from(dayRows),
+      reasons: Array.from(reasonRows),
+      paymentMethods: Array.from(methodRows),
+    };
   }
 
   async findStoreVerificationTotals(
@@ -654,6 +744,10 @@ export class AdminQueryRepository {
       conditions.push(sql`onboarding_status = ${filter.onboardingStatus}`);
     if (filter.healthStatus)
       conditions.push(sql`health_status = ${filter.healthStatus}`);
+    if (filter.signal)
+      conditions.push(
+        sql`${filter.signal}::text = ANY(critical_signals || attention_signals)`,
+      );
     if (filter.country)
       conditions.push(
         sql`upper(COALESCE(country_code, '')) = ${filter.country.toUpperCase()}`,
@@ -715,7 +809,23 @@ export class AdminQueryRepository {
       creditBalanceState: sql`credit_balance_state`,
       templateUnavailable: sql`template_unavailable`,
       templateDegraded: sql`template_degraded`,
+      intakeReceived24h: sql`intake_received_24h`,
+      intakeEligible24h: sql`intake_eligible_24h`,
+      intakeSkipped24h: sql`intake_skipped_24h`,
+      intakeBaseReceived: sql`intake_base_received`,
+      intakeBaseEligible: sql`intake_base_eligible`,
+      planBilled: sql`(NOT is_credit)`,
+      uninstallPlanPaid: sql`uninstall_plan_paid`,
+      uninstallWasActive: sql`uninstall_was_active`,
+      hasPreviousInstall: sql`(previous_install_at IS NOT NULL)`,
     });
+    const paidPlans =
+      derivation.paidPlanIds.length > 0
+        ? sql`COALESCE(uninstall_plan_id, '') IN (${sql.join(
+            derivation.paidPlanIds.map((plan) => sql`${plan}`),
+            sql`, `,
+          )})`
+        : sql`false`;
 
     return sql`
       raw_stores AS (${this.storeQuery(extraColumns, where)}),
@@ -750,7 +860,8 @@ export class AdminQueryRepository {
             WHEN COALESCE(credit_posted_balance, 0) < 0 THEN 'debt'
             WHEN ${available} = 0 AND COALESCE(credit_spare, 0) = 0 THEN 'zero'
             WHEN ${available} <= ${derivation.lowBalanceThreshold}::int THEN 'low'
-            ELSE 'ok' END) AS credit_balance_state
+            ELSE 'ok' END) AS credit_balance_state,
+          ${paidPlans} AS uninstall_plan_paid
         FROM fallback_stores
       ),
       signaled_stores AS (
@@ -841,6 +952,36 @@ export class AdminQueryRepository {
         ca.status::text AS credit_account_status,
         ca.posted_balance AS credit_posted_balance,
         ca.held_credits AS credit_held_credits,
+        COALESCE(intake.received_24h, 0) AS intake_received_24h,
+        COALESCE(intake.eligible_24h, 0) AS intake_eligible_24h,
+        COALESCE(intake.skipped_24h, 0) AS intake_skipped_24h,
+        COALESCE(intake.base_received, 0) AS intake_base_received,
+        COALESCE(intake.base_eligible, 0) AS intake_base_eligible,
+        intake.top_skip_reason AS intake_top_skip_reason,
+        intake.top_payment_method AS intake_top_payment_method,
+        -- Lifecycle rows written before uninstall facts were recorded fall
+        -- back to the integration: billing_plan_id survives the uninstall, and
+        -- a cancel time at the uninstall means the plan was live until then.
+        (CASE WHEN l.uninstalled_at IS NOT NULL THEN COALESCE(l.uninstall_plan_id, i.billing_plan_id::text) END) AS uninstall_plan_id,
+        (CASE
+          WHEN l.uninstalled_at IS NULL THEN false
+          WHEN l.uninstall_billing_status IS NOT NULL THEN
+            lower(btrim(l.uninstall_billing_status)) IN ('active', 'paid_through')
+            OR COALESCE(l.uninstall_paid_through_at > l.uninstalled_at, false)
+          ELSE COALESCE(i.paid_through_at > l.uninstalled_at, false)
+            OR (i.billing_activated_at IS NOT NULL
+              AND i.billing_activated_at <= l.uninstalled_at
+              AND COALESCE(i.billing_canceled_at >= l.uninstalled_at - INTERVAL '5 minutes', false))
+          END) AS uninstall_was_active,
+        (CASE WHEN l.uninstalled_at IS NOT NULL THEN COALESCE(l.uninstall_paid_through_at, CASE WHEN l.uninstall_billing_status IS NULL THEN i.paid_through_at END) END) AS uninstall_paid_through_at,
+        previous_install.installed_at AS previous_install_at,
+        previous_install.uninstalled_at AS previous_uninstalled_at,
+        COALESCE(
+          previous_install.uninstall_plan_id,
+          CASE WHEN previous_install.integration_id IS NOT NULL
+            AND i.billing_activated_at <= previous_install.uninstalled_at
+            THEN i.billing_plan_id::text END
+        ) AS previous_plan_id,
         ${templateHealth.unavailable} AS template_unavailable,
         ${templateHealth.degraded} AS template_degraded${extraColumns}
       FROM integrations i
@@ -890,6 +1031,48 @@ export class AdminQueryRepository {
         WHERE w.integration_id = i.id
       ) webhook_metrics ON true
       LEFT JOIN LATERAL (${customerCountriesSql(sql`i.id`)}) customer_countries ON true
+      -- Unique orders received, from the hourly counts: the last 24 hours and
+      -- the 7 days before them. An index range scan of at most 192 rows.
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(SUM(b.received) FILTER (WHERE b.bucket_start >= NOW() - INTERVAL '24 hours'), 0)::int AS received_24h,
+          COALESCE(SUM(b.eligible) FILTER (WHERE b.bucket_start >= NOW() - INTERVAL '24 hours'), 0)::int AS eligible_24h,
+          COALESCE(SUM(b.skipped) FILTER (WHERE b.bucket_start >= NOW() - INTERVAL '24 hours'), 0)::int AS skipped_24h,
+          COALESCE(SUM(b.received) FILTER (WHERE b.bucket_start < NOW() - INTERVAL '24 hours'), 0)::int AS base_received,
+          COALESCE(SUM(b.eligible) FILTER (WHERE b.bucket_start < NOW() - INTERVAL '24 hours'), 0)::int AS base_eligible,
+          (
+            SELECT reason.key
+            FROM integration_order_intake rb
+            CROSS JOIN LATERAL jsonb_each_text(rb.skipped_by_reason) reason
+            WHERE rb.integration_id = i.id AND rb.bucket_start >= NOW() - INTERVAL '24 hours'
+            GROUP BY reason.key
+            ORDER BY SUM(reason.value::int) DESC, reason.key
+            LIMIT 1
+          ) AS top_skip_reason,
+          (
+            SELECT method.key
+            FROM integration_order_intake mb
+            CROSS JOIN LATERAL jsonb_each_text(mb.payment_methods) method
+            WHERE mb.integration_id = i.id AND mb.bucket_start >= NOW() - INTERVAL '24 hours'
+            GROUP BY method.key
+            ORDER BY SUM(method.value::int) DESC, method.key
+            LIMIT 1
+          ) AS top_payment_method
+        FROM integration_order_intake b
+        WHERE b.integration_id = i.id
+          AND b.bucket_start >= NOW() - INTERVAL '8 days'
+      ) intake ON true
+      -- The installation before the current one, when the store reinstalled.
+      LEFT JOIN LATERAL (
+        SELECT earlier.integration_id, earlier.installed_at, earlier.uninstalled_at, earlier.uninstall_plan_id
+        FROM admin_store_lifecycles earlier
+        WHERE earlier.integration_id = i.id
+          AND l.uninstalled_at IS NULL
+          AND earlier.uninstalled_at IS NOT NULL
+          AND earlier.installed_at < l.installed_at
+        ORDER BY earlier.installed_at DESC
+        LIMIT 1
+      ) previous_install ON true
       ${where}
     `;
   }

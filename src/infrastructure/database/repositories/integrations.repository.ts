@@ -11,7 +11,11 @@ import {
 } from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 import { resolvePaidThroughAtUninstall } from '../../../shared/billing/paid-through.policy';
-import { PAID_THROUGH_BILLING_STATUS } from '../../../shared/utils/billing.util';
+import {
+  effectiveBillingStatus,
+  isPaidThroughLive,
+  PAID_THROUGH_BILLING_STATUS,
+} from '../../../shared/utils/billing.util';
 
 @Injectable()
 export class IntegrationsRepository {
@@ -403,10 +407,27 @@ export class IntegrationsRepository {
         .where(eq(integrations.id, integrationId))
         .returning();
 
+      // The plan as it was at uninstall, for admin: a reinstall or a new plan
+      // later overwrites the integration's billing columns.
+      const paidThroughAtUninstall =
+        paidThroughAt ??
+        (current &&
+        isPaidThroughLive(current.paidThroughAt, new Date(occurredAt))
+          ? current.paidThroughAt
+          : null);
       await tx
         .update(adminStoreLifecycles)
         .set({
           uninstalledAt: occurredAt,
+          uninstallPlanId: current?.billingPlanId ?? null,
+          uninstallBillingStatus: current
+            ? effectiveBillingStatus(
+                current.billingStatus,
+                current.paidThroughAt,
+                new Date(occurredAt),
+              )
+            : null,
+          uninstallPaidThroughAt: paidThroughAtUninstall,
           updatedAt: occurredAt,
           provenance: sql`COALESCE(${adminStoreLifecycles.provenance}, '{}'::jsonb) || '{"uninstall":"captured_exact"}'::jsonb`,
         })
