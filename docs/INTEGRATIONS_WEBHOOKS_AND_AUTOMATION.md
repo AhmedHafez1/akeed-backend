@@ -95,9 +95,35 @@ Smart filtering: ignores blocked-status webhooks for non-current subscriptions. 
 
 ### Uninstall Webhook
 
-`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, and closes the current installation lifecycle. Then `StoreDataDeletionRepository.deleteStoreData` (store scope) deletes the store's customer data in one transaction: orders, verifications and everything that cascades from them, message dispatches, import batches, and every `webhook_events` row of the store, matched by organization/source or by platform and store domain, never only through `order_id`. Retained Meta webhooks and provider receipts that mention the store's messages go too. The integration, organization, plan and usage records remain for a reinstall until `shop/redact`. Accepted webhook jobs carry their trusted organization/source identity and are skipped before business processing if the source is disconnected or the relationship no longer matches.
+`APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, closes the current installation lifecycle and sets `integrations.uninstalled_at` (a redelivery keeps the first time). **No store data is deleted on uninstall.** Shopify's 48-hour rule applies (`SHOPIFY_UNINSTALL_DATA_RETENTION_MS` in `shared/commerce/shopify-data-retention.ts`, a constant on purpose, not an environment setting):
 
-Queued automation re-checks both installation and billing state at execution time. Pending initial sends become `failed` with an `integration_inactive` or `billing_not_active` reason; follow-up and escalation jobs retain the existing verification status and record skip metadata. No quota is reserved and no WhatsApp send, quiet-hours reschedule, or Shopify tag is attempted for blocked jobs.
+- **Inside 48 hours** every order, verification, webhook row and metric is kept. A reinstall reactivates the same integration row (`upsertShopifyIntegration`), clears `uninstalled_at`, which cancels the scheduled deletion, and the merchant dashboard and admin store page show the full history again.
+- **At 48 hours**, if the store has not reinstalled, the `shopify-uninstall-retention` job (BullMQ, every 15 minutes, no switch) deletes everything: `StoreDataDeletionRepository.deleteUninstalledShopifyStore`, which is `deleteStoreData` with organization scope behind a guard. Up to 100 stores per run; a store that fails (credit records) is logged and picked up next run.
+- **`shop/redact`** (Shopify sends it at 48 hours) runs the same guarded routine without the time check.
+
+The guard locks the organization and integration rows, then re-reads the integration: an active store (reinstalled) is never deleted (redact logs `handleShopRedact.storeReinstalled`, the job counts `skippedReinstalled`), and a store already deleted returns `not_found`, so the job and redact are idempotent in either order or at the same moment. A reinstall that races the deletion either commits first (skip) or waits and then installs fresh. Stores uninstalled before `uninstalled_at` existed have it NULL and are left to `shop/redact`.
+
+At uninstall all in-flight work for the store stops, so nothing sends for it, during the window or after a reinstall:
+
+- Open verifications are closed in one statement with `metadata.reason = 'store_uninstalled'`: never-sent rows (`pending`, `blocked`) become `failed`; rows awaiting a reply (`sent`, `delivered`, `read`) become `expired`. Both statuses are final for every automation job, and `store_uninstalled` is in neither `RETRYABLE_VERIFICATION_REASONS` nor `BLOCKED_EVENT_REASONS`, so merchant retry, capacity recovery and event redispatch never reopen them.
+- Scheduled and paused automatic cancellations are stopped with reason `store_uninstalled` (not resumed on reinstall).
+- Every send path also re-checks the store at execution time (below), as a second line for jobs already queued.
+
+Accepted webhook jobs carry their trusted organization/source identity and are skipped before business processing if the source is disconnected or the relationship no longer matches.
+
+Queued automation re-checks both installation and billing state at execution time. Pending initial sends become `failed` with an `integration_inactive` or `billing_not_active` reason; follow-up and escalation jobs retain the existing verification status and record skip metadata. No quota is reserved and no WhatsApp send, quiet-hours reschedule, or Shopify tag is attempted for blocked jobs. Inactive-store guards, by path:
+
+| Path                                                                         | Guard                                                                                         |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Initial send, reminder, no-reply escalation                                  | `skipUnavailableIntegration` and `VerificationSendService.loadContext` (`integration_inactive`) |
+| Sender retry / fallback / recovery sweep                                     | `loadContext`; recovery finishes as `verification_closed`                                     |
+| Acknowledgment (Akeed number), unresolved-reply nudge, merchant-number thank-you | `CustomerReplyFollowUpService`: ineligible `integration_inactive` before any claim or send |
+| Change-request acknowledgment / reconfirmation / platform effects            | Dispatch claim, `loadContext`, commerce registry (`integration_inactive`)                     |
+| Automatic cancellation, commerce outcome sync                                | Stopped at uninstall; commerce registry refuses inactive sources before any Shopify call     |
+| Capacity (blocked-order) recovery                                            | Active sources only; `store_uninstalled` is not a capacity reason                            |
+| Webhook queue, order-import release                                          | `integration_inactive` / `source_inactive` skip                                               |
+
+Merchant emails (sender alerts, change-request email, the one-off credit-model notice) are not WhatsApp and are not gated on installation.
 
 ### GDPR Webhooks
 
@@ -107,7 +133,7 @@ Required by Shopify for app listing compliance.
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `handleCustomerDataRequest` | Finds the customer's orders and verifications, filtered by the order IDs in the request.                 |
 | `handleCustomerRedact`      | Anonymises the customer's orders, clears their verification metadata and empties stored order payloads. |
-| `handleShopRedact`          | `deleteStoreData` with organization scope: all store data plus the integration, usage, memberships and organization, in one transaction. |
+| `handleShopRedact`          | `deleteUninstalledShopifyStore`: all store data plus the integration, usage, memberships and organization, in one transaction; skipped if the store has reinstalled. |
 
 Customer requests match a customer within the store's own integration by any key Shopify sends: the Shopify order IDs (`orders_to_redact` or `orders_requested`), the customer ID in the stored order payload, the email (case-insensitive) or the phone (as sent and in E.164). Shopify often sends no phone, and an order's phone usually comes from its address, so no single key is required; a request carrying none of them is logged as `noIdentifiers` and skipped.
 
@@ -128,7 +154,7 @@ npm run replay:shopify-customer-redactions -- --event-id <webhook_events id> --a
 | ------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
 | `unlinked_finished` | `order_id IS NULL`, `completed`/`skipped`/`failed`, not held, not dispatch-required, received over 48h ago | delete |
 | `no_store`          | `integration_id IS NULL`, received over 48h ago, any status (they can never be processed)                   | delete |
-| `before_uninstall`  | received before the store's last `admin_store_lifecycles.uninstalled_at` (not under a live processing lease) | delete |
+| `before_uninstall`  | received before `integrations.uninstalled_at` of a store still uninstalled 48h later (not under a live processing lease); a safety net behind the uninstall-retention job | delete |
 | WooCommerce marker  | `order.create:<integration>:<order>` rows past the same rules: `holdOf` routes later deliveries on them      | payload set to `{}`, row kept |
 
 Shopify GDPR request rows (`customers/redact`, `customers/data_request`, `shop/redact`) attached to a store are kept: they hold ids only and are the request record the replay script reads. Order-linked rows are kept (merchant retry and the lifecycle projection read them). Inside 48h every row stays, so a Shopify resend is still answered as a duplicate; after it, a resend would be stored again but cannot duplicate the order, because orders are unique per `(integration_id, external_order_id)`.

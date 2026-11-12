@@ -28,7 +28,10 @@ import {
 } from '../schema';
 import {
   RETRYABLE_VERIFICATION_REASONS,
+  STORE_UNINSTALLED_REASON,
   TERMINAL_STATUSES,
+  UNINSTALL_AWAITING_REPLY_STATUSES,
+  UNINSTALL_UNSENT_STATUSES,
   WEBHOOK_PROTECTED_STATUSES,
 } from '../../../shared/verification/verification-lifecycle';
 import {
@@ -214,6 +217,61 @@ function strandedCapacityResume(olderThan: string) {
 @Injectable()
 export class VerificationsRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
+
+  /**
+   * Ends a store's open verifications when it uninstalls, so nothing sends
+   * for it again, before or after a reinstall. Unsent rows (`pending`,
+   * `blocked`) become `failed`; rows awaiting a reply become `expired`. Both
+   * carry `store_uninstalled`, which no retry or recovery path reopens.
+   * Final rows are untouched, and a second call changes nothing.
+   */
+  async closeOpenForUninstalledStore(
+    orgId: string,
+    integrationId: string,
+    closedAt = new Date().toISOString(),
+  ): Promise<{ failed: number; expired: number }> {
+    const unsent = UNINSTALL_UNSENT_STATUSES.map((status) => sql`${status}`);
+    const rows = await this.db
+      .update(verifications)
+      .set({
+        status: sql`CASE WHEN ${verifications.status} IN (${sql.join(unsent, sql`, `)})
+          THEN 'failed' ELSE 'expired' END::verification_status`,
+        nextRetryAt: null,
+        metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+          {
+            reason: STORE_UNINSTALLED_REASON,
+            closed_at: closedAt,
+          },
+        )}::jsonb`,
+        updatedAt: closedAt,
+      })
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          inArray(verifications.status, [
+            ...UNINSTALL_UNSENT_STATUSES,
+            ...UNINSTALL_AWAITING_REPLY_STATUSES,
+          ]),
+          inArray(
+            verifications.orderId,
+            this.db
+              .select({ id: orders.id })
+              .from(orders)
+              .where(
+                and(
+                  eq(orders.orgId, orgId),
+                  eq(orders.integrationId, integrationId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ status: verifications.status });
+    return {
+      failed: rows.filter((row) => row.status === 'failed').length,
+      expired: rows.filter((row) => row.status === 'expired').length,
+    };
+  }
 
   async getFunnelCountsByOrgAndPeriod(
     orgId: string,

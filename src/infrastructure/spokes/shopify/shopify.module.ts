@@ -17,6 +17,10 @@ import { SHOPIFY_SUBSCRIPTION_SYNC_QUEUE } from './subscription-sync/shopify-sub
 import { ShopifySubscriptionSyncProcessor } from './subscription-sync/shopify-subscription-sync.processor';
 import { ShopifySubscriptionSyncScheduler } from './subscription-sync/shopify-subscription-sync.scheduler';
 import { ShopifySubscriptionSyncService } from './subscription-sync/shopify-subscription-sync.service';
+import { SHOPIFY_UNINSTALL_RETENTION_QUEUE } from './uninstall-retention/shopify-uninstall-retention.constants';
+import { ShopifyUninstallRetentionProcessor } from './uninstall-retention/shopify-uninstall-retention.processor';
+import { ShopifyUninstallRetentionScheduler } from './uninstall-retention/shopify-uninstall-retention.scheduler';
+import { ShopifyUninstallRetentionService } from './uninstall-retention/shopify-uninstall-retention.service';
 
 @Module({
   imports: [
@@ -26,6 +30,7 @@ import { ShopifySubscriptionSyncService } from './subscription-sync/shopify-subs
     ShopifyCommerceModule,
     ConfigModule,
     BullModule.registerQueue({ name: SHOPIFY_SUBSCRIPTION_SYNC_QUEUE }),
+    BullModule.registerQueue({ name: SHOPIFY_UNINSTALL_RETENTION_QUEUE }),
   ],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [
@@ -38,6 +43,9 @@ import { ShopifySubscriptionSyncService } from './subscription-sync/shopify-subs
     ShopifySubscriptionSyncService,
     ShopifySubscriptionSyncProcessor,
     ShopifySubscriptionSyncScheduler,
+    ShopifyUninstallRetentionService,
+    ShopifyUninstallRetentionProcessor,
+    ShopifyUninstallRetentionScheduler,
   ],
   exports: [ShopifyCommerceModule, ShopifyAuthService],
 })

@@ -2,7 +2,8 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { CapacityRecoveryProducer } from '../../../../modules/capacity-recovery/capacity-recovery.producer';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { StoreDataDeletionRepository } from '../../../database/repositories/store-data-deletion.repository';
+import { VerificationAutoCancellationsRepository } from '../../../database/repositories/verification-auto-cancellations.repository';
+import { VerificationsRepository } from '../../../database/repositories/verifications.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
@@ -32,7 +33,8 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
-    private readonly storeDataDeletion: StoreDataDeletionRepository,
+    private readonly verificationsRepo: VerificationsRepository,
+    private readonly autoCancellations: VerificationAutoCancellationsRepository,
     @Optional()
     private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
@@ -72,32 +74,34 @@ export class ShopifyBillingWebhookService {
       uninstalledAt,
     );
 
-    // Customer data only: the integration and organization stay, because a
-    // reinstall reuses them. Webhook rows are matched by store as well as by
-    // owner, so rows that never linked to an order go too.
-    const purged = await this.storeDataDeletion.deleteStoreData(
-      {
-        orgId: integration.orgId,
-        integrationId: integration.id,
-        platform: 'shopify',
-        storeDomain: shopDomain.trim().toLowerCase(),
-      },
-      { scope: 'store' },
+    // Shopify's 48-hour rule: nothing is deleted here. A reinstall inside the
+    // window gets its history back; the uninstall-retention job (or
+    // shop/redact) deletes everything once it closes. What stops now is all
+    // work that could still message this store's customers: automatic
+    // cancellations and every open verification, closed with a reason no
+    // retry or recovery reopens, so a reinstall never sends old orders.
+    const stoppedAutoCancellations =
+      await this.autoCancellations.stopPendingForIntegration(
+        integration.orgId,
+        integration.id,
+        'store_uninstalled',
+        null,
+      );
+    const closed = await this.verificationsRepo.closeOpenForUninstalledStore(
+      integration.orgId,
+      integration.id,
+      uninstalledAt,
     );
     this.logger.log(
       buildBackendLog('ShopifyBillingWebhookService', {
-        action: 'handleAppUninstalled.purged',
+        action: 'handleAppUninstalled.closedOpenWork',
         outcome: 'success',
         shopDomain,
         orgId: integration.orgId,
         integrationId: integration.id,
-        purgedOrders: purged.orders,
-        purgedVerifications: purged.verifications,
-        purgedWebhookEvents: purged.webhookEvents,
-        purgedMessageDispatches: purged.messageDispatches,
-        purgedOrderImportBatches: purged.orderImportBatches,
-        purgedMetaWebhookEvents: purged.metaWebhookEvents,
-        purgedProviderMessageReceipts: purged.providerMessageReceipts,
+        failedVerifications: closed.failed,
+        expiredVerifications: closed.expired,
+        stoppedAutoCancellations,
       }),
     );
     return { received: true };

@@ -289,6 +289,7 @@ Shopify sends `app_subscriptions/update` webhooks when subscription status chang
 - Other statuses (`pending`, `accepted`) change nothing.
 - `isActive` represents whether the Shopify app is installed. Only install and uninstall flows may change it; billing entitlement is controlled by `billingStatus`.
 - Subscription updates for an uninstalled integration are acknowledged without mutating local installation or billing state.
+- Uninstall still cancels local billing and clears `shopifySubscriptionId`, but keeps all store data for 48 hours (Shopify's rule). A reinstall in that window reactivates the same integration with its history; plan selection runs again. After 48 hours the store is deleted (see `INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md`, Uninstall Webhook).
 - Non-current subscription webhooks are ignored, whatever their status, so a declined upgrade cannot disable the merchant's existing plan.
 - An update that leaves the subscription active requests capacity recovery for the organization, so its blocked orders are sent.
 

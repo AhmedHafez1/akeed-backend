@@ -739,6 +739,13 @@ export const integrations = pgTable(
       mode: 'string',
     }),
     logoHeaderEnabled: boolean('logo_header_enabled').default(true).notNull(),
+    // When the store last uninstalled. Set by app/uninstalled, cleared by a
+    // reinstall; the uninstall-retention job deletes the store's data once
+    // this is SHOPIFY_UNINSTALL_DATA_RETENTION_MS old.
+    uninstalledAt: timestamp('uninstalled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -749,6 +756,11 @@ export const integrations = pgTable(
     }).defaultNow(),
   },
   (table) => [
+    index('idx_integrations_uninstalled_due')
+      .on(table.uninstalledAt)
+      .where(
+        sql`${table.isActive} = false AND ${table.uninstalledAt} IS NOT NULL`,
+      ),
     index('idx_integrations_org_id').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),

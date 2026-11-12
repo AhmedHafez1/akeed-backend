@@ -54,6 +54,7 @@ function setup(
     integration: {
       id: 'int-1',
       orgId: 'org-1',
+      isActive: true,
       acknowledgmentEnabled: true,
       defaultLanguage: 'auto',
       storeName: 'Nour',
@@ -181,6 +182,26 @@ describe('CustomerReplyFollowUpService', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
   });
   afterEach(() => jest.restoreAllMocks());
+
+  describe('an uninstalled store', () => {
+    it.each([
+      ['the Akeed-number acknowledgment', ACK],
+      ['the unresolved-reply nudge', NUDGE],
+      ['the merchant-number thank-you', MERCHANT_ACK],
+    ])('sends nothing for %s', async (_label, request) => {
+      const s = setup({
+        integration: { isActive: false },
+        verification: request.kind === 'nudge' ? { status: 'sent' } : undefined,
+      });
+      await expect(s.service.handle(request)).resolves.toEqual({
+        outcome: 'ineligible',
+        reason: 'integration_inactive',
+      });
+      expect(s.serviceMessages.claim).not.toHaveBeenCalled();
+      expect(s.dispatches.claim).not.toHaveBeenCalled();
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+    });
+  });
 
   describe('merchant-number thank-yous', () => {
     it('uses the receiving number despite shared opt-out and acknowledgment switch off, without billing', async () => {

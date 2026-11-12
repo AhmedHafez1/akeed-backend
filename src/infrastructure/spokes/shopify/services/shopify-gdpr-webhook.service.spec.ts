@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import { ShopifyGdprWebhookService } from './shopify-gdpr-webhook.service';
 import { buildShopifyCustomerKeys } from './shopify-customer-keys';
@@ -146,7 +147,10 @@ describe('buildShopifyCustomerKeys', () => {
 describe('ShopifyGdprWebhookService shop redact', () => {
   const integrationsRepo = { findByPlatformDomain: jest.fn() };
   const webhookEventsRepo = { insertIfNew: jest.fn() };
-  const storeDataDeletion = { deleteStoreData: jest.fn() };
+  const storeDataDeletion = {
+    deleteStoreData: jest.fn(),
+    deleteUninstalledShopifyStore: jest.fn(),
+  };
 
   function service() {
     return new ShopifyGdprWebhookService(
@@ -161,10 +165,13 @@ describe('ShopifyGdprWebhookService shop redact', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     webhookEventsRepo.insertIfNew.mockResolvedValue({ id: 'event-1' });
-    storeDataDeletion.deleteStoreData.mockResolvedValue({ webhookEvents: 4 });
+    storeDataDeletion.deleteUninstalledShopifyStore.mockResolvedValue({
+      outcome: 'deleted',
+      counts: { webhookEvents: 4 },
+    });
   });
 
-  it('deletes the whole organization in one routine and keeps its own request row', async () => {
+  it('deletes the whole uninstalled organization through the guarded routine and keeps its own request row', async () => {
     integrationsRepo.findByPlatformDomain.mockResolvedValue({
       id: 'integration-1',
       orgId: 'org-1',
@@ -177,16 +184,51 @@ describe('ShopifyGdprWebhookService shop redact', () => {
       'shop/redact',
     );
 
-    expect(storeDataDeletion.deleteStoreData).toHaveBeenCalledWith(
+    expect(
+      storeDataDeletion.deleteUninstalledShopifyStore,
+    ).toHaveBeenCalledWith(
       {
         orgId: 'org-1',
         integrationId: 'integration-1',
         platform: 'shopify',
         storeDomain: 'synthetic.myshopify.com',
       },
-      { scope: 'organization', keepWebhookEventId: 'event-1' },
+      { keepWebhookEventId: 'event-1' },
     );
+    expect(storeDataDeletion.deleteStoreData).not.toHaveBeenCalled();
   });
+
+  it.each(['reinstalled', 'not_found'] as const)(
+    'acknowledges without error when the routine skips (%s)',
+    async (reason) => {
+      integrationsRepo.findByPlatformDomain.mockResolvedValue({
+        id: 'integration-1',
+        orgId: 'org-1',
+        isActive: reason === 'reinstalled',
+      });
+      storeDataDeletion.deleteUninstalledShopifyStore.mockResolvedValue({
+        outcome: 'skipped',
+        reason,
+      });
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const ack = await service().handleShopRedact(
+        { shop_id: '1', shop_domain: 'synthetic.myshopify.com' },
+        'synthetic.myshopify.com',
+        'delivery-1',
+        'shop/redact',
+      );
+
+      expect(ack).toEqual({ received: true });
+      const warned = warn.mock.calls.some(([line]) =>
+        String(line).includes('handleShopRedact.storeReinstalled'),
+      );
+      expect(warned).toBe(reason === 'reinstalled');
+      warn.mockRestore();
+    },
+  );
 
   it('deletes nothing for an unknown store or a duplicate delivery', async () => {
     integrationsRepo.findByPlatformDomain.mockResolvedValue(undefined);
@@ -210,6 +252,8 @@ describe('ShopifyGdprWebhookService shop redact', () => {
     );
 
     expect(ack).toEqual({ received: true, duplicate: true });
-    expect(storeDataDeletion.deleteStoreData).not.toHaveBeenCalled();
+    expect(
+      storeDataDeletion.deleteUninstalledShopifyStore,
+    ).not.toHaveBeenCalled();
   });
 });

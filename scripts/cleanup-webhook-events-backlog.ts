@@ -4,7 +4,8 @@
  *
  *   unlinked_finished  finished, never linked to an order, older than 48h
  *   no_store           no store matched (integration_id IS NULL), older than 48h
- *   before_uninstall   received before the store's last uninstall
+ *   before_uninstall   received before the uninstall of a store still
+ *                      uninstalled after the 48-hour window
  *   woocommerce_marker_scrub
  *                      WooCommerce create markers past those rules: the payload
  *                      is cleared, the row stays (later deliveries route on it)

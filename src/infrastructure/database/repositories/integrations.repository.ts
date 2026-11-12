@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
-import { eq, and, isNotNull, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   adminAccessAudit,
@@ -136,6 +136,9 @@ export class IntegrationsRepository {
           ...(existing.isActive
             ? {}
             : { onboardingStatus: 'pending' as const }),
+          // A reinstall inside the 48-hour window keeps the store's history:
+          // clearing the uninstall time cancels its scheduled deletion.
+          uninstalledAt: null,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(integrations.id, existing.id))
@@ -313,6 +316,10 @@ export class IntegrationsRepository {
           onboardingStatus: 'pending',
           billingCanceledAt: sql`COALESCE(${integrations.billingCanceledAt}, ${occurredAt})`,
           billingStatusUpdatedAt: occurredAt,
+          // Starts the 48-hour window; the store's data is kept until then.
+          // A redelivered uninstall keeps the first time, so it can't
+          // extend the window.
+          uninstalledAt: sql`COALESCE(${integrations.uninstalledAt}, ${occurredAt})`,
           updatedAt: occurredAt,
         })
         .where(eq(integrations.id, integrationId))
@@ -334,6 +341,31 @@ export class IntegrationsRepository {
 
       return updated;
     });
+  }
+
+  /**
+   * Shopify stores still uninstalled whose 48-hour window has closed, oldest
+   * first. Rows uninstalled before `uninstalled_at` existed stay NULL and are
+   * left to shop/redact.
+   */
+  async findUninstalledShopifyDueForDeletion(cutoff: string, limit = 100) {
+    return this.db
+      .select({
+        id: integrations.id,
+        orgId: integrations.orgId,
+        platformStoreUrl: integrations.platformStoreUrl,
+      })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.platformType, 'shopify'),
+          eq(integrations.isActive, false),
+          isNotNull(integrations.uninstalledAt),
+          lte(integrations.uninstalledAt, cutoff),
+        ),
+      )
+      .orderBy(integrations.uninstalledAt)
+      .limit(limit);
   }
 
   private encryptAccessToken(accessToken: string): string {
