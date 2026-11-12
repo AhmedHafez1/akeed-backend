@@ -694,6 +694,13 @@
       "when": 1795305600000,
       "tag": "0097_integration_paid_through_at",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795392000000,
+      "tag": "0098_plan_required_notices",
+      "breakpoints": true
     }
   ]
 }

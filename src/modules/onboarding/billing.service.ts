@@ -268,8 +268,8 @@ export class BillingService {
    * Onboarding v2 grants Starter without a plan picker. A store that already
    * has an active plan keeps it. A reinstalled store, whose one free claim is
    * used, gets its Starter plan back while free messages remain; otherwise it
-   * is left planless instead of failing setup: it still goes live and is
-   * offered plans from the dashboard.
+   * is left planless instead of failing setup. Setup then offers a plan;
+   * saving configuration alone does not make confirmations live.
    */
   async activateStarterSilently(
     integration: IntegrationRecord,

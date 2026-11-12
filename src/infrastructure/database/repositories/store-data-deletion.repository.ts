@@ -300,6 +300,10 @@ export class StoreDataDeletionRepository {
         memberships: 0,
         organizations: 0,
       };
+      // Notice envelopes include the merchant's email and are part of store deletion.
+      await tx.execute(
+        sql`DELETE FROM plan_required_notices WHERE org_id=${orgId}::uuid AND integration_id=${store.integrationId}::uuid`,
+      );
       if (!orgScope) return counts;
 
       counts.integrationMonthlyUsage = await count(

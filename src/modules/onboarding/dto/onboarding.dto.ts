@@ -330,8 +330,8 @@ export class OnboardingClientEventDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['setup', 'test', 'success'])
-  step?: 'setup' | 'test' | 'success';
+  @IsIn(['setup', 'plans', 'test', 'success'])
+  step?: 'setup' | 'plans' | 'test' | 'success';
 }
 
 export interface OnboardingActivationDto {
@@ -354,6 +354,8 @@ export interface OnboardingUsageDto {
 }
 
 export interface OnboardingStateDto {
+  /** Shopify automatic-confirmation readiness; absent for other platforms. */
+  sendingAvailability?: import('../../../shared/billing/sending-availability').SendingAvailability;
   integrationId: string;
   source: {
     platformType: string;
@@ -474,7 +476,7 @@ export interface SettingsResponseDto {
       pools?: UsagePools | null;
       used: number;
       limit: number;
-      periodStart: string;
+      periodStart: string | null;
       periodEnd: string | null;
     };
     /** Accepted customer messages in the last 30 days (tests excluded). */

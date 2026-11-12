@@ -71,6 +71,8 @@ import {
   canWriteOrganization,
 } from '../auth/organization-role';
 import { SourceSetupService } from './source-setup.service';
+import { SendingAvailabilityService } from './sending-availability.service';
+import { PlanRequiredNoticesRepository } from '../../infrastructure/database/repositories/plan-required-notices.repository';
 import { toMerchantBrandingDto } from '../merchant-branding/merchant-branding.types';
 import type {
   SourceHealthDto,
@@ -131,6 +133,9 @@ export class OnboardingService {
     @Optional()
     private readonly templateMessages: TemplateMessageService = new TemplateMessageService(),
     @Optional() private readonly messageTexts?: MessageTextsService,
+    @Optional()
+    private readonly sendingAvailability?: SendingAvailabilityService,
+    @Optional() private readonly planNotices?: PlanRequiredNoticesRepository,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -154,8 +159,8 @@ export class OnboardingService {
 
   /**
    * Quick setup is the whole of onboarding v2: saving it activates Starter
-   * without a plan picker and takes the store live, so the first real COD
-   * order is confirmed even if the merchant never finishes the test step.
+   * without a plan picker when eligible. A planless reinstall saves setup but
+   * must choose a plan before real COD confirmations can send.
    */
   async completeSetup(
     user: AuthenticatedUser,
@@ -181,16 +186,29 @@ export class OnboardingService {
 
     const starter =
       await this.billingService.activateStarterSilently(integration);
-    await this.onboardingState.markOnboardingCompleted(integration.id);
-    await this.adminLifecycles?.reachMilestone(
-      integration.id,
-      'setupCompletedAt',
-      'setup_completed',
-      {
-        provenance: { setup_completed: 'captured_exact' },
-        props: { starter, autoConfirm: payload.isAutoVerifyEnabled },
-      },
-    );
+    if (integration.platformType === 'shopify' && this.planNotices) {
+      const first = await this.planNotices.completeSetup(
+        user.orgId,
+        integration.id,
+      );
+      if (first)
+        await this.adminLifecycles?.recordEvent(
+          integration.id,
+          'setup_completed',
+          { starter, autoConfirm: payload.isAutoVerifyEnabled },
+        );
+    } else {
+      await this.onboardingState.markOnboardingCompleted(integration.id);
+      await this.adminLifecycles?.reachMilestone(
+        integration.id,
+        'setupCompletedAt',
+        'setup_completed',
+        {
+          provenance: { setup_completed: 'captured_exact' },
+          props: { starter, autoConfirm: payload.isAutoVerifyEnabled },
+        },
+      );
+    }
 
     return this.getState(user);
   }
@@ -383,6 +401,21 @@ export class OnboardingService {
   private async getCurrentUsage(
     integration: IntegrationRecord,
   ): Promise<SettingsResponseDto['billing']['usage']> {
+    if (
+      integration.platformType === 'shopify' &&
+      !isBillingStatusActive(
+        integration.billingStatus,
+        integration.paidThroughAt,
+      )
+    ) {
+      return {
+        used: 0,
+        limit: 0,
+        periodStart: null,
+        periodEnd: null,
+        pools: null,
+      };
+    }
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
     const { used, limit } = displayedUsage(entitlement);
@@ -563,6 +596,12 @@ export class OnboardingService {
 
     return {
       ...state,
+      ...(integration.platformType === 'shopify' && this.sendingAvailability
+        ? {
+            sendingAvailability:
+              await this.sendingAvailability.read(integration),
+          }
+        : {}),
       messageCurrency: latestOrderCurrency ?? state.shippingCurrency,
       changeRequestReadiness:
         (await this.onboardingState.changeRequestReadiness?.(integration)) ?? {
@@ -656,7 +695,15 @@ export class OnboardingService {
   private async readUsage(
     integration: IntegrationRecord,
   ): Promise<OnboardingUsageDto | null> {
-    if (!integration.billingPlanId) return null;
+    if (
+      !integration.billingPlanId ||
+      (integration.platformType === 'shopify' &&
+        !isBillingStatusActive(
+          integration.billingStatus,
+          integration.paidThroughAt,
+        ))
+    )
+      return null;
     const entitlement =
       await this.billingEntitlements.readEntitlement(integration);
     return { ...displayedUsage(entitlement), pools: entitlement.pools };

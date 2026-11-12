@@ -46,13 +46,16 @@ describe('bulk import and order API release gates: one implementation per rule (
     ]);
   });
 
-  it('send readiness: the credit and slot gates are read only by the readiness service and the core', () => {
+  it('send readiness: core and advisory readers share the authoritative credit and slot gates', () => {
     // Anywhere in src, not only the channels: the core's own send-time gates
     // are the transactional truth the advisory readiness check mirrors.
     // Capacity recovery reads the slot gate the same advisory way, to stop a
     // run early; its sends still go through the core's ledger.
+    // Shopify's onboarding/dashboard snapshot is also advisory: displaying
+    // availability never reserves usage or changes the send-time decision.
     expect(filesMatching(/\.(resolveDenial|hasAvailableSlot)\(/)).toEqual([
       'modules/capacity-recovery/capacity-recovery.service.ts',
+      'modules/onboarding/sending-availability.service.ts',
       'modules/order-ingestion/standalone-send-readiness.service.ts',
       'modules/verification-core/verification-hub.service.ts',
       'modules/verification-core/verification-send.service.ts',

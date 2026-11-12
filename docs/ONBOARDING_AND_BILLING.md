@@ -49,7 +49,7 @@ Transitions:
 
 ## Onboarding Flow
 
-The embedded onboarding flow has two steps:
+Shopify embedded onboarding saves quick setup, then offers the free test. A store without an entitled plan sees plan selection before the test or success screen. Other platforms keep their existing setup and prepaid-credit flows.
 
 ### Step 1 — Configuration
 
@@ -66,30 +66,36 @@ Behavior:
 
 - Fields auto-save to the backend with a 1500ms debounce while on step 1.
 - If the store name could not be prefilled from the Shopify API, a warning banner is shown.
-- Clicking "Continue to Billing" performs an explicit save and advances to step 2.
+- Submitting setup calls `POST /api/onboarding/setup`, saves configuration and attempts silent Starter activation or resumption of existing paid-through days.
 - Validation: store name must be non-empty.
 
-### Step 2 — Billing
+### Plan selection when required
 
-The merchant selects a billing plan and activates it.
+If no plan is entitled after setup, the merchant chooses a plan using the same Shopify picker as the dashboard. Saving configuration does not imply that confirmations can send.
 
 Behavior:
 
 - Plans are fetched from `GET /api/onboarding/billing/plans`.
-- The default selected plan is `basic`.
-- If the Starter free plan has already been claimed for this shop, it is disabled with a tooltip.
+- The previous paid plan is selected when available; otherwise the cheapest paid plan is selected.
+- Exhausted one-time Starter eligibility is explained. A cancelled paid plan is identified as ended, rather than displayed as current.
 - Activating a paid plan creates a Shopify recurring application charge and redirects the merchant to the Shopify billing confirmation page.
 - Activating the free Starter plan completes onboarding immediately without a Shopify redirect.
 - On billing callback return, the backend verifies the charge status, activates the subscription, marks onboarding as completed, and redirects to the dashboard.
+- "Choose later" opens the dashboard with a non-dismissible critical no-plan banner. The warning does not depend on held orders and combines with any capacity warning. Orders skipped for billing inactivity are reported separately from held orders, within the current installation and last 48 hours. Selecting a plan does not replay skipped orders.
 
 ### Resume Logic
 
 When a merchant returns to the onboarding page mid-flow:
 
-- If `onboardingStatus` is `completed`, redirect to dashboard.
-- If `billingPlanId` or `billingStatus` is set, resume at step 2 (billing).
-- If billing has a non-active status (declined, frozen, expired, canceled, error), show a recovery error banner on step 2.
-- Otherwise, start at step 1.
+- If setup is incomplete, start with configuration.
+- If setup is complete but a plan is required, show plan selection, including when the test was requested directly.
+- With a plan, resume an unfinished test; after a confirmed or skipped test, open the dashboard.
+
+### Sending availability and reinstall email
+
+For Shopify only, `GET /api/onboarding/state`, the setup response and the state within `GET /api/settings` include `sendingAvailability`: availability and denial reason from the existing entitlement/capacity policy, effective billing status, current and previous plan, cancellation and paid-through dates, and recorded missed-order counts. It is a read-only snapshot, not a reservation or delivery guarantee. The Plan tab hides usage and renewal information from ended periods. Active paid-through periods retain their existing entitlement and usage.
+
+Planless setup completion creates one `plan_required_notices` record per installation lifecycle in the same transaction as completion. A background worker uses the existing email port and the store's notification email, linking into Shopify Admin's localized Plan tab. Reads never create notices. Retries retain the same email envelope and idempotency key, use bounded attempts and stop before the provider's 24-hour replay window ends. A new plan or ended installation cancels unsent notices; failed, disabled and missing-recipient outcomes are recorded. Existing email configuration controls delivery. Notice envelopes are deleted with store data.
 
 ### Standalone onboarding
 

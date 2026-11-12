@@ -43,6 +43,7 @@ import { WhatsappTemplateDraftsRepository } from './repositories/whatsapp-templa
 import { WhatsappTemplateLifecycleRepository } from './repositories/whatsapp-template-lifecycle.repository';
 import { ReviewPromptsRepository } from './repositories/review-prompts.repository';
 import { UsageAlertsRepository } from './repositories/usage-alerts.repository';
+import { PlanRequiredNoticesRepository } from './repositories/plan-required-notices.repository';
 import { TipsCampaignsRepository } from './repositories/tips-campaigns.repository';
 import { MetaWebhookEventsRepository } from './repositories/meta-webhook-events.repository';
 import { CustomerMessagesRepository } from './repositories/customer-messages.repository';
@@ -93,6 +94,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     ReviewPromptsRepository,
     WhatsappSenderAlertsRepository,
     UsageAlertsRepository,
+    PlanRequiredNoticesRepository,
     TipsCampaignsRepository,
     MetaWebhookEventsRepository,
   ],
@@ -140,6 +142,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     WhatsappTemplateLifecycleRepository,
     ReviewPromptsRepository,
     UsageAlertsRepository,
+    PlanRequiredNoticesRepository,
     TipsCampaignsRepository,
     MetaWebhookEventsRepository,
   ],
