@@ -1,3 +1,7 @@
+import {
+  PAID_THROUGH_BILLING_STATUS,
+  effectiveBillingStatusSql,
+} from '../../../shared/utils/billing.util';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { PREPAID_CREDIT_PLATFORMS } from '../../../shared/billing/credit-eligibility';
@@ -263,7 +267,7 @@ export class TipsCampaignsRepository {
       const options: SQL[] = [];
       if (shopifyPlans.length)
         options.push(
-          sql`(i.platform_type = 'shopify' AND lower(btrim(COALESCE(i.billing_status, ''))) IN ('active', 'not_required') AND i.billing_plan_id::text IN (${inList(shopifyPlans)}))`,
+          sql`(i.platform_type = 'shopify' AND lower(btrim(COALESCE(${effectiveBillingStatusSql(sql`i.billing_status`, sql`i.paid_through_at`)}, ''))) IN ('active', 'not_required', ${PAID_THROUGH_BILLING_STATUS}) AND i.billing_plan_id::text IN (${inList(shopifyPlans)}))`,
         );
       if (filters.plans.includes('prepaid'))
         options.push(

@@ -49,6 +49,16 @@ const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
   },
 };
 
+/**
+ * Whether a plan is charged through a Shopify subscription (amount > 0). Reads
+ * the plan templates, so it also works where `BillingConfigService` is not
+ * available (the uninstall path in the repository).
+ */
+export function isPaidBillingPlan(planId: string | null | undefined): boolean {
+  if (!planId || !isBillingPlanId(planId)) return false;
+  return BILLING_PLAN_TEMPLATES[planId].amount > 0;
+}
+
 export const DEFAULT_BILLING_PLAN_ID: BillingPlanId = 'starter';
 
 /**

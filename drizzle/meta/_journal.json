@@ -680,6 +680,27 @@
       "when": 1795132800000,
       "tag": "0095_change_request_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795219200000,
+      "tag": "0096_integration_uninstalled_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795305600000,
+      "tag": "0097_integration_paid_through_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795392000000,
+      "tag": "0098_plan_required_notices",
+      "breakpoints": true
     }
   ]
 }

@@ -739,6 +739,20 @@ export const integrations = pgTable(
       mode: 'string',
     }),
     logoHeaderEnabled: boolean('logo_header_enabled').default(true).notNull(),
+    // When the store last uninstalled. Set by app/uninstalled, cleared by a
+    // reinstall; the uninstall-retention job deletes the store's data once
+    // this is SHOPIFY_UNINSTALL_DATA_RETENTION_MS old.
+    uninstalledAt: timestamp('uninstalled_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    // End of the period a paid store had paid for when it uninstalled. While
+    // in the future, a reinstall resumes that plan as `paid_through`. Set once
+    // per paid period at uninstall, never moved by a reinstall.
+    paidThroughAt: timestamp('paid_through_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     createdAt: timestamp('created_at', {
       withTimezone: true,
       mode: 'string',
@@ -749,6 +763,11 @@ export const integrations = pgTable(
     }).defaultNow(),
   },
   (table) => [
+    index('idx_integrations_uninstalled_due')
+      .on(table.uninstalledAt)
+      .where(
+        sql`${table.isActive} = false AND ${table.uninstalledAt} IS NOT NULL`,
+      ),
     index('idx_integrations_org_id').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
@@ -1706,6 +1725,11 @@ export const webhookEvents = pgTable(
       table.status.asc().nullsLast().op('enum_ops'),
       table.nextDispatchAt.asc().nullsLast().op('timestamptz_ops'),
     ),
+    index('webhook_events_planless_recent_idx')
+      .on(table.orgId, table.integrationId, table.receivedAt)
+      .where(
+        sql`${table.platform}='shopify' AND ${table.jobType}='order.create' AND ${table.status}='skipped' AND ${table.lastError}='billing_not_active'`,
+      ),
     index('idx_webhook_events_org_id').using(
       'btree',
       table.orgId.asc().nullsLast().op('uuid_ops'),
@@ -1858,6 +1882,11 @@ export const adminStoreLifecycles = pgTable(
     }).defaultNow(),
   },
   (table) => [
+    unique('admin_store_lifecycles_identity_key').on(
+      table.id,
+      table.orgId,
+      table.integrationId,
+    ),
     index('idx_admin_store_lifecycles_org').on(table.orgId),
     index('idx_admin_store_lifecycles_installed').on(table.installedAt),
     index('idx_admin_store_lifecycles_integration_installed').on(
@@ -2199,6 +2228,75 @@ export const whatsappSenderAlerts = pgTable(
       sql`${table.emailStatus} IN ('pending','sending','sent','skipped','failed')`,
     ),
     pgPolicy('Service role manages whatsapp sender alerts', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const planRequiredNotices = pgTable(
+  'plan_required_notices',
+  {
+    id: uuid()
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey()
+      .notNull(),
+    orgId: uuid('org_id').notNull(),
+    integrationId: uuid('integration_id').notNull(),
+    lifecycleId: uuid('lifecycle_id').notNull().unique(),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    emailPayload:
+      jsonb('email_payload').$type<
+        import('../../shared/ports/email.port').EmailMessage
+      >(),
+    firstAttemptAt: timestamp('first_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .defaultNow()
+      .notNull(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    reason: text('reason'),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId, table.orgId],
+      foreignColumns: [integrations.id, integrations.orgId],
+      name: 'plan_required_notices_source_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.lifecycleId, table.orgId, table.integrationId],
+      foreignColumns: [
+        adminStoreLifecycles.id,
+        adminStoreLifecycles.orgId,
+        adminStoreLifecycles.integrationId,
+      ],
+      name: 'plan_required_notices_lifecycle_fkey',
+    }).onDelete('cascade'),
+    index('plan_required_notices_due_idx')
+      .on(table.nextAttemptAt)
+      .where(sql`${table.status} IN ('pending','sending')`),
+    check(
+      'plan_required_notices_status_check',
+      sql`${table.status} IN ('pending','sending','sent','skipped','failed')`,
+    ),
+    check('plan_required_notices_attempts_check', sql`${table.attempts} >= 0`),
+    pgPolicy('Service role manages plan required notices', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],

@@ -2,7 +2,8 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { CapacityRecoveryProducer } from '../../../../modules/capacity-recovery/capacity-recovery.producer';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { OrdersRepository } from '../../../database/repositories/orders.repository';
+import { VerificationAutoCancellationsRepository } from '../../../database/repositories/verification-auto-cancellations.repository';
+import { VerificationsRepository } from '../../../database/repositories/verifications.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
@@ -32,7 +33,8 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
-    private readonly ordersRepo: OrdersRepository,
+    private readonly verificationsRepo: VerificationsRepository,
+    private readonly autoCancellations: VerificationAutoCancellationsRepository,
     @Optional()
     private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
@@ -67,25 +69,54 @@ export class ShopifyBillingWebhookService {
     }
 
     const uninstalledAt = new Date().toISOString();
-    await this.integrationsRepo.markShopifyUninstalled(
+    const uninstalled = await this.integrationsRepo.markShopifyUninstalled(
       integration.id,
       uninstalledAt,
     );
+    // A paid store that uninstalls mid-period keeps the days it paid for: a
+    // reinstall before this date resumes the plan (see BillingService).
+    if (uninstalled?.paidThroughAt) {
+      this.logger.log(
+        buildBackendLog('ShopifyBillingWebhookService', {
+          action: 'handleAppUninstalled.paidThroughRecorded',
+          outcome: 'success',
+          shopDomain,
+          orgId: integration.orgId,
+          integrationId: integration.id,
+          billingPlanId: uninstalled.billingPlanId,
+          paidThroughAt: uninstalled.paidThroughAt,
+        }),
+      );
+    }
 
-    const purged = await this.ordersRepo.purgeByIntegration(
+    // Shopify's 48-hour rule: nothing is deleted here. A reinstall inside the
+    // window gets its history back; the uninstall-retention job (or
+    // shop/redact) deletes everything once it closes. What stops now is all
+    // work that could still message this store's customers: automatic
+    // cancellations and every open verification, closed with a reason no
+    // retry or recovery reopens, so a reinstall never sends old orders.
+    const stoppedAutoCancellations =
+      await this.autoCancellations.stopPendingForIntegration(
+        integration.orgId,
+        integration.id,
+        'store_uninstalled',
+        null,
+      );
+    const closed = await this.verificationsRepo.closeOpenForUninstalledStore(
       integration.orgId,
       integration.id,
+      uninstalledAt,
     );
     this.logger.log(
       buildBackendLog('ShopifyBillingWebhookService', {
-        action: 'handleAppUninstalled.purged',
+        action: 'handleAppUninstalled.closedOpenWork',
         outcome: 'success',
         shopDomain,
         orgId: integration.orgId,
         integrationId: integration.id,
-        purgedOrders: purged.orders,
-        purgedVerifications: purged.verifications,
-        purgedWebhookEvents: purged.webhookEvents,
+        failedVerifications: closed.failed,
+        expiredVerifications: closed.expired,
+        stoppedAutoCancellations,
       }),
     );
     return { received: true };

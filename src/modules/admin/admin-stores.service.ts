@@ -149,6 +149,8 @@ export interface AdminStoreDetailView extends AdminStoreView {
   created_at: string | null;
   last_synced_at: string | null;
   billing_activated_at: string | null;
+  /** End of a live paid-through period (plan resumed after a reinstall). */
+  paid_through_at: string | null;
   settings: {
     default_language: string;
     shipping_currency: string;
@@ -445,6 +447,30 @@ export class AdminStoresService {
   }
 
   /**
+   * Removes the store's paid-through date, e.g. after a manual refund of the
+   * charge it covered. Returns the store as staff now see it.
+   */
+  async clearPaidThrough(
+    audit: { userId: string; requestId?: string },
+    integrationId: string,
+  ) {
+    const found = await this.integrations?.clearPaidThrough(
+      integrationId,
+      audit,
+    );
+    if (!found) throw new NotFoundException('Store not found.');
+    this.logger.log(
+      buildBackendLog(AdminStoresService.name, {
+        action: 'admin-store-paid-through-cleared',
+        outcome: 'success',
+        integrationId,
+        requestId: audit.requestId,
+      }),
+    );
+    return this.getStore(integrationId);
+  }
+
+  /**
    * The store's logo, its switch and every image twin staff registered, so
    * staff can see why a store's messages carry no banner.
    */
@@ -540,6 +566,7 @@ export class AdminStoresService {
       created_at: row.created_at,
       last_synced_at: row.last_synced_at,
       billing_activated_at: row.billing_activated_at,
+      paid_through_at: row.paid_through_at ?? null,
       settings: {
         default_language: row.default_language,
         shipping_currency: row.shipping_currency,

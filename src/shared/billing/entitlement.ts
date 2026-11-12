@@ -25,6 +25,8 @@ export interface EntitlementSource extends EntitlementIdentity {
   billingStatus: string | null;
   billingPlanId: string | null;
   billingActivatedAt: string | null;
+  /** End of a resumed paid period (`billing_status = 'paid_through'`). */
+  paidThroughAt?: string | null;
 }
 
 export type EntitlementDenialReason =
@@ -106,7 +108,7 @@ export function resolveEntitlement(
     reason = 'source_identity_mismatch';
   else if (!source.isActive) reason = 'integration_inactive';
   else if (source.platformType === 'shopify') {
-    if (!isBillingStatusActive(source.billingStatus))
+    if (!isBillingStatusActive(source.billingStatus, source.paidThroughAt, now))
       reason = 'billing_not_active';
   } else if (
     accountingMode === 'periodic_plan' &&

@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
-import { eq, and, isNotNull, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   adminAccessAudit,
@@ -10,6 +10,8 @@ import {
   integrations,
 } from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
+import { resolvePaidThroughAtUninstall } from '../../../shared/billing/paid-through.policy';
+import { PAID_THROUGH_BILLING_STATUS } from '../../../shared/utils/billing.util';
 
 @Injectable()
 export class IntegrationsRepository {
@@ -136,6 +138,9 @@ export class IntegrationsRepository {
           ...(existing.isActive
             ? {}
             : { onboardingStatus: 'pending' as const }),
+          // A reinstall inside the 48-hour window keeps the store's history:
+          // clearing the uninstall time cancels its scheduled deletion.
+          uninstalledAt: null,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(integrations.id, existing.id))
@@ -156,15 +161,6 @@ export class IntegrationsRepository {
       .returning();
 
     return created;
-  }
-
-  async deleteByOrgId(orgId: string) {
-    const results = await this.db
-      .delete(integrations)
-      .where(eq(integrations.orgId, orgId))
-      .returning({ id: integrations.id });
-
-    return results.length;
   }
 
   async deleteById(id: string) {
@@ -287,6 +283,61 @@ export class IntegrationsRepository {
     });
   }
 
+  /**
+   * Staff remove a store's paid-through date (e.g. the old charge was
+   * refunded by hand). A store using it right now loses the plan and reads as
+   * cancelled, exactly as when the date passes. Audited like other staff
+   * changes.
+   */
+  async clearPaidThrough(
+    integrationId: string,
+    audit: { userId: string; requestId?: string },
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          orgId: integrations.orgId,
+          billingStatus: integrations.billingStatus,
+          paidThroughAt: integrations.paidThroughAt,
+        })
+        .from(integrations)
+        .where(eq(integrations.id, integrationId))
+        .for('update');
+      if (!current) return false;
+      const now = new Date().toISOString();
+      const inPaidThrough =
+        current.billingStatus?.trim().toLowerCase() ===
+        PAID_THROUGH_BILLING_STATUS;
+      await tx
+        .update(integrations)
+        .set({
+          paidThroughAt: null,
+          ...(inPaidThrough
+            ? {
+                billingStatus: 'cancelled',
+                billingStatusUpdatedAt: now,
+                billingCanceledAt: now,
+              }
+            : {}),
+          updatedAt: now,
+        })
+        .where(eq(integrations.id, integrationId));
+      await tx.insert(adminAccessAudit).values({
+        userId: audit.userId,
+        action: 'store.paid-through.clear',
+        outcome: 'allowed',
+        requestId: audit.requestId,
+        targetIntegrationId: integrationId,
+        metadata: {
+          orgId: current.orgId,
+          previousPaidThroughAt: current.paidThroughAt,
+          previousBillingStatus: current.billingStatus,
+        },
+      });
+      return true;
+    });
+  }
+
   /** The logo columns of one store, for staff. */
   async findLogoState(integrationId: string) {
     const [row] = await this.db
@@ -307,9 +358,30 @@ export class IntegrationsRepository {
     occurredAt = new Date().toISOString(),
   ) {
     return this.db.transaction(async (tx) => {
+      // Read under a lock first: the paid-through rule needs the billing
+      // state as it was just before this uninstall, and a concurrent
+      // subscription webhook must not change it in between.
+      const [current] = await tx
+        .select({
+          billingPlanId: integrations.billingPlanId,
+          billingStatus: integrations.billingStatus,
+          billingActivatedAt: integrations.billingActivatedAt,
+          billingCanceledAt: integrations.billingCanceledAt,
+          shopifySubscriptionId: integrations.shopifySubscriptionId,
+          paidThroughAt: integrations.paidThroughAt,
+          uninstalledAt: integrations.uninstalledAt,
+        })
+        .from(integrations)
+        .where(eq(integrations.id, integrationId))
+        .for('update');
+      const paidThroughAt = current
+        ? resolvePaidThroughAtUninstall(current, occurredAt)
+        : null;
+
       const [updated] = await tx
         .update(integrations)
         .set({
+          ...(paidThroughAt ? { paidThroughAt } : {}),
           isActive: false,
           accessToken: null,
           webhookSecret: null,
@@ -322,6 +394,10 @@ export class IntegrationsRepository {
           onboardingStatus: 'pending',
           billingCanceledAt: sql`COALESCE(${integrations.billingCanceledAt}, ${occurredAt})`,
           billingStatusUpdatedAt: occurredAt,
+          // Starts the 48-hour window; the store's data is kept until then.
+          // A redelivered uninstall keeps the first time, so it can't
+          // extend the window.
+          uninstalledAt: sql`COALESCE(${integrations.uninstalledAt}, ${occurredAt})`,
           updatedAt: occurredAt,
         })
         .where(eq(integrations.id, integrationId))
@@ -343,6 +419,31 @@ export class IntegrationsRepository {
 
       return updated;
     });
+  }
+
+  /**
+   * Shopify stores still uninstalled whose 48-hour window has closed, oldest
+   * first. Rows uninstalled before `uninstalled_at` existed stay NULL and are
+   * left to shop/redact.
+   */
+  async findUninstalledShopifyDueForDeletion(cutoff: string, limit = 100) {
+    return this.db
+      .select({
+        id: integrations.id,
+        orgId: integrations.orgId,
+        platformStoreUrl: integrations.platformStoreUrl,
+      })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.platformType, 'shopify'),
+          eq(integrations.isActive, false),
+          isNotNull(integrations.uninstalledAt),
+          lte(integrations.uninstalledAt, cutoff),
+        ),
+      )
+      .orderBy(integrations.uninstalledAt)
+      .limit(limit);
   }
 
   private encryptAccessToken(accessToken: string): string {

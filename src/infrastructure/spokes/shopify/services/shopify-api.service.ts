@@ -64,11 +64,13 @@ interface CreateRecurringApplicationChargeInput {
   returnUrl: string;
   test: boolean;
   replaceImmediately?: boolean;
+  trialDays?: number;
 }
 
 interface AppSubscriptionStatusResult {
   id: string;
   status: string;
+  trialDays?: number;
 }
 
 @Injectable()
@@ -358,6 +360,11 @@ export class ShopifyApiService {
         replacementBehavior: payload.replaceImmediately
           ? 'APPLY_IMMEDIATELY'
           : 'STANDARD',
+        // Shopify starts the trial when the merchant approves the charge;
+        // the first charge comes when it ends. Sent only when there is one.
+        ...(payload.trialDays && payload.trialDays > 0
+          ? { trialDays: payload.trialDays }
+          : {}),
       },
     );
 
@@ -401,6 +408,9 @@ export class ShopifyApiService {
     return {
       id: node.id,
       status: node.status,
+      ...(typeof node.trialDays === 'number'
+        ? { trialDays: node.trialDays }
+        : {}),
     };
   }
 

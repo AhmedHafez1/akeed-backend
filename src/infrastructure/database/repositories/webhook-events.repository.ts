@@ -622,13 +622,4 @@ export class WebhookEventsRepository {
       )
       .orderBy(webhookEvents.receivedAt)) as WebhookEvent[];
   }
-
-  async deleteByOrgId(orgId: string): Promise<number> {
-    const results = await this.db
-      .delete(webhookEvents)
-      .where(eq(webhookEvents.orgId, orgId))
-      .returning({ id: webhookEvents.id });
-
-    return results.length;
-  }
 }

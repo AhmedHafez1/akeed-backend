@@ -330,8 +330,8 @@ export class OnboardingClientEventDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['setup', 'test', 'success'])
-  step?: 'setup' | 'test' | 'success';
+  @IsIn(['setup', 'plans', 'test', 'success'])
+  step?: 'setup' | 'plans' | 'test' | 'success';
 }
 
 export interface OnboardingActivationDto {
@@ -354,6 +354,8 @@ export interface OnboardingUsageDto {
 }
 
 export interface OnboardingStateDto {
+  /** Shopify automatic-confirmation readiness; absent for other platforms. */
+  sendingAvailability?: import('../../../shared/billing/sending-availability').SendingAvailability;
   integrationId: string;
   source: {
     platformType: string;
@@ -377,6 +379,11 @@ export interface OnboardingStateDto {
   avgShippingCost: number;
   billingPlanId: OnboardingBillingPlanId | null;
   billingStatus: string | null;
+  /**
+   * While the store uses a resumed paid period (`billingStatus` =
+   * `paid_through`): when it ends. Null otherwise.
+   */
+  paidThroughAt: string | null;
   billingManagement: BillingManagement;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
@@ -439,6 +446,11 @@ export interface OnboardingBillingPlansResponseDto {
   isFreePlanClaimed: boolean;
   /** The plan the store pays for now; null while no plan is active. */
   currentPlanId: OnboardingBillingPlanId | null;
+  /**
+   * While the store uses the days it paid for before an uninstall: when they
+   * end. Subscribing now starts Shopify's first charge then. Null otherwise.
+   */
+  paidThroughAt: string | null;
 }
 
 export interface SettingsResponseDto {
@@ -458,11 +470,13 @@ export interface SettingsResponseDto {
     isFreePlanClaimed: boolean;
     /** The plan the store pays for now; null while no plan is active. */
     currentPlanId: OnboardingBillingPlanId | null;
+    /** End of the paid-through period in use; null otherwise. */
+    paidThroughAt: string | null;
     usage: {
       pools?: UsagePools | null;
       used: number;
       limit: number;
-      periodStart: string;
+      periodStart: string | null;
       periodEnd: string | null;
     };
     /** Accepted customer messages in the last 30 days (tests excluded). */

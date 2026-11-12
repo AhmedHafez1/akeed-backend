@@ -49,7 +49,7 @@ Transitions:
 
 ## Onboarding Flow
 
-The embedded onboarding flow has two steps:
+Shopify embedded onboarding saves quick setup, then offers the free test. A store without an entitled plan sees plan selection before the test or success screen. Other platforms keep their existing setup and prepaid-credit flows.
 
 ### Step 1 — Configuration
 
@@ -66,30 +66,36 @@ Behavior:
 
 - Fields auto-save to the backend with a 1500ms debounce while on step 1.
 - If the store name could not be prefilled from the Shopify API, a warning banner is shown.
-- Clicking "Continue to Billing" performs an explicit save and advances to step 2.
+- Submitting setup calls `POST /api/onboarding/setup`, saves configuration and attempts silent Starter activation or resumption of existing paid-through days.
 - Validation: store name must be non-empty.
 
-### Step 2 — Billing
+### Plan selection when required
 
-The merchant selects a billing plan and activates it.
+If no plan is entitled after setup, the merchant chooses a plan using the same Shopify picker as the dashboard. Saving configuration does not imply that confirmations can send.
 
 Behavior:
 
 - Plans are fetched from `GET /api/onboarding/billing/plans`.
-- The default selected plan is `basic`.
-- If the Starter free plan has already been claimed for this shop, it is disabled with a tooltip.
+- The previous paid plan is selected when available; otherwise the cheapest paid plan is selected.
+- Exhausted one-time Starter eligibility is explained. A cancelled paid plan is identified as ended, rather than displayed as current.
 - Activating a paid plan creates a Shopify recurring application charge and redirects the merchant to the Shopify billing confirmation page.
 - Activating the free Starter plan completes onboarding immediately without a Shopify redirect.
 - On billing callback return, the backend verifies the charge status, activates the subscription, marks onboarding as completed, and redirects to the dashboard.
+- "Choose later" opens the dashboard with a non-dismissible critical no-plan banner. The warning does not depend on held orders and combines with any capacity warning. Orders skipped for billing inactivity are reported separately from held orders, within the current installation and last 48 hours. Selecting a plan does not replay skipped orders.
 
 ### Resume Logic
 
 When a merchant returns to the onboarding page mid-flow:
 
-- If `onboardingStatus` is `completed`, redirect to dashboard.
-- If `billingPlanId` or `billingStatus` is set, resume at step 2 (billing).
-- If billing has a non-active status (declined, frozen, expired, canceled, error), show a recovery error banner on step 2.
-- Otherwise, start at step 1.
+- If setup is incomplete, start with configuration.
+- If setup is complete but a plan is required, show plan selection, including when the test was requested directly.
+- With a plan, resume an unfinished test; after a confirmed or skipped test, open the dashboard.
+
+### Sending availability and reinstall email
+
+For Shopify only, `GET /api/onboarding/state`, the setup response and the state within `GET /api/settings` include `sendingAvailability`: availability and denial reason from the existing entitlement/capacity policy, effective billing status, current and previous plan, cancellation and paid-through dates, and recorded missed-order counts. It is a read-only snapshot, not a reservation or delivery guarantee. The Plan tab hides usage and renewal information from ended periods. Active paid-through periods retain their existing entitlement and usage.
+
+Planless setup completion creates one `plan_required_notices` record per installation lifecycle in the same transaction as completion. A background worker uses the existing email port and the store's notification email, linking into Shopify Admin's localized Plan tab. Reads never create notices. Retries retain the same email envelope and idempotency key, use bounded attempts and stop before the provider's 24-hour replay window ends. A new plan or ended installation cancels unsent notices; failed, disabled and missing-recipient outcomes are recorded. Existing email configuration controls delivery. Notice envelopes are deleted with store data.
 
 ### Standalone onboarding
 
@@ -132,10 +138,21 @@ Test mode is enabled in non-production environments via `SHOPIFY_BILLING_TEST_MO
 | `frozen`       | Shopify froze the subscription (e.g. payment failure). |            No             |
 | `expired`      | Subscription expired without renewal.                  |            No             |
 | `cancelled`    | Merchant or system canceled the subscription.          |            No             |
+| `paid_through` | Paid plan resumed after a reinstall, no subscription.  | Only while `paid_through_at` is in the future |
 | `error`        | Billing initiation failed (e.g. Shopify API error).    |            No             |
 | `null`         | No billing activity yet.                               |            No             |
 
-Only `active` and `not_required` allow verification sends. This is enforced by `isBillingStatusActive()` in `shared/utils/billing.util.ts`.
+Only `active`, `not_required` and a live `paid_through` allow verification sends. This is enforced by `isBillingStatusActive(status, paidThroughAt)` in `shared/utils/billing.util.ts`; a `paid_through` status without its date fails closed. Expiry is checked at read time, not by a job: once `paid_through_at` passes, `effectiveBillingStatus()` / `effectiveBillingStatusSql()` read the store as `cancelled` everywhere (entitlement, plans, onboarding state, admin health and lists, tips audiences), so the store is planless and is asked to subscribe, exactly as after a cancel. The stored row keeps `paid_through`.
+
+### Paid-through resume (uninstall and reinstall)
+
+Shopify cancels the subscription on uninstall without credit. So a paid store keeps the days it already paid for:
+
+- **At uninstall** (`IntegrationsRepository.markShopifyUninstalled`, rule in `shared/billing/paid-through.policy.ts`): on the first uninstall of an install, a paid plan (amount > 0) with a Shopify subscription and `billing_activated_at` that was active until the uninstall gets `paid_through_at` = the exact end of the 30-day period holding the uninstall (`getBillingPeriodEndAt`, same cycle math as `getBillingPeriodStart`). "Active until the uninstall" is `active`, or `cancelled` with `billing_canceled_at` at most 5 minutes before: Shopify's CANCELLED webhook can land before `app/uninstalled`. A merchant cancel or a freeze earlier earns nothing. A subscription still in its trial is paid only to its first charge. A date still in the future is never moved, so uninstall/reinstall loops cannot extend it.
+- **At setup after reinstall** (`BillingService.activateStarterSilently`, before Starter): while `paid_through_at` is in the future the plan comes back as `paid_through`, with no subscription; `billing_plan_id`, `billing_activated_at` and the usage counters are untouched, so the store has exactly what it had left. Blocked orders are released (`capacityRecovery.request(orgId, 'plan_activated')`).
+- **Subscribing during the period**: the Shopify subscription is created with `trialDays = ceil(days left)`, so the first charge comes after the paid days. Renewal is not offered (there is no live subscription). On approval: same plan keeps its period anchor and counters; another plan gets its fresh allowance now, with `billing_activated_at` set to Shopify's first charge (approval + trial days) so later periods line up with Shopify's charges. `paid_through_at` is cleared; no old subscription is cancelled (there is none).
+- The resume only works inside the 48-hour retention window: the store's row, and its date, are deleted with the rest of its data.
+- Staff can see "Paid through" on the admin store page and clear it (`POST /api/admin/stores/:id/paid-through/clear`, audited), e.g. after a manual refund. A store using it at that moment becomes `cancelled`.
 
 ## Billing Activation Flows
 
@@ -289,6 +306,7 @@ Shopify sends `app_subscriptions/update` webhooks when subscription status chang
 - Other statuses (`pending`, `accepted`) change nothing.
 - `isActive` represents whether the Shopify app is installed. Only install and uninstall flows may change it; billing entitlement is controlled by `billingStatus`.
 - Subscription updates for an uninstalled integration are acknowledged without mutating local installation or billing state.
+- Uninstall still cancels local billing and clears `shopifySubscriptionId`, but keeps all store data for 48 hours (Shopify's rule). A reinstall in that window reactivates the same integration with its history; plan selection runs again. After 48 hours the store is deleted (see `INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md`, Uninstall Webhook).
 - Non-current subscription webhooks are ignored, whatever their status, so a declined upgrade cannot disable the merchant's existing plan.
 - An update that leaves the subscription active requests capacity recovery for the organization, so its blocked orders are sent.
 
@@ -352,6 +370,7 @@ Shopify sends `app_subscriptions/update` webhooks when subscription status chang
 | `billing_activated_at`      | timestamptz                          | When the current subscription was activated. Anchors billing period. |
 | `billing_canceled_at`       | timestamptz                          | When the subscription was canceled/declined.                         |
 | `billing_status_updated_at` | timestamptz                          | Last time billing status changed.                                    |
+| `paid_through_at`           | timestamptz                          | End of the paid period a store left at uninstall; drives `paid_through`. |
 
 ### `integration_monthly_usage`
 
@@ -410,7 +429,8 @@ Error handling:
 - The Starter free plan can only be claimed once per shop domain, ever. Reinstalling the app does not reset the claim.
 - Plan changes create a new Shopify subscription before canceling the old one, ensuring no gap in service.
 - Declining a plan upgrade preserves the existing active plan.
-- Usage counters reset on plan change so the merchant starts fresh on the new plan.
+- Usage counters reset on plan change so the merchant starts fresh on the new plan. Exceptions: resuming a paid-through plan, and subscribing to that same plan during it, keep the counters.
+- A paid store that uninstalls keeps the days it paid for if it reinstalls inside the 48-hour window (`paid_through`); it is never charged twice for them.
 - Billing periods are 30-day rolling cycles from activation, not calendar months.
 - When billing is not required (dev mode), plans activate with status `not_required`.
 - The `pendingBillingPlanId` pattern prevents local state corruption if the merchant declines a plan change.

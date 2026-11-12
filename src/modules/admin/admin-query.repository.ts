@@ -1,3 +1,4 @@
+import { effectiveBillingStatusSql } from '../../shared/utils/billing.util';
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -95,6 +96,8 @@ export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
   shipping_currency: string;
   last_synced_at: string | null;
   billing_activated_at: string | null;
+  /** End of a live paid-through period; null once it has passed. */
+  paid_through_at: string | null;
   created_at: string | null;
 }
 
@@ -407,6 +410,7 @@ export class AdminQueryRepository {
         i.shipping_currency,
         i.last_synced_at,
         i.billing_activated_at,
+        (CASE WHEN i.paid_through_at > NOW() THEN i.paid_through_at END) AS paid_through_at,
         i.created_at`,
         sql`WHERE i.id = ${integrationId}`,
         derivation,
@@ -797,7 +801,9 @@ export class AdminQueryRepository {
         COALESCE(i.is_active, false) AS is_active,
         i.onboarding_status::text AS onboarding_status,
         i.billing_plan_id::text AS plan,
-        i.billing_status AS subscription_status,
+        -- Effective status: a lapsed paid-through period reads as cancelled,
+        -- so health and filters treat it like any ended plan.
+        ${effectiveBillingStatusSql(sql`i.billing_status`, sql`i.paid_through_at`)} AS subscription_status,
         i.is_auto_verify_enabled AS auto_confirmation_enabled,
         COALESCE(l.installed_at, i.created_at) AS installed_at,
         l.uninstalled_at,

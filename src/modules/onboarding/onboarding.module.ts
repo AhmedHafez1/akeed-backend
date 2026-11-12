@@ -22,10 +22,18 @@ import { EasyOrdersSetupContributor } from '../../infrastructure/spokes/easyorde
 import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
 import { WooCommerceSetupContributor } from '../../infrastructure/spokes/woocommerce/woocommerce-setup.contributor';
 import { SourceSetupService } from './source-setup.service';
+import { SendingAvailabilityService } from './sending-availability.service';
+import { PlanRequiredNoticesService } from './plan-required-notices.service';
+import {
+  PlanRequiredNoticesQueueModule,
+  PlanRequiredNoticesScheduler,
+  PlanRequiredNoticesProcessor,
+} from './plan-required-notices.queue';
 
 @Module({
   imports: [
     DatabaseModule,
+    PlanRequiredNoticesQueueModule,
     AuthModule,
     ShopifyModule,
     EasyOrdersIngestionModule,
@@ -38,6 +46,10 @@ import { SourceSetupService } from './source-setup.service';
   ],
   providers: [
     OnboardingService,
+    SendingAvailabilityService,
+    PlanRequiredNoticesService,
+    PlanRequiredNoticesScheduler,
+    PlanRequiredNoticesProcessor,
     OnboardingStateService,
     BillingService,
     BillingConfigService,

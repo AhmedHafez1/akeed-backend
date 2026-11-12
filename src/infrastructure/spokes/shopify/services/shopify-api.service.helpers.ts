@@ -54,6 +54,7 @@ export type AppSubscriptionStatusResponse = GraphQLResponse<{
   node?: {
     id?: string;
     status?: string;
+    trialDays?: number | null;
   } | null;
 }>;
 
@@ -153,6 +154,7 @@ export const CREATE_APP_SUBSCRIPTION_MUTATION = `
     $returnUrl: URL!
     $test: Boolean
     $replacementBehavior: AppSubscriptionReplacementBehavior
+    $trialDays: Int
   ) {
     appSubscriptionCreate(
       name: $name
@@ -160,6 +162,7 @@ export const CREATE_APP_SUBSCRIPTION_MUTATION = `
       returnUrl: $returnUrl
       test: $test
       replacementBehavior: $replacementBehavior
+      trialDays: $trialDays
     ) {
       confirmationUrl
       userErrors {
@@ -176,6 +179,7 @@ export const GET_APP_SUBSCRIPTION_STATUS_QUERY = `
       ... on AppSubscription {
         id
         status
+        trialDays
       }
     }
   }

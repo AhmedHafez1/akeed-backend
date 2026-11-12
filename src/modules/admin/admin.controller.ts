@@ -120,6 +120,19 @@ export class AdminController {
     );
   }
 
+  /** Staff remove a store's paid-through date (e.g. after a manual refund). */
+  @Post('stores/:integrationId/paid-through/clear')
+  @Header('Cache-Control', 'private, no-store')
+  clearStorePaidThrough(
+    @Req() request: RequestWithAdmin,
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+  ) {
+    return this.storesService.clearPaidThrough(
+      { userId: request.admin.userId, requestId: readRequestId(request) },
+      integrationId,
+    );
+  }
+
   @Get('stores/:integrationId/verifications')
   @Header('Cache-Control', 'private, no-store')
   getStoreVerifications(
