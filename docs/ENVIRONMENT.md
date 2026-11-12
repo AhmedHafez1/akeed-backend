@@ -259,6 +259,8 @@ The frontend shows the source picker on signup only when `NEXT_PUBLIC_EASYORDERS
 
 EasyOrders requests are limited to 30 a minute per integration (at most 20 of them order lookups, so outcome writes keep headroom), counted in memory: correct for one backend instance, like the other throttlers. An outcome costs two requests, three when a lost answer forces a read-back. Outcome retries run on the `commerce-outcome-sync` BullMQ queue, which needs Redis like the other queues. An order that fails while the queue is down is recovered by the webhook reconciler, which is off unless `WEBHOOK_RECONCILIATION_ENABLED=true`.
 
+`WEBHOOK_RETENTION_ENABLED` (default `true`) keeps the hourly `webhook-events-retention` job that deletes `webhook_events` rows no reader needs after 48 hours (see [webhook event retention](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#webhook-event-retention)). `false` removes the schedule; nothing else changes.
+
 The install callback is called by the seller's browser from `https://app.easy-orders.net`. Its CORS answer is fixed to that origin in `src/shared/config/route-scoped-cors.config.ts` and ignores `CORS_ALLOWED_ORIGINS`.
 
 ## WooCommerce Connection

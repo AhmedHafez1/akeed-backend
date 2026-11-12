@@ -1019,15 +1019,6 @@ export class VerificationsRepository {
       .returning();
   }
 
-  async deleteByOrgId(orgId: string): Promise<number> {
-    const results = await this.db
-      .delete(verifications)
-      .where(eq(verifications.orgId, orgId))
-      .returning({ id: verifications.id });
-
-    return results.length;
-  }
-
   /**
    * Mark a follow-up WhatsApp message as sent.
    *

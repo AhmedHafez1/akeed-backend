@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { CapacityRecoveryProducer } from '../../../../modules/capacity-recovery/capacity-recovery.producer';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { OrdersRepository } from '../../../database/repositories/orders.repository';
+import { StoreDataDeletionRepository } from '../../../database/repositories/store-data-deletion.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
 import {
   ShopifyAppSubscriptionWebhookDto,
@@ -32,7 +32,7 @@ export class ShopifyBillingWebhookService {
   constructor(
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
-    private readonly ordersRepo: OrdersRepository,
+    private readonly storeDataDeletion: StoreDataDeletionRepository,
     @Optional()
     private readonly capacityRecovery?: CapacityRecoveryProducer,
   ) {}
@@ -72,9 +72,17 @@ export class ShopifyBillingWebhookService {
       uninstalledAt,
     );
 
-    const purged = await this.ordersRepo.purgeByIntegration(
-      integration.orgId,
-      integration.id,
+    // Customer data only: the integration and organization stay, because a
+    // reinstall reuses them. Webhook rows are matched by store as well as by
+    // owner, so rows that never linked to an order go too.
+    const purged = await this.storeDataDeletion.deleteStoreData(
+      {
+        orgId: integration.orgId,
+        integrationId: integration.id,
+        platform: 'shopify',
+        storeDomain: shopDomain.trim().toLowerCase(),
+      },
+      { scope: 'store' },
     );
     this.logger.log(
       buildBackendLog('ShopifyBillingWebhookService', {
@@ -86,6 +94,10 @@ export class ShopifyBillingWebhookService {
         purgedOrders: purged.orders,
         purgedVerifications: purged.verifications,
         purgedWebhookEvents: purged.webhookEvents,
+        purgedMessageDispatches: purged.messageDispatches,
+        purgedOrderImportBatches: purged.orderImportBatches,
+        purgedMetaWebhookEvents: purged.metaWebhookEvents,
+        purgedProviderMessageReceipts: purged.providerMessageReceipts,
       }),
     );
     return { received: true };

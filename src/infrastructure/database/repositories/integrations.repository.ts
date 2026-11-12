@@ -158,15 +158,6 @@ export class IntegrationsRepository {
     return created;
   }
 
-  async deleteByOrgId(orgId: string) {
-    const results = await this.db
-      .delete(integrations)
-      .where(eq(integrations.orgId, orgId))
-      .returning({ id: integrations.id });
-
-    return results.length;
-  }
-
   async deleteById(id: string) {
     const results = await this.db
       .delete(integrations)

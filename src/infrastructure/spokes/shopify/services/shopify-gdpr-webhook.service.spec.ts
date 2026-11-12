@@ -6,25 +6,20 @@ describe('ShopifyGdprWebhookService customer requests', () => {
   const ordersRepo = {
     findShopifyCustomerOrders: jest.fn(),
     redactShopifyCustomer: jest.fn(),
-    deleteByOrgId: jest.fn(),
   };
   const integrationsRepo = { findByPlatformDomain: jest.fn() };
   const webhookEventsRepo = {
     insertIfNew: jest.fn(),
     replaceRawPayload: jest.fn(),
-    deleteByOrgId: jest.fn(),
   };
   const shopDomain = 'synthetic.myshopify.com';
 
   function service() {
     return new ShopifyGdprWebhookService(
       ordersRepo as never,
-      {} as never,
       integrationsRepo as never,
-      {} as never,
-      {} as never,
-      {} as never,
       webhookEventsRepo as never,
+      {} as never,
       new PhoneService(),
     );
   }
@@ -145,5 +140,76 @@ describe('buildShopifyCustomerKeys', () => {
       phones: ['0501234567'],
       externalOrderIds: ['9'],
     });
+  });
+});
+
+describe('ShopifyGdprWebhookService shop redact', () => {
+  const integrationsRepo = { findByPlatformDomain: jest.fn() };
+  const webhookEventsRepo = { insertIfNew: jest.fn() };
+  const storeDataDeletion = { deleteStoreData: jest.fn() };
+
+  function service() {
+    return new ShopifyGdprWebhookService(
+      {} as never,
+      integrationsRepo as never,
+      webhookEventsRepo as never,
+      storeDataDeletion as never,
+      new PhoneService(),
+    );
+  }
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    webhookEventsRepo.insertIfNew.mockResolvedValue({ id: 'event-1' });
+    storeDataDeletion.deleteStoreData.mockResolvedValue({ webhookEvents: 4 });
+  });
+
+  it('deletes the whole organization in one routine and keeps its own request row', async () => {
+    integrationsRepo.findByPlatformDomain.mockResolvedValue({
+      id: 'integration-1',
+      orgId: 'org-1',
+    });
+
+    await service().handleShopRedact(
+      { shop_id: '1', shop_domain: 'Synthetic.myshopify.com' },
+      'Synthetic.myshopify.com',
+      'delivery-1',
+      'shop/redact',
+    );
+
+    expect(storeDataDeletion.deleteStoreData).toHaveBeenCalledWith(
+      {
+        orgId: 'org-1',
+        integrationId: 'integration-1',
+        platform: 'shopify',
+        storeDomain: 'synthetic.myshopify.com',
+      },
+      { scope: 'organization', keepWebhookEventId: 'event-1' },
+    );
+  });
+
+  it('deletes nothing for an unknown store or a duplicate delivery', async () => {
+    integrationsRepo.findByPlatformDomain.mockResolvedValue(undefined);
+    await service().handleShopRedact(
+      { shop_id: '1', shop_domain: 'gone.myshopify.com' },
+      'gone.myshopify.com',
+      'delivery-1',
+      'shop/redact',
+    );
+
+    integrationsRepo.findByPlatformDomain.mockResolvedValue({
+      id: 'integration-1',
+      orgId: 'org-1',
+    });
+    webhookEventsRepo.insertIfNew.mockResolvedValue(null);
+    const ack = await service().handleShopRedact(
+      { shop_id: '1', shop_domain: 'synthetic.myshopify.com' },
+      'synthetic.myshopify.com',
+      'delivery-1',
+      'shop/redact',
+    );
+
+    expect(ack).toEqual({ received: true, duplicate: true });
+    expect(storeDataDeletion.deleteStoreData).not.toHaveBeenCalled();
   });
 });

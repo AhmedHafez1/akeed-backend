@@ -2,16 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
-import { IntegrationMonthlyUsageRepository } from '../../../database/repositories/integration-monthly-usage.repository';
-import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import {
   hasShopifyCustomerKeys,
   OrdersRepository,
   type ShopifyCustomerKeys,
 } from '../../../database/repositories/orders.repository';
-import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
+import { StoreDataDeletionRepository } from '../../../database/repositories/store-data-deletion.repository';
 import { WebhookEventsRepository } from '../../../database/repositories/webhook-events.repository';
-import { VerificationsRepository } from '../../../database/repositories/verifications.repository';
 import {
   ShopifyCustomersDataRequestDto,
   ShopifyCustomersRedactDto,
@@ -40,12 +37,9 @@ export class ShopifyGdprWebhookService {
 
   constructor(
     private readonly ordersRepo: OrdersRepository,
-    private readonly verificationsRepo: VerificationsRepository,
     private readonly integrationsRepo: IntegrationsRepository,
-    private readonly integrationUsageRepo: IntegrationMonthlyUsageRepository,
-    private readonly membershipsRepo: MembershipsRepository,
-    private readonly organizationsRepo: OrganizationsRepository,
     private readonly webhookEventsRepo: WebhookEventsRepository,
+    private readonly storeDataDeletion: StoreDataDeletionRepository,
     private readonly phoneService: PhoneService,
   ) {}
 
@@ -251,19 +245,20 @@ export class ShopifyGdprWebhookService {
       }),
     );
 
-    const { orgId, isDuplicate } = await this.resolveWebhookContext({
-      shopDomain,
-      webhookId,
-      topic,
-      logLabel: 'GDPR shop redact',
-      rawPayload: payload as unknown as Record<string, unknown>,
-    });
+    const { integration, orgId, isDuplicate, webhookEventId } =
+      await this.resolveWebhookContext({
+        shopDomain,
+        webhookId,
+        topic,
+        logLabel: 'GDPR shop redact',
+        rawPayload: payload as unknown as Record<string, unknown>,
+      });
 
     if (isDuplicate) {
       return { received: true, duplicate: true };
     }
 
-    if (!orgId) {
+    if (!orgId || !integration) {
       this.logger.warn(
         buildBackendLog('ShopifyGdprWebhookService', {
           action: 'handleShopRedact.noIntegration',
@@ -274,29 +269,34 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    const webhookEventsDeleted =
-      await this.webhookEventsRepo.deleteByOrgId(orgId);
-    const usageDeleted = await this.integrationUsageRepo.deleteByOrgId(orgId);
-    const verificationsDeleted =
-      await this.verificationsRepo.deleteByOrgId(orgId);
-    const ordersDeleted = await this.ordersRepo.deleteByOrgId(orgId);
-    const integrationsDeleted =
-      await this.integrationsRepo.deleteByOrgId(orgId);
-    const membershipsDeleted = await this.membershipsRepo.deleteByOrgId(orgId);
-    const organizationsDeleted = await this.organizationsRepo.deleteById(orgId);
+    // One transaction. The request row itself is kept (detached from the
+    // organization) so a redelivery is still answered as a duplicate.
+    const deleted = await this.storeDataDeletion.deleteStoreData(
+      {
+        orgId,
+        integrationId: integration.id,
+        platform: 'shopify',
+        storeDomain: shopDomain.trim().toLowerCase(),
+      },
+      { scope: 'organization', keepWebhookEventId: webhookEventId },
+    );
 
     this.logger.log(
       buildBackendLog('ShopifyGdprWebhookService', {
         action: 'handleShopRedact.completed',
         outcome: 'success',
         orgId,
-        webhookEventsDeleted,
-        usageDeleted,
-        verificationsDeleted,
-        ordersDeleted,
-        integrationsDeleted,
-        membershipsDeleted,
-        organizationsDeleted,
+        webhookEventsDeleted: deleted.webhookEvents,
+        usageDeleted: deleted.integrationMonthlyUsage,
+        verificationsDeleted: deleted.verifications,
+        messageDispatchesDeleted: deleted.messageDispatches,
+        orderImportBatchesDeleted: deleted.orderImportBatches,
+        ordersDeleted: deleted.orders,
+        metaWebhookEventsDeleted: deleted.metaWebhookEvents,
+        providerMessageReceiptsDeleted: deleted.providerMessageReceipts,
+        integrationsDeleted: deleted.integrations,
+        membershipsDeleted: deleted.memberships,
+        organizationsDeleted: deleted.organizations,
       }),
     );
 
