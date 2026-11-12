@@ -154,6 +154,12 @@ export class ShopifyOrderWebhookDto {
   @IsString({ each: true })
   payment_gateway_names?: string[];
 
+  /** Tells an unpaid `manual` order (a COD order form) from a paid one. */
+  @Transform(stringOrAbsent)
+  @IsOptional()
+  @IsString()
+  financial_status?: string;
+
   @IsOptional()
   @IsBoolean()
   test?: boolean;

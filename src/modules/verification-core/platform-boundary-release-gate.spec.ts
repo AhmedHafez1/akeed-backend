@@ -100,7 +100,7 @@ describe('platform-neutral verification core release gate', () => {
     };
     const ordersRepository = {
       findBySourceExternalId: jest.fn().mockResolvedValue(undefined),
-      create: jest.fn().mockResolvedValue(persistedOrder),
+      createIfAbsent: jest.fn().mockResolvedValue(persistedOrder),
       findById: jest.fn().mockResolvedValue(persistedOrder),
       findForOutcomeDispatch: jest.fn().mockResolvedValue(persistedOrder),
     };

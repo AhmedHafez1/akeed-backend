@@ -151,6 +151,59 @@ describe('OrderEligibilityService', () => {
     });
   });
 
+  describe('Shopify manual unpaid orders', () => {
+    const manualUnpaid = {
+      payment_gateway_names: ['manual'],
+      financial_status: 'pending',
+    };
+
+    it('counts a manual unpaid order declared non_cod before the rule as COD', () => {
+      expect(
+        service.evaluateOrderForVerification({
+          order: {
+            ...baseOrder,
+            paymentMethod: 'manual',
+            paymentSignals: ['manual'],
+            codStatus: 'non_cod',
+            rawPayload: manualUnpaid,
+          },
+          integration: { platformType: 'shopify' },
+        }),
+      ).toEqual({
+        eligible: true,
+        reason: 'manual_unpaid_cod',
+        matchedSignal: 'manual',
+      });
+    });
+
+    it('keeps a stored order without financial_status non-COD', () => {
+      expect(
+        service.evaluateOrderForVerification({
+          order: {
+            ...baseOrder,
+            paymentMethod: 'manual',
+            codStatus: 'non_cod',
+            rawPayload: { payment_gateway_names: ['manual'] },
+          },
+          integration: { platformType: 'shopify' },
+        }),
+      ).toEqual({ eligible: false, reason: 'non_cod_payment_method' });
+    });
+
+    it('does not change a standalone order paid by a method named manual', () => {
+      expect(
+        service.evaluateOrderForVerification({
+          order: {
+            ...baseOrder,
+            paymentMethod: 'manual',
+            rawPayload: manualUnpaid,
+          },
+          integration: { platformType: 'standalone' },
+        }),
+      ).toMatchObject({ eligible: false, reason: 'non_cod_payment_method' });
+    });
+  });
+
   it.each(['SHOPIFY', ' shopify ', 'magento', ''])(
     'does not coerce unknown platform %p to Shopify',
     (platformType) => {

@@ -194,16 +194,46 @@ function shopifyCustomerWebhookMatch(
 export class OrdersRepository {
   constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) {}
 
+  /** The one insert of an order row, shared by both create paths. */
+  private insertOrder(data: typeof orders.$inferInsert) {
+    return this.db.insert(orders).values({
+      ...data,
+      customerCountry: data.customerCountry ?? phoneRegion(data.customerPhone),
+    });
+  }
+
   async create(data: typeof orders.$inferInsert) {
-    const [result] = await this.db
-      .insert(orders)
-      .values({
-        ...data,
-        customerCountry:
-          data.customerCountry ?? phoneRegion(data.customerPhone),
+    const [result] = await this.insertOrder(data).returning();
+    return result;
+  }
+
+  /**
+   * Creates a store order unless one already exists for the same integration
+   * and external id. Two deliveries of one order processed at the same time
+   * both reach this insert; the second then reuses the first's row instead of
+   * failing on the unique key and waiting for a queue retry.
+   */
+  async createIfAbsent(
+    data: typeof orders.$inferInsert & {
+      integrationId: string;
+      externalOrderId: string;
+    },
+  ) {
+    const [created] = await this.insertOrder(data)
+      .onConflictDoNothing({
+        target: [orders.integrationId, orders.externalOrderId],
       })
       .returning();
-    return result;
+    if (created) return created;
+    const existing = await this.findBySourceExternalId({
+      orgId: data.orgId,
+      integrationId: data.integrationId,
+      externalOrderId: data.externalOrderId,
+    });
+    if (!existing) {
+      throw new Error('Order conflict winner could not be reloaded');
+    }
+    return existing;
   }
 
   /**

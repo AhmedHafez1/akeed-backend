@@ -12,7 +12,10 @@ import {
   appendPaymentSignal,
   classifyCodStatus,
 } from '../../../../shared/commerce/payment-signals';
-import { collectShopifyGatewaySignals } from './shopify-payment-signals';
+import {
+  collectShopifyGatewaySignals,
+  isShopifyManualUnpaidCod,
+} from './shopify-payment-signals';
 import { intakeOrderId } from '../../../../shared/commerce/order-intake.policy';
 
 /**
@@ -81,7 +84,9 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
       currency: payload.currency ?? '',
       paymentMethod,
       paymentSignals,
-      codStatus: classifyCodStatus(paymentSignals),
+      codStatus: isShopifyManualUnpaidCod(payload)
+        ? 'cod'
+        : classifyCodStatus(paymentSignals),
       ...(lineItems.length ? { lineItems } : {}),
       ...this.resolveShipping(payload),
       rawPayload,
@@ -210,5 +215,6 @@ interface ShopifyRawOrder {
   currency?: string;
   gateway?: string;
   payment_gateway_names?: string[];
+  financial_status?: string;
   transactions?: Array<{ gateway?: string } | null>;
 }

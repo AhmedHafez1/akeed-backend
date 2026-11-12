@@ -224,14 +224,54 @@ describe('ShopifyOrderNormalizer compatibility', () => {
 
   it.each(shopifyPaymentFixtures)(
     'composes real normalization and eligibility: $name',
-    ({ payload, eligible }) => {
-      const order = normalize(payload);
+    (fixture) => {
+      const order = normalize(fixture.payload);
       expect(order).not.toBeNull();
-      expect(
+      const result =
         new ShopifyOrderEligibilityStrategy().evaluateOrderForVerification(
           order!,
-        ).eligible,
-      ).toBe(eligible);
+        );
+      expect(result.eligible).toBe(fixture.eligible);
+      if ('reason' in fixture) expect(result.reason).toBe(fixture.reason);
     },
   );
+
+  it('declares a manual unpaid order as COD and keeps its payment method', () => {
+    const order = normalize({
+      payment_gateway_names: ['manual'],
+      financial_status: 'pending',
+    });
+    expect(order).toMatchObject({ paymentMethod: 'manual', codStatus: 'cod' });
+    expect(
+      new ShopifyOrderEligibilityStrategy().evaluateOrderForVerification(
+        order!,
+      ),
+    ).toEqual({
+      eligible: true,
+      reason: 'manual_unpaid_cod',
+      matchedSignal: 'manual',
+    });
+  });
+
+  it('leaves a paid manual order non-COD', () => {
+    expect(
+      normalize({ payment_gateway_names: ['manual'], financial_status: 'paid' })
+        ?.codStatus,
+    ).toBe('non_cod');
+  });
+
+  it('judges an order stored as non_cod before the rule by its payload', () => {
+    const stored = {
+      ...normalize({
+        payment_gateway_names: ['manual'],
+        financial_status: 'pending',
+      })!,
+      codStatus: 'non_cod' as const,
+    };
+    expect(
+      new ShopifyOrderEligibilityStrategy().evaluateOrderForVerification(
+        stored,
+      ),
+    ).toMatchObject({ eligible: true, reason: 'manual_unpaid_cod' });
+  });
 });

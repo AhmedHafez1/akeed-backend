@@ -91,7 +91,7 @@ function buildIntegration(
 function createMocks() {
   const ordersRepo = {
     findBySourceExternalId: jest.fn(),
-    create: jest.fn(),
+    createIfAbsent: jest.fn(),
     findById: jest.fn(),
   };
 
@@ -345,7 +345,7 @@ describe('VerificationHubService', () => {
         },
       } as Job<WebhookJobPayload>;
       await worker.process(job);
-      expect(ordersRepo.create).not.toHaveBeenCalled();
+      expect(ordersRepo.createIfAbsent).not.toHaveBeenCalled();
       expect(verificationSendService.sendInitial).not.toHaveBeenCalled();
       if (store === 'unknown')
         expect(eventRepo.markSkipped).toHaveBeenCalledWith(
@@ -510,7 +510,7 @@ describe('VerificationHubService', () => {
           reason: 'cod_match',
         });
         ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-        ordersRepo.create.mockResolvedValue({
+        ordersRepo.createIfAbsent.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
           externalOrderId: 'ext-order-1',
@@ -553,7 +553,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -609,7 +609,7 @@ describe('VerificationHubService', () => {
       });
 
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -671,7 +671,7 @@ describe('VerificationHubService', () => {
       });
 
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -709,7 +709,7 @@ describe('VerificationHubService', () => {
         reason: 'cod_match',
       });
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -753,7 +753,7 @@ describe('VerificationHubService', () => {
         });
 
         ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-        ordersRepo.create.mockResolvedValue({
+        ordersRepo.createIfAbsent.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
           externalOrderId: 'ext-order-1',
@@ -809,7 +809,7 @@ describe('VerificationHubService', () => {
       });
 
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -863,7 +863,7 @@ describe('VerificationHubService', () => {
           reason: 'cod_match',
         });
         ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-        ordersRepo.create.mockResolvedValue({
+        ordersRepo.createIfAbsent.mockResolvedValue({
           id: 'order-db-1',
           orgId: 'org-1',
           externalOrderId: 'ext-order-1',
@@ -913,7 +913,7 @@ describe('VerificationHubService', () => {
       });
 
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({
+      ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1074,7 +1074,7 @@ describe('VerificationHubService', () => {
         buildIntegration(),
       );
 
-      expect(ordersRepo.create).not.toHaveBeenCalled();
+      expect(ordersRepo.createIfAbsent).not.toHaveBeenCalled();
       expect(verificationsRepo.create).toHaveBeenCalled();
       expect(result).toEqual({
         orderId: 'order-db-1',
@@ -1094,7 +1094,10 @@ describe('VerificationHubService', () => {
         automationProducer,
       } = createMocks();
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      ordersRepo.createIfAbsent.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
       verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
       verificationSendService.sendInitial.mockResolvedValue({
@@ -1143,7 +1146,10 @@ describe('VerificationHubService', () => {
         billingEntitlementService,
       } = createMocks();
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      ordersRepo.createIfAbsent.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
       verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
       verificationSendService.sendInitial.mockResolvedValue({
@@ -1178,7 +1184,10 @@ describe('VerificationHubService', () => {
         verificationSendService,
       } = createMocks();
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      ordersRepo.createIfAbsent.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
       verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
       verificationSendService.sendInitial.mockResolvedValue({
@@ -1219,7 +1228,10 @@ describe('VerificationHubService', () => {
         verificationSendService,
       } = createMocks();
       ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      ordersRepo.create.mockResolvedValue({ id: 'order-test', orgId: 'org-1' });
+      ordersRepo.createIfAbsent.mockResolvedValue({
+        id: 'order-test',
+        orgId: 'org-1',
+      });
       verificationsRepo.findByOrderId.mockResolvedValue(null);
       verificationsRepo.create.mockResolvedValue({ id: 'ver-test' });
       verificationSendService.sendInitial.mockResolvedValue({
@@ -1563,7 +1575,7 @@ describe('VerificationHubService', () => {
         { eligible: true, reason: 'cod_match' },
       );
       mocks.ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      mocks.ordersRepo.create.mockResolvedValue({
+      mocks.ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-db-1',
         orgId: 'org-1',
         externalOrderId: 'ext-order-1',
@@ -1623,7 +1635,7 @@ describe('VerificationHubService', () => {
         skipped: true,
         reason: 'CREDIT_ACCOUNT_SUSPENDED',
       });
-      expect(mocks.ordersRepo.create).not.toHaveBeenCalled();
+      expect(mocks.ordersRepo.createIfAbsent).not.toHaveBeenCalled();
       expect(mocks.verificationsRepo.create).not.toHaveBeenCalled();
     });
 
@@ -1663,7 +1675,7 @@ describe('VerificationHubService', () => {
     it('never blocks the onboarding test message', async () => {
       const mocks = createMocks();
       mocks.ordersRepo.findBySourceExternalId.mockResolvedValue(null);
-      mocks.ordersRepo.create.mockResolvedValue({
+      mocks.ordersRepo.createIfAbsent.mockResolvedValue({
         id: 'order-test',
         orgId: 'org-1',
       });

@@ -45,3 +45,44 @@ export function collectShopifyGatewaySignals(rawPayload: unknown): string[] {
 
   return signals;
 }
+
+const MANUAL_GATEWAY = 'manual';
+const UNPAID_FINANCIAL_STATUS = 'pending';
+
+/**
+ * Whether a Shopify order is cash on delivery although its gateway is the
+ * generic `manual` one: COD order-form apps and orders created in the admin
+ * report `manual` instead of the store's COD method. Only an order whose sole
+ * gateway is `manual` and that is still unpaid (`pending`) counts. A paid
+ * order, an order next to another gateway, or one without a financial status
+ * stays non-COD. Named manual methods such as "Bank Deposit" are reported by
+ * their own name, so they never match.
+ */
+export function isShopifyManualUnpaidCod(rawPayload: unknown): boolean {
+  if (
+    !rawPayload ||
+    typeof rawPayload !== 'object' ||
+    Array.isArray(rawPayload)
+  ) {
+    return false;
+  }
+  const payload = rawPayload as Record<string, unknown>;
+
+  const gateways = new Set<string>();
+  const addGateway = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const gateway = value.trim().toLowerCase();
+    if (gateway) gateways.add(gateway);
+  };
+  const gatewayNames = payload['payment_gateway_names'];
+  if (Array.isArray(gatewayNames)) gatewayNames.forEach(addGateway);
+  addGateway(payload['gateway']);
+
+  const financialStatus = payload['financial_status'];
+  return (
+    gateways.size === 1 &&
+    gateways.has(MANUAL_GATEWAY) &&
+    typeof financialStatus === 'string' &&
+    financialStatus.trim().toLowerCase() === UNPAID_FINANCIAL_STATUS
+  );
+}
