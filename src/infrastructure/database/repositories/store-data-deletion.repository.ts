@@ -58,6 +58,19 @@ export const GDPR_WEBHOOK_JOB_TYPES = [
 ] as const;
 
 type Executor = Pick<DrizzleDB, 'execute'>;
+type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
+
+export type UninstalledStoreDeletionResult =
+  | { outcome: 'deleted'; counts: StoreDataDeletionCounts }
+  | {
+      outcome: 'skipped';
+      /**
+       * `not_found`: already deleted (the job or an earlier redact ran).
+       * `reinstalled`: the store is active again and keeps its data.
+       * `not_due`: the 48-hour window has not closed (job only).
+       */
+      reason: 'not_found' | 'reinstalled' | 'not_due';
+    };
 
 async function count(tx: Executor, statement: SQL): Promise<number> {
   const rows = await tx.execute(
@@ -83,6 +96,62 @@ export class StoreDataDeletionRepository {
     store: StoreIdentity,
     options: StoreDataDeletionOptions,
   ): Promise<StoreDataDeletionCounts> {
+    return this.db.transaction((tx) =>
+      this.deleteInTransaction(tx, store, options),
+    );
+  }
+
+  /**
+   * Deletes an uninstalled Shopify store and its organization: the 48-hour
+   * job and shop/redact both come here. The integration row is locked first,
+   * so a reinstall (which updates that row) either commits before, and the
+   * store is skipped, or waits until the data is gone. A store that is
+   * active again is never touched; a store already deleted is a no-op.
+   */
+  async deleteUninstalledShopifyStore(
+    store: StoreIdentity,
+    options: { dueBefore?: string; keepWebhookEventId?: string } = {},
+  ): Promise<UninstalledStoreDeletionResult> {
+    return this.db.transaction(async (tx) => {
+      // Organization first: a concurrent insert that references the store
+      // (a webhook row) takes its FK locks in that order, so taking them in
+      // the same order here cannot deadlock; the insert waits, then sees the
+      // store gone.
+      await tx.execute(sql`
+        SELECT 1 FROM organizations WHERE id = ${store.orgId}::uuid FOR UPDATE`);
+      const [current] = (await tx.execute(sql`
+        SELECT is_active, uninstalled_at FROM integrations
+        WHERE id = ${store.integrationId}::uuid AND org_id = ${store.orgId}::uuid
+        FOR UPDATE`)) as unknown as Array<{
+        is_active: boolean | null;
+        uninstalled_at: string | Date | null;
+      }>;
+      if (!current) return { outcome: 'skipped', reason: 'not_found' };
+      if (current.is_active !== false)
+        return { outcome: 'skipped', reason: 'reinstalled' };
+      if (options.dueBefore) {
+        const uninstalledAt = current.uninstalled_at
+          ? new Date(current.uninstalled_at).getTime()
+          : null;
+        if (
+          uninstalledAt === null ||
+          uninstalledAt > new Date(options.dueBefore).getTime()
+        )
+          return { outcome: 'skipped', reason: 'not_due' };
+      }
+      const counts = await this.deleteInTransaction(tx, store, {
+        scope: 'organization',
+        keepWebhookEventId: options.keepWebhookEventId,
+      });
+      return { outcome: 'deleted', counts };
+    });
+  }
+
+  private async deleteInTransaction(
+    tx: Transaction,
+    store: StoreIdentity,
+    options: StoreDataDeletionOptions,
+  ): Promise<StoreDataDeletionCounts> {
     const { orgId, integrationId, platform, storeDomain } = store;
     const orgScope = options.scope === 'organization';
     const keepId = options.keepWebhookEventId ?? null;
@@ -101,7 +170,7 @@ export class StoreDataDeletionRepository {
       WHERE d.org_id = ${orgId}::uuid
         AND (d.verification_id IN (${storeVerifications}) OR ${ownedBy('d')})`;
 
-    return this.db.transaction(async (tx) => {
+    {
       // Credit rows are financial records with NO ACTION FKs on dispatches and
       // accounts; deleting around them would either fail half-way or destroy
       // the ledger. Shopify stores are not prepaid, so this is a guard only.
@@ -256,6 +325,6 @@ export class StoreDataDeletionRepository {
         sql`DELETE FROM organizations WHERE id = ${orgId}::uuid RETURNING 1`,
       );
       return counts;
-    });
+    }
   }
 }

@@ -59,7 +59,8 @@ type IneligibleReason =
   | 'not_customer_answer'
   | 'verification_closed'
   | 'already_handled'
-  | 'merchant_disabled';
+  | 'merchant_disabled'
+  | 'integration_inactive';
 
 export type CustomerReplyFollowUpOutcome =
   | { outcome: 'sent'; providerMessageId: string }
@@ -181,6 +182,11 @@ export class CustomerReplyFollowUpService {
       return ineligible('verification_not_found');
     }
     if (order.isTest === true) return ineligible('test_order');
+    // An uninstalled (or otherwise inactive) store sends nothing, from the
+    // Akeed number or the merchant's own: neither path's later checks (the
+    // own-number connection, the nudge's free-form send) look at the store.
+    if (order.integration?.isActive !== true)
+      return ineligible('integration_inactive');
     if (
       request.kind === 'acknowledgment' &&
       !merchantSender &&

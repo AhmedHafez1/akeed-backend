@@ -87,7 +87,9 @@ export type AutoCancelStopReason =
   | 'excluded'
   | 'feature_disabled'
   | 'status_changed'
-  | 'change_requested';
+  | 'change_requested'
+  // The store uninstalled Akeed; a reinstall does not bring it back.
+  | 'store_uninstalled';
 
 export type AutoCancelDecision =
   | { kind: 'schedule'; dueAt: Date }

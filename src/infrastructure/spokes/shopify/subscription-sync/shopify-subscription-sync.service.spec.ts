@@ -40,7 +40,8 @@ function setup(stores: Array<Record<string, unknown>>) {
   const webhookService = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     { insertIfNew: jest.fn() } as any,
-    { deleteStoreData: jest.fn() } as any,
+    { closeOpenForUninstalledStore: jest.fn() } as any,
+    { stopPendingForIntegration: jest.fn() } as any,
     capacityRecovery as any,
   );
   const service = new ShopifySubscriptionSyncService(

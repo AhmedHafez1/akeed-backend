@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { databaseErrorCode } from '../../../../shared/database/serializable-retry';
 import { buildBackendLog } from '../../../../shared/logging/backend-log.util';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
@@ -269,18 +270,46 @@ export class ShopifyGdprWebhookService {
       return { received: true };
     }
 
-    // One transaction. The request row itself is kept (detached from the
+    // One transaction, through the same guarded routine as the 48-hour job.
+    // A store that reinstalled is never deleted: shop/redact can still arrive
+    // after a reinstall. The request row itself is kept (detached from the
     // organization) so a redelivery is still answered as a duplicate.
-    const deleted = await this.storeDataDeletion.deleteStoreData(
+    const result = await this.storeDataDeletion.deleteUninstalledShopifyStore(
       {
         orgId,
         integrationId: integration.id,
         platform: 'shopify',
         storeDomain: shopDomain.trim().toLowerCase(),
       },
-      { scope: 'organization', keepWebhookEventId: webhookEventId },
+      { keepWebhookEventId: webhookEventId },
     );
 
+    if (result.outcome === 'skipped') {
+      const context = {
+        outcome: 'skipped' as const,
+        shopDomain,
+        orgId,
+        integrationId: integration.id,
+        reason: result.reason,
+      };
+      if (result.reason === 'reinstalled')
+        this.logger.warn(
+          buildBackendLog('ShopifyGdprWebhookService', {
+            action: 'handleShopRedact.storeReinstalled',
+            ...context,
+          }),
+        );
+      else
+        this.logger.log(
+          buildBackendLog('ShopifyGdprWebhookService', {
+            action: 'handleShopRedact.alreadyDeleted',
+            ...context,
+          }),
+        );
+      return { received: true };
+    }
+
+    const deleted = result.counts;
     this.logger.log(
       buildBackendLog('ShopifyGdprWebhookService', {
         action: 'handleShopRedact.completed',
@@ -328,22 +357,37 @@ export class ShopifyGdprWebhookService {
       );
     }
 
-    const integration = await this.integrationsRepo.findByPlatformDomain(
+    let integration = await this.integrationsRepo.findByPlatformDomain(
       params.shopDomain,
       'shopify',
     );
-    const orgId = integration?.orgId;
 
     if (params.webhookId) {
-      const insertedWebhookRecord = await this.webhookEventsRepo.insertIfNew({
-        platform: 'shopify',
-        jobType: params.topic || params.logLabel,
-        idempotencyKey: params.webhookId,
-        storeDomain: params.shopDomain,
-        orgId: integration?.orgId ?? null,
-        integrationId: integration?.id ?? null,
-        rawPayload: params.rawPayload,
-      });
+      const record = (owner: typeof integration) =>
+        this.webhookEventsRepo.insertIfNew({
+          platform: 'shopify',
+          jobType: params.topic || params.logLabel,
+          idempotencyKey: params.webhookId,
+          storeDomain: params.shopDomain,
+          orgId: owner?.orgId ?? null,
+          integrationId: owner?.id ?? null,
+          rawPayload: params.rawPayload,
+        });
+      let insertedWebhookRecord: Awaited<ReturnType<typeof record>>;
+      try {
+        insertedWebhookRecord = await record(integration);
+      } catch (error) {
+        // The store was deleted between the lookup and the insert (the
+        // 48-hour job ran at the same moment): look again, and record the
+        // request against what is left, which is nothing to delete.
+        if (!integration || databaseErrorCode(error) !== '23503') throw error;
+        integration = await this.integrationsRepo.findByPlatformDomain(
+          params.shopDomain,
+          'shopify',
+        );
+        insertedWebhookRecord = await record(integration);
+      }
+      const orgId = integration?.orgId;
 
       if (!insertedWebhookRecord) {
         this.logger.warn(
@@ -366,7 +410,7 @@ export class ShopifyGdprWebhookService {
       };
     }
 
-    return { integration, orgId, isDuplicate: false };
+    return { integration, orgId: integration?.orgId, isDuplicate: false };
   }
 
   private filterOrdersByRequestedIds(

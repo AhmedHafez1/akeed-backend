@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { GDPR_WEBHOOK_JOB_TYPES } from './store-data-deletion.repository';
+import { SHOPIFY_UNINSTALL_DATA_RETENTION_MS } from '../../../shared/commerce/shopify-data-retention';
 
 /**
  * How long a finished webhook row is kept. Shopify retries a delivery for up
@@ -95,10 +96,22 @@ export class WebhookRetentionRules {
     return sql`${sql.raw(alias)}.job_type IN (${gdprJobTypes})`;
   }
 
-  /** A store's latest uninstall, from its lifecycle history. */
-  private lastUninstalledAt(alias: string): SQL {
-    return sql`(SELECT max(l.uninstalled_at) FROM admin_store_lifecycles l
-      WHERE l.integration_id = ${sql.raw(alias)}.integration_id)`;
+  /**
+   * When the store uninstalled, only once it is still uninstalled and its
+   * 48-hour window has closed; NULL otherwise, so the comparison it is used
+   * in is never true. Inside the window, or after a reinstall, the store's
+   * orders are kept and so are their webhook rows (merchant retry and the
+   * lifecycle projection read them). This is a safety net behind the
+   * uninstall-retention job, which deletes the whole store at that point.
+   */
+  private expiredUninstallAt(alias: string): SQL {
+    const windowClosedBefore = new Date(
+      this.now.getTime() - SHOPIFY_UNINSTALL_DATA_RETENTION_MS,
+    ).toISOString();
+    return sql`(SELECT i.uninstalled_at FROM integrations i
+      WHERE i.id = ${sql.raw(alias)}.integration_id
+        AND i.is_active = false
+        AND i.uninstalled_at <= ${windowClosedBefore}::timestamptz)`;
   }
 
   predicate(category: WebhookRetentionCategory, alias = 'w'): SQL {
@@ -120,12 +133,12 @@ export class WebhookRetentionRules {
       case 'no_store':
         return sql`(${w}.integration_id IS NULL
           AND ${this.receivedAt(alias)} < ${this.cutoff})`;
-      // Received before the store's last uninstall; that uninstall already
-      // deleted the orders these rows belonged to. A row a worker holds a
-      // live processing lease on is left for the next run.
+      // Received before the uninstall of a store still uninstalled 48 hours
+      // later, whose data is due for deletion. A row a worker holds a live
+      // processing lease on is left for the next run.
       case 'before_uninstall':
         return sql`(${w}.integration_id IS NOT NULL
-          AND ${this.receivedAt(alias)} < ${this.lastUninstalledAt(alias)}
+          AND ${this.receivedAt(alias)} < ${this.expiredUninstallAt(alias)}
           AND NOT (${w}.status = 'processing'
             AND ${w}.processing_lease_until IS NOT NULL
             AND ${w}.processing_lease_until > ${this.nowParam})
@@ -145,7 +158,7 @@ export class WebhookRetentionRules {
           AND ${w}.hold_state <> 'held'
           AND ${w}.dispatch_required = false
           AND ${this.receivedAt(alias)} < ${this.cutoff})
-        OR ${this.receivedAt(alias)} < ${this.lastUninstalledAt(alias)}))`;
+        OR ${this.receivedAt(alias)} < ${this.expiredUninstallAt(alias)}))`;
   }
 }
 

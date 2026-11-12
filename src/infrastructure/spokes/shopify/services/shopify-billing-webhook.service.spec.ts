@@ -32,22 +32,24 @@ function createMocks() {
   const webhookEventsRepo = {
     insertIfNew: jest.fn().mockResolvedValue({ id: 'wh-1' }),
   };
+  const verificationsRepo = {
+    closeOpenForUninstalledStore: jest
+      .fn()
+      .mockResolvedValue({ failed: 2, expired: 1 }),
+  };
+  const autoCancellations = {
+    stopPendingForIntegration: jest.fn().mockResolvedValue(1),
+  };
   const storeDataDeletion = {
-    deleteStoreData: jest.fn().mockResolvedValue({
-      orders: 2,
-      verifications: 2,
-      webhookEvents: 3,
-      messageDispatches: 0,
-      orderImportBatches: 0,
-      metaWebhookEvents: 0,
-      providerMessageReceipts: 0,
-    }),
+    deleteStoreData: jest.fn(),
+    deleteUninstalledShopifyStore: jest.fn(),
   };
   const capacityRecovery = { request: jest.fn() };
   const service = new ShopifyBillingWebhookService(
     integrationsRepo as any,
     webhookEventsRepo as any,
-    storeDataDeletion as any,
+    verificationsRepo as any,
+    autoCancellations as any,
     capacityRecovery as any,
   );
 
@@ -55,6 +57,8 @@ function createMocks() {
     service,
     integrationsRepo,
     webhookEventsRepo,
+    verificationsRepo,
+    autoCancellations,
     storeDataDeletion,
     capacityRecovery,
   };
@@ -81,7 +85,7 @@ describe('ShopifyBillingWebhookService', () => {
       expect(integrationsRepo.deleteById).not.toHaveBeenCalled();
     });
 
-    it('deletes the store data, unlinked webhook rows included, after marking it uninstalled', async () => {
+    it('keeps all store data: the 48-hour window lets a reinstall get its history back', async () => {
       const { service, integrationsRepo, storeDataDeletion } = createMocks();
       integrationsRepo.findByPlatformDomain.mockResolvedValue(
         makeIntegration(),
@@ -92,24 +96,49 @@ describe('ShopifyBillingWebhookService', () => {
         'test.myshopify.com',
       );
 
-      expect(storeDataDeletion.deleteStoreData).toHaveBeenCalledWith(
-        {
-          orgId: 'org-1',
-          integrationId: 'int-1',
-          platform: 'shopify',
-          storeDomain: 'test.myshopify.com',
-        },
-        { scope: 'store' },
+      expect(storeDataDeletion.deleteStoreData).not.toHaveBeenCalled();
+      expect(
+        storeDataDeletion.deleteUninstalledShopifyStore,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('stops automatic cancellations and closes open verifications after marking it uninstalled', async () => {
+      const {
+        service,
+        integrationsRepo,
+        verificationsRepo,
+        autoCancellations,
+      } = createMocks();
+      integrationsRepo.findByPlatformDomain.mockResolvedValue(
+        makeIntegration(),
       );
+
+      await service.handleAppUninstalled(
+        { id: 123 } as any,
+        'test.myshopify.com',
+      );
+
+      const uninstalledAt = integrationsRepo.markShopifyUninstalled.mock
+        .calls[0][1] as string;
+      expect(autoCancellations.stopPendingForIntegration).toHaveBeenCalledWith(
+        'org-1',
+        'int-1',
+        'store_uninstalled',
+        null,
+      );
+      expect(
+        verificationsRepo.closeOpenForUninstalledStore,
+      ).toHaveBeenCalledWith('org-1', 'int-1', uninstalledAt);
       expect(
         integrationsRepo.markShopifyUninstalled.mock.invocationCallOrder[0],
       ).toBeLessThan(
-        storeDataDeletion.deleteStoreData.mock.invocationCallOrder[0],
+        verificationsRepo.closeOpenForUninstalledStore.mock
+          .invocationCallOrder[0],
       );
     });
 
-    it('purges nothing when the shop has no integration', async () => {
-      const { service, integrationsRepo, storeDataDeletion } = createMocks();
+    it('touches nothing when the shop has no integration', async () => {
+      const { service, integrationsRepo, verificationsRepo } = createMocks();
       integrationsRepo.findByPlatformDomain.mockResolvedValue(undefined);
 
       await service.handleAppUninstalled(
@@ -117,19 +146,24 @@ describe('ShopifyBillingWebhookService', () => {
         'unknown.myshopify.com',
       );
 
-      expect(storeDataDeletion.deleteStoreData).not.toHaveBeenCalled();
+      expect(integrationsRepo.markShopifyUninstalled).not.toHaveBeenCalled();
+      expect(
+        verificationsRepo.closeOpenForUninstalledStore,
+      ).not.toHaveBeenCalled();
     });
 
-    it('propagates a purge failure so Shopify retries the webhook', async () => {
-      const { service, integrationsRepo, storeDataDeletion } = createMocks();
+    it('propagates a close-out failure so Shopify retries the webhook', async () => {
+      const { service, integrationsRepo, verificationsRepo } = createMocks();
       integrationsRepo.findByPlatformDomain.mockResolvedValue(
         makeIntegration(),
       );
-      storeDataDeletion.deleteStoreData.mockRejectedValue(new Error('fk'));
+      verificationsRepo.closeOpenForUninstalledStore.mockRejectedValue(
+        new Error('db'),
+      );
 
       await expect(
         service.handleAppUninstalled({ id: 123 } as any, 'test.myshopify.com'),
-      ).rejects.toThrow('fk');
+      ).rejects.toThrow('db');
     });
   });
 

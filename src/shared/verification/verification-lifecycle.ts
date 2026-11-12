@@ -39,6 +39,28 @@ export const WEBHOOK_PROTECTED_STATUSES: VerificationStatus[] = [
 ];
 
 /**
+ * `metadata.reason` of a verification closed because its store uninstalled
+ * Akeed (`failed` if nothing was sent, `expired` if it was awaiting a reply).
+ * Deliberately absent from {@link RETRYABLE_VERIFICATION_REASONS} and
+ * {@link BLOCKED_EVENT_REASONS}: after a reinstall these rows stay closed, so
+ * an old order never sends.
+ */
+export const STORE_UNINSTALLED_REASON = 'store_uninstalled';
+
+/** Open statuses an uninstall closes as `failed`: nothing was sent yet. */
+export const UNINSTALL_UNSENT_STATUSES: VerificationStatus[] = [
+  'pending',
+  'blocked',
+];
+
+/** Open statuses an uninstall closes as `expired`: sent, awaiting a reply. */
+export const UNINSTALL_AWAITING_REPLY_STATUSES: VerificationStatus[] = [
+  'sent',
+  'delivered',
+  'read',
+];
+
+/**
  * `metadata.reason` values on a `failed` verification that a merchant may
  * retry. Each represents a condition the merchant can resolve (top up the
  * plan, reactivate the source, settle billing) rather than a permanent defect.

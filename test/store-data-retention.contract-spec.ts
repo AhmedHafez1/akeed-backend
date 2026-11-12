@@ -17,6 +17,20 @@ import {
 } from '../src/infrastructure/database/repositories/webhook-events-retention.repository';
 import { WebhookEventsRepository } from '../src/infrastructure/database/repositories/webhook-events.repository';
 import { cleanupWebhookEventsBacklog } from '../scripts/cleanup-webhook-events-backlog';
+import { ConfigService } from '@nestjs/config';
+import { IntegrationsRepository } from '../src/infrastructure/database/repositories/integrations.repository';
+import { VerificationsRepository } from '../src/infrastructure/database/repositories/verifications.repository';
+import { VerificationAutoCancellationsRepository } from '../src/infrastructure/database/repositories/verification-auto-cancellations.repository';
+import { ShopifyBillingWebhookService } from '../src/infrastructure/spokes/shopify/services/shopify-billing-webhook.service';
+import { ShopifyGdprWebhookService } from '../src/infrastructure/spokes/shopify/services/shopify-gdpr-webhook.service';
+import { ShopifyUninstallRetentionService } from '../src/infrastructure/spokes/shopify/uninstall-retention/shopify-uninstall-retention.service';
+import { SHOPIFY_UNINSTALL_DATA_RETENTION_MS } from '../src/shared/commerce/shopify-data-retention';
+import { PhoneService } from '../src/shared/services/phone.service';
+import {
+  AUTOMATION_FINAL_STATUSES,
+  isRetryableVerificationReason,
+} from '../src/shared/verification/verification-lifecycle';
+import { CAPACITY_BLOCK_REASONS } from '../src/shared/verification/capacity-block';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 
@@ -697,9 +711,57 @@ describe('store data deletion and webhook retention (isolated PostgreSQL)', () =
         received_at: ago(HOUR),
       });
 
-      // A reinstalled store: rows received before its last uninstall go,
-      // even linked or recent ones; rows after it follow the normal rules.
-      const reinstalled = await seedStore('golf');
+      // A store still uninstalled after its 48-hour window: rows received
+      // before the uninstall go, even linked ones; later rows follow the
+      // normal rules.
+      const expired = await seedStore('golf');
+      await client.unsafe(
+        `DELETE FROM "${namespace}".webhook_events WHERE store_domain = $1`,
+        [expired.storeDomain],
+      );
+      await client.unsafe(
+        `UPDATE "${namespace}".integrations SET is_active = false, uninstalled_at = $2 WHERE id = $1`,
+        [expired.integrationId, ago(49 * HOUR)],
+      );
+      const expiredOwned = {
+        storeDomain: expired.storeDomain,
+        org_id: expired.orgId,
+        integration_id: expired.integrationId,
+      };
+      ids.beforeUninstallPending = await webhook({
+        ...expiredOwned,
+        status: 'pending',
+        received_at: ago(60 * HOUR),
+      });
+      ids.beforeUninstallLinked = await webhook({
+        ...expiredOwned,
+        order_id: expired.orderId,
+        received_at: ago(60 * HOUR),
+      });
+      ids.afterUninstall = await webhook({
+        ...expiredOwned,
+        received_at: ago(2 * HOUR),
+      });
+
+      // Inside the window, and after a reinstall, the store keeps its orders,
+      // so it keeps their webhook rows too, however old.
+      const inWindow = await seedStore('golf-window');
+      await client.unsafe(
+        `DELETE FROM "${namespace}".webhook_events WHERE store_domain = $1`,
+        [inWindow.storeDomain],
+      );
+      await client.unsafe(
+        `UPDATE "${namespace}".integrations SET is_active = false, uninstalled_at = $2 WHERE id = $1`,
+        [inWindow.integrationId, ago(47 * HOUR)],
+      );
+      ids.inWindowLinked = await webhook({
+        storeDomain: inWindow.storeDomain,
+        org_id: inWindow.orgId,
+        integration_id: inWindow.integrationId,
+        order_id: inWindow.orderId,
+        received_at: ago(60 * HOUR),
+      });
+      const reinstalled = await seedStore('golf-reinstalled');
       await client.unsafe(
         `DELETE FROM "${namespace}".webhook_events WHERE store_domain = $1`,
         [reinstalled.storeDomain],
@@ -708,24 +770,12 @@ describe('store data deletion and webhook retention (isolated PostgreSQL)', () =
         `UPDATE "${namespace}".admin_store_lifecycles SET uninstalled_at = $2 WHERE integration_id = $1`,
         [reinstalled.integrationId, ago(10 * HOUR)],
       );
-      const reinstalledOwned = {
+      ids.reinstalledLinked = await webhook({
         storeDomain: reinstalled.storeDomain,
         org_id: reinstalled.orgId,
         integration_id: reinstalled.integrationId,
-      };
-      ids.beforeUninstallPending = await webhook({
-        ...reinstalledOwned,
-        status: 'pending',
-        received_at: ago(20 * HOUR),
-      });
-      ids.beforeUninstallLinked = await webhook({
-        ...reinstalledOwned,
         order_id: reinstalled.orderId,
         received_at: ago(20 * HOUR),
-      });
-      ids.afterReinstall = await webhook({
-        ...reinstalledOwned,
-        received_at: ago(2 * HOUR),
       });
 
       // WooCommerce create marker: kept, payload cleared.
@@ -811,7 +861,9 @@ describe('store data deletion and webhook retention (isolated PostgreSQL)', () =
         'oldDispatchable',
         'oldGdpr',
         'noStoreSkippedNew',
-        'afterReinstall',
+        'afterUninstall',
+        'inWindowLinked',
+        'reinstalledLinked',
         'wooMarker',
       ])
         expect([kept, await exists(ids[kept])]).toEqual([kept, true]);
@@ -903,6 +955,393 @@ describe('store data deletion and webhook retention (isolated PostgreSQL)', () =
         }),
       ).rejects.toThrow(/unique_external_order_per_integration/);
       expect(WEBHOOK_EVENT_RETENTION_MS).toBe(48 * HOUR);
+    });
+  });
+
+  describe('Shopify 48-hour uninstall window', () => {
+    const integrationsRepo = new IntegrationsRepository(
+      db as never,
+      new ConfigService({ SHOPIFY_TOKEN_ENCRYPTION_KEY: 'k'.repeat(32) }),
+    );
+    const verificationsRepo = new VerificationsRepository(db as never);
+    const uninstall = new ShopifyBillingWebhookService(
+      integrationsRepo,
+      events,
+      verificationsRepo,
+      new VerificationAutoCancellationsRepository(db as never),
+    );
+    const gdpr = new ShopifyGdprWebhookService(
+      {} as never,
+      integrationsRepo,
+      events,
+      deletion,
+      new PhoneService(),
+    );
+    const job = new ShopifyUninstallRetentionService(
+      integrationsRepo,
+      deletion,
+    );
+    const at = (ms: number) => new Date(Date.now() + ms);
+
+    /** A store with one verification per open status, plus one confirmed. */
+    async function installedStore(label: string) {
+      const store = await seedStore(label);
+      const statuses = ['pending', 'blocked', 'sent', 'delivered', 'read'];
+      const open: Record<string, string> = {};
+      for (const status of statuses) {
+        const orderId = (await seed('orders', {
+          org_id: store.orgId,
+          integration_id: store.integrationId,
+          external_order_id: `${label}-${status}`,
+          customer_phone: '+201000000000',
+        }))!;
+        open[status] = (await seed('verifications', {
+          org_id: store.orgId,
+          order_id: orderId,
+          status,
+          metadata:
+            status === 'blocked' ? { reason: 'plan_limit_reached' } : {},
+        }))!;
+      }
+      await client.unsafe(
+        `UPDATE "${namespace}".verifications SET status = 'confirmed' WHERE id = $1`,
+        [store.verificationId],
+      );
+      return { store, open };
+    }
+
+    const uninstallStore = (store: SeededStore) =>
+      uninstall.handleAppUninstalled({ id: 1 } as never, store.storeDomain);
+
+    async function backdateUninstall(store: SeededStore, hoursAgo: number) {
+      await client.unsafe(
+        `UPDATE "${namespace}".integrations SET uninstalled_at = $2 WHERE id = $1`,
+        [
+          store.integrationId,
+          new Date(Date.now() - hoursAgo * HOUR).toISOString(),
+        ],
+      );
+    }
+
+    const redact = (store: SeededStore, deliveryId: string) =>
+      gdpr.handleShopRedact(
+        { shop_id: '1', shop_domain: store.storeDomain },
+        store.storeDomain,
+        deliveryId,
+        'shop/redact',
+      );
+
+    const accountRows = async (store: SeededStore) => ({
+      organizations: await countWhere('organizations', `id = '${store.orgId}'`),
+      integrations: await countWhere(
+        'integrations',
+        `id = '${store.integrationId}'`,
+      ),
+      memberships: await countWhere('memberships', `org_id = '${store.orgId}'`),
+    });
+
+    it('uninstall keeps every row, deactivates the store and closes open work for good', async () => {
+      const { store, open } = await installedStore('hotel');
+      const before = await inventory(store);
+
+      await uninstallStore(store);
+
+      // Nothing deleted; stopping the auto-cancellation records one event.
+      expect(await inventory(store)).toEqual({
+        ...before,
+        verification_auto_cancellation_events:
+          before.verification_auto_cancellation_events + 1,
+      });
+      expect(await accountRows(store)).toEqual({
+        organizations: 1,
+        integrations: 1,
+        memberships: 1,
+      });
+      const [integration] = await client.unsafe<
+        Array<{
+          is_active: boolean;
+          access_token: string | null;
+          billing_status: string;
+          shopify_subscription_id: string | null;
+          uninstalled_at: Date | null;
+        }>
+      >(
+        `SELECT is_active, access_token, billing_status, shopify_subscription_id, uninstalled_at FROM "${namespace}".integrations WHERE id = $1`,
+        [store.integrationId],
+      );
+      expect(integration).toMatchObject({
+        is_active: false,
+        access_token: null,
+        billing_status: 'cancelled',
+        shopify_subscription_id: null,
+      });
+      expect(integration.uninstalled_at).not.toBeNull();
+
+      const rows = await client.unsafe<
+        Array<{ id: string; status: string; reason: string | null }>
+      >(
+        `SELECT id, status::text, metadata->>'reason' AS reason FROM "${namespace}".verifications WHERE org_id = $1`,
+        [store.orgId],
+      );
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(byId.get(open.pending)).toMatchObject({
+        status: 'failed',
+        reason: 'store_uninstalled',
+      });
+      expect(byId.get(open.blocked)).toMatchObject({
+        status: 'failed',
+        reason: 'store_uninstalled',
+      });
+      for (const status of ['sent', 'delivered', 'read'])
+        expect(byId.get(open[status])).toMatchObject({
+          status: 'expired',
+          reason: 'store_uninstalled',
+        });
+      expect(byId.get(store.verificationId)?.status).toBe('confirmed');
+      // Every closed row is final for every automation job, and no retry or
+      // recovery path accepts its reason.
+      for (const row of rows)
+        expect(AUTOMATION_FINAL_STATUSES).toContain(row.status);
+      expect(isRetryableVerificationReason('store_uninstalled')).toBe(false);
+      expect(
+        await verificationsRepo.reopenRetryableInitialFailure(
+          open.pending,
+          store.orgId,
+        ),
+      ).toBe(false);
+      expect(
+        await verificationsRepo.listCapacityRecoveryCandidates({
+          orgId: store.orgId,
+          reasons: CAPACITY_BLOCK_REASONS,
+          legacyFailedSince: new Date(0).toISOString(),
+          limit: 100,
+        }),
+      ).toEqual([]);
+      const [autoCancel] = await client.unsafe<
+        Array<{ status: string; reason: string }>
+      >(
+        `SELECT status, reason FROM "${namespace}".verification_auto_cancellations WHERE verification_id = $1`,
+        [store.verificationId],
+      );
+      expect(autoCancel).toEqual({
+        status: 'stopped',
+        reason: 'store_uninstalled',
+      });
+
+      // A redelivered uninstall keeps the first time: the window never grows.
+      await backdateUninstall(store, 30);
+      await uninstallStore(store);
+      const [again] = await client.unsafe<Array<{ uninstalled_at: Date }>>(
+        `SELECT uninstalled_at FROM "${namespace}".integrations WHERE id = $1`,
+        [store.integrationId],
+      );
+      expect(
+        Date.now() - new Date(again.uninstalled_at).getTime(),
+      ).toBeGreaterThan(29 * HOUR);
+    });
+
+    it('a reinstall at 47h keeps the history, cancels the deletion and never reopens old work', async () => {
+      const { store, open } = await installedStore('india');
+      await uninstallStore(store);
+      await backdateUninstall(store, 47);
+      const kept = await inventory(store);
+
+      await integrationsRepo.upsertShopifyIntegration(
+        store.orgId,
+        store.storeDomain,
+        'shopify',
+        'new-offline-token',
+      );
+
+      const [integration] = await client.unsafe<
+        Array<{ is_active: boolean; uninstalled_at: Date | null }>
+      >(
+        `SELECT is_active, uninstalled_at FROM "${namespace}".integrations WHERE id = $1`,
+        [store.integrationId],
+      );
+      expect(integration).toEqual({ is_active: true, uninstalled_at: null });
+      // The usual retention rules (unrelated to the uninstall) have run once;
+      // from here on, nothing more of this store may go.
+      await retention.run({ now: at(2 * HOUR) });
+      const baseline = await inventory(store);
+      const linkedWebhooks = () =>
+        countWhere(
+          'webhook_events',
+          `org_id = '${store.orgId}' AND order_id IS NOT NULL`,
+        );
+      const linkedBefore = await linkedWebhooks();
+      expect(linkedBefore).toBeGreaterThan(0);
+      expect(baseline.orders).toBe(kept.orders);
+      expect(baseline.verifications).toBe(kept.verifications);
+
+      // Past the original 48h: the job and the hourly retention leave it.
+      // (Other suites' stores past their window may be deleted by this run.)
+      const result = await job.run(at(2 * HOUR));
+      expect(result.failed).toBe(0);
+      await retention.run({ now: at(2 * HOUR) });
+      expect(await inventory(store)).toEqual(baseline);
+      expect(await linkedWebhooks()).toBe(linkedBefore);
+      expect(await accountRows(store)).toEqual({
+        organizations: 1,
+        integrations: 1,
+        memberships: 1,
+      });
+
+      // The old pending order stays closed: an active store's retry and
+      // capacity recovery both refuse it.
+      expect(
+        await verificationsRepo.reopenRetryableInitialFailure(
+          open.pending,
+          store.orgId,
+        ),
+      ).toBe(false);
+      expect(
+        await verificationsRepo.listCapacityRecoveryCandidates({
+          orgId: store.orgId,
+          reasons: CAPACITY_BLOCK_REASONS,
+          legacyFailedSince: new Date(0).toISOString(),
+          limit: 100,
+        }),
+      ).toEqual([]);
+    });
+
+    it('the job deletes a store still uninstalled after 48h, and only that store', async () => {
+      const { store } = await installedStore('juliet');
+      const { store: fresh } = await installedStore('kilo');
+      const { store: live } = await installedStore('lima');
+      await uninstallStore(store);
+      await uninstallStore(fresh);
+      await backdateUninstall(store, 48 * 1 + 1 / 60);
+      await backdateUninstall(fresh, 47);
+      const freshBefore = await inventory(fresh);
+      const liveBefore = await inventory(live);
+
+      const result = await job.run();
+
+      expect(result.deletedStores).toBeGreaterThanOrEqual(1);
+      expect(result.failed).toBe(0);
+      expect(await accountRows(store)).toEqual({
+        organizations: 0,
+        integrations: 0,
+        memberships: 0,
+      });
+      expect(
+        Object.values(await inventory(store)).every((count) => count === 0),
+      ).toBe(true);
+      expect(await inventory(fresh)).toEqual(freshBefore);
+      expect(await inventory(live)).toEqual(liveBefore);
+      expect(SHOPIFY_UNINSTALL_DATA_RETENTION_MS).toBe(48 * HOUR);
+
+      // A second run finds nothing for it.
+      const again = await job.run();
+      expect(again.deletedStores).toBe(0);
+    });
+
+    it('shop/redact deletes a still-uninstalled store at once', async () => {
+      const { store } = await installedStore('mike');
+      await uninstallStore(store);
+
+      await expect(redact(store, 'redact-mike')).resolves.toEqual({
+        received: true,
+      });
+
+      expect(await accountRows(store)).toEqual({
+        organizations: 0,
+        integrations: 0,
+        memberships: 0,
+      });
+      const after = await inventory(store);
+      // Only the redact request row, detached, remains.
+      expect({ ...after, webhook_events: 0 }).toEqual(
+        Object.fromEntries(Object.keys(after).map((k) => [k, 0])),
+      );
+    });
+
+    it('shop/redact after a reinstall deletes nothing', async () => {
+      const { store } = await installedStore('november');
+      await uninstallStore(store);
+      await integrationsRepo.upsertShopifyIntegration(
+        store.orgId,
+        store.storeDomain,
+        'shopify',
+        'new-offline-token',
+      );
+      const before = await inventory(store);
+
+      await expect(redact(store, 'redact-november')).resolves.toEqual({
+        received: true,
+      });
+
+      expect(await accountRows(store)).toEqual({
+        organizations: 1,
+        integrations: 1,
+        memberships: 1,
+      });
+      const after = await inventory(store);
+      // The request row itself is stored, as for any GDPR request.
+      expect(after).toEqual({
+        ...before,
+        webhook_events: before.webhook_events + 1,
+      });
+    });
+
+    it('the job and shop/redact are idempotent in any order, even together', async () => {
+      const first = await installedStore('oscar');
+      const second = await installedStore('papa');
+      const third = await installedStore('quebec');
+      for (const { store } of [first, second, third]) {
+        await uninstallStore(store);
+        await backdateUninstall(store, 49);
+      }
+
+      // Job, then redact.
+      await job.run();
+      await expect(redact(first.store, 'redact-oscar')).resolves.toEqual({
+        received: true,
+      });
+      // Redact, then job (papa was already deleted by the run above; quebec
+      // too). Recreate the race on a fresh store: both at once.
+      const race = await installedStore('romeo');
+      await uninstallStore(race.store);
+      await backdateUninstall(race.store, 49);
+      const [jobResult, redactResult] = await Promise.all([
+        job.run(),
+        redact(race.store, 'redact-romeo'),
+      ]);
+      expect(jobResult.failed).toBe(0);
+      expect(redactResult).toEqual({ received: true });
+      await expect(redact(race.store, 'redact-romeo-2')).resolves.toEqual({
+        received: true,
+      });
+      const last = await job.run();
+      expect(last).toMatchObject({ deletedStores: 0, failed: 0 });
+      for (const { store } of [first, second, third, race])
+        expect(await accountRows(store)).toEqual({
+          organizations: 0,
+          integrations: 0,
+          memberships: 0,
+        });
+
+      // The guarded routine reports a gone store as not_found, not an error.
+      await expect(
+        deletion.deleteUninstalledShopifyStore(race.store),
+      ).resolves.toEqual({ outcome: 'skipped', reason: 'not_found' });
+    });
+
+    it('the 0096 migration applies, and re-applies, cleanly', async () => {
+      const migration = readFileSync(
+        resolve(__dirname, '../drizzle/0096_integration_uninstalled_at.sql'),
+        'utf8',
+      );
+      for (let run = 0; run < 2; run += 1)
+        for (const statement of migration.split('--> statement-breakpoint'))
+          if (statement.trim())
+            await client.unsafe(
+              statement.replaceAll(
+                '"integrations"',
+                `"${namespace}"."integrations"`,
+              ),
+            );
     });
   });
 });
