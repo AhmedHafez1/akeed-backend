@@ -2,10 +2,10 @@ import type {
   CommerceCancellationOptions,
   CommerceOutcomeConnection,
 } from '../../../../shared/commerce/commerce-outcome';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { AxiosResponse } from 'axios';
+import { AxiosResponse, isAxiosError } from 'axios';
 import { firstValueFrom, timeout } from 'rxjs';
 import { decryptToken } from '../../../../shared/utils/token-encryption.util';
 import {
@@ -54,6 +54,14 @@ import {
   toOrderGid,
   validateUsageBillingPayload,
 } from './shopify-api.service.helpers';
+import {
+  ShopifyCredentialService,
+  type ShopifyAccessToken,
+} from './shopify-credential.service';
+import {
+  isLegacyTokenRejection,
+  ShopifyReauthRequiredError,
+} from './shopify-offline-token';
 
 interface CreateRecurringApplicationChargeInput {
   name: string;
@@ -82,6 +90,8 @@ export class ShopifyApiService {
     private readonly _httpService: HttpService,
     @Inject(ConfigService)
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly credentials?: ShopifyCredentialService,
   ) {}
 
   async addOrderTag(
@@ -548,25 +558,57 @@ export class ShopifyApiService {
     variables?: Record<string, unknown>,
     timeoutMs?: number,
   ): Promise<AxiosResponse<T>> {
-    const accessToken = this.getAccessTokenOrThrow(integration);
-
-    const request = this._httpService.post<T>(
-      this.getGraphqlUrl(integration.platformStoreUrl),
-      {
-        query,
-        variables,
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
+    const accessToken = await this.getAccessTokenOrThrow(integration);
+    const send = (token: string) => {
+      const request = this._httpService.post<T>(
+        this.getGraphqlUrl(integration.platformStoreUrl),
+        {
+          query,
+          variables,
         },
-        ...(timeoutMs ? { timeout: timeoutMs } : {}),
-      },
-    );
-    return firstValueFrom(
-      timeoutMs ? request.pipe(timeout(timeoutMs)) : request,
-    );
+        {
+          headers: {
+            'X-Shopify-Access-Token': token,
+            'Content-Type': 'application/json',
+          },
+          ...(timeoutMs ? { timeout: timeoutMs } : {}),
+        },
+      );
+      return firstValueFrom(
+        timeoutMs ? request.pipe(timeout(timeoutMs)) : request,
+      );
+    };
+
+    try {
+      return await send(accessToken.token);
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      if (!this.credentials) throw error;
+      // A 401 is answered before Shopify runs anything, so one retry with a
+      // renewed token cannot repeat a write.
+      if (status === 401 && accessToken.kind === 'expiring') {
+        const renewed = await this.credentials.renew(
+          integration,
+          accessToken.generation,
+          true,
+        );
+        return send(renewed.token);
+      }
+      if (
+        isAxiosError(error) &&
+        isLegacyTokenRejection(status, error.response?.data)
+      ) {
+        await this.credentials.markReauthRequired(
+          integration,
+          'legacy_token_rejected',
+        );
+        throw new ShopifyReauthRequiredError(
+          integration.platformStoreUrl,
+          'legacy_token_rejected',
+        );
+      }
+      throw error;
+    }
   }
 
   private logGraphQLResponseIssues(params: {
@@ -600,9 +642,10 @@ export class ShopifyApiService {
     }
   }
 
-  private getAccessTokenOrThrow(
+  private async getAccessTokenOrThrow(
     integration: CommerceOutcomeConnection,
-  ): string {
+  ): Promise<ShopifyAccessToken> {
+    if (this.credentials) return this.credentials.getAccessToken(integration);
     if (integration.accessToken) {
       const encryptionKey = this.configService.get<string>(
         'SHOPIFY_TOKEN_ENCRYPTION_KEY',
@@ -613,7 +656,11 @@ export class ShopifyApiService {
       }
 
       try {
-        return decryptToken(integration.accessToken, encryptionKey);
+        return {
+          token: decryptToken(integration.accessToken, encryptionKey),
+          kind: 'legacy',
+          generation: 0,
+        };
       } catch {
         throw new Error(
           `Unable to decrypt the stored Shopify token for ${integration.platformStoreUrl}. Reconnect the store using the current SHOPIFY_TOKEN_ENCRYPTION_KEY.`,

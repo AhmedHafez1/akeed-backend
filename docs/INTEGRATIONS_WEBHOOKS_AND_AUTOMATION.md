@@ -716,7 +716,7 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 
 **Endpoint:** `https://{platformStoreUrl}/admin/api/{version}/graphql.json`
 
-**Authentication:** Decrypted offline access token from the integration record.
+**Authentication:** An expiring offline access token from `ShopifyCredentialService`, read from the database on every call and renewed under the shop's credential lock when it ends within 5 minutes. Stores not yet migrated use their non-expiring token. See "Expiring offline tokens" in `IDENTITY_ACCESS_AND_ORGANIZATION.md`.
 
 ### Operations
 
@@ -747,6 +747,8 @@ Cross-midnight windows are supported (e.g., 21:00–09:00).
 
 - GraphQL errors and user validation errors are logged with request IDs. Tagging errors now propagate to registry failure results while callers preserve local outcomes and best-effort semantics.
 - Access tokens are decrypted per-request using `SHOPIFY_TOKEN_ENCRYPTION_KEY`.
+- A 401 renews the token once and retries the request once; Shopify answers 401 before running anything, so the retry cannot repeat a write.
+- A refused refresh, or a 403 for a non-expiring token Shopify no longer accepts, marks the store `reauth_required` and throws `ShopifyReauthRequiredError`. Outcome tagging reports it as `credentials_rejected` with `requiresAssistance`.
 
 ## Backend Code Map
 

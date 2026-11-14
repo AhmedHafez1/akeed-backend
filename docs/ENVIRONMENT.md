@@ -74,7 +74,20 @@ npm run db:push
   - `SHOPIFY_API_VERSION` (e.g., `2026-01`)
   - `API_URL` (base URL used for OAuth callback and webhook addresses)
   - `SHOPIFY_REDIRECT_URI` (usually `${API_URL}/api/auth/shopify/callback`)
-  - `SHOPIFY_TOKEN_ENCRYPTION_KEY` (required, AES-256-GCM key used to encrypt `integrations.access_token` at rest; supported formats: 32-byte UTF-8, 64-char hex, or base64-encoded 32-byte key)
+  - `SHOPIFY_TOKEN_ENCRYPTION_KEY` (required, AES-256-GCM key used to encrypt `integrations.access_token` and the refresh token in `shopify_offline_credentials` at rest; supported formats: 32-byte UTF-8, 64-char hex, or base64-encoded 32-byte key)
+
+### Expiring offline tokens
+
+Every install asks Shopify for an expiring offline token: a 1-hour access token and a 90-day refresh token that rotates on each use. Akeed renews the access token before an Admin API call when it ends within 5 minutes. A background job (every 15 minutes) renews refresh tokens that end within 14 days. Stores installed before expiring tokens move in batches.
+
+| Variable | Use |
+| --- | --- |
+| `SHOPIFY_TOKEN_MIGRATION_ENABLED` | `true` or `false` (default). Moves installed stores still on a non-expiring token to an expiring one, a batch per run. It also lets a store move when the merchant opens Akeed. |
+| `SHOPIFY_TOKEN_MIGRATION_BATCH_SIZE` | Stores moved per run. Default `10`, at most `100`. |
+| `SHOPIFY_TOKEN_MIGRATION_SHOPS` | Optional comma-separated shop domains. When set, only these stores move (a canary). |
+| `SHOPIFY_TOKEN_REFRESH_JOB_ENABLED` | `true` (default) or `false`. Renews refresh tokens that end within 14 days, so stores that make no Admin API calls keep access. |
+
+A store whose refresh Shopify refuses is marked `reauth_required` and makes no more Admin API calls until the merchant opens Akeed, which acquires a new pair. `scripts/sql/shopify-offline-credential-status.sql` counts stores by credential state.
 
 ## Supabase Email Confirmation
 

@@ -6,6 +6,7 @@ Scripts to paste into the Supabase SQL editor. They are not migrations and nothi
 | --- | --- |
 | `delete-organization.sql` | Deletes one organization and every row linked to it. |
 | `delete-user.sql` | Deletes one user from `auth.users`, their memberships, and every organization where they are the only member. |
+| `shopify-offline-credential-status.sql` | Read-only. Counts installed Shopify stores by offline-token state while they move to expiring tokens, and lists stores that need the merchant to reopen Akeed. |
 
 ## How to run
 

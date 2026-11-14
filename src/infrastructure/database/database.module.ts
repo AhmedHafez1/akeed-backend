@@ -33,6 +33,7 @@ import { VerificationMessageDispatchesRepository } from './repositories/verifica
 import { OrderImportsRepository } from './repositories/order-imports.repository';
 import { OrderImportReleaseRepository } from './repositories/order-import-release.repository';
 import { IntegrationApiKeysRepository } from './repositories/integration-api-keys.repository';
+import { ShopifyOfflineCredentialsRepository } from './repositories/shopify-offline-credentials.repository';
 import { EasyOrdersConnectionsRepository } from './repositories/easyorders-connections.repository';
 import { WooCommerceConnectionsRepository } from './repositories/woocommerce-connections.repository';
 import { CommerceOutcomeSyncsRepository } from './repositories/commerce-outcome-syncs.repository';
@@ -83,6 +84,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     OrderImportsRepository,
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
+    ShopifyOfflineCredentialsRepository,
     EasyOrdersConnectionsRepository,
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
@@ -133,6 +135,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     OrderImportsRepository,
     OrderImportReleaseRepository,
     IntegrationApiKeysRepository,
+    ShopifyOfflineCredentialsRepository,
     EasyOrdersConnectionsRepository,
     WooCommerceConnectionsRepository,
     CommerceOutcomeSyncsRepository,
