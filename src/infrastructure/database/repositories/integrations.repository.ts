@@ -3,11 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
 import { eq, and, isNotNull, isNull, lte, sql } from 'drizzle-orm';
-import { DRIZZLE } from '../database.provider';
+import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
   adminStoreLifecycles,
   integrations,
+  shopifyOfflineCredentials,
 } from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 import { resolvePaidThroughAtUninstall } from '../../../shared/billing/paid-through.policy';
@@ -16,6 +17,8 @@ import {
   isPaidThroughLive,
   PAID_THROUGH_BILLING_STATUS,
 } from '../../../shared/utils/billing.util';
+
+type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 @Injectable()
 export class IntegrationsRepository {
@@ -121,12 +124,24 @@ export class IntegrationsRepository {
     patformType: string,
     accessToken: string,
     expiresAt?: string,
+    /** Install writes the credential row in the same transaction. */
+    tx?: Transaction,
   ) {
-    const existing = await this.findByPlatformDomain(shopDomain, patformType);
+    const db = tx ?? this.db;
+    const [existing] = await db
+      .select({ id: integrations.id, isActive: integrations.isActive })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.platformStoreUrl, shopDomain),
+          eq(integrations.platformType, patformType),
+        ),
+      )
+      .limit(1);
     const encryptedAccessToken = this.encryptAccessToken(accessToken);
 
     if (existing) {
-      const [updated] = await this.db
+      const [updated] = await db
         .update(integrations)
         .set({
           orgId,
@@ -152,7 +167,7 @@ export class IntegrationsRepository {
       return updated;
     }
 
-    const [created] = await this.db
+    const [created] = await db
       .insert(integrations)
       .values({
         orgId,
@@ -406,6 +421,11 @@ export class IntegrationsRepository {
         })
         .where(eq(integrations.id, integrationId))
         .returning();
+
+      // The access token is gone, so its refresh token goes too.
+      await tx
+        .delete(shopifyOfflineCredentials)
+        .where(eq(shopifyOfflineCredentials.integrationId, integrationId));
 
       // The plan as it was at uninstall, for admin: a reinstall or a new plan
       // later overwrites the integration's billing columns.

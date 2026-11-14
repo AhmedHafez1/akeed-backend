@@ -5532,3 +5532,87 @@ export const whatsappConnectionTemplates = pgTable(
     }),
   ],
 ).enableRLS();
+
+/**
+ * The renewal half of a Shopify offline credential; the access token stays
+ * in `integrations.access_token`. Backend-only: never selected into an API
+ * response. `generation` grows on every write so a caller holding an older
+ * access token can tell another worker already renewed it.
+ */
+export const shopifyOfflineCredentials = pgTable(
+  'shopify_offline_credentials',
+  {
+    integrationId: uuid('integration_id').primaryKey().notNull(),
+    credentialKind: text('credential_kind')
+      .$type<'legacy' | 'expiring'>()
+      .notNull(),
+    refreshToken: text('refresh_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    status: text()
+      .$type<'active' | 'reauth_required'>()
+      .notNull()
+      .default('active'),
+    generation: integer().notNull().default(0),
+    lastRefreshedAt: timestamp('last_refreshed_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    migratedAt: timestamp('migrated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastErrorCode: text('last_error_code'),
+    lastErrorAt: timestamp('last_error_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integrationId],
+      foreignColumns: [integrations.id],
+      name: 'shopify_offline_credentials_integration_id_fkey',
+    }).onDelete('cascade'),
+    check(
+      'shopify_offline_credentials_credential_kind_check',
+      sql`${table.credentialKind} IN ('legacy','expiring')`,
+    ),
+    check(
+      'shopify_offline_credentials_status_check',
+      sql`${table.status} IN ('active','reauth_required')`,
+    ),
+    check(
+      'shopify_offline_credentials_generation_check',
+      sql`${table.generation} >= 0`,
+    ),
+    check(
+      'shopify_offline_credentials_expiring_check',
+      sql`${table.credentialKind} <> 'expiring' OR (${table.refreshToken} IS NOT NULL AND ${table.accessTokenExpiresAt} IS NOT NULL AND ${table.refreshTokenExpiresAt} IS NOT NULL)`,
+    ),
+    index('shopify_offline_credentials_refresh_due_idx')
+      .on(table.refreshTokenExpiresAt)
+      .where(
+        sql`${table.credentialKind} = 'expiring' AND ${table.status} = 'active'`,
+      ),
+    pgPolicy('Service role manages shopify offline credentials', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();

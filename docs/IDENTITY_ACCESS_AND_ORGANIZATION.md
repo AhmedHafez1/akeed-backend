@@ -67,8 +67,8 @@ Merchant → GET /api/auth/shopify?shop=X
   → Redirect to Shopify OAuth consent screen
   → Shopify redirects to GET /api/auth/shopify/callback?shop=X&code=Y&state=Z&hmac=H
   → Backend verifies HMAC, verifies signed state (HMAC + 10-min TTL)
-  → Exchanges code for offline access token
-  → Persists org + integration + membership
+  → Exchanges code for an expiring offline token pair (expiring=1)
+  → Persists org + integration + refresh token + membership
   → Registers webhooks
   → Redirects to frontend
 ```
@@ -84,12 +84,22 @@ EmbeddedAuthGate (frontend)
   → Gets session token from window.shopify.idToken()
   → POST /api/auth/shopify/token-exchange { sessionToken }
   → Backend verifies JWT (HMAC-SHA256, exp, nbf, aud)
-  → If already installed → short-circuits with success
-  → Exchanges session token for offline access token (token_exchange grant type)
-  → Persists org + integration + membership
-  → Registers webhooks
+  → If already installed with a healthy credential → short-circuits with success
+  → Exchanges session token for an expiring offline pair (token_exchange grant type, expiring=1)
+  → Persists org + integration + refresh token + membership
+  → Registers webhooks (new installs only)
   → Returns { installed: true }
 ```
+
+### Expiring offline tokens
+
+Shopify offline tokens expire. Each grant returns a 1-hour access token and a 90-day refresh token, and every refresh returns a new refresh token that replaces the old one. Getting a new pair for a store retires the previous one, so every acquisition, refresh and migration for a shop runs under one Postgres advisory lock (`ShopifyOfflineCredentialsRepository.withShopLock`). The lock is held across the Shopify call, which has a 10-second timeout.
+
+- **Storage:** the access token stays encrypted in `integrations.access_token`, with its expiry in `integrations.expires_at`. The encrypted refresh token, both expiries, a `generation` counter and the migration state live in the backend-only `shopify_offline_credentials` table. A store with no row there still holds a non-expiring token.
+- **Use:** every Admin API call gets its token from `ShopifyCredentialService`. It renews the token under the lock when it ends within 5 minutes. A caller that waited for the lock and finds a newer `generation` uses the stored token instead of refreshing again. After a 401 the call renews once and retries once.
+- **Dead credential:** when Shopify refuses a refresh, or rejects a non-expiring token with 403, the store is marked `reauth_required` and makes no further Admin API calls. The next time the merchant opens Akeed, token exchange acquires a new pair. Opening Akeed also renews a pair whose refresh token ends within 7 days.
+- **Migration:** with `SHOPIFY_TOKEN_MIGRATION_ENABLED=true`, a job running every 15 minutes exchanges a batch of non-expiring tokens for expiring pairs. `SHOPIFY_TOKEN_MIGRATION_SHOPS` limits it to named shops. The old token stays stored until the new pair is committed. Shopify returns the same pair when the same token is sent again within 7 days, so a failed save is recovered on the next run. With the switch on, a store also migrates when the merchant opens Akeed.
+- **Keep-alive:** the same job renews refresh tokens that end within 14 days, so stores that make no Admin API calls do not lapse.
 
 ### Flow 3 — Shopify Session Auth (Ongoing API Access)
 
@@ -268,7 +278,7 @@ Unique constraint on `(org_id, user_id)`. RLS policies: owners have all operatio
 During Shopify install (OAuth callback or token exchange), `ShopifyAuthService.handlePersistence()`:
 
 1. Creates/updates org by slug (slug = shop domain, name = shop name without `.myshopify.com`).
-2. Upserts integration with encrypted access token.
+2. Acquires an expiring token pair and, under the shop's credential lock and in one transaction, upserts the integration with the encrypted access token and its expiry and the encrypted refresh token in `shopify_offline_credentials`.
 3. For new orgs: creates a Supabase user with email `{shop}@akeed-shopify.internal` and a random 32-char password.
 4. Creates owner membership linking the Supabase user to the org.
 
@@ -292,7 +302,7 @@ After the first confirmed Supabase session:
 
 ## Token Encryption
 
-Shopify access tokens and WhatsApp access tokens are encrypted at rest using AES-256-GCM.
+Shopify access and refresh tokens and WhatsApp access tokens are encrypted at rest using AES-256-GCM.
 
 Format: `v1:<iv>:<authTag>:<ciphertext>` (all base64url encoded).
 
@@ -463,6 +473,10 @@ Both use `fetchWithAuth()` which auto-injects the appropriate token (Shopify ses
 | Organizations repository | `infrastructure/database/repositories/organizations.repository.ts` | CRUD with slug-based upsert.                                                      |
 | Memberships repository   | `infrastructure/database/repositories/memberships.repository.ts`   | CRUD with `(org_id, user_id)` upsert.                                             |
 | Integrations repository  | `infrastructure/database/repositories/integrations.repository.ts`  | Platform domain lookup, upsert with token encryption.                             |
+| Offline credentials repository | `infrastructure/database/repositories/shopify-offline-credentials.repository.ts` | Shop credential lock, refresh token storage, migration and keep-alive queries. |
+| Shopify token client     | `infrastructure/spokes/shopify/services/shopify-token.client.ts`  | Token endpoint calls: ID-token exchange, code grant, refresh, migration.          |
+| Shopify credential service | `infrastructure/spokes/shopify/services/shopify-credential.service.ts` | Usable Admin API token per store; renews expiring tokens under the lock.      |
+| Offline credentials job  | `infrastructure/spokes/shopify/offline-credentials/`              | Batch migration from non-expiring tokens and refresh-token keep-alive.            |
 
 ## Frontend Code Map
 
@@ -589,7 +603,7 @@ All fields optional. Access token is encrypted before storage.
 - Organization creation uses slug-based upsert: re-calling with the same slug updates rather than duplicates.
 - Membership creation uses `(org_id, user_id)` upsert.
 - Integration upsert keyed on `(org_id, platform_store_url)`.
-- Token exchange short-circuits if shop is already installed.
+- Token exchange short-circuits if the shop is already installed and its credential is healthy.
 
 ### Graceful Degradation
 
@@ -633,7 +647,7 @@ npm --prefix akeed-frontend run build
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Shopify OAuth install from App Store                     | OAuth flow completes, org + integration + membership created, webhooks registered.        |
 | Token exchange from App Bridge v4 (first install)        | Offline token obtained, org persisted, `{ installed: true }` returned.                    |
-| Token exchange for already-installed shop                | Short-circuits: returns `{ installed: true }` without re-exchanging.                      |
+| Token exchange for already-installed shop                | Short-circuits: returns `{ installed: true }` without re-exchanging, unless the credential is `reauth_required`, its refresh token ends within 7 days, or migration allows a non-expiring store to move. |
 | API call with valid Shopify session token                | `DualAuthGuard` passes, `AuthenticatedUser` attached with `source: 'shopify'`.            |
 | API call with expired Shopify session token              | Frontend retries once with fresh token from `window.shopify.idToken()`.                   |
 | API call with valid Supabase JWT                         | `DualAuthGuard` passes, `AuthenticatedUser` attached with `source: 'supabase'`.           |

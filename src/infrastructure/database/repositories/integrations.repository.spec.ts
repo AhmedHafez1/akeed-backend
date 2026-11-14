@@ -1,5 +1,9 @@
 import type { ConfigService } from '@nestjs/config';
-import { adminStoreLifecycles, integrations } from '../schema';
+import {
+  adminStoreLifecycles,
+  integrations,
+  shopifyOfflineCredentials,
+} from '../schema';
 import { IntegrationsRepository } from './integrations.repository';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -38,6 +42,7 @@ describe('IntegrationsRepository installation lifecycle', () => {
           };
         },
       })),
+      delete: jest.fn(() => ({ where: () => Promise.resolve(undefined) })),
     };
     const db = {
       transaction: jest.fn((callback: (transaction: typeof tx) => unknown) =>
@@ -64,7 +69,7 @@ describe('IntegrationsRepository installation lifecycle', () => {
   const uninstallTime = '2026-11-11T16:54:00.000Z';
 
   it('commits uninstall state and lifecycle closure in one transaction', async () => {
-    const { repository, db, forUpdate, integrationSet, lifecycleSet } =
+    const { repository, db, tx, forUpdate, integrationSet, lifecycleSet } =
       setupUninstall({ ...paidPro, billingPlanId: 'starter' });
 
     const result = await repository.markShopifyUninstalled(
@@ -75,6 +80,8 @@ describe('IntegrationsRepository installation lifecycle', () => {
     expect(result).toEqual({ id: 'int-1', paidThroughAt: null });
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(forUpdate).toHaveBeenCalledWith('update');
+    // The refresh token goes with the access token.
+    expect(tx.delete).toHaveBeenCalledWith(shopifyOfflineCredentials);
     expect(integrationSet).toHaveBeenCalledWith(
       expect.objectContaining({
         isActive: false,
@@ -271,11 +278,11 @@ describe('IntegrationsRepository installation lifecycle', () => {
   function setupUpsert(existing: Record<string, unknown>) {
     const set = jest.fn<void, [Record<string, unknown>]>();
     const db = {
-      query: {
-        integrations: {
-          findFirst: jest.fn().mockResolvedValue(existing),
-        },
-      },
+      select: jest.fn(() => ({
+        from: () => ({
+          where: () => ({ limit: jest.fn().mockResolvedValue([existing]) }),
+        }),
+      })),
       update: jest.fn(() => ({
         set: (updates: Record<string, unknown>) => {
           set(updates);

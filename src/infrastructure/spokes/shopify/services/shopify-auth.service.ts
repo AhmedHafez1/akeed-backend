@@ -2,13 +2,16 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import type { AxiosError } from 'axios';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { IntegrationsRepository } from '../../../database/repositories/integrations.repository';
 import { OrganizationsRepository } from '../../../database/repositories/organizations.repository';
 import { MembershipsRepository } from '../../../database/repositories/memberships.repository';
 import { AdminStoreLifecyclesRepository } from '../../../database/repositories/admin-store-lifecycles.repository';
+import {
+  ShopifyOfflineCredentialsRepository,
+  type ShopifyCredentialState,
+} from '../../../database/repositories/shopify-offline-credentials.repository';
 import { PhoneService } from '../../../../shared/services/phone.service';
 import { followStoreTimezone } from '../../../../shared/utils/store-timezone.util';
 import {
@@ -16,6 +19,18 @@ import {
   normalizeError,
 } from '../../../../shared/logging/backend-log.util';
 import { shopifyError } from '../shopify.errors';
+import {
+  REFRESH_TOKEN_REACQUIRE_BEFORE_MS,
+  type ShopifyOfflineTokenPair,
+  ShopifyTokenRequestError,
+  ShopifyTokenResponseInvalidError,
+} from './shopify-offline-token';
+import { ShopifyTokenClient } from './shopify-token.client';
+import {
+  isShopInMigrationScope,
+  SHOPIFY_TOKEN_MIGRATION_ENABLED_KEY,
+  SHOPIFY_TOKEN_MIGRATION_SHOPS_KEY,
+} from '../offline-credentials/shopify-offline-credentials.constants';
 import {
   generateNonce,
   validateShop,
@@ -57,6 +72,8 @@ export class ShopifyAuthService {
     private readonly integrationsRepo: IntegrationsRepository,
     private readonly organizationsRepo: OrganizationsRepository,
     private readonly membershipsRepo: MembershipsRepository,
+    private readonly tokenClient: ShopifyTokenClient,
+    private readonly credentialsRepo: ShopifyOfflineCredentialsRepository,
     @Optional()
     private readonly adminLifecycles?: AdminStoreLifecyclesRepository,
     @Optional()
@@ -137,11 +154,10 @@ export class ShopifyAuthService {
     this.verifyHmac(rawQuery);
     const statePayload = this.verifyState(state, shop, host);
 
-    // Exchange code for access token
-    const accessToken = await this.exchangeCodeForToken(shop, code);
-
-    // Persist integration
-    await this.handlePersistence(shop, accessToken);
+    // Exchange the code for an expiring offline pair and store it
+    const { accessToken } = await this.handlePersistence(shop, () =>
+      this.exchangeCodeForToken(shop, code),
+    );
 
     // Register webhooks and ensure critical topics are active
     await this.registerWebhooks(shop, accessToken);
@@ -186,10 +202,16 @@ export class ShopifyAuthService {
    * sends it here. The backend:
    *   1. Verifies the JWT (signature, exp, nbf, aud).
    *   2. Extracts the shop domain from the `dest` claim.
-   *   3. If the shop is already installed → returns immediately.
+   *   3. If the shop is already installed with a healthy credential →
+   *      returns immediately.
    *   4. Otherwise exchanges the token with Shopify's OAuth endpoint using
-   *      the `urn:ietf:params:oauth:grant-type:token-exchange` grant type.
-   *   5. Persists the resulting offline access token and provisions the org.
+   *      the `urn:ietf:params:oauth:grant-type:token-exchange` grant type
+   *      for an expiring offline pair.
+   *   5. Persists the pair and, on a new install, provisions the org.
+   *
+   * An installed store whose credential is dead, ends within a week, or (once
+   * the migration switch allows it) is still non-expiring gets a new pair
+   * here: the merchant opening Akeed is what heals it.
    *
    * This avoids the full-page redirect of the legacy OAuth handshake.
    */
@@ -207,20 +229,46 @@ export class ShopifyAuthService {
       }),
     );
 
-    // Already installed — short-circuit
+    // Already installed — short-circuit unless the credential needs a new pair
     const alreadyInstalled = await this.isInstalled(shop);
     if (alreadyInstalled) {
+      const state = await this.credentialsRepo.findStateByShop(shop);
+      const reason = this.reacquireReason(shop, state);
+      if (reason) {
+        // The store is already installed, so a failed renewal must not stop
+        // the app from loading; the next open tries again.
+        try {
+          await this.handlePersistence(shop, () =>
+            this.exchangeSessionTokenForOfflineToken(shop, sessionToken),
+          );
+          this.logger.log(
+            buildBackendLog(ShopifyAuthService.name, {
+              action: 'shopify-offline-credential-reacquire',
+              outcome: 'success',
+              shopDomain: shop,
+              reason,
+            }),
+          );
+        } catch (error) {
+          this.logger.warn(
+            buildBackendLog(ShopifyAuthService.name, {
+              action: 'shopify-offline-credential-reacquire',
+              outcome: 'failure',
+              shopDomain: shop,
+              reason,
+              ...normalizeError(error),
+            }),
+          );
+        }
+      }
       return { installed: true, shop };
     }
 
-    // Exchange session token → offline access token
-    const accessToken = await this.exchangeSessionTokenForOfflineToken(
-      shop,
-      sessionToken,
+    // Exchange session token → expiring offline pair, and persist
+    // integration + organisation + user (reuses existing logic)
+    const { accessToken } = await this.handlePersistence(shop, () =>
+      this.exchangeSessionTokenForOfflineToken(shop, sessionToken),
     );
-
-    // Persist integration + organisation + user (reuses existing logic)
-    await this.handlePersistence(shop, accessToken);
 
     // Register webhooks and ensure critical topics are active
     await this.registerWebhooks(shop, accessToken);
@@ -235,6 +283,33 @@ export class ShopifyAuthService {
       }),
     );
     return { installed: true, shop };
+  }
+
+  /** Why an installed store gets a new pair on open, or undefined. */
+  private reacquireReason(
+    shop: string,
+    state: ShopifyCredentialState | undefined,
+    now: Date = new Date(),
+  ): string | undefined {
+    if (!state) return undefined;
+    if (state.status === 'reauth_required') return 'reauth_required';
+    if (state.credentialKind === 'legacy')
+      return isShopInMigrationScope(
+        shop,
+        this.configService.get<string>(SHOPIFY_TOKEN_MIGRATION_ENABLED_KEY),
+        this.configService.get<string>(SHOPIFY_TOKEN_MIGRATION_SHOPS_KEY),
+      )
+        ? 'legacy_token'
+        : undefined;
+    const refreshEndsAt = state.refreshTokenExpiresAt
+      ? Date.parse(state.refreshTokenExpiresAt)
+      : NaN;
+    if (
+      !Number.isFinite(refreshEndsAt) ||
+      refreshEndsAt - now.getTime() < REFRESH_TOKEN_REACQUIRE_BEFORE_MS
+    )
+      return 'refresh_token_ending';
+    return undefined;
   }
 
   private async recordInstallation(shop: string): Promise<void> {
@@ -522,64 +597,26 @@ export class ShopifyAuthService {
   }
 
   /**
-   * Exchange a session token for an offline access token via Shopify's
-   * token-exchange grant type.
-   *
-   * POST https://{shop}/admin/oauth/access_token
-   *   grant_type              = urn:ietf:params:oauth:grant-type:token-exchange
-   *   subject_token           = <session_token>
-   *   subject_token_type      = urn:ietf:params:oauth:token-type:id_token
-   *   requested_token_type    = urn:shopify:params:oauth:token-type:offline-access-token
-   *   client_id               = <api_key>
-   *   client_secret           = <api_secret>
+   * Exchange a session token for an expiring offline pair via Shopify's
+   * token-exchange grant type (`expiring=1`).
    */
   private async exchangeSessionTokenForOfflineToken(
     shop: string,
     sessionToken: string,
-  ): Promise<string> {
-    const url = `https://${shop}/admin/oauth/access_token`;
-    const clientId = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
-    const clientSecret =
-      this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-
+  ): Promise<ShopifyOfflineTokenPair> {
     try {
-      const { data } = await firstValueFrom(
-        this.httpService.post<{ access_token: string; scope: string }>(url, {
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-          subject_token: sessionToken,
-          subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-          requested_token_type:
-            'urn:shopify:params:oauth:token-type:offline-access-token',
-        }),
-      );
-
+      const pair = await this.tokenClient.exchangeIdToken(shop, sessionToken);
       this.logger.log(
         buildBackendLog(ShopifyAuthService.name, {
           action: 'shopify-offline-token-exchange',
           outcome: 'success',
           shopDomain: shop,
-          scopes: data.scope,
+          scopes: pair.scope,
         }),
       );
-      return data.access_token;
+      return pair;
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<unknown>;
-      const status = axiosError.response?.status;
-      const errData = axiosError.response?.data;
-
-      this.logger.error(
-        buildBackendLog(ShopifyAuthService.name, {
-          action: 'shopify-offline-token-exchange',
-          outcome: 'failure',
-          shopDomain: shop,
-          httpStatus: status,
-          details: errData ? JSON.stringify(errData) : axiosError.message,
-          ...normalizeError(error),
-        }),
-      );
-
+      this.logTokenFailure('shopify-offline-token-exchange', shop, error);
       throw shopifyError(
         'SHOPIFY_TOKEN_EXCHANGE_FAILED',
         'Failed to exchange session token for access token',
@@ -590,30 +627,11 @@ export class ShopifyAuthService {
   private async exchangeCodeForToken(
     shop: string,
     code: string,
-  ): Promise<string> {
-    const url = `https://${shop}/admin/oauth/access_token`;
-    const clientId = this.configService.getOrThrow<string>('SHOPIFY_API_KEY');
-    const clientSecret =
-      this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
-
+  ): Promise<ShopifyOfflineTokenPair> {
     try {
-      const { data } = await firstValueFrom(
-        this.httpService.post<{ access_token: string }>(url, {
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-        }),
-      );
-      return data.access_token;
+      return await this.tokenClient.exchangeCode(shop, code);
     } catch (error: unknown) {
-      this.logger.error(
-        buildBackendLog(ShopifyAuthService.name, {
-          action: 'shopify-auth-code-exchange',
-          outcome: 'failure',
-          shopDomain: shop,
-          ...normalizeError(error),
-        }),
-      );
+      this.logTokenFailure('shopify-auth-code-exchange', shop, error);
       throw shopifyError(
         'SHOPIFY_TOKEN_EXCHANGE_FAILED',
         'Failed to exchange authorization code',
@@ -621,7 +639,34 @@ export class ShopifyAuthService {
     }
   }
 
-  private async handlePersistence(shop: string, accessToken: string) {
+  private logTokenFailure(action: string, shop: string, error: unknown) {
+    this.logger.error(
+      buildBackendLog(ShopifyAuthService.name, {
+        action,
+        outcome: 'failure',
+        shopDomain: shop,
+        ...(error instanceof ShopifyTokenRequestError
+          ? {
+              errorCode: `token_${error.kind}`,
+              httpStatus: error.httpStatus,
+              providerError: error.providerError,
+            }
+          : error instanceof ShopifyTokenResponseInvalidError
+            ? { errorCode: 'token_response_invalid', field: error.field }
+            : normalizeError(error)),
+      }),
+    );
+  }
+
+  /**
+   * Acquires a pair with `acquire` and stores it with the integration, both
+   * under the shop's credential lock: a new pair retires the old one, so no
+   * refresh may run in between.
+   */
+  private async handlePersistence(
+    shop: string,
+    acquire: () => Promise<ShopifyOfflineTokenPair>,
+  ): Promise<ShopifyOfflineTokenPair> {
     const existingIntegration =
       await this.integrationsRepo.findByPlatformDomain(shop, 'shopify');
 
@@ -639,12 +684,24 @@ export class ShopifyAuthService {
       orgId = org.id;
     }
 
-    await this.integrationsRepo.upsertShopifyIntegration(
-      orgId,
-      shop,
-      'shopify',
-      accessToken,
-    );
+    const pair = await this.credentialsRepo.withShopLock(shop, async (tx) => {
+      const acquired = await acquire();
+      const integration = await this.integrationsRepo.upsertShopifyIntegration(
+        orgId,
+        shop,
+        'shopify',
+        acquired.accessToken,
+        acquired.accessTokenExpiresAt,
+        tx,
+      );
+      await this.credentialsRepo.upsertExpiringCredential(
+        tx,
+        integration.id,
+        acquired,
+        'acquired',
+      );
+      return acquired;
+    });
 
     // Existing integrations can outlive their organization membership after
     // an interrupted install. Repair that state during every install flow.
@@ -680,6 +737,7 @@ export class ShopifyAuthService {
         // This can be retried later or handled manually
       }
     }
+    return pair;
   }
 
   private async createOrGetUser(shop: string): Promise<{ id: string }> {

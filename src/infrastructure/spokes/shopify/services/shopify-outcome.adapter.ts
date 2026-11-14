@@ -14,6 +14,10 @@ import {
   ShopifyGraphqlError,
   type ShopifyOrderCancellationState,
 } from './shopify-api.service.helpers';
+import {
+  ShopifyReauthRequiredError,
+  ShopifyTokenRequestError,
+} from './shopify-offline-token';
 
 /** The tag each tagging outcome adds to the Shopify order. */
 const OUTCOME_TAGS = {
@@ -49,6 +53,16 @@ function retryAfterMs(header: unknown): number | undefined {
 export function classifyShopifyWriteError(
   error: unknown,
 ): CommerceOutcomeOperationResult | null {
+  if (error instanceof ShopifyReauthRequiredError)
+    return {
+      status: 'permanent_failure',
+      errorCode: 'credentials_rejected',
+      requiresAssistance: true,
+    };
+  if (error instanceof ShopifyTokenRequestError)
+    return error.kind === 'transient'
+      ? { status: 'retryable_failure', errorCode: 'source_unavailable' }
+      : null;
   if (error instanceof ShopifyGraphqlError) {
     return error.kind === 'user'
       ? { status: 'permanent_failure', errorCode: 'remote_rejected' }

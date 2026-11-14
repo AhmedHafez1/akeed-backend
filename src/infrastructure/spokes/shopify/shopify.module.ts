@@ -21,6 +21,10 @@ import { SHOPIFY_UNINSTALL_RETENTION_QUEUE } from './uninstall-retention/shopify
 import { ShopifyUninstallRetentionProcessor } from './uninstall-retention/shopify-uninstall-retention.processor';
 import { ShopifyUninstallRetentionScheduler } from './uninstall-retention/shopify-uninstall-retention.scheduler';
 import { ShopifyUninstallRetentionService } from './uninstall-retention/shopify-uninstall-retention.service';
+import { SHOPIFY_OFFLINE_CREDENTIALS_QUEUE } from './offline-credentials/shopify-offline-credentials.constants';
+import { ShopifyOfflineCredentialsProcessor } from './offline-credentials/shopify-offline-credentials.processor';
+import { ShopifyOfflineCredentialsScheduler } from './offline-credentials/shopify-offline-credentials.scheduler';
+import { ShopifyOfflineCredentialsService } from './offline-credentials/shopify-offline-credentials.service';
 
 @Module({
   imports: [
@@ -31,6 +35,7 @@ import { ShopifyUninstallRetentionService } from './uninstall-retention/shopify-
     ConfigModule,
     BullModule.registerQueue({ name: SHOPIFY_SUBSCRIPTION_SYNC_QUEUE }),
     BullModule.registerQueue({ name: SHOPIFY_UNINSTALL_RETENTION_QUEUE }),
+    BullModule.registerQueue({ name: SHOPIFY_OFFLINE_CREDENTIALS_QUEUE }),
   ],
   controllers: [ShopifyController, ShopifyAuthController],
   providers: [
@@ -46,6 +51,9 @@ import { ShopifyUninstallRetentionService } from './uninstall-retention/shopify-
     ShopifyUninstallRetentionService,
     ShopifyUninstallRetentionProcessor,
     ShopifyUninstallRetentionScheduler,
+    ShopifyOfflineCredentialsService,
+    ShopifyOfflineCredentialsProcessor,
+    ShopifyOfflineCredentialsScheduler,
   ],
   exports: [ShopifyCommerceModule, ShopifyAuthService],
 })
