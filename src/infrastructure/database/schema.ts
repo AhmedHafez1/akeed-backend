@@ -106,7 +106,7 @@ export const verificationDispatchState = pgEnum('verification_dispatch_state', [
 
 export const integrationDefaultLanguage = pgEnum(
   'integration_default_language',
-  ['en', 'ar', 'auto', 'ur', 'es', 'fr', 'tr'],
+  ['en', 'ar', 'auto', 'ur', 'es', 'fr', 'tr', 'storefront'],
 );
 
 export const integrationOnboardingStatus = pgEnum(
@@ -1050,6 +1050,9 @@ export const orders = pgTable(
     shippingAddress: text('shipping_address'),
     // The country of the customer's phone (migration 0072), set at ingest.
     customerCountry: varchar('customer_country', { length: 2 }),
+    // The language tag the order was placed in (migration 0100), as the store
+    // sent it. NULL for a source that does not send one.
+    customerLanguage: varchar('customer_language', { length: 35 }),
     isTest: boolean('is_test').default(false).notNull(),
     createdAt: timestamp('created_at', {
       withTimezone: true,
@@ -1090,6 +1093,10 @@ export const orders = pgTable(
     check(
       'orders_customer_country_check',
       sql`customer_country ~ '^[A-Z]{2}$'`,
+    ),
+    check(
+      'orders_customer_language_check',
+      sql`customer_language ~ '^[a-z]{2,3}([-_][a-z0-9]{1,8})*$'`,
     ),
     foreignKey({
       columns: [table.integrationId, table.orgId],

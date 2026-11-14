@@ -264,6 +264,11 @@ Unique constraint on `(platform, idempotency_key)` for deduplication.
 2. If `auto`, detect from the customer phone number's country code:
    - Pakistan (`+92`) gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France (`+33`) gets French, Türkiye (`+90`) gets Turkish, but only while that language is **live**: it has an active default template that may be sent.
    - Otherwise an Arabic country code gets Arabic and everything else gets English. A number from Pakistan, Spain, France or Türkiye therefore keeps getting English until its language is live.
+3. If `storefront`, follow the language the customer shopped in (`orders.customer_language`, read from the primary subtag, so `fr-CA` is French):
+   - One of the six message languages is used while it is live (Arabic and English always are).
+   - Any other language gets English.
+   - An order with no language, or whose language is not live, falls back to the `auto` rule above.
+   - Only Shopify sends the language today (the order's `customer_locale`, the storefront language at checkout). Manual, imported, API, EasyOrders and WooCommerce orders carry none, so they follow `auto`.
 
 Arabic country codes: `+966` (SA), `+971` (UAE), `+973` (BH), `+20` (EG), `+212` (MA), and others. The lists are in `src/shared/messaging/template-language.ts`. Countries with several languages (the United States, Canada, Belgium, Switzerland) are not mapped.
 

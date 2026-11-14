@@ -522,6 +522,7 @@ export class VerificationSendService {
       : selectTemplateForSend(await this.templateRegistry.listTemplates(), {
           preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
           phoneNumber: order.customerPhone,
+          orderLanguage: order.customerLanguage,
           ...storeTemplateKeys(integration),
           guardrail: {
             enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,

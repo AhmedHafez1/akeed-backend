@@ -51,7 +51,7 @@ Recipients are organizations with an active store (`integrations.is_active = tru
 | Store country | `integrations.country_code` | Known only for Shopify stores, from the Shopify billing address. A store with no country never matches. Country is not a language preference. |
 | Platform | `integrations.platform_type` | `shopify`, `standalone`, `easyorders`, `woocommerce`. |
 | Signup date | `organizations.created_at` | Whole UTC days, both ends included. A missing date never matches. |
-| WhatsApp message language | `integrations.default_language` | `ar`, `en`, `ur`, `es`, `fr`, `tr` or `auto`. This is not the dashboard language. |
+| WhatsApp message language | `integrations.default_language` | `ar`, `en`, `ur`, `es`, `fr`, `tr`, `auto` or `storefront`. This is not the dashboard language. |
 | Current plan | `integrations.billing_plan_id` with `billing_status` | Starter, Basic, Pro or Scale count only for Shopify stores whose billing status is `active` or `not_required`. "Prepaid credits" means a standalone, EasyOrders or WooCommerce source. |
 | Features | `auto_cancel_enabled`, `quiet_hours_enabled`, `follow_up_enabled`, `escalation_enabled`, `is_auto_verify_enabled`, `logo_header_enabled` | Each can be required on or off. A missing value matches neither. The logo header filter reads the staff switch, not whether the banner actually shows. |
 

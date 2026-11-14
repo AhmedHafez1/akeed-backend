@@ -20,6 +20,7 @@ import {
 import {
   matchCountryLanguage,
   resolveTemplateLanguageForPhone,
+  normalizeOrderLanguageTag,
 } from './template-language';
 import { EXPECTED_CATEGORY_BY_PURPOSE } from './template-provider.types';
 import {
@@ -160,6 +161,52 @@ describe('resolveTemplateLanguageForPhone', () => {
       ).toBe('en');
     }
     expect(resolveTemplateLanguageForPhone('auto', EGYPT_PHONE)).toBe('ar');
+  });
+});
+
+describe('the store-language setting', () => {
+  const TUNISIA_PHONE = '+21626000000';
+  const everyLanguageLive = () => true;
+  const resolve = (
+    orderLanguage: string | null | undefined,
+    phone = TUNISIA_PHONE,
+    isLive: ((language: string) => boolean) | undefined = everyLanguageLive,
+  ) =>
+    resolveTemplateLanguageForPhone('storefront', phone, isLive, orderLanguage);
+
+  it('sends the language the customer shopped in', () => {
+    expect(resolve('fr')).toBe('fr');
+    expect(resolve('fr-ca')).toBe('fr');
+    expect(resolve('en-us')).toBe('en');
+    expect(resolve('ar')).toBe('ar');
+    expect(resolve('tr')).toBe('tr');
+  });
+
+  it('sends English for a language Akeed does not write in', () => {
+    expect(resolve('de')).toBe('en');
+    expect(resolve('pt-br')).toBe('en');
+  });
+
+  it('follows the number when the order carries no language', () => {
+    expect(resolve(null)).toBe('ar');
+    expect(resolve(undefined, US_PHONE)).toBe('en');
+    expect(resolve('', FRANCE_PHONE)).toBe('fr');
+  });
+
+  it('follows the number when the shopped language is not live', () => {
+    expect(resolve('fr', TUNISIA_PHONE, () => false)).toBe('ar');
+    expect(
+      resolveTemplateLanguageForPhone('storefront', US_PHONE, undefined, 'es'),
+    ).toBe('en');
+  });
+
+  it('keeps a language tag only when it is shaped like one', () => {
+    expect(normalizeOrderLanguageTag(' FR-ca ')).toBe('fr-ca');
+    expect(normalizeOrderLanguageTag('pt_BR')).toBe('pt_br');
+    expect(normalizeOrderLanguageTag('')).toBeNull();
+    expect(normalizeOrderLanguageTag('<script>')).toBeNull();
+    expect(normalizeOrderLanguageTag(42)).toBeNull();
+    expect(normalizeOrderLanguageTag('en-' + 'x'.repeat(40))).toBeNull();
   });
 });
 

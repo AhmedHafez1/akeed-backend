@@ -55,7 +55,7 @@ export function templateHealthSql(store: SQL = sql`i`): {
     const defaultUnhealthy = row(sql`t.is_default AND NOT ${healthy}`);
     const preference = sql`COALESCE(${store}.default_language::text, 'auto')`;
     const sends = TEMPLATE_LANGUAGE_DEFINITIONS[language].required
-      ? sql`${preference} IN ('auto', ${language})`
+      ? sql`${preference} IN ('auto', 'storefront', ${language})`
       : sql`${preference} = ${language}`;
     return {
       unavailable: sql`(${sends} AND NOT ${selectionSendable} AND NOT ${defaultSendable})`,

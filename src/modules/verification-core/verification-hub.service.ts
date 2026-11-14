@@ -891,6 +891,7 @@ export class VerificationHubService {
       lineItems: orderData.lineItems?.length ? orderData.lineItems : null,
       shippingRegion: orderData.shippingRegion || null,
       shippingAddress: orderData.shippingAddress || null,
+      customerLanguage: orderData.customerLanguage || null,
       isTest: isSyntheticTestOrderId(orderData.externalOrderId),
     };
   }

@@ -342,7 +342,8 @@ export function toSelectedTemplate(
  * records the same values the message is built from.
  *
  * The store's forced language wins; `auto` follows the number, and a missing
- * number is read like a local number without a country code.
+ * number is read like a local number without a country code. `storefront`
+ * follows `orderLanguage`, the language the order was placed in.
  *
  * `keys` and `reminderKeys` carry the store's choice per language. The
  * Arabic and English parameters are the same values under their older names;
@@ -353,6 +354,8 @@ export function selectTemplateForSend(
   params: {
     preferredLanguage?: string | null;
     phoneNumber: string | null | undefined;
+    /** The language tag the order was placed in, when the store sent one. */
+    orderLanguage?: string | null;
     keys?: Partial<Record<TemplateLanguage, string | null>>;
     reminderKeys?: Partial<Record<TemplateLanguage, string | null>>;
     arKey?: string | null;
@@ -415,6 +418,7 @@ function selectStoredTemplate(
     params.phoneNumber ?? '',
     (candidate: CountryTemplateLanguage) =>
       isLiveLanguage(templates, candidate, params.guardrail),
+    params.orderLanguage,
   );
   const autoStyle =
     language === 'ar' &&

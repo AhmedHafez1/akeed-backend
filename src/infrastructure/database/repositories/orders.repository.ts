@@ -695,6 +695,7 @@ export class OrdersRepository {
             lineItems: null,
             shippingRegion: null,
             shippingAddress: null,
+            customerLanguage: null,
             updatedAt: now,
           })
           .where(inArray(orders.id, orderIds));

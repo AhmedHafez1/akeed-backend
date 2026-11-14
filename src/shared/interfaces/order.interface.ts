@@ -40,6 +40,12 @@ export interface NormalizedOrder {
   shippingRegion?: string;
   /** The street address of the delivery. */
   shippingAddress?: string;
+  /**
+   * The language tag the customer shopped in (`fr`, `en-us`), already
+   * checked with `normalizeOrderLanguageTag`. Omitted by a source that does
+   * not send one.
+   */
+  customerLanguage?: string;
   /** Opaque provider payload. Platform-specific code owns its interpretation. */
   rawPayload?: Record<string, unknown>;
 }

@@ -236,6 +236,8 @@ export class CustomerReplyFollowUpService {
       resolveTemplateLanguageForPhone(
         integration?.defaultLanguage,
         order.customerPhone ?? '',
+        undefined,
+        order.customerLanguage,
       );
     const style = acknowledgmentStyle(sent?.variantKey);
 
