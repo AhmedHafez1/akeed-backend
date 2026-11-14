@@ -41,6 +41,7 @@ export const ONBOARDING_LANGUAGES = [
   'es',
   'fr',
   'tr',
+  'storefront',
 ] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
 /** The canonical order currency list; defined once in the shared rules. */

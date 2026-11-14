@@ -125,8 +125,11 @@ export class ChangeRequestTemplatesService {
   ): Promise<ChangeRequestReadiness> {
     const templates = await this.registry.listTemplates();
     // Representatives cover every branch of the existing automatic language/dialect selectors.
+    // The store-language setting falls back to the automatic rule, so it
+    // needs the same numbers.
     const phones =
-      integration.defaultLanguage === 'auto'
+      integration.defaultLanguage === 'auto' ||
+      integration.defaultLanguage === 'storefront'
         ? [
             '+201000000001',
             '+966500000001',

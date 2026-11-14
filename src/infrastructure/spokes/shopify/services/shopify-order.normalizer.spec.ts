@@ -95,6 +95,18 @@ describe('ShopifyOrderNormalizer compatibility', () => {
     });
   });
 
+  it('keeps the storefront language the customer checked out in', () => {
+    expect(normalize({ customer_locale: 'fr-FR' })?.customerLanguage).toBe(
+      'fr-fr',
+    );
+    expect(normalize({ customer_locale: null })).not.toHaveProperty(
+      'customerLanguage',
+    );
+    expect(normalize({ customer_locale: 'not a tag' })).not.toHaveProperty(
+      'customerLanguage',
+    );
+  });
+
   it('leaves the details out when Shopify delivers none', () => {
     const order = normalize({ shipping_address: { phone: '+201001234567' } });
 

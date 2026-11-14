@@ -52,6 +52,7 @@ export const TIPS_AUDIENCE_MESSAGE_LANGUAGES = [
   'fr',
   'tr',
   'auto',
+  'storefront',
 ] as const;
 export type TipsAudienceMessageLanguage =
   (typeof TIPS_AUDIENCE_MESSAGE_LANGUAGES)[number];

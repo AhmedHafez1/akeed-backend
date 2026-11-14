@@ -708,6 +708,13 @@
       "when": 1795478400000,
       "tag": "0099_admin_store_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795564800000,
+      "tag": "0100_order_customer_language",
+      "breakpoints": true
     }
   ]
 }

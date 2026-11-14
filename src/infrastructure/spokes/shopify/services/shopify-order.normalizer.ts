@@ -8,6 +8,7 @@ import { WebhookOrderNormalizer } from '../../../../modules/webhook-queue/interf
 import { PhoneService } from '../../../../shared/services/phone.service';
 import type { PlatformType } from '../../../../shared/interfaces/commerce-source.interface';
 import { toOrderLineItems } from '../../../../shared/commerce/order-line-items';
+import { normalizeOrderLanguageTag } from '../../../../shared/messaging/template-language';
 import {
   appendPaymentSignal,
   classifyCodStatus,
@@ -70,6 +71,8 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
     const paymentMethod = this.resolvePaymentMethod(payload);
     const paymentSignals = this.collectPaymentSignals(payload, paymentMethod);
     const lineItems = this.resolveLineItems(payload);
+    // The storefront language the customer checked out in.
+    const customerLanguage = normalizeOrderLanguageTag(payload.customer_locale);
 
     return {
       orgId,
@@ -89,6 +92,7 @@ export class ShopifyOrderNormalizer implements WebhookOrderNormalizer {
         : classifyCodStatus(paymentSignals),
       ...(lineItems.length ? { lineItems } : {}),
       ...this.resolveShipping(payload),
+      ...(customerLanguage ? { customerLanguage } : {}),
       rawPayload,
     };
   }
@@ -213,6 +217,7 @@ interface ShopifyRawOrder {
   } | null>;
   total_price?: string;
   currency?: string;
+  customer_locale?: string | null;
   gateway?: string;
   payment_gateway_names?: string[];
   financial_status?: string;
