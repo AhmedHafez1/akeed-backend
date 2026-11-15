@@ -82,14 +82,8 @@ export class ShopifyAuthService {
 
   async isInstalled(shop: string): Promise<boolean> {
     this.assertValidShop(shop);
-    const integration = await this.integrationsRepo.findByPlatformDomain(
-      shop,
-      'shopify',
-    );
-    if (!integration?.isActive) return false;
-
-    const memberships = await this.membershipsRepo.findByOrg(integration.orgId);
-    return memberships.length > 0;
+    const state = await this.credentialsRepo.findInstallStateByShop(shop);
+    return state?.installed === true;
   }
 
   install(shop: string, host?: string): string {
@@ -229,11 +223,12 @@ export class ShopifyAuthService {
       }),
     );
 
-    // Already installed — short-circuit unless the credential needs a new pair
-    const alreadyInstalled = await this.isInstalled(shop);
-    if (alreadyInstalled) {
-      const state = await this.credentialsRepo.findStateByShop(shop);
-      const reason = this.reacquireReason(shop, state);
+    // Already installed — short-circuit unless the credential needs a new
+    // pair. Install status and credential come from one read.
+    const installState =
+      await this.credentialsRepo.findInstallStateByShop(shop);
+    if (installState?.installed) {
+      const reason = this.reacquireReason(shop, installState.credential);
       if (reason) {
         // The store is already installed, so a failed renewal must not stop
         // the app from loading; the next open tries again.

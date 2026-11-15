@@ -6,6 +6,10 @@ import {
 import type { Reflector } from '@nestjs/core';
 import { DualAuthGuard } from './dual-auth.guard';
 import type { TokenValidatorService } from '../services/token-validator.service';
+import {
+  createRequestContext,
+  runRequestContext,
+} from '../../../shared/request-context/request-context';
 
 function createContext() {
   const request = {
@@ -62,5 +66,33 @@ describe('DualAuthGuard', () => {
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('records auth time on the active request context', async () => {
+    const user = {
+      userId: 'user-1',
+      orgId: 'org-1',
+      role: 'owner',
+      source: 'shopify',
+      shop: 'synthetic.myshopify.com',
+    };
+    const tokenValidator = {
+      validateToken: jest.fn().mockResolvedValue(user),
+    };
+    const reflector = {
+      getAllAndOverride: jest.fn().mockReturnValue(false),
+    };
+    const guard = new DualAuthGuard(
+      tokenValidator as unknown as TokenValidatorService,
+      reflector as unknown as Reflector,
+    );
+    const { context, request } = createContext();
+    const requestContext = createRequestContext('request-1');
+
+    await expect(
+      runRequestContext(requestContext, () => guard.canActivate(context)),
+    ).resolves.toBe(true);
+    expect((request as { user?: unknown }).user).toEqual(user);
+    expect(requestContext.authMs).toEqual(expect.any(Number));
   });
 });

@@ -145,6 +145,28 @@ describe('request-scoped readiness reads', () => {
     expect(maximum).toBe(4);
   });
 
+  it('starts the persisted catalog read with the registry list, before any sender resolves', async () => {
+    const f = setup();
+    const release: (() => void)[] = [];
+    f.senders.resolve.mockImplementation(
+      () =>
+        new Promise<ResolvedSender>((resolve) =>
+          release.push(() => resolve(FEATURE_OFF_SENDER)),
+        ),
+    );
+    const result = f.service.readiness(f.integration());
+    await flush();
+    expect(f.persisted.findAll).toHaveBeenCalledTimes(1);
+    expect(f.persisted.findImageTwins).not.toHaveBeenCalled();
+    expect(f.senders.resolve).toHaveBeenCalledTimes(4);
+    release.splice(0).forEach((resolve) => resolve());
+    await flush();
+    release.splice(0).forEach((resolve) => resolve());
+    expect((await result).ready).toBe(true);
+    expect(f.persisted.findAll).toHaveBeenCalledTimes(1);
+    expect(f.persisted.findImageTwins).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retain a failed catalog promise for the next evaluation', async () => {
     const f = setup();
     f.persisted.findAll.mockRejectedValueOnce(

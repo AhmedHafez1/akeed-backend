@@ -8,6 +8,7 @@ import { UsageAccountingRouter } from './repositories/usage-accounting.router';
 import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DRIZZLE, drizzleProvider, type DrizzleDB } from './database.provider';
+import { DatabaseLatencyProbe } from './database-latency-probe';
 import { CreditAccountingRepository } from './repositories/credit-accounting.repository';
 import { PaymentPurchasesRepository } from './repositories/payment-purchases.repository';
 
@@ -62,6 +63,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     UsageAccountingRouter,
     PaymentPurchasesRepository,
     drizzleProvider,
+    DatabaseLatencyProbe,
     OrdersRepository,
     VerificationsRepository,
     VerificationAutoCancellationsRepository,

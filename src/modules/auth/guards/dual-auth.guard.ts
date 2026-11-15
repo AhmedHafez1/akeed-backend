@@ -15,6 +15,7 @@ import {
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
 import type { OrganizationRole } from '../organization-role';
+import { currentRequestContext } from '../../../shared/request-context/request-context';
 
 /**
  * Dual Authentication Guard
@@ -107,6 +108,8 @@ export class DualAuthGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
+    const requestContext = currentRequestContext();
+    const validationStartedAt = Date.now();
     try {
       // Validate token and get user context
       const user = await this.tokenValidator.validateToken(token, {
@@ -143,6 +146,9 @@ export class DualAuthGuard implements CanActivate {
       }
 
       throw new UnauthorizedException('Invalid or expired token');
+    } finally {
+      if (requestContext)
+        requestContext.authMs = Date.now() - validationStartedAt;
     }
   }
 

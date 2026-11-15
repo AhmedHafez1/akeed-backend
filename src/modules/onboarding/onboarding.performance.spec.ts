@@ -49,6 +49,7 @@ describe('onboarding state latency', () => {
       findLatestOrderCurrency: read('EGP'),
     };
     const entitlement = {
+      beginReads: jest.fn(),
       readEntitlement: read({
         includedLimit: 100,
         consumedCount: 25,
@@ -111,6 +112,82 @@ describe('onboarding state latency', () => {
     expect(logs).toContain('onboarding-state-read');
     expect(logs).toContain('changeRequestReadinessMs');
     expect(logs).not.toMatch(/org-a|user-a|synthetic.myshopify.com/);
+  });
+
+  it('shares one entitlement read set between the usage card and sending availability', async () => {
+    const integration = {
+      id: 'integration-a',
+      orgId: 'org-a',
+      platformType: 'shopify',
+      onboardingStatus: 'completed',
+      billingPlanId: 'basic',
+      billingStatus: 'active',
+      isActive: true,
+      isAutoVerifyEnabled: true,
+    };
+    const reads = { source: jest.fn(), usage: jest.fn(), sender: jest.fn() };
+    const entitlement = {
+      beginReads: jest.fn().mockReturnValue(reads),
+      readEntitlement: jest.fn().mockResolvedValue({
+        includedLimit: 100,
+        consumedCount: 25,
+        periodStart: '2026-11-01',
+        periodEnd: null,
+        pools: null,
+      }),
+      evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
+    };
+    const sending = {
+      read: jest.fn().mockResolvedValue({ available: true, reason: null }),
+    };
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const service = new OnboardingService(
+      {
+        resolveCurrentIntegration: jest.fn().mockResolvedValue(integration),
+        prefillStoreNameIfMissing: jest.fn().mockResolvedValue(integration),
+        toState: jest.fn().mockReturnValue({
+          isOnboardingComplete: true,
+          shippingCurrency: 'USD',
+        }),
+      } as never,
+      {} as never,
+      entitlement as never,
+      { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      seededTemplateRegistry(),
+      {
+        findCurrent: jest.fn().mockResolvedValue({
+          setupCompletedAt: null,
+          firstRealConfirmedAt: null,
+        }),
+      } as never,
+      undefined,
+      {
+        hasRealOrders: jest.fn().mockResolvedValue(true),
+        findLatestOrderCurrency: jest.fn().mockResolvedValue('EGP'),
+      } as never,
+      { describe: jest.fn().mockResolvedValue(null) } as never,
+      undefined,
+      undefined,
+      undefined,
+      sending as never,
+    );
+    await service.getState({
+      userId: 'user-a',
+      orgId: 'org-a',
+      source: 'shopify',
+      shop: 'synthetic.myshopify.com',
+      role: 'owner',
+    });
+    expect(entitlement.beginReads).toHaveBeenCalledTimes(1);
+    expect(entitlement.beginReads).toHaveBeenCalledWith(
+      integration,
+      integration,
+    );
+    expect(entitlement.readEntitlement).toHaveBeenCalledWith(
+      integration,
+      reads,
+    );
+    expect(sending.read).toHaveBeenCalledWith(integration, reads);
   });
 
   it('logs failure timing without hiding dependency errors or their status', async () => {

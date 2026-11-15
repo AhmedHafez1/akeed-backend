@@ -394,6 +394,7 @@ beforeAll(async () => {
   service = new VerificationsService(
     repository,
     {
+      beginReads: jest.fn(),
       readEntitlement: jest.fn().mockResolvedValue({
         consumedCount: 27,
         includedLimit: 30,
@@ -1073,6 +1074,7 @@ sqlBenchmark(
       new Service(
         repository,
         {
+          beginReads: () => undefined as never,
           readEntitlement: () =>
             Promise.resolve({
               consumedCount: 27,

@@ -16,6 +16,12 @@ import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dis
 import { WebhookJobType } from '../src/modules/webhook-queue/webhook-queue.constants';
 import { shopifyOrderFixture } from '../src/infrastructure/spokes/shopify/services/fixtures/shopify-order.fixture';
 import { ConfigService } from '@nestjs/config';
+import { IntegrationsRepository } from '../src/infrastructure/database/repositories/integrations.repository';
+import { instrumentPostgresClient } from '../src/infrastructure/database/query-instrumentation';
+import {
+  createRequestContext,
+  runRequestContext,
+} from '../src/shared/request-context/request-context';
 
 function testDatabaseUrl(): string {
   const value = process.env.E01_TEST_DATABASE_URL;
@@ -784,5 +790,134 @@ describe('Shopify isolated PostgreSQL contract', () => {
         webhookEvents: 0,
       });
     });
+  });
+});
+
+describe('Shopify auth joined access contract', () => {
+  const authNamespace = `shopify_auth_${randomUUID().replaceAll('-', '')}`;
+  const authClient = postgres(databaseUrl, {
+    max: 2,
+    prepare: false,
+    connect_timeout: 5,
+    onnotice: () => undefined,
+    connection: { search_path: `${authNamespace},public` },
+  });
+  const authDb = drizzle(instrumentPostgresClient(authClient), { schema });
+  const access = new IntegrationsRepository(
+    authDb as never,
+    new ConfigService(),
+  );
+  const orgId = randomUUID();
+  const foreignOrg = randomUUID();
+  const shop = 'auth-synthetic.myshopify.com';
+  let created = false;
+  beforeAll(async () => {
+    await authClient`CREATE SCHEMA ${authClient(authNamespace)}`;
+    created = true;
+    await authClient.unsafe(
+      `CREATE FUNCTION "${authNamespace}".uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'`,
+    );
+    for (const table of [schema.integrations, schema.memberships]) {
+      const definition = getTableConfig(table);
+      const dialect = new PgDialect();
+      const columns = definition.columns.map((column) => {
+        let result = `"${column.name}" ${column.getSQLType()}`;
+        if (column.notNull) result += ' NOT NULL';
+        if (column.primary) result += ' PRIMARY KEY';
+        if (column.default !== undefined) {
+          const value = column.default;
+          result +=
+            ' DEFAULT ' +
+            (value instanceof SQL
+              ? dialect.sqlToQuery(value).sql
+              : typeof value === 'boolean' || typeof value === 'number'
+                ? String(value)
+                : "'" +
+                  (typeof value === 'string'
+                    ? value
+                    : JSON.stringify(value)
+                  ).replaceAll("'", "''") +
+                  "'");
+        }
+        return result;
+      });
+      await authClient.unsafe(
+        `CREATE TABLE "${definition.name}" (${columns.join(', ')})`,
+      );
+    }
+  });
+  afterAll(async () => {
+    try {
+      if (created)
+        await authClient`DROP SCHEMA ${authClient(authNamespace)} CASCADE`;
+    } finally {
+      await authClient.end({ timeout: 5 });
+    }
+  });
+  beforeEach(async () => {
+    await authDb.delete(schema.memberships);
+    await authDb.delete(schema.integrations);
+    await authDb.insert(schema.integrations).values({
+      id: randomUUID(),
+      orgId,
+      platformType: 'shopify',
+      platformStoreUrl: shop,
+      isActive: true,
+    });
+  });
+  it('returns the integration and only its members in one statement with deterministic owner-first order', async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()].sort();
+    await authDb.insert(schema.memberships).values([
+      {
+        id: ids[2],
+        orgId,
+        userId: randomUUID(),
+        role: 'viewer',
+        createdAt: '2020-01-01T00:00:00Z',
+      },
+      {
+        id: ids[1],
+        orgId,
+        userId: randomUUID(),
+        role: 'owner',
+        createdAt: '2021-01-01T00:00:00Z',
+      },
+      {
+        id: ids[0],
+        orgId,
+        userId: randomUUID(),
+        role: 'owner',
+        createdAt: '2021-01-01T00:00:00Z',
+      },
+      {
+        id: randomUUID(),
+        orgId: foreignOrg,
+        userId: randomUUID(),
+        role: 'owner',
+      },
+    ]);
+    const context = createRequestContext();
+    const result = await runRequestContext(context, () =>
+      access.findShopifyAccessByDomain(shop),
+    );
+    expect(context.db.count).toBe(1);
+    expect(result?.integration.orgId).toBe(orgId);
+    expect(result?.memberships.map((member) => member.id)).toEqual([
+      ids[0],
+      ids[1],
+      ids[2],
+    ]);
+  });
+  it('preserves memberless and inactive integrations and returns undefined for an unknown shop', async () => {
+    expect((await access.findShopifyAccessByDomain(shop))?.memberships).toEqual(
+      [],
+    );
+    await authDb.update(schema.integrations).set({ isActive: false });
+    expect(
+      (await access.findShopifyAccessByDomain(shop))?.integration.isActive,
+    ).toBe(false);
+    expect(
+      await access.findShopifyAccessByDomain('unknown.myshopify.com'),
+    ).toBeUndefined();
   });
 });

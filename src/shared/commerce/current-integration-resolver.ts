@@ -1,5 +1,6 @@
 import type { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import type { integrations } from '../../infrastructure/database/schema';
+import { recallAuthIntegration } from '../request-context/request-context';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 
@@ -28,16 +29,38 @@ export async function resolveShopifyLinkedIntegration(
   integrationsRepo: IntegrationsRepository,
   params: { orgId: string; shopDomain: string; requireActive: boolean },
 ): Promise<ShopifyLinkedIntegrationResolution> {
-  const integration = await integrationsRepo.findByOrgAndPlatformDomain(
-    params.orgId,
-    params.shopDomain,
-    'shopify',
-  );
+  const integration =
+    rememberedShopifyIntegration(params) ??
+    (await integrationsRepo.findByOrgAndPlatformDomain(
+      params.orgId,
+      params.shopDomain,
+      'shopify',
+    ));
   if (!integration) return { outcome: 'not_found' };
   if (params.requireActive && !integration.isActive) {
     return { outcome: 'inactive', integration };
   }
   return { outcome: 'found', integration };
+}
+
+/**
+ * The auth guard has already loaded this request's Shopify integration by
+ * shop domain. That row is reused only when it is the one this lookup would
+ * return (same organization, same shop, Shopify) and the request has not
+ * written since, which `recallAuthIntegration` enforces, so a handler that
+ * has just updated the row reads it back from the database.
+ */
+function rememberedShopifyIntegration(params: {
+  orgId: string;
+  shopDomain: string;
+}): IntegrationRecord | undefined {
+  const remembered = recallAuthIntegration();
+  return remembered &&
+    remembered.orgId === params.orgId &&
+    remembered.platformStoreUrl === params.shopDomain &&
+    remembered.platformType === 'shopify'
+    ? remembered
+    : undefined;
 }
 
 export type FallbackActiveIntegrationResolution =

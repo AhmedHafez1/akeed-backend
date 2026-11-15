@@ -7,6 +7,11 @@ import type { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { TokenValidatorService } from './token-validator.service';
+import {
+  createRequestContext,
+  recallAuthIntegration,
+  runRequestContext,
+} from '../../../shared/request-context/request-context';
 
 const SHOPIFY_SECRET = 'shopify-test-secret';
 const SHOPIFY_API_KEY = 'shopify-test-key';
@@ -63,10 +68,9 @@ function createService(isActive: boolean) {
     get: jest.fn(),
   };
   const integrationsRepo = {
-    findByPlatformDomain: jest.fn().mockResolvedValue({
-      id: 'int-1',
-      orgId: 'org-1',
-      isActive,
+    findShopifyAccessByDomain: jest.fn().mockResolvedValue({
+      integration: { id: 'int-1', orgId: 'org-1', isActive },
+      memberships: [{ userId: 'owner-1', orgId: 'org-1', role: 'owner' }],
     }),
   };
   const membershipsRepo = {
@@ -136,6 +140,45 @@ describe('TokenValidatorService Shopify installation state', () => {
       source: 'shopify',
       shop: 'test.myshopify.com',
     });
+  });
+
+  it('resolves the shop and its memberships in one repository read', async () => {
+    const { service, integrationsRepo, membershipsRepo } = createService(true);
+
+    await service.validateToken(createShopifyToken());
+
+    expect(integrationsRepo.findShopifyAccessByDomain).toHaveBeenCalledTimes(1);
+    expect(integrationsRepo.findShopifyAccessByDomain).toHaveBeenCalledWith(
+      'test.myshopify.com',
+    );
+    expect(membershipsRepo.findByOrg).not.toHaveBeenCalled();
+  });
+
+  it('prefers the owner when the joined rows list a viewer first', async () => {
+    const { service, integrationsRepo } = createService(true);
+    integrationsRepo.findShopifyAccessByDomain.mockResolvedValue({
+      integration: { id: 'int-1', orgId: 'org-1', isActive: true },
+      memberships: [
+        { userId: 'viewer-1', orgId: 'org-1', role: 'viewer' },
+        { userId: 'owner-2', orgId: 'org-1', role: 'owner' },
+      ],
+    });
+
+    await expect(
+      service.validateToken(createShopifyToken()),
+    ).resolves.toMatchObject({ userId: 'owner-2', role: 'owner' });
+  });
+
+  it('returns 401 User not found when the join yields no membership', async () => {
+    const { service, integrationsRepo } = createService(true);
+    integrationsRepo.findShopifyAccessByDomain.mockResolvedValue({
+      integration: { id: 'int-1', orgId: 'org-1', isActive: true },
+      memberships: [],
+    });
+
+    await expect(
+      service.validateToken(createShopifyToken()),
+    ).rejects.toMatchObject({ message: 'User not found' });
   });
 });
 
@@ -280,7 +323,7 @@ describe('TokenValidatorService database failures', () => {
 
   it('returns 503, not 401, when the Shopify integration lookup fails', async () => {
     const { service, integrationsRepo } = createService(true);
-    integrationsRepo.findByPlatformDomain.mockRejectedValue(
+    integrationsRepo.findShopifyAccessByDomain.mockRejectedValue(
       poolExhaustedError(),
     );
 
@@ -299,5 +342,30 @@ describe('TokenValidatorService database failures', () => {
     await expect(
       service.validateToken(createSupabaseToken()),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('TokenValidatorService request context', () => {
+  it('remembers the resolved integration on the active request context', async () => {
+    const { service } = createService(true);
+    await runRequestContext(createRequestContext(), async () => {
+      await service.validateToken(createShopifyToken());
+      expect(recallAuthIntegration()).toMatchObject({
+        id: 'int-1',
+        orgId: 'org-1',
+      });
+    });
+    expect(recallAuthIntegration()).toBeUndefined();
+  });
+
+  it('remembers nothing for a Supabase token', async () => {
+    const { service } = createService(true);
+    mockSupabaseUser(service);
+    await runRequestContext(createRequestContext(), async () => {
+      await service.validateToken(createSupabaseToken(), {
+        allowMissingOrg: true,
+      });
+      expect(recallAuthIntegration()).toBeUndefined();
+    });
   });
 });

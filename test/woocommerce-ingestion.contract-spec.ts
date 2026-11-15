@@ -2214,6 +2214,7 @@ describe('WooCommerce webhook ingestion PostgreSQL contract', () => {
     const listService = new VerificationsService(
       verificationsRepo,
       {
+        beginReads: () => undefined as never,
         readEntitlement: () =>
           Promise.resolve({
             consumedCount: 0,

@@ -21,6 +21,7 @@ import {
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
 import { isOrganizationRole } from '../organization-role';
+import { rememberAuthIntegration } from '../../../shared/request-context/request-context';
 
 /**
  * Token Validator Service
@@ -217,11 +218,10 @@ export class TokenValidatorService {
       // Extract shop domain
       const shop = payload.dest.replace('https://', '');
 
-      // Find integration by shop domain
-      const integration = await this.integrationsRepo.findByPlatformDomain(
-        shop,
-        'shopify',
-      );
+      // The store and its members in one round trip.
+      const access =
+        await this.integrationsRepo.findShopifyAccessByDomain(shop);
+      const integration = access?.integration;
 
       if (!integration || !integration.isActive) {
         this.logger.warn(
@@ -239,11 +239,10 @@ export class TokenValidatorService {
 
       const orgId = integration.orgId;
 
-      // Find user membership
-      // For Shopify, we use the shop domain to identify the user
-      const membership = await this.membershipsRepo.findByOrg(orgId);
+      // For Shopify, the shop domain identifies the user through its members.
+      const membership = access.memberships;
 
-      if (!membership || membership.length === 0) {
+      if (membership.length === 0) {
         this.logger.warn(
           buildBackendLog(TokenValidatorService.name, {
             action: 'token-validate-shopify',
@@ -267,6 +266,10 @@ export class TokenValidatorService {
           code: 'ORGANIZATION_ROLE_INVALID',
         });
       }
+
+      // Handlers may reuse this row for the same org and shop instead of
+      // reading it again; see recallAuthIntegration.
+      rememberAuthIntegration(integration);
 
       return {
         userId: selectedMembership.userId,

@@ -12,7 +12,11 @@ import {
   sql,
 } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
-import { integrations, shopifyOfflineCredentials } from '../schema';
+import {
+  integrations,
+  memberships,
+  shopifyOfflineCredentials,
+} from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
 
 type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
@@ -27,6 +31,13 @@ export interface ExpiringTokenPairInput {
 
 /** How the stored pair came to be; each sets its own timestamp. */
 export type CredentialWriteEvent = 'acquired' | 'refreshed' | 'migrated';
+
+/** Whether a store counts as installed, with its credential, from one read. */
+export interface ShopifyInstallState {
+  /** An active integration whose organization has at least one member. */
+  installed: boolean;
+  credential: ShopifyCredentialState;
+}
 
 /**
  * One store's credential as stored: both tokens still encrypted. A store with
@@ -143,6 +154,38 @@ export class ShopifyOfflineCredentialsRepository {
       )
       .limit(1);
     return row ? toState(row) : undefined;
+  }
+
+  /**
+   * Install status and credential state together, so opening an installed
+   * store costs one round trip. Membership is an `exists` check rather than a
+   * join: the state needs no member rows, only that there is one.
+   */
+  async findInstallStateByShop(
+    shopDomain: string,
+  ): Promise<ShopifyInstallState | undefined> {
+    const [row] = await this.db
+      .select({
+        ...STATE_COLUMNS,
+        hasMembers: sql<boolean>`exists (select 1 from ${memberships} where ${memberships.orgId} = ${integrations.orgId})`,
+      })
+      .from(integrations)
+      .leftJoin(
+        shopifyOfflineCredentials,
+        eq(shopifyOfflineCredentials.integrationId, integrations.id),
+      )
+      .where(
+        and(
+          eq(integrations.platformType, 'shopify'),
+          eq(integrations.platformStoreUrl, shopDomain),
+        ),
+      )
+      .limit(1);
+    if (!row) return undefined;
+    return {
+      installed: row.isActive === true && row.hasMembers === true,
+      credential: toState(row),
+    };
   }
 
   /** Stores the new pair on the integration and the credential row. */

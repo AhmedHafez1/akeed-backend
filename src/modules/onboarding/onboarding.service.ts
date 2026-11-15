@@ -14,7 +14,10 @@ import { MessageTextsService } from '../message-texts/message-texts.service';
 import { acknowledgmentStyle } from '../../shared/messaging/message-texts.types';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
-import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import {
+  BillingEntitlementService,
+  type EntitlementReads,
+} from '../verification-core/billing-entitlement.service';
 import { CreditEligibilityService } from '../verification-core/credit-eligibility.service';
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import { getBillingManagement } from '../../shared/billing/entitlement';
@@ -80,6 +83,7 @@ import type {
   SourceSetupDto,
 } from '../../shared/commerce/source-setup';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import { dbCounters } from '../../shared/request-context/request-context';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -177,6 +181,7 @@ export class OnboardingService {
           outcome: succeeded ? 'success' : 'failure',
           durationMs: Date.now() - startedAt,
           ...timings,
+          ...dbCounters(),
         }),
       );
     }
@@ -635,6 +640,12 @@ export class OnboardingService {
     const blockedReasons = standalone
       ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
+    // The usage card and sending availability evaluate the same entitlement;
+    // within this one request they share its reads, seeded from the row above.
+    const entitlementReads = this.billingEntitlements.beginReads(
+      integration,
+      integration,
+    );
 
     const [
       activation,
@@ -648,7 +659,7 @@ export class OnboardingService {
         this.readActivation(integration, state.isOnboardingComplete),
       ),
       this.timedStateRead(timings, 'usageMs', () =>
-        this.readUsage(integration),
+        this.readUsage(integration, entitlementReads),
       ),
       this.timedStateRead(timings, 'sourceSetupMs', () =>
         this.readSourceSetup(integration, accountStatus),
@@ -664,7 +675,7 @@ export class OnboardingService {
       ),
       this.timedStateRead(timings, 'sendingAvailabilityMs', () =>
         integration.platformType === 'shopify' && this.sendingAvailability
-          ? this.sendingAvailability.read(integration)
+          ? this.sendingAvailability.read(integration, entitlementReads)
           : Promise.resolve(undefined),
       ),
       this.timedStateRead(
@@ -780,6 +791,7 @@ export class OnboardingService {
 
   private async readUsage(
     integration: IntegrationRecord,
+    reads?: EntitlementReads,
   ): Promise<OnboardingUsageDto | null> {
     if (
       !integration.billingPlanId ||
@@ -790,8 +802,10 @@ export class OnboardingService {
         ))
     )
       return null;
-    const entitlement =
-      await this.billingEntitlements.readEntitlement(integration);
+    const entitlement = await this.billingEntitlements.readEntitlement(
+      integration,
+      reads,
+    );
     return { ...displayedUsage(entitlement), pools: entitlement.pools };
   }
 

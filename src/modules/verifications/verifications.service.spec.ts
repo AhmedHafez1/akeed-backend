@@ -127,6 +127,7 @@ function createMocks() {
   };
 
   const billingEntitlements = {
+    beginReads: jest.fn(),
     readEntitlement: jest.fn().mockResolvedValue({
       consumedCount: 4,
       includedLimit: 30,
@@ -904,6 +905,7 @@ describe('Dashboard cancellation capabilities', () => {
       const service = new VerificationsService(
         withHeldDefaults(repo) as never,
         {
+          beginReads: jest.fn(),
           readEntitlement: jest.fn().mockResolvedValue({
             consumedCount: 0,
             includedLimit: 30,
@@ -977,6 +979,7 @@ describe('Capacity renewal offer', () => {
       const service = new VerificationsService(
         withHeldDefaults(repo) as never,
         {
+          beginReads: jest.fn(),
           readEntitlement: jest.fn().mockResolvedValue({
             planId: 'basic',
             consumedCount: 300,
@@ -1005,6 +1008,7 @@ describe('Listing fetch size', () => {
     return new VerificationsService(
       withHeldDefaults(repo) as never,
       {
+        beginReads: jest.fn(),
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 0,
           includedLimit: 30,
@@ -1113,6 +1117,7 @@ describe('Held orders on the verifications listing', () => {
     return new VerificationsService(
       withHeldDefaults(repo) as never,
       {
+        beginReads: jest.fn(),
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 0,
           includedLimit: 30,
@@ -1319,6 +1324,7 @@ describe('Customer track record and export', () => {
     return new VerificationsService(
       withHeldDefaults(repo) as never,
       {
+        beginReads: jest.fn(),
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 0,
           includedLimit: 30,
