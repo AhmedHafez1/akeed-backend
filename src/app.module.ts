@@ -14,10 +14,12 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SecurityMiddleware } from './shared/middleware/security.middleware';
+import { RequestContextMiddleware } from './shared/request-context/request-context.middleware';
+import { ServerTimingInterceptor } from './shared/interceptors/server-timing.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { MerchantBrandingModule } from './modules/merchant-branding/merchant-branding.module';
@@ -190,11 +192,15 @@ const billingModule = BillingModule.register({
   providers: [
     AppService,
     SecurityMiddleware,
+    RequestContextMiddleware,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: ServerTimingInterceptor },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(SecurityMiddleware).forRoutes('*');
+    // Security first: it assigns the request id and answers OPTIONS, which
+    // therefore never opens a request context.
+    consumer.apply(SecurityMiddleware, RequestContextMiddleware).forRoutes('*');
   }
 }

@@ -65,6 +65,15 @@ function setup(options: {
   };
   const credentialsRepo = {
     findStateByShop: jest.fn().mockResolvedValue(options.credential),
+    findInstallStateByShop: jest
+      .fn()
+      .mockResolvedValue(
+        options.installed
+          ? { installed: true, credential: options.credential }
+          : options.credential
+            ? { installed: false, credential: options.credential }
+            : undefined,
+      ),
     withShopLock: jest.fn((_shop: string, fn: (tx: unknown) => unknown) =>
       Promise.resolve(fn('tx')),
     ),
@@ -131,10 +140,36 @@ describe('ShopifyAuthService expiring offline tokens', () => {
     expect(t.recordInstallation).toHaveBeenCalled();
   });
 
-  it('leaves a healthy installed store alone', async () => {
+  it('leaves a healthy installed store alone after one read', async () => {
     const t = setup({ installed: true, credential: state() });
     await t.service.tokenExchange('session-token');
     expect(t.tokenClient.exchangeIdToken).not.toHaveBeenCalled();
+    expect(t.credentialsRepo.findInstallStateByShop).toHaveBeenCalledTimes(1);
+    expect(t.credentialsRepo.findStateByShop).not.toHaveBeenCalled();
+    expect(t.integrationsRepo.findByPlatformDomain).not.toHaveBeenCalled();
+  });
+
+  it('decides installed and reacquire from one install-state read', async () => {
+    const t = setup({
+      installed: true,
+      credential: state({ status: 'reauth_required' }),
+    });
+    await t.service.tokenExchange('session-token');
+    expect(t.credentialsRepo.findInstallStateByShop).toHaveBeenCalledTimes(1);
+    expect(t.credentialsRepo.findStateByShop).not.toHaveBeenCalled();
+    // The decision needed no second read; the persistence path still reads
+    // the row it is about to update.
+    expect(t.integrationsRepo.findByPlatformDomain).toHaveBeenCalledTimes(1);
+    expect(t.tokenClient.exchangeIdToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an active store without members as not installed', async () => {
+    const t = setup({ installed: false, credential: state() });
+    await expect(t.service.isInstalled(SHOP)).resolves.toBe(false);
+    await t.service.tokenExchange('session-token');
+    // Not installed: the install path runs, with webhooks and lifecycle start.
+    expect(t.tokenClient.exchangeIdToken).toHaveBeenCalledTimes(1);
+    expect(t.registerWebhooks).toHaveBeenCalled();
   });
 
   it.each([

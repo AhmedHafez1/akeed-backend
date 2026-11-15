@@ -8,6 +8,19 @@ const meta = {
 };
 
 describe('validateEnv', () => {
+  it('accepts optional database diagnostics and preserves their values', () => {
+    expect(
+      validateEnv({
+        NODE_ENV: 'test',
+        DATABASE_URL: 'postgres://x/db',
+        DATABASE_LATENCY_PROBE: 'false',
+        DATABASE_IDLE_TIMEOUT_SECONDS: '300',
+      }),
+    ).toMatchObject({
+      DATABASE_LATENCY_PROBE: 'false',
+      DATABASE_IDLE_TIMEOUT_SECONDS: '300',
+    });
+  });
   it('accepts a fully configured environment', () => {
     expect(() =>
       validateEnv({

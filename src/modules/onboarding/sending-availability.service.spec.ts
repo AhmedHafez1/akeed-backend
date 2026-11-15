@@ -42,6 +42,50 @@ function setup(overrides: Record<string, unknown> = {}, used = 0) {
   return { source, notices, service };
 }
 
+describe('Shopify sending availability shared reads', () => {
+  it('uses the caller’s entitlement reads instead of reading the source again', async () => {
+    const source = {
+      id: 'source-1',
+      orgId: 'org-1',
+      platformType: 'shopify',
+      isActive: true,
+      onboardingStatus: 'completed',
+      isAutoVerifyEnabled: true,
+      billingStatus: 'active',
+      billingPlanId: 'pro',
+      billingActivatedAt: '2026-11-01T00:00:00Z',
+      billingCanceledAt: null,
+      paidThroughAt: null,
+    } as typeof integrations.$inferSelect;
+    const repository = {
+      getEntitlementSource: jest.fn().mockResolvedValue(source),
+      getIntegrationUsageForPeriod: jest
+        .fn()
+        .mockResolvedValue({ consumedCount: 0, includedLimit: 1000 }),
+    };
+    const entitlement = new BillingEntitlementService(repository as never);
+    const service = new SendingAvailabilityService(
+      entitlement,
+      { countMissedOrders: jest.fn() } as never,
+      {
+        resolvePlan: (id: 'pro') =>
+          resolveBillingPlan({
+            planId: id,
+            currencyCode: 'USD',
+            testMode: true,
+          }),
+      } as never,
+    );
+    const availability = await service.read(
+      source,
+      entitlement.beginReads(source, source),
+    );
+    expect(availability).toMatchObject({ available: true, reason: null });
+    expect(repository.getEntitlementSource).not.toHaveBeenCalled();
+    expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Shopify sending availability', () => {
   it.each([
     [{}, 0, 'billing_not_active', 'none', null],

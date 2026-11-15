@@ -56,6 +56,22 @@ The production `akeed-backend` service is set up for deploys without dropped req
 
 Without a healthcheck, Railway routes traffic as soon as the container starts, before the port is open, and callers get 502 "connection refused".
 
+## Database Connection
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | required | Runtime queries. Production uses the Supabase transaction pooler (port 6543), where prepared statements are switched off automatically. |
+| `MIGRATION_DATABASE_URL` | `DATABASE_URL` | Migrations take a session-scoped advisory lock the transaction pooler cannot hold; point this at the session pooler (port 5432). |
+| `DATABASE_POOL_MAX` | `10` | Connections per backend process. On the session pooler the total across every process and tool must stay below the project's `pool_size`. |
+| `DATABASE_IDLE_TIMEOUT_SECONDS` | `20` | How long an idle pooled connection stays open. Preserve the default during attribution. After measuring setup overhead and churn, transaction-pool deployments can opt in to `300`; session-pool deployments must continue releasing server slots promptly. |
+| `DATABASE_LATENCY_PROBE` | `true` | Set to `false` to skip the `database-latency-probe` log line written once after boot (never written under `NODE_ENV=test`). |
+
+The detached probe uses one temporary client with a maximum of one connection, a 10-second connection timeout and a 15-second measurement deadline, then closes it. It reports median simple-protocol latency (`simpleMs`), median parameterized latency (`extendedMs`), their difference (`protocolOverheadMs`) and a known-cold first sample (`firstSampleMs`). The cold sample includes setup and driver type discovery; its difference from the warm median is diagnostic, not an isolated TCP-handshake measurement. Parameterized statements require two round trips with prepared statements disabled. The application pool keeps its existing connection/lifetime defaults during this attribution release.
+
+HTTP responses carry numeric `Server-Timing` fields: `auth` (when authentication was attempted), `handler`, `total`, `db`, `dbmax`, `dbq` and `dbconn`. Guard failures and handler errors are covered; preflights report zero counters. Database duration includes pool wait and sums concurrent statements, so it can exceed wall time. Counts cover application statements, including nested savepoints' statements, but exclude driver-issued transaction-control/type-discovery SQL. New connection generations are observed at first statement use after opening or closing; the process-wide delta covers the request's time window and may appear in overlapping requests. It is not exclusive request ownership.
+
+The `onboarding-state-read`, `verifications-list-read` and `verifications-overview-read` logs include the same database counters. The latter two report `sourcesMs`, `pageMs` and `enrichMs`. New performance records contain numeric measurements and fixed action names, without tenant identities, SQL, credentials or payloads. `DATABASE_LATENCY_PROBE=false` disables the boot measurement; it never runs under `NODE_ENV=test`.
+
 ## Database Migrations
 
 Drizzle Kit also respects the environment. To run migrations against a specific environment, ensure the variables are set before running the command, or rely on `drizzle.config.ts` loading logic.

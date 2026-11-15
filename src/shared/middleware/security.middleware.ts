@@ -41,6 +41,10 @@ export class SecurityMiddleware implements NestMiddleware {
 
     // Handle OPTIONS preflight requests
     if (req.method === 'OPTIONS') {
+      res.setHeader(
+        'Server-Timing',
+        'handler;dur=0, total;dur=0, db;dur=0, dbmax;dur=0, dbq;dur=0, dbconn;dur=0',
+      );
       return res.status(200).end();
     }
 
@@ -171,7 +175,10 @@ export class SecurityMiddleware implements NestMiddleware {
       'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning, x-shopify-access-token, Idempotency-Key',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'X-Request-Id, Server-Timing',
+    );
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
   }
 

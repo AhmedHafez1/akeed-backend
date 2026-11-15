@@ -2,12 +2,13 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
-import { eq, and, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { eq, and, asc, desc, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
   adminStoreLifecycles,
   integrations,
+  memberships,
   shopifyOfflineCredentials,
 } from '../schema';
 import { encryptToken } from '../../../shared/utils/token-encryption.util';
@@ -73,6 +74,46 @@ export class IntegrationsRepository {
         eq(integrations.platformType, platformType),
       ),
     });
+  }
+
+  /**
+   * The Shopify store and its organization's members in one statement, for
+   * the auth guard. Members come owner first, then in creation order, so the
+   * member the guard picks is the same on every request.
+   */
+  async findShopifyAccessByDomain(domain: string): Promise<
+    | {
+        integration: typeof integrations.$inferSelect;
+        memberships: (typeof memberships.$inferSelect)[];
+      }
+    | undefined
+  > {
+    const rows = await this.db
+      .select({ integration: integrations, membership: memberships })
+      .from(integrations)
+      .leftJoin(memberships, eq(memberships.orgId, integrations.orgId))
+      .where(
+        and(
+          eq(integrations.platformStoreUrl, domain),
+          eq(integrations.platformType, 'shopify'),
+        ),
+      )
+      .orderBy(
+        asc(integrations.id),
+        desc(sql<boolean>`${memberships.role} = 'owner'`),
+        asc(memberships.createdAt),
+        asc(memberships.id),
+      );
+    const first = rows[0];
+    if (!first) return undefined;
+    return {
+      integration: first.integration,
+      memberships: rows.flatMap((row) =>
+        row.integration.id === first.integration.id && row.membership
+          ? [row.membership]
+          : [],
+      ),
+    };
   }
 
   async findByOrgAndPlatformDomain(

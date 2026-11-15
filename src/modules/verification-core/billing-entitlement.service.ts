@@ -17,8 +17,53 @@ import {
 } from '../../shared/billing/own-number-billing.policy';
 import {
   SENDER_RESOLVER_PORT,
+  type ResolvedSender,
   type SenderResolverPort,
 } from '../../shared/ports/sender-resolver.port';
+
+type PeriodUsage = Awaited<
+  ReturnType<IntegrationMonthlyUsageRepository['getIntegrationUsageForPeriod']>
+>;
+
+/**
+ * The reads one entitlement evaluation needs, each made at most once. A set
+ * belongs to the single request that began it: it travels down that request's
+ * call chain and is dropped with the response, never kept on a service, so
+ * the next request reads billing state afresh.
+ */
+export interface EntitlementReads {
+  source(): Promise<EntitlementSource | undefined>;
+  usage(periodStart: string): Promise<PeriodUsage>;
+  sender(orgId: string): Promise<ResolvedSender['kind']>;
+}
+
+/** Only what the repository read returns, so a seeded set behaves like a fresh one. */
+function toEntitlementSource(row: EntitlementSource): EntitlementSource {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    platformType: row.platformType,
+    isActive: row.isActive,
+    billingStatus: row.billingStatus,
+    billingPlanId: row.billingPlanId,
+    billingActivatedAt: row.billingActivatedAt,
+    paidThroughAt: row.paidThroughAt ?? null,
+  };
+}
+
+/** Starts `read` on first use; a failed read is forgotten so it can be retried. */
+function once<K, V>(
+  cache: Map<K, Promise<V>>,
+  key: K,
+  read: () => Promise<V>,
+): Promise<V> {
+  const pending = cache.get(key);
+  if (pending) return pending;
+  const started = read();
+  cache.set(key, started);
+  started.catch(() => cache.delete(key));
+  return started;
+}
 
 @Injectable()
 export class BillingEntitlementService {
@@ -47,16 +92,50 @@ export class BillingEntitlementService {
     );
   }
 
-  async readEntitlement(identity: EntitlementIdentity) {
-    const source =
-      await this.monthlyUsageRepository.getEntitlementSource(identity);
+  /**
+   * Begins one set of memoized reads for `identity`. `seed` is a row the
+   * caller has just loaded for the same integration; it stands in for the
+   * source read only when its `id` and `orgId` both match, so a caller can
+   * never evaluate one integration against another's billing state.
+   */
+  beginReads(
+    identity: EntitlementIdentity,
+    seed?: EntitlementSource,
+  ): EntitlementReads {
+    const sources = new Map<'source', Promise<EntitlementSource | undefined>>();
+    if (seed && seed.id === identity.id && seed.orgId === identity.orgId)
+      sources.set('source', Promise.resolve(toEntitlementSource(seed)));
+    const usage = new Map<string, Promise<PeriodUsage>>();
+    const senders = new Map<string, Promise<ResolvedSender['kind']>>();
+    return {
+      source: () =>
+        once(sources, 'source', () =>
+          this.monthlyUsageRepository.getEntitlementSource(identity),
+        ),
+      usage: (periodStart) =>
+        once(usage, periodStart, () =>
+          this.monthlyUsageRepository.getIntegrationUsageForPeriod({
+            integrationId: identity.id,
+            periodStart,
+          }),
+        ),
+      sender: (orgId) => once(senders, orgId, () => this.predictSender(orgId)),
+    };
+  }
+
+  /** Without `reads`, every call reads fresh billing state. */
+  async readEntitlement(
+    identity: EntitlementIdentity,
+    reads: EntitlementReads = this.beginReads(identity),
+  ) {
+    const source = await reads.source();
     const mode = this.accountingMode(source);
     const entitlement = resolveEntitlement(source, identity, undefined, mode);
     const accounting = this.accounting;
     if (source && accounting && mode === 'prepaid_credit') {
       const availability = await accounting.readAvailability(
         source.orgId,
-        nextSendDisplayedCost(await this.predictSender(source.orgId)),
+        nextSendDisplayedCost(await reads.sender(source.orgId)),
       );
       return {
         ...entitlement,
@@ -69,16 +148,11 @@ export class BillingEntitlementService {
       };
     }
     const usage = source
-      ? await this.monthlyUsageRepository.getIntegrationUsageForPeriod({
-          integrationId: identity.id,
-          periodStart: entitlement.periodStart,
-        })
+      ? await reads.usage(entitlement.periodStart)
       : { consumedCount: 0, ownNumberConsumed: 0 };
     // While the next send would go from the merchant's number, both pools
     // count; otherwise only the Akeed pool does, exactly as before.
-    const sender = source
-      ? await this.predictSender(source.orgId)
-      : 'akeed_system';
+    const sender = source ? await reads.sender(source.orgId) : 'akeed_system';
     const pools = {
       akeed: usagePool(usage.consumedCount, entitlement.includedLimit),
       ownNumber: usagePool(
@@ -107,9 +181,9 @@ export class BillingEntitlementService {
 
   async hasAvailableSlot(
     identity: EntitlementIdentity,
+    reads: EntitlementReads = this.beginReads(identity),
   ): Promise<EntitlementAvailability> {
-    const source =
-      await this.monthlyUsageRepository.getEntitlementSource(identity);
+    const source = await reads.source();
     const mode = this.accountingMode(source);
     const access = resolveEntitlement(source, identity, undefined, mode);
     const accounting = this.accounting;
@@ -123,10 +197,10 @@ export class BillingEntitlementService {
         };
       return accounting.readAvailability(
         source.orgId,
-        nextSendDisplayedCost(await this.predictSender(source.orgId)),
+        nextSendDisplayedCost(await reads.sender(source.orgId)),
       );
     }
-    const entitlement = await this.readEntitlement(identity);
+    const entitlement = await this.readEntitlement(identity, reads);
     const available =
       entitlement.allowed &&
       entitlement.consumedCount < entitlement.includedLimit;

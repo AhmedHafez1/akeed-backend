@@ -198,6 +198,7 @@ describe('OnboardingService', () => {
           .mockResolvedValue({ plans: [], isFreePlanClaimed: true }),
       } as any,
       {
+        beginReads: jest.fn(),
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 27,
           includedLimit: 30,
@@ -291,6 +292,7 @@ describe('OnboardingService', () => {
         onboardingState,
         {} as never,
         {
+          beginReads: jest.fn(),
           evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
         } as never,
         { readStatus: jest.fn().mockResolvedValue(accountStatus) } as never,

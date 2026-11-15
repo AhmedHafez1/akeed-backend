@@ -113,4 +113,86 @@ describe('BillingEntitlementService', () => {
       });
     });
   });
+
+  describe('request-scoped reads', () => {
+    const source = {
+      id: 'integration-1',
+      orgId: 'org-1',
+      platformType: 'shopify',
+      isActive: true,
+      billingStatus: 'active',
+      billingPlanId: 'basic',
+      billingActivatedAt: '2026-11-01T00:00:00Z',
+      paidThroughAt: null,
+    };
+
+    function build() {
+      const repository = {
+        getEntitlementSource: jest.fn().mockResolvedValue(source),
+        getIntegrationUsageForPeriod: jest.fn().mockResolvedValue({
+          consumedCount: 3,
+          includedLimit: 30,
+          ownNumberConsumed: 0,
+        }),
+      };
+      const senders = { predict: jest.fn().mockResolvedValue('akeed_system') };
+      const service = new BillingEntitlementService(
+        repository as never,
+        usageAccountingFixture(),
+        senders as never,
+      );
+      return { repository, senders, service };
+    }
+
+    it('reads the source, usage and sender once across the usage card and the slot check', async () => {
+      const { repository, senders, service } = build();
+      const reads = service.beginReads(source);
+      const entitlement = await service.readEntitlement(source, reads);
+      const slot = await service.hasAvailableSlot(source, reads);
+      expect(entitlement).toMatchObject({ allowed: true, consumedCount: 3 });
+      expect(slot).toMatchObject({ available: true, consumedCount: 3 });
+      expect(repository.getEntitlementSource).toHaveBeenCalledTimes(1);
+      expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalledTimes(1);
+      expect(senders.predict).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads fresh state on every call without a shared set', async () => {
+      const { repository, service } = build();
+      await service.readEntitlement(source);
+      await service.hasAvailableSlot(source);
+      expect(repository.getEntitlementSource).toHaveBeenCalledTimes(2);
+      expect(repository.getIntegrationUsageForPeriod).toHaveBeenCalledTimes(2);
+    });
+
+    it('accepts a seed only for the same integration and organization', async () => {
+      const { repository, service } = build();
+      const seeded = await service.readEntitlement(
+        source,
+        service.beginReads(source, { ...source, billingPlanId: 'pro' }),
+      );
+      expect(seeded.planId).toBe('pro');
+      expect(repository.getEntitlementSource).not.toHaveBeenCalled();
+
+      await service.readEntitlement(
+        source,
+        service.beginReads(source, { ...source, id: 'integration-2' }),
+      );
+      await service.readEntitlement(
+        source,
+        service.beginReads(source, { ...source, orgId: 'org-2' }),
+      );
+      expect(repository.getEntitlementSource).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgets a failed read so the next call can retry', async () => {
+      const { repository, service } = build();
+      repository.getEntitlementSource.mockRejectedValueOnce(
+        new Error('synthetic unavailable'),
+      );
+      const reads = service.beginReads(source);
+      await expect(reads.source()).rejects.toThrow('synthetic unavailable');
+      await expect(reads.source()).resolves.toEqual(source);
+      expect(repository.getEntitlementSource).toHaveBeenCalledTimes(2);
+    });
+  });
 });

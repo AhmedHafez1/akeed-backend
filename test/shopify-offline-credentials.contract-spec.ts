@@ -121,6 +121,9 @@ describe('Shopify offline credentials PostgreSQL contract', () => {
          updated_at timestamptz NOT NULL DEFAULT now()
        )`,
     );
+    await client.unsafe(
+      `CREATE TABLE "${namespace}".memberships (org_id uuid NOT NULL)`,
+    );
     await applyMigration();
     await applyMigration();
   });
@@ -135,6 +138,55 @@ describe('Shopify offline credentials PostgreSQL contract', () => {
 
   beforeEach(async () => {
     await client.unsafe(`DELETE FROM "${namespace}".integrations`);
+  });
+
+  it('reads install state for only the matching organization and preserves legacy/renewal states', async () => {
+    const id = await insertStore('install.myshopify.com');
+    await client.unsafe(`INSERT INTO "${namespace}".memberships VALUES ($1)`, [
+      randomUUID(),
+    ]);
+    expect(
+      await repository.findInstallStateByShop('install.myshopify.com'),
+    ).toMatchObject({
+      installed: false,
+      credential: { credentialKind: 'legacy' },
+    });
+    await client.unsafe(
+      `INSERT INTO "${namespace}".memberships SELECT org_id FROM "${namespace}".integrations WHERE id = $1`,
+      [id],
+    );
+    expect(
+      await repository.findInstallStateByShop('install.myshopify.com'),
+    ).toMatchObject({ installed: true });
+    await repository.withShopLock('install.myshopify.com', (tx) =>
+      repository.saveExpiringPair(tx, id, PAIR, 'acquired'),
+    );
+    expect(
+      await repository.findInstallStateByShop('install.myshopify.com'),
+    ).toMatchObject({
+      installed: true,
+      credential: { credentialKind: 'expiring', status: 'active' },
+    });
+    await client.unsafe(
+      `UPDATE "${namespace}".shopify_offline_credentials SET status = 'reauth_required' WHERE integration_id = $1`,
+      [id],
+    );
+    expect(
+      await repository.findInstallStateByShop('install.myshopify.com'),
+    ).toMatchObject({
+      installed: true,
+      credential: { status: 'reauth_required' },
+    });
+    await client.unsafe(
+      `UPDATE "${namespace}".integrations SET is_active = false WHERE id = $1`,
+      [id],
+    );
+    expect(
+      await repository.findInstallStateByShop('install.myshopify.com'),
+    ).toMatchObject({ installed: false });
+    expect(
+      await repository.findInstallStateByShop('absent.myshopify.com'),
+    ).toBeUndefined();
   });
 
   it('refuses an expiring credential without its refresh token', async () => {

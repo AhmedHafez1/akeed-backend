@@ -46,6 +46,7 @@ import {
   decodeCursor,
   encodeCursor,
 } from '../orders/services/pagination.helpers';
+import { dbCounters } from '../../shared/request-context/request-context';
 import { CommerceOutcomeRegistryService } from '../commerce-outcomes/commerce-outcome-registry.service';
 import { CommerceOutcomeSyncsRepository } from '../../infrastructure/database/repositories/commerce-outcome-syncs.repository';
 import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
@@ -303,6 +304,11 @@ interface VerificationStatusCounts {
   followUpsSent: number;
 }
 
+/** Stage durations of one dashboard read, in milliseconds. */
+type DashboardReadTimings = Partial<
+  Record<'sourcesMs' | 'pageMs' | 'enrichMs', number>
+>;
+
 @Injectable()
 export class VerificationsService {
   private readonly logger = new Logger(VerificationsService.name);
@@ -326,6 +332,44 @@ export class VerificationsService {
     orgId: string,
     query: GetVerificationsQueryDto,
   ): Promise<PaginatedResponse<VerificationListItemDto>> {
+    return this.loggedRead('verifications-list-read', (timings) =>
+      this.readList(orgId, query, timings),
+    );
+  }
+
+  /**
+   * One numeric timing line per dashboard read: stage durations, the request's
+   * database counters, and no tenant identity.
+   */
+  private async loggedRead<T>(
+    action: 'verifications-list-read' | 'verifications-overview-read',
+    read: (timings: DashboardReadTimings) => Promise<T>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    const timings: DashboardReadTimings = {};
+    let succeeded = false;
+    try {
+      const result = await read(timings);
+      succeeded = true;
+      return result;
+    } finally {
+      this.logger.log(
+        buildBackendLog(VerificationsService.name, {
+          action,
+          outcome: succeeded ? 'success' : 'failure',
+          durationMs: Date.now() - startedAt,
+          ...timings,
+          ...dbCounters(),
+        }),
+      );
+    }
+  }
+
+  private async readList(
+    orgId: string,
+    query: GetVerificationsQueryDto,
+    timings: DashboardReadTimings,
+  ): Promise<PaginatedResponse<VerificationListItemDto>> {
     const statuses = this.parseStatuses(query.status);
     const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
     const limit = query.limit ?? DEFAULT_VERIFICATIONS_PAGE_SIZE;
@@ -333,7 +377,9 @@ export class VerificationsService {
 
     // The reporting timezone has to be known before the date range can be
     // resolved, so this read is not part of the parallel batch below.
+    const sourcesStartedAt = Date.now();
     const integrations = await this.integrationsRepo.findByOrg(orgId);
+    timings.sourcesMs = Date.now() - sourcesStartedAt;
     const reportingTimezone = this.resolveReportingTimezone(integrations);
     const activeIntegrations = integrations.filter(
       (integration) => integration.isActive === true,
@@ -362,6 +408,7 @@ export class VerificationsService {
     const refinement = { tab, searchDigits, withActionReason: true };
     const reuseTabCount = !statuses && !searchDigits;
 
+    const pageStartedAt = Date.now();
     const [
       verifications,
       filteredCount,
@@ -403,6 +450,7 @@ export class VerificationsService {
       this.resolvePageBudget(orgId, activeIntegrations),
       this.verificationsRepo.countByTab(orgId, filterPeriod, importBatchId),
     ]);
+    timings.pageMs = Date.now() - pageStartedAt;
     const totalCount = reuseTabCount ? tabCounts[tab ?? 'all'] : filteredCount;
 
     const merged = mergeByRecency(
@@ -423,6 +471,7 @@ export class VerificationsService {
     const verificationIds = items
       .filter((item) => !isHeldRow(item))
       .map((item) => item.id);
+    const enrichStartedAt = Date.now();
     const [syncRows, historyOf, autoCancelRows, changeRequestOf] =
       await Promise.all([
         this.outcomeSyncs?.findByCorrelationIds(orgId, verificationIds) ?? [],
@@ -431,6 +480,7 @@ export class VerificationsService {
           [],
         this.loadChangeRequests(orgId, verificationIds),
       ]);
+    timings.enrichMs = Date.now() - enrichStartedAt;
     const autoCancelOf = (verificationId: string) =>
       autoCancelRows.find((row) => row.verificationId === verificationId);
 
@@ -578,8 +628,20 @@ export class VerificationsService {
     orgId: string,
     query: GetVerificationOverviewQueryDto,
   ): Promise<VerificationOverviewDto> {
+    return this.loggedRead('verifications-overview-read', (timings) =>
+      this.readOverview(orgId, query, timings),
+    );
+  }
+
+  private async readOverview(
+    orgId: string,
+    query: GetVerificationOverviewQueryDto,
+    timings: DashboardReadTimings,
+  ): Promise<VerificationOverviewDto> {
     const dateRange = query.date_range ?? DEFAULT_STATS_DATE_RANGE;
+    const sourcesStartedAt = Date.now();
     const integrations = await this.integrationsRepo.findByOrg(orgId);
+    timings.sourcesMs = Date.now() - sourcesStartedAt;
     const activeIntegrations = integrations.filter(
       (integration) => integration.isActive === true,
     );
@@ -595,6 +657,7 @@ export class VerificationsService {
     const now = new Date().toISOString();
     const source = activeIntegrations[0];
 
+    const pageStartedAt = Date.now();
     const [
       counts,
       confirmedValue,
@@ -613,9 +676,11 @@ export class VerificationsService {
         period,
         NEEDS_ACTION_TOP_LIMIT,
       ),
-      source ? this.billingEntitlements.readEntitlement(source) : null,
+      source ? this.readEntitlementOf(source) : null,
       this.verificationsRepo.countBlocked(orgId),
     ]);
+    timings.pageMs = Date.now() - pageStartedAt;
+    const enrichStartedAt = Date.now();
     const [historyOf, changeRequestOf] = await Promise.all([
       this.loadCustomerHistory(orgId, topRows),
       this.loadChangeRequests(
@@ -623,6 +688,7 @@ export class VerificationsService {
         topRows.map((row) => row.id),
       ),
     ]);
+    timings.enrichMs = Date.now() - enrichStartedAt;
 
     return {
       date_range: dateRange,
@@ -1011,6 +1077,17 @@ export class VerificationsService {
    * already surfaced through `source`, and inventing a zero budget here would
    * read as "limit reached".
    */
+  /**
+   * The entitlement of a source row this request has just loaded: the row
+   * seeds the read set, so the integration is not read a second time.
+   */
+  private readEntitlementOf(source: typeof integrations.$inferSelect) {
+    return this.billingEntitlements.readEntitlement(
+      source,
+      this.billingEntitlements.beginReads(source, source),
+    );
+  }
+
   private async resolvePageBudget(
     orgId: string,
     activeIntegrations: (typeof integrations.$inferSelect)[],
@@ -1022,7 +1099,7 @@ export class VerificationsService {
       activeIntegrations.length === 1 ? activeIntegrations[0] : null;
     if (!source) return {};
     const [entitlement, blockedCount] = await Promise.all([
-      this.billingEntitlements.readEntitlement(source),
+      this.readEntitlementOf(source),
       this.verificationsRepo.countBlocked(orgId),
     ]);
     // The confirmations list shows the same blocked-orders warning as the
@@ -1184,7 +1261,7 @@ export class VerificationsService {
         'Multiple active commerce sources require staff review',
       );
     const usage = activeIntegrations[0]
-      ? await this.billingEntitlements.readEntitlement(activeIntegrations[0])
+      ? await this.readEntitlementOf(activeIntegrations[0])
       : {
           consumedCount: 0,
           includedLimit: 0,

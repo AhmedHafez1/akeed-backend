@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { integrations } from '../../infrastructure/database/schema';
 import { PlanRequiredNoticesRepository } from '../../infrastructure/database/repositories/plan-required-notices.repository';
-import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
+import {
+  BillingEntitlementService,
+  type EntitlementReads,
+} from '../verification-core/billing-entitlement.service';
 import { BillingConfigService } from './billing-config.service';
 import {
   effectiveBillingStatus,
@@ -18,11 +21,13 @@ export class SendingAvailabilityService {
     private readonly billingConfig: BillingConfigService,
   ) {}
 
+  /** `reads` lets one request share its entitlement reads with the usage card. */
   async read(
     source: typeof integrations.$inferSelect,
+    reads?: EntitlementReads,
   ): Promise<SendingAvailability> {
     const now = new Date();
-    const slot = await this.entitlements.hasAvailableSlot(source);
+    const slot = await this.entitlements.hasAvailableSlot(source, reads);
     const status = effectiveBillingStatus(
       source.billingStatus,
       source.paidThroughAt,

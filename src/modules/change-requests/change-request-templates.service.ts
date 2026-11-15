@@ -154,7 +154,13 @@ export class ChangeRequestTemplatesService {
     integration: Integration,
     switches: TemplateSelectionSwitches = {},
   ): Promise<ChangeRequestReadiness> {
-    const templates = await this.registry.listTemplates();
+    // Every check with a template reads the persisted catalog, so that read
+    // starts alongside the registry list instead of after the first sender.
+    const reads = this.freshReads();
+    const [templates] = await Promise.all([
+      this.registry.listTemplates(),
+      reads.templates(),
+    ]);
     // Representatives cover every branch of the existing automatic language/dialect selectors.
     // The store-language setting falls back to the automatic rule, so it
     // needs the same numbers.
@@ -178,7 +184,6 @@ export class ChangeRequestTemplatesService {
     const checks: (() => Promise<
       ChangeRequestReadiness['variants'][number]
     >)[] = [];
-    const reads = this.freshReads();
     const seen = new Set<string>();
     for (const phone of phones)
       for (const kind of integration.followUpEnabled
