@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   ServiceUnavailableException,
@@ -78,9 +79,21 @@ import type {
   SourceHealthDto,
   SourceSetupDto,
 } from '../../shared/commerce/source-setup';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+type StateReadStage =
+  | 'sourceMs'
+  | 'storeNameMs'
+  | 'creditStatusMs'
+  | 'activationMs'
+  | 'usageMs'
+  | 'sourceSetupMs'
+  | 'currencyMs'
+  | 'sendingAvailabilityMs'
+  | 'changeRequestReadinessMs';
+type StateReadTimings = Partial<Record<StateReadStage, number>>;
 
 /** One value per message language, in the list's order. */
 function byTemplateLanguage<T>(
@@ -113,6 +126,7 @@ function toTemplateStyleDto(
 
 @Injectable()
 export class OnboardingService {
+  private readonly logger = new Logger(OnboardingService.name);
   constructor(
     private readonly onboardingState: OnboardingStateService,
     private readonly billingService: BillingService,
@@ -139,13 +153,47 @@ export class OnboardingService {
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
-    const integration = await this.onboardingState.resolveCurrentIntegration(
-      user,
-      { allowDisconnected: true },
-    );
-    const hydratedIntegration =
-      await this.onboardingState.prefillStoreNameIfMissing(integration);
-    return this.buildState(user, hydratedIntegration);
+    const startedAt = Date.now();
+    const timings: StateReadTimings = {};
+    let succeeded = false;
+    try {
+      const integration = await this.timedStateRead(timings, 'sourceMs', () =>
+        this.onboardingState.resolveCurrentIntegration(user, {
+          allowDisconnected: true,
+        }),
+      );
+      const hydratedIntegration = await this.timedStateRead(
+        timings,
+        'storeNameMs',
+        () => this.onboardingState.prefillStoreNameIfMissing(integration),
+      );
+      const state = await this.buildState(user, hydratedIntegration, timings);
+      succeeded = true;
+      return state;
+    } finally {
+      this.logger.log(
+        buildBackendLog(OnboardingService.name, {
+          action: 'onboarding-state-read',
+          outcome: succeeded ? 'success' : 'failure',
+          durationMs: Date.now() - startedAt,
+          ...timings,
+        }),
+      );
+    }
+  }
+
+  private async timedStateRead<T>(
+    timings: StateReadTimings | undefined,
+    stage: StateReadStage,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    if (!timings) return read();
+    const startedAt = Date.now();
+    try {
+      return await read();
+    } finally {
+      timings[stage] = Date.now() - startedAt;
+    }
   }
 
   async updateSettings(
@@ -574,40 +622,69 @@ export class OnboardingService {
   private async buildState(
     user: AuthenticatedUser,
     integration: IntegrationRecord,
+    timings?: StateReadTimings,
   ): Promise<OnboardingStateDto> {
     const state = this.onboardingState.toState(integration);
     const canUpdateConfiguration = this.canUpdateConfiguration(user);
     const standalone = integration.platformType === 'standalone';
-    const accountStatus = await this.creditEligibility.readStatus(integration);
+    const accountStatus = await this.timedStateRead(
+      timings,
+      'creditStatusMs',
+      () => this.creditEligibility.readStatus(integration),
+    );
     const blockedReasons = standalone
       ? this.getStandaloneBlockedReasons(integration, accountStatus)
       : [];
 
-    const [activation, usage, sourceSetup, latestOrderCurrency] =
-      await Promise.all([
+    const [
+      activation,
+      usage,
+      sourceSetup,
+      latestOrderCurrency,
+      sendingAvailability,
+      changeRequestReadiness,
+    ] = await Promise.all([
+      this.timedStateRead(timings, 'activationMs', () =>
         this.readActivation(integration, state.isOnboardingComplete),
+      ),
+      this.timedStateRead(timings, 'usageMs', () =>
         this.readUsage(integration),
+      ),
+      this.timedStateRead(timings, 'sourceSetupMs', () =>
         this.readSourceSetup(integration, accountStatus),
-        this.ordersRepo?.findLatestOrderCurrency(
-          integration.orgId,
-          integration.id,
-        ) ?? null,
-      ]);
+      ),
+      this.timedStateRead(
+        timings,
+        'currencyMs',
+        () =>
+          this.ordersRepo?.findLatestOrderCurrency(
+            integration.orgId,
+            integration.id,
+          ) ?? Promise.resolve(null),
+      ),
+      this.timedStateRead(timings, 'sendingAvailabilityMs', () =>
+        integration.platformType === 'shopify' && this.sendingAvailability
+          ? this.sendingAvailability.read(integration)
+          : Promise.resolve(undefined),
+      ),
+      this.timedStateRead(
+        timings,
+        'changeRequestReadinessMs',
+        () =>
+          this.onboardingState.changeRequestReadiness?.(integration) ??
+          Promise.resolve({ ready: false, variants: [] }),
+      ),
+    ]);
 
     return {
       ...state,
       ...(integration.platformType === 'shopify' && this.sendingAvailability
         ? {
-            sendingAvailability:
-              await this.sendingAvailability.read(integration),
+            sendingAvailability,
           }
         : {}),
       messageCurrency: latestOrderCurrency ?? state.shippingCurrency,
-      changeRequestReadiness:
-        (await this.onboardingState.changeRequestReadiness?.(integration)) ?? {
-          ready: false,
-          variants: [],
-        },
+      changeRequestReadiness,
       activation,
       usage,
       permissions: {

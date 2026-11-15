@@ -21,7 +21,10 @@ import {
 } from '../../shared/ports/sender-resolver.port';
 import { WhatsappConnectionTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-connection-templates.repository';
 import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
-import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
+import type {
+  ImageTwinTemplate,
+  RegistryTemplate,
+} from '../../shared/messaging/template-registry.types';
 import {
   selectTemplateForSend,
   toSelectedTemplate,
@@ -36,6 +39,11 @@ import type { integrations } from '../../infrastructure/database/schema';
 import type { TemplateSelectionSwitches } from '../../shared/messaging/template-selector';
 
 type Integration = typeof integrations.$inferSelect;
+interface TemplateReads {
+  templates(): Promise<readonly RegistryTemplate[]>;
+  twins(): Promise<readonly ImageTwinTemplate[]>;
+}
+const READINESS_CONCURRENCY = 4;
 export interface ChangeRequestReadiness {
   ready: boolean;
   variants: {
@@ -68,10 +76,33 @@ export class ChangeRequestTemplatesService {
     orgId: string,
     sender: ResolvedSender,
   ): Promise<SelectedCodTemplate | null> {
+    return this.counterpartWithReads(base, orgId, sender, this.freshReads());
+  }
+
+  /** Persisted approvals are shared only within one evaluation, never across requests or sends. */
+  private freshReads(): TemplateReads {
+    let templates: Promise<readonly RegistryTemplate[]> | undefined;
+    let twins: Promise<readonly ImageTwinTemplate[]> | undefined;
+    return {
+      templates: () =>
+        (templates ??=
+          this.templates?.findAll() ?? this.registry.listTemplates()),
+      twins: () =>
+        (twins ??=
+          this.templates?.findImageTwins() ??
+          this.registry.listImageTwins?.() ??
+          Promise.resolve([])),
+    };
+  }
+
+  private async counterpartWithReads(
+    base: SelectedCodTemplate,
+    orgId: string,
+    sender: ResolvedSender,
+    reads: TemplateReads,
+  ): Promise<SelectedCodTemplate | null> {
     // Read current persisted approvals rather than the ordinary selector's stale-on-error cache.
-    const sibling = (
-      await (this.templates?.findAll() ?? this.registry.listTemplates())
-    ).find(
+    const sibling = (await reads.templates()).find(
       (row) =>
         row.changeRequestOfKey === base.registryKey &&
         row.language === base.language &&
@@ -144,6 +175,10 @@ export class ChangeRequestTemplatesService {
           ? ['+201000000001', '+966500000001', '+212600000001']
           : ['+12025550100'];
     const variants: ChangeRequestReadiness['variants'] = [];
+    const checks: (() => Promise<
+      ChangeRequestReadiness['variants'][number]
+    >)[] = [];
+    const reads = this.freshReads();
     const seen = new Set<string>();
     for (const phone of phones)
       for (const kind of integration.followUpEnabled
@@ -167,37 +202,55 @@ export class ChangeRequestTemplatesService {
         if (seen.has(key)) continue;
         seen.add(key);
         if (!base) {
-          variants.push({
-            language: 'language' in selection ? selection.language : '',
-            style: '',
-            sender: 'unknown',
-            ready: false,
-            reason: 'confirmation_template_unavailable',
-          });
+          checks.push(() =>
+            Promise.resolve({
+              language: 'language' in selection ? selection.language : '',
+              style: '',
+              sender: 'unknown',
+              ready: false,
+              reason: 'confirmation_template_unavailable',
+            }),
+          );
           continue;
         }
-        const sender = await this.senders.resolve({
-          orgId: integration.orgId,
-          template: base,
-        });
-        const variant = await this.selectVariant(base, integration, sender);
-        const ready =
-          variant.ready &&
-          (!selection.fallbackReason ||
-            selection.fallbackReason === 'key_missing');
-        variants.push({
-          language: base.language,
-          style: base.variantKey,
-          sender: sender.kind,
-          ready,
-          template_key: variant.template.registryKey ?? null,
-          branding_supported: sender.kind === 'akeed_system',
-          header_format: variant.template.imageHeader ? 'image' : 'none',
-          reason: ready
-            ? null
-            : (variant.reason ?? 'confirmation_template_unavailable'),
+        checks.push(async () => {
+          const sender = await this.senders.resolve({
+            orgId: integration.orgId,
+            template: base,
+          });
+          const variant = await this.selectVariantWithReads(
+            base,
+            integration,
+            sender,
+            reads,
+          );
+          const ready =
+            variant.ready &&
+            (!selection.fallbackReason ||
+              selection.fallbackReason === 'key_missing');
+          return {
+            language: base.language,
+            style: base.variantKey,
+            sender: sender.kind,
+            ready,
+            template_key: variant.template.registryKey ?? null,
+            branding_supported: sender.kind === 'akeed_system',
+            header_format: variant.template.imageHeader ? 'image' : 'none',
+            reason: ready
+              ? null
+              : (variant.reason ?? 'confirmation_template_unavailable'),
+          };
         });
       }
+    // Bound per-store lookups and preserve the selector's language/style ordering.
+    for (let index = 0; index < checks.length; index += READINESS_CONCURRENCY) {
+      const batch = await Promise.all(
+        checks
+          .slice(index, index + READINESS_CONCURRENCY)
+          .map((check) => check()),
+      );
+      variants.push(...batch);
+    }
     return {
       ready: variants.length > 0 && variants.every((variant) => variant.ready),
       variants,
@@ -213,13 +266,17 @@ export class ChangeRequestTemplatesService {
     styles: readonly RegistryTemplate[],
   ): Promise<Set<string>> {
     const keys = new Set<string>();
+    const reads = this.freshReads();
     for (const style of styles) {
       const base = toSelectedTemplate(style);
       const sender = await this.senders.resolve({
         orgId: integration.orgId,
         template: base,
       });
-      if ((await this.selectVariant(base, integration, sender)).ready)
+      if (
+        (await this.selectVariantWithReads(base, integration, sender, reads))
+          .ready
+      )
         keys.add(style.key);
     }
     return keys;
@@ -231,12 +288,21 @@ export class ChangeRequestTemplatesService {
     integration: Integration,
     sender: ResolvedSender,
   ) {
-    const twins =
-      sender.kind === 'akeed_system'
-        ? await (this.templates?.findImageTwins() ??
-            this.registry.listImageTwins?.() ??
-            Promise.resolve([]))
-        : [];
+    return this.selectVariantWithReads(
+      base,
+      integration,
+      sender,
+      this.freshReads(),
+    );
+  }
+
+  private async selectVariantWithReads(
+    base: SelectedCodTemplate,
+    integration: Integration,
+    sender: ResolvedSender,
+    reads: TemplateReads,
+  ) {
+    const twins = sender.kind === 'akeed_system' ? await reads.twins() : [];
     const branded =
       sender.kind === 'akeed_system' &&
       integration.logoHeaderEnabled &&
@@ -266,9 +332,9 @@ export class ChangeRequestTemplatesService {
           !own.driftReason,
         );
       } else if (sender.kind === 'akeed_system') {
-        const original = (
-          await (this.templates?.findAll() ?? this.registry.listTemplates())
-        ).find((row) => row.key === base.registryKey);
+        const original = (await reads.templates()).find(
+          (row) => row.key === base.registryKey,
+        );
         sendable = Boolean(
           original?.isActive &&
           original.reviewStatus === 'approved' &&
@@ -294,7 +360,12 @@ export class ChangeRequestTemplatesService {
         reason: sendable ? reason : 'ordinary_fallback_unavailable',
       };
     };
-    const counterpart = await this.counterpart(base, integration.orgId, sender);
+    const counterpart = await this.counterpartWithReads(
+      base,
+      integration.orgId,
+      sender,
+      reads,
+    );
     if (!counterpart) return unavailable('change_text_unavailable');
     if (!branded)
       return {
