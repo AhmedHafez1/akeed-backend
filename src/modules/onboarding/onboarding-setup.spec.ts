@@ -46,6 +46,7 @@ function setup(
     starter?: string;
     hasRealOrders?: boolean;
     latestOrderCurrency?: string | null;
+    firstCustomerConfirmationAt?: string | null;
   } = {},
 ) {
   const integration = makeIntegration(options.integration);
@@ -83,6 +84,9 @@ function setup(
       .mockResolvedValue({ consumedCount: 0, includedLimit: 30 }),
   };
   const ordersRepo = {
+    findFirstCustomerConfirmationAt: jest
+      .fn()
+      .mockResolvedValue(options.firstCustomerConfirmationAt ?? null),
     hasRealOrders: jest.fn().mockResolvedValue(options.hasRealOrders ?? false),
     findLatestOrderCurrency: jest
       .fn()
@@ -203,6 +207,39 @@ describe('OnboardingService.completeSetup', () => {
 });
 
 describe('OnboardingService activation.hasRealOrders', () => {
+  it('recovers a missing milestone from customer confirmations for this store', async () => {
+    const confirmedAt = '2026-11-12T08:00:00.000Z';
+    const { service, ordersRepo, lifecycles } = setup({
+      firstCustomerConfirmationAt: confirmedAt,
+    });
+
+    const state = await service.getState(owner);
+
+    expect(state.activation.firstRealConfirmedAt).toBe(confirmedAt);
+    expect(ordersRepo.findFirstCustomerConfirmationAt).toHaveBeenCalledWith(
+      owner.orgId,
+      'int-1',
+    );
+    expect(lifecycles.reachMilestone).not.toHaveBeenCalled();
+  });
+
+  it('preserves a captured milestone without querying confirmation history', async () => {
+    const { service, ordersRepo, lifecycles } = setup();
+    const confirmedAt = '2026-11-12T08:00:00.000Z';
+    lifecycles.findCurrent.mockResolvedValueOnce({
+      setupCompletedAt: '2026-09-23T08:00:00.000Z',
+      testSentAt: null,
+      testConfirmedAt: null,
+      testSkippedAt: null,
+      firstRealConfirmedAt: confirmedAt,
+    });
+
+    expect(
+      (await service.getState(owner)).activation.firstRealConfirmedAt,
+    ).toBe(confirmedAt);
+    expect(ordersRepo.findFirstCustomerConfirmationAt).not.toHaveBeenCalled();
+  });
+
   it('reports no real orders so the standalone dashboard shows first-run', async () => {
     const { service, ordersRepo } = setup({ hasRealOrders: false });
 

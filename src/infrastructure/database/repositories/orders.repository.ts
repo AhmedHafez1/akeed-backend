@@ -1,7 +1,18 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../index';
-import { desc, eq, and, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  asc,
+  desc,
+  eq,
+  and,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { DRIZZLE } from '../database.provider';
 import {
   integrations,
@@ -280,6 +291,36 @@ export class OrdersRepository {
       .where(and(eq(orders.orgId, orgId), eq(orders.isTest, false)))
       .limit(1);
     return rows.length > 0;
+  }
+
+  /** Recover activation from retained customer replies when its milestone is missing. */
+  async findFirstCustomerConfirmationAt(
+    orgId: string,
+    integrationId: string,
+  ): Promise<string | null> {
+    const [row] = await this.db
+      .select({ confirmedAt: verifications.confirmedAt })
+      .from(verifications)
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verifications.orgId, orgId),
+          eq(orders.integrationId, integrationId),
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+          isNotNull(verifications.confirmedAt),
+          sql`${verifications.confirmationSource} IS DISTINCT FROM 'merchant_manual'`,
+        ),
+      )
+      .orderBy(asc(verifications.confirmedAt))
+      .limit(1);
+    return row?.confirmedAt ?? null;
   }
 
   /**
