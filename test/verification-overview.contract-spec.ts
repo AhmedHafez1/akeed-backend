@@ -5,7 +5,7 @@ import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
 import { dirname } from 'node:path';
 import { resolve } from 'node:path';
 import { NotFoundException } from '@nestjs/common';
-import { SQL } from 'drizzle-orm';
+import { SQL, sql } from 'drizzle-orm';
 import { getTableConfig, PgDialect, type PgTable } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -424,6 +424,86 @@ const owner = (orgId: string): AuthenticatedUser => ({
   orgId,
   role: 'owner',
   source: 'shopify',
+});
+
+describe('activation confirmation history', () => {
+  it('ignores tests and manual confirmations, finds the earliest customer reply, and isolates stores and tenants', async () => {
+    const orgId = randomUUID();
+    const otherOrgId = randomUUID();
+    const integrationId = randomUUID();
+    const siblingIntegrationId = randomUUID();
+    const otherIntegrationId = randomUUID();
+    for (const id of [orgId, otherOrgId]) {
+      await db
+        .insert(tables.organizations)
+        .values({ id, name: 'Activation', slug: id });
+    }
+    for (const [id, tenant] of [
+      [integrationId, orgId],
+      [siblingIntegrationId, orgId],
+      [otherIntegrationId, otherOrgId],
+    ]) {
+      await db.insert(tables.integrations).values({
+        id,
+        orgId: tenant,
+        platformType: 'shopify',
+        platformStoreUrl: `${id}.myshopify.com`,
+      });
+    }
+    const history = new OrdersRepository(db);
+    const add = async (
+      confirmedAt: string,
+      overrides: Partial<Seed> = {},
+      confirmationSource: 'customer' | 'merchant_manual' | null = 'customer',
+    ) => {
+      const id = randomUUID();
+      await seed({
+        id,
+        orgId,
+        integrationId,
+        orderNumber: id,
+        phone: '+201000000099',
+        total: '10.00',
+        verification: { status: 'confirmed', confirmedAt, confirmationSource },
+        ...overrides,
+      });
+      return id;
+    };
+    await add('2026-11-01T08:00:00.000Z', {}, 'merchant_manual');
+    await add('2026-11-02T08:00:00.000Z', { isTest: true });
+    const legacyTestId = await add('2026-11-03T08:00:00.000Z', {
+      isTest: true,
+    });
+    const [legacyTest] = await db
+      .select({ orderId: tables.verifications.orderId })
+      .from(tables.verifications)
+      .where(sql`${tables.verifications.id} = ${legacyTestId}`);
+    await client`UPDATE orders SET is_test=false WHERE id=${legacyTest.orderId}`;
+    await add('2026-11-04T08:00:00.000Z', {
+      integrationId: siblingIntegrationId,
+    });
+    await add('2026-11-05T08:00:00.000Z', {
+      orgId: otherOrgId,
+      integrationId: otherIntegrationId,
+    });
+    await expect(
+      history.findFirstCustomerConfirmationAt(orgId, integrationId),
+    ).resolves.toBeNull();
+    await add('2026-11-12T08:00:00.000Z');
+    // Older customer replies predate confirmation_source and legitimately have null provenance.
+    await add('2026-11-10T08:00:00.000Z', {}, null);
+    const first = await history.findFirstCustomerConfirmationAt(
+      orgId,
+      integrationId,
+    );
+    expect(new Date(first!).toISOString()).toBe('2026-11-10T08:00:00.000Z');
+    await expect(
+      history.findFirstCustomerConfirmationAt(otherOrgId, integrationId),
+    ).resolves.toBeNull();
+    await expect(
+      history.findFirstCustomerConfirmationAt(orgId, otherIntegrationId),
+    ).resolves.toBeNull();
+  });
 });
 
 describe('0043 migration', () => {

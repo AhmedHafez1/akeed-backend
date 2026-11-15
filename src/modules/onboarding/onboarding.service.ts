@@ -667,12 +667,21 @@ export class OnboardingService {
     const hasActivePlan =
       this.billingEntitlements.evaluateAccess(integration).allowed;
     const managesBilling = getBillingManagement(integration).canManageBilling;
+    const firstRealConfirmedAt =
+      lifecycle?.firstRealConfirmedAt ??
+      (lifecycle?.setupCompletedAt
+        ? await this.ordersRepo?.findFirstCustomerConfirmationAt(
+            integration.orgId,
+            integration.id,
+          )
+        : null) ??
+      null;
     return {
       setupCompletedAt: lifecycle?.setupCompletedAt ?? null,
       testSentAt: lifecycle?.testSentAt ?? null,
       testConfirmedAt: lifecycle?.testConfirmedAt ?? null,
       testSkippedAt: lifecycle?.testSkippedAt ?? null,
-      firstRealConfirmedAt: lifecycle?.firstRealConfirmedAt ?? null,
+      firstRealConfirmedAt,
       hasRealOrders,
       isLive:
         isOnboardingComplete &&
