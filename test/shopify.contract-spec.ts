@@ -11,6 +11,8 @@ import { OrdersRepository } from '../src/infrastructure/database/repositories/or
 import { ShopifyGdprWebhookService } from '../src/infrastructure/spokes/shopify/services/shopify-gdpr-webhook.service';
 import { PhoneService } from '../src/shared/services/phone.service';
 import { replayShopifyCustomerRedactions } from '../scripts/replay-shopify-customer-redactions';
+import { backfillFreePlanClaimPhones } from '../scripts/backfill-free-plan-claim-phones';
+import { hashClaimPhone } from '../src/shared/billing/free-plan-claim-phone';
 import { WebhookQueueProducer } from '../src/modules/webhook-queue/webhook-queue.producer';
 import { WebhookDispatchService } from '../src/modules/webhook-queue/webhook-dispatch.service';
 import { WebhookJobType } from '../src/modules/webhook-queue/webhook-queue.constants';
@@ -256,6 +258,134 @@ describe('Shopify isolated PostgreSQL contract', () => {
       expect(reclaimed).toHaveLength(0);
     } finally {
       await client.unsafe(`DROP SCHEMA "${claims}" CASCADE`);
+    }
+  });
+
+  it('refuses a second free plan claim from the same WhatsApp number on another store', async () => {
+    const phoneClaims = `${namespace}_phone_claims`;
+    await client.unsafe(`CREATE SCHEMA "${phoneClaims}"`);
+    try {
+      const migration = readFileSync(
+        resolve(__dirname, '../drizzle/0102_free_plan_claim_phone.sql'),
+        'utf8',
+      );
+      const apply = () =>
+        client.begin(async (tx) => {
+          await tx.unsafe(`SET LOCAL search_path TO "${phoneClaims}"`);
+          for (const statement of migration.split('--> statement-breakpoint')) {
+            if (statement.trim()) await tx.unsafe(statement);
+          }
+        });
+      await client.unsafe(
+        `CREATE TABLE "${phoneClaims}"."billing_free_plan_claims" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "org_id" uuid, "platform_type" text NOT NULL, "shop_domain" text NOT NULL, CONSTRAINT "billing_free_plan_claims_platform_shop_key" UNIQUE("platform_type","shop_domain"))`,
+      );
+      // A claim from before the column stays valid, with no number.
+      await client`INSERT INTO ${client(phoneClaims)}.billing_free_plan_claims (platform_type, shop_domain) VALUES ('shopify', 'legacy.myshopify.com')`;
+
+      await apply();
+      await apply();
+
+      const claim = (shopDomain: string, phoneHash: string) => client`
+        INSERT INTO ${client(phoneClaims)}.billing_free_plan_claims (org_id, platform_type, shop_domain, phone_hash)
+        VALUES (${randomUUID()}, 'shopify', ${shopDomain}, ${phoneHash})
+        ON CONFLICT DO NOTHING
+        RETURNING id`;
+      const phoneHash = 'a'.repeat(64);
+
+      await expect(
+        claim('first.myshopify.com', phoneHash),
+      ).resolves.toHaveLength(1);
+      // Same number, new store: refused.
+      await expect(
+        claim('second.myshopify.com', phoneHash),
+      ).resolves.toHaveLength(0);
+      // Same store, new number: still refused by the store key.
+      await expect(
+        claim('first.myshopify.com', 'b'.repeat(64)),
+      ).resolves.toHaveLength(0);
+      // A new store with a new number claims normally.
+      await expect(
+        claim('third.myshopify.com', 'c'.repeat(64)),
+      ).resolves.toHaveLength(1);
+
+      const rows = await client<
+        { shop_domain: string; phone_hash: string | null }[]
+      >`
+        SELECT shop_domain, phone_hash FROM ${client(phoneClaims)}.billing_free_plan_claims
+        ORDER BY shop_domain`;
+      expect(rows).toEqual([
+        { shop_domain: 'first.myshopify.com', phone_hash: phoneHash },
+        { shop_domain: 'legacy.myshopify.com', phone_hash: null },
+        { shop_domain: 'third.myshopify.com', phone_hash: 'c'.repeat(64) },
+      ]);
+    } finally {
+      await client.unsafe(`DROP SCHEMA "${phoneClaims}" CASCADE`);
+    }
+  });
+
+  it('backfills claim phone hashes oldest first and leaves duplicates domain-only', async () => {
+    const backfill = `${namespace}_claim_backfill`;
+    await client.unsafe(`CREATE SCHEMA "${backfill}"`);
+    const scoped = postgres(databaseUrl, {
+      max: 1,
+      onnotice: () => undefined,
+      connection: { search_path: backfill },
+    });
+    try {
+      await scoped.unsafe(
+        `CREATE TABLE integrations ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "platform_type" text NOT NULL, "platform_store_url" text NOT NULL, "merchant_whatsapp_phone" text, UNIQUE ("platform_type", "platform_store_url"))`,
+      );
+      await scoped.unsafe(
+        `CREATE TABLE billing_free_plan_claims ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "org_id" uuid, "platform_type" text NOT NULL, "shop_domain" text NOT NULL, "claimed_at" timestamptz DEFAULT now(), "updated_at" timestamptz DEFAULT now(), CONSTRAINT "billing_free_plan_claims_platform_shop_key" UNIQUE("platform_type","shop_domain"))`,
+      );
+      const migration = readFileSync(
+        resolve(__dirname, '../drizzle/0102_free_plan_claim_phone.sql'),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint')) {
+        if (statement.trim()) await scoped.unsafe(statement);
+      }
+
+      await scoped`INSERT INTO integrations (platform_type, platform_store_url, merchant_whatsapp_phone) VALUES
+        ('shopify', 'First.myshopify.com', '+201001234567'),
+        ('shopify', 'second.myshopify.com', '+201001234567'),
+        ('shopify', 'nophone.myshopify.com', NULL)`;
+      await scoped`INSERT INTO billing_free_plan_claims (platform_type, shop_domain, claimed_at) VALUES
+        ('shopify', 'first.myshopify.com', '2026-01-01T00:00:00Z'),
+        ('shopify', 'second.myshopify.com', '2026-02-01T00:00:00Z'),
+        ('shopify', 'nophone.myshopify.com', '2026-03-01T00:00:00Z'),
+        ('shopify', 'deleted.myshopify.com', '2026-04-01T00:00:00Z')`;
+
+      const key = 'k'.repeat(32);
+      const expected = { scanned: 4, updated: 1, duplicate: 1, noPhone: 2 };
+      await expect(
+        backfillFreePlanClaimPhones(scoped, { apply: false, key }),
+      ).resolves.toEqual(expected);
+      const untouched = await scoped<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM billing_free_plan_claims WHERE phone_hash IS NOT NULL`;
+      expect(untouched[0].n).toBe(0);
+
+      await expect(
+        backfillFreePlanClaimPhones(scoped, { apply: true, key }),
+      ).resolves.toEqual(expected);
+      const rows = await scoped<
+        { shop_domain: string; phone_hash: string | null }[]
+      >`
+        SELECT shop_domain, phone_hash FROM billing_free_plan_claims ORDER BY claimed_at`;
+      expect(rows.map((row) => row.phone_hash)).toEqual([
+        hashClaimPhone('+201001234567', key),
+        null,
+        null,
+        null,
+      ]);
+
+      // Re-running finds the first claim done and changes nothing.
+      await expect(
+        backfillFreePlanClaimPhones(scoped, { apply: true, key }),
+      ).resolves.toEqual({ scanned: 3, updated: 0, duplicate: 1, noPhone: 2 });
+    } finally {
+      await scoped.end();
+      await client.unsafe(`DROP SCHEMA "${backfill}" CASCADE`);
     }
   });
 
@@ -817,6 +947,15 @@ describe('Shopify auth joined access contract', () => {
     await authClient.unsafe(
       `CREATE FUNCTION "${authNamespace}".uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'`,
     );
+    for (const definition of [
+      schema.integrationDefaultLanguage,
+      schema.integrationOnboardingStatus,
+      schema.integrationBillingPlanId,
+    ]) {
+      await authClient.unsafe(
+        `CREATE TYPE "${authNamespace}"."${definition.enumName}" AS ENUM (${definition.enumValues.map((value: string) => `'${value.replaceAll("'", "''")}'`).join(', ')})`,
+      );
+    }
     for (const table of [schema.integrations, schema.memberships]) {
       const definition = getTableConfig(table);
       const dialect = new PgDialect();

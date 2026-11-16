@@ -1,4 +1,5 @@
 import { BillingService } from './billing.service';
+import { hashClaimPhone } from '../../shared/billing/free-plan-claim-phone';
 import type { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -22,6 +23,7 @@ function makeIntegration(overrides: Record<string, unknown> = {}) {
     billingActivatedAt: '2026-01-01T00:00:00Z',
     billingCanceledAt: null,
     billingStatusUpdatedAt: null,
+    merchantWhatsappPhone: '+201001234567',
     ...overrides,
   };
 }
@@ -67,6 +69,7 @@ function createMocks() {
     getAppUrl: jest.fn().mockReturnValue('https://app.akeed.co'),
     getApiKey: jest.fn().mockReturnValue('key'),
     getApiSecret: jest.fn().mockReturnValue('secret'),
+    getFreePlanClaimPhoneKey: jest.fn().mockReturnValue('k'.repeat(32)),
   };
 
   const capacityRecovery = { request: jest.fn() };
@@ -309,6 +312,102 @@ describe('BillingService', () => {
       expect(
         mocks.freePlanClaimsRepo.deleteByPlatformAndShop,
       ).not.toHaveBeenCalled();
+    });
+
+    it('claims with a keyed hash of the WhatsApp number, never the number', async () => {
+      const mocks = createMocks();
+      mocks.integrationsRepo.updateById.mockResolvedValue(
+        makeIntegration() as never,
+      );
+
+      await mocks.service.initiateBilling(
+        makeIntegration({ billingPlanId: null, billingStatus: null }) as never,
+        'starter',
+      );
+
+      const calls = mocks.freePlanClaimsRepo.createIfNew.mock
+        .calls as unknown[][];
+      const claim = calls[0][0] as Record<string, unknown>;
+      expect(claim).toMatchObject({
+        orgId: 'org-1',
+        platformType: 'shopify',
+        shopDomain: 'test.myshopify.com',
+        phoneHash: hashClaimPhone('+201001234567', 'k'.repeat(32)),
+      });
+      expect(JSON.stringify(claim)).not.toContain('201001234567');
+    });
+
+    it('requires a WhatsApp number before Starter can be claimed', async () => {
+      const mocks = createMocks();
+
+      await expect(
+        mocks.service.initiateBilling(
+          makeIntegration({
+            billingPlanId: null,
+            billingStatus: null,
+            merchantWhatsappPhone: null,
+          }) as never,
+          'starter',
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'BILLING_FREE_PLAN_PHONE_REQUIRED' },
+      });
+      expect(mocks.freePlanClaimsRepo.createIfNew).not.toHaveBeenCalled();
+      expect(mocks.integrationsRepo.updateById).not.toHaveBeenCalled();
+    });
+
+    it('still resumes its own unused Starter when the store has no number', async () => {
+      const mocks = createMocks();
+      mocks.billingConfig.resolveAllPlans.mockReturnValue([
+        {
+          id: 'starter',
+          name: 'Akeed Starter',
+          amount: 0,
+          currencyCode: 'USD',
+          testMode: true,
+          includedVerifications: 30,
+        },
+      ]);
+      mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
+        consumedCount: 5,
+        includedLimit: 30,
+      });
+      mocks.integrationsRepo.updateById.mockResolvedValue(
+        makeIntegration() as never,
+      );
+
+      await expect(
+        mocks.service.initiateBilling(
+          makeIntegration({
+            billingStatus: 'cancelled',
+            merchantWhatsappPhone: null,
+          }) as never,
+          'starter',
+        ),
+      ).resolves.toHaveProperty('confirmationUrl');
+      expect(mocks.freePlanClaimsRepo.createIfNew).not.toHaveBeenCalled();
+      expect(mocks.integrationsRepo.updateById).toHaveBeenCalledWith(
+        'int-1',
+        expect.objectContaining({ billingStatus: 'active' }),
+      );
+    });
+  });
+
+  describe('getBillingPlans — free plan claimed by number', () => {
+    it('shows Starter as used when the number claimed on another store', async () => {
+      const mocks = createMocks();
+      mocks.freePlanClaimsRepo.hasClaim.mockResolvedValue(true);
+
+      const result = await mocks.service.getBillingPlans(
+        makeIntegration({ billingPlanId: null, billingStatus: null }) as never,
+      );
+
+      expect(result.isFreePlanClaimed).toBe(true);
+      expect(mocks.freePlanClaimsRepo.hasClaim).toHaveBeenCalledWith({
+        platformType: 'shopify',
+        shopDomain: 'test.myshopify.com',
+        phoneHash: hashClaimPhone('+201001234567', 'k'.repeat(32)),
+      });
     });
   });
 

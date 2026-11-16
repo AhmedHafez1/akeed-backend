@@ -91,6 +91,7 @@
     "backfill:order-customer-country": "tsx scripts/backfill-order-customer-country.ts",
     "replay:shopify-customer-redactions": "tsx scripts/replay-shopify-customer-redactions.ts",
     "cleanup:webhook-events": "tsx scripts/cleanup-webhook-events-backlog.ts",
+    "backfill:free-plan-claim-phones": "tsx scripts/backfill-free-plan-claim-phones.ts",
     "backfill:order-intake": "tsx scripts/backfill-order-intake.ts",
     "test:contract:admin-store-signals": "jest --config ./test/jest-admin-store-signals-contract.json --runInBand",
     "docs:order-api-guide": "node scripts/order-api-guide.js",

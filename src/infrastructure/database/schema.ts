@@ -973,6 +973,9 @@ export const billingFreePlanClaims = pgTable(
     orgId: uuid('org_id'),
     platformType: text('platform_type').notNull(),
     shopDomain: text('shop_domain').notNull(),
+    // Keyed hash of the merchant's WhatsApp number, never the number: one
+    // number gets one free plan, and the row must hold no personal data.
+    phoneHash: text('phone_hash'),
     claimedAt: timestamp('claimed_at', {
       withTimezone: true,
       mode: 'string',
@@ -1004,6 +1007,9 @@ export const billingFreePlanClaims = pgTable(
       table.platformType,
       table.shopDomain,
     ),
+    uniqueIndex('billing_free_plan_claims_phone_hash_key')
+      .using('btree', table.phoneHash.asc().nullsLast().op('text_ops'))
+      .where(sql`(phone_hash IS NOT NULL)`),
     pgPolicy('Service role manages free plan claims', {
       as: 'permissive',
       for: 'all',

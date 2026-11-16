@@ -80,6 +80,9 @@ const PLACEHOLDER_VALUES = new Set([
   'your-secret-here',
 ]);
 
+export const FREE_PLAN_CLAIM_PHONE_KEY_VAR = 'FREE_PLAN_CLAIM_PHONE_KEY';
+export const FREE_PLAN_CLAIM_PHONE_KEY_MIN_LENGTH = 32;
+
 function isBlank(value: string | undefined): boolean {
   return value === undefined || value.trim().length === 0;
 }
@@ -117,6 +120,31 @@ export function validateEnv(
         );
       }
     }
+  }
+
+  // Free-plan claims keep a keyed hash of the merchant's number. Changing the
+  // key later would let every number claim again, so a deployment must set a
+  // real one; development and tests fall back to a fixed local key.
+  const claimPhoneKey = read(FREE_PLAN_CLAIM_PHONE_KEY_VAR)?.trim();
+  if (isProductionLike && isBlank(claimPhoneKey)) {
+    errors.push(
+      `${FREE_PLAN_CLAIM_PHONE_KEY_VAR} is required — without it the Starter plan cannot be limited to one claim per WhatsApp number.`,
+    );
+  } else if (
+    claimPhoneKey &&
+    claimPhoneKey.length < FREE_PLAN_CLAIM_PHONE_KEY_MIN_LENGTH
+  ) {
+    errors.push(
+      `${FREE_PLAN_CLAIM_PHONE_KEY_VAR} must be at least ${FREE_PLAN_CLAIM_PHONE_KEY_MIN_LENGTH} characters.`,
+    );
+  } else if (
+    isProductionLike &&
+    claimPhoneKey &&
+    PLACEHOLDER_VALUES.has(claimPhoneKey)
+  ) {
+    errors.push(
+      `${FREE_PLAN_CLAIM_PHONE_KEY_VAR} is still set to the ${'`'}.env.example${'`'} placeholder.`,
+    );
   }
 
   // Optional: the Conversions API stays off unless the Pixel and token are set.

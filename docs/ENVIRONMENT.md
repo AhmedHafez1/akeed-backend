@@ -125,11 +125,12 @@ A store whose refresh Shopify refuses is marked `reauth_required` and makes no m
     - `true`: creates test subscriptions (recommended outside production billing tests).
     - `false`: creates real charges (only for production billing validation).
   - `POST /api/onboarding/billing` requires `planId` and maps to built-in plans:
-    - `starter`: free, 30 WhatsApp confirmations (no Shopify charge, onboarding auto-completes; one-time claim per store).
+    - `starter`: free, 30 WhatsApp confirmations (no Shopify charge, onboarding auto-completes; one-time claim per store and per merchant WhatsApp number).
     - `basic`: `$9.99`/month, 300 WhatsApp confirmations/month.
     - `pro`: `$22.99`/month, 1,000 WhatsApp confirmations/month.
     - `business`: public-facing Scale plan, `$49.99`/month, 2,500 WhatsApp confirmations/month.
   - Plans do not include usage-based Shopify billing line items. When the included limit is reached, sending stops until renewal or upgrade.
+  - `FREE_PLAN_CLAIM_PHONE_KEY`: secret key (at least 32 characters) for the HMAC-SHA256 hash of the merchant's WhatsApp number that each Starter claim keeps. Required outside development and tests, where a fixed local key is used. Generate it once (for example `openssl rand -hex 32`) and never change it: a new key makes every stored hash stop matching, so every number could claim Starter again. `npm run backfill:free-plan-claim-phones` hashes the numbers of claims made before this check and must run with the same key.
 
 ## Standalone Account Activation
 

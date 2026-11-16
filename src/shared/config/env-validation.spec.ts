@@ -5,6 +5,7 @@ const meta = {
   WA_PHONE_NUMBER_ID: 'phone',
   WA_VERIFY_TOKEN: 'verify',
   META_APP_SECRET: 'a-real-secret',
+  FREE_PLAN_CLAIM_PHONE_KEY: 'k'.repeat(32),
 };
 
 describe('validateEnv', () => {
@@ -27,6 +28,28 @@ describe('validateEnv', () => {
         NODE_ENV: 'production',
         DATABASE_URL: 'postgres://localhost/db',
         ...meta,
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires a free-plan claim key of at least 32 characters when deployed', () => {
+    const withoutKey: Record<string, string> = { ...meta };
+    delete withoutKey.FREE_PLAN_CLAIM_PHONE_KEY;
+    const base = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://localhost/db',
+    };
+    expect(() => validateEnv({ ...base, ...withoutKey })).toThrow(
+      /FREE_PLAN_CLAIM_PHONE_KEY is required/,
+    );
+    expect(() =>
+      validateEnv({ ...base, ...meta, FREE_PLAN_CLAIM_PHONE_KEY: 'short' }),
+    ).toThrow(/FREE_PLAN_CLAIM_PHONE_KEY must be at least 32/);
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgres://localhost/db',
+        ...withoutKey,
       }),
     ).not.toThrow();
   });

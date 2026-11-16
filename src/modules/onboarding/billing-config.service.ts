@@ -7,6 +7,9 @@ import {
   resolveBillingPlans,
   resolveBooleanConfig,
 } from './onboarding.service.helpers';
+import { FREE_PLAN_CLAIM_PHONE_KEY_VAR } from '../../shared/config/env-validation';
+
+const LOCAL_FREE_PLAN_CLAIM_PHONE_KEY = 'akeed-local-free-plan-claim-phone-key';
 
 @Injectable()
 export class BillingConfigService {
@@ -60,6 +63,18 @@ export class BillingConfigService {
 
   getApiSecret(): string {
     return this.configService.getOrThrow<string>('SHOPIFY_API_SECRET');
+  }
+
+  /**
+   * The key free-plan claims hash the merchant's number with. `validateEnv`
+   * requires it outside development and tests; there a fixed local key keeps
+   * setup to copying `.env.example`.
+   */
+  getFreePlanClaimPhoneKey(): string {
+    return (
+      this.configService.get<string>(FREE_PLAN_CLAIM_PHONE_KEY_VAR)?.trim() ||
+      LOCAL_FREE_PLAN_CLAIM_PHONE_KEY
+    );
   }
 
   private getBooleanConfig(key: string, defaultValue: boolean): boolean {

@@ -404,6 +404,7 @@ describe('order imports PostgreSQL contract', () => {
         '0099_admin_store_signals.sql',
         '0100_order_customer_language.sql',
         '0101_shopify_offline_credentials.sql',
+        '0102_free_plan_claim_phone.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
