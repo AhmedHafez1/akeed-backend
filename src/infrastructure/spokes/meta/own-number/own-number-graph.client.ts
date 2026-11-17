@@ -79,6 +79,8 @@ export interface InspectedBusinessToken {
 export interface WabaPhoneNumber {
   id: string;
   displayPhoneNumber: string | null;
+  /** Meta's `is_on_biz_app`; null where Meta sent nothing usable. */
+  isOnBizApp: boolean | null;
 }
 
 /** How Meta reports a number's use. Null where Meta sent nothing usable. */
@@ -168,15 +170,22 @@ export class OwnNumberGraphClient {
     };
   }
 
-  /** `GET /oauth/access_token`: the login code for a business token. */
+  /**
+   * `GET /oauth/access_token`: the login code for a business token. A code
+   * from a redirect sign-in is exchanged with the same `redirect_uri` the
+   * dialog was opened with; a code from the SDK popup has none.
+   */
   async exchangeCode(input: {
     appId: string;
     appSecret: string;
     code: string;
+    redirectUri?: string;
   }): Promise<OwnNumberGraphResult<{ businessToken: string }>> {
     const url = new URL(`${this.graphBaseUrl}/oauth/access_token`);
     url.searchParams.set('client_id', input.appId);
     url.searchParams.set('client_secret', input.appSecret);
+    if (input.redirectUri)
+      url.searchParams.set('redirect_uri', input.redirectUri);
     url.searchParams.set('code', input.code);
     const result = await this.getJson(
       'whatsapp_signup_code_exchange',
@@ -267,7 +276,7 @@ export class OwnNumberGraphClient {
     if (!META_ID.test(input.wabaId))
       throw new Error('WhatsApp Business account id must be numeric');
     const url = new URL(`${this.graphBaseUrl}/${input.wabaId}/phone_numbers`);
-    url.searchParams.set('fields', 'id,display_phone_number');
+    url.searchParams.set('fields', 'id,display_phone_number,is_on_biz_app');
     url.searchParams.set('limit', String(WABA_PHONE_NUMBERS_PAGE_LIMIT));
     const result = await this.getJson(
       'whatsapp_signup_phone_numbers_read',
@@ -283,9 +292,10 @@ export class OwnNumberGraphClient {
       ok: true,
       value: data.flatMap((entry: unknown) => {
         if (!entry || typeof entry !== 'object') return [];
-        const { id, display_phone_number } = entry as {
+        const { id, display_phone_number, is_on_biz_app } = entry as {
           id?: unknown;
           display_phone_number?: unknown;
+          is_on_biz_app?: unknown;
         };
         if (typeof id !== 'string' || !META_ID.test(id)) return [];
         return [
@@ -297,6 +307,8 @@ export class OwnNumberGraphClient {
               display_phone_number.length <= MAX_DISPLAY_PHONE_NUMBER_LENGTH
                 ? display_phone_number
                 : null,
+            isOnBizApp:
+              typeof is_on_biz_app === 'boolean' ? is_on_biz_app : null,
           },
         ];
       }),

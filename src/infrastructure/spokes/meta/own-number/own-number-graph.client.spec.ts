@@ -193,12 +193,16 @@ describe('OwnNumberGraphClient', () => {
         {
           id: FAKE_PHONE_NUMBER_ID,
           displayPhoneNumber: FAKE_DISPLAY_PHONE_NUMBER,
+          isOnBizApp: null,
         },
       ],
     });
     expect(fake.requests[0]).toMatchObject({
       path: `/${FAKE_WABA_ID}/phone_numbers`,
-      query: { fields: 'id,display_phone_number', limit: '100' },
+      query: {
+        fields: 'id,display_phone_number,is_on_biz_app',
+        limit: '100',
+      },
     });
     expectNoSecretsLogged();
   });

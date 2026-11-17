@@ -426,6 +426,120 @@ describe('WhatsappConnectService', () => {
     });
   });
 
+  describe('full-page sign-in', () => {
+    it('builds Meta’s sign-in link back to the page in its language, with the signup ticket as state', async () => {
+      const s = setup();
+      const issued = await s.service.issueTicket(owner(), 'en');
+      const ticket = new URL(issued.connectUrl).searchParams.get('ticket')!;
+      const result = await s.service.claimTicket(ticket, 'en');
+      const link = new URL(result.signupUrl);
+      expect(link.origin + link.pathname).toBe(
+        'https://www.facebook.com/v26.0/dialog/oauth',
+      );
+      expect(Object.fromEntries(link.searchParams)).toEqual({
+        client_id: FAKE_APP_ID,
+        redirect_uri: `${BASE}/en/whatsapp/connect`,
+        state: result.signupTicket,
+        config_id: '1234567890',
+        response_type: 'code',
+        override_default_response_type: 'true',
+        extras: JSON.stringify({ setup: {}, version: 'v5' }),
+      });
+      expect(logs.join(' ')).not.toContain(result.signupTicket);
+    });
+
+    it('defaults the return page to Arabic', async () => {
+      const s = setup();
+      const { signupUrl } = await claimed(s);
+      expect(new URL(signupUrl).searchParams.get('redirect_uri')).toBe(
+        `${BASE}/ar/whatsapp/connect`,
+      );
+    });
+
+    it('exchanges a returned code with the same page as redirect_uri', async () => {
+      const s = setup();
+      const { signupTicket } = await claimed(s);
+      await expect(
+        s.service.completeSignup({
+          signupTicket,
+          code: FAKE_CODE,
+          redirectLocale: 'fr',
+        }),
+      ).resolves.toMatchObject({ state: 'connecting' });
+      expect(s.meta.requests[0]).toMatchObject({
+        path: '/oauth/access_token',
+        query: { redirect_uri: `${BASE}/fr/whatsapp/connect` },
+      });
+    });
+
+    it('labels the path from Meta’s is_on_biz_app when the page reported nothing', async () => {
+      const state = defaultSignupState();
+      state.phoneNumbersByWaba[FAKE_WABA_ID][0].is_on_biz_app = true;
+      const s = setup(connectOn, state);
+      const { signupTicket } = await claimed(s);
+      await expect(
+        s.service.completeSignup({
+          signupTicket,
+          code: FAKE_CODE,
+          redirectLocale: 'ar',
+        }),
+      ).resolves.toMatchObject({ signupPath: 'coexistence' });
+      expect(s.connectionRows.get(ORG)).toMatchObject({
+        signupPath: 'coexistence',
+      });
+    });
+
+    it('relaunches once with an unused signup ticket, which then stops working', async () => {
+      const s = setup();
+      const first = await claimed(s);
+      const again = await s.service.relaunchSignup(first.signupTicket, 'ur');
+      expect(again.signupTicket).not.toBe(first.signupTicket);
+      expect(new URL(again.signupUrl).searchParams.get('state')).toBe(
+        again.signupTicket,
+      );
+      expect(new URL(again.signupUrl).searchParams.get('redirect_uri')).toBe(
+        `${BASE}/ur/whatsapp/connect`,
+      );
+      await expectCode(
+        s.service.relaunchSignup(first.signupTicket, 'ur'),
+        'WHATSAPP_CONNECT_TICKET_INVALID',
+      );
+      await expectCode(
+        complete(s, first.signupTicket),
+        'WHATSAPP_CONNECT_TICKET_INVALID',
+      );
+      await expect(complete(s, again.signupTicket)).resolves.toMatchObject({
+        state: 'connecting',
+      });
+    });
+
+    it('refuses a link ticket or a spent signup ticket for a relaunch', async () => {
+      const s = setup();
+      const issued = await s.service.issueTicket(owner(), 'ar');
+      const ticket = new URL(issued.connectUrl).searchParams.get('ticket')!;
+      await expectCode(
+        s.service.relaunchSignup(ticket, 'ar'),
+        'WHATSAPP_CONNECT_TICKET_INVALID',
+      );
+      const { signupTicket } = await s.service.claimTicket(ticket);
+      await complete(s, signupTicket);
+      await expectCode(
+        s.service.relaunchSignup(signupTicket, 'ar'),
+        'WHATSAPP_CONNECT_TICKET_INVALID',
+      );
+    });
+
+    it('rechecks the owner role before a relaunch', async () => {
+      const s = setup();
+      const { signupTicket } = await claimed(s);
+      s.roles.set(`${ORG}:${USER}`, 'admin');
+      await expectCode(
+        s.service.relaunchSignup(signupTicket, 'ar'),
+        'WHATSAPP_CONNECTION_OWNER_REQUIRED',
+      );
+    });
+  });
+
   describe('completeSignup', () => {
     it('verifies the token and assets, then stores ciphertext in state connecting', async () => {
       const s = setup();

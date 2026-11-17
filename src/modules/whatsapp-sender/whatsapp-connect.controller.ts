@@ -11,6 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   ClaimWhatsappConnectTicketDto,
   CompleteWhatsappSignupDto,
+  RelaunchWhatsappSignupDto,
   type WhatsappConnectTicketClaimedDto,
   type WhatsappSignupCompletedDto,
 } from './dto/whatsapp-connect.dto';
@@ -32,6 +33,7 @@ export const claimWhatsappConnectTicketPipe = codedPipe(
   ClaimWhatsappConnectTicketDto,
 );
 export const completeWhatsappSignupPipe = codedPipe(CompleteWhatsappSignupDto);
+export const relaunchWhatsappSignupPipe = codedPipe(RelaunchWhatsappSignupDto);
 
 /**
  * The connect page, which runs outside any Akeed or Shopify session. Each
@@ -51,9 +53,18 @@ export class WhatsappConnectController {
     // this route's pipe (expectedType) answers with the connect code.
     @Body(claimWhatsappConnectTicketPipe) body: object,
   ): Promise<WhatsappConnectTicketClaimedDto> {
-    return this.connect.claimTicket(
-      (body as ClaimWhatsappConnectTicketDto).ticket,
-    );
+    const { ticket, locale } = body as ClaimWhatsappConnectTicketDto;
+    return this.connect.claimTicket(ticket, locale);
+  }
+
+  @Post('relaunch')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  relaunch(
+    @Body(relaunchWhatsappSignupPipe) body: object,
+  ): Promise<WhatsappConnectTicketClaimedDto> {
+    const { signupTicket, locale } = body as RelaunchWhatsappSignupDto;
+    return this.connect.relaunchSignup(signupTicket, locale);
   }
 
   @Post('complete')

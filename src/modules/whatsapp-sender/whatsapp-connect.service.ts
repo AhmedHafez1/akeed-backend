@@ -19,6 +19,10 @@ import {
   signupPathFromHints,
   type SignupSessionHints,
 } from '../../infrastructure/spokes/meta/own-number/signup-assets.policy';
+import {
+  buildEmbeddedSignupUrl,
+  embeddedSignupRedirectUri,
+} from '../../infrastructure/spokes/meta/own-number/embedded-signup-url.policy';
 import { encryptConnectionSecret } from '../../infrastructure/spokes/meta/own-number/whatsapp-connection-credentials';
 import {
   generateInstallToken,
@@ -53,6 +57,9 @@ export const CONNECT_TICKET_TTL_SECONDS = 600;
  * a business and verifying a number by code.
  */
 export const SIGNUP_TICKET_TTL_SECONDS = 1_800;
+
+/** For a connect page that does not say its language: the app's default. */
+const DEFAULT_CONNECT_LOCALE: WhatsappConnectLocale = 'ar';
 
 const REPLACEABLE: ReadonlySet<string> = new Set(SIGNUP_REPLACEABLE_STATES);
 
@@ -118,38 +125,86 @@ export class WhatsappConnectService {
     return { connectUrl: url.toString(), expiresAt: toIso(issued.expiresAt) };
   }
 
-  async claimTicket(ticket: string): Promise<WhatsappConnectTicketClaimedDto> {
+  async claimTicket(
+    ticket: string,
+    locale: WhatsappConnectLocale = DEFAULT_CONNECT_LOCALE,
+  ): Promise<WhatsappConnectTicketClaimedDto> {
     const consumed = await this.tickets.consume(hashInstallToken(ticket), {
       lifetimeSeconds: CONNECT_TICKET_TTL_SECONDS,
     });
     if (!consumed)
       throw this.fail('claim', null, 'WHATSAPP_CONNECT_TICKET_INVALID');
-    const { config } = await this.recheck(
+    const context = await this.recheck(
       consumed.orgId,
       consumed.userId,
       'claim',
     );
+    return this.issueSignupTicket(consumed, context, locale, 'claim');
+  }
 
+  /**
+   * Another sign-in after Meta came back without a code (cancelled or
+   * failed). The unused signup ticket is spent and replaced, so each ticket
+   * still opens Meta's flow at most once.
+   */
+  async relaunchSignup(
+    signupTicket: string,
+    locale: WhatsappConnectLocale,
+  ): Promise<WhatsappConnectTicketClaimedDto> {
+    const consumed = await this.tickets.consume(
+      hashInstallToken(signupTicket),
+      { lifetimeSeconds: SIGNUP_TICKET_TTL_SECONDS },
+    );
+    if (!consumed)
+      throw this.fail('claim', null, 'WHATSAPP_CONNECT_TICKET_INVALID');
+    const context = await this.recheck(
+      consumed.orgId,
+      consumed.userId,
+      'claim',
+    );
+    return this.issueSignupTicket(consumed, context, locale, 'relaunch');
+  }
+
+  private async issueSignupTicket(
+    owner: { orgId: string; userId: string },
+    { config }: ConnectContext,
+    locale: WhatsappConnectLocale,
+    step: 'claim' | 'relaunch',
+  ): Promise<WhatsappConnectTicketClaimedDto> {
     const signupTicket = generateInstallToken();
     const issued = await this.tickets.issue({
-      orgId: consumed.orgId,
-      userId: consumed.userId,
+      orgId: owner.orgId,
+      userId: owner.userId,
       tokenHash: hashInstallToken(signupTicket),
       ttlSeconds: SIGNUP_TICKET_TTL_SECONDS,
     });
     this.logger.log(
       buildBackendLog(WhatsappConnectService.name, {
-        action: 'whatsapp_connect_ticket_claim',
+        action:
+          step === 'claim'
+            ? 'whatsapp_connect_ticket_claim'
+            : 'whatsapp_signup_relaunch',
         outcome: 'success',
-        orgId: consumed.orgId,
+        orgId: owner.orgId,
       }),
     );
+    const graphApiVersion = readMetaGraphConfig(this.config).apiVersion;
     return {
       signupTicket,
       expiresAt: toIso(issued.expiresAt),
       appId: config.metaAppId,
       configId: config.embeddedSignupConfigId,
-      graphApiVersion: readMetaGraphConfig(this.config).apiVersion,
+      graphApiVersion,
+      signupUrl: buildEmbeddedSignupUrl({
+        graphApiVersion,
+        appId: config.metaAppId,
+        configId: config.embeddedSignupConfigId,
+        redirectUri: embeddedSignupRedirectUri(
+          config.connectPageBaseUrl,
+          locale,
+        ),
+        state: signupTicket,
+      }),
     };
   }
 
@@ -171,6 +226,14 @@ export class WhatsappConnectService {
       appId: config.metaAppId,
       appSecret,
       code: input.code,
+      ...(input.redirectLocale
+        ? {
+            redirectUri: embeddedSignupRedirectUri(
+              config.connectPageBaseUrl,
+              input.redirectLocale,
+            ),
+          }
+        : {}),
     });
     if (!exchanged.ok)
       throw this.providerFail(
@@ -236,7 +299,7 @@ export class WhatsappConnectService {
         `phone_${phone.reason}`,
       );
 
-    const signupPath = signupPathFromHints(hints);
+    const signupPath = signupPathFromHints(hints, phone.phoneNumber.isOnBizApp);
     let saved: Awaited<
       ReturnType<WhatsappConnectionsRepository['saveSignupForOrg']>
     >;
