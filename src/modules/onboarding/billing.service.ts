@@ -48,6 +48,7 @@ import {
   getBillingPeriodStart,
   getOneTimePeriodStart,
 } from '../../shared/billing/billing-period';
+import { hashClaimPhone } from '../../shared/billing/free-plan-claim-phone';
 import {
   buildBackendLog,
   normalizeError,
@@ -68,6 +69,8 @@ export type StarterActivationResult =
   | 'resumed_paid_through'
   | 'already_claimed'
   | 'not_applicable';
+
+type FreePlanClaimResult = 'activated' | 'already_claimed' | 'phone_required';
 
 interface BillingChargeResolution {
   status: string;
@@ -114,6 +117,7 @@ export class BillingService {
       (await this.freePlanClaimsRepo.hasClaim({
         platformType: integration.platformType,
         shopDomain: integration.platformStoreUrl,
+        phoneHash: this.claimPhoneHash(integration),
       })) && !(await this.findResumableFreePlan(integration));
 
     return {
@@ -296,11 +300,8 @@ export class BillingService {
       .find((plan) => plan.amount === 0);
     if (!starterPlan) return 'not_applicable';
 
-    const activated = await this.claimAndActivateFreePlan(
-      integration,
-      starterPlan,
-    );
-    if (activated) return 'activated';
+    const claim = await this.claimAndActivateFreePlan(integration, starterPlan);
+    if (claim === 'activated') return 'activated';
     return (await this.resumeFreePlanIfAllowanceLeft(integration))
       ? 'resumed'
       : 'already_claimed';
@@ -311,20 +312,26 @@ export class BillingService {
     billingPlan: BillingPlanConfig,
     host: string | undefined,
   ) {
-    const activated = await this.claimAndActivateFreePlan(
-      integration,
-      billingPlan,
-    );
+    const claim = await this.claimAndActivateFreePlan(integration, billingPlan);
 
     if (
-      !activated &&
+      claim !== 'activated' &&
       !(await this.resumeFreePlanIfAllowanceLeft(integration))
     ) {
+      if (claim === 'phone_required') {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message:
+            'Add your WhatsApp number in Settings before activating the Starter plan.',
+          code: 'BILLING_FREE_PLAN_PHONE_REQUIRED',
+        });
+      }
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
         message:
-          'Starter plan can only be activated once per store. Please choose a paid plan.',
+          'The Starter plan has already been used. Please choose a paid plan.',
         code: 'BILLING_FREE_PLAN_ALREADY_CLAIMED',
       });
     }
@@ -341,14 +348,20 @@ export class BillingService {
   private async claimAndActivateFreePlan(
     integration: IntegrationRecord,
     billingPlan: BillingPlanConfig,
-  ): Promise<boolean> {
+  ): Promise<FreePlanClaimResult> {
+    // The number is part of the claim: without one, a merchant could take
+    // the free plan again on every new store.
+    const phoneHash = this.claimPhoneHash(integration);
+    if (!phoneHash) return 'phone_required';
+
     const claimCreated = await this.freePlanClaimsRepo.createIfNew({
       orgId: integration.orgId,
       platformType: integration.platformType,
       shopDomain: integration.platformStoreUrl,
+      phoneHash,
     });
 
-    if (!claimCreated) return false;
+    if (!claimCreated) return 'already_claimed';
 
     try {
       await this.cancelExistingSubscriptionIfAny(integration);
@@ -387,7 +400,13 @@ export class BillingService {
       }),
     );
 
-    return true;
+    return 'activated';
+  }
+
+  private claimPhoneHash(integration: IntegrationRecord): string | null {
+    const phone = integration.merchantWhatsappPhone?.trim();
+    if (!phone) return null;
+    return hashClaimPhone(phone, this.billingConfig.getFreePlanClaimPhoneKey());
   }
 
   /**

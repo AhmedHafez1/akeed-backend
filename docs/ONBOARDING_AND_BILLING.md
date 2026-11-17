@@ -159,9 +159,9 @@ Shopify cancels the subscription on uninstall without credit. So a paid store ke
 ### Free Plan (Starter)
 
 1. Frontend calls `POST /api/onboarding/billing` with `planId: 'starter'`.
-2. Backend checks `billing_free_plan_claims` for an existing claim for this platform + shop domain.
-3. If already claimed, return `400 Bad Request`.
-4. Create a claim record in `billing_free_plan_claims`.
+2. The store needs a merchant WhatsApp number. Without one, a store that cannot resume its own Starter gets `400` `BILLING_FREE_PLAN_PHONE_REQUIRED`.
+3. Backend inserts a claim into `billing_free_plan_claims` with the shop domain and a keyed hash of that number. If the store or the number has claimed before, the insert does nothing and the request returns `400` `BILLING_FREE_PLAN_ALREADY_CLAIMED` (unless the store resumes its own unused Starter).
+4. The claim is a single insert, so two simultaneous claims cannot both succeed.
 5. Cancel any existing Shopify subscription.
 6. Set `billingPlanId = 'starter'`, `billingStatus = 'active'`, `shopifySubscriptionId = null`.
 7. Reset monthly usage counters.
@@ -395,11 +395,14 @@ Constraints:
 | `org_id`        | uuid        | Organization that claimed the free plan. |
 | `platform_type` | text        | E-commerce platform (`shopify`, etc.).   |
 | `shop_domain`   | text        | Store domain that claimed the plan.      |
+| `phone_hash`    | text        | HMAC-SHA256 of the merchant's WhatsApp number digits under `FREE_PLAN_CLAIM_PHONE_KEY`; never the number. NULL for claims made without one. |
 | `claimed_at`    | timestamptz | When the free plan was claimed.          |
 
 Constraints:
 
 - Unique on `(platform_type, shop_domain)` — one free plan claim per shop per platform, ever.
+- Unique on `phone_hash` where it is set, across platforms — one free plan claim per merchant WhatsApp number, ever.
+- The row outlives shop/redact with `org_id` set to NULL. It keeps only the store identity and the keyed hash, so it holds no readable personal data.
 
 ## Reliability And Safety
 
@@ -426,7 +429,7 @@ Error handling:
 
 ## Known Business Decisions
 
-- The Starter free plan can only be claimed once per shop domain, ever. Reinstalling the app does not reset the claim.
+- The Starter free plan can only be claimed once per shop domain and once per merchant WhatsApp number, ever. Reinstalling the app does not reset the claim, and a new store with the same number cannot claim it again. Changing the number after a claim does not create a new claim.
 - Plan changes create a new Shopify subscription before canceling the old one, ensuring no gap in service.
 - Declining a plan upgrade preserves the existing active plan.
 - Usage counters reset on plan change so the merchant starts fresh on the new plan. Exceptions: resuming a paid-through plan, and subscribing to that same plan during it, keep the counters.
@@ -460,6 +463,8 @@ npm --prefix akeed-frontend run build
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | First-time onboarding with Starter plan           | Onboarding completes, `billingStatus = 'active'`, free plan claim created, usage counters initialized.            |
 | Second Starter claim for same shop                | Returns `400 Bad Request` — Starter can only be claimed once.                                                     |
+| Starter claim on a new shop with a number that already claimed | Returns `400` `BILLING_FREE_PLAN_ALREADY_CLAIMED`; the picker shows Starter as used.                  |
+| Starter claim with no merchant WhatsApp number    | Returns `400` `BILLING_FREE_PLAN_PHONE_REQUIRED`; no claim is created.                                            |
 | Paid plan activation (merchant approves)          | Shopify charge confirmed, `billingPlanId` updated, `billingStatus = 'active'`, usage reset, onboarding completed. |
 | Paid plan activation (merchant declines)          | `billingStatus = 'declined'`, `pendingBillingPlanId` cleared, onboarding stays pending.                           |
 | Plan upgrade from Basic to Pro (approved)         | Old subscription canceled, new plan activated, usage counters reset.                                              |
