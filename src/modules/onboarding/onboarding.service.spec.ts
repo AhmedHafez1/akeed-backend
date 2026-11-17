@@ -123,7 +123,7 @@ describe('OnboardingService', () => {
       expect(result.billing.usage).toEqual({
         pools: {
           akeed: { used: 42, limit: 300, remaining: 258 },
-          ownNumber: { used: 0, limit: 900, remaining: 900 },
+          ownNumber: { used: 0, limit: 1000, remaining: 1000 },
         },
         used: 42,
         limit: 300,

@@ -6,7 +6,7 @@ import type {
   EntitlementSnapshot,
   EntitlementIdentity,
 } from '../../../shared/billing/entitlement';
-import { ownNumberLimit } from '../../../shared/billing/billing-plan';
+import { resolveOwnNumberIncludedVerifications } from '../../../shared/billing/billing-plan';
 import {
   decidePeriodicCharge,
   type ChargeRule,
@@ -81,10 +81,11 @@ export class PeriodicPlanAccounting {
     if (!usage) throw new Error('Usage row missing after reservation upsert');
     const sender = params.senderKind ?? 'akeed_system';
     const rule = params.chargeRule ?? 'standard';
-    const ownLimit = ownNumberLimit(entitlement.includedLimit);
+    const ownLimit = resolveOwnNumberIncludedVerifications(entitlement.planId);
+    // A fallback is an Akeed-number send: the rule only changes how usage
+    // is reported below.
     const charge = decidePeriodicCharge({
       sender,
-      rule,
       snapshot: {
         akeedUsed: usage.consumedCount,
         akeedLimit: entitlement.includedLimit,

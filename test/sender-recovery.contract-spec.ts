@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { creditUsageHarness } from './contracts/credit-usage-harness';
+import type { BillingPlanId } from '../src/shared/billing/billing-plan';
 import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import { WhatsappConnectionsRepository } from '../src/infrastructure/database/repositories/whatsapp-connections.repository';
 import { WhatsappConnectionTemplatesRepository } from '../src/infrastructure/database/repositories/whatsapp-connection-templates.repository';
@@ -46,8 +47,13 @@ const selected: SelectedCodTemplate = {
 const future = () => new Date(Date.now() + 600_000).toISOString();
 const now = () => new Date().toISOString();
 
-async function fixture(platform: string, balance = 3) {
+async function fixture(platform: string, balance = 3, planId?: BillingPlanId) {
   const source = await h.merchant(balance, platform);
+  if (planId)
+    await db
+      .update(integrations)
+      .set({ billingPlanId: planId })
+      .where(eq(integrations.id, source.integrationId));
   const [connection] = await db
     .insert(whatsappConnections)
     .values({
@@ -160,6 +166,15 @@ async function receipt(
       ? {}
       : { failure: classifyOwnNumberFailure({ code }) }),
   });
+}
+
+async function rowsOf(f: Fixture) {
+  return db
+    .select()
+    .from(verificationMessageDispatches)
+    .where(
+      eq(verificationMessageDispatches.verificationId, f.input.verificationId),
+    );
 }
 
 describe('merchant sender recovery on disposable PostgreSQL', () => {
@@ -544,42 +559,107 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
           ),
       ).toHaveLength(2);
     });
-    it.each([0, 1])(
-      'fallback charges only remaining capacity %s without debt',
-      async (remaining) => {
-        const f = await fixture(platform, 1);
-        await fail(f, 100);
-        if (platform === 'standalone') {
-          for (let n = 0; n < (remaining === 1 ? 1 : 2); n++)
-            expect(
-              await repo.claim({
-                ...(await h.verification(f.source)),
-                sender: f.sender,
-              }),
-            ).toMatchObject({ outcome: 'claimed' });
-        } else
-          await db
-            .update(integrationMonthlyUsage)
-            .set({ consumedCount: 30, ownNumberConsumed: 90 - remaining })
-            .where(
-              eq(integrationMonthlyUsage.integrationId, f.source.integrationId),
-            );
-        const next = await fallback(f);
-        expect(next).toMatchObject({
-          outcome: 'claimed',
-          dispatch: { billingCost: remaining },
+    it('refuses a fallback it cannot pay in full, then sends the order once capacity is back', async () => {
+      const f = await fixture(platform, 1);
+      await fail(f, 100);
+      if (platform === 'standalone') {
+        // Leave less than a stored credit: at most the spare, 1 displayed.
+        const summary = await h.credits.getSummary(f.source.orgId);
+        if (summary && summary.postedBalance > 0)
+          await h.adjust(f.source.orgId, -summary.postedBalance);
+      } else
+        await db
+          .update(integrationMonthlyUsage)
+          .set({ consumedCount: 30, ownNumberConsumed: 10 })
+          .where(
+            eq(integrationMonthlyUsage.integrationId, f.source.integrationId),
+          );
+      const before = await charged(f);
+      const refused = await Promise.all([fallback(f), fallback(f)]);
+      for (const result of refused)
+        expect(result).toMatchObject({
+          outcome: 'blocked',
+          reason:
+            platform === 'standalone'
+              ? 'INSUFFICIENT_CREDITS'
+              : 'plan_limit_reached',
         });
-        if (platform === 'standalone') {
-          expect(await h.credits.getSummary(f.source.orgId)).toMatchObject({
-            postedBalance: 0,
-            heldCredits: 0,
-          });
-          expect(await h.credits.checkInvariant(f.source.orgId)).toMatchObject({
-            consistent: true,
-          });
-        }
-      },
-    );
+      expect(await charged(f)).toEqual(before);
+      expect(await rowsOf(f)).toHaveLength(1);
+
+      const reason =
+        platform === 'standalone'
+          ? 'INSUFFICIENT_CREDITS'
+          : 'plan_limit_reached';
+      expect(
+        await repo.endRefusedFallback(f.source.orgId, f.dispatch.id, reason),
+      ).toBe(true);
+      expect(
+        await repo.endRefusedFallback(f.source.orgId, f.dispatch.id, reason),
+      ).toBe(false);
+      expect(await root(f)).toMatchObject({
+        senderRecoveryState: 'complete',
+        senderRecoveryDueAt: null,
+      });
+      const [blocked] = await db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.id, f.input.verificationId));
+      expect(blocked).toMatchObject({
+        status: 'blocked',
+        metadata: expect.objectContaining({ reason, kind: 'initial' }),
+      });
+
+      // Capacity is back (a top-up, or a new period): the order is sent once,
+      // and charged once, through the ordinary claim.
+      if (platform === 'standalone') await h.adjust(f.source.orgId, 3);
+      else
+        await db
+          .update(integrationMonthlyUsage)
+          .set({ consumedCount: 0 })
+          .where(
+            eq(integrationMonthlyUsage.integrationId, f.source.integrationId),
+          );
+      const resends = await Promise.all([
+        repo.claim({
+          ...f.input,
+          sender: FEATURE_OFF_SENDER,
+          leaseUntil: future(),
+        }),
+        repo.claim({
+          ...f.input,
+          sender: FEATURE_OFF_SENDER,
+          leaseUntil: future(),
+        }),
+      ]);
+      expect(resends.filter((r) => r.outcome === 'claimed')).toHaveLength(1);
+    });
+  });
+
+  it('lets only one of a Scale backup and an ordinary send take the last Akeed unit', async () => {
+    const f = await fixture('shopify', 3, 'business');
+    await fail(f, 100);
+    await db
+      .update(integrationMonthlyUsage)
+      .set({ consumedCount: 2499 })
+      .where(eq(integrationMonthlyUsage.integrationId, f.source.integrationId));
+    const [backup, ordinary] = await Promise.all([
+      fallback(f),
+      repo.claim({
+        ...(await h.verification(f.source)),
+        sender: FEATURE_OFF_SENDER,
+      }),
+    ]);
+    expect(
+      [backup, ordinary].filter((r) => r.outcome === 'claimed'),
+    ).toHaveLength(1);
+    expect((await charged(f)).akeed).toBe(2500);
+    if (backup.outcome === 'claimed')
+      expect(backup.dispatch).toMatchObject({
+        billingPool: 'akeed',
+        billingCost: 1,
+      });
+    else expect(await rowsOf(f)).toHaveLength(1);
   });
 
   it('rejects cross-tenant attempt authorization and receipt routing', async () => {

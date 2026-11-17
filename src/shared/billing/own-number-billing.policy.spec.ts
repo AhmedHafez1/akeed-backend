@@ -1,4 +1,9 @@
-import { ownNumberLimit, ownNumberMultiplier } from './billing-plan';
+import {
+  BILLING_PLAN_IDS,
+  resolveBillingPlans,
+  resolveIncludedVerificationsLimit,
+  resolveOwnNumberIncludedVerifications,
+} from './billing-plan';
 import {
   decidePeriodicCharge,
   decidePrepaidCharge,
@@ -15,25 +20,20 @@ import {
 describe('own-number billing policy', () => {
   describe('prepaid charges (displayed credits)', () => {
     it.each([
-      // sender, rule, stored, spare, expected
-      ['akeed_system', 'standard', 3, 0, { cost: 2, action: 'reserve' }],
-      ['akeed_system', 'standard', 1, 1, { cost: 2, action: 'reserve' }],
-      ['akeed_system', 'standard', 0, 1, null],
-      ['akeed_system', 'standard', 0, 0, null],
-      ['merchant_own', 'standard', 3, 0, { cost: 1, action: 'pack' }],
-      ['merchant_own', 'standard', 3, 1, { cost: 1, action: 'use_spare' }],
-      ['merchant_own', 'standard', 0, 1, { cost: 1, action: 'use_spare' }],
-      ['merchant_own', 'standard', 0, 0, null],
-      ['akeed_system', 'fallback', 1, 0, { cost: 2, action: 'reserve' }],
-      ['akeed_system', 'fallback', 1, 1, { cost: 2, action: 'reserve' }],
-      ['akeed_system', 'fallback', 0, 1, { cost: 1, action: 'use_spare' }],
-      ['akeed_system', 'fallback', 0, 0, { cost: 0, action: 'none' }],
+      // sender, stored, spare, expected
+      ['akeed_system', 3, 0, { cost: 2, action: 'reserve' }],
+      ['akeed_system', 1, 1, { cost: 2, action: 'reserve' }],
+      ['akeed_system', 0, 1, null],
+      ['akeed_system', 0, 0, null],
+      ['merchant_own', 3, 0, { cost: 1, action: 'pack' }],
+      ['merchant_own', 3, 1, { cost: 1, action: 'use_spare' }],
+      ['merchant_own', 0, 1, { cost: 1, action: 'use_spare' }],
+      ['merchant_own', 0, 0, null],
     ] as const)(
-      '%s %s with %i stored and spare %i',
-      (sender, rule, availableStored, spare, expected) => {
+      '%s with %i stored and spare %i',
+      (sender, availableStored, spare, expected) => {
         const charge = decidePrepaidCharge({
           sender,
-          rule,
           snapshot: { availableStored, spare },
         });
         expect(charge).toEqual(
@@ -44,14 +44,21 @@ describe('own-number billing policy', () => {
       },
     );
 
-    it('treats a negative available balance as empty', () => {
+    it('charges a fallback the full Akeed-number price or refuses it', () => {
+      // A fallback is an Akeed-number send: a spare alone or an empty
+      // balance no longer lets it go out for 1 or 0 credits.
       expect(
         decidePrepaidCharge({
           sender: 'akeed_system',
-          rule: 'fallback',
+          snapshot: { availableStored: 0, spare: 1 },
+        }),
+      ).toEqual({ allowed: false, reason: 'INSUFFICIENT_CREDITS' });
+      expect(
+        decidePrepaidCharge({
+          sender: 'akeed_system',
           snapshot: { availableStored: -4, spare: 0 },
         }),
-      ).toMatchObject({ allowed: true, cost: 0, action: 'none' });
+      ).toEqual({ allowed: false, reason: 'INSUFFICIENT_CREDITS' });
     });
 
     it('charges exactly one stored credit for two own-number sends, on the first', () => {
@@ -61,14 +68,13 @@ describe('own-number billing policy', () => {
       for (let send = 0; send < 2; send++) {
         const charge = decidePrepaidCharge({
           sender: 'merchant_own',
-          rule: 'standard',
           snapshot: { availableStored: stored, spare },
         });
         if (!charge.allowed || charge.action === 'reserve')
           throw new Error('unexpected');
         if (charge.action === 'pack') stored -= 1;
         posted.push(stored);
-        spare = spareAfterCharge(charge.action as 'pack' | 'use_spare', spare);
+        spare = spareAfterCharge(charge.action, spare);
       }
       expect(posted).toEqual([4, 4]);
       expect(spare).toBe(0);
@@ -108,7 +114,7 @@ describe('own-number billing policy', () => {
       },
     );
 
-    it('tells reservation charges from own-number charges', () => {
+    it('tells reservation charges from own-number charges, including recorded partial fallbacks', () => {
       expect(
         usesCreditReservation({ billingPool: null, billingCost: null }),
       ).toBe(true);
@@ -118,6 +124,7 @@ describe('own-number billing policy', () => {
       expect(
         usesCreditReservation({ billingPool: 'credits', billingCost: 1 }),
       ).toBe(false);
+      // Rows recorded before fallbacks were charged in full still settle.
       expect(
         usesCreditReservation({ billingPool: 'credits', billingCost: 0 }),
       ).toBe(false);
@@ -148,62 +155,103 @@ describe('own-number billing policy', () => {
   describe('Shopify pools', () => {
     it.each([
       ['starter', 30, 90],
-      ['basic', 300, 900],
-      ['pro', 1000, 3000],
-      ['scale', 2500, 7500],
-    ])('%s gives %i Akeed and %i own-number messages', (_, akeed, own) => {
-      expect(ownNumberLimit(akeed)).toBe(own);
+      ['basic', 300, 1000],
+      ['pro', 1000, 5000],
+      ['business', 2500, 20000],
+    ] as const)(
+      '%s gives %i Akeed and %i own-number messages',
+      (planId, akeed, own) => {
+        expect(resolveIncludedVerificationsLimit(planId)).toBe(akeed);
+        expect(resolveOwnNumberIncludedVerifications(planId)).toBe(own);
+      },
+    );
+
+    it('keeps plan ids and prices, and every own-number pool is finite', () => {
+      const plans = resolveBillingPlans({
+        currencyCode: 'USD',
+        testMode: true,
+      });
+      expect(plans.map((plan) => [plan.id, plan.amount])).toEqual([
+        ['starter', 0],
+        ['basic', 9.99],
+        ['pro', 22.99],
+        ['business', 49.99],
+      ]);
+      for (const plan of plans) {
+        expect(Number.isSafeInteger(plan.ownNumberIncludedVerifications)).toBe(
+          true,
+        );
+        expect(plan.ownNumberIncludedVerifications).toBeGreaterThan(0);
+      }
+      expect(BILLING_PLAN_IDS).toEqual(['starter', 'basic', 'pro', 'business']);
     });
 
-    it('uses a multiplier of three', () => {
-      expect(ownNumberMultiplier).toBe(3);
-    });
-
-    const pools = (akeedUsed: number, ownUsed: number) => ({
-      akeedUsed,
-      akeedLimit: 300,
-      ownUsed,
-      ownLimit: 900,
+    it('gives no own-number pool without a plan', () => {
+      expect(resolveOwnNumberIncludedVerifications(null)).toBe(0);
     });
 
     it.each([
-      // sender, rule, akeed used, own used, expected
-      ['akeed_system', 'standard', 0, 0, { pool: 'akeed', cost: 1 }],
-      ['akeed_system', 'standard', 300, 0, null],
-      ['merchant_own', 'standard', 0, 0, { pool: 'own_number', cost: 1 }],
-      ['merchant_own', 'standard', 300, 899, { pool: 'own_number', cost: 1 }],
-      // D11: own pool empty, number healthy, Akeed pool not empty.
-      ['merchant_own', 'standard', 0, 900, { pool: 'akeed', cost: 1 }],
-      ['merchant_own', 'standard', 300, 900, null],
-      ['akeed_system', 'fallback', 299, 900, { pool: 'akeed', cost: 1 }],
-      // D4: Akeed pool empty takes 3 from the own pool, or what is left.
-      ['akeed_system', 'fallback', 300, 0, { pool: 'own_number', cost: 3 }],
-      ['akeed_system', 'fallback', 300, 898, { pool: 'own_number', cost: 2 }],
-      ['akeed_system', 'fallback', 300, 900, { pool: 'own_number', cost: 0 }],
+      ['starter', 30, 90],
+      ['basic', 300, 1000],
+      ['pro', 1000, 5000],
+      ['business', 2500, 20000],
     ] as const)(
-      '%s %s with %i Akeed and %i own used',
-      (sender, rule, akeedUsed, ownUsed, expected) => {
-        expect(
+      '%s: each pool pays for its own sender, an own number spills into the Akeed pool',
+      (_, akeedLimit, ownLimit) => {
+        const charge = (
+          sender: 'akeed_system' | 'merchant_own',
+          akeedUsed: number,
+          ownUsed: number,
+        ) =>
           decidePeriodicCharge({
             sender,
-            rule,
-            snapshot: pools(akeedUsed, ownUsed),
-          }),
-        ).toEqual(
-          expected
-            ? { allowed: true, ...expected }
-            : { allowed: false, reason: 'plan_limit_reached' },
-        );
+            snapshot: { akeedUsed, akeedLimit, ownUsed, ownLimit },
+          });
+        const blocked = { allowed: false, reason: 'plan_limit_reached' };
+        // Own number: its pool to the last unit, then the Akeed pool (D11).
+        expect(charge('merchant_own', 0, ownLimit - 1)).toEqual({
+          allowed: true,
+          pool: 'own_number',
+          cost: 1,
+        });
+        expect(charge('merchant_own', akeedLimit - 1, ownLimit)).toEqual({
+          allowed: true,
+          pool: 'akeed',
+          cost: 1,
+        });
+        expect(charge('merchant_own', akeedLimit, ownLimit)).toEqual(blocked);
+        // Akeed's number, fallbacks included: the Akeed pool only.
+        expect(charge('akeed_system', akeedLimit - 1, ownLimit)).toEqual({
+          allowed: true,
+          pool: 'akeed',
+          cost: 1,
+        });
+        for (const ownUsed of [0, ownLimit - 2, ownLimit])
+          expect(charge('akeed_system', akeedLimit, ownUsed)).toEqual(blocked);
+        // An empty Akeed pool never stops the own number while it has room.
+        expect(charge('merchant_own', akeedLimit, 10)).toEqual({
+          allowed: true,
+          pool: 'own_number',
+          cost: 1,
+        });
       },
     );
 
     it('counts both pools only while the next send uses the own number', () => {
-      expect(periodicUsageForNextSend(pools(100, 200), 'merchant_own')).toEqual(
-        { used: 300, limit: 1200 },
-      );
-      expect(periodicUsageForNextSend(pools(100, 200), 'akeed_system')).toEqual(
-        { used: 100, limit: 300 },
-      );
+      const pools = {
+        akeedUsed: 100,
+        akeedLimit: 300,
+        ownUsed: 200,
+        ownLimit: 1000,
+      };
+      expect(periodicUsageForNextSend(pools, 'merchant_own')).toEqual({
+        used: 300,
+        limit: 1300,
+      });
+      expect(periodicUsageForNextSend(pools, 'akeed_system')).toEqual({
+        used: 100,
+        limit: 300,
+      });
     });
   });
 });

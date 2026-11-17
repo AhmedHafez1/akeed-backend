@@ -7,6 +7,10 @@ import { ChangeRequestTemplatesService } from '../change-requests/change-request
 import { customerRecipientHash } from '../../shared/messaging/change-request-messaging';
 import type { CreditDenialCode } from '../../shared/billing/credit-eligibility';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  isCapacityBlockReason,
+  type CapacityBlockReason,
+} from '../../shared/verification/capacity-block';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
 import { hasCrossedCreditsWarning } from '../../shared/analytics/product-events';
 import {
@@ -484,6 +488,20 @@ export class VerificationSendService {
           : { fallbackFrom: dispatch }),
       },
     );
+    const refused =
+      dispatch.senderRecoveryState === 'fallback'
+        ? refusedFallbackReason(result)
+        : null;
+    if (refused) {
+      // No Akeed message or credits left for the fallback: it is refused like
+      // any other send, and the order waits as a blocked order.
+      await this.messageDispatches.endRefusedFallback(
+        orgId,
+        dispatchId,
+        refused,
+      );
+      return { ...result, recoveryKind: dispatch.kind as SendKind };
+    }
     if (
       dispatch.senderRecoveryState === 'fallback' &&
       !['recovery_pending'].includes(result.status) &&
@@ -1311,4 +1329,15 @@ export class VerificationSendService {
       );
     }
   }
+}
+
+/** The capacity reason a fallback send was refused for, if any. */
+function refusedFallbackReason(result: {
+  status: string;
+  reason?: string;
+}): CapacityBlockReason | null {
+  if (result.status === 'plan_limit_reached') return 'plan_limit_reached';
+  return result.status === 'skipped' && isCapacityBlockReason(result.reason)
+    ? result.reason
+    : null;
 }

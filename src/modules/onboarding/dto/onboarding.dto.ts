@@ -436,7 +436,7 @@ export interface OnboardingBillingPlanDto {
   includedVerifications: number;
   /**
    * The separate allowance of messages from the merchant's own number, once
-   * connected: three per included Akeed message.
+   * connected. Set per plan, not as a multiple of the Akeed allowance.
    */
   ownNumberIncludedVerifications: number;
 }

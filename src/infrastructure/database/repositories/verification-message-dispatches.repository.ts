@@ -46,6 +46,7 @@ import {
 } from '../../../shared/verification/verification-lifecycle';
 import { classifyDeliveryFailure } from '../../../shared/verification/delivery-failure.policy';
 import { CHANGE_REQUEST_OPEN_REASON } from '../../../shared/verification/change-request.policy';
+import type { CapacityBlockReason } from '../../../shared/verification/capacity-block';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   completeReconfirmationInTx,
@@ -608,6 +609,35 @@ export class VerificationMessageDispatchesRepository {
             reconciliationRequired();
           if (previous.accountingMode === 'prepaid_credit')
             return this.claimPrepaid(tx, params);
+          const entitlement = resolveEntitlement(source, {
+            id: params.integrationId,
+            orgId: params.orgId,
+          });
+          if (!params.billingExempt && !entitlement.allowed)
+            throw new ConflictException('Fallback integration is not eligible');
+          // Reserved before the successor row exists: a plan whose fallbacks
+          // use the Akeed pool only (Scale) can refuse, and a refusal must
+          // leave no successor that would block the fallback next period.
+          const reservation = params.billingExempt
+            ? null
+            : await this.accounting.periodic.reserve(
+                tx,
+                {
+                  ...params,
+                  id: params.integrationId,
+                  senderKind: 'akeed_system',
+                  chargeRule: 'fallback',
+                },
+                entitlement,
+                now,
+              );
+          if (reservation && !reservation.allowed)
+            return {
+              outcome: 'blocked' as const,
+              reason: reservation.reason,
+              consumedCount: reservation.consumedCount,
+              includedLimit: reservation.includedLimit,
+            };
           const fallbackGeneration = await this.nextGeneration(
             tx,
             params.verificationId,
@@ -637,32 +667,11 @@ export class VerificationMessageDispatchesRepository {
               recipientHash: params.recipientHash,
             })
             .returning();
-          const entitlement = resolveEntitlement(source, {
-            id: params.integrationId,
-            orgId: params.orgId,
-          });
-          if (!params.billingExempt && !entitlement.allowed)
-            throw new ConflictException('Fallback integration is not eligible');
           const senderColumns = await this.claimSenderColumns(
             tx,
             params,
             fresh,
           );
-          const reservation = params.billingExempt
-            ? null
-            : await this.accounting.periodic.reserve(
-                tx,
-                {
-                  ...params,
-                  id: params.integrationId,
-                  senderKind: 'akeed_system',
-                  chargeRule: 'fallback',
-                },
-                entitlement,
-                now,
-              );
-          if (reservation && !reservation.allowed)
-            throw new ConflictException('Fallback accounting refused');
           const [claimed] = await tx
             .update(verificationMessageDispatches)
             .set({
@@ -1760,6 +1769,70 @@ export class VerificationMessageDispatchesRepository {
               : {}),
           })
           .where(eq(verificationMessageDispatches.id, dispatchId));
+      }),
+    );
+  }
+
+  /**
+   * Ends a fallback that its sender could not pay for: the Akeed pool was
+   * empty, or the balance was short. Nothing goes out and nothing is charged.
+   * An initial message that never went out blocks the verification with the
+   * capacity reason, exactly as a send refused at the limit does, so capacity
+   * recovery sends it once capacity returns (renewal, an upgrade, a top-up)
+   * while the order is recent, and moves it to needs-action after that. A
+   * reminder simply ends, as a reminder refused at the limit does. Repeating
+   * it changes nothing.
+   */
+  async endRefusedFallback(
+    orgId: string,
+    dispatchId: string,
+    reason: CapacityBlockReason,
+  ): Promise<boolean> {
+    return withSerializableRetry(() =>
+      this.withDispatchTransaction(dispatchId, async (tx) => {
+        const [dispatch] = await tx
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            and(
+              eq(verificationMessageDispatches.id, dispatchId),
+              eq(verificationMessageDispatches.orgId, orgId),
+            ),
+          )
+          .for('update');
+        if (!dispatch || dispatch.senderRecoveryState !== 'fallback')
+          return false;
+        const now = new Date().toISOString();
+        await tx
+          .update(verificationMessageDispatches)
+          .set({
+            senderRecoveryState: 'complete',
+            senderRecoveryDueAt: null,
+            senderAutomationPending: false,
+            updatedAt: now,
+          })
+          .where(eq(verificationMessageDispatches.id, dispatch.id));
+        if (dispatch.kind === 'initial')
+          await tx
+            .update(verifications)
+            .set({
+              status: 'blocked',
+              metadata: sql`COALESCE(${verifications.metadata}, '{}'::jsonb) || ${JSON.stringify(
+                { reason, kind: 'initial', blocked_at: now },
+              )}::jsonb`,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(verifications.id, dispatch.verificationId),
+                sameCycle(dispatch),
+                eq(verifications.orgId, dispatch.orgId),
+                notInArray(verifications.status, WEBHOOK_PROTECTED_STATUSES),
+                sql`${verifications.lastSentAt} IS NULL`,
+                sql`${verifications.merchantCanceledAt} IS NULL`,
+              ),
+            );
+        return true;
       }),
     );
   }
@@ -3191,11 +3264,10 @@ export class VerificationMessageDispatchesRepository {
       params,
       dispatch?.state === 'ready' ? dispatch : undefined,
     );
-    const rule = params.chargeRule ?? 'standard';
     const denial = await this.accounting.newHoldDenial(
       tx,
       params.orgId,
-      rule === 'fallback' ? 0 : nextSendDisplayedCost(senderKind),
+      nextSendDisplayedCost(senderKind),
     );
     if (denial) return { outcome: 'blocked', reason: denial };
     const previous = dispatch;
@@ -3261,17 +3333,23 @@ export class VerificationMessageDispatchesRepository {
     const locked = await this.accounting.prepaid.lock(tx, params.orgId);
     const charge = decidePrepaidCharge({
       sender: senderColumns.senderKind ?? senderKind,
-      rule,
       snapshot: {
         availableStored: locked.postedBalance - locked.heldCredits,
         spare: locked.spareCredit,
       },
     });
-    if (!charge.allowed) return { outcome: 'blocked', reason: charge.reason };
+    if (!charge.allowed) {
+      // A refused fallback leaves no successor: one would stop the merchant
+      // from sending the message again once credits are back.
+      if (params.fallbackForDispatchId && dispatch.id !== previous?.id)
+        await tx
+          .delete(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.id, dispatch.id));
+      return { outcome: 'blocked', reason: charge.reason };
+    }
     if (charge.action === 'reserve')
       await this.accounting.prepaid.hold(tx, dispatch);
-    else if (charge.action !== 'none')
-      await this.accounting.prepaid.chargeSpare(tx, dispatch, charge.action);
+    else await this.accounting.prepaid.chargeSpare(tx, dispatch, charge.action);
     const [claimed] = await tx
       .update(verificationMessageDispatches)
       .set({

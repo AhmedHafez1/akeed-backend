@@ -10,8 +10,9 @@ import { IntegrationsRepository } from '../../infrastructure/database/repositori
 import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
 import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
 import {
+  isBillingPlanId,
   isPaidBillingPlan,
-  ownNumberLimit,
+  resolveOwnNumberIncludedVerifications,
 } from '../../shared/billing/billing-plan';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
@@ -805,7 +806,9 @@ export class AdminStoresService {
         akeed: usagePool(used, limit),
         ownNumber: usagePool(
           Number(row.own_number_used ?? 0),
-          ownNumberLimit(limit),
+          resolveOwnNumberIncludedVerifications(
+            plan && isBillingPlanId(plan) ? plan : null,
+          ),
         ),
       },
       used,

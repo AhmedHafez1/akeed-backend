@@ -15,6 +15,8 @@ interface BillingPlanTemplate {
   name: string;
   amount: number;
   includedVerifications: number;
+  /** The plan's own-number pool, set per plan rather than as a multiple. */
+  ownNumberIncludedVerifications: number;
 }
 
 export interface BillingPlanConfig {
@@ -24,6 +26,7 @@ export interface BillingPlanConfig {
   currencyCode: string;
   testMode: boolean;
   includedVerifications: number;
+  ownNumberIncludedVerifications: number;
 }
 
 const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
@@ -31,21 +34,25 @@ const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
     name: 'Akeed Starter',
     amount: 0,
     includedVerifications: 30,
+    ownNumberIncludedVerifications: 90,
   },
   basic: {
     name: 'Akeed Basic',
     amount: 9.99,
     includedVerifications: 300,
+    ownNumberIncludedVerifications: 1000,
   },
   pro: {
     name: 'Akeed Pro',
     amount: 22.99,
     includedVerifications: 1000,
+    ownNumberIncludedVerifications: 5000,
   },
   business: {
     name: 'Akeed Scale',
     amount: 49.99,
     includedVerifications: 2500,
+    ownNumberIncludedVerifications: 20000,
   },
 };
 
@@ -81,14 +88,16 @@ export const STANDALONE_DEFAULT_PLAN_ID: BillingPlanId = 'starter';
 export const ONE_TIME_BILLING_PLAN_IDS: readonly BillingPlanId[] = ['starter'];
 
 /**
- * A connected own number adds a separate pool of this many messages per
- * included Akeed message (Basic: 300 Akeed + 900 own number). The pool shares
- * the plan's period, so Starter's one-time 30 become 30 + 90.
+ * A connected own number adds a separate pool of messages, set per plan
+ * (Basic: 300 Akeed + 1,000 own number). The pool shares the plan's period, so
+ * Starter's one-time 30 come with a one-time 90. No plan, no pool.
  */
-export const ownNumberMultiplier = 3;
-
-export function ownNumberLimit(includedLimit: number): number {
-  return includedLimit * ownNumberMultiplier;
+export function resolveOwnNumberIncludedVerifications(
+  planId: BillingPlanId | null,
+): number {
+  return planId
+    ? BILLING_PLAN_TEMPLATES[planId].ownNumberIncludedVerifications
+    : 0;
 }
 
 export function isOneTimeBillingPlan(planId: BillingPlanId | null): boolean {
@@ -127,6 +136,7 @@ export function resolveBillingPlan(params: {
     currencyCode: params.currencyCode,
     testMode: params.testMode,
     includedVerifications: planTemplate.includedVerifications,
+    ownNumberIncludedVerifications: planTemplate.ownNumberIncludedVerifications,
   };
 
   validateBillingPlan(billingPlan);
@@ -156,6 +166,12 @@ function validateBillingPlan(plan: BillingPlanConfig): void {
   if (plan.includedVerifications <= 0) {
     throw new InternalServerErrorException(
       `Invalid included verification limit for plan: ${plan.id}`,
+    );
+  }
+
+  if (plan.ownNumberIncludedVerifications <= 0) {
+    throw new InternalServerErrorException(
+      `Invalid own-number limit for plan: ${plan.id}`,
     );
   }
 }

@@ -204,7 +204,8 @@ describe('AdminStoresService', () => {
         percent: 30,
         pools: {
           akeed: { used: 30, limit: 100, remaining: 70 },
-          ownNumber: { used: 0, limit: 300, remaining: 300 },
+          // By plan identity: Basic's own-number pool.
+          ownNumber: { used: 0, limit: 1000, remaining: 1000 },
         },
       },
     });

@@ -10,11 +10,12 @@
  * goes out.
  *
  * Shopify plans count messages instead: the plan's Akeed pool plus a separate
- * own-number pool of {@link ownNumberMultiplier} times its size.
+ * own-number pool whose size each plan sets.
  *
  * A fallback is the Akeed-number retry of an own-number attempt that failed.
- * The merchant already chose to send, so a fallback is never blocked by an
- * empty balance: it charges what is left.
+ * It is an ordinary Akeed-number send: 2 credits or 1 from the Akeed pool, and
+ * refused like any other send when those are not there. It never takes
+ * own-number messages and never goes out for less.
  */
 
 export type SenderKind = 'akeed_system' | 'merchant_own';
@@ -25,8 +26,6 @@ export type BillingPool = 'credits' | 'akeed' | 'own_number';
 export const AKEED_SEND_DISPLAYED_COST = 2;
 /** Displayed credits an own-number send costs on prepaid. */
 export const OWN_NUMBER_SEND_DISPLAYED_COST = 1;
-/** Own-number messages one fallback takes when the Akeed pool is empty (D4). */
-export const FALLBACK_OWN_POOL_COST = 3;
 
 export interface PrepaidPoolSnapshot {
   /** Stored credits not already held: `posted_balance - held_credits`. */
@@ -40,33 +39,25 @@ export interface PrepaidPoolSnapshot {
  *   provider's answer.
  * - `pack`: post one stored credit as `own_number_pack` and leave a spare.
  * - `use_spare`: spend the spare, no ledger row.
- * - `none`: a fallback with nothing left to charge.
  */
-export type PrepaidChargeAction = 'reserve' | 'pack' | 'use_spare' | 'none';
+export type PrepaidChargeAction = 'reserve' | 'pack' | 'use_spare';
 
 export type PrepaidCharge =
   | {
       allowed: true;
       pool: 'credits';
-      cost: 0 | 1 | 2;
+      cost: 1 | 2;
       action: PrepaidChargeAction;
     }
   | { allowed: false; reason: 'INSUFFICIENT_CREDITS' };
 
+/** A fallback is charged as the Akeed-number send it is. */
 export function decidePrepaidCharge(params: {
   sender: SenderKind;
-  rule: ChargeRule;
   snapshot: PrepaidPoolSnapshot;
 }): PrepaidCharge {
   const stored = Math.max(params.snapshot.availableStored, 0);
   const spare = params.snapshot.spare === 1 ? 1 : 0;
-  if (params.rule === 'fallback') {
-    if (stored >= 1)
-      return { allowed: true, pool: 'credits', cost: 2, action: 'reserve' };
-    if (spare)
-      return { allowed: true, pool: 'credits', cost: 1, action: 'use_spare' };
-    return { allowed: true, pool: 'credits', cost: 0, action: 'none' };
-  }
   if (params.sender === 'merchant_own') {
     if (spare)
       return { allowed: true, pool: 'credits', cost: 1, action: 'use_spare' };
@@ -143,9 +134,13 @@ export type PeriodicCharge =
   | { allowed: true; pool: 'akeed' | 'own_number'; cost: number }
   | { allowed: false; reason: 'plan_limit_reached' };
 
+/**
+ * Each pool pays for its own sender. The one crossing is a healthy own number
+ * whose pool is empty: it keeps sending on the Akeed pool (D11). A fallback is
+ * an Akeed-number send and uses the Akeed pool only.
+ */
 export function decidePeriodicCharge(params: {
   sender: SenderKind;
-  rule: ChargeRule;
   snapshot: PeriodicPoolSnapshot;
 }): PeriodicCharge {
   const akeedLeft = Math.max(
@@ -156,14 +151,6 @@ export function decidePeriodicCharge(params: {
     params.snapshot.ownLimit - params.snapshot.ownUsed,
     0,
   );
-  if (params.rule === 'fallback') {
-    if (akeedLeft >= 1) return { allowed: true, pool: 'akeed', cost: 1 };
-    return {
-      allowed: true,
-      pool: 'own_number',
-      cost: Math.min(FALLBACK_OWN_POOL_COST, ownLeft),
-    };
-  }
   if (params.sender === 'merchant_own') {
     if (ownLeft >= 1) return { allowed: true, pool: 'own_number', cost: 1 };
     // D11: the number is healthy, so keep sending from it on the Akeed pool.
