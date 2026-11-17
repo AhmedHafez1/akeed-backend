@@ -40,10 +40,7 @@ import {
 } from '../../shared/utils/billing.util';
 import { paidThroughTrialDays } from '../../shared/billing/paid-through.policy';
 import { renewableSubscriptionPlanId } from '../../shared/billing/usage-alert.policy';
-import {
-  isOneTimeBillingPlan,
-  ownNumberLimit,
-} from '../../shared/billing/billing-plan';
+import { isOneTimeBillingPlan } from '../../shared/billing/billing-plan';
 import {
   getBillingPeriodStart,
   getOneTimePeriodStart,
@@ -128,9 +125,7 @@ export class BillingService {
         amount: plan.amount,
         currencyCode: plan.currencyCode,
         includedVerifications: plan.includedVerifications,
-        ownNumberIncludedVerifications: ownNumberLimit(
-          plan.includedVerifications,
-        ),
+        ownNumberIncludedVerifications: plan.ownNumberIncludedVerifications,
       })),
       isFreePlanClaimed,
       currentPlanId: isBillingStatusActive(

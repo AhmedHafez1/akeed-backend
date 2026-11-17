@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { creditUsageHarness } from './contracts/credit-usage-harness';
+import type { BillingPlanId } from '../src/shared/billing/billing-plan';
 import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import { IntegrationMonthlyUsageRepository } from '../src/infrastructure/database/repositories/integration-monthly-usage.repository';
 import { StandaloneBillingOperationsRepository } from '../src/modules/admin/standalone-billing-operations.repository';
@@ -8,6 +9,7 @@ import {
   creditAccounts,
   creditLedgerEntries,
   integrationMonthlyUsage,
+  integrations,
   verificationMessageDispatches,
   whatsappConnections,
 } from '../src/infrastructure/database/schema';
@@ -109,6 +111,17 @@ async function setPools(
     .update(integrationMonthlyUsage)
     .set({ consumedCount: akeed, ownNumberConsumed: own })
     .where(eq(integrationMonthlyUsage.integrationId, integrationId));
+}
+
+/** Moves a synthetic Shopify source onto another plan, before any usage. */
+async function onPlan(
+  integrationId: string,
+  planId: BillingPlanId,
+): Promise<void> {
+  await db
+    .update(integrations)
+    .set({ billingPlanId: planId })
+    .where(eq(integrations.id, integrationId));
 }
 
 describe('own-number billing PostgreSQL contract', () => {
@@ -272,41 +285,24 @@ describe('own-number billing PostgreSQL contract', () => {
       await reconciled(source.orgId);
     });
 
-    it('charges a fallback what is left and never blocks it on balance (D4)', async () => {
+    it('refuses a fallback the balance cannot pay in full, without charging it', async () => {
       const source = await merchant(1);
       const sender = await ownSender(source.orgId);
+      // One own-number send leaves only the spare: 1 displayed credit.
       await claim({ ...(await verification(source)), sender });
-      const spareFallback = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
-      expect(spareFallback).toMatchObject({
-        senderKind: 'akeed_system',
-        billingPool: 'credits',
-        billingCost: 1,
-      });
-      const freeFallback = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
-      expect(freeFallback).toMatchObject({ billingCost: 0 });
-      expect(await account(source.orgId)).toEqual({
-        posted: 0,
-        held: 0,
-        spare: 0,
-      });
-      // A standard send with nothing left is still refused.
-      expect(await dispatches.claim(await verification(source))).toMatchObject({
-        outcome: 'blocked',
-        reason: 'INSUFFICIENT_CREDITS',
-      });
-      // Returning a cost-0 fallback moves nothing.
-      await dispatches.resolveNotAccepted(freeFallback.id, undefined, true);
-      expect(await account(source.orgId)).toEqual({
-        posted: 0,
-        held: 0,
-        spare: 0,
-      });
+      const before = await account(source.orgId);
+      expect(before).toEqual({ posted: 0, held: 0, spare: 1 });
+      expect(
+        await dispatches.claim({
+          ...(await verification(source)),
+          chargeRule: 'fallback',
+        }),
+      ).toMatchObject({ outcome: 'blocked', reason: 'INSUFFICIENT_CREDITS' });
+      expect(await account(source.orgId)).toEqual(before);
+      // The spare still pays for the merchant's own number.
+      expect(
+        await claim({ ...(await verification(source)), sender }),
+      ).toMatchObject({ billingPool: 'credits', billingCost: 1 });
       await reconciled(source.orgId);
     });
 
@@ -437,7 +433,7 @@ describe('own-number billing PostgreSQL contract', () => {
       });
     });
 
-    it('charges a fallback the Akeed pool, then 3 own-number messages or what is left (D4)', async () => {
+    it('charges a fallback the Akeed pool only, and refuses it when that is empty', async () => {
       const source = await merchant(0, 'shopify');
       const sender = await ownSender(source.orgId);
       await claim({ ...(await verification(source)), sender });
@@ -446,30 +442,19 @@ describe('own-number billing PostgreSQL contract', () => {
         chargeRule: 'fallback',
       });
       expect(akeed).toMatchObject({ billingPool: 'akeed', billingCost: 1 });
-      await setPools(source.integrationId, 30, 10);
-      const three = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
-      expect(three).toMatchObject({
-        billingPool: 'own_number',
-        billingCost: 3,
-      });
-      await setPools(source.integrationId, 30, 88);
-      const two = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
-      expect(two).toMatchObject({ billingPool: 'own_number', billingCost: 2 });
-      expect(await pools(source.integrationId)).toMatchObject({
-        akeed: 30,
-        own: 90,
-      });
-      const free = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
-      expect(free).toMatchObject({ billingPool: 'own_number', billingCost: 0 });
+      for (const own of [10, 88, 90]) {
+        await setPools(source.integrationId, 30, own);
+        expect(
+          await dispatches.claim({
+            ...(await verification(source)),
+            chargeRule: 'fallback',
+          }),
+        ).toMatchObject({ outcome: 'blocked', reason: 'plan_limit_reached' });
+        expect(await pools(source.integrationId)).toMatchObject({
+          akeed: 30,
+          own,
+        });
+      }
     });
 
     it('returns and restores usage to the pool it came from, once', async () => {
@@ -478,13 +463,10 @@ describe('own-number billing PostgreSQL contract', () => {
       await setPools(source.integrationId, 0, 0);
       await claim({ ...(await verification(source)), sender });
       await setPools(source.integrationId, 30, 10);
-      const fallback = await claim({
-        ...(await verification(source)),
-        chargeRule: 'fallback',
-      });
+      const fallback = await claim({ ...(await verification(source)), sender });
       expect(await pools(source.integrationId)).toMatchObject({
         akeed: 30,
-        own: 13,
+        own: 11,
       });
       await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
       await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
@@ -492,7 +474,7 @@ describe('own-number billing PostgreSQL contract', () => {
         akeed: 30,
         own: 10,
       });
-      // Staff confirm it was sent after all: the 3 come back, to the own pool.
+      // Staff confirm it was sent after all: the message comes back, to the own pool.
       await dispatches.markAccepted({
         dispatchId: fallback.id,
         providerMessageId: randomUUID(),
@@ -500,7 +482,7 @@ describe('own-number billing PostgreSQL contract', () => {
       });
       expect(await pools(source.integrationId)).toMatchObject({
         akeed: 30,
-        own: 13,
+        own: 11,
       });
     });
 
@@ -534,6 +516,89 @@ describe('own-number billing PostgreSQL contract', () => {
         own: 0,
         row: { includedLimit: 300 },
       });
+    });
+
+    it.each([
+      ['basic', 300, 1000],
+      ['pro', 1000, 5000],
+      ['business', 2500, 20000],
+    ] as const)(
+      '%s: own pool to its last unit, then the Akeed pool, then blocked',
+      async (planId, akeedLimit, ownLimit) => {
+        const source = await merchant(0, 'shopify');
+        await onPlan(source.integrationId, planId);
+        const sender = await ownSender(source.orgId);
+        await claim({ ...(await verification(source)), sender });
+        await setPools(source.integrationId, 0, ownLimit - 1);
+        expect(
+          await claim({ ...(await verification(source)), sender }),
+        ).toMatchObject({ billingPool: 'own_number', billingCost: 1 });
+        await setPools(source.integrationId, akeedLimit - 1, ownLimit);
+        expect(
+          await claim({ ...(await verification(source)), sender }),
+        ).toMatchObject({ billingPool: 'akeed', billingCost: 1 });
+        expect(
+          await dispatches.claim({ ...(await verification(source)), sender }),
+        ).toMatchObject({ outcome: 'blocked', reason: 'plan_limit_reached' });
+        expect(await pools(source.integrationId)).toMatchObject({
+          akeed: akeedLimit,
+          own: ownLimit,
+          row: { includedLimit: akeedLimit },
+        });
+      },
+    );
+
+    it('refuses a Scale fallback once the Akeed pool is empty, with no own-pool charge', async () => {
+      // Scale's large own-number pool still never pays for a fallback.
+      const source = await merchant(0, 'shopify');
+      await onPlan(source.integrationId, 'business');
+      const sender = await ownSender(source.orgId);
+      await claim({ ...(await verification(source)), sender });
+      await setPools(source.integrationId, 2499, 10);
+      expect(
+        await claim({
+          ...(await verification(source)),
+          chargeRule: 'fallback',
+        }),
+      ).toMatchObject({ billingPool: 'akeed', billingCost: 1 });
+      for (const own of [10, 19998, 20000]) {
+        await setPools(source.integrationId, 2500, own);
+        expect(
+          await dispatches.claim({
+            ...(await verification(source)),
+            chargeRule: 'fallback',
+          }),
+        ).toMatchObject({ outcome: 'blocked', reason: 'plan_limit_reached' });
+        expect(await pools(source.integrationId)).toMatchObject({
+          akeed: 2500,
+          own,
+        });
+      }
+      await setPools(source.integrationId, 2500, 10);
+      expect(
+        await claim({ ...(await verification(source)), sender }),
+      ).toMatchObject({ billingPool: 'own_number', billingCost: 1 });
+    });
+
+    it('returns a recorded charge to its own pool and period after a plan change', async () => {
+      const source = await merchant(0, 'shopify');
+      const sender = await ownSender(source.orgId);
+      await claim({ ...(await verification(source)), sender });
+      await setPools(source.integrationId, 30, 10);
+      const fallback = await claim({ ...(await verification(source)), sender });
+      await onPlan(source.integrationId, 'business');
+      await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
+      await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
+      const [row] = await db
+        .select()
+        .from(integrationMonthlyUsage)
+        .where(
+          and(
+            eq(integrationMonthlyUsage.integrationId, source.integrationId),
+            eq(integrationMonthlyUsage.periodStart, fallback.usagePeriodStart!),
+          ),
+        );
+      expect(row).toMatchObject({ consumedCount: 30, ownNumberConsumed: 10 });
     });
 
     it('keeps the recorded pool on a row whose usage was released', async () => {

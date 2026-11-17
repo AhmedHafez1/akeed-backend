@@ -233,7 +233,7 @@ Usage is tracked in the `integration_monthly_usage` table:
 | `consumedCount` | Number of currently billable WhatsApp sends this period. |
 | `includedLimit` | Plan's included confirmations for this period.  |
 | `blockedCount`  | Sends blocked because the limit was reached.    |
-| `ownNumberConsumed` | Messages taken from the own-number pool this period. Its limit is `includedLimit` × 3 and is never stored. |
+| `ownNumberConsumed` | Messages taken from the own-number pool this period. Its limit comes from the plan (`resolveOwnNumberIncludedVerifications`) and is never stored. |
 
 Rules:
 
@@ -266,21 +266,23 @@ A send from the merchant's own WhatsApp number costs less than one from the Akee
 | --- | --- | --- |
 | Akeed number | 2 displayed credits: one reserved stored credit, as before | 1 from the Akeed pool |
 | Merchant's number | 1 displayed credit | 1 from the own-number pool; when that is empty and the number is healthy, 1 from the Akeed pool |
-| Fallback to Akeed after an own-number attempt failed | 2 displayed credits, or what is left | 1 from the Akeed pool; when that is empty, 3 from the own-number pool, or what is left |
-| Nothing left | Blocked, except a fallback, which is sent and charges nothing | Both pools empty: blocked, except a fallback |
+| Fallback to Akeed after an own-number attempt failed | 2 displayed credits, like any Akeed-number send | 1 from the Akeed pool, like any Akeed-number send |
+| Not enough left | Blocked | Blocked (the own-number pool never pays for an Akeed-number send) |
 
 | Plan | Akeed messages | Own-number messages |
 | --- | ---: | ---: |
 | Starter (one-time) | 30 | 90 |
-| Basic | 300 | 900 |
-| Pro | 1,000 | 3,000 |
-| Scale | 2,500 | 7,500 |
+| Basic | 300 | 1,000 |
+| Pro | 1,000 | 5,000 |
+| Scale | 2,500 | 20,000 |
+
+The plan id resolves both figures (`billing-plan.ts`); the own-number pool is not a multiple of the Akeed pool. Both pools share the plan's 30-day period, and Starter's stay one-time. Every own-number pool is finite, and Meta bills the merchant separately for those messages.
 
 **Prepaid spare credit.** A stored credit pays for two own-number sends. `credit_accounts.spare_credit` (0 or 1) holds the half already paid for. With no spare, an own-number send posts one stored credit as an `own_number_pack` ledger entry (−1) and leaves a spare; with a spare, it uses it and writes no ledger row. So the charge lands on the first of each two, and the balance always covers a send before it goes out. A failed or refused own-number send returns its credit as a spare, and a second return turns the two spares back into a stored credit through `own_number_pack_reversal` (+1). The dispatch's `billing_refunded_at` makes each return happen once. Own-number charges are taken at claim time and need no reservation, so acceptance moves nothing. Merchants see a pack as −2 credits and a pack reversal as +2, and the spare as one credit in their balance: displayed credits are `(posted_balance − held_credits) × 2 + spare_credit`.
 
 **Gates before a claim.** Send readiness, import quotes, the hub and capacity recovery price the next send by its likely sender: the merchant's number when own-number sending is on and the connection is active and not degraded. The template is not checked there, so the claim still decides the real cost. On Shopify, the own-number pool only counts toward capacity, the dashboard and the plan usage alerts while that is true; otherwise merchants see the Akeed pool alone, as before. A prepaid account is not `depleted` while a spare pays for the next own-number send.
 
-**Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. A fallback is never blocked by an empty balance or pool. Merchant sender recovery passes this rule explicitly after returning the failed merchant charge. The fallback records its actual cost, including a partial charge or zero; it does not create debt. Delayed merchant retries retain one charge until acceptance or terminal settlement.
+**Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. Merchant sender recovery passes `fallback` after returning the failed merchant charge; the rule authorizes the fallback dispatch and does not change its price. A fallback is an Akeed-number send: 2 displayed credits or 1 from the Akeed pool. It never takes own-number messages and never goes out for less. When the balance or the Akeed pool cannot pay, the claim refuses it (`INSUFFICIENT_CREDITS`, `CREDIT_DEBT_OUTSTANDING` or `plan_limit_reached`) and creates no fallback dispatch, and the order becomes a blocked order (see [Order confirmation workflow](ORDER_CONFIRMATION_WORKFLOW.md)). Own-number sends continue while their own pool or the D11 spillover allows. Dispatches recorded under the earlier rule (an own-number pool cost of up to 3, or a prepaid cost of 1 or 0) keep their recorded cost and settle by it. Delayed merchant retries retain one charge until acceptance or terminal settlement.
 
 ## Usage Alerts
 

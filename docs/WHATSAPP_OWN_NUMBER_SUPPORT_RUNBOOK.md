@@ -79,9 +79,9 @@ Own-number thank-yous follow the connection preference and require an open servi
 
 ## Billing reconciliation
 
-Prepaid dispatch costs are displayed credits: own number 1, Akeed 2. A fallback charges up to 2 from what remains, including 1 or 0 without debt. Ledger quantities and reservation quantities remain stored credits worth two displayed credits each. An own-number pack is shared across two one-credit charges, so a valid spare-funded dispatch may have no individual ledger entry.
+Prepaid dispatch costs are displayed credits: own number 1, Akeed 2. A fallback costs 2, like any Akeed-number send; with less available it is refused and the order is blocked until credits are bought. Rows recorded before this rule may show a fallback cost of 1 or 0; they settle by their recorded cost. Ledger quantities and reservation quantities remain stored credits worth two displayed credits each. An own-number pack is shared across two one-credit charges, so a valid spare-funded dispatch may have no individual ledger entry.
 
-Shopify charges the recorded pool, not the sender's identity: a healthy own-number send can use the Akeed pool for 1. An Akeed fallback uses 1 from the Akeed pool, otherwise up to 3 from the own-number pool, including a partial or zero charge. Plan changes reset both pools. Meta bills the merchant directly for its own-number traffic, separately from Akeed.
+Shopify charges the recorded pool, not the sender's identity: a healthy own-number send can use the Akeed pool for 1. An Akeed fallback uses 1 from the Akeed pool and never the own-number pool. With the Akeed pool empty it is refused, with no charge and no fallback dispatch, and an unsent first confirmation becomes a blocked order (`plan_limit_reached`) that capacity recovery sends after renewal or an upgrade while the order is recent. Rows recorded before this rule may show an own-number pool cost of up to 3; they settle by it. Plan allowances are Starter 30 + 90 (one-time), Basic 300 + 1,000, Pro 1,000 + 5,000 and Scale 2,500 + 20,000. Plan changes reset both pools. Meta bills the merchant directly for its own-number traffic, separately from Akeed.
 
 The owner/operator runs the read-only script using a dedicated database session and the pilot's organization and start time:
 

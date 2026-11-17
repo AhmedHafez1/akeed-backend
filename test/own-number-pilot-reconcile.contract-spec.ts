@@ -318,7 +318,7 @@ describe('read-only own-number pilot reconciliation over psql', () => {
   });
 
   it.each([0, 1, 2])(
-    'reconciles prepaid fallback costing %s without debt',
+    'reconciles a prepaid fallback with %s displayed credits left: charged 2 or refused',
     async (cost) => {
       const f = await own();
       await repo.failMerchantAttempt(
@@ -349,9 +349,17 @@ describe('read-only own-number pilot reconciliation over psql', () => {
         chargeRule: 'fallback',
         fallbackForDispatchId: f.dispatch.id,
       });
-      if (claim.outcome !== 'claimed') throw new Error(claim.outcome);
-      expect(claim.dispatch.billingCost).toBe(cost);
-      await h.acceptance(claim.dispatch);
+      if (cost < 2) {
+        // No partial or free fallback: refused, and nothing is left behind.
+        expect(claim).toMatchObject({
+          outcome: 'blocked',
+          reason: 'INSUFFICIENT_CREDITS',
+        });
+      } else {
+        if (claim.outcome !== 'claimed') throw new Error(claim.outcome);
+        expect(claim.dispatch.billingCost).toBe(2);
+        await h.acceptance(claim.dispatch);
+      }
       clean(f.source.orgId);
     },
   );
@@ -360,9 +368,10 @@ describe('read-only own-number pilot reconciliation over psql', () => {
     const f = await own('shopify');
     await h.db
       .update(integrationMonthlyUsage)
-      .set({ consumedCount: 30, ownNumberConsumed: 91 })
+      .set({ consumedCount: 30, ownNumberConsumed: 10 })
       .where(eq(integrationMonthlyUsage.integrationId, f.source.integrationId));
-    expect((await fallback(f)).billingCost).toBe(0);
+    // The Akeed pool is empty: refused, though own-number messages are left.
+    await expect(fallback(f)).rejects.toThrow('blocked');
     const test = await repo.claim({
       ...(await h.verification(f.source)),
       sender: f.sender,

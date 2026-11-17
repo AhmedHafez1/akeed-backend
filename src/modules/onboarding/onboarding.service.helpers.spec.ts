@@ -64,6 +64,7 @@ describe('onboarding.service.helpers', () => {
         currencyCode: 'USD',
         testMode: false,
         includedVerifications: 30,
+        ownNumberIncludedVerifications: 90,
       });
     });
 

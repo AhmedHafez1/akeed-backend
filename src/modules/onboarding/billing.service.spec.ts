@@ -1,5 +1,6 @@
 import { BillingService } from './billing.service';
 import { hashClaimPhone } from '../../shared/billing/free-plan-claim-phone';
+import { resolveBillingPlans } from '../../shared/billing/billing-plan';
 import type { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -536,20 +537,9 @@ describe('BillingService', () => {
   describe('getBillingPlans — own-number allowance', () => {
     it('lists each plan with its separate own-number allowance', async () => {
       const mocks = createMocks();
+      // The real plan config, so the response is pinned to it.
       mocks.billingConfig.resolveAllPlans.mockReturnValue(
-        [
-          ['starter', 30],
-          ['basic', 300],
-          ['pro', 1000],
-          ['business', 2500],
-        ].map(([id, includedVerifications]) => ({
-          id,
-          name: `Akeed ${id}`,
-          amount: 0,
-          currencyCode: 'USD',
-          testMode: true,
-          includedVerifications,
-        })),
+        resolveBillingPlans({ currencyCode: 'USD', testMode: true }),
       );
 
       const result = await mocks.service.getBillingPlans(
@@ -564,9 +554,9 @@ describe('BillingService', () => {
         ]),
       ).toEqual([
         ['starter', 30, 90],
-        ['basic', 300, 900],
-        ['pro', 1000, 3000],
-        ['business', 2500, 7500],
+        ['basic', 300, 1000],
+        ['pro', 1000, 5000],
+        ['business', 2500, 20000],
       ]);
     });
   });
