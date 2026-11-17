@@ -16,7 +16,11 @@ describe('/api/whatsapp-connect', () => {
   jest.setTimeout(30_000);
 
   let app: INestApplication;
-  const connect = { claimTicket: jest.fn(), completeSignup: jest.fn() };
+  const connect = {
+    claimTicket: jest.fn(),
+    relaunchSignup: jest.fn(),
+    completeSignup: jest.fn(),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -35,6 +39,7 @@ describe('/api/whatsapp-connect', () => {
 
   beforeEach(() => {
     connect.claimTicket.mockReset();
+    connect.relaunchSignup.mockReset();
     connect.completeSignup.mockReset();
   });
 
@@ -51,7 +56,42 @@ describe('/api/whatsapp-connect', () => {
       .send({ ticket: TICKET })
       .expect(200)
       .expect('Cache-Control', 'no-store');
-    expect(connect.claimTicket).toHaveBeenCalledWith(TICKET);
+    expect(connect.claimTicket).toHaveBeenCalledWith(TICKET, undefined);
+  });
+
+  it('claims for the page’s language', async () => {
+    connect.claimTicket.mockResolvedValue({ signupTicket: 'B'.repeat(43) });
+    await http(app)
+      .post('/api/whatsapp-connect/claim')
+      .send({ ticket: TICKET, locale: 'en' })
+      .expect(200);
+    expect(connect.claimTicket).toHaveBeenCalledWith(TICKET, 'en');
+  });
+
+  it('relaunches with the unused signup ticket and the page’s language', async () => {
+    connect.relaunchSignup.mockResolvedValue({ signupTicket: 'B'.repeat(43) });
+    await http(app)
+      .post('/api/whatsapp-connect/relaunch')
+      .send({ signupTicket: TICKET, locale: 'ar' })
+      .expect(200)
+      .expect('Cache-Control', 'no-store');
+    expect(connect.relaunchSignup).toHaveBeenCalledWith(TICKET, 'ar');
+  });
+
+  it.each([
+    { signupTicket: TICKET },
+    { signupTicket: TICKET, locale: 'de' },
+    { signupTicket: 'short', locale: 'ar' },
+    { signupTicket: TICKET, locale: 'ar', orgId: 'x' },
+  ])('refuses relaunch body %o with the connect code', async (body) => {
+    const response = await http(app)
+      .post('/api/whatsapp-connect/relaunch')
+      .send(body)
+      .expect(400);
+    expect(response.body).toMatchObject({
+      code: 'WHATSAPP_CONNECT_INVALID_REQUEST',
+    });
+    expect(connect.relaunchSignup).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -59,6 +99,7 @@ describe('/api/whatsapp-connect', () => {
     { ticket: 'short' },
     { ticket: `${'A'.repeat(42)}=` },
     { ticket: TICKET, orgId: 'x' },
+    { ticket: TICKET, locale: 'de' },
   ])('refuses claim body %o with the connect code', async (body) => {
     const response = await http(app)
       .post('/api/whatsapp-connect/claim')
@@ -122,6 +163,8 @@ describe('/api/whatsapp-connect', () => {
     { signupTicket: TICKET, code: CODE, phoneNumberId: '1; drop' },
     { signupTicket: TICKET, code: CODE, isOnBusinessApp: 'yes' },
     { signupTicket: TICKET, code: CODE, accessToken: 'EAAG' },
+    { signupTicket: TICKET, code: CODE, redirectLocale: 'de' },
+    { signupTicket: TICKET, code: CODE, redirectUri: 'https://evil.io' },
   ])('refuses complete body %# with the connect code', async (body) => {
     const response = await http(app)
       .post('/api/whatsapp-connect/complete')

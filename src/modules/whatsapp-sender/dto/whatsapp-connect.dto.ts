@@ -34,6 +34,24 @@ export class ClaimWhatsappConnectTicketDto {
   @IsString()
   @Matches(TICKET_PATTERN)
   ticket!: string;
+
+  /** The page's language: Meta sends the merchant back to this page. */
+  @IsOptional()
+  @IsIn(WHATSAPP_CONNECT_LOCALES)
+  locale?: WhatsappConnectLocale;
+}
+
+/**
+ * Another try after Meta came back without a code: the unused signup ticket
+ * is traded for a fresh one and a fresh sign-in link.
+ */
+export class RelaunchWhatsappSignupDto {
+  @IsString()
+  @Matches(TICKET_PATTERN)
+  signupTicket!: string;
+
+  @IsIn(WHATSAPP_CONNECT_LOCALES)
+  locale!: WhatsappConnectLocale;
 }
 
 /**
@@ -65,6 +83,14 @@ export class CompleteWhatsappSignupDto {
   @IsOptional()
   @IsBoolean()
   isOnBusinessApp?: boolean;
+
+  /**
+   * Set when the code came back to the connect page in this language from a
+   * full-page sign-in: the exchange repeats that page as `redirect_uri`.
+   */
+  @IsOptional()
+  @IsIn(WHATSAPP_CONNECT_LOCALES)
+  redirectLocale?: WhatsappConnectLocale;
 }
 
 export interface WhatsappConnectTicketIssuedDto {
@@ -84,6 +110,11 @@ export interface WhatsappConnectTicketClaimedDto {
   appId: string;
   configId: string;
   graphApiVersion: string;
+  /**
+   * Meta's sign-in page for this signup, opened in the same tab. It carries
+   * the signup ticket as `state`, so it is used for navigation only.
+   */
+  signupUrl: string;
 }
 
 /** A verified signup. Never a token, PIN, ticket or ciphertext. */

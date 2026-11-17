@@ -113,8 +113,8 @@ describe('chooseWabaId', () => {
 });
 
 describe('choosePhoneNumber', () => {
-  const one = { id: '1', displayPhoneNumber: '+20 1' };
-  const two = { id: '2', displayPhoneNumber: '+20 2' };
+  const one = { id: '1', displayPhoneNumber: '+20 1', isOnBizApp: null };
+  const two = { id: '2', displayPhoneNumber: '+20 2', isOnBizApp: null };
 
   it('accepts a hinted number on the account’s list', () => {
     expect(choosePhoneNumber([one, two], '2')).toEqual({

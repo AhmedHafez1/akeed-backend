@@ -107,12 +107,15 @@ export function choosePhoneNumber(
 }
 
 /**
- * How the number was connected. Only the signup page reports this; no
- * documented Graph field confirms it. It is a label for later setup, never an
- * access decision.
+ * How the number was connected: the signup page's report when there is one,
+ * otherwise Meta's `is_on_biz_app` for the chosen number (a redirect sign-in
+ * has no page report). It is a label for later setup, never an access
+ * decision: setup reads Meta again and refuses when the two disagree.
  */
 export function signupPathFromHints(
   hints: SignupSessionHints,
+  metaIsOnBizApp: boolean | null = null,
 ): WhatsappSignupPath {
-  return hints.isOnBusinessApp === true ? 'coexistence' : 'new_number';
+  const onBusinessApp = hints.isOnBusinessApp ?? metaIsOnBizApp;
+  return onBusinessApp === true ? 'coexistence' : 'new_number';
 }

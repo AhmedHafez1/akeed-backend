@@ -45,7 +45,7 @@ export interface FakeMetaSignupState {
   };
   phoneNumbersByWaba: Record<
     string,
-    { id: string; display_phone_number: string }[]
+    { id: string; display_phone_number: string; is_on_biz_app?: boolean }[]
   >;
   failures: Partial<
     Record<'exchange' | 'inspect' | 'phone_numbers', FakeSignupFailure>
