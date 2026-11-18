@@ -96,7 +96,7 @@ describe('OnboardingStateService', () => {
       expect(state.sendDelayMinutes).toBe(0);
     });
 
-    it('uses an 18-hour total when the no-reply setting is missing', () => {
+    it('uses a 14-hour total when the no-reply setting is missing', () => {
       const state = callToState(
         service,
         makeIntegration({
@@ -105,8 +105,8 @@ describe('OnboardingStateService', () => {
         }),
       );
 
-      expect(state.followUpDelayMinutes).toBe(360);
-      expect(state.escalationDelayMinutes).toBe(1080);
+      expect(state.followUpDelayMinutes).toBe(120);
+      expect(state.escalationDelayMinutes).toBe(840);
     });
 
     it('preserves an existing store with the previous default', () => {
