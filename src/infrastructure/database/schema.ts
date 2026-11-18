@@ -698,11 +698,11 @@ export const integrations = pgTable(
     }),
     followUpEnabled: boolean('follow_up_enabled').default(true).notNull(),
     followUpDelayMinutes: integer('follow_up_delay_minutes')
-      .default(360)
+      .default(120)
       .notNull(),
     escalationEnabled: boolean('escalation_enabled').default(true).notNull(),
     escalationDelayMinutes: integer('escalation_delay_minutes')
-      .default(1080)
+      .default(840)
       .notNull(),
     quietHoursEnabled: boolean('quiet_hours_enabled').default(false).notNull(),
     quietHoursStart: text('quiet_hours_start').default('22:00'),

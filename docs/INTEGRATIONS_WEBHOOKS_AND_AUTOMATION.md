@@ -1298,7 +1298,7 @@ The check reads the sibling frontend repo (`../akeed-frontend`, or `ORDER_API_GU
 | `follow_up_enabled`        | boolean | `true`        | Enable follow-up reminders.           |
 | `follow_up_delay_minutes`  | int     | `120`         | Delay before follow-up (minutes).     |
 | `escalation_enabled`       | boolean | `true`        | Enable no-reply escalation.           |
-| `escalation_delay_minutes` | int     | `360`         | Delay before escalation (minutes).    |
+| `escalation_delay_minutes` | int     | `840`         | Delay before escalation (minutes).    |
 | `quiet_hours_enabled`      | boolean | `false`       | Suppress sends during off-hours.      |
 | `quiet_hours_start`        | text    | —             | Quiet window start (HH:mm).           |
 | `quiet_hours_end`          | text    | —             | Quiet window end (HH:mm).             |

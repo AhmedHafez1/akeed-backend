@@ -405,6 +405,7 @@ describe('order imports PostgreSQL contract', () => {
         '0100_order_customer_language.sql',
         '0101_shopify_offline_credentials.sql',
         '0102_free_plan_claim_phone.sql',
+        '0103_reminder_default_two_hours.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),
@@ -442,7 +443,7 @@ describe('order imports PostgreSQL contract', () => {
     ).rejects.toThrow();
   });
 
-  it('gives a new store a 12-hour no-reply gap with quiet hours off', async () => {
+  it('gives a new store a 2-hour reminder and a 12-hour no-reply gap with quiet hours off', async () => {
     const { integrationId } = await createSource();
     const [store] = await client<
       {
@@ -457,8 +458,8 @@ describe('order imports PostgreSQL contract', () => {
         quiet_hours_enabled, quiet_hours_start, quiet_hours_end
       FROM integrations WHERE id = ${integrationId}`;
     expect(store).toEqual({
-      follow_up_delay_minutes: 360,
-      escalation_delay_minutes: 1080,
+      follow_up_delay_minutes: 120,
+      escalation_delay_minutes: 840,
       quiet_hours_enabled: false,
       quiet_hours_start: '22:00',
       quiet_hours_end: '09:00',
@@ -479,6 +480,12 @@ describe('order imports PostgreSQL contract', () => {
         'utf8',
       ),
     );
+    for (const statement of readFileSync(
+      resolve(__dirname, '../drizzle/0103_reminder_default_two_hours.sql'),
+      'utf8',
+    ).split('--> statement-breakpoint')) {
+      if (statement.trim()) await client.unsafe(statement);
+    }
 
     const stores = await client<
       { id: string; escalation_delay_minutes: number }[]

@@ -729,6 +729,13 @@
       "when": 1795737600000,
       "tag": "0102_free_plan_claim_phone",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1795824000000,
+      "tag": "0103_reminder_default_two_hours",
+      "breakpoints": true
     }
   ]
 }

@@ -130,7 +130,7 @@ export interface ManualConfirmationResponse {
   alreadyConfirmed?: boolean;
 }
 
-const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 360;
+const DEFAULT_FOLLOW_UP_DELAY_MINUTES = 120;
 const MS_PER_HOUR = 3_600_000;
 
 /** Digits of a search term, or undefined when nothing searchable remains. */

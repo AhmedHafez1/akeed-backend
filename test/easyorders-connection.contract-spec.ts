@@ -511,9 +511,9 @@ describe('EasyOrders connection PostgreSQL contract', () => {
         assume_cod_when_payment_missing: false,
         send_delay_minutes: 0,
         follow_up_enabled: true,
-        follow_up_delay_minutes: 360,
+        follow_up_delay_minutes: 120,
         escalation_enabled: true,
-        escalation_delay_minutes: 1080,
+        escalation_delay_minutes: 840,
         quiet_hours_enabled: false,
       });
       expect(sources[0].billing_activated_at).not.toBeNull();
