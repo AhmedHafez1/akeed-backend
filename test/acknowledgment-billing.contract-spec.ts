@@ -1,3 +1,8 @@
+import { MessageImprovementSwitches } from '../src/shared/config/message-improvement-switches';
+import {
+  parseWhatsappTemplateConfig,
+  WHATSAPP_TEMPLATE_CONFIG,
+} from '../src/shared/config/whatsapp-template.config';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +27,8 @@ import {
   creditLedgerEntries,
 } from '../src/infrastructure/database/schema';
 import { VerificationServiceMessagesRepository } from '../src/infrastructure/database/repositories/verification-service-messages.repository';
+import { IntegrationsRepository } from '../src/infrastructure/database/repositories/integrations.repository';
+import { WhatsappConnectionSettingsService } from '../src/modules/whatsapp-sender/whatsapp-connection-settings.service';
 
 const harness = creditUsageHarness();
 const { db, client, dispatches, merchant, verification, acceptance, balance } =
@@ -51,7 +58,7 @@ async function input(platform = 'standalone', quantity = 3) {
   };
 }
 
-async function claim(params: Awaited<ReturnType<typeof input>>) {
+async function claim(params: Parameters<typeof dispatches.claim>[0]) {
   const result = await dispatches.claim(params);
   if (result.outcome !== 'claimed')
     throw new Error(`Expected claim, received ${result.outcome}`);
@@ -68,21 +75,25 @@ describe('paid thank-you messages against PostgreSQL', () => {
   beforeAll(harness.setup);
   afterAll(harness.teardown);
 
-  describe('free thank-yous from the receiving merchant number', () => {
+  describe('paid thank-yous from the receiving merchant number', () => {
     const key = 'c'.repeat(64);
     let nextPhone = 800000000000000;
-    async function merchantReply(platform: string) {
+    async function merchantReply(
+      platform: string,
+      options: { exhausted?: boolean; enabled?: boolean } = {},
+    ) {
       const params = await input(platform, 1);
       await db
         .update(integrations)
-        .set({ acknowledgmentEnabled: false })
+        .set({ acknowledgmentEnabled: options.enabled !== false })
         .where(eq(integrations.id, params.integrationId));
-      if (platform === 'standalone') await harness.adjust(params.orgId, -1);
-      else
+      if (options.exhausted && platform === 'standalone')
+        await harness.adjust(params.orgId, -1);
+      else if (options.exhausted)
         await db.insert(integrationMonthlyUsage).values({
           orgId: params.orgId,
           integrationId: params.integrationId,
-          periodStart: `${new Date().toISOString().slice(0, 7)}-01`,
+          periodStart: '2026-09-01',
           includedLimit: 30,
           consumedCount: 30,
           ownNumberConsumed: 90,
@@ -102,6 +113,9 @@ describe('paid thank-you messages against PostgreSQL', () => {
         })
         .returning();
       const config = new ConfigService({
+        [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig({
+          WHATSAPP_ACKNOWLEDGMENT_ENABLED: 'true',
+        }),
         whatsappOwnNumber: { sendingEnabled: true },
         WA_PHONE_NUMBER_ID: 'shared-phone',
         WA_ACCESS_TOKEN: 'synthetic-shared-token',
@@ -143,7 +157,7 @@ describe('paid thank-you messages against PostgreSQL', () => {
           ),
         } as never,
         adapter,
-        undefined,
+        new MessageImprovementSwitches(config),
         undefined,
         connections,
         config,
@@ -151,6 +165,7 @@ describe('paid thank-you messages against PostgreSQL', () => {
       return {
         params,
         connection,
+        config,
         http,
         service,
         request: {
@@ -194,22 +209,21 @@ describe('paid thank-you messages against PostgreSQL', () => {
     }
 
     it.each(['standalone', 'shopify'])(
-      'sends once with exhausted capacity and no accounting changes (%s)',
+      'charges one message from the actual sender once, then reverses a failed delivery once (%s)',
       async (platform) => {
         const f = await merchantReply(platform);
-        const before = await accountingSnapshot(f.params.orgId);
         const orderBefore = await snapshot(f.params.verificationId);
         const results = await Promise.all([
           f.service.handle(f.request),
           f.service.handle(f.request),
         ]);
-        expect(results.map((result) => result.outcome).sort()).toEqual([
+        expect(results.map((r) => r.outcome).sort()).toEqual([
           'ineligible',
           'sent',
         ]);
         expect(f.http.post).toHaveBeenCalledTimes(1);
         expect(f.http.post.mock.calls[0][0]).toContain(
-          `/${f.connection.phoneNumberId}/messages`,
+          '/' + f.connection.phoneNumberId + '/messages',
         );
         const [record] = await db
           .select()
@@ -224,93 +238,281 @@ describe('paid thank-you messages against PostgreSQL', () => {
           state: 'sent',
           senderKind: 'merchant_own',
           senderPhoneNumberId: f.connection.phoneNumberId,
-          dispatchId: null,
         });
-        expect(
-          await serviceMessages.recordDeliveryFailure(
-            record.providerMessageId!,
-          ),
-        ).toBe(true);
-        expect(
-          await serviceMessages.recordDeliveryFailure(
-            record.providerMessageId!,
-          ),
-        ).toBe(true);
-        expect(await accountingSnapshot(f.params.orgId)).toEqual(before);
+        expect(typeof record.dispatchId).toBe('string');
+        const [dispatch] = await db
+          .select()
+          .from(verificationMessageDispatches)
+          .where(eq(verificationMessageDispatches.id, record.dispatchId!));
+        expect(dispatch).toMatchObject({
+          state: 'accepted',
+          senderKind: 'merchant_own',
+          billingCost: 1,
+          billingPool: platform === 'standalone' ? 'credits' : 'own_number',
+        });
+        if (platform === 'standalone') {
+          await balance(f.params.orgId, 0, 0);
+          const [account] = await db
+            .select()
+            .from(creditAccounts)
+            .where(eq(creditAccounts.orgId, f.params.orgId));
+          expect(account.spareCredit).toBe(1);
+        } else {
+          const [usage] = await db
+            .select()
+            .from(integrationMonthlyUsage)
+            .where(
+              eq(integrationMonthlyUsage.integrationId, f.params.integrationId),
+            );
+          expect(usage).toMatchObject({
+            consumedCount: 0,
+            ownNumberConsumed: 1,
+          });
+        }
+        const failedAt = new Date(Date.now() + 1000).toISOString();
+        for (let i = 0; i < 2; i++)
+          await dispatches.recordProviderStatus(
+            dispatch.id,
+            'failed',
+            failedAt,
+          );
+        if (platform === 'standalone') {
+          await balance(f.params.orgId, 1, 0);
+          const [account] = await db
+            .select()
+            .from(creditAccounts)
+            .where(eq(creditAccounts.orgId, f.params.orgId));
+          expect(account.spareCredit).toBe(0);
+        } else {
+          const [usage] = await db
+            .select()
+            .from(integrationMonthlyUsage)
+            .where(
+              eq(integrationMonthlyUsage.integrationId, f.params.integrationId),
+            );
+          expect(usage).toMatchObject({
+            consumedCount: 0,
+            ownNumberConsumed: 0,
+          });
+        }
         expect(await snapshot(f.params.verificationId)).toEqual(orderBefore);
       },
     );
 
-    it('authorizes only its tenant, verification, phone, and still-claimed acknowledgment', async () => {
+    it.each(['standalone', 'shopify'])(
+      'skips the provider when own-number capacity is exhausted (%s)',
+      async (platform) => {
+        const f = await merchantReply(platform, { exhausted: true });
+        await expect(f.service.handle(f.request)).resolves.toMatchObject({
+          outcome: 'skipped',
+          reason: 'billing_unavailable',
+        });
+        expect(f.http.post).not.toHaveBeenCalled();
+        if (platform === 'standalone') await balance(f.params.orgId, 0, 0);
+        else {
+          const [usage] = await db
+            .select()
+            .from(integrationMonthlyUsage)
+            .where(
+              eq(integrationMonthlyUsage.integrationId, f.params.integrationId),
+            );
+          expect(usage).toMatchObject({
+            consumedCount: 30,
+            ownNumberConsumed: 90,
+          });
+        }
+      },
+    );
+
+    it('honors the saved Message-tab opt-out before creating a claim', async () => {
+      const f = await merchantReply('standalone', { enabled: false });
+      const before = await accountingSnapshot(f.params.orgId);
+      await expect(f.service.handle(f.request)).resolves.toMatchObject({
+        outcome: 'ineligible',
+        reason: 'merchant_disabled',
+      });
+      expect(f.http.post).not.toHaveBeenCalled();
+      expect(await accountingSnapshot(f.params.orgId)).toEqual(before);
+    });
+
+    it('authorizes only a linked, claimed acknowledgment for its tenant and checks current opt-in', async () => {
       const f = await merchantReply('standalone');
-      const claimed = await serviceMessages.claim({
+      const message = await serviceMessages.claim({
         ...f.request,
         sender: f.request.receivingSender,
       });
+      const dispatch = await claim({
+        ...f.params,
+        sender: {
+          kind: 'merchant_own',
+          connectionId: f.connection.id,
+          reason: 'own_number_thank_you',
+          units: 1,
+        },
+      });
+      await serviceMessages.linkDispatch(
+        message!.id,
+        f.params.orgId,
+        dispatch.id,
+      );
       const params = {
         orgId: f.params.orgId,
-        serviceMessageId: claimed!.id,
+        dispatchId: dispatch.id,
         verificationId: f.params.verificationId,
-        phoneNumberId: f.connection.phoneNumberId,
       };
       expect(
-        await serviceMessages.isClaimedMerchantAcknowledgment(params),
+        await serviceMessages.isClaimedAcknowledgmentDispatch(params),
       ).toBe(true);
       for (const change of [
         { orgId: randomUUID() },
+        { dispatchId: randomUUID() },
         { verificationId: randomUUID() },
-        { serviceMessageId: randomUUID() },
-        { phoneNumberId: 'foreign-phone' },
       ])
         expect(
-          await serviceMessages.isClaimedMerchantAcknowledgment({
+          await serviceMessages.isClaimedAcknowledgmentDispatch({
             ...params,
             ...change,
           }),
         ).toBe(false);
-      await serviceMessages.markNotSent({
-        id: claimed!.id,
-        state: 'skipped',
-        reason: 'window_closed',
-      });
+      await db
+        .update(integrations)
+        .set({ acknowledgmentEnabled: false })
+        .where(eq(integrations.id, f.params.integrationId));
       expect(
-        await serviceMessages.isClaimedMerchantAcknowledgment(params),
+        await serviceMessages.isClaimedAcknowledgmentDispatch(params),
       ).toBe(false);
-      await f.service.handle(f.request);
-      expect(f.http.post).not.toHaveBeenCalled();
+      await dispatches.resolveNotAccepted(dispatch.id, undefined, true);
     });
 
-    it('records a closed window once without billing or a shared-number fallback', async () => {
+    it('releases a closed-window hold once without a shared-number fallback', async () => {
       const f = await merchantReply('standalone');
-      const before = await accountingSnapshot(f.params.orgId);
+      const before = await snapshot(f.params.verificationId);
       f.http.post.mockReturnValue(
         throwError(() => ({
           isAxiosError: true,
           response: { status: 400, data: { error: { code: 131047 } } },
         })),
       );
-      await expect(f.service.handle(f.request)).resolves.toEqual({
+      await expect(f.service.handle(f.request)).resolves.toMatchObject({
         outcome: 'skipped',
         reason: 'window_closed',
       });
       await f.service.handle(f.request);
       expect(f.http.post).toHaveBeenCalledTimes(1);
-      const [record] = await db
+      expect(f.http.post.mock.calls[0][0]).toContain(
+        '/' + f.connection.phoneNumberId + '/messages',
+      );
+      await balance(f.params.orgId, 1, 0);
+      const [account] = await db
         .select()
-        .from(verificationServiceMessages)
-        .where(
-          eq(
-            verificationServiceMessages.verificationId,
-            f.params.verificationId,
-          ),
+        .from(creditAccounts)
+        .where(eq(creditAccounts.orgId, f.params.orgId));
+      expect(account.spareCredit).toBe(0);
+      expect(await snapshot(f.params.verificationId)).toEqual(before);
+    });
+
+    it.each(['standalone', 'shopify'])(
+      'preserves uncertain-outcome accounting and never sends twice (%s)',
+      async (platform) => {
+        const f = await merchantReply(platform);
+        f.http.post.mockReturnValue(
+          throwError(() => new Error('synthetic transport interruption')),
         );
-      expect(record).toMatchObject({
-        state: 'skipped',
-        skipReason: 'window_closed',
-        senderKind: 'merchant_own',
-        dispatchId: null,
-      });
-      expect(await accountingSnapshot(f.params.orgId)).toEqual(before);
+        await expect(f.service.handle(f.request)).resolves.toMatchObject({
+          outcome: 'failed',
+          reason: 'provider_error',
+        });
+        await f.service.handle(f.request);
+        expect(f.http.post).toHaveBeenCalledTimes(1);
+        const [dispatch] = await db
+          .select()
+          .from(verificationMessageDispatches)
+          .where(
+            eq(
+              verificationMessageDispatches.verificationId,
+              f.params.verificationId,
+            ),
+          );
+        expect(dispatch).toMatchObject({
+          state: 'outcome_unknown',
+          senderKind: 'merchant_own',
+          billingCost: 1,
+        });
+        if (platform === 'standalone') {
+          await balance(f.params.orgId, 0, 0);
+          const [account] = await db
+            .select()
+            .from(creditAccounts)
+            .where(eq(creditAccounts.orgId, f.params.orgId));
+          expect(account.spareCredit).toBe(1);
+        } else {
+          const [usage] = await db
+            .select()
+            .from(integrationMonthlyUsage)
+            .where(
+              eq(integrationMonthlyUsage.integrationId, f.params.integrationId),
+            );
+          expect(usage).toMatchObject({
+            consumedCount: 0,
+            ownNumberConsumed: 0,
+          });
+        }
+      },
+    );
+
+    it('maps the legacy endpoint to the tenant-scoped Message preference and keeps original consent time', async () => {
+      const f = await merchantReply('standalone', { enabled: false });
+      const sources = new IntegrationsRepository(db as never, f.config);
+      const settings = new WhatsappConnectionSettingsService(
+        new WhatsappConnectionsRepository(db as never),
+        sources,
+        f.config,
+      );
+      const user = {
+        orgId: f.params.orgId,
+        userId: randomUUID(),
+        role: 'admin' as const,
+        source: 'supabase' as const,
+      };
+      await expect(
+        settings.update(user, { thankYouEnabled: true }),
+      ).resolves.toEqual({ thankYouEnabled: true });
+      const [first] = await db
+        .select()
+        .from(integrations)
+        .where(eq(integrations.id, f.params.integrationId));
+      expect(first.acknowledgmentEnabled).toBe(true);
+      expect(first.acknowledgmentEnabledAt).not.toBeNull();
+      await settings.update(user, { thankYouEnabled: true });
+      const [second] = await db
+        .select()
+        .from(integrations)
+        .where(eq(integrations.id, f.params.integrationId));
+      expect(second.acknowledgmentEnabledAt).toBe(
+        first.acknowledgmentEnabledAt,
+      );
+      expect(
+        await sources.updateAcknowledgmentPreference(
+          randomUUID(),
+          f.params.integrationId,
+          false,
+          true,
+        ),
+      ).toBeNull();
+      await settings.update(user, { thankYouEnabled: false });
+      const [disabled] = await db
+        .select()
+        .from(integrations)
+        .where(eq(integrations.id, f.params.integrationId));
+      expect(disabled.acknowledgmentEnabled).toBe(false);
+      await expect(
+        sources.updateAcknowledgmentPreference(
+          f.params.orgId,
+          f.params.integrationId,
+          true,
+          false,
+        ),
+      ).rejects.toThrow();
     });
   });
 

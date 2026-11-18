@@ -52,6 +52,7 @@ import {
   type TemplateLanguage,
 } from '../../shared/messaging/template-registry.types';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
+import { acknowledgmentPreferenceUpdates } from '../../shared/messaging/acknowledgment-preference';
 import { MESSAGE_IMPROVEMENT_SWITCHES_OFF } from '../../shared/config/whatsapp-template.config';
 import {
   TEMPLATE_REGISTRY_PORT,
@@ -180,21 +181,14 @@ export class OnboardingStateService {
     }
 
     if (payload.acknowledgmentEnabled !== undefined) {
-      if (
-        payload.acknowledgmentEnabled &&
-        !integration.acknowledgmentEnabled &&
-        !this.switches().acknowledgment
-      ) {
-        throw new BadRequestException({
-          statusCode: 400,
-          error: 'Bad Request',
-          message: 'Thank-you messages are not available',
-          code: 'SETTINGS_ACKNOWLEDGMENT_UNAVAILABLE',
-        });
-      }
-      updates.acknowledgmentEnabled = payload.acknowledgmentEnabled;
-      if (payload.acknowledgmentEnabled && !integration.acknowledgmentEnabled)
-        updates.acknowledgmentEnabledAt = new Date().toISOString();
+      Object.assign(
+        updates,
+        acknowledgmentPreferenceUpdates(
+          integration.acknowledgmentEnabled,
+          payload.acknowledgmentEnabled,
+          this.switches().acknowledgment,
+        ),
+      );
     }
 
     // Automation settings
@@ -380,9 +374,13 @@ export class OnboardingStateService {
       });
     }
 
-    const updated = await this.integrationsRepo.updateById(integration.id, {
-      ...updates,
-    });
+    const updated =
+      payload.acknowledgmentEnabled !== undefined
+        ? await this.integrationsRepo.updateById(integration.id, updates, {
+            orgId: user.orgId,
+            acknowledgmentAvailable: this.switches().acknowledgment,
+          })
+        : await this.integrationsRepo.updateById(integration.id, updates);
 
     if (!updated) {
       throw new NotFoundException('Integration not found');

@@ -9,7 +9,10 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { CREDITS_PER_AKEED_MESSAGE } from '../../shared/billing/merchant-credits';
+import {
+  CREDITS_PER_AKEED_MESSAGE,
+  CREDITS_PER_OWN_NUMBER_MESSAGE,
+} from '../../shared/billing/merchant-credits';
 import { MessageTextsService } from '../message-texts/message-texts.service';
 import { acknowledgmentStyle } from '../../shared/messaging/message-texts.types';
 import { AdminStoreLifecyclesRepository } from '../../infrastructure/database/repositories/admin-store-lifecycles.repository';
@@ -367,6 +370,7 @@ export class OnboardingService {
     return {
       available: this.improvementSwitches?.current().acknowledgment === true,
       creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
+      ownNumberCreditsPerMessage: CREDITS_PER_OWN_NUMBER_MESSAGE,
       previews,
     };
   }

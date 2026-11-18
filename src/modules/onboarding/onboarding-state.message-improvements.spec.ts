@@ -409,6 +409,7 @@ describe('thank-you previews and consent', () => {
     expect(response.acknowledgment).toMatchObject({
       available: true,
       creditsPerMessage: 2,
+      ownNumberCreditsPerMessage: 1,
     });
     expect(response.acknowledgment?.previews.ar.standard.confirmed).toBe(
       'ack_confirmed.ar.standard',

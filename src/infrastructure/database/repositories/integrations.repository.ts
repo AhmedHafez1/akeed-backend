@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { acknowledgmentPreferenceUpdates } from '../../../shared/messaging/acknowledgment-preference';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
 import { eq, and, asc, desc, isNotNull, isNull, lte, sql } from 'drizzle-orm';
@@ -23,6 +24,20 @@ type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 @Injectable()
 export class IntegrationsRepository {
+  async updateAcknowledgmentPreference(
+    orgId: string,
+    integrationId: string,
+    enabled: boolean,
+    available: boolean,
+  ) {
+    return (
+      (await this.updateById(
+        integrationId,
+        { acknowledgmentEnabled: enabled },
+        { orgId, acknowledgmentAvailable: available },
+      )) ?? null
+    );
+  }
   /** Staff-only lookup; merchant entrypoints use authenticated org-scoped reads. */
   async findById(id: string) {
     return this.db.query.integrations.findFirst({
@@ -235,6 +250,7 @@ export class IntegrationsRepository {
   async updateById(
     id: string,
     updates: Partial<typeof integrations.$inferInsert>,
+    preference?: { orgId: string; acknowledgmentAvailable: boolean },
   ) {
     const nextUpdates = { ...updates };
     if (typeof nextUpdates.accessToken === 'string') {
@@ -243,6 +259,44 @@ export class IntegrationsRepository {
       );
     }
 
+    if (preference && typeof nextUpdates.acknowledgmentEnabled === 'boolean') {
+      const enabled = nextUpdates.acknowledgmentEnabled;
+      // Determine consent time from the locked value, not a stale settings read.
+      delete nextUpdates.acknowledgmentEnabledAt;
+      return this.db.transaction(async (tx) => {
+        const [source] = await tx
+          .select({ enabled: integrations.acknowledgmentEnabled })
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.id, id),
+              eq(integrations.orgId, preference.orgId),
+              eq(integrations.isActive, true),
+            ),
+          )
+          .for('update');
+        if (!source) return undefined;
+        const [saved] = await tx
+          .update(integrations)
+          .set({
+            ...nextUpdates,
+            ...acknowledgmentPreferenceUpdates(
+              source.enabled,
+              enabled,
+              preference.acknowledgmentAvailable,
+            ),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(
+            and(
+              eq(integrations.id, id),
+              eq(integrations.orgId, preference.orgId),
+            ),
+          )
+          .returning();
+        return saved;
+      });
+    }
     const [result] = await this.db
       .update(integrations)
       .set({

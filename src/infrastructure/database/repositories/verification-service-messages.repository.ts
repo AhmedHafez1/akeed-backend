@@ -5,12 +5,16 @@ import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   verificationReplyEvents,
   verificationServiceMessages,
+  verifications,
+  orders,
+  integrations,
 } from '../schema';
 import type {
   MessageTextPurpose,
   ServiceMessageKind,
   ServiceMessageSkipReason,
 } from '../../../shared/messaging/message-texts.types';
+import { acknowledgmentOptedIn } from '../../../shared/messaging/message-texts.types';
 import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
 import type { MerchantReplySender } from '../../../shared/messaging/merchant-reply-sender';
 
@@ -118,6 +122,57 @@ export class VerificationServiceMessagesRepository {
       .returning({ id: verificationServiceMessages.id });
     if (rows.length !== 1)
       throw new Error('Service message dispatch link conflict');
+  }
+
+  /** Recheck the linked claim and current opt-in immediately before provider I/O. */
+  async isClaimedAcknowledgmentDispatch(params: {
+    orgId: string;
+    dispatchId: string;
+    verificationId: string;
+  }): Promise<boolean> {
+    const [row] = await this.db
+      .select({
+        enabled: integrations.acknowledgmentEnabled,
+        enabledAt: integrations.acknowledgmentEnabledAt,
+        repliedAt: verificationServiceMessages.repliedAt,
+      })
+      .from(verificationServiceMessages)
+      .innerJoin(
+        verifications,
+        and(
+          eq(verifications.id, verificationServiceMessages.verificationId),
+          eq(verifications.orgId, params.orgId),
+        ),
+      )
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, params.orgId),
+        ),
+      )
+      .innerJoin(
+        integrations,
+        and(
+          eq(integrations.id, orders.integrationId),
+          eq(integrations.orgId, params.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(verificationServiceMessages.orgId, params.orgId),
+          eq(verificationServiceMessages.verificationId, params.verificationId),
+          eq(verificationServiceMessages.dispatchId, params.dispatchId),
+          eq(verificationServiceMessages.kind, 'acknowledgment'),
+          eq(verificationServiceMessages.state, 'claimed'),
+          eq(integrations.isActive, true),
+        ),
+      )
+      .limit(1);
+    return Boolean(
+      row?.repliedAt &&
+      acknowledgmentOptedIn(row.enabled, row.enabledAt, row.repliedAt),
+    );
   }
 
   async markSent(params: {

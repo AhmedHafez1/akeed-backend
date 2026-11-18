@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MembershipsRepository } from '../../infrastructure/database/repositories/memberships.repository';
+import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { whatsappSettingsLink } from '../../shared/notifications/whatsapp-settings-link';
 import { WhatsappConnectTicketsRepository } from '../../infrastructure/database/repositories/whatsapp-connect-tickets.repository';
 import {
   SIGNUP_REPLACEABLE_STATES,
@@ -92,6 +94,7 @@ export class WhatsappConnectService {
     private readonly memberships: MembershipsRepository,
     private readonly graph: OwnNumberGraphClient,
     private readonly setupQueue: WhatsappConnectionSetupProducer,
+    private readonly integrations: IntegrationsRepository,
   ) {}
 
   async issueTicket(
@@ -190,6 +193,11 @@ export class WhatsappConnectService {
     );
     const graphApiVersion = readMetaGraphConfig(this.config).apiVersion;
     return {
+      returnUrl: await this.settingsReturnUrl(
+        owner.orgId,
+        locale,
+        config.connectPageBaseUrl,
+      ),
       signupTicket,
       expiresAt: toIso(issued.expiresAt),
       appId: config.metaAppId,
@@ -300,6 +308,11 @@ export class WhatsappConnectService {
       );
 
     const signupPath = signupPathFromHints(hints, phone.phoneNumber.isOnBizApp);
+    const returnUrl = await this.settingsReturnUrl(
+      orgId,
+      input.redirectLocale ?? DEFAULT_CONNECT_LOCALE,
+      config.connectPageBaseUrl,
+    );
     let saved: Awaited<
       ReturnType<WhatsappConnectionsRepository['saveSignupForOrg']>
     >;
@@ -355,7 +368,30 @@ export class WhatsappConnectService {
       state: 'connecting',
       displayPhoneNumber: phone.phoneNumber.displayPhoneNumber,
       signupPath,
+      returnUrl,
     };
+  }
+
+  private async settingsReturnUrl(
+    orgId: string,
+    language: WhatsappConnectLocale,
+    dashboardUrl: string,
+  ): Promise<string> {
+    const sources = await this.integrations.findActiveByOrg(orgId);
+    const source = sources.length === 1 ? sources[0] : undefined;
+    const link = whatsappSettingsLink({
+      language,
+      platformType: source?.platformType ?? 'standalone',
+      platformStoreUrl: source?.platformStoreUrl ?? '',
+      dashboardUrl:
+        this.config.get<string>('FRONTEND_DASHBOARD_URL') ?? dashboardUrl,
+      shopifyApiKey: this.config.get<string>('SHOPIFY_API_KEY'),
+    });
+    // A malformed/inactive commerce source must never become an external redirect.
+    return (
+      link ??
+      new URL(`/${language}/settings?tab=whatsapp`, dashboardUrl).toString()
+    );
   }
 
   /** The switch and signup settings, or the unavailable code. */

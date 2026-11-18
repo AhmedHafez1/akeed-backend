@@ -46,12 +46,16 @@ const params: Parameters<MessagingPort['sendVerificationTemplate']>[0] = {
 function setup() {
   const values: Record<string, unknown> = {
     whatsappOwnNumber: { sendingEnabled: true },
+    whatsappTemplates: { messageImprovements: { acknowledgment: true } },
     WA_ACCESS_TOKEN: 'shared-secret',
     WA_PHONE_NUMBER_ID: 'shared-phone',
     SHOPIFY_TOKEN_ENCRYPTION_KEY: key,
   };
   const config = { get: (name: string) => values[name] };
   const dispatch = {
+    kind: 'acknowledgment',
+    orgId: 'org',
+    senderConnectionGeneration: 2,
     state: 'sending',
     senderKind: 'merchant_own',
     senderConnectionId: 'connection',
@@ -80,14 +84,15 @@ function setup() {
       .fn()
       .mockResolvedValue({ status: 'approved', category: 'utility' }),
   };
+  const serviceMessages = {
+    isClaimedAcknowledgmentDispatch: jest.fn().mockResolvedValue(true),
+  };
   const reader = new MetaSendContextService(
     config as never,
     dispatches as never,
     connections as never,
     templates as never,
-    {
-      isClaimedMerchantAcknowledgment: jest.fn().mockResolvedValue(true),
-    } as never,
+    serviceMessages as never,
   );
   const http = {
     post: jest
@@ -105,6 +110,7 @@ function setup() {
     reader,
     http,
     adapter,
+    serviceMessages,
   };
 }
 
@@ -391,6 +397,7 @@ describe('merchant free-form sender', () => {
     to: '+201000000001',
     body: 'Thank you',
     verificationId: 'verification',
+    dispatchContext: { orgId: 'org', dispatchId: 'dispatch' },
     sender: {
       kind: 'merchant_own',
       orgId: 'org',
@@ -406,7 +413,7 @@ describe('merchant free-form sender', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it('uses the receiving number and encrypted merchant token without templates or billing dispatches', async () => {
+  it('uses the receiving number and encrypted token after dispatch authorization', async () => {
     const s = setup();
     await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toEqual({
       outcome: 'accepted',
@@ -429,14 +436,20 @@ describe('merchant free-form sender', () => {
       },
     );
     expect(s.templates.findForSend).not.toHaveBeenCalled();
-    expect(s.dispatches.findForSender).not.toHaveBeenCalled();
+    expect(s.dispatches.findForSender).toHaveBeenCalledWith(
+      'org',
+      'dispatch',
+      'verification',
+    );
+    expect(
+      s.serviceMessages.isClaimedAcknowledgmentDispatch,
+    ).toHaveBeenCalled();
   });
 
   it.each([
     { state: 'disconnected' },
     { state: 'offboarded' },
     { degradedClass: 'payment' },
-    { thankYouEnabled: false },
     { signupGeneration: 3 },
     { orgId: 'foreign' },
     { id: 'replacement' },
@@ -460,6 +473,32 @@ describe('merchant free-form sender', () => {
     );
     expect(s.connections.findByOrg).not.toHaveBeenCalled();
     expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unbilled merchant acknowledgment', async () => {
+    const s = setup();
+    await expect(
+      s.adapter.sendFreeFormText({ ...freeForm, dispatchContext: undefined }),
+    ).resolves.toMatchObject({ outcome: 'rejected' });
+    expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('rechecks unified opt-in immediately before HTTP', async () => {
+    const s = setup();
+    s.serviceMessages.isClaimedAcknowledgmentDispatch.mockResolvedValue(false);
+    await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toMatchObject({
+      outcome: 'rejected',
+    });
+    expect(s.connections.findByOrg).not.toHaveBeenCalled();
+    expect(s.http.post).not.toHaveBeenCalled();
+  });
+
+  it('ignores the obsolete connection toggle after the unified preference is authorized', async () => {
+    const s = setup();
+    s.connection.thankYouEnabled = false;
+    await expect(s.adapter.sendFreeFormText(freeForm)).resolves.toMatchObject({
+      outcome: 'accepted',
+    });
   });
 
   it('refuses an absent service-message authorization boundary', async () => {

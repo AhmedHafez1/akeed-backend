@@ -182,6 +182,7 @@ describe('WhatsappConnectService', () => {
   ) {
     const f = fakes(state);
     const setupQueue = { enqueueSetup: jest.fn().mockResolvedValue(true) };
+    const sources = { findActiveByOrg: jest.fn().mockResolvedValue([]) };
     jest
       .spyOn(global, 'fetch')
       .mockImplementation(f.meta.fetch as typeof fetch);
@@ -198,8 +199,9 @@ describe('WhatsappConnectService', () => {
       f.membershipsRepo as unknown as MembershipsRepository,
       new OwnNumberGraphClient(config),
       setupQueue as unknown as WhatsappConnectionSetupProducer,
+      sources as never,
     );
-    return { service, setupQueue, ...f };
+    return { service, setupQueue, sources, ...f };
   }
 
   const owner = (orgId = ORG): AuthenticatedUser => ({
@@ -251,6 +253,44 @@ describe('WhatsappConnectService', () => {
   afterEach(() => jest.restoreAllMocks());
 
   describe('setup hand-off', () => {
+    it('returns to the trusted Shopify source and preserves the completion locale', async () => {
+      const s = setup({ ...connectOn, SHOPIFY_API_KEY: 'synthetic-app' });
+      s.sources.findActiveByOrg.mockResolvedValue([
+        {
+          platformType: 'shopify',
+          platformStoreUrl: 'synthetic.myshopify.com',
+        },
+      ]);
+      const { signupTicket, returnUrl } = await claimed(s);
+      expect(returnUrl).toBe(
+        'https://synthetic.myshopify.com/admin/apps/synthetic-app/ar/settings?tab=whatsapp',
+      );
+      expect(
+        (
+          await complete(s, signupTicket, {
+            redirectLocale: 'fr',
+            returnUrl: 'https://untrusted.example.test',
+          })
+        ).returnUrl,
+      ).toBe(
+        'https://synthetic.myshopify.com/admin/apps/synthetic-app/fr/settings?tab=whatsapp',
+      );
+      expect(s.sources.findActiveByOrg).toHaveBeenCalledWith(ORG);
+    });
+
+    it('uses the configured standalone app origin for the return tab', async () => {
+      const s = setup({
+        ...connectOn,
+        FRONTEND_DASHBOARD_URL: 'https://dashboard.example.test/en/dashboard',
+      });
+      const { signupTicket, returnUrl } = await claimed(s);
+      expect(returnUrl).toBe(
+        'https://dashboard.example.test/ar/settings?tab=whatsapp',
+      );
+      expect(
+        (await complete(s, signupTicket, { redirectLocale: 'ur' })).returnUrl,
+      ).toBe('https://dashboard.example.test/ur/settings?tab=whatsapp');
+    });
     it('queues setup for the saved signup and its generation', async () => {
       const s = setup();
       const { signupTicket } = await claimed(s);
@@ -549,6 +589,7 @@ describe('WhatsappConnectService', () => {
         state: 'connecting',
         displayPhoneNumber: FAKE_DISPLAY_PHONE_NUMBER,
         signupPath: 'coexistence',
+        returnUrl: `${BASE}/ar/settings?tab=whatsapp`,
       });
       const row = s.connectionRows.get(ORG)!;
       expect(row).toMatchObject({

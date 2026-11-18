@@ -459,6 +459,7 @@ export interface SettingsResponseDto {
   acknowledgment?: {
     available: boolean;
     creditsPerMessage: number;
+    ownNumberCreditsPerMessage?: number;
     previews: Record<
       TemplateLanguage,
       Record<string, { confirmed: string | null; canceled: string | null }>
