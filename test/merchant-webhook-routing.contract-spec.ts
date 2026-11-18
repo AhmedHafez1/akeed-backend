@@ -351,13 +351,19 @@ describe('merchant webhook routing PostgreSQL contract', () => {
       1,
     );
     expect(
-      await connections.completeHealth(claim, { status: 'LIMITED' }),
+      await connections.completeHealth(claim, { status: 'BLOCKED' }),
     ).toMatchObject({ state: 'verifying' });
+    await connections.requestHealth(f.source.orgId, f.connection.id, 1);
+    claim = await connections.claimHealth(f.source.orgId, f.connection.id, 1);
+    // BLOCKED left it degraded: LIMITED alone does not bring it back.
+    expect(
+      await connections.completeHealth(claim, { status: 'LIMITED' }),
+    ).toMatchObject({ state: 'verifying', degradedClass: 'restricted' });
     await connections.requestHealth(f.source.orgId, f.connection.id, 1);
     claim = await connections.claimHealth(f.source.orgId, f.connection.id, 1);
     expect(
       await connections.completeHealth(claim, { status: 'AVAILABLE' }),
-    ).toMatchObject({ state: 'active' });
+    ).toMatchObject({ state: 'active', degradedClass: null });
   });
 
   it('rejects duplicate, older and superseded-generation lifecycle work', async () => {

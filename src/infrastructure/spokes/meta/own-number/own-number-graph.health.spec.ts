@@ -40,6 +40,31 @@ describe('Meta phone health mapping', () => {
     expect(url).toContain('health_status');
     expect(url).not.toContain('synthetic-token');
   });
+  it("keeps Meta's short explanation of a LIMITED status, bounded", async () => {
+    const s = setup({
+      id: '1000',
+      health_status: {
+        can_send_message: 'LIMITED',
+        entities: [
+          {
+            additional_info: [
+              'Your display name has not been approved yet.',
+              'x'.repeat(500),
+              7,
+            ],
+          },
+          { additional_info: ['third', 'fourth'] },
+        ],
+      },
+    });
+    const result = await s.client.readHealth('1000', 'synthetic-token');
+    expect(result.status).toBe('LIMITED');
+    expect(result.limitations).toEqual([
+      'Your display name has not been approved yet.',
+      'x'.repeat(200),
+      'third',
+    ]);
+  });
   it('uses health entity error codes for degradation', async () => {
     const s = setup({
       id: '1000',

@@ -381,8 +381,14 @@ export class WhatsappConnectionsRepository {
           : (result.failure?.degrade ?? 'restricted');
     if (result.status === 'AVAILABLE' && degraded !== 'credentials')
       degraded = null;
+    // Meta's LIMITED can send, with restrictions such as a lower message
+    // limit for a new business. It activates the number; a send Meta refuses
+    // over a limit falls back to Akeed's number and degrades it. Only
+    // AVAILABLE clears a degradation.
     const active =
-      claim.state === 'verifying' && result.status === 'AVAILABLE' && !degraded;
+      claim.state === 'verifying' &&
+      (result.status === 'AVAILABLE' || result.status === 'LIMITED') &&
+      !degraded;
     const [row] = await this.db
       .update(whatsappConnections)
       .set({
