@@ -66,6 +66,8 @@ export class ConnectionHealthService {
         orgId,
         connectionId: id,
         healthStatus: result.status,
+        ...(result.limitations ? { limitations: result.limitations } : {}),
+        state: row.state,
       }),
     );
   }

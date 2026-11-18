@@ -683,7 +683,7 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
     expect(await root(f)).toMatchObject({ senderRecoveryState: null });
   });
   it.each(['AVAILABLE', 'LIMITED', 'BLOCKED', 'unknown'] as const)(
-    'health activation requires AVAILABLE (%s)',
+    'health activation needs a number that can send: AVAILABLE or LIMITED (%s)',
     async (status) => {
       const f = await fixture('standalone');
       await db
@@ -697,7 +697,9 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
       );
       expect(claim).not.toBeNull();
       const row = await connections.completeHealth(claim, { status });
-      expect(row.state).toBe(status === 'AVAILABLE' ? 'active' : 'verifying');
+      expect(row.state).toBe(
+        status === 'AVAILABLE' || status === 'LIMITED' ? 'active' : 'verifying',
+      );
       expect(row.degradedClass).toBe(
         status === 'BLOCKED' ? 'restricted' : null,
       );
@@ -716,10 +718,12 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         f.connection.id,
         1,
       );
-      expect(
-        (await connections.completeHealth(claim, { status: 'LIMITED' }))
-          .degradedClass,
-      ).toBe(degraded);
+      // LIMITED neither clears a degradation nor activates a degraded number.
+      const limited = await connections.completeHealth(claim, {
+        status: 'LIMITED',
+      });
+      expect(limited.degradedClass).toBe(degraded);
+      expect(limited.state).toBe('active');
       await db
         .update(whatsappConnections)
         .set({ nextHealthAt: now() })
