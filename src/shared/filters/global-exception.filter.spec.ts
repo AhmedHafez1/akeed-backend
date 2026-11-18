@@ -2,6 +2,7 @@ import { HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
 import type { HttpAdapterHost } from '@nestjs/core';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { GlobalExceptionFilter } from './global-exception.filter';
+import { DatabaseTimeoutError } from '../errors/database-timeout.error';
 
 const PHONE = '+201000000000';
 const TOKEN_HASH = 'a'.repeat(64);
@@ -43,6 +44,23 @@ describe('GlobalExceptionFilter', () => {
 
   afterAll(() => {
     Logger.overrideLogger(['log', 'warn', 'error']);
+  });
+
+  it('answers 503 with a stable code when the database misses its deadline', () => {
+    const { filter, host, reply } = createFilter();
+    const wrapped = new DrizzleQueryError(
+      'select 1',
+      [],
+      new DatabaseTimeoutError('query', 30_000),
+    );
+
+    filter.catch(wrapped, host);
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ statusCode: 503, code: 'DATABASE_TIMEOUT' }),
+      503,
+    );
   });
 
   it('answers 500 for a failed query and logs the statement without its parameters', () => {

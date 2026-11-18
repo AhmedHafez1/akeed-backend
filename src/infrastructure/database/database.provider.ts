@@ -5,6 +5,13 @@ import postgres from 'postgres';
 import * as tables from './schema';
 import * as relationDefinitions from './relations';
 import { instrumentPostgresClient } from './query-instrumentation';
+import { boundPostgresClient } from './query-deadline';
+import {
+  DATABASE_RESILIENCE_DEFAULTS,
+  readDatabaseResilienceConfig,
+  type DatabaseResilienceConfig,
+} from '../../shared/config/database-resilience.config';
+import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import {
   noteConnection,
   noteConnectionClosed,
@@ -69,14 +76,28 @@ export interface PoolOptions {
   prepare: boolean;
   max: number;
   idle_timeout: number;
+  connect_timeout: number;
+  max_lifetime: number;
 }
 
+/**
+ * `connect_timeout` bounds opening a connection. `max_lifetime` replaces a
+ * connection after a fixed age instead of the driver's random 30 to 60
+ * minutes. Neither can free a connection whose statement never returns: the
+ * driver retires a connection only once its statement settles. The statement
+ * and transaction deadlines (`boundPostgresClient`) and the pool watchdog
+ * cover that case.
+ */
 export function buildPoolOptions(
   databaseUrl: string,
   env: {
     DATABASE_POOL_MAX?: string;
     DATABASE_IDLE_TIMEOUT_SECONDS?: string;
   },
+  resilience: Pick<
+    DatabaseResilienceConfig,
+    'connectTimeoutSeconds' | 'maxLifetimeSeconds'
+  > = DATABASE_RESILIENCE_DEFAULTS,
 ): PoolOptions {
   const transactionPooler = usesTransactionPooler(databaseUrl);
   return {
@@ -87,6 +108,8 @@ export function buildPoolOptions(
       env.DATABASE_IDLE_TIMEOUT_SECONDS,
       DEFAULT_IDLE_TIMEOUT_SECONDS,
     ),
+    connect_timeout: resilience.connectTimeoutSeconds,
+    max_lifetime: resilience.maxLifetimeSeconds,
   };
 }
 
@@ -100,19 +123,25 @@ export const drizzleProvider: Provider = {
       throw new Error('DATABASE_URL is not defined in environment variables');
     }
 
-    const { transactionPooler, ...pool } = buildPoolOptions(databaseUrl, {
-      DATABASE_POOL_MAX: configService.get<string>('DATABASE_POOL_MAX'),
-      DATABASE_IDLE_TIMEOUT_SECONDS: configService.get<string>(
-        'DATABASE_IDLE_TIMEOUT_SECONDS',
-      ),
-    });
+    const resilience = readDatabaseResilienceConfig(configService);
+    const { transactionPooler, ...pool } = buildPoolOptions(
+      databaseUrl,
+      {
+        DATABASE_POOL_MAX: configService.get<string>('DATABASE_POOL_MAX'),
+        DATABASE_IDLE_TIMEOUT_SECONDS: configService.get<string>(
+          'DATABASE_IDLE_TIMEOUT_SECONDS',
+        ),
+      },
+      resilience,
+    );
     const client = postgres(databaseUrl, {
       ...pool,
       // The first statement after each socket close observes a new generation.
       debug: (connectionId: number) => noteConnection(connectionId),
       onclose: (connectionId: number) => noteConnectionClosed(connectionId),
     });
-    new Logger('DatabaseProvider').log(
+    const logger = new Logger('DatabaseProvider');
+    logger.log(
       JSON.stringify({
         app: 'backend',
         module: 'DatabaseProvider',
@@ -122,9 +151,27 @@ export const drizzleProvider: Provider = {
         preparedStatements: pool.prepare,
         poolMax: pool.max,
         idleTimeoutSeconds: pool.idle_timeout,
+        connectTimeoutSeconds: pool.connect_timeout,
+        maxLifetimeSeconds: pool.max_lifetime,
+        queryTimeoutMs: resilience.queryTimeoutMs,
+        transactionTimeoutMs: resilience.transactionTimeoutMs,
       }),
     );
-    const db = drizzle(instrumentPostgresClient(client), { schema });
+    const bounded = boundPostgresClient(client, {
+      queryTimeoutMs: resilience.queryTimeoutMs,
+      transactionTimeoutMs: resilience.transactionTimeoutMs,
+      onTimeout: (scope, timeoutMs) =>
+        logger.warn(
+          buildBackendLog('DatabaseProvider', {
+            action: 'database-deadline',
+            outcome: 'failure',
+            reason: 'timeout',
+            scope,
+            timeoutMs,
+          }),
+        ),
+    });
+    const db = drizzle(instrumentPostgresClient(bounded), { schema });
 
     return db;
   },
