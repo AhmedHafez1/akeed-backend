@@ -45,6 +45,8 @@ export const SENDER_HEALTH_PORT = Symbol('SENDER_HEALTH_PORT');
 export interface SenderHealthResult {
   status: 'AVAILABLE' | 'LIMITED' | 'BLOCKED' | 'unknown';
   failure?: SenderFailure;
+  /** Meta's explanation of a LIMITED status, for support. */
+  limitations?: string[];
   qualityRating?: string | null;
   nameStatus?: string | null;
 }

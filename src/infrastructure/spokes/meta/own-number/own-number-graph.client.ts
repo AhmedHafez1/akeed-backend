@@ -146,7 +146,10 @@ export class OwnNumberGraphClient {
       id?: unknown;
       health_status?: {
         can_send_message?: unknown;
-        entities?: { errors?: { error_code?: unknown }[] }[];
+        entities?: {
+          errors?: { error_code?: unknown }[];
+          additional_info?: unknown;
+        }[];
       };
       quality_rating?: unknown;
       name_status?: unknown;
@@ -162,9 +165,11 @@ export class OwnNumberGraphClient {
       failures.find((item) => item.class === 'credentials') ??
       failures.find((item) => item.class === 'payment') ??
       failures.find((item) => item.class === 'restricted');
+    const limitations = healthLimitations(raw.health_status?.entities);
     return {
       status,
       ...(failure ? { failure } : {}),
+      ...(limitations.length ? { limitations } : {}),
       qualityRating: providerEnum(raw.quality_rating),
       nameStatus: providerEnum(raw.name_status),
     };
@@ -660,4 +665,21 @@ export class OwnNumberGraphClient {
     );
     return { ok: false, kind: 'unavailable', graphErrorCode: null };
   }
+}
+
+/**
+ * Meta's short explanations of a LIMITED status (`additional_info`), kept
+ * bounded: a few lines of plain provider text, never message content.
+ */
+function healthLimitations(entities: unknown): string[] {
+  if (!Array.isArray(entities)) return [];
+  return entities
+    .flatMap((entity: { additional_info?: unknown }) =>
+      Array.isArray(entity?.additional_info)
+        ? (entity.additional_info as unknown[])
+        : [],
+    )
+    .filter((line): line is string => typeof line === 'string')
+    .map((line) => line.slice(0, 200))
+    .slice(0, 3);
 }
