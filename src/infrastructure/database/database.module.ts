@@ -9,6 +9,7 @@ import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DRIZZLE, drizzleProvider, type DrizzleDB } from './database.provider';
 import { DatabaseLatencyProbe } from './database-latency-probe';
+import { DatabasePoolWatchdog } from './database-pool-watchdog';
 import { CreditAccountingRepository } from './repositories/credit-accounting.repository';
 import { PaymentPurchasesRepository } from './repositories/payment-purchases.repository';
 
@@ -64,6 +65,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     PaymentPurchasesRepository,
     drizzleProvider,
     DatabaseLatencyProbe,
+    DatabasePoolWatchdog,
     OrdersRepository,
     VerificationsRepository,
     VerificationAutoCancellationsRepository,

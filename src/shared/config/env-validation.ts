@@ -41,6 +41,10 @@ import {
   parseWhatsappOwnNumberConfig,
   WHATSAPP_OWN_NUMBER_CONFIG,
 } from './whatsapp-own-number.config';
+import {
+  DATABASE_RESILIENCE_CONFIG,
+  parseDatabaseResilienceConfig,
+} from './database-resilience.config';
 
 /**
  * Fail-fast validation of the environment the app cannot work without.
@@ -177,5 +181,6 @@ export function validateEnv(
     [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
     [META_WEBHOOK_CONFIG]: parseMetaWebhookConfig(config),
     [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(config),
+    [DATABASE_RESILIENCE_CONFIG]: parseDatabaseResilienceConfig(config),
   };
 }

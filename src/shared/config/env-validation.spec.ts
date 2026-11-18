@@ -138,6 +138,17 @@ describe('validateEnv', () => {
     ).toEqual(validateEnv(base).whatsappOwnNumber);
   });
 
+  it('parses the database bounds and fails boot on a malformed one', () => {
+    const base = { NODE_ENV: 'test', DATABASE_URL: 'postgres://x/db' };
+    expect(validateEnv(base).databaseResilience).toMatchObject({
+      queryTimeoutMs: 30_000,
+      watchdogEnabled: false,
+    });
+    expect(() =>
+      validateEnv({ ...base, DATABASE_QUERY_TIMEOUT_MS: '30s' }),
+    ).toThrow(/DATABASE_QUERY_TIMEOUT_MS must be a positive whole number/);
+  });
+
   it('fails boot when own-number connect is on without its signup settings', () => {
     expect(() =>
       validateEnv({

@@ -21,7 +21,19 @@ describe('database pool options', () => {
       prepare: false,
       max: 10,
       idle_timeout: 20,
+      connect_timeout: 10,
+      max_lifetime: 900,
     });
+  });
+
+  it('bounds connection setup and lifetime from the resilience settings', () => {
+    expect(
+      buildPoolOptions(
+        SESSION_POOLER,
+        {},
+        { connectTimeoutSeconds: 4, maxLifetimeSeconds: 300 },
+      ),
+    ).toMatchObject({ connect_timeout: 4, max_lifetime: 300 });
   });
 
   it('releases idle connections quickly on the session pooler', () => {
