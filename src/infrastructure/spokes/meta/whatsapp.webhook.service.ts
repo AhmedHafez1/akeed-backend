@@ -244,13 +244,13 @@ export class WhatsAppWebhookService {
         await this.verificationsRepo.findById(verificationId);
       if (
         !verification ||
-        (options.receivingSender
-          ? verification.orgId !== options.receivingOrgId
-          : !(await this.messageDispatches.acknowledgmentEnabledForVerification(
-              verificationId,
-              verification.orgId,
-              this.messageTime(message),
-            )))
+        (options.receivingSender &&
+          verification.orgId !== options.receivingOrgId) ||
+        !(await this.messageDispatches.acknowledgmentEnabledForVerification(
+          verificationId,
+          verification.orgId,
+          this.messageTime(message),
+        ))
       )
         return;
       await this.automation?.enqueueAcknowledgment({

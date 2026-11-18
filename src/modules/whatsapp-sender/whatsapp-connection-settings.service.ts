@@ -1,5 +1,12 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { WhatsappConnectionsRepository } from '../../infrastructure/database/repositories/whatsapp-connections.repository';
+import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
+import { ConfigService } from '@nestjs/config';
+import { readWhatsappTemplateConfig } from '../../shared/config/whatsapp-template.config';
+import {
+  resolveFallbackActiveIntegration,
+  resolveShopifyLinkedIntegration,
+} from '../../shared/commerce/current-integration-resolver';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import type { AuthenticatedUser } from '../auth/guards/dual-auth.guard';
 import { assertOrganizationWriteAllowed } from '../auth/organization-role';
@@ -29,7 +36,11 @@ export function whatsappConnectionSettingsError(
 export class WhatsappConnectionSettingsService {
   private readonly logger = new Logger(WhatsappConnectionSettingsService.name);
 
-  constructor(private readonly connections: WhatsappConnectionsRepository) {}
+  constructor(
+    private readonly connections: WhatsappConnectionsRepository,
+    private readonly integrations: IntegrationsRepository,
+    private readonly config: ConfigService,
+  ) {}
 
   async update(
     user: AuthenticatedUser,
@@ -39,9 +50,31 @@ export class WhatsappConnectionSettingsService {
       code: 'WHATSAPP_CONNECTION_WRITE_REQUIRED',
       message: 'Owner or admin role is required to change WhatsApp settings.',
     });
-    const saved = await this.connections.updateThankYouEnabled(
+    if (!(await this.connections.findByOrg(user.orgId)))
+      throw whatsappConnectionSettingsError('WHATSAPP_CONNECTION_NOT_FOUND');
+    const source = user.shop
+      ? await resolveShopifyLinkedIntegration(this.integrations, {
+          orgId: user.orgId,
+          shopDomain: user.shop,
+          requireActive: true,
+        })
+      : await resolveFallbackActiveIntegration(this.integrations, user.orgId);
+    if (source.outcome !== 'found')
+      throw new HttpException(
+        {
+          statusCode: 409,
+          error: 'Conflict',
+          code: 'ONBOARDING_SOURCE_AMBIGUOUS',
+          message: 'The current commerce source is unavailable.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    const saved = await this.integrations.updateAcknowledgmentPreference(
       user.orgId,
+      source.integration.id,
       settings.thankYouEnabled,
+      readWhatsappTemplateConfig(this.config).messageImprovements
+        .acknowledgment,
     );
     if (!saved)
       throw whatsappConnectionSettingsError('WHATSAPP_CONNECTION_NOT_FOUND');
@@ -50,9 +83,9 @@ export class WhatsappConnectionSettingsService {
         action: 'whatsapp-connection-settings-update',
         outcome: 'success',
         orgId: user.orgId,
-        thankYouEnabled: saved.thankYouEnabled,
+        thankYouEnabled: saved.acknowledgmentEnabled,
       }),
     );
-    return saved;
+    return { thankYouEnabled: saved.acknowledgmentEnabled };
   }
 }

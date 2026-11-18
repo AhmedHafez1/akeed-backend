@@ -104,6 +104,8 @@ export interface WhatsappConnectTicketIssuedDto {
 
 /** What the connect page needs to launch Embedded Signup. */
 export interface WhatsappConnectTicketClaimedDto {
+  /** Public settings navigation, safe to retain across the Meta redirect. */
+  returnUrl: string;
   /** Single use, for the one completion request. Held in page memory only. */
   signupTicket: string;
   expiresAt: string;
@@ -122,4 +124,5 @@ export interface WhatsappSignupCompletedDto {
   state: 'connecting';
   displayPhoneNumber: string | null;
   signupPath: WhatsappSignupPath;
+  returnUrl: string;
 }

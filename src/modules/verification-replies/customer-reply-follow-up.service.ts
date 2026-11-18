@@ -153,6 +153,7 @@ export class CustomerReplyFollowUpService {
     request: CustomerReplyFollowUp,
   ): Promise<CustomerReplyFollowUpOutcome> {
     const merchantSender = request.receivingSender;
+    if (!this.isEnabled(request.kind)) return ineligible('switch_off');
     if (merchantSender) {
       if (
         request.kind !== 'acknowledgment' ||
@@ -169,7 +170,7 @@ export class CustomerReplyFollowUpService {
         )
       )
         return ineligible('merchant_disabled');
-    } else if (!this.isEnabled(request.kind)) return ineligible('switch_off');
+    }
 
     const verification = await this.verificationsRepo.findById(
       request.verificationId,
@@ -189,7 +190,6 @@ export class CustomerReplyFollowUpService {
       return ineligible('integration_inactive');
     if (
       request.kind === 'acknowledgment' &&
-      !merchantSender &&
       !acknowledgmentOptedIn(
         order.integration?.acknowledgmentEnabled,
         order.integration?.acknowledgmentEnabledAt,
@@ -271,7 +271,7 @@ export class CustomerReplyFollowUpService {
     const identity = { purpose, language, style: text.style };
 
     let dispatch: DispatchRecord | undefined;
-    if (request.kind === 'acknowledgment' && !merchantSender) {
+    if (request.kind === 'acknowledgment') {
       if (!integration || integration.orgId !== request.orgId)
         return this.notSent(
           claim.id,
@@ -289,6 +289,16 @@ export class CustomerReplyFollowUpService {
           templateName: null,
           languageCode: language,
           leaseUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+          ...(merchantSender
+            ? {
+                sender: {
+                  kind: 'merchant_own' as const,
+                  connectionId: merchantSender.connectionId,
+                  reason: 'own_number_thank_you',
+                  units: 1,
+                },
+              }
+            : {}),
         }),
       );
       if (billed.outcome !== 'claimed')
@@ -300,6 +310,27 @@ export class CustomerReplyFollowUpService {
         );
       const claimedDispatch = billed.dispatch;
       dispatch = claimedDispatch;
+      if (
+        merchantSender &&
+        (dispatch.senderPhoneNumberId !== merchantSender.phoneNumberId ||
+          dispatch.senderConnectionId !== merchantSender.connectionId ||
+          dispatch.senderConnectionGeneration !==
+            merchantSender.signupGeneration)
+      ) {
+        await withSerializableRetry(() =>
+          this.messageDispatches.resolveNotAccepted(
+            dispatch!.id,
+            undefined,
+            true,
+          ),
+        );
+        return this.notSent(
+          claim.id,
+          'skipped',
+          'billing_unavailable',
+          identity,
+        );
+      }
       try {
         await this.serviceMessages.linkDispatch(
           claim.id,
@@ -333,6 +364,14 @@ export class CustomerReplyFollowUpService {
         to: order.customerPhone,
         body,
         verificationId: verification.id,
+        ...(dispatch
+          ? {
+              dispatchContext: {
+                orgId: request.orgId,
+                dispatchId: dispatch.id,
+              },
+            }
+          : {}),
         ...(merchantSender
           ? {
               sender: {

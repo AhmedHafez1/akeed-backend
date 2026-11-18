@@ -13,11 +13,9 @@ export function merchantReplySenderReady(
     signupGeneration: number;
     state: string;
     degradedClass: string | null;
-    thankYouEnabled: boolean;
   } | null,
   sender: MerchantReplySender,
   orgId: string,
-  requireThankYou = true,
 ): boolean {
   return Boolean(
     connection &&
@@ -26,7 +24,6 @@ export function merchantReplySenderReady(
     connection.phoneNumberId === sender.phoneNumberId &&
     connection.signupGeneration === sender.signupGeneration &&
     connection.state === 'active' &&
-    !connection.degradedClass &&
-    (!requireThankYou || connection.thankYouEnabled === true),
+    !connection.degradedClass,
   );
 }

@@ -50,6 +50,11 @@ describe('ConnectionStatusService', () => {
       connections as unknown as WhatsappConnectionsRepository,
       rows as unknown as WhatsappConnectionTemplatesRepository,
       registryFake([inspected()]) as unknown as WhatsappTemplatesRepository,
+      {
+        findActiveByOrg: jest
+          .fn()
+          .mockResolvedValue([{ acknowledgmentEnabled: true }]),
+      } as never,
       new ConfigService({
         [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(
           sendingEnabled
@@ -110,10 +115,10 @@ describe('ConnectionStatusService', () => {
     });
   });
 
-  it('exposes the saved disabled thank-you preference', async () => {
+  it('exposes the Message preference instead of the obsolete connection preference', async () => {
     await expect(
       setup({ thankYouEnabled: false }).service.forOrganization('org-1'),
-    ).resolves.toMatchObject({ thankYouEnabled: false });
+    ).resolves.toMatchObject({ thankYouEnabled: true });
   });
 
   it('answers null for an organization without a connection', async () => {

@@ -26,6 +26,7 @@ export interface WhatsappConnectionStatusDto {
     category: string | null;
     readiness: Pick<ResolvedSender, 'kind' | 'reason'>;
   }[];
+  /** Deprecated alias of the current commerce source's Message preference. */
   thankYouEnabled: boolean;
   state: WhatsappConnectionState;
   signupPath: WhatsappSignupPath;

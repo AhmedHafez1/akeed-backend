@@ -46,6 +46,7 @@ import { SenderResolverService } from '../src/modules/whatsapp-sender/sender-res
 import { SenderAlertService } from '../src/modules/whatsapp-sender/sender-alert.service';
 import { VerificationSendService } from '../src/modules/verification-core/verification-send.service';
 import { CustomerReplyFollowUpService } from '../src/modules/verification-replies/customer-reply-follow-up.service';
+import { MessageImprovementSwitches } from '../src/shared/config/message-improvement-switches';
 import { MerchantMessageFailure } from '../src/shared/ports/sender-recovery.port';
 import type { MessagingPort } from '../src/shared/ports/messaging.port';
 import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
@@ -128,7 +129,9 @@ describe('merchant number from signup to customer reply', () => {
         WA_PHONE_NUMBER_ID: 'shared-phone',
         [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(env),
         [META_GRAPH_CONFIG]: parseMetaGraphConfig({}),
-        [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig({}),
+        [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig({
+          WHATSAPP_ACKNOWLEDGMENT_ENABLED: 'true',
+        }),
         [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig({
           EMAIL_ALERTS_ENABLED: 'true',
           RESEND_API_KEY: 'synthetic',
@@ -173,6 +176,7 @@ describe('merchant number from signup to customer reply', () => {
         new MembershipsRepository(h.db as never),
         graph,
         queue as never,
+        new IntegrationsRepository(h.db as never, config),
       );
       const user = {
         userId,
@@ -262,6 +266,7 @@ describe('merchant number from signup to customer reply', () => {
         connections,
         rows,
         registry,
+        new IntegrationsRepository(h.db as never, config),
         config,
       );
       expect(
@@ -493,13 +498,15 @@ describe('merchant number from signup to customer reply', () => {
             Promise.resolve({ body: 'Thank you', style: 'default' }),
         } as never,
         messaging,
-        undefined,
+        new MessageImprovementSwitches(config),
         undefined,
         connections,
         config,
       );
       const before =
         await h.client`SELECT * FROM credit_accounts WHERE org_id = ${source.orgId}`;
+      const poolsBefore =
+        await h.client`SELECT * FROM integration_monthly_usage WHERE org_id = ${source.orgId}`;
       expect(
         await followUp.handle({
           kind: 'acknowledgment',
@@ -515,9 +522,24 @@ describe('merchant number from signup to customer reply', () => {
         }),
       ).toMatchObject({ outcome: 'sent' });
       expect(messaging.sendFreeFormText).toHaveBeenCalledTimes(1);
-      expect(
-        await h.client`SELECT * FROM credit_accounts WHERE org_id = ${source.orgId}`,
-      ).toEqual(before);
+      if (platform === 'standalone') {
+        const afterThankYou =
+          await h.client`SELECT * FROM credit_accounts WHERE org_id = ${source.orgId}`;
+        expect(afterThankYou[0]).toMatchObject({
+          posted_balance:
+            Number(before[0].posted_balance) -
+            (before[0].spare_credit === 1 ? 0 : 1),
+          spare_credit: before[0].spare_credit === 1 ? 0 : 1,
+          held_credits: Number(before[0].held_credits),
+        });
+      } else {
+        const poolsAfter =
+          await h.client`SELECT * FROM integration_monthly_usage WHERE org_id = ${source.orgId}`;
+        expect(poolsAfter[0]).toMatchObject({
+          consumed_count: Number(poolsBefore[0].consumed_count),
+          own_number_consumed: Number(poolsBefore[0].own_number_consumed) + 1,
+        });
+      }
       // Payment recovery comes from a fresh health observation; old generation work is fenced.
       await health.run(
         source.orgId,

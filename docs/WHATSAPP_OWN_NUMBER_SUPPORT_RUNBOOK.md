@@ -13,7 +13,7 @@ For configuration prerequisites and durable webhook operation, see [Environment]
 
 ## Connection and setup problems
 
-Only an organization owner can connect, disconnect, or change the thank-you preference. Viewers and other members can inspect the allowed read-only state. Start signup from Settings; do not reuse or forward a ticket URL.
+Only an organization owner can connect or disconnect. Owners and admins can change the single thank-you preference in Settings > Message; viewers are read-only. Start signup from Settings; do not reuse or forward a ticket URL.
 
 | Symptom or code | Action |
 | --- | --- |
@@ -75,7 +75,9 @@ For a Coexistence connection, show the returned phone-app steps: **Settings → 
 
 `PARTNER_REMOVED`, `PARTNER_APP_UNINSTALLED` and `ACCOUNT_DELETED` disconnect and clear credentials. `ACCOUNT_OFFBOARDED` offboards; `ACCOUNT_RECONNECTED` returns to verification before activation. Restriction/violation events degrade the connection. If the recorded reason is `PRIMARY_INACTIVITY`, ask the owner to open the WhatsApp Business app regularly and reconnect if required. Other provider reasons are preserved as identifiers for diagnosis.
 
-Own-number thank-yous follow the connection preference and require an open service window and a healthy active receiving connection. They use no Akeed credits or plan capacity. They never fall back to Akeed and stop when own-number sending is disabled. Meta may charge the merchant separately under its pricing.
+Thank-yous from either sender follow the saved Message-tab preference. The connection-specific API is a compatibility adapter to that preference. Existing Message preferences remain unchanged; the old connection flag no longer independently controls sending.
+
+An own-number thank-you requires an open service window and the same healthy active receiving connection. It reserves one own-number plan message or one displayed prepaid credit before sending. An Akeed-number thank-you uses one Akeed plan message or two displayed credits. Capacity is selected from the actual sender, even while a connected number is awaiting approval. Confirmed non-sends release capacity; uncertain sends remain subject to the existing accounting reconciliation policy. Own-number thank-yous never fall back to Akeed. Historical free replies remain uncharged. Meta pricing is separate.
 
 ## Billing reconciliation
 

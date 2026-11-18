@@ -143,8 +143,8 @@ describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
       },
     };
 
-    it('queues a merchant acknowledgment with shared thank-yous disabled', async () => {
-      const s = setup({ merchantEnabled: false });
+    it('queues a merchant acknowledgment only with the unified preference enabled', async () => {
+      const s = setup({ merchantEnabled: true });
       await s.service.processIncomingOrThrow(button('confirm_ver-1'), routing);
       expect(s.automation.enqueueAcknowledgment).toHaveBeenCalledWith({
         verificationId: 'ver-1',
@@ -155,7 +155,13 @@ describe('WhatsAppWebhookService: acknowledgment and nudge', () => {
       });
       expect(
         s.messageDispatches.acknowledgmentEnabledForVerification,
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledWith('ver-1', 'org-1', REPLIED_AT);
+    });
+
+    it('does not queue a merchant acknowledgment after unified opt-out', async () => {
+      const s = setup({ merchantEnabled: false });
+      await s.service.processIncomingOrThrow(button('confirm_ver-1'), routing);
+      expect(s.automation.enqueueAcknowledgment).not.toHaveBeenCalled();
     });
 
     it('does not queue a merchant acknowledgment for a foreign verification', async () => {

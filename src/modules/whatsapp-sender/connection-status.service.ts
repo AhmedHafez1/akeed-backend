@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { readWhatsappOwnNumberConfig } from '../../shared/config/whatsapp-own-number.config';
 import { resolveSender } from './sender-resolution.policy';
 import {
@@ -27,6 +28,7 @@ export class ConnectionStatusService {
     private readonly connections: WhatsappConnectionsRepository,
     private readonly rows: WhatsappConnectionTemplatesRepository,
     private readonly registry: WhatsappTemplatesRepository,
+    private readonly integrations: IntegrationsRepository,
     @Optional() private readonly config?: ConfigService,
   ) {}
 
@@ -54,9 +56,13 @@ export class ConnectionStatusService {
     const enabled = this.config
       ? readWhatsappOwnNumberConfig(this.config).sendingEnabled
       : false;
+    const sources = await this.integrations.findActiveByOrg(orgId);
+    const thankYouEnabled =
+      sources.length === 1 && sources[0].acknowledgmentEnabled === true;
     const byId = new Map(rows.map((row) => [row.templateId, row]));
     return {
       ...setupView(connection),
+      thankYouEnabled,
       templates: summarizeTemplates(rows),
       templateDetails: inspected
         .filter(
@@ -141,7 +147,6 @@ function setupView(connection: WhatsappConnectionRecord) {
       lastCheckedAt: connection.lastHealthAt,
     },
     state: connection.state,
-    thankYouEnabled: connection.thankYouEnabled,
     signupPath: connection.signupPath,
     displayPhoneNumber: connection.displayPhoneNumber,
     setup: {

@@ -97,7 +97,13 @@ function setup(
   const dispatches = {
     claim: jest.fn().mockResolvedValue({
       outcome: options.billingOutcome ?? 'claimed',
-      dispatch: { id: 'dispatch-1', generation: 1 },
+      dispatch: {
+        id: 'dispatch-1',
+        generation: 1,
+        senderPhoneNumberId: 'merchant-phone',
+        senderConnectionId: 'connection-1',
+        senderConnectionGeneration: 2,
+      },
     }),
     markAccepted: jest.fn().mockResolvedValue({ outcome: 'accepted' }),
     resolveNotAccepted: jest.fn().mockResolvedValue({ id: 'dispatch-1' }),
@@ -204,11 +210,54 @@ describe('CustomerReplyFollowUpService', () => {
   });
 
   describe('merchant-number thank-yous', () => {
-    it('uses the receiving number despite shared opt-out and acknowledgment switch off, without billing', async () => {
-      const s = setup({
-        switches: { acknowledgment: false },
-        integration: { acknowledgmentEnabled: false },
+    it.each([
+      { integration: { acknowledgmentEnabled: false } },
+      { integration: { acknowledgmentEnabledAt: new Date(NOW).toISOString() } },
+      { switches: { acknowledgment: false } },
+    ])(
+      'respects unified opt-in and switch before claiming (%o)',
+      async (options) => {
+        const s = setup(options);
+        await expect(s.service.handle(MERCHANT_ACK)).resolves.toMatchObject({
+          outcome: 'ineligible',
+        });
+        expect(s.dispatches.claim).not.toHaveBeenCalled();
+        expect(s.serviceMessages.claim).not.toHaveBeenCalled();
+        expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not send from the merchant number without capacity', async () => {
+      const s = setup({ billingOutcome: 'blocked' });
+      await expect(s.service.handle(MERCHANT_ACK)).resolves.toMatchObject({
+        outcome: 'skipped',
+        reason: 'billing_unavailable',
       });
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+    });
+
+    it('releases capacity when the connection generation changed during the billing claim', async () => {
+      const s = setup();
+      s.dispatches.claim.mockResolvedValue({
+        outcome: 'claimed',
+        dispatch: {
+          id: 'dispatch-1',
+          generation: 1,
+          senderPhoneNumberId: 'merchant-phone',
+          senderConnectionId: 'connection-1',
+          senderConnectionGeneration: 3,
+        },
+      });
+      await s.service.handle(MERCHANT_ACK);
+      expect(s.dispatches.resolveNotAccepted).toHaveBeenCalledWith(
+        'dispatch-1',
+        undefined,
+        true,
+      );
+      expect(s.messagingPort.sendFreeFormText).not.toHaveBeenCalled();
+    });
+    it('bills the receiving number and ignores the obsolete connection preference', async () => {
+      const s = setup({ connection: { thankYouEnabled: false } });
       await expect(s.service.handle(MERCHANT_ACK)).resolves.toEqual({
         outcome: 'sent',
         providerMessageId: 'wamid.text-1',
@@ -217,6 +266,7 @@ describe('CustomerReplyFollowUpService', () => {
         to: '+201001112223',
         body: 'طلبك رقم #1117 من Nour اتأكد.',
         verificationId: 'ver-1',
+        dispatchContext: { orgId: 'org-1', dispatchId: 'dispatch-1' },
         sender: {
           ...MERCHANT_ACK.receivingSender,
           kind: 'merchant_own',
@@ -227,13 +277,25 @@ describe('CustomerReplyFollowUpService', () => {
       expect(s.serviceMessages.claim).toHaveBeenCalledWith(
         expect.objectContaining({ sender: MERCHANT_ACK.receivingSender }),
       );
-      expect(s.dispatches.claim).not.toHaveBeenCalled();
-      expect(s.serviceMessages.linkDispatch).not.toHaveBeenCalled();
-      expect(s.dispatches.markAccepted).not.toHaveBeenCalled();
+      expect(s.dispatches.claim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sender: {
+            kind: 'merchant_own',
+            connectionId: 'connection-1',
+            reason: 'own_number_thank_you',
+            units: 1,
+          },
+        }),
+      );
+      expect(s.serviceMessages.linkDispatch).toHaveBeenCalledWith(
+        'msg-1',
+        'org-1',
+        'dispatch-1',
+      );
+      expect(s.dispatches.markAccepted).toHaveBeenCalled();
     });
 
     it.each([
-      { thankYouEnabled: false },
       { id: 'other-connection' },
       { orgId: 'other-org' },
       { phoneNumberId: 'other-phone' },
@@ -289,7 +351,7 @@ describe('CustomerReplyFollowUpService', () => {
       [{ outcome: 'failed', code: 'timeout' }, 'failed', 'provider_error'],
       [new Error('network'), 'failed', 'provider_error'],
     ] as const)(
-      'records %o without fallback, retry, or accounting',
+      'settles %o without fallback or retry',
       async (send, outcome, reason) => {
         const s = setup({ send });
         await expect(s.service.handle(MERCHANT_ACK)).resolves.toEqual({
@@ -301,9 +363,18 @@ describe('CustomerReplyFollowUpService', () => {
         );
         expect(s.messagingPort.sendFreeFormText).toHaveBeenCalledTimes(1);
         expect(s.messagingPort.sendVerificationTemplate).not.toHaveBeenCalled();
-        expect(s.dispatches.claim).not.toHaveBeenCalled();
-        expect(s.dispatches.resolveNotAccepted).not.toHaveBeenCalled();
-        expect(s.dispatches.markFailedProviderOutcome).not.toHaveBeenCalled();
+        expect(s.dispatches.claim).toHaveBeenCalledTimes(1);
+        if (reason === 'window_closed' || reason === 'provider_rejected')
+          expect(s.dispatches.resolveNotAccepted).toHaveBeenCalledWith(
+            'dispatch-1',
+            undefined,
+            true,
+          );
+        else
+          expect(s.dispatches.markFailedProviderOutcome).toHaveBeenCalledWith(
+            'dispatch-1',
+            'provider_error',
+          );
       },
     );
 
@@ -472,6 +543,7 @@ describe('CustomerReplyFollowUpService', () => {
         to: '+201001112223',
         body: 'طلبك رقم #1117 من Nour اتأكد.',
         verificationId: 'ver-1',
+        dispatchContext: { orgId: 'org-1', dispatchId: 'dispatch-1' },
       });
       expect(serviceMessages.markSent).toHaveBeenCalledWith(
         expect.objectContaining({

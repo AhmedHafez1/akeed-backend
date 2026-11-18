@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readWhatsappTemplateConfig } from '../../../../shared/config/whatsapp-template.config';
 import { VerificationMessageDispatchesRepository } from '../../../database/repositories/verification-message-dispatches.repository';
 import { WhatsappConnectionsRepository } from '../../../database/repositories/whatsapp-connections.repository';
 import { WhatsappConnectionTemplatesRepository } from '../../../database/repositories/whatsapp-connection-templates.repository';
@@ -57,7 +58,7 @@ export class MetaSendContextService {
     private readonly serviceMessages?: VerificationServiceMessagesRepository,
   ) {}
 
-  /** Free-form replies use their claimed service message, never a billing dispatch. */
+  /** Paid replies require their immutable dispatch and a still-claimed message. */
   async resolveFreeForm(
     params: Parameters<NonNullable<MessagingPort['sendFreeFormText']>>[0],
   ): Promise<MetaSendContext> {
@@ -74,7 +75,18 @@ export class MetaSendContextService {
       if (
         !dispatch ||
         dispatch.state !== 'sending' ||
-        dispatch.kind !== 'change_acknowledgment'
+        !['acknowledgment', 'change_acknowledgment'].includes(dispatch.kind)
+      )
+        return refuse();
+      if (
+        dispatch.kind === 'acknowledgment' &&
+        (!readWhatsappTemplateConfig(this.config).messageImprovements
+          .acknowledgment ||
+          !(await this.serviceMessages?.isClaimedAcknowledgmentDispatch({
+            orgId: params.dispatchContext.orgId,
+            dispatchId: params.dispatchContext.dispatchId,
+            verificationId: params.verificationId,
+          })))
       )
         return refuse();
       if (dispatch.senderKind === 'akeed_system') {
@@ -101,7 +113,7 @@ export class MetaSendContextService {
       )
         return refuse();
       const connection = await this.connections.findByOrg(sender.orgId);
-      if (!merchantReplySenderReady(connection, sender, sender.orgId, false))
+      if (!merchantReplySenderReady(connection, sender, sender.orgId))
         return refuse();
       const token = readBusinessToken(
         connection!,
@@ -114,34 +126,7 @@ export class MetaSendContextService {
         timeout: 15_000,
       };
     }
-    if (
-      !sender ||
-      sender.kind !== 'merchant_own' ||
-      !readWhatsappOwnNumberConfig(this.config).sendingEnabled
-    )
-      return refuse();
-    if (
-      !(await this.serviceMessages?.isClaimedMerchantAcknowledgment({
-        orgId: sender.orgId,
-        serviceMessageId: sender.serviceMessageId,
-        verificationId: params.verificationId,
-        phoneNumberId: sender.phoneNumberId,
-      }))
-    )
-      return refuse();
-    const connection = await this.connections.findByOrg(sender.orgId);
-    if (!merchantReplySenderReady(connection, sender, sender.orgId))
-      return refuse();
-    const token = readBusinessToken(
-      connection!,
-      this.config.get<string>('SHOPIFY_TOKEN_ENCRYPTION_KEY') ?? '',
-    );
-    if (!token) return refuse();
-    return {
-      url: `${readMetaGraphConfig(this.config).baseUrl}/${sender.phoneNumberId}/messages`,
-      token,
-      timeout: 15_000,
-    };
+    return refuse();
   }
 
   async resolve(
