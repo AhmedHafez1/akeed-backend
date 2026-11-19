@@ -10,9 +10,12 @@ import {
   creditReservations,
   integrations,
   organizations,
+  paymentProviderEvents,
   paymentPurchases,
   verificationMessageDispatches,
 } from '../../infrastructure/database/schema';
+import type { CheckoutPaidFilter } from './checkout-attempts.policy';
+import type { PaymentMode } from '../../shared/ports/payments.port';
 import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibility';
 import { balanceState } from './standalone-billing-operations.policy';
 import type {
@@ -20,6 +23,28 @@ import type {
   AccountFilters,
 } from './standalone-billing-operations.types';
 import type { AccountRow } from './standalone-billing.types';
+
+/** One organization's checkout history, as the attempts query returns it. */
+export interface CheckoutAttemptQueryRow extends Record<string, unknown> {
+  org_id: string;
+  organization_name: string | null;
+  attempts: number;
+  first_attempt_at: string | Date;
+  last_attempt_at: string | Date;
+  paid_ever: boolean;
+  reference: string;
+  status: string;
+  total_minor: number;
+  currency: string;
+  checkout_expires_at: string | Date | null;
+  reconciliation_code: string | null;
+  decline_code: string | null;
+  owner_email: string | null;
+  owner_name: string | null;
+  platform_type: string | null;
+  platform_store_url: string | null;
+  merchant_whatsapp_phone: string | null;
+}
 
 @Injectable()
 export class StandaloneBillingRepository {
@@ -96,6 +121,122 @@ export class StandaloneBillingRepository {
         ];
       }),
     );
+  }
+
+  /**
+   * Every organization with a checkout in this deployment's payment mode,
+   * newest attempt first, merchants who never paid ahead of those who did. In
+   * production that leaves out test-mode checkouts: staff trying the sandbox,
+   * not merchants to follow up.
+   *
+   * Contact details come from the owner's sign-up (email and name) and the
+   * credit-billed source (WhatsApp number). A page asks for one row more than
+   * it shows so the caller can tell whether another page exists.
+   */
+  async listCheckoutAttempts(
+    limit: number,
+    offset: number,
+    paid: CheckoutPaidFilter,
+    mode: PaymentMode,
+  ): Promise<CheckoutAttemptQueryRow[]> {
+    const paidCondition =
+      paid === 'unpaid'
+        ? sql`WHERE NOT attempts.paid_ever`
+        : paid === 'paid'
+          ? sql`WHERE attempts.paid_ever`
+          : sql``;
+    const platforms = sql.join(
+      PREPAID_CREDIT_PLATFORMS.map((platform) => sql`${platform}`),
+      sql`, `,
+    );
+    const result = await this.db.execute<CheckoutAttemptQueryRow>(sql`
+      WITH attempts AS (
+        SELECT
+          purchase.org_id,
+          count(*)::int AS attempts,
+          min(purchase.created_at) AS first_attempt_at,
+          max(purchase.created_at) AS last_attempt_at,
+          bool_or(purchase.status IN ('successful', 'refunded')) AS paid_ever
+        FROM ${paymentPurchases} AS purchase
+        WHERE purchase.mode = ${mode}
+        GROUP BY purchase.org_id
+      )
+      SELECT
+        attempts.org_id,
+        organization.name AS organization_name,
+        attempts.attempts,
+        attempts.first_attempt_at,
+        attempts.last_attempt_at,
+        attempts.paid_ever,
+        latest.reference,
+        latest.status,
+        latest.total_minor,
+        latest.currency,
+        latest.checkout_expires_at,
+        latest.reconciliation_code,
+        decline.error_code AS decline_code,
+        owner_user.email AS owner_email,
+        owner_user.full_name AS owner_name,
+        source.platform_type,
+        source.platform_store_url,
+        source.merchant_whatsapp_phone
+      FROM attempts
+      INNER JOIN ${organizations} AS organization
+        ON organization.id = attempts.org_id
+      CROSS JOIN LATERAL (
+        SELECT
+          purchase.id,
+          purchase.reference,
+          purchase.status::text AS status,
+          purchase.total_minor,
+          purchase.currency,
+          purchase.checkout_expires_at,
+          purchase.reconciliation_code
+        FROM ${paymentPurchases} AS purchase
+        WHERE purchase.org_id = attempts.org_id AND purchase.mode = ${mode}
+        ORDER BY purchase.created_at DESC, purchase.id DESC
+        LIMIT 1
+      ) AS latest
+      LEFT JOIN LATERAL (
+        SELECT event.error_code
+        FROM ${paymentProviderEvents} AS event
+        WHERE event.purchase_id = latest.id
+          AND event.verified
+          AND event.error_code IS NOT NULL
+        ORDER BY event.received_at DESC
+        LIMIT 1
+      ) AS decline ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          member_user.email,
+          member_user.raw_user_meta_data ->> 'full_name' AS full_name
+        FROM memberships AS membership
+        INNER JOIN auth.users AS member_user
+          ON member_user.id = membership.user_id
+        WHERE membership.org_id = attempts.org_id
+          AND membership.role = 'owner'
+        ORDER BY membership.created_at ASC
+        LIMIT 1
+      ) AS owner_user ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          integration.platform_type::text AS platform_type,
+          integration.platform_store_url,
+          integration.merchant_whatsapp_phone
+        FROM ${integrations} AS integration
+        WHERE integration.org_id = attempts.org_id
+          AND integration.platform_type::text IN (${platforms})
+        ORDER BY integration.is_active DESC NULLS LAST,
+          integration.created_at DESC
+        LIMIT 1
+      ) AS source ON true
+      ${paidCondition}
+      ORDER BY attempts.paid_ever ASC, attempts.last_attempt_at DESC,
+        attempts.org_id ASC
+      LIMIT ${limit + 1}
+      OFFSET ${offset}
+    `);
+    return [...result];
   }
 
   /**

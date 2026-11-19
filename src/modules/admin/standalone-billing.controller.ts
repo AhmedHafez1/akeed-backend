@@ -17,7 +17,10 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { AdminAccessGuard } from './admin-access.guard';
 import type { RequestWithAdmin } from './admin.types';
-import { StandaloneBillingAccountsDto } from './dto/standalone-billing.dto';
+import {
+  CheckoutAttemptsQueryDto,
+  StandaloneBillingAccountsDto,
+} from './dto/standalone-billing.dto';
 import { PurchaseRefParamDto } from '../billing/dto/billing.dto';
 import {
   AdjustmentApplyDto,
@@ -117,6 +120,12 @@ export class StandaloneBillingController {
       settlement: body,
       requestId: readRequestId(request),
     });
+  }
+
+  @Get('checkout-attempts')
+  @Header('Cache-Control', 'private, no-store')
+  checkoutAttempts(@Query() query: CheckoutAttemptsQueryDto) {
+    return this.billing.checkoutAttempts(query);
   }
 
   @Get('accounts')

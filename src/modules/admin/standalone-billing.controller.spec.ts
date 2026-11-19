@@ -30,6 +30,9 @@ describe('Standalone billing staff HTTP boundary', () => {
   const previewId = randomUUID();
   const billing = {
     list: jest.fn().mockResolvedValue({ rows: [] }),
+    checkoutAttempts: jest
+      .fn()
+      .mockResolvedValue({ rows: [], nextOffset: null }),
   };
   const operations = {
     accountDetail: jest.fn().mockResolvedValue({ account: null }),
@@ -145,6 +148,33 @@ describe('Standalone billing staff HTTP boundary', () => {
       .get('/api/admin/standalone-billing/accounts?balance=rich')
       .set('Authorization', 'Bearer staff-aal2')
       .expect(400);
+  });
+  it('lists checkout attempts to staff, uncached, with only known filters', async () => {
+    const response = await http()
+      .get(
+        '/api/admin/standalone-billing/checkout-attempts?paid=unpaid&limit=20&offset=40',
+      )
+      .set('Authorization', 'Bearer staff-aal2')
+      .expect(200);
+    expect(billing.checkoutAttempts).toHaveBeenCalledWith({
+      paid: 'unpaid',
+      limit: 20,
+      offset: 40,
+    });
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    for (const query of ['paid=maybe', 'limit=0', 'offset=-1'])
+      await http()
+        .get(`/api/admin/standalone-billing/checkout-attempts?${query}`)
+        .set('Authorization', 'Bearer staff-aal2')
+        .expect(400);
+    await http()
+      .get('/api/admin/standalone-billing/checkout-attempts')
+      .expect(401);
+    await http()
+      .get('/api/admin/standalone-billing/checkout-attempts')
+      .set('Authorization', 'Bearer merchant-owner')
+      .expect(403);
+    expect(billing.checkoutAttempts).toHaveBeenCalledTimes(1);
   });
   it('reads one account by organization id, uncached', async () => {
     const response = await http()
@@ -585,6 +615,7 @@ describe('Standalone billing staff HTTP boundary', () => {
       [
         'GET accounts',
         'GET accounts/:orgId',
+        'GET checkout-attempts',
         'GET health',
         'GET reconciliation/findings',
         'GET settlements',

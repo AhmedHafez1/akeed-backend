@@ -95,3 +95,98 @@ describe('Standalone billing account listing', () => {
     expect(page.operations).toEqual({ enabled: true, operator: true });
   });
 });
+
+describe('Standalone billing checkout attempts', () => {
+  const repository = { listCheckoutAttempts: jest.fn() };
+  const service = () =>
+    new StandaloneBillingService(
+      repository as unknown as StandaloneBillingRepository,
+      configuration(),
+    );
+  const NOW = Date.parse('2026-11-19T21:00:00Z');
+  const row = (orgId: string, overrides: Record<string, unknown> = {}) => ({
+    org_id: orgId,
+    organization_name: 'Merchant',
+    attempts: 2,
+    first_attempt_at: new Date('2026-11-18T04:25:44Z'),
+    last_attempt_at: '2026-11-18 04:26:11.91+00',
+    paid_ever: false,
+    reference: `ref-${orgId}`,
+    status: 'pending',
+    total_minor: 20000,
+    currency: 'EGP',
+    checkout_expires_at: new Date('2026-11-18T04:41:12Z'),
+    reconciliation_code: null,
+    decline_code: null,
+    owner_email: 'owner@merchant.test',
+    owner_name: 'Owner',
+    platform_type: 'standalone',
+    platform_store_url: 'standalone://merchant',
+    merchant_whatsapp_phone: '+201000000000',
+    ...overrides,
+  });
+  beforeEach(() => jest.resetAllMocks());
+
+  it('pages with one extra row and maps contact details and outcomes', async () => {
+    repository.listCheckoutAttempts.mockResolvedValue([
+      row('org-1'),
+      row('org-2', {
+        status: 'failed',
+        decline_code: 'authentication_failed',
+        paid_ever: true,
+        platform_type: null,
+        platform_store_url: null,
+      }),
+      row('org-3'),
+    ]);
+    const page = await service().checkoutAttempts(
+      { limit: 2, offset: 10, paid: 'all' },
+      NOW,
+    );
+    expect(repository.listCheckoutAttempts).toHaveBeenCalledWith(
+      2,
+      10,
+      'all',
+      'live',
+    );
+    expect(page.nextOffset).toBe(12);
+    expect(page.rows).toHaveLength(2);
+    expect(page.rows[0]).toEqual({
+      orgId: 'org-1',
+      organizationName: 'Merchant',
+      owner: {
+        name: 'Owner',
+        email: 'owner@merchant.test',
+        whatsappPhone: '+201000000000',
+      },
+      source: { platformType: 'standalone', identity: 'standalone://merchant' },
+      attempts: 2,
+      firstAttemptAt: '2026-11-18T04:25:44.000Z',
+      lastAttemptAt: '2026-11-18T04:26:11.910Z',
+      paidEver: false,
+      latest: {
+        reference: 'ref-org-1',
+        status: 'pending',
+        outcome: 'left_checkout',
+        declineCode: null,
+        reconciliationCode: null,
+        totalMinor: 20000,
+        currency: 'EGP',
+      },
+    });
+    expect(page.rows[1].latest.outcome).toBe('declined');
+    expect(page.rows[1].source).toBeNull();
+  });
+
+  it('defaults to the first page of every merchant and reports no next page', async () => {
+    repository.listCheckoutAttempts.mockResolvedValue([row('org-1')]);
+    const page = await service().checkoutAttempts({}, NOW);
+    expect(repository.listCheckoutAttempts).toHaveBeenCalledWith(
+      50,
+      0,
+      'all',
+      'live',
+    );
+    expect(page.nextOffset).toBeNull();
+  });
+});
