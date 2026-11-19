@@ -1,8 +1,11 @@
 import { DatabaseTimeoutError } from '../../shared/errors/database-timeout.error';
 import {
+  DeadlineBurstDetector,
   pingWithin,
   PoolWatchdog,
+  type DeadlineBurstEvent,
   type PingResult,
+  type PoolRecycler,
   type PoolWatchdogEvent,
 } from './pool-health';
 
@@ -46,7 +49,11 @@ describe('pingWithin', () => {
 });
 
 describe('PoolWatchdog', () => {
-  function build(pool: PingResult[], fresh: PingResult[] = [ok]) {
+  function build(
+    pool: PingResult[],
+    fresh: PingResult[] = [ok],
+    recycler?: PoolRecycler,
+  ) {
     const events: PoolWatchdogEvent[] = [];
     const exit = jest.fn();
     const pingFresh = jest.fn(() => Promise.resolve(fresh.shift() ?? ok));
@@ -56,6 +63,7 @@ describe('PoolWatchdog', () => {
       failuresBeforeExit: 3,
       onCheck: (event) => events.push(event),
       exit,
+      recycler,
     });
     return { watchdog, events, exit, pingFresh };
   }
@@ -133,5 +141,155 @@ describe('PoolWatchdog', () => {
 
     expect(exit).not.toHaveBeenCalled();
     expect(watchdog.consecutiveTimeouts).toBe(1);
+  });
+
+  it('replaces the pool at the threshold when a replacement is allowed', async () => {
+    const recycler = { allowed: jest.fn(() => true), recycle: jest.fn() };
+    const { watchdog, events, exit } = build(
+      [timeout, timeout, timeout],
+      [ok],
+      recycler,
+    );
+
+    await run(watchdog, 3);
+
+    expect(recycler.recycle).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ kind: 'pool-recycled' });
+    expect(watchdog.consecutiveTimeouts).toBe(0);
+  });
+
+  it('exits when a replacement is not allowed', async () => {
+    const recycler = { allowed: () => false, recycle: jest.fn() };
+    const { watchdog, events, exit } = build(
+      [timeout, timeout, timeout],
+      [ok],
+      recycler,
+    );
+
+    await run(watchdog, 3);
+
+    expect(recycler.recycle).not.toHaveBeenCalled();
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toMatchObject({ kind: 'pool-wedged' });
+  });
+
+  it('neither replaces nor exits when the database is unreachable', async () => {
+    const recycler = { allowed: () => true, recycle: jest.fn() };
+    const { watchdog, exit } = build(
+      [timeout, timeout, timeout],
+      [failed],
+      recycler,
+    );
+
+    await run(watchdog, 3);
+
+    expect(recycler.recycle).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+describe('DeadlineBurstDetector', () => {
+  function build(
+    options: {
+      fresh?: PingResult[];
+      allowed?: () => boolean;
+      threshold?: number;
+    } = {},
+  ) {
+    let clock = 0;
+    const events: DeadlineBurstEvent[] = [];
+    const fresh = options.fresh ?? [ok];
+    const pingFresh = jest.fn(() => Promise.resolve(fresh.shift() ?? ok));
+    const recycler = {
+      allowed: jest.fn(options.allowed ?? (() => true)),
+      recycle: jest.fn(),
+    };
+    const detector = new DeadlineBurstDetector({
+      threshold: options.threshold ?? 3,
+      windowMs: 60_000,
+      now: () => clock,
+      pingFresh,
+      recycler,
+      onBurst: (event) => events.push(event),
+    });
+    const at = (ms: number) => {
+      clock = ms;
+      return detector.record();
+    };
+    return { detector, events, pingFresh, recycler, at };
+  }
+
+  it('replaces the pool once the threshold falls within the window', async () => {
+    const { events, pingFresh, recycler, at } = build();
+
+    await at(0);
+    await at(10_000);
+    expect(pingFresh).not.toHaveBeenCalled();
+    await at(20_000);
+
+    expect(pingFresh).toHaveBeenCalledTimes(1);
+    expect(recycler.recycle).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([{ kind: 'recycle', deadlines: 3, fresh: ok }]);
+  });
+
+  it('forgets deadlines that fall out of the window', async () => {
+    const { recycler, detector, at } = build();
+
+    await at(0);
+    await at(10_000);
+    await at(70_001);
+
+    expect(recycler.recycle).not.toHaveBeenCalled();
+    expect(detector.recentDeadlines).toBe(1);
+  });
+
+  it('does nothing while a replacement is not allowed', async () => {
+    const { pingFresh, recycler, at } = build({ allowed: () => false });
+
+    for (const ms of [0, 1_000, 2_000, 3_000]) await at(ms);
+
+    expect(pingFresh).not.toHaveBeenCalled();
+    expect(recycler.recycle).not.toHaveBeenCalled();
+  });
+
+  it('does not replace the pool when the database itself is unreachable', async () => {
+    const { events, recycler, at } = build({ fresh: [timeout] });
+
+    for (const ms of [0, 1_000, 2_000]) await at(ms);
+
+    expect(recycler.recycle).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      { kind: 'database-unreachable', deadlines: 3, fresh: timeout },
+    ]);
+  });
+
+  it('checks once while a fresh ping is already running', async () => {
+    let answer: (result: PingResult) => void = () => undefined;
+    const { recycler, pingFresh, detector } = build({ threshold: 1 });
+    pingFresh.mockImplementationOnce(
+      () => new Promise<PingResult>((resolve) => (answer = resolve)),
+    );
+
+    const first = detector.record();
+    await detector.record();
+    answer(ok);
+    await first;
+
+    expect(pingFresh).toHaveBeenCalledTimes(1);
+    expect(recycler.recycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the replacement when another trigger replaced the pool during the ping', async () => {
+    let allowed = true;
+    const { recycler, pingFresh, at } = build({ allowed: () => allowed });
+    pingFresh.mockImplementationOnce(() => {
+      allowed = false;
+      return Promise.resolve(ok);
+    });
+
+    for (const ms of [0, 1_000, 2_000]) await at(ms);
+
+    expect(recycler.recycle).not.toHaveBeenCalled();
   });
 });

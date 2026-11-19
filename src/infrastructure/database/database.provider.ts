@@ -16,6 +16,12 @@ import {
   noteConnection,
   noteConnectionClosed,
 } from '../../shared/request-context/request-context';
+import {
+  DATABASE_POOL_CONTROL,
+  DatabasePoolControl,
+} from './database-pool-control';
+import { pingWithFreshClient } from './pool-health';
+import { createSwappableClient } from './swappable-client';
 
 const schema = { ...tables, ...relationDefinitions };
 
@@ -113,54 +119,107 @@ export function buildPoolOptions(
   };
 }
 
-export const drizzleProvider: Provider = {
-  provide: DRIZZLE,
+/**
+ * Seconds a replaced client keeps serving what already runs on it. A whole
+ * transaction may take `transactionTimeoutMs`, so a healthy one finishes;
+ * a stuck socket is destroyed at the end of it.
+ */
+export function drainTimeoutSeconds(
+  resilience: Pick<DatabaseResilienceConfig, 'transactionTimeoutMs'>,
+): number {
+  return Math.max(1, Math.ceil(resilience.transactionTimeoutMs / 1000));
+}
+
+function readDatabaseUrl(configService: ConfigService): string {
+  const databaseUrl = configService.get<string>('DATABASE_URL');
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is not defined in environment variables');
+  }
+  return databaseUrl;
+}
+
+export const databasePoolProvider: Provider = {
+  provide: DATABASE_POOL_CONTROL,
   inject: [ConfigService],
   useFactory: (configService: ConfigService) => {
-    const databaseUrl = configService.get<string>('DATABASE_URL');
-
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL is not defined in environment variables');
-    }
-
     const resilience = readDatabaseResilienceConfig(configService);
-    const { transactionPooler, ...pool } = buildPoolOptions(
-      databaseUrl,
-      {
-        DATABASE_POOL_MAX: configService.get<string>('DATABASE_POOL_MAX'),
-        DATABASE_IDLE_TIMEOUT_SECONDS: configService.get<string>(
-          'DATABASE_IDLE_TIMEOUT_SECONDS',
-        ),
-      },
-      resilience,
-    );
-    const client = postgres(databaseUrl, {
-      ...pool,
-      // The first statement after each socket close observes a new generation.
-      debug: (connectionId: number) => noteConnection(connectionId),
-      onclose: (connectionId: number) => noteConnectionClosed(connectionId),
+    // Resolved when the first client is created, so a module whose database
+    // handle is replaced never needs DATABASE_URL. Boot validation requires it.
+    let settings:
+      | { databaseUrl: string; pool: Omit<PoolOptions, 'transactionPooler'> }
+      | undefined;
+    const connection = () => {
+      if (settings) return settings;
+      const databaseUrl = readDatabaseUrl(configService);
+      const { transactionPooler, ...pool } = buildPoolOptions(
+        databaseUrl,
+        {
+          DATABASE_POOL_MAX: configService.get<string>('DATABASE_POOL_MAX'),
+          DATABASE_IDLE_TIMEOUT_SECONDS: configService.get<string>(
+            'DATABASE_IDLE_TIMEOUT_SECONDS',
+          ),
+        },
+        resilience,
+      );
+      new Logger('DatabaseProvider').log(
+        JSON.stringify({
+          app: 'backend',
+          module: 'DatabaseProvider',
+          action: 'database-client-init',
+          outcome: 'success',
+          transactionPooler,
+          preparedStatements: pool.prepare,
+          poolMax: pool.max,
+          idleTimeoutSeconds: pool.idle_timeout,
+          connectTimeoutSeconds: pool.connect_timeout,
+          maxLifetimeSeconds: pool.max_lifetime,
+          queryTimeoutMs: resilience.queryTimeoutMs,
+          transactionTimeoutMs: resilience.transactionTimeoutMs,
+          poolRecycle: resilience.recycleEnabled,
+        }),
+      );
+      settings = { databaseUrl, pool };
+      return settings;
+    };
+    // postgres.js numbers connections 1..max per client, so a replacement
+    // client's connections are told apart by its generation.
+    const swappable = createSwappableClient((generation) => {
+      const { databaseUrl, pool } = connection();
+      return postgres(databaseUrl, {
+        ...pool,
+        // The first statement after each socket close observes a new generation.
+        debug: (connectionId: number) =>
+          noteConnection(`${generation}:${connectionId}`),
+        onclose: (connectionId: number) =>
+          noteConnectionClosed(`${generation}:${connectionId}`),
+      });
     });
+    return new DatabasePoolControl(swappable, {
+      enabled: resilience.recycleEnabled,
+      cooldownMs: resilience.recycleCooldownMs,
+      drainTimeoutSeconds: drainTimeoutSeconds(resilience),
+      deadlineThreshold: resilience.recycleDeadlines,
+      deadlineWindowMs: resilience.recycleWindowMs,
+      pingFresh: () =>
+        pingWithFreshClient(connection().databaseUrl, resilience.pingTimeoutMs),
+      logger: new Logger(DatabasePoolControl.name),
+    });
+  },
+};
+
+export const drizzleProvider: Provider = {
+  provide: DRIZZLE,
+  inject: [ConfigService, DATABASE_POOL_CONTROL],
+  useFactory: (
+    configService: ConfigService,
+    control: DatabasePoolControl<postgres.Sql>,
+  ) => {
+    const resilience = readDatabaseResilienceConfig(configService);
     const logger = new Logger('DatabaseProvider');
-    logger.log(
-      JSON.stringify({
-        app: 'backend',
-        module: 'DatabaseProvider',
-        action: 'database-client-init',
-        outcome: 'success',
-        transactionPooler,
-        preparedStatements: pool.prepare,
-        poolMax: pool.max,
-        idleTimeoutSeconds: pool.idle_timeout,
-        connectTimeoutSeconds: pool.connect_timeout,
-        maxLifetimeSeconds: pool.max_lifetime,
-        queryTimeoutMs: resilience.queryTimeoutMs,
-        transactionTimeoutMs: resilience.transactionTimeoutMs,
-      }),
-    );
-    const bounded = boundPostgresClient(client, {
+    const bounded = boundPostgresClient(control.client, {
       queryTimeoutMs: resilience.queryTimeoutMs,
       transactionTimeoutMs: resilience.transactionTimeoutMs,
-      onTimeout: (scope, timeoutMs) =>
+      onTimeout: (scope, timeoutMs) => {
         logger.warn(
           buildBackendLog('DatabaseProvider', {
             action: 'database-deadline',
@@ -169,7 +228,9 @@ export const drizzleProvider: Provider = {
             scope,
             timeoutMs,
           }),
-        ),
+        );
+        control.noteDeadline();
+      },
     });
     const db = drizzle(instrumentPostgresClient(bounded), { schema });
 

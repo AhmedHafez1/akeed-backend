@@ -7,7 +7,11 @@ import { PrepaidCreditAccounting } from './repositories/prepaid-credit-accountin
 import { UsageAccountingRouter } from './repositories/usage-accounting.router';
 import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { DRIZZLE, drizzleProvider, type DrizzleDB } from './database.provider';
+import { databasePoolProvider, drizzleProvider } from './database.provider';
+import {
+  DATABASE_POOL_CONTROL,
+  DatabasePoolControl,
+} from './database-pool-control';
 import { DatabaseLatencyProbe } from './database-latency-probe';
 import { DatabasePoolWatchdog } from './database-pool-watchdog';
 import { CreditAccountingRepository } from './repositories/credit-accounting.repository';
@@ -63,6 +67,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     PrepaidCreditAccounting,
     UsageAccountingRouter,
     PaymentPurchasesRepository,
+    databasePoolProvider,
     drizzleProvider,
     DatabaseLatencyProbe,
     DatabasePoolWatchdog,
@@ -158,13 +163,15 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
   ],
 })
 export class DatabaseModule implements OnApplicationShutdown {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DATABASE_POOL_CONTROL)
+    private readonly pool: DatabasePoolControl,
+  ) {}
 
   // Give pooler slots back as soon as the process stops, instead of when the
-  // server notices the dead socket.
+  // server notices the dead socket. Clients still draining after a pool
+  // replacement are ended too.
   async onApplicationShutdown(): Promise<void> {
-    await (this.db.$client as Partial<DrizzleDB['$client']> | undefined)?.end?.(
-      { timeout: 5 },
-    );
+    await this.pool.endAll(5);
   }
 }

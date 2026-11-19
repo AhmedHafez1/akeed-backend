@@ -39,7 +39,7 @@ export interface RequestContext {
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
-const seenConnections = new Set<number>();
+const seenConnections = new Set<number | string>();
 let connectionGenerations = 0;
 
 export function createRequestContext(requestId?: string): RequestContext {
@@ -89,15 +89,19 @@ export function recordTransaction(): void {
   context.db.writes += 1;
 }
 
-/** First statement on an open connection generation; never retains SQL or parameters. */
-export function noteConnection(connectionId: number): void {
+/**
+ * First statement on an open connection generation; never retains SQL or
+ * parameters. The id includes the pool generation once the pool can be
+ * replaced, because each driver client numbers its connections from 1.
+ */
+export function noteConnection(connectionId: number | string): void {
   if (seenConnections.has(connectionId)) return;
   seenConnections.add(connectionId);
   connectionGenerations += 1;
 }
 
 /** postgres.js reuses the same pool slot id when its socket reconnects. */
-export function noteConnectionClosed(connectionId: number): void {
+export function noteConnectionClosed(connectionId: number | string): void {
   seenConnections.delete(connectionId);
 }
 

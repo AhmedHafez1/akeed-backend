@@ -141,8 +141,9 @@ describe('validateEnv', () => {
   it('parses the database bounds and fails boot on a malformed one', () => {
     const base = { NODE_ENV: 'test', DATABASE_URL: 'postgres://x/db' };
     expect(validateEnv(base).databaseResilience).toMatchObject({
-      queryTimeoutMs: 30_000,
+      queryTimeoutMs: 15_000,
       watchdogEnabled: false,
+      recycleEnabled: false,
     });
     expect(() =>
       validateEnv({ ...base, DATABASE_QUERY_TIMEOUT_MS: '30s' }),
