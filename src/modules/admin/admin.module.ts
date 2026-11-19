@@ -1,3 +1,4 @@
+import { TipsModule } from '../tips/tips.module';
 import { AdminChangePreparationController } from './admin-change-preparation.controller';
 import { AdminChangePreparationService } from './admin-change-preparation.service';
 import {
@@ -65,6 +66,7 @@ export class AdminModule {
       module: AdminModule,
       imports: [
         AuthModule,
+        TipsModule,
         DatabaseModule,
         WebhookQueueModule,
         OrdersModule,

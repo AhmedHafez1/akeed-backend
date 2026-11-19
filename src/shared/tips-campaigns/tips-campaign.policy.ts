@@ -356,6 +356,19 @@ export function normalizeTipsAudienceFilters(raw: unknown): {
   );
   if (languages) filters.message_languages = languages;
 
+  if (input.own_number_connection !== undefined) {
+    if (
+      input.own_number_connection === 'connected' ||
+      input.own_number_connection === 'not_connected'
+    )
+      filters.own_number_connection = input.own_number_connection;
+    else
+      issues.push({
+        field: 'filters.own_number_connection',
+        code: 'invalid_value',
+      });
+  }
+
   const plans = pickFromCatalog(
     'filters.plans',
     input.plans,

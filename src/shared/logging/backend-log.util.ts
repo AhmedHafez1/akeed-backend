@@ -49,6 +49,12 @@ const REDACTED_KEYS = new Set([
   'passcode',
   'otp',
   'secret',
+  'unsubscribesecret',
+  'announcement_email_unsubscribe_secret',
+  'emailpayload',
+  'email_payload',
+  'replyto',
+  'reply_to',
   // Integration API keys: the stored hash and the full key.
   'key_hash',
   'keyhash',

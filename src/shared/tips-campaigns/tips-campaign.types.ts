@@ -77,6 +77,7 @@ export type TipsAudienceFeature = (typeof TIPS_AUDIENCE_FEATURES)[number];
  * days, both ends inclusive.
  */
 export interface TipsAudienceFilters {
+  own_number_connection?: 'connected' | 'not_connected';
   countries?: string[];
   platforms?: TipsAudiencePlatform[];
   signup_from?: string;
@@ -96,6 +97,11 @@ export interface TipsAudience {
 export type TipsCampaignAction =
   | { kind: 'internal'; route: TipActionRoute }
   | { kind: 'external'; url: string };
+
+export interface TipsSecondaryAction {
+  action: TipsCampaignAction;
+  labels: Partial<Record<InterfaceLocale, string>>;
+}
 
 export interface TipsTranslation {
   locale: InterfaceLocale;

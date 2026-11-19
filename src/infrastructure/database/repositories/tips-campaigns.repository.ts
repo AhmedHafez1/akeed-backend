@@ -2,6 +2,8 @@ import {
   PAID_THROUGH_BILLING_STATUS,
   effectiveBillingStatusSql,
 } from '../../../shared/utils/billing.util';
+import type { AnnouncementEmail } from '../../../shared/tips-campaigns/announcement-email.policy';
+import type { TipsSecondaryAction } from '../../../shared/tips-campaigns/tips-campaign.types';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { PREPAID_CREDIT_PLATFORMS } from '../../../shared/billing/credit-eligibility';
@@ -37,6 +39,8 @@ export interface TipsAdminAudit {
 }
 
 export interface TipsCampaignContentWrite {
+  email?: AnnouncementEmail | null;
+  secondaryAction?: TipsSecondaryAction | null;
   name: string;
   type: TipsCampaignType;
   action: TipsCampaignAction | null;
@@ -50,6 +54,8 @@ export interface TipsCampaignDraftWrite extends TipsCampaignContentWrite {
 
 /** Fields an edit changes; anything absent stays as stored. */
 export interface TipsCampaignPatch {
+  email?: AnnouncementEmail | null;
+  secondaryAction?: TipsSecondaryAction | null;
   name?: string;
   type?: TipsCampaignType;
   action?: TipsCampaignAction | null;
@@ -71,6 +77,7 @@ export type TipsCampaignAnalytics = {
 };
 
 export type TipsCampaignListRow = TipsCampaignAnalytics & {
+  secondary_action?: TipsSecondaryAction | null;
   id: string;
   name: string;
   type: TipsCampaignType;
@@ -134,6 +141,7 @@ export interface TipsCreatedCursor {
 }
 
 export type TipsMerchantCardRow = {
+  secondary_action?: TipsSecondaryAction | null;
   delivery_generation: number;
   first_viewed_at: string | null;
   id: string;
@@ -244,6 +252,14 @@ export class TipsCampaignsRepository {
       return sql.join(conditions, sql` AND `);
     }
     const filters = audience.filters;
+    if (filters.own_number_connection) {
+      const connected = sql`EXISTS (SELECT 1 FROM whatsapp_connections wc WHERE wc.org_id = o.id AND wc.state <> 'disconnected')`;
+      conditions.push(
+        filters.own_number_connection === 'connected'
+          ? connected
+          : sql`NOT ${connected}`,
+      );
+    }
     if (filters.countries?.length)
       conditions.push(
         sql`upper(i.country_code) IN (${inList(filters.countries)})`,
@@ -605,6 +621,8 @@ export class TipsCampaignsRepository {
         const [campaign] = await tx
           .insert(tipsCampaigns)
           .values({
+            announcementEmail: write.email ?? null,
+            secondaryAction: write.secondaryAction ?? null,
             name: write.name,
             type: write.type,
             ...this.actionColumns(write.action),
@@ -650,16 +668,33 @@ export class TipsCampaignsRepository {
     return withSerializableRetry(() =>
       this.db.transaction(async (tx) => {
         const [current] = await tx
-          .select({ id: tipsCampaigns.id, revision: tipsCampaigns.revision })
+          .select({
+            id: tipsCampaigns.id,
+            revision: tipsCampaigns.revision,
+            status: tipsCampaigns.status,
+            email: tipsCampaigns.announcementEmail,
+          })
           .from(tipsCampaigns)
           .where(eq(tipsCampaigns.id, id))
           .for('update');
         if (!current) return { kind: 'not_found' } as const;
+        if (
+          patch.email !== undefined &&
+          current.status !== 'draft' &&
+          JSON.stringify(patch.email) !== JSON.stringify(current.email)
+        )
+          return { kind: 'revision_conflict' } as const;
         if (current.revision !== revision)
           return { kind: 'revision_conflict' } as const;
         const [campaign] = await tx
           .update(tipsCampaigns)
           .set({
+            ...(patch.email !== undefined
+              ? { announcementEmail: patch.email }
+              : {}),
+            ...(patch.secondaryAction !== undefined
+              ? { secondaryAction: patch.secondaryAction }
+              : {}),
             ...(patch.name !== undefined ? { name: patch.name } : {}),
             ...(patch.type !== undefined ? { type: patch.type } : {}),
             ...(patch.action !== undefined
@@ -775,6 +810,11 @@ export class TipsCampaignsRepository {
           if (hash !== params.reviewedHash)
             throw new PublishAbort({ kind: 'audience_changed', count });
 
+          if (campaign.announcementEmail) {
+            await tx.execute(
+              sql`INSERT INTO announcement_email_deliveries (campaign_id, org_id) SELECT campaign_id, org_id FROM tips_campaign_recipients WHERE campaign_id = ${params.id}::uuid ON CONFLICT DO NOTHING`,
+            );
+          }
           const [published] = await tx
             .update(tipsCampaigns)
             .set({
@@ -791,6 +831,7 @@ export class TipsCampaignsRepository {
           await this.audit(tx, AUDIT_ACTIONS.publish, params.audit, {
             campaignId: params.id,
             recipientCount: count,
+            emailRecipientCount: campaign.announcementEmail ? count : 0,
             revision: params.revision,
           });
           return { kind: 'published', campaign: published } as const;
@@ -935,6 +976,7 @@ export class TipsCampaignsRepository {
         page.type,
         page.status,
         page.action_kind,
+        page.secondary_action,
         page.show_as_banner,
         ${iso(sql`page.published_at`)} AS published_at,
         ${iso(sql`page.expires_at`)} AS expires_at,
@@ -1026,6 +1068,7 @@ export class TipsCampaignsRepository {
         c.type,
         r.delivery_generation,
         ${iso(sql`r.first_viewed_at`)} AS first_viewed_at,
+        c.secondary_action,
         c.action_kind,
         c.action_route,
         c.action_url,
@@ -1106,7 +1149,9 @@ export class TipsCampaignsRepository {
         ? sql`c.status <> 'draft'`
         : sql`c.status = 'published' AND (c.expires_at IS NULL OR c.expires_at > now()) AND r.dismissed_at IS NULL`;
     const needsAction =
-      event === 'click' ? sql`AND c.action_kind IS NOT NULL` : sql``;
+      event === 'click'
+        ? sql`AND (c.action_kind IS NOT NULL OR c.secondary_action IS NOT NULL)`
+        : sql``;
     const rows = await this.db.execute(sql`
       UPDATE tips_campaign_recipients r
       SET ${column} = COALESCE(r.${column}, now())

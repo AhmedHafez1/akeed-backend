@@ -1,3 +1,5 @@
+import type { AnnouncementEmail } from '../../../shared/tips-campaigns/announcement-email.policy';
+import type { TipsSecondaryAction } from '../../../shared/tips-campaigns/tips-campaign.types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -94,6 +96,14 @@ export class AdminTipsAudienceDto {
 }
 
 export class AdminTipsCampaignCreateDto {
+  @IsOptional()
+  @IsObject()
+  email?: AnnouncementEmail | null;
+
+  @IsOptional()
+  @IsObject()
+  secondary_action?: TipsSecondaryAction | null;
+
   @IsString()
   @MaxLength(TEXT_STORE_LIMIT)
   name!: string;
@@ -129,6 +139,14 @@ export class AdminTipsCampaignCreateDto {
  * are; `action: null` removes the button and `expires_at: null` the expiry.
  */
 export class AdminTipsCampaignUpdateDto {
+  @IsOptional()
+  @IsObject()
+  email?: AnnouncementEmail | null;
+
+  @IsOptional()
+  @IsObject()
+  secondary_action?: TipsSecondaryAction | null;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -253,4 +271,11 @@ export class AdminTipsOrganizationsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+}
+
+export class AdminAnnouncementPreviewDto {
+  @IsIn(['en', 'ar', 'ur', 'es', 'fr', 'tr'])
+  locale: 'en' | 'ar' | 'ur' | 'es' | 'fr' | 'tr' = 'en';
+  @IsIn(['starter', 'basic', 'pro', 'business', 'prepaid'])
+  sample: 'starter' | 'basic' | 'pro' | 'business' | 'prepaid' = 'basic';
 }

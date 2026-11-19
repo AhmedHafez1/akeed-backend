@@ -1,4 +1,8 @@
 import {
+  ANNOUNCEMENT_EMAIL_CONFIG,
+  parseAnnouncementEmailConfig,
+} from './announcement-email.config';
+import {
   parseStandaloneCreditBillingConfig,
   STANDALONE_CREDIT_BILLING_CONFIG,
 } from './standalone-credit-billing.config';
@@ -178,6 +182,7 @@ export function validateEnv(
     [WHATSAPP_TEMPLATE_CONFIG]: parseWhatsappTemplateConfig(config),
     [MERCHANT_BRANDING_CONFIG]: parseMerchantBrandingConfig(config),
     [USAGE_ALERTS_CONFIG]: parseUsageAlertsConfig(config),
+    [ANNOUNCEMENT_EMAIL_CONFIG]: parseAnnouncementEmailConfig(config),
     [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
     [META_WEBHOOK_CONFIG]: parseMetaWebhookConfig(config),
     [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(config),

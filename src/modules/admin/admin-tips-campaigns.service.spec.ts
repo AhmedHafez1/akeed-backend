@@ -17,6 +17,9 @@ function record(
   overrides: Partial<TipsCampaignRecord> = {},
 ): TipsCampaignRecord {
   return {
+    announcementEmail: null,
+    emailStoppedAt: null,
+    secondaryAction: null,
     id: ID,
     name: 'Quiet hours tip',
     type: 'tip',

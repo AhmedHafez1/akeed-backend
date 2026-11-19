@@ -2,9 +2,21 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import {
+  announcementIssues,
+  type AnnouncementEmail,
+} from '../../shared/tips-campaigns/announcement-email.policy';
+import {
+  AnnouncementEmailService,
+  type AnnouncementSample,
+} from '../tips/announcement-email.service';
+import type { AnnouncementEmailStats } from '../../infrastructure/database/repositories/announcement-emails.repository';
+import type { InterfaceLocale } from '../../shared/i18n/interface-locales';
+import type { TipsSecondaryAction } from '../../shared/tips-campaigns/tips-campaign.types';
 import {
   TipsCampaignsRepository,
   type TipsAdminAudit,
@@ -31,6 +43,7 @@ import {
   nextTipsStatus,
   normalizeTipsAudience,
   normalizeTipsContent,
+  normalizeTipsAction,
   parseTipsReviewToken,
   tipsBannerRejection,
   tipsEditRejection,
@@ -65,6 +78,11 @@ const DEFAULT_LIST_LIMIT = 20;
 const DEFAULT_ORGANIZATION_LIMIT = 25;
 
 export interface AdminTipsCampaignView {
+  email?: AnnouncementEmail | null;
+  secondary_action?: TipsSecondaryAction | null;
+  email_stopped_at?: string | null;
+  email_enabled?: boolean;
+  email_stats?: AnnouncementEmailStats | null;
   id: string;
   name: string;
   type: TipsCampaignType;
@@ -160,7 +178,10 @@ function nameCursor(raw: string | undefined): TipsNameCursor | undefined {
 export class AdminTipsCampaignsService {
   private readonly logger = new Logger(AdminTipsCampaignsService.name);
 
-  constructor(private readonly campaigns: TipsCampaignsRepository) {}
+  constructor(
+    private readonly campaigns: TipsCampaignsRepository,
+    @Optional() private readonly announcements?: AnnouncementEmailService,
+  ) {}
 
   /** Overridable in specs so expiry rules can be tested at a fixed time. */
   protected now(): Date {
@@ -214,7 +235,7 @@ export class AdminTipsCampaignsService {
           row.expires_at ? new Date(row.expires_at) : null,
           now,
         ),
-        has_action: row.action_kind !== null,
+        has_action: row.action_kind !== null || !!row.secondary_action,
         show_as_banner: row.show_as_banner,
         published_at: row.published_at,
         expires_at: row.expires_at,
@@ -263,10 +284,16 @@ export class AdminTipsCampaignsService {
     );
     const expiresAt = this.normalizeExpiry(dto.expires_at, issues);
     issues.push(...name.issues, ...content.issues, ...audience.issues);
+    issues.push(
+      ...announcementIssues(dto.email),
+      ...this.secondaryIssues(dto.secondary_action),
+    );
     this.assertValid(issues);
 
     const campaign = await this.campaigns.create(
       {
+        email: dto.email ?? null,
+        secondaryAction: dto.secondary_action ?? null,
         name: name.name,
         type: dto.type,
         action: content.action,
@@ -292,6 +319,22 @@ export class AdminTipsCampaignsService {
     const { campaign, translations } = await this.require(id);
     const issues: TipsValidationIssue[] = [];
     const patch: TipsCampaignPatch = {};
+    if (dto.email !== undefined) {
+      issues.push(...announcementIssues(dto.email));
+      if (
+        campaign.status !== 'draft' &&
+        JSON.stringify(dto.email) !== JSON.stringify(campaign.announcementEmail)
+      )
+        throw this.conflict(
+          TIPS_CAMPAIGN_ERROR_CODES.notEditable,
+          'Published email content is frozen.',
+        );
+      patch.email = dto.email;
+    }
+    if (dto.secondary_action !== undefined) {
+      issues.push(...this.secondaryIssues(dto.secondary_action));
+      patch.secondaryAction = dto.secondary_action;
+    }
 
     if (dto.name !== undefined) {
       const name = validateTipsName(dto.name);
@@ -703,6 +746,71 @@ export class AdminTipsCampaignsService {
     };
   }
 
+  async emailPreview(
+    id: string,
+    locale: InterfaceLocale,
+    sample: AnnouncementSample,
+  ) {
+    const { campaign } = await this.require(id);
+    if (!campaign.announcementEmail || !this.announcements)
+      throw this.conflict(
+        TIPS_CAMPAIGN_ERROR_CODES.invalid,
+        'This campaign has no email.',
+      );
+    return this.announcements.preview(
+      campaign.announcementEmail,
+      locale,
+      sample,
+    );
+  }
+
+  async stopEmail(audit: TipsAdminAudit, id: string) {
+    const { campaign } = await this.require(id);
+    if (
+      !campaign.announcementEmail ||
+      campaign.status === 'draft' ||
+      !this.announcements
+    )
+      throw this.conflict(
+        TIPS_CAMPAIGN_ERROR_CODES.invalidTransition,
+        'Only published campaign email can be stopped.',
+      );
+    await this.announcements.deliveries.stop(id, audit);
+    return this.get(id);
+  }
+
+  private secondaryIssues(
+    value: TipsSecondaryAction | null | undefined,
+  ): TipsValidationIssue[] {
+    if (value === null || value === undefined) return [];
+    const bad: TipsValidationIssue = {
+      field: 'secondary_action',
+      code: 'invalid_value',
+    };
+    if (
+      typeof value !== 'object' ||
+      !value.action ||
+      !value.labels ||
+      typeof value.labels !== 'object' ||
+      Array.isArray(value.labels)
+    )
+      return [bad];
+    const issues = normalizeTipsAction(value.action).issues.map((issue) => ({
+      ...issue,
+      field: 'secondary_action',
+    }));
+    if (!value.labels.en) issues.push(bad);
+    for (const [locale, label] of Object.entries(value.labels))
+      if (
+        !(INTERFACE_LOCALES as readonly string[]).includes(locale) ||
+        typeof label !== 'string' ||
+        !label.trim() ||
+        label.length > 30
+      )
+        issues.push(bad);
+    return issues;
+  }
+
   private publicationIssues(detail: TipsCampaignDetail): TipsValidationIssue[] {
     const { campaign, translations } = detail;
     const content = normalizeTipsContent({
@@ -716,6 +824,8 @@ export class AdminTipsCampaignsService {
     });
     const expiry = expiryIssue(campaign.expiresAt, this.now());
     return [
+      ...announcementIssues(campaign.announcementEmail, true),
+      ...this.secondaryIssues(campaign.secondaryAction),
       ...validateTipsName(campaign.name).issues,
       ...content.issues,
       ...(expiry ? [expiry] : []),
@@ -776,6 +886,14 @@ export class AdminTipsCampaignsService {
         this.now(),
       ),
       action,
+      email: campaign.announcementEmail ?? null,
+      secondary_action: campaign.secondaryAction ?? null,
+      email_stopped_at: toIso(campaign.emailStoppedAt ?? null),
+      email_enabled: this.announcements?.enabled() ?? false,
+      email_stats:
+        campaign.announcementEmail && this.announcements
+          ? await this.announcements.deliveries.stats(campaign.id)
+          : null,
       show_as_banner: campaign.showAsBanner,
       expires_at: toIso(campaign.expiresAt),
       audience: {

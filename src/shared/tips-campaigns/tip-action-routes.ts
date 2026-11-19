@@ -7,6 +7,8 @@
 export type TipActionMode = 'embedded' | 'standalone';
 
 export const TIP_ACTION_ROUTES = {
+  settings_whatsapp: { modes: ['embedded', 'standalone'] },
+  guide_own_whatsapp_number: { modes: ['embedded', 'standalone'] },
   settings_message: { modes: ['embedded', 'standalone'] },
   settings_timing: { modes: ['embedded', 'standalone'] },
   plan: { modes: ['embedded', 'standalone'] },

@@ -29,6 +29,30 @@ const ENABLED = {
 };
 
 describe('ResendEmailAdapter', () => {
+  it('maps announcement reply-to and one-click headers without changing the transport key', async () => {
+    const http = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'synthetic-email' }),
+    });
+    const headers = {
+      'List-Unsubscribe':
+        '<https://api.example.test/unsubscribe?token=synthetic>',
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' as const,
+    };
+    await adapter(ENABLED, http).send({
+      ...MESSAGE,
+      replyTo: 'reply@example.test',
+      headers,
+    });
+    const [, init] = http.mock.calls[0] as [
+      string,
+      { body: string; headers: Record<string, string> },
+    ];
+    const body: unknown = JSON.parse(init.body);
+    expect(body).toMatchObject({ reply_to: 'reply@example.test', headers });
+    expect(init.headers['Idempotency-Key']).toBe(MESSAGE.idempotencyKey);
+  });
   it('does not report acceptance for a successful response without a provider reference', async () => {
     const http = jest.fn().mockResolvedValue({
       ok: true,

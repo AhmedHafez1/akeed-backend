@@ -4,6 +4,11 @@ export interface EmailMessage {
   /** Snapshotted for durable notifications so retries keep the same envelope. */
   from?: string;
   to: string;
+  replyTo?: string;
+  headers?: {
+    'List-Unsubscribe': string;
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click';
+  };
   subject: string;
   text: string;
   html: string;
@@ -27,7 +32,7 @@ export type EmailSendResult =
       uncertain?: boolean;
     };
 
-/** Transactional email to a merchant. Never throws. */
+/** Merchant email, including opt-out announcements. Never throws. */
 export interface EmailPort {
   send(message: EmailMessage): Promise<EmailSendResult>;
 }
