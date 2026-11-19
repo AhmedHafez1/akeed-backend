@@ -79,6 +79,9 @@ function shopifyRow(
     previous_install_at: null,
     previous_uninstalled_at: null,
     previous_plan_id: null,
+    org_store_count: 1,
+    has_credit_history: false,
+    has_real_activity: true,
     is_credit: false,
     usage_limit_effective: 100,
     usage_percent: 30,
@@ -162,6 +165,7 @@ const summary: AdminStoreSummaryRow = {
   healthy: 1,
   attention_required: 0,
   critical: 1,
+  paying: 0,
 };
 
 function createService(repository: Record<string, jest.Mock>) {
@@ -734,5 +738,115 @@ describe('AdminStoresService', () => {
     expect(data[0].resend_dispatch_id).toBe('dispatch-v-2');
     // A customer reply is final, so there is nothing to resend.
     expect(data[1].resend_dispatch_id).toBeNull();
+  });
+});
+
+describe('AdminStoresService.deleteStore', () => {
+  const audit = { userId: 'staff-1', requestId: 'req-1' };
+  const deadRow = () =>
+    detailRow(
+      shopifyRow({
+        health_status: 'critical',
+        lifecycle_status: 'installed',
+        installed_at: '2026-01-01T00:00:00.000Z',
+        usage_used: 0,
+        has_real_activity: false,
+      }),
+    );
+
+  function deletionService(
+    row: AdminStoreDetailQueryRow,
+    deleteResult: unknown = { deleted: true, userIds: ['user-1', 'user-2'] },
+  ) {
+    const config = new ConfigService({
+      [STANDALONE_CREDIT_BILLING_CONFIG]: parseStandaloneCreditBillingConfig(
+        {},
+      ),
+    });
+    const deletions = {
+      deleteOrganization: jest.fn().mockResolvedValue(deleteResult),
+      findUsersWithoutOrganization: jest.fn().mockResolvedValue(['user-1']),
+    };
+    const authUsers = { deleteUser: jest.fn().mockResolvedValue(true) };
+    const service = new AdminStoresService(
+      { findStoreById: jest.fn().mockResolvedValue(row) } as never,
+      new AdminHealthRuleService(config),
+      config,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deletions as never,
+      authUsers as never,
+    );
+    return { service, deletions, authUsers };
+  }
+
+  it('deletes the organization and the logins left without one', async () => {
+    const { service, deletions, authUsers } = deletionService(deadRow());
+
+    await expect(
+      service.deleteStore(audit, SHOPIFY_ID, ' Shopify Store '),
+    ).resolves.toEqual({ deleted: true, logins_removed: 1, logins_failed: 0 });
+
+    expect(deletions.deleteOrganization).toHaveBeenCalledWith({
+      orgId: 'org-shopify',
+      integrationId: SHOPIFY_ID,
+    });
+    expect(deletions.findUsersWithoutOrganization).toHaveBeenCalledWith([
+      'user-1',
+      'user-2',
+    ]);
+    expect(authUsers.deleteUser).toHaveBeenCalledTimes(1);
+    expect(authUsers.deleteUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('refuses a store that was used', async () => {
+    const { service, deletions } = deletionService({
+      ...deadRow(),
+      has_real_activity: true,
+    });
+
+    await expect(
+      service.deleteStore(audit, SHOPIFY_ID, 'Shopify Store'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'ADMIN_STORE_DELETE_NOT_ELIGIBLE',
+        reason: 'has_usage',
+      },
+    });
+    expect(deletions.deleteOrganization).not.toHaveBeenCalled();
+  });
+
+  it('refuses a mistyped store name', async () => {
+    const { service, deletions } = deletionService(deadRow());
+
+    await expect(
+      service.deleteStore(audit, SHOPIFY_ID, 'Shopify'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(deletions.deleteOrganization).not.toHaveBeenCalled();
+  });
+
+  it('reports a store that changed under the lock', async () => {
+    const { service, authUsers } = deletionService(deadRow(), {
+      deleted: false,
+      reason: 'changed',
+    });
+
+    await expect(
+      service.deleteStore(audit, SHOPIFY_ID, 'Shopify Store'),
+    ).rejects.toMatchObject({
+      response: { code: 'ADMIN_STORE_DELETE_NOT_ELIGIBLE', reason: 'changed' },
+    });
+    expect(authUsers.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('counts a login Supabase failed to remove', async () => {
+    const { service, authUsers } = deletionService(deadRow());
+    authUsers.deleteUser.mockRejectedValue(new Error('network'));
+
+    await expect(
+      service.deleteStore(audit, SHOPIFY_ID, 'Shopify Store'),
+    ).resolves.toEqual({ deleted: true, logins_removed: 0, logins_failed: 1 });
   });
 });

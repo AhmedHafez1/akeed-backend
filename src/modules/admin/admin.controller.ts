@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -32,6 +33,7 @@ import { MessageDispatchResolutionDto } from './dto/message-dispatch-resolution.
 import { MessageDispatchResendDto } from './dto/message-dispatch-resend.dto';
 import { AdminLogoHeaderDto } from './dto/admin-logo-header.dto';
 import { AdminReviewPromptDto } from './dto/admin-review-prompt.dto';
+import { AdminStoreDeleteDto } from './dto/admin-store-delete.dto';
 import { readRequestId } from './standalone-billing-operator.guard';
 import { MessageDispatchResolutionService } from './message-dispatch-resolution.service';
 
@@ -117,6 +119,22 @@ export class AdminController {
     return this.storesService.resetReviewPrompt(
       { userId: request.admin.userId, requestId: readRequestId(request) },
       integrationId,
+    );
+  }
+
+  /** Staff delete a dead store and its whole organization. */
+  @Delete('stores/:integrationId')
+  @Header('Cache-Control', 'private, no-store')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  deleteStore(
+    @Req() request: RequestWithAdmin,
+    @Param('integrationId', new ParseUUIDPipe()) integrationId: string,
+    @Body() body: AdminStoreDeleteDto,
+  ) {
+    return this.storesService.deleteStore(
+      { userId: request.admin.userId, requestId: readRequestId(request) },
+      integrationId,
+      body.confirm_store_name,
     );
   }
 

@@ -506,6 +506,13 @@ export class WhatsAppWebhookService {
               button.intent,
               { skipIfSynced: true },
             );
+            // The admin lifecycle reads a store as active from the first
+            // answer it records, so every accepted answer path records it.
+            await this.adminLifecycles?.recordMessageStatus({
+              verificationId: button.verificationId,
+              status: button.intent,
+              occurredAt: input.occurredAt,
+            });
             if (options.receivingSender || this.switches().acknowledgment)
               await this.queueAcknowledgment(
                 button.verificationId,

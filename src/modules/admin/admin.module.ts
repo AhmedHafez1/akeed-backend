@@ -13,6 +13,8 @@ import { AdminFunnelService } from './admin-funnel.service';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import { AdminQueryRepository } from './admin-query.repository';
 import { AdminStoresService } from './admin-stores.service';
+import { AdminAuthUsersService } from './admin-auth-users.service';
+import { AdminStoreDeletionRepository } from '../../infrastructure/database/repositories/admin-store-deletion.repository';
 import { AdminTemplateMetricsService } from './admin-template-metrics.service';
 import { StandaloneBillingController } from './standalone-billing.controller';
 import { StandaloneBillingLoggingInterceptor } from './standalone-billing-logging.interceptor';
@@ -87,6 +89,8 @@ export class AdminModule {
         AdminAccessGuard,
         AdminQueryRepository,
         AdminStoresService,
+        AdminStoreDeletionRepository,
+        AdminAuthUsersService,
         AdminFunnelService,
         AdminTemplateMetricsService,
         AdminHealthRuleService,
