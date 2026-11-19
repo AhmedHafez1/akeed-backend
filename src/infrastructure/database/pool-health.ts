@@ -66,18 +66,35 @@ export async function pingWithFreshClient(
   }
 }
 
+/**
+ * Replaces the application pool in process. `allowed` says whether a
+ * replacement may happen now: false while one is running or within the
+ * cooldown after the last one.
+ */
+export interface PoolRecycler {
+  allowed: () => boolean;
+  recycle: () => void;
+}
+
 export interface PoolWatchdogDeps {
   pingPool: () => Promise<PingResult>;
   pingFresh: () => Promise<PingResult>;
   failuresBeforeExit: number;
   onCheck: (event: PoolWatchdogEvent) => void;
   exit: () => void;
+  /** Without it a wedged pool always ends the process. */
+  recycler?: PoolRecycler;
 }
 
 export type PoolWatchdogEvent =
   | { kind: 'recovered'; missedChecks: number }
   | { kind: 'pool-error'; ping: PingResult }
   | { kind: 'pool-timeout'; ping: PingResult; consecutive: number }
+  | {
+      kind: 'pool-recycled';
+      consecutive: number;
+      fresh: PingResult;
+    }
   | {
       kind: 'pool-wedged';
       consecutive: number;
@@ -91,10 +108,11 @@ export type PoolWatchdogEvent =
 
 /**
  * Counts consecutive pool pings that miss their deadline. At the threshold it
- * pings through a fresh client: if that answers, the pool is wedged and the
- * process exits for the platform to restart it; if that fails too, the
- * database or network is down, a restart would not help, and checking
- * continues.
+ * pings through a fresh client. If that answers, the pool is wedged: it is
+ * replaced in process when a replacement is allowed, and otherwise (it was
+ * replaced moments ago and is stuck again) the process exits for the platform
+ * to restart it. If the fresh client fails too, the database or network is
+ * down, neither would help, and checking continues.
  */
 export class PoolWatchdog {
   private consecutive = 0;
@@ -133,6 +151,17 @@ export class PoolWatchdog {
 
     const fresh = await this.deps.pingFresh();
     if (fresh.outcome === 'ok') {
+      const recycler = this.deps.recycler;
+      if (recycler?.allowed()) {
+        this.deps.onCheck({
+          kind: 'pool-recycled',
+          consecutive: this.consecutive,
+          fresh,
+        });
+        this.consecutive = 0;
+        recycler.recycle();
+        return;
+      }
       this.deps.onCheck({
         kind: 'pool-wedged',
         consecutive: this.consecutive,
@@ -146,5 +175,65 @@ export class PoolWatchdog {
       consecutive: this.consecutive,
       fresh,
     });
+  }
+}
+
+export interface DeadlineBurstDeps {
+  threshold: number;
+  windowMs: number;
+  now: () => number;
+  pingFresh: () => Promise<PingResult>;
+  recycler: PoolRecycler;
+  onBurst: (event: DeadlineBurstEvent) => void;
+}
+
+export type DeadlineBurstEvent =
+  | { kind: 'recycle'; deadlines: number; fresh: PingResult }
+  | { kind: 'database-unreachable'; deadlines: number; fresh: PingResult };
+
+/**
+ * Catches a pool that is only partly stuck. Each missed statement or
+ * transaction deadline is recorded; when `threshold` of them fall within
+ * `windowMs` and a fresh client answers, the pool is replaced. Slow queries
+ * on a healthy database can trigger it too, which costs a set of new
+ * connections: statements already running finish on the old ones. While a
+ * replacement is not allowed (running, or within its cooldown) deadlines are
+ * still recorded but nothing happens.
+ */
+export class DeadlineBurstDetector {
+  private deadlines: number[] = [];
+  private checking = false;
+
+  constructor(private readonly deps: DeadlineBurstDeps) {}
+
+  get recentDeadlines(): number {
+    return this.deadlines.length;
+  }
+
+  async record(): Promise<void> {
+    const now = this.deps.now();
+    this.deadlines = this.deadlines.filter(
+      (at) => now - at < this.deps.windowMs,
+    );
+    this.deadlines.push(now);
+    if (this.deadlines.length < this.deps.threshold) return;
+    if (this.checking || !this.deps.recycler.allowed()) return;
+
+    this.checking = true;
+    const deadlines = this.deadlines.length;
+    try {
+      const fresh = await this.deps.pingFresh();
+      if (fresh.outcome !== 'ok') {
+        this.deps.onBurst({ kind: 'database-unreachable', deadlines, fresh });
+        return;
+      }
+      // Another trigger may have replaced the pool while the ping ran.
+      if (!this.deps.recycler.allowed()) return;
+      this.deadlines = [];
+      this.deps.onBurst({ kind: 'recycle', deadlines, fresh });
+      this.deps.recycler.recycle();
+    } finally {
+      this.checking = false;
+    }
   }
 }

@@ -12,6 +12,7 @@ import * as poolHealth from './pool-health';
 function build(
   overrides: Partial<DatabaseResilienceConfig>,
   execute: () => Promise<unknown>,
+  pool: { enabled: boolean; allowed?: () => boolean } = { enabled: false },
 ) {
   const settings = {
     ...DATABASE_RESILIENCE_DEFAULTS,
@@ -26,22 +27,46 @@ function build(
     getOrThrow: () => 'postgresql://u:p@db.example:6543/postgres',
   } as unknown as ConfigService;
   const db = { execute: jest.fn(execute) };
-  const watchdog = new DatabasePoolWatchdog(db as unknown as DrizzleDB, config);
+  const recycle = jest.fn();
+  const control = {
+    enabled: pool.enabled,
+    recycler: jest.fn(() => ({
+      allowed: pool.allowed ?? (() => true),
+      recycle,
+    })),
+  };
+  const watchdog = new DatabasePoolWatchdog(
+    db as unknown as DrizzleDB,
+    config,
+    control,
+  );
   watchdog.exitProcess = jest.fn();
-  return { watchdog, db };
+  return { watchdog, db, recycle, control };
 }
 
 async function flush(): Promise<void> {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
 }
 
+async function runChecks(checks: number): Promise<void> {
+  for (let check = 0; check < checks; check += 1) {
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    jest.advanceTimersByTime(100);
+    await flush();
+  }
+}
+
 describe('DatabasePoolWatchdog', () => {
   let fatal: jest.SpyInstance;
+  let warn: jest.SpyInstance;
 
   beforeEach(() => {
     jest.useFakeTimers();
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
     fatal = jest
       .spyOn(Logger.prototype, 'fatal')
       .mockImplementation(() => undefined);
@@ -86,6 +111,52 @@ describe('DatabasePoolWatchdog', () => {
     jest.advanceTimersByTime(5_000);
     await flush();
     expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces a wedged pool instead of exiting when replacement is allowed', async () => {
+    jest
+      .spyOn(poolHealth, 'pingWithFreshClient')
+      .mockResolvedValue({ outcome: 'ok', elapsedMs: 5 });
+    const { watchdog, db, recycle, control } = build(
+      {},
+      () => new Promise(() => undefined),
+      { enabled: true },
+    );
+
+    watchdog.onApplicationBootstrap();
+    await runChecks(2);
+
+    expect(control.recycler).toHaveBeenCalledWith('wedged');
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(watchdog.exitProcess).not.toHaveBeenCalled();
+    expect(fatal).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('"processAction":"recycle"'),
+    );
+
+    // Checking continues against the replacement pool.
+    await runChecks(1);
+    expect(db.execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('exits when the pool is wedged again within the replacement cooldown', async () => {
+    jest
+      .spyOn(poolHealth, 'pingWithFreshClient')
+      .mockResolvedValue({ outcome: 'ok', elapsedMs: 5 });
+    const { watchdog, recycle } = build(
+      {},
+      () => new Promise(() => undefined),
+      { enabled: true, allowed: () => false },
+    );
+
+    watchdog.onApplicationBootstrap();
+    await runChecks(2);
+
+    expect(recycle).not.toHaveBeenCalled();
+    expect(watchdog.exitProcess).toHaveBeenCalledTimes(1);
+    expect(fatal).toHaveBeenCalledWith(
+      expect.stringContaining('"processAction":"exit"'),
+    );
   });
 
   it('stops checking on shutdown', async () => {

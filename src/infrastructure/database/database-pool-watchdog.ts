@@ -14,6 +14,10 @@ import {
 import { readDatabaseResilienceConfig } from '../../shared/config/database-resilience.config';
 import { DRIZZLE, type DrizzleDB } from './database.provider';
 import {
+  DATABASE_POOL_CONTROL,
+  type DatabasePoolControl,
+} from './database-pool-control';
+import {
   pingWithFreshClient,
   pingWithin,
   PoolWatchdog,
@@ -30,11 +34,12 @@ function rounded(ping: PingResult): Record<string, unknown> {
 }
 
 /**
- * Pings the application pool on an interval and ends the process when the
- * pool keeps missing its deadline while the database itself answers. The
- * process stays alive and keeps logging in that state, so nothing else would
- * restart it. The exit is immediate: a graceful shutdown would wait on the
- * same stuck connections. Queue jobs left active are retried after restart.
+ * Pings the application pool on an interval. When the pool keeps missing its
+ * deadline while the database itself answers, the pool is replaced in
+ * process. If it is stuck again within the replacement cooldown, the process
+ * ends: it would stay alive and keep logging in that state, so nothing else
+ * would restart it. The exit is immediate: a graceful shutdown would wait on
+ * the same stuck connections. Queue jobs left active are retried after restart.
  */
 @Injectable()
 export class DatabasePoolWatchdog
@@ -49,6 +54,8 @@ export class DatabasePoolWatchdog
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly configService: ConfigService,
+    @Inject(DATABASE_POOL_CONTROL)
+    private readonly pool: Pick<DatabasePoolControl, 'enabled' | 'recycler'>,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -65,6 +72,7 @@ export class DatabasePoolWatchdog
         this.stopped = true;
         this.exitProcess();
       },
+      recycler: this.pool.enabled ? this.pool.recycler('wedged') : undefined,
     });
     this.logger.log(
       buildBackendLog(DatabasePoolWatchdog.name, {
@@ -73,6 +81,7 @@ export class DatabasePoolWatchdog
         intervalMs: config.watchdogIntervalMs,
         pingTimeoutMs: config.pingTimeoutMs,
         failuresBeforeExit: config.watchdogFailures,
+        poolRecycle: this.pool.enabled,
       }),
     );
     this.schedule(watchdog, config.watchdogIntervalMs);
@@ -136,6 +145,19 @@ export class DatabasePoolWatchdog
             consecutive: event.consecutive,
             pingTimeoutMs,
             ...rounded(event.ping),
+          }),
+        );
+        return;
+      case 'pool-recycled':
+        this.logger.warn(
+          buildBackendLog(DatabasePoolWatchdog.name, {
+            action: 'database-pool-wedged',
+            outcome: 'failure',
+            reason: 'pool-wedged',
+            processAction: 'recycle',
+            consecutive: event.consecutive,
+            pingTimeoutMs,
+            freshClient: rounded(event.fresh),
           }),
         );
         return;

@@ -10,12 +10,16 @@ describe('parseDatabaseResilienceConfig', () => {
     expect(parseDatabaseResilienceConfig({ NODE_ENV: 'production' })).toEqual({
       connectTimeoutSeconds: 10,
       maxLifetimeSeconds: 900,
-      queryTimeoutMs: 30_000,
+      queryTimeoutMs: 15_000,
       transactionTimeoutMs: 60_000,
-      pingTimeoutMs: 5_000,
+      pingTimeoutMs: 3_000,
       watchdogEnabled: true,
-      watchdogIntervalMs: 15_000,
+      watchdogIntervalMs: 5_000,
       watchdogFailures: 4,
+      recycleEnabled: true,
+      recycleDeadlines: 3,
+      recycleWindowMs: 60_000,
+      recycleCooldownMs: 60_000,
     });
   });
 
@@ -30,6 +34,10 @@ describe('parseDatabaseResilienceConfig', () => {
         DATABASE_POOL_WATCHDOG: 'false',
         DATABASE_POOL_WATCHDOG_INTERVAL_MS: '10000',
         DATABASE_POOL_WATCHDOG_FAILURES: '6',
+        DATABASE_POOL_RECYCLE: 'false',
+        DATABASE_POOL_RECYCLE_DEADLINES: '5',
+        DATABASE_POOL_RECYCLE_WINDOW_MS: '30000',
+        DATABASE_POOL_RECYCLE_COOLDOWN_MS: '120000',
       }),
     ).toEqual({
       connectTimeoutSeconds: 5,
@@ -40,16 +48,21 @@ describe('parseDatabaseResilienceConfig', () => {
       watchdogEnabled: false,
       watchdogIntervalMs: 10_000,
       watchdogFailures: 6,
+      recycleEnabled: false,
+      recycleDeadlines: 5,
+      recycleWindowMs: 30_000,
+      recycleCooldownMs: 120_000,
     });
   });
 
-  it('keeps the watchdog off under tests', () => {
-    expect(
-      parseDatabaseResilienceConfig({
-        NODE_ENV: 'test',
-        DATABASE_POOL_WATCHDOG: 'true',
-      }).watchdogEnabled,
-    ).toBe(false);
+  it('keeps the watchdog and pool replacement off under tests', () => {
+    const parsed = parseDatabaseResilienceConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_WATCHDOG: 'true',
+      DATABASE_POOL_RECYCLE: 'true',
+    });
+    expect(parsed.watchdogEnabled).toBe(false);
+    expect(parsed.recycleEnabled).toBe(false);
   });
 
   it.each([
@@ -57,6 +70,8 @@ describe('parseDatabaseResilienceConfig', () => {
     ['DATABASE_QUERY_TIMEOUT_MS', '-5'],
     ['DATABASE_CONNECT_TIMEOUT_SECONDS', '2.5'],
     ['DATABASE_POOL_WATCHDOG_FAILURES', 'four'],
+    ['DATABASE_POOL_RECYCLE_DEADLINES', '0'],
+    ['DATABASE_POOL_RECYCLE_COOLDOWN_MS', '1m'],
   ])('rejects %s=%s', (key, value) => {
     expect(() => parseDatabaseResilienceConfig({ [key]: value })).toThrow(
       `${key} must be a positive whole number.`,
@@ -67,6 +82,9 @@ describe('parseDatabaseResilienceConfig', () => {
     expect(() =>
       parseDatabaseResilienceConfig({ DATABASE_POOL_WATCHDOG: 'yes' }),
     ).toThrow('DATABASE_POOL_WATCHDOG must be true or false.');
+    expect(() =>
+      parseDatabaseResilienceConfig({ DATABASE_POOL_RECYCLE: 'on' }),
+    ).toThrow('DATABASE_POOL_RECYCLE must be true or false.');
   });
 
   it('rejects a transaction deadline shorter than a statement deadline', () => {
@@ -81,7 +99,7 @@ describe('parseDatabaseResilienceConfig', () => {
   it('rejects a ping deadline that overlaps the next check', () => {
     expect(() =>
       parseDatabaseResilienceConfig({
-        DATABASE_PING_TIMEOUT_MS: '15000',
+        DATABASE_PING_TIMEOUT_MS: '5000',
       }),
     ).toThrow('DATABASE_PING_TIMEOUT_MS must be shorter than');
   });
@@ -97,10 +115,11 @@ describe('readDatabaseResilienceConfig', () => {
     expect(readDatabaseResilienceConfig(config)).toBe(parsed);
   });
 
-  it('keeps defaults and no watchdog when the environment was never validated', () => {
+  it('keeps defaults with no watchdog or pool replacement when the environment was never validated', () => {
     expect(readDatabaseResilienceConfig({ get: () => undefined })).toEqual({
       ...DATABASE_RESILIENCE_DEFAULTS,
       watchdogEnabled: false,
+      recycleEnabled: false,
     });
   });
 });

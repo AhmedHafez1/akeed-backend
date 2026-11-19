@@ -47,6 +47,7 @@
     "test:contract:order-api-release-gate": "jest --config ./test/jest-order-api-release-gate-contract.json --runInBand",
     "test:contract:verification-overview": "jest --config ./test/jest-verification-overview-contract.json --runInBand",
     "test:contract:review-prompt": "jest --config ./test/jest-review-prompt-contract.json --runInBand",
+    "test:contract:database-pool-recycle": "jest --config ./test/jest-database-pool-recycle-contract.json --runInBand",
     "test:contract:tips-campaigns": "jest --config ./test/jest-tips-campaigns-contract.json --runInBand",
     "test:contract:paymob-checkout": "jest --config ./test/jest-paymob-checkout-contract.json --runInBand",
     "test:contract:acknowledgment-billing": "jest --config ./test/jest-acknowledgment-billing-contract.json --runInBand",
