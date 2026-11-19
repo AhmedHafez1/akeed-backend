@@ -1,3 +1,9 @@
+import {
+  AnnouncementEmailsRepository,
+  type AnnouncementDelivery,
+} from '../src/infrastructure/database/repositories/announcement-emails.repository';
+import type { EmailMessage } from '../src/shared/ports/email.port';
+import { TipsService } from '../src/modules/tips/tips.service';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { randomUUID } from 'node:crypto';
 import {
@@ -54,6 +60,7 @@ const MIGRATIONS = [
   '0080_tips_campaign_change_note_types.sql',
   '0084_tips_campaign_banner.sql',
   '0087_tips_recipient_deliveries.sql',
+  '0105_announcement_email.sql',
 ];
 const namespace = `tips_campaigns_${randomUUID().replaceAll('-', '')}`;
 const client = postgres(isolatedDatabaseUrl(), {
@@ -221,6 +228,7 @@ describe('tips campaigns (Postgres contract)', () => {
       DO $$ BEGIN CREATE ROLE service_role; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       DO $$ BEGIN CREATE ROLE authenticated; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       DO $$ BEGIN CREATE ROLE anon; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      CREATE TABLE whatsapp_connections (org_id uuid NOT NULL, state text NOT NULL);
       CREATE TABLE organizations (
         id uuid PRIMARY KEY,
         name text NOT NULL,
@@ -237,6 +245,7 @@ describe('tips campaigns (Postgres contract)', () => {
         default_language text DEFAULT 'auto' NOT NULL,
         billing_plan_id text DEFAULT 'starter' NOT NULL,
         billing_status text,
+        paid_through_at timestamptz,
         auto_cancel_enabled boolean DEFAULT false NOT NULL,
         quiet_hours_enabled boolean DEFAULT false NOT NULL,
         follow_up_enabled boolean DEFAULT true NOT NULL,
@@ -1322,6 +1331,419 @@ describe('tips campaigns (Postgres contract)', () => {
           'ALTER TABLE admin_access_audit DROP CONSTRAINT refuse_banner_audit',
         );
       }
+    });
+  });
+  describe('announcement email outbox', () => {
+    it('renders a secondary-only card as one complete locale bundle and counts its clicks', async () => {
+      const orgId = await merchant();
+      const campaign = await draft(direct([orgId]), {
+        name: 'Secondary guide only',
+      });
+      await repository.update(
+        campaign.id,
+        campaign.revision,
+        {
+          secondaryAction: {
+            action: { kind: 'internal', route: 'guide_own_whatsapp_number' },
+            labels: { en: 'How it works' },
+          },
+        },
+        AUDIT,
+      );
+      const current = (await repository.findById(campaign.id))!.campaign;
+      await reviewAndPublish(current);
+      const tips = new TipsService(repository);
+      const user = {
+        orgId,
+        userId: STAFF,
+        role: 'owner' as const,
+        source: 'supabase' as const,
+      };
+      const cards = await tips.getCards(user, 'ar');
+      expect(cards.cards[0]).toMatchObject({
+        locale: 'en',
+        secondary_action: {
+          kind: 'internal',
+          route: 'guide_own_whatsapp_number',
+          label: 'How it works',
+        },
+      });
+      await tips.recordEvent(user, campaign.id, 'click');
+      expect(await repository.analytics(campaign.id)).toMatchObject({
+        clicked: 1,
+      });
+      const admin = new AdminTipsCampaignsService(repository);
+      expect(
+        (await admin.list({ search: 'Secondary guide only' })).items[0]
+          .has_action,
+      ).toBe(true);
+    });
+    const emails = new AnnouncementEmailsRepository(
+      drizzle(client, { schema }) as never,
+    );
+    const message = {
+      to: 'synthetic@example.test',
+      from: 'Akeed <synthetic@example.test>',
+      subject: 'Launch',
+      text: 'Hello',
+      html: '<p>Hello</p>',
+      idempotencyKey: 'synthetic-key',
+    };
+
+    beforeEach(async () => {
+      await client`TRUNCATE announcement_email_deliveries, announcement_email_preferences`;
+      await client`UPDATE announcement_email_dispatch_state SET next_batch_at = now() - interval '1 minute', lease_until = NULL, claim_token = NULL`;
+    });
+
+    async function publishEmail(ids: string[]) {
+      const campaign = await draft(direct(ids));
+      const updated = await repository.update(
+        campaign.id,
+        campaign.revision,
+        {
+          email: {
+            translations: [
+              { locale: 'en', subject: 'Launch', body: 'Hello {storeName}' },
+            ],
+          },
+        },
+        AUDIT,
+      );
+      if (updated.kind !== 'updated')
+        throw new Error('Could not prepare synthetic campaign');
+      await reviewAndPublish(updated.campaign);
+      return updated.campaign;
+    }
+    async function claim() {
+      const token = await emails.claimSweep(300000);
+      if (!token) throw new Error('Expected an available sweep');
+      const row = await emails.claimNext(token);
+      if (!row) throw new Error('Expected a pending delivery');
+      return { token, row };
+    }
+    async function prepare(row: AnnouncementDelivery) {
+      const saved = await emails.prepare(row, {
+        ...message,
+        idempotencyKey: `announcement-${row.campaignId}-${row.orgId}`,
+      });
+      if (!saved) throw new Error('Expected a saved envelope');
+      const started = await emails.startAttempt(saved);
+      if (!started) throw new Error('Expected an attempt');
+      return started;
+    }
+
+    it('freezes one row per recipient, repeats publish safely, and never emails later card additions', async () => {
+      const a = await merchant(),
+        b = await merchant(),
+        extra = await merchant();
+      const campaign = await publishEmail([a, b]);
+      const repeated = await reviewAndPublish(campaign);
+      expect(repeated.kind).toBe('already_published');
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        pending: 2,
+        sent: 0,
+      });
+      const current = (await repository.findById(campaign.id))!.campaign;
+      await repository.changeRecipients({
+        id: campaign.id,
+        revision: current.revision,
+        operation: 'add',
+        orgIds: [extra],
+        maxRecipients: MAX,
+        audit: AUDIT,
+      });
+      expect(await emails.stats(campaign.id)).toMatchObject({ pending: 2 });
+    });
+
+    it('rejects unknown placeholders at review and freezes published email content', async () => {
+      const a = await merchant();
+      const campaign = await draft(direct([a]));
+      await repository.update(
+        campaign.id,
+        campaign.revision,
+        {
+          email: {
+            translations: [
+              { locale: 'en', subject: 'Launch', body: '{unknown}' },
+            ],
+          },
+        },
+        AUDIT,
+      );
+      const admin = new AdminTipsCampaignsService(repository);
+      await expect(admin.review(AUDIT, campaign.id)).rejects.toMatchObject({
+        response: {
+          code: 'TIPS_CAMPAIGN_INVALID',
+          issues: [
+            { field: 'email', code: 'unknown_placeholder', locale: 'en' },
+          ],
+        },
+      });
+      expect(await recipientIds(campaign.id)).toEqual([]);
+      const published = await publishEmail([a]);
+      await expect(
+        admin.update(AUDIT, published.id, {
+          revision: published.revision,
+          email: {
+            translations: [
+              { locale: 'en', subject: 'Changed', body: 'Different' },
+            ],
+          },
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'TIPS_CAMPAIGN_NOT_EDITABLE' },
+      });
+    });
+
+    it('rolls both channels back on a changed audience and on a rejected publication audit', async () => {
+      const a = await merchant();
+      const campaign = await draft(direct([a]));
+      await repository.update(
+        campaign.id,
+        1,
+        {
+          email: {
+            translations: [{ locale: 'en', subject: 'Launch', body: 'Hello' }],
+          },
+        },
+        AUDIT,
+      );
+      const current = (await repository.findById(campaign.id))!.campaign;
+      const result = await repository.publish({
+        id: current.id,
+        revision: current.revision,
+        reviewedHash: 'bad-hash',
+        token: 'synthetic',
+        maxRecipients: MAX,
+        audit: AUDIT,
+      });
+      expect(result.kind).toBe('audience_changed');
+      expect(await recipientIds(current.id)).toEqual([]);
+      expect(await emails.stats(current.id)).toMatchObject({ pending: 0 });
+      await client.unsafe(
+        "ALTER TABLE admin_access_audit ADD CONSTRAINT refuse_email_publish CHECK (action <> 'tips-campaign.publish') NOT VALID",
+      );
+      try {
+        await expect(reviewAndPublish(current)).rejects.toThrow();
+      } finally {
+        await client.unsafe(
+          'ALTER TABLE admin_access_audit DROP CONSTRAINT refuse_email_publish',
+        );
+      }
+      expect(await recipientIds(current.id)).toEqual([]);
+      expect(await emails.stats(current.id)).toMatchObject({ pending: 0 });
+    });
+
+    it('serializes sweep pacing and fences an expired row claim after worker restart', async () => {
+      await publishEmail([await merchant()]);
+      const tokens = await Promise.all([
+        emails.claimSweep(300000),
+        emails.claimSweep(300000),
+      ]);
+      expect(tokens.filter(Boolean)).toHaveLength(1);
+      const token = tokens.find(Boolean)!;
+      const old = (await emails.claimNext(token))!;
+      await emails.finishSweep(token);
+      expect(await emails.claimSweep(300000)).toBeNull();
+      await client`UPDATE announcement_email_dispatch_state SET next_batch_at = now() - interval '1 minute'`;
+      await client`UPDATE announcement_email_deliveries SET lease_until = now() - interval '1 minute'`;
+      const next = await claim();
+      expect(next.row.claimToken).not.toBe(old.claimToken);
+      expect(await emails.prepare(old, message)).toBeNull();
+      const send = jest.fn().mockResolvedValue({ status: 'sent' });
+      await emails.dispatch(old, () => true, send);
+      expect(send).not.toHaveBeenCalled();
+      await emails.finishSweep(next.token);
+    });
+
+    it('uses the unchanged saved envelope after a lost provider response or result transaction', async () => {
+      const campaign = await publishEmail([await merchant()]);
+      const first = await claim();
+      const started = await prepare(first.row);
+      const accepted = new Set<string>();
+      const send = jest.fn((payload: EmailMessage) => {
+        accepted.add(payload.idempotencyKey!);
+        return Promise.resolve({ status: 'sent' as const });
+      });
+      await client.unsafe(
+        "ALTER TABLE admin_access_audit ADD CONSTRAINT refuse_email_result CHECK (action <> 'tips-campaign.email.send') NOT VALID",
+      );
+      try {
+        await expect(
+          emails.dispatch(started, () => true, send),
+        ).rejects.toThrow();
+      } finally {
+        await client.unsafe(
+          'ALTER TABLE admin_access_audit DROP CONSTRAINT refuse_email_result',
+        );
+      }
+      const [persisted] =
+        await client`SELECT first_attempt_at, email_payload, status FROM announcement_email_deliveries WHERE campaign_id = ${campaign.id}`;
+      expect(persisted.first_attempt_at).not.toBeNull();
+      expect(persisted.status).toBe('processing');
+      await client`UPDATE announcement_email_deliveries SET lease_until = now() - interval '1 minute'`;
+      await client`UPDATE announcement_email_dispatch_state SET next_batch_at = now() - interval '1 minute', lease_until = NULL, claim_token = NULL`;
+      const retry = await claim();
+      const retryStarted = (await emails.startAttempt(retry.row))!;
+      await emails.dispatch(retryStarted, () => true, send);
+      expect(send.mock.calls[0][0]).toEqual(send.mock.calls[1][0]);
+      expect(accepted.size).toBe(1);
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        sent: 1,
+        processing: 0,
+      });
+      expect(await emails.claimNext(retry.token)).toBeNull();
+    });
+
+    it('bounds retries and refuses to resend after the provider replay window', async () => {
+      const campaign = await publishEmail([await merchant()]);
+      const { token, row } = await claim();
+      const started = await prepare(row);
+      const send = jest.fn().mockResolvedValue({
+        status: 'failed',
+        reason: 'provider_unreachable',
+        retryable: true,
+        uncertain: true,
+      });
+      await emails.dispatch(started, () => true, send);
+      expect(await emails.stats(campaign.id)).toMatchObject({ pending: 1 });
+      await client`UPDATE announcement_email_deliveries SET first_attempt_at = now() - interval '25 hours', next_attempt_at = now() - interval '1 minute'`;
+      const next = (await emails.claimNext(token))!;
+      expect(await emails.startAttempt(next)).toBeNull();
+      await emails.fail(next, 'provider_outcome_unresolved');
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        failed: 1,
+        reasons: { provider_outcome_unresolved: 1 },
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(await emails.claimNext(token)).toBeNull();
+    });
+
+    it('allows five attempts, then settles the refusal without a sixth send', async () => {
+      const campaign = await publishEmail([await merchant()]);
+      const token = (await emails.claimSweep(300000))!;
+      const send = jest.fn();
+      send.mockResolvedValue({
+        status: 'failed',
+        reason: 'provider_status_503',
+        retryable: true,
+        uncertain: true,
+      });
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        await client`UPDATE announcement_email_deliveries SET next_attempt_at = now() - interval '1 minute'`;
+        const row = (await emails.claimNext(token))!;
+        const started = await prepare(row);
+        expect(started.attempts).toBe(attempt);
+        await emails.dispatch(started, () => true, send);
+      }
+      expect(send).toHaveBeenCalledTimes(5);
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        failed: 1,
+        pending: 0,
+      });
+      expect(await emails.claimNext(token)).toBeNull();
+    });
+
+    it('denies database client access to envelopes and announcement preferences', async () => {
+      for (const role of ['anon', 'authenticated']) {
+        await expect(
+          client.begin(async (tx) => {
+            await tx.unsafe('SET LOCAL ROLE ' + role);
+            await tx.unsafe('SELECT * FROM announcement_email_deliveries');
+          }),
+        ).rejects.toThrow();
+        await expect(
+          client.begin(async (tx) => {
+            await tx.unsafe('SET LOCAL ROLE ' + role);
+            await tx.unsafe(
+              'INSERT INTO announcement_email_preferences (org_id) VALUES (gen_random_uuid())',
+            );
+          }),
+        ).rejects.toThrow();
+      }
+    });
+
+    it('permanent Stop serializes with an in-flight send and skips claimed or pending rows', async () => {
+      const campaign = await publishEmail([await merchant(), await merchant()]);
+      const { token, row } = await claim();
+      const started = await prepare(row);
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const send = jest.fn(async () => {
+        entered();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { status: 'sent' as const };
+      });
+      const dispatch = emails.dispatch(started, () => true, send);
+      await waiting;
+      const stop = emails.stop(campaign.id, AUDIT);
+      release();
+      await Promise.all([dispatch, stop]);
+      await emails.stop(campaign.id, AUDIT);
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        sent: 1,
+        skipped: 1,
+        reasons: { stopped: 1 },
+      });
+      expect(await emails.claimNext(token)).toBeNull();
+      const audits =
+        await client`SELECT id FROM admin_access_audit WHERE action = 'tips-campaign.email.stop' AND metadata->>'campaignId' = ${campaign.id}`;
+      expect(audits).toHaveLength(1);
+    });
+
+    it('holds disabled sends and skips opt-outs/inactive stores without affecting another organization', async () => {
+      const a = await merchant(),
+        b = await merchant();
+      const campaign = await publishEmail([a, b]);
+      const { token, row } = await claim();
+      const started = await prepare(row);
+      const send = jest.fn().mockResolvedValue({ status: 'sent' });
+      await emails.dispatch(started, () => false, send);
+      expect(send).not.toHaveBeenCalled();
+      await emails.unsubscribe(a);
+      await emails.unsubscribe(a);
+      await client`UPDATE integrations SET is_active = false WHERE org_id = ${b}`;
+      await client`UPDATE announcement_email_deliveries SET next_attempt_at = now() - interval '1 minute'`;
+      for (let n = 0; n < 2; n++) {
+        const next = (await emails.claimNext(token))!;
+        const attempt = await prepare(next);
+        await emails.dispatch(attempt, () => true, send);
+      }
+      expect(send).not.toHaveBeenCalled();
+      expect(await emails.stats(campaign.id)).toMatchObject({
+        skipped: 2,
+        reasons: { unsubscribed: 1, inactive: 1 },
+      });
+      const preferences = await client<
+        { org_id: string }[]
+      >`SELECT org_id FROM announcement_email_preferences`;
+      expect(preferences.map((p) => p.org_id)).toEqual([a]);
+    });
+
+    it('filters every non-disconnected connection as connected without duplicating organizations', async () => {
+      const connected = await merchant(),
+        disconnected = await merchant(),
+        absent = await merchant();
+      await client`INSERT INTO whatsapp_connections (org_id,state) VALUES (${connected},'degraded'),(${connected},'connecting'),(${disconnected},'disconnected')`;
+      expect(
+        await matches(filters({ own_number_connection: 'connected' })),
+      ).toContain(connected);
+      expect(
+        await matches(filters({ own_number_connection: 'not_connected' })),
+      ).toEqual(expect.arrayContaining([disconnected, absent]));
+      expect(
+        await matches(filters({ own_number_connection: 'not_connected' })),
+      ).not.toContain(connected);
+      expect(
+        (await matches(filters({ own_number_connection: 'connected' }))).filter(
+          (id) => id === connected,
+        ),
+      ).toHaveLength(1);
     });
   });
 });

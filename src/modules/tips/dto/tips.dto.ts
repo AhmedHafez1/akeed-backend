@@ -18,6 +18,7 @@ export type TipsCardActionDto =
   | { kind: 'external'; url: string; label: string };
 
 export interface TipsCardDto {
+  secondary_action?: TipsCardActionDto | null;
   delivery_generation: number;
   /** First view by any teammate in this organization; null means unread. */
   first_viewed_at: string | null;

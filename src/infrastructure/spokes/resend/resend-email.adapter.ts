@@ -61,6 +61,8 @@ export class ResendEmailAdapter implements EmailPort {
               from: message.from ?? settings.emailFrom,
               to: [message.to],
               subject: message.subject,
+              ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+              ...(message.headers ? { headers: message.headers } : {}),
               text: message.text,
               html: message.html,
             }),

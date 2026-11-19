@@ -18,6 +18,7 @@ import { AdminAccessGuard } from './admin-access.guard';
 import { AdminTipsCampaignsService } from './admin-tips-campaigns.service';
 import type { RequestWithAdmin } from './admin.types';
 import {
+  AdminAnnouncementPreviewDto,
   AdminTipsBannerDto,
   AdminTipsCampaignCreateDto,
   AdminTipsCampaignUpdateDto,
@@ -81,6 +82,26 @@ export class AdminTipsCampaignsController {
     @Body() body: AdminTipsCampaignUpdateDto,
   ) {
     return this.campaigns.update(this.audit(request), id, body);
+  }
+
+  @Get(':id/email-preview')
+  @Header('Cache-Control', 'private, no-store')
+  emailPreview(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: AdminAnnouncementPreviewDto,
+  ) {
+    return this.campaigns.emailPreview(id, query.locale, query.sample);
+  }
+
+  @Post(':id/email-stop')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(WRITE_THROTTLE)
+  @Header('Cache-Control', 'private, no-store')
+  stopEmail(
+    @Req() request: RequestWithAdmin,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.campaigns.stopEmail(this.audit(request), id);
   }
 
   @Get(':id/recipients')

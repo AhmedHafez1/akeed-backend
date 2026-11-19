@@ -743,6 +743,13 @@
       "when": 1795910400000,
       "tag": "0104_backfill_lifecycle_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1795996800000,
+      "tag": "0105_announcement_email",
+      "breakpoints": true
     }
   ]
 }

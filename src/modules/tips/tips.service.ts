@@ -44,7 +44,15 @@ export class TipsService {
     );
     const cards = rows.flatMap((row): TipsCardDto[] => {
       const hasAction = row.action_kind !== null;
-      const bundle = chooseTipsBundle(row.translations, locale, hasAction);
+      const bundle = chooseTipsBundle(
+        row.secondary_action
+          ? row.translations.filter(
+              (translation) => row.secondary_action?.labels[translation.locale],
+            )
+          : row.translations,
+        locale,
+        hasAction,
+      );
       if (!bundle) return [];
       let action: TipsCardActionDto | null = null;
       if (
@@ -78,6 +86,17 @@ export class TipsService {
           title: bundle.title,
           description: bundle.description,
           action,
+          ...(row.secondary_action
+            ? {
+                secondary_action: {
+                  ...row.secondary_action.action,
+                  label:
+                    row.secondary_action.labels[bundle.locale] ??
+                    row.secondary_action.labels.en ??
+                    '',
+                },
+              }
+            : {}),
           show_as_banner: row.show_as_banner === true,
           published_at: row.published_at,
         },

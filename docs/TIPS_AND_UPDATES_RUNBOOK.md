@@ -1,6 +1,6 @@
 # Tips and Updates Runbook
 
-Admins publish tips and feature announcements to chosen merchant accounts. Merchants see them in Tips & updates, and admins can also show a campaign as a slim banner on the dashboard and confirmations in both Shopify and standalone. Campaigns never send email, WhatsApp, push or popups. Every campaign is created and published by hand. Publication saves the initial audience; staff can explicitly add, remove or reissue individual merchant accounts afterward. Nothing is triggered automatically.
+Admins publish tips and feature announcements to chosen merchant accounts. Merchants see them in Tips & updates, and admins can also show a campaign as a slim banner on the dashboard and confirmations in both Shopify and standalone. A campaign can optionally include an announcement email. Every campaign is authored and published by staff. Publication saves the initial audience; staff can explicitly add, remove or reissue individual merchant accounts afterward. Email delivery starts automatically for the original frozen recipients when sending is enabled.
 
 ## Where it lives
 
@@ -133,3 +133,23 @@ ORDER BY created_at;
 - Unit: `npx jest src/shared/tips-campaigns src/modules/tips src/modules/admin/admin-tips-campaigns.service.spec.ts`.
 - Postgres contract (Docker): `scripts/test-tips-campaigns-contract.ps1` (`npm run test:contract:tips-campaigns` with `E01_TEST_DATABASE_URL`).
 - Frontend: `npx vitest run src/features/tips src/features/admin/admin-tips.model.test.ts src/features/admin/TipCampaignEditorPage.test.tsx`.
+
+## Announcement email channel
+
+A draft may include email subject/body translations. English is required; other languages are complete or absent. The launch content has all six. Email language follows usage alerts: usageAlertLanguage(defaultLanguage), with the whole English email as fallback when the requested translation is absent. Admin chrome remains English. Preview uses synthetic Starter, Basic, Pro, Scale and prepaid samples, sends nothing and does not review the campaign.
+
+The body accepts {storeName}, {planLine}, {dashboardLink} and {guideLink}. Unknown or malformed placeholders fail Review. A missing value used by the body skips that organization. planLine reads current billing-plan allowances, one-time/30-day periods, credit costs and the configured prepaid price. Authors must retain the separate Meta-charge sentence where own-number pricing is mentioned. HTML is generated from escaped plain text.
+
+The optional secondary card action uses the safe action catalog and per-language labels. A missing secondary label makes the whole card fall back to English. Settings: WhatsApp preserves Shopify context; the own-number guide opens a localized public page in a new tab. The own-number audience filter treats every non-disconnected connection as connected.
+
+Review retains one count and hash. Publish inserts card recipients and email delivery rows in the same transaction; the database enforces one row per campaign/organization. Email content is frozen after publication. Later card edits, enrollment additions, removals and Show again never create email rows or resend an email. Removing a card enrollment does not stop its original frozen email; use Stop sending to stop remaining campaign email.
+
+Delivery uses a BullMQ sweep with a database pace gate and leased, fenced claims. The default is at most 50 rows every five minutes across workers. A prepared envelope is saved before the provider request; recipient, sender, reply-to, content, headers and idempotency key remain unchanged on retries. The key is announcement-<campaignId>-<orgId>. Retries are bounded to five attempts and end before Resend's 24-hour replay window. Unresolved outcomes become failed and are never automatically replayed afterward. Sent means provider-accepted, not inbox-delivered.
+
+The sender/reply-to reuse EMAIL_FROM. A usable notificationEmail is preferred, otherwise the organization owner's usable email is used. Delivery rechecks active-store status and announcement unsubscribe preference. Reasons include no_recipient, inactive, unsubscribed, missing_<placeholder>, stopped, campaign_inactive and provider outcome/error codes. Terminal envelopes are cleared; minimal status/idempotency facts remain. Addresses and unsubscribe tokens never enter logs or admin responses.
+
+Stop sending is permanent and audited. It waits for the bounded in-flight request, then skips remaining pending/claimed rows. It does not hide the card, and card Pause/Resume cannot restart stopped email. Archived/expired campaigns do not initiate email. The global switch holds pending work while off. Changing it requires the normal deployment/restart flow.
+
+Unsubscribe is organization-wide for announcements only. A dedicated HMAC-signed token binds the organization, scope and language. GET shows a localized confirmation without changing state; POST is unauthenticated, idempotent and changes only that organization's announcement preference. The email includes a footer link, List-Unsubscribe and List-Unsubscribe-Post headers. Keep the signing secret/public URL available when sending is disabled so old links keep working. Resend must DKIM-sign both unsubscribe headers for mailbox clients to offer RFC 8058 one-click unsubscribe; this needs owner verification without treating fake tests as delivery evidence.
+
+Deploy the backend migration/API before the frontend. Keep announcement sending off until the owner has checked the draft, preview content, configured sender and public unsubscribe URL. Publish, Stop and each provider attempt are audited with the initiating staff member, time and count. Global/queue diagnostics and row reasons support investigation without reading recipient addresses.

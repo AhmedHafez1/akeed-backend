@@ -6,6 +6,18 @@ import {
 } from './backend-log.util';
 
 describe('buildBackendLog', () => {
+  it('redacts announcement envelope, reply address and signing secret', () => {
+    const line = buildBackendLog('Announcements', {
+      action: 'announcement-email',
+      outcome: 'failure',
+      emailPayload: { to: 'synthetic@example.test', subject: 'Private' },
+      replyTo: 'reply@example.test',
+      unsubscribeSecret: 'synthetic-signing-secret',
+    });
+    expect(line).not.toContain('synthetic@example.test');
+    expect(line).not.toContain('reply@example.test');
+    expect(line).not.toContain('synthetic-signing-secret');
+  });
   it('recursively redacts billing credentials, evidence, and customer data', () => {
     const parsed = JSON.parse(
       buildBackendLog('Billing', {

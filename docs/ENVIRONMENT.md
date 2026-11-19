@@ -678,3 +678,13 @@ The webhook processing job queue uses BullMQ backed by Redis.
 - `REDIS_URL`: Redis connection string to use for the job queue.
   - Production: Railway's Redis service
   - Local: `redis://localhost:6379`
+
+## Announcement campaign email
+
+ANNOUNCEMENT_EMAIL_ENABLED defaults to false. With it off, queued announcement rows remain pending and no provider request is made. Enabling requires EMAIL_ALERTS_ENABLED=true, RESEND_API_KEY, EMAIL_FROM, FRONTEND_DASHBOARD_URL, ANNOUNCEMENT_EMAIL_PUBLIC_API_URL and ANNOUNCEMENT_EMAIL_UNSUBSCRIBE_SECRET. Sender and reply-to both use EMAIL_FROM. This switch never changes transactional preferences.
+
+ANNOUNCEMENT_EMAIL_BATCH_SIZE defaults to 50 (range 1–100). ANNOUNCEMENT_EMAIL_INTERVAL_MS defaults to 300000 (range 60000–86400000). A shared database pace gate applies across concurrent workers and duplicate jobs. Publication persists the outbox even when sending is off; the scheduler recovers it when the owner enables sending.
+
+ANNOUNCEMENT_EMAIL_PUBLIC_API_URL is the trusted HTTPS API origin with no credentials, query or fragment. ANNOUNCEMENT_EMAIL_UNSUBSCRIBE_SECRET is a dedicated random signing secret of at least 32 characters. Store it as a server secret. Keep both configured while sending is off to preserve old unsubscribe links. Rotating the secret invalidates old links; do not rotate it merely to stop sends. Never log it or embed it in client configuration.
+
+The per-campaign Stop action permanently skips remaining work. Requests already admitted may finish before Stop completes. No pause/resume or generic requeue operation may reset a terminal email row. See TIPS_AND_UPDATES_RUNBOOK.md for retries, skip reasons and the public unsubscribe endpoint.

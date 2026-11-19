@@ -22,6 +22,9 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { AnnouncementEmail } from '../../shared/tips-campaigns/announcement-email.policy';
+import type { TipsSecondaryAction } from '../../shared/tips-campaigns/tips-campaign.types';
+import type { EmailMessage } from '../../shared/ports/email.port';
 import type { SenderAlertKind } from '../../shared/notifications/sender-alert.policy';
 import type { SelectedCodTemplate } from '../../shared/messaging/cod-template-selector';
 import type { SenderFailure } from '../../shared/ports/sender-recovery.port';
@@ -4779,6 +4782,12 @@ export const tipsCampaigns = pgTable(
       .$type<TipsCampaignStatus>()
       .default('draft')
       .notNull(),
+    announcementEmail: jsonb('announcement_email').$type<AnnouncementEmail>(),
+    emailStoppedAt: timestamp('email_stopped_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    secondaryAction: jsonb('secondary_action').$type<TipsSecondaryAction>(),
     actionKind: text('action_kind').$type<'internal' | 'external'>(),
     actionRoute: text('action_route'),
     actionUrl: text('action_url'),
@@ -5615,6 +5624,115 @@ export const shopifyOfflineCredentials = pgTable(
       ),
     pgPolicy('Service role manages shopify offline credentials', {
       as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const announcementEmailPreferences = pgTable(
+  'announcement_email_preferences',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    unsubscribedAt: timestamp('unsubscribed_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  () => [
+    pgPolicy('Service role manages announcement preferences', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const announcementEmailDeliveries = pgTable(
+  'announcement_email_deliveries',
+  {
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => tipsCampaigns.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    status: text('status')
+      .$type<'pending' | 'processing' | 'sent' | 'skipped' | 'failed'>()
+      .notNull()
+      .default('pending'),
+    reason: text('reason'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    claimToken: uuid('claim_token'),
+    firstAttemptAt: timestamp('first_attempt_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    emailPayload: jsonb('email_payload').$type<EmailMessage>(),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.campaignId, table.orgId] }),
+    index('idx_announcement_email_due')
+      .on(table.nextAttemptAt, table.campaignId, table.orgId)
+      .where(sql`${table.status} IN ('pending', 'processing')`),
+    index('idx_announcement_email_org').on(table.orgId),
+    check(
+      'announcement_email_status_check',
+      sql`${table.status} IN ('pending', 'processing', 'sent', 'skipped', 'failed')`,
+    ),
+    check(
+      'announcement_email_attempts_check',
+      sql`${table.attempts} BETWEEN 0 AND 5`,
+    ),
+    pgPolicy('Service role manages announcement deliveries', {
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+export const announcementEmailDispatchState = pgTable(
+  'announcement_email_dispatch_state',
+  {
+    id: integer('id').primaryKey().default(1),
+    nextBatchAt: timestamp('next_batch_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
+      .notNull()
+      .defaultNow(),
+    leaseUntil: timestamp('lease_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    claimToken: uuid('claim_token'),
+  },
+  (table) => [
+    check('announcement_dispatch_singleton', sql`${table.id} = 1`),
+    pgPolicy('Service role manages announcement dispatch', {
       for: 'all',
       to: ['service_role'],
       using: sql`true`,
