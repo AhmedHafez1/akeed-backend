@@ -1,5 +1,6 @@
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import type { AccountBillingSummary } from './standalone-billing-operations.types';
+import type { CheckoutOutcome } from './checkout-attempts.policy';
 
 export interface AccountSource {
   id: string;
@@ -19,6 +20,34 @@ export interface AccountSnapshot {
   /** What the merchant sees; the fields above are stored credits. */
   displayedAvailableCredits: number;
   version: number;
+}
+
+/**
+ * One merchant who started a live Paymob checkout, with what staff need to
+ * follow up: how it ended and how to reach the owner.
+ */
+export interface CheckoutAttemptRow {
+  orgId: string;
+  organizationName: string | null;
+  owner: {
+    name: string | null;
+    email: string | null;
+    whatsappPhone: string | null;
+  };
+  source: { platformType: string; identity: string } | null;
+  attempts: number;
+  firstAttemptAt: string;
+  lastAttemptAt: string;
+  paidEver: boolean;
+  latest: {
+    reference: string;
+    status: string;
+    outcome: CheckoutOutcome;
+    declineCode: string | null;
+    reconciliationCode: string | null;
+    totalMinor: number;
+    currency: string;
+  };
 }
 
 /** One organization as the staff account list shows it. */

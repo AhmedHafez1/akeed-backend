@@ -7,6 +7,8 @@ import {
 import {
   creditAccounts,
   creditLedgerEntries,
+  integrations,
+  memberships,
   paymentPurchases,
   verificationMessageDispatches,
 } from '../src/infrastructure/database/schema';
@@ -207,6 +209,104 @@ describe('PostgreSQL staff billing operations', () => {
       ).rejects.toMatchObject({
         response: { code: 'BILLING_ACCOUNT_NOT_FOUND' },
       });
+    });
+
+    it('lists merchants who started a checkout, unpaid first, with how to reach the owner', async () => {
+      // Supabase owns auth.users; the suite stands in a minimal copy.
+      await harness.client.unsafe(`CREATE SCHEMA IF NOT EXISTS auth;
+        CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb)`);
+      const owner = async (orgId: string, email: string) => {
+        const userId = randomUUID();
+        await harness.client`INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES (${userId}, ${email}, ${JSON.stringify({ full_name: 'Synthetic owner' })}::jsonb)`;
+        await db.insert(memberships).values({ orgId, userId, role: 'owner' });
+      };
+      const declined = await harness.merchant(30);
+      const paid = await harness.merchant(30);
+      const left = await harness.merchant(30);
+      const never = await harness.merchant(30);
+      await owner(declined.orgId, 'declined@merchant.test');
+      await db
+        .update(integrations)
+        .set({ merchantWhatsappPhone: '+201000000001' })
+        .where(eq(integrations.orgId, declined.orgId));
+
+      const buy = (user: typeof declined.user) =>
+        harness.billing.createPurchase(user, `key-${randomUUID()}`, 100);
+      const first = await buy(declined.user);
+      await harness.callbacks.ingest(
+        harness.paymob.event(first.reference, {
+          signal: 'decline',
+          errorCode: 'authentication_failed',
+        }),
+      );
+      const failedThenPaid = await buy(paid.user);
+      await harness.callbacks.ingest(
+        harness.paymob.event(failedThenPaid.reference, { signal: 'decline' }),
+      );
+      await settle((await buy(paid.user)).reference);
+      const abandoned = await buy(left.user);
+      await db
+        .update(paymentPurchases)
+        .set({ checkoutExpiresAt: '2026-11-01T00:00:00Z' })
+        .where(eq(paymentPurchases.reference, abandoned.reference));
+
+      const page = await accounts.checkoutAttempts({ limit: 100 });
+      const merchants: string[] = [
+        declined.orgId,
+        paid.orgId,
+        left.orgId,
+        never.orgId,
+      ];
+      const ours = page.rows.filter((row) => merchants.includes(row.orgId));
+      expect(ours.map((row) => row.orgId)).not.toContain(never.orgId);
+      expect(ours.at(-1)?.orgId).toBe(paid.orgId);
+      expect(ours.find((row) => row.orgId === declined.orgId)).toMatchObject({
+        attempts: 1,
+        paidEver: false,
+        owner: {
+          name: 'Synthetic owner',
+          email: 'declined@merchant.test',
+          whatsappPhone: '+201000000001',
+        },
+        source: { platformType: 'standalone', identity: declined.orgId },
+        latest: {
+          reference: first.reference,
+          status: 'failed',
+          outcome: 'declined',
+          declineCode: 'authentication_failed',
+          totalMinor: 20000,
+          currency: 'EGP',
+        },
+      });
+      expect(ours.find((row) => row.orgId === paid.orgId)).toMatchObject({
+        attempts: 2,
+        paidEver: true,
+        latest: { outcome: 'paid' },
+      });
+      expect(ours.find((row) => row.orgId === left.orgId)).toMatchObject({
+        paidEver: false,
+        owner: { name: null, email: null, whatsappPhone: null },
+        latest: { status: 'pending', outcome: 'left_checkout' },
+      });
+
+      const unpaid = await accounts.checkoutAttempts({
+        limit: 100,
+        paid: 'unpaid',
+      });
+      expect(unpaid.rows.map((row) => row.orgId)).toEqual(
+        expect.arrayContaining([declined.orgId, left.orgId]),
+      );
+      expect(unpaid.rows.map((row) => row.orgId)).not.toContain(paid.orgId);
+      const onlyPaid = await accounts.checkoutAttempts({
+        limit: 100,
+        paid: 'paid',
+      });
+      expect(onlyPaid.rows.map((row) => row.orgId)).toContain(paid.orgId);
+      expect(onlyPaid.rows.every((row) => row.paidEver)).toBe(true);
+
+      const firstPage = await accounts.checkoutAttempts({ limit: 1 });
+      expect(firstPage.rows).toHaveLength(1);
+      expect(firstPage.nextOffset).toBe(1);
     });
   });
 
