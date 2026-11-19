@@ -18,7 +18,12 @@ import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
 import { ReviewPromptsRepository } from '../../infrastructure/database/repositories/review-prompts.repository';
 import { WhatsappTemplatesRepository } from '../../infrastructure/database/repositories/whatsapp-templates.repository';
-import { buildBackendLog } from '../../shared/logging/backend-log.util';
+import {
+  buildBackendLog,
+  normalizeError,
+} from '../../shared/logging/backend-log.util';
+import { AdminStoreDeletionRepository } from '../../infrastructure/database/repositories/admin-store-deletion.repository';
+import { AdminAuthUsersService } from './admin-auth-users.service';
 import {
   effectiveReviewPromptState,
   reviewPromptVariantFor,
@@ -39,6 +44,7 @@ import {
 } from '../orders/services/pagination.helpers';
 import { resolveIncludedVerificationsLimit } from '../onboarding/onboarding.service.helpers';
 import { AdminHealthRuleService } from './admin-health-rule.service';
+import { storeDeletionBlock } from './admin-store-deletion.policy';
 import {
   buildSignalDetails,
   type AdminSignalDetails,
@@ -140,6 +146,8 @@ export interface AdminStoreView {
   first_eligible_real_order_at: string | null;
   activated_at: string | null;
   last_activity_at: string | null;
+  /** Whether staff may delete this store and its whole organization. */
+  can_delete: boolean;
   health: {
     status: AdminHealthStatus;
     top_signal: string | null;
@@ -264,6 +272,8 @@ export class AdminStoresService {
     @Optional() private readonly reviewPrompts?: ReviewPromptsRepository,
     @Optional()
     private readonly changeTemplates?: ChangeRequestTemplatesService,
+    @Optional() private readonly deletions?: AdminStoreDeletionRepository,
+    @Optional() private readonly authUsers?: AdminAuthUsersService,
   ) {}
 
   async getStores(query: AdminStoresQueryDto) {
@@ -275,6 +285,7 @@ export class AdminStoresService {
         search: query.search,
         platform: query.platform,
         plan: query.plan,
+        paying: query.paying,
         lifecycleStatus: query.lifecycle_status,
         onboardingStatus: query.onboarding_status,
         healthStatus: query.health_status,
@@ -495,6 +506,96 @@ export class AdminStoresService {
       }),
     );
     return { logo_header: await this.logoHeaderView(integrationId) };
+  }
+
+  /**
+   * Deletes a dead store with its whole organization, then the logins left
+   * without an organization. Staff confirm by typing the store name. The
+   * eligibility rule is checked here and again under a lock in the delete,
+   * so a store that became active meanwhile is never removed. A login that
+   * Supabase fails to delete is logged and reported; the data is gone.
+   */
+  async deleteStore(
+    audit: { userId: string; requestId?: string },
+    integrationId: string,
+    confirmStoreName: string,
+  ) {
+    if (!this.deletions) throw new NotFoundException('Store not found.');
+    const row = await this.requireStore(integrationId);
+    const block = storeDeletionBlock(deletionFacts(row), new Date());
+    if (block)
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'This store cannot be deleted.',
+        code: 'ADMIN_STORE_DELETE_NOT_ELIGIBLE',
+        reason: block,
+      });
+    const storeName = (row.store_name ?? row.organization_name).trim();
+    if (confirmStoreName.trim() !== storeName)
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'The store name does not match.',
+        code: 'ADMIN_STORE_DELETE_NAME_MISMATCH',
+      });
+
+    const result = await this.deletions.deleteOrganization({
+      orgId: row.org_id,
+      integrationId,
+    });
+    if (!result.deleted) {
+      if (result.reason === 'not_found')
+        throw new NotFoundException('Store not found.');
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'This store changed and cannot be deleted.',
+        code: 'ADMIN_STORE_DELETE_NOT_ELIGIBLE',
+        reason: 'changed',
+      });
+    }
+
+    const orphans = await this.deletions.findUsersWithoutOrganization(
+      result.userIds,
+    );
+    let loginsFailed = 0;
+    for (const userId of orphans) {
+      const removed = await this.authUsers
+        ?.deleteUser(userId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            buildBackendLog(AdminStoresService.name, {
+              action: 'admin-store-delete-login',
+              outcome: 'failure',
+              integrationId,
+              requestId: audit.requestId,
+              ...normalizeError(error),
+            }),
+          );
+          return false;
+        });
+      if (!removed) loginsFailed += 1;
+    }
+
+    this.logger.log(
+      buildBackendLog(AdminStoresService.name, {
+        action: 'admin-store-delete',
+        outcome: 'success',
+        integrationId,
+        orgId: row.org_id,
+        platform: row.platform_type,
+        loginsRemoved: orphans.length - loginsFailed,
+        loginsFailed,
+        adminUserId: audit.userId,
+        requestId: audit.requestId,
+      }),
+    );
+    return {
+      deleted: true,
+      logins_removed: orphans.length - loginsFailed,
+      logins_failed: loginsFailed,
+    };
   }
 
   /**
@@ -879,6 +980,7 @@ export class AdminStoresService {
       first_eligible_real_order_at: row.first_eligible_order_at_effective,
       activated_at: row.first_resolved_at_effective,
       last_activity_at: row.last_activity_at,
+      can_delete: storeDeletionBlock(deletionFacts(row), new Date()) === null,
       health: {
         status: row.health_status as AdminHealthStatus,
         top_signal: signals[0] ?? null,
@@ -899,6 +1001,19 @@ export class AdminStoresService {
         : [],
     };
   }
+}
+
+/** The deletion facts the policy reads, from a store row. */
+export function deletionFacts(row: AdminStoreViewRow) {
+  return {
+    healthStatus: row.health_status,
+    lifecycleStatus: row.lifecycle_status,
+    installedAt: row.installed_at,
+    usageUsed: Number(row.usage_used ?? 0),
+    hasRealActivity: Boolean(row.has_real_activity),
+    hasCreditHistory: Boolean(row.has_credit_history),
+    orgStoreCount: Number(row.org_store_count ?? 0),
+  };
 }
 
 /** A store time zone Postgres and Intl both accept, else UTC. */

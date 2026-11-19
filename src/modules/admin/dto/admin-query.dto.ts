@@ -65,6 +65,14 @@ export class AdminStoresQueryDto {
   @IsIn(PLANS)
   plan?: (typeof PLANS)[number];
 
+  /** Stores on a paid plan whose billing is live. */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  paying?: boolean;
+
   @IsOptional()
   @IsIn(PLATFORMS)
   platform?: (typeof PLATFORMS)[number];

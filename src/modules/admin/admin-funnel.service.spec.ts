@@ -57,6 +57,9 @@ function row(overrides: Partial<AdminStoreQueryRow> = {}): AdminStoreQueryRow {
     previous_install_at: null,
     previous_uninstalled_at: null,
     previous_plan_id: null,
+    org_store_count: 1,
+    has_credit_history: false,
+    has_real_activity: true,
     ...overrides,
   };
 }

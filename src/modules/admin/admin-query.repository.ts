@@ -8,6 +8,13 @@ import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibilit
 import type { AdminHealthColumns } from './admin-health-rule.service';
 import { customerCountriesSql } from './admin-customer-countries.sql';
 import { templateHealthSql } from './admin-template-health.sql';
+import { storeDeletionFactsSql } from '../../infrastructure/database/repositories/admin-store-deletion.repository';
+import {
+  BILLING_PLAN_IDS,
+  isPaidBillingPlan,
+} from '../../shared/billing/billing-plan';
+
+const PAYING_PLANS = BILLING_PLAN_IDS.filter((plan) => isPaidBillingPlan(plan));
 
 export interface AdminStoreQueryRow {
   [key: string]: unknown;
@@ -77,6 +84,10 @@ export interface AdminStoreQueryRow {
   previous_install_at: string | null;
   previous_uninstalled_at: string | null;
   previous_plan_id: string | null;
+  /** Facts that decide whether staff may delete the store. */
+  org_store_count: number | string;
+  has_credit_history: boolean;
+  has_real_activity: boolean;
 }
 
 export interface AdminStoreViewRow extends AdminStoreQueryRow {
@@ -266,6 +277,8 @@ export interface AdminStoreListFilter {
   search?: string;
   platform?: string;
   plan?: string;
+  /** Only stores on a paid plan whose billing is live. */
+  paying?: boolean;
   lifecycleStatus?: string;
   onboardingStatus?: string;
   healthStatus?: string;
@@ -295,6 +308,7 @@ export interface AdminStoreSummaryRow {
   healthy: number;
   attention_required: number;
   critical: number;
+  paying: number;
 }
 
 export type AdminStorePageRow = AdminStoreViewRow & { sort_value: string };
@@ -385,7 +399,8 @@ export class AdminQueryRepository {
           COUNT(*) FILTER (WHERE lifecycle_status = 'uninstalled')::int AS uninstalled,
           COUNT(*) FILTER (WHERE health_status = 'healthy')::int AS healthy,
           COUNT(*) FILTER (WHERE health_status = 'attention_required')::int AS attention_required,
-          COUNT(*) FILTER (WHERE health_status = 'critical')::int AS critical
+          COUNT(*) FILTER (WHERE health_status = 'critical')::int AS critical,
+          COUNT(*) FILTER (WHERE ${this.payingCondition()})::int AS paying
         FROM filtered
       ),
       page AS (
@@ -415,6 +430,7 @@ export class AdminQueryRepository {
       healthy: Number(first?.healthy ?? 0),
       attention_required: Number(first?.attention_required ?? 0),
       critical: Number(first?.critical ?? 0),
+      paying: Number(first?.paying ?? 0),
     };
     const rows = resultRows.filter(
       (row): row is AdminStoreSummaryRow & AdminStorePageRow =>
@@ -724,6 +740,21 @@ export class AdminQueryRepository {
     `;
   }
 
+  /**
+   * A paying store: installed, on a paid plan billed through the platform,
+   * with billing live now. A lapsed paid-through period already reads as
+   * cancelled in `subscription_status`.
+   */
+  private payingCondition(): SQL {
+    return sql`(lifecycle_status <> 'uninstalled'
+      AND NOT is_credit
+      AND plan IN (${sql.join(
+        PAYING_PLANS.map((plan) => sql`${plan}`),
+        sql`, `,
+      )})
+      AND lower(btrim(COALESCE(subscription_status, ''))) IN ('active', 'paid_through'))`;
+  }
+
   private listConditions(filter: AdminStoreListFilter): SQL {
     const conditions: SQL[] = [sql`true`];
     const search = filter.search?.trim().toLocaleLowerCase();
@@ -738,6 +769,7 @@ export class AdminQueryRepository {
     if (filter.platform)
       conditions.push(sql`platform_type = ${filter.platform}`);
     if (filter.plan) conditions.push(sql`plan = ${filter.plan}`);
+    if (filter.paying) conditions.push(this.payingCondition());
     if (filter.lifecycleStatus)
       conditions.push(sql`lifecycle_status = ${filter.lifecycleStatus}`);
     if (filter.onboardingStatus)
@@ -983,7 +1015,8 @@ export class AdminQueryRepository {
             THEN i.billing_plan_id::text END
         ) AS previous_plan_id,
         ${templateHealth.unavailable} AS template_unavailable,
-        ${templateHealth.degraded} AS template_degraded${extraColumns}
+        ${templateHealth.degraded} AS template_degraded,
+        ${storeDeletionFactsSql(sql`i`)}${extraColumns}
       FROM integrations i
       INNER JOIN organizations o ON o.id = i.org_id
       LEFT JOIN credit_accounts ca ON ca.org_id = i.org_id

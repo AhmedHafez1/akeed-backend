@@ -736,6 +736,13 @@
       "when": 1795824000000,
       "tag": "0103_reminder_default_two_hours",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1795910400000,
+      "tag": "0104_backfill_lifecycle_resolution",
+      "breakpoints": true
     }
   ]
 }
