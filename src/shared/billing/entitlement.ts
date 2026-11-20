@@ -4,7 +4,7 @@ import {
   DEFAULT_BILLING_PLAN_ID,
   isBillingPlanId,
   isOneTimeBillingPlan,
-  resolveIncludedVerificationsLimit,
+  resolvePeriodicPlanAllowances,
   type BillingPlanId,
 } from './billing-plan';
 import {
@@ -55,6 +55,7 @@ export interface EntitlementSnapshot {
   reason: EntitlementDenialReason | null;
   planId: BillingPlanId | null;
   includedLimit: number;
+  ownNumberIncludedLimit: number;
   periodStart: string;
   /** `null` for a one-time plan: its allowance never resets. */
   periodEnd: string | null;
@@ -123,7 +124,10 @@ export function resolveEntitlement(
     allowed: reason === null,
     reason,
     planId,
-    includedLimit: planId ? resolveIncludedVerificationsLimit(planId) : 0,
+    ...resolvePeriodicPlanAllowances(
+      planId,
+      source?.platformType === 'shopify' ? 'shopify' : 'legacy',
+    ),
     periodStart,
     periodEnd: oneTime ? null : getBillingPeriodEnd(periodStart),
   };

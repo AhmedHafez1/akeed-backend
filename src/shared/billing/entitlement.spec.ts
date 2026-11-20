@@ -17,24 +17,28 @@ const now = new Date('2026-05-15T00:00:00Z');
 
 describe('provider-neutral entitlement policy', () => {
   it.each([
-    ['basic', 300],
-    ['pro', 1000],
-    ['business', 2500],
-  ])('uses the existing %s quota', (billingPlanId, includedLimit) => {
-    expect(
-      resolveEntitlement(
-        { ...source, billingPlanId: String(billingPlanId) },
-        source,
-        now,
-      ),
-    ).toMatchObject({
-      allowed: true,
-      reason: null,
-      includedLimit,
-      periodStart: '2026-05-01',
-      periodEnd: '2026-05-31',
-    });
-  });
+    ['basic', 300, 1000],
+    ['pro', 1000, 5000],
+    ['business', 2500, 20000],
+  ])(
+    'uses the existing %s quota',
+    (billingPlanId, includedLimit, ownNumberIncludedLimit) => {
+      expect(
+        resolveEntitlement(
+          { ...source, billingPlanId: String(billingPlanId) },
+          source,
+          now,
+        ),
+      ).toMatchObject({
+        allowed: true,
+        reason: null,
+        includedLimit,
+        ownNumberIncludedLimit,
+        periodStart: '2026-05-01',
+        periodEnd: '2026-05-31',
+      });
+    },
+  );
 
   it.each(['basic', 'pro', 'business'])(
     'rolls the paid %s quota into a new 30-day period',
@@ -61,6 +65,7 @@ describe('provider-neutral entitlement policy', () => {
         allowed: true,
         planId: 'starter',
         includedLimit: 30,
+        ownNumberIncludedLimit: 90,
         periodStart: '2026-05-01',
         periodEnd: null,
       });
@@ -153,9 +158,28 @@ describe('provider-neutral entitlement policy', () => {
           source,
           now,
         ),
-      ).toMatchObject({ allowed: true, planId: 'starter', includedLimit: 30 });
+      ).toMatchObject({
+        allowed: true,
+        planId: 'starter',
+        includedLimit: 60,
+        ownNumberIncludedLimit: 200,
+      });
     },
   );
+
+  it('resolves both Basic pools for Shopify', () => {
+    expect(
+      resolveEntitlement(
+        { ...source, platformType: 'shopify', billingPlanId: 'basic' },
+        source,
+        now,
+      ),
+    ).toMatchObject({
+      allowed: true,
+      includedLimit: 300,
+      ownNumberIncludedLimit: 2000,
+    });
+  });
 
   it('keeps management capability distinct from entitlement access', () => {
     expect(getBillingManagement(source)).toEqual({

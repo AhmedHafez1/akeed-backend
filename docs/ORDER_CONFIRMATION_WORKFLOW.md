@@ -574,7 +574,7 @@ Plan limits are defined in `akeed-backend/src/modules/onboarding/onboarding.serv
 
 | Plan               | Monthly price | Included WhatsApp confirmations | Public positioning                     |
 | ------------------ | ------------: | ------------------------------: | -------------------------------------- |
-| Starter            |           `0` |                   `30` one-time | Try Akeed before paying                |
+| Starter            |           `0` |                   `60` one-time | Try Akeed before paying                |
 | Basic              |        `9.99` |                   `300` monthly | Start confirming COD orders            |
 | Pro                |       `22.99` |                  `1000` monthly | For stores confirming COD orders daily |
 | Scale (`business`) |       `49.99` |                  `2500` monthly | Higher-volume COD stores               |

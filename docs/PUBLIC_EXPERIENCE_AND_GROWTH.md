@@ -131,7 +131,7 @@ The public page cannot call the authenticated billing API, so it mirrors these v
 
 ### Shopify: monthly plans
 
-Shopify merchants subscribe to a plan billed by Shopify, and the page links to the plans instead of repeating them (a copy once drifted from the backend). The authoritative plan definitions are in `ONBOARDING_AND_BILLING.md` (Starter 30 one-time, Basic 300, Pro 1,000, Scale 2,500 per month).
+Shopify merchants subscribe to a plan billed by Shopify, and the page links to the plans instead of repeating them (a copy once drifted from the backend). The authoritative plan definitions are in `ONBOARDING_AND_BILLING.md` (Starter 60 one-time, Basic 300, Pro 1,000, Scale 2,500 per month).
 
 ## Legal Pages
 

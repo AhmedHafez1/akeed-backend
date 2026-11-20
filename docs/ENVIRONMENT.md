@@ -155,7 +155,7 @@ A store whose refresh Shopify refuses is marked `reauth_required` and makes no m
     - `true`: creates test subscriptions (recommended outside production billing tests).
     - `false`: creates real charges (only for production billing validation).
   - `POST /api/onboarding/billing` requires `planId` and maps to built-in plans:
-    - `starter`: free, 30 WhatsApp confirmations (no Shopify charge, onboarding auto-completes; one-time claim per store and per merchant WhatsApp number).
+    - `starter`: free, 60 WhatsApp confirmations (no Shopify charge, onboarding auto-completes; one-time claim per store and per merchant WhatsApp number).
     - `basic`: `$9.99`/month, 300 WhatsApp confirmations/month.
     - `pro`: `$22.99`/month, 1,000 WhatsApp confirmations/month.
     - `business`: public-facing Scale plan, `$49.99`/month, 2,500 WhatsApp confirmations/month.

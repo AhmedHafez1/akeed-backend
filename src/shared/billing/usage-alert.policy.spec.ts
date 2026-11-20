@@ -24,9 +24,9 @@ describe('planUsageAlertLevels', () => {
     expect(planUsageAlertLevels(used, limit)).toEqual(expected);
   });
 
-  it('rounds nothing: 24 of 30 is exactly 80%, 23 is not', () => {
-    expect(planUsageAlertLevels(24, 30)).toEqual(['80']);
-    expect(planUsageAlertLevels(23, 30)).toEqual([]);
+  it('rounds nothing: 48 of 60 is exactly 80%, 47 is not', () => {
+    expect(planUsageAlertLevels(48, 60)).toEqual(['80']);
+    expect(planUsageAlertLevels(47, 60)).toEqual([]);
   });
 
   it('has no levels without a finite allowance', () => {

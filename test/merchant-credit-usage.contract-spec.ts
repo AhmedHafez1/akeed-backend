@@ -249,7 +249,8 @@ describe('merchant per-send usage on disposable PostgreSQL', () => {
       { limit: 100, sort: 'installed_at', direction: 'desc' },
       {
         lowBalanceThreshold: 10,
-        planLimits: { starter: 30 },
+        planLimits: { starter: 60 },
+        legacyPlanLimits: { starter: 30 },
         paidPlanIds: [],
         healthSignals: () => ({
           critical: sql`ARRAY[]::text[]`,

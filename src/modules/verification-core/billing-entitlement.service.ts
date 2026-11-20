@@ -9,7 +9,6 @@ import {
   type UsageAccountingMode,
 } from '../../shared/billing/entitlement';
 import { getBillingPeriodStart } from '../../shared/billing/billing-period';
-import { resolveOwnNumberIncludedVerifications } from '../../shared/billing/billing-plan';
 import { usagePool } from '../../shared/billing/usage-pools';
 import {
   nextSendDisplayedCost,
@@ -157,7 +156,7 @@ export class BillingEntitlementService {
       akeed: usagePool(usage.consumedCount, entitlement.includedLimit),
       ownNumber: usagePool(
         usage.ownNumberConsumed ?? 0,
-        resolveOwnNumberIncludedVerifications(entitlement.planId),
+        entitlement.ownNumberIncludedLimit,
       ),
     };
     if (sender !== 'merchant_own')
@@ -167,7 +166,7 @@ export class BillingEntitlementService {
         akeedUsed: usage.consumedCount,
         akeedLimit: entitlement.includedLimit,
         ownUsed: usage.ownNumberConsumed ?? 0,
-        ownLimit: resolveOwnNumberIncludedVerifications(entitlement.planId),
+        ownLimit: entitlement.ownNumberIncludedLimit,
       },
       sender,
     );

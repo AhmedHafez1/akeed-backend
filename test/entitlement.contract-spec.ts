@@ -60,7 +60,7 @@ describe('provider-neutral entitlement PostgreSQL contract', () => {
       `CREATE FUNCTION "${namespace}".uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()'`,
     );
     await client.unsafe(
-      `CREATE TABLE "${namespace}".integrations (id uuid PRIMARY KEY, org_id uuid NOT NULL, platform_type text NOT NULL, is_active boolean, billing_status text, billing_plan_id text, billing_activated_at timestamptz)`,
+      `CREATE TABLE "${namespace}".integrations (id uuid PRIMARY KEY, org_id uuid NOT NULL, platform_type text NOT NULL, is_active boolean, billing_status text, billing_plan_id text, billing_activated_at timestamptz, paid_through_at timestamptz)`,
     );
     const migration = readFileSync(
       resolve(__dirname, '../drizzle/0005_chemical_lady_ursula.sql'),
@@ -99,6 +99,33 @@ describe('provider-neutral entitlement PostgreSQL contract', () => {
     const [usage] =
       await client`SELECT consumed_count, blocked_count FROM ${client(namespace)}.integration_monthly_usage`;
     expect(usage).toMatchObject({ consumed_count: 30, blocked_count: 6 });
+  });
+
+  it('resumes a Shopify Starter in the same period when its stored limit is 30', async () => {
+    await client`UPDATE ${client(namespace)}.integrations SET platform_type = 'shopify', billing_status = 'active', billing_activated_at = '2026-05-01T00:00:00Z' WHERE id = ${identity.id}`;
+    await client`INSERT INTO ${client(namespace)}.integration_monthly_usage (org_id, integration_id, period_start, included_limit, consumed_count) VALUES (${identity.orgId}, ${identity.id}, '2026-05-01', 30, 30)`;
+
+    expect(await service.reserveVerificationSlot(identity)).toMatchObject({
+      allowed: true,
+      consumedCount: 31,
+      includedLimit: 60,
+      periodStart: '2026-05-01',
+      periodEnd: null,
+    });
+    const results = await Promise.all(
+      Array.from({ length: 30 }, () =>
+        service.reserveVerificationSlot(identity),
+      ),
+    );
+    expect(results.filter((r) => r.allowed)).toHaveLength(29);
+    expect(
+      results.filter((r) => r.reason === 'plan_limit_reached'),
+    ).toHaveLength(1);
+    const rows =
+      await client`SELECT included_limit, consumed_count, blocked_count FROM ${client(namespace)}.integration_monthly_usage`;
+    expect(rows).toEqual([
+      { included_limit: 60, consumed_count: 60, blocked_count: 1 },
+    ]);
   });
 
   it.each(['inactive', 'blocked'])(
@@ -181,7 +208,7 @@ describe('provider-neutral entitlement PostgreSQL contract', () => {
   it('keeps periods and integrations separate and releases the original period', async () => {
     const first = await service.reserveVerificationSlot(identity);
     const otherId = randomUUID();
-    await client`INSERT INTO ${client(namespace)}.integrations SELECT ${otherId}, org_id, platform_type, is_active, billing_status, billing_plan_id, billing_activated_at FROM ${client(namespace)}.integrations WHERE id = ${identity.id}`;
+    await client`INSERT INTO ${client(namespace)}.integrations SELECT ${otherId}, org_id, platform_type, is_active, billing_status, billing_plan_id, billing_activated_at, paid_through_at FROM ${client(namespace)}.integrations WHERE id = ${identity.id}`;
     await service.reserveVerificationSlot({ ...identity, id: otherId });
     await client`UPDATE ${client(namespace)}.integrations SET billing_activated_at = now() + interval '35 days' WHERE id = ${identity.id}`;
     const next = await service.reserveVerificationSlot(identity);

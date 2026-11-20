@@ -12,7 +12,7 @@ import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
 import {
   isBillingPlanId,
   isPaidBillingPlan,
-  resolveOwnNumberIncludedVerifications,
+  resolvePeriodicPlanAllowances,
 } from '../../shared/billing/billing-plan';
 import { isBillingStatusActive } from '../../shared/utils/billing.util';
 import { usagePool, type UsagePools } from '../../shared/billing/usage-pools';
@@ -42,7 +42,6 @@ import {
   decodeCursor,
   encodeCursor,
 } from '../orders/services/pagination.helpers';
-import { resolveIncludedVerificationsLimit } from '../onboarding/onboarding.service.helpers';
 import { AdminHealthRuleService } from './admin-health-rule.service';
 import { storeDeletionBlock } from './admin-store-deletion.policy';
 import {
@@ -856,7 +855,16 @@ export class AdminStoresService {
       lowBalanceThreshold: readStandaloneCreditBillingConfig(this.config)
         .lowBalanceThreshold,
       planLimits: Object.fromEntries(
-        PLAN_IDS.map((plan) => [plan, resolveIncludedVerificationsLimit(plan)]),
+        PLAN_IDS.map((plan) => [
+          plan,
+          resolvePeriodicPlanAllowances(plan, 'shopify').includedLimit,
+        ]),
+      ),
+      legacyPlanLimits: Object.fromEntries(
+        PLAN_IDS.map((plan) => [
+          plan,
+          resolvePeriodicPlanAllowances(plan, 'legacy').includedLimit,
+        ]),
       ),
       paidPlanIds: PLAN_IDS.filter((plan) => isPaidBillingPlan(plan)),
       healthSignals: (columns) => this.healthRules.signalsSql(columns),
@@ -907,9 +915,10 @@ export class AdminStoresService {
         akeed: usagePool(used, limit),
         ownNumber: usagePool(
           Number(row.own_number_used ?? 0),
-          resolveOwnNumberIncludedVerifications(
+          resolvePeriodicPlanAllowances(
             plan && isBillingPlanId(plan) ? plan : null,
-          ),
+            row.platform_type === 'shopify' ? 'shopify' : 'legacy',
+          ).ownNumberIncludedLimit,
         ),
       },
       used,

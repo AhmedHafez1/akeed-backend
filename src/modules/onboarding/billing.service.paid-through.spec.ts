@@ -9,7 +9,7 @@ const PAID_THROUGH_AT = '2026-11-30T08:30:00.000Z';
 const REINSTALL_AT = new Date('2026-11-11T17:01:00.000Z');
 
 const PLANS = [
-  { id: 'starter', amount: 0, includedVerifications: 30 },
+  { id: 'starter', amount: 0, includedVerifications: 60 },
   { id: 'basic', amount: 9.99, includedVerifications: 300 },
   { id: 'pro', amount: 22.99, includedVerifications: 1000 },
   { id: 'business', amount: 49.99, includedVerifications: 2500 },

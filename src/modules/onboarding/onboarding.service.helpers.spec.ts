@@ -32,8 +32,8 @@ describe('onboarding.service.helpers', () => {
   });
 
   describe('resolveIncludedVerificationsLimit', () => {
-    it('returns 30 for starter', () => {
-      expect(resolveIncludedVerificationsLimit('starter')).toBe(30);
+    it('returns 60 for starter', () => {
+      expect(resolveIncludedVerificationsLimit('starter')).toBe(60);
     });
 
     it('returns 300 for basic', () => {
@@ -63,8 +63,8 @@ describe('onboarding.service.helpers', () => {
         amount: 0,
         currencyCode: 'USD',
         testMode: false,
-        includedVerifications: 30,
-        ownNumberIncludedVerifications: 90,
+        includedVerifications: 60,
+        ownNumberIncludedVerifications: 200,
       });
     });
 

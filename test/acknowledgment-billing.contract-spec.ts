@@ -94,9 +94,9 @@ describe('paid thank-you messages against PostgreSQL', () => {
           orgId: params.orgId,
           integrationId: params.integrationId,
           periodStart: '2026-09-01',
-          includedLimit: 30,
-          consumedCount: 30,
-          ownNumberConsumed: 90,
+          includedLimit: 60,
+          consumedCount: 60,
+          ownNumberConsumed: 200,
         });
       const [connection] = await db
         .insert(whatsappConnections)
@@ -317,8 +317,8 @@ describe('paid thank-you messages against PostgreSQL', () => {
               eq(integrationMonthlyUsage.integrationId, f.params.integrationId),
             );
           expect(usage).toMatchObject({
-            consumedCount: 30,
-            ownNumberConsumed: 90,
+            consumedCount: 60,
+            ownNumberConsumed: 200,
           });
         }
       },
