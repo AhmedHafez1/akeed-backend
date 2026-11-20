@@ -36,7 +36,6 @@ import { WebhookQueueModule } from './modules/webhook-queue/webhook-queue.module
 import { VerificationCoreModule } from './modules/verification-core/verification-core.module';
 import { VerificationAutomationModule } from './modules/verification-automation/verification-automation.module';
 import { CapacityRecoveryModule } from './modules/capacity-recovery/capacity-recovery.module';
-import { CreditModelNoticeModule } from './modules/credit-model-notice/credit-model-notice.module';
 import { AutoCancellationModule } from './modules/auto-cancellation/auto-cancellation.module';
 import { ChangeRequestsModule } from './modules/change-requests/change-requests.module';
 import { WhatsappSenderModule } from './modules/whatsapp-sender/whatsapp-sender.module';
@@ -176,7 +175,6 @@ const billingModule = BillingModule.register({
     WebhookQueueModule,
     VerificationAutomationModule,
     CapacityRecoveryModule,
-    CreditModelNoticeModule,
     AutoCancellationModule,
     ChangeRequestsModule,
     WhatsappSenderModule,

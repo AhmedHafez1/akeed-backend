@@ -1,12 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { paymobBillingHarness } from './contracts/paymob-billing-harness';
 import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
 import { BillingRepository } from '../src/modules/billing/billing.repository';
 import { BillingService } from '../src/modules/billing/billing.service';
-import { CreditModelNoticesRepository } from '../src/infrastructure/database/repositories/credit-model-notices.repository';
 import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import {
   integrations as integrationsTable,
@@ -269,39 +266,5 @@ describe('PostgreSQL displayed credits cycle', () => {
       limit: 100,
       remaining: 98,
     });
-  });
-
-  it('backfills the notice for existing accounts only, and claims each email once', async () => {
-    const existing = await harness.merchant(10);
-    const migration = readFileSync(
-      resolve(__dirname, '../drizzle/0081_credit_model_notices.sql'),
-      'utf8',
-    );
-    for (const statement of migration.split('--> statement-breakpoint')) {
-      if (statement.trim()) await harness.client.unsafe(statement);
-    }
-    const later = await harness.merchant(10);
-    const notices = new CreditModelNoticesRepository(db as never);
-
-    await expect(notices.isVisible(existing.orgId)).resolves.toBe(true);
-    await expect(notices.isVisible(later.orgId)).resolves.toBe(false);
-
-    await notices.dismiss(existing.orgId);
-    await expect(notices.isVisible(existing.orgId)).resolves.toBe(false);
-
-    const [first, second] = await Promise.all([
-      notices.claimEmailBatch(1000),
-      notices.claimEmailBatch(1000),
-    ]);
-    const claimed = [...first, ...second];
-    expect(claimed).toContain(existing.orgId);
-    expect(claimed).not.toContain(later.orgId);
-    expect(new Set(claimed).size).toBe(claimed.length);
-    await expect(notices.claimEmailBatch(1000)).resolves.toEqual([]);
-
-    await notices.markEmail(existing.orgId, 'sent');
-    await expect(
-      notices.markEmail(existing.orgId, 'nonsense' as never),
-    ).rejects.toThrow();
   });
 });

@@ -7,6 +7,8 @@ import {
   displayedUsage,
   messagePricesMinor,
   OddDisplayedCreditsError,
+  storedBalance,
+  storedCreditUsage,
   toDisplayedCredits,
   toStoredCredits,
 } from './merchant-credits';
@@ -113,5 +115,36 @@ describe('merchant credits', () => {
       estimatedMessagesMin: 40,
       estimatedMessagesMax: 80,
     });
+  });
+});
+
+describe('stored balance for staff', () => {
+  it.each([
+    [70, 0, 70],
+    [70, 1, 70.5],
+    [0, 1, 0.5],
+    [-5, 0, 0],
+  ])('reads %i stored with spare %i as %s', (stored, spare, balance) => {
+    expect(storedBalance(stored, spare)).toBe(balance);
+  });
+
+  it('splits everything added into used and left', () => {
+    expect(
+      storedCreditUsage({ added: 170, available: 135, spareCredit: 1 }),
+    ).toEqual({ added: 170, used: 34.5, left: 135.5, percent: 20 });
+  });
+
+  it('never shows more used than added, or a negative use', () => {
+    expect(storedCreditUsage({ added: 10, available: 40 })).toEqual({
+      added: 40,
+      used: 0,
+      left: 40,
+      percent: 0,
+    });
+    expect(storedCreditUsage({ added: 100, available: 0 })).toMatchObject({
+      used: 100,
+      percent: 100,
+    });
+    expect(storedCreditUsage({ added: 0, available: 0 }).percent).toBe(0);
   });
 });

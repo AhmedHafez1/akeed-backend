@@ -5,6 +5,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
 import { PREPAID_CREDIT_PLATFORMS } from '../../shared/billing/credit-eligibility';
+import { CREDIT_FUNDING_TYPES } from '../../shared/billing/merchant-credits';
 import type { AdminHealthColumns } from './admin-health-rule.service';
 import { customerCountriesSql } from './admin-customer-countries.sql';
 import { templateHealthSql } from './admin-template-health.sql';
@@ -67,6 +68,8 @@ export interface AdminStoreQueryRow {
   credit_account_status: string | null;
   credit_posted_balance: number | string | null;
   credit_held_credits: number | string | null;
+  /** Stored credits ever added: grants, purchases, staff adjustments, refunds. */
+  credit_added?: number | string | null;
   /** Unique orders over the last 24h and the 7 days before them. */
   intake_received_24h: number | string;
   intake_eligible_24h: number | string;
@@ -989,6 +992,15 @@ export class AdminQueryRepository {
         ca.status::text AS credit_account_status,
         ca.posted_balance AS credit_posted_balance,
         ca.held_credits AS credit_held_credits,
+        (CASE WHEN ca.org_id IS NOT NULL THEN (
+          SELECT COALESCE(sum(entry.quantity), 0)
+          FROM credit_ledger_entries entry
+          WHERE entry.org_id = i.org_id
+            AND entry.type::text IN (${sql.join(
+              CREDIT_FUNDING_TYPES.map((type) => sql`${type}`),
+              sql`, `,
+            )})
+        ) END) AS credit_added,
         COALESCE(intake.received_24h, 0) AS intake_received_24h,
         COALESCE(intake.eligible_24h, 0) AS intake_eligible_24h,
         COALESCE(intake.skipped_24h, 0) AS intake_skipped_24h,

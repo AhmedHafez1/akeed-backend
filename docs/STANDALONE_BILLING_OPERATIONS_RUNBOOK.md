@@ -51,7 +51,7 @@ Open **Open** on a row, or filter first: *Balance* (low, no credits, debt), *Acc
 2. Enter the reason and **Apply**. The request carries one idempotency key for this preview; retrying after a network error cannot post twice.
 3. `BILLING_PREVIEW_STALE` means a send, payment or other change moved the account after your preview. Preview again and re-check the figures.
 
-Accounts pending approval cannot be adjusted; approve them first. Adjustments are `staff_adjustment` ledger entries in stored credits, where 1 stored credit shows the merchant 2 credits; reverse one with an opposite adjustment, never by editing data.
+Adjustments are `staff_adjustment` ledger entries in stored credits, where 1 stored credit is one Akeed message and EGP 1 to the merchant; reverse one with an opposite adjustment, never by editing data.
 
 ### Resolve an unknown send
 

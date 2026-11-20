@@ -147,6 +147,16 @@ it('uses the configured Starter limit for a Shopify row that still stores 30', a
   });
 });
 
+it('sums what a standalone account was given, leaving its sends out', async () => {
+  const { integrationId, orgId } = await h.merchant(30);
+  await h.adjust(orgId, -10);
+  await h.adjust(orgId, 25);
+
+  const { row } = await signalsOf(integrationId);
+  expect(Number(row.credit_added)).toBe(45);
+  expect(Number(row.credit_available)).toBe(45);
+});
+
 describe('order intake counts', () => {
   it('counts a store order once across duplicate and concurrent deliveries', async () => {
     const { integrationId } = await store();

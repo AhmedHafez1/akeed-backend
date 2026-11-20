@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { ChangeRequestTemplatesService } from '../change-requests/change-request-templates.service';
-import { toDisplayedBalance } from '../../shared/billing/merchant-credits';
+import { storedCreditUsage } from '../../shared/billing/merchant-credits';
 import {
   isBillingPlanId,
   isPaidBillingPlan,
@@ -96,13 +96,15 @@ export type AdminStoreBilling =
   | {
       model: 'credits';
       account_status: string;
-      available: number;
+      /**
+       * Stored credits left: one Akeed message, EGP 1 at the default price.
+       * An unused own-number half makes it end in .5.
+       */
+      balance: number;
       held: number;
       debt: number;
-      /** The spare displayed credit (0 or 1) on top of the stored balance. */
-      spare: number;
-      /** What the merchant sees: stored available as displayed, plus the spare. */
-      displayed_available: number;
+      /** Everything added, what sends used of it and what is left. */
+      usage: { added: number; used: number; left: number; percent: number };
       balance_state: BalanceState;
     };
 
@@ -931,14 +933,9 @@ export class AdminStoresService {
         ? {
             model: 'credits',
             account_status: row.credit_account_status,
-            available: Number(row.credit_available ?? 0),
+            ...creditFigures(row),
             held: Number(row.credit_held_credits ?? 0),
             debt: Number(row.credit_debt ?? 0),
-            spare: Number(row.credit_spare ?? 0) === 1 ? 1 : 0,
-            displayed_available: toDisplayedBalance(
-              Number(row.credit_available ?? 0),
-              Number(row.credit_spare ?? 0),
-            ),
             balance_state: row.credit_balance_state,
           }
         : {
@@ -1074,4 +1071,16 @@ export function toOrderIntakeView(
       count: Number(row.count ?? 0),
     })),
   };
+}
+
+function creditFigures(row: AdminStoreViewRow): {
+  balance: number;
+  usage: { added: number; used: number; left: number; percent: number };
+} {
+  const usage = storedCreditUsage({
+    added: Number(row.credit_added ?? 0),
+    available: Number(row.credit_available ?? 0),
+    spareCredit: Number(row.credit_spare ?? 0),
+  });
+  return { balance: usage.left, usage };
 }

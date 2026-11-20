@@ -156,3 +156,42 @@ export function displayedPurchaseTerms(
     unitPriceMinor: displayedUnitPriceMinor(stored.unitPriceMinor),
   };
 }
+
+/**
+ * Ledger entries that add to or take back what an account was given, as
+ * opposed to what its sends used. Staff read usage as everything added minus
+ * what is left.
+ */
+export const CREDIT_FUNDING_TYPES = [
+  'free_grant',
+  'purchase',
+  'staff_adjustment',
+  'refund_reversal',
+  'chargeback_reversal',
+  'chargeback_reinstatement',
+] as const;
+
+/**
+ * A balance in stored credits, the unit staff read: one Akeed message, EGP 1
+ * at the default price. A spare is half of one, so a balance can end in .5.
+ */
+export function storedBalance(stored: number, spareCredit = 0): number {
+  return Math.max(stored, 0) + (spareCredit === 1 ? 0.5 : 0);
+}
+
+/** What an account was given, has used and has left, in stored credits. */
+export function storedCreditUsage(params: {
+  added: number;
+  available: number;
+  spareCredit?: number;
+}): { added: number; used: number; left: number; percent: number } {
+  const left = storedBalance(params.available, params.spareCredit);
+  const added = Math.max(params.added, left);
+  const used = added - left;
+  return {
+    added,
+    used,
+    left,
+    percent: added > 0 ? Math.min(Math.round((used * 100) / added), 100) : 0,
+  };
+}

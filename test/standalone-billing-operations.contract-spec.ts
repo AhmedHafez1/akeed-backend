@@ -125,7 +125,10 @@ describe('PostgreSQL staff billing operations', () => {
         postedBalance: 130,
         heldCredits: 1,
         availableCredits: 129,
+        balance: 129,
+        usage: { added: 130, used: 1, left: 129, percent: 1 },
       });
+      expect(detail.account).not.toHaveProperty('displayed');
       expect(detail.reconciliation).toMatchObject({
         consistent: true,
         ledgerBalance: 130,
@@ -167,6 +170,27 @@ describe('PostgreSQL staff billing operations', () => {
       // Nothing of the other tenant's send reaches this tenant's detail.
       const foreign = await operations.accountDetail(OPERATOR, other.orgId);
       expect(serialized).not.toContain(foreign.holds.items[0].dispatchId);
+    });
+
+    it('reads one stored balance with its half and what sends used of everything added', async () => {
+      const merchant = await harness.merchant(30);
+      await staffAdjust(merchant.orgId, -10);
+      await harness.ambiguousSend(merchant);
+      // Only the reading is under test: the spare is set without its pack.
+      await db
+        .update(creditAccounts)
+        .set({ spareCredit: 1, version: sql`${creditAccounts.version} + 1` })
+        .where(eq(creditAccounts.orgId, merchant.orgId));
+      const detail = await operations.accountDetail(OPERATOR, merchant.orgId);
+      expect(detail.account).toMatchObject({
+        availableCredits: 19,
+        balance: 19.5,
+        usage: { added: 20, used: 0.5, left: 19.5, percent: 3 },
+      });
+      const page = await accounts.list(OPERATOR, { limit: 100 });
+      expect(
+        page.rows.find((row) => row.orgId === merchant.orgId)?.account,
+      ).toMatchObject({ availableCredits: 19, balance: 19.5 });
     });
 
     it('makes a drifted projection prominent and blocks mutations', async () => {

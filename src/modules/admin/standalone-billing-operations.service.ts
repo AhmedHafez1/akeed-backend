@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
-import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
+import { storedCreditUsage } from '../../shared/billing/merchant-credits';
 import {
   isStandaloneBillingOperator,
   readStandaloneBillingOperationsConfig,
@@ -74,18 +74,20 @@ export function projection(account: {
   };
 }
 
-/** What the merchant sees, so staff can match a support conversation. */
-export function displayedProjection(account: {
-  postedBalance: number;
-  heldCredits: number;
-}): BalanceProjection {
-  const stored = projection(account);
-  return {
-    postedBalance: toDisplayedCredits(stored.postedBalance),
-    heldCredits: toDisplayedCredits(stored.heldCredits),
-    availableCredits: toDisplayedCredits(stored.availableCredits),
-    debtCredits: toDisplayedCredits(stored.debtCredits),
-  };
+/**
+ * The balance staff read, in stored credits with any unused own-number half,
+ * and what the account has used of everything added to it.
+ */
+export function staffBalance(
+  account: { postedBalance: number; heldCredits: number; spareCredit: number },
+  addedCredits: number,
+) {
+  const usage = storedCreditUsage({
+    added: addedCredits,
+    available: Math.max(account.postedBalance - account.heldCredits, 0),
+    spareCredit: account.spareCredit,
+  });
+  return { balance: usage.left, usage };
 }
 
 function adjustmentFingerprint(
@@ -182,7 +184,7 @@ export class StandaloneBillingOperationsService {
         ? {
             status: account.status,
             ...projection(account),
-            displayed: displayedProjection(account),
+            ...staffBalance(account, detail.addedCredits),
             balanceState: balanceState(account, lowBalanceThreshold),
             version: account.version,
             activatedAt: detail.activatedAt,
@@ -193,24 +195,9 @@ export class StandaloneBillingOperationsService {
       reconciliation,
       mutationsBlocked: mutationBlock(reconciliation) !== null,
       operations: this.access(userId),
-      ledger: {
-        ...detail.ledger,
-        items: detail.ledger.items.map((entry) => ({
-          ...entry,
-          displayedQuantity: toDisplayedCredits(entry.quantity),
-          displayedPostedBalanceAfter: toDisplayedCredits(
-            entry.postedBalanceAfter,
-          ),
-        })),
-      },
+      ledger: detail.ledger,
       holds: detail.holds,
-      purchases: {
-        ...detail.purchases,
-        items: detail.purchases.items.map((purchase) => ({
-          ...purchase,
-          displayedQuantity: toDisplayedCredits(purchase.quantity),
-        })),
-      },
+      purchases: detail.purchases,
       events: detail.events,
       audit: detail.audit,
     };
