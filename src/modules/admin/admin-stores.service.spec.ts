@@ -31,6 +31,8 @@ function shopifyRow(
     organization_name: 'Shopify Org',
     store_name: 'Shopify Store',
     shop_domain: 'example.myshopify.com',
+    owner_email: 'owner@example.com',
+    merchant_whatsapp_phone: '+966500000001',
     country_code: 'SA',
     top_customer_country: 'SA',
     top_customer_country_share: 100,
@@ -136,8 +138,6 @@ function standaloneRow(
 function detailRow(row: AdminStorePageRow): AdminStoreDetailQueryRow {
   return {
     ...row,
-    owner_email: 'owner@example.com',
-    merchant_whatsapp_phone: '+966500000001',
     default_language: 'auto',
     follow_up_enabled: false,
     follow_up_delay_minutes: 120,
@@ -350,6 +350,8 @@ describe('AdminStoresService', () => {
     const first = await service.getStores({ sort: 'store_name', limit: 1 });
 
     expect(first.data).toHaveLength(1);
+    expect(first.data[0].owner_email).toBe('owner@example.com');
+    expect(first.data[0].merchant_whatsapp_phone).toBe('+966500000001');
     expect(first.next_cursor).not.toBeNull();
 
     await service.getStores({
