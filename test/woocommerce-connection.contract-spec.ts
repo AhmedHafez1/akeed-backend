@@ -549,7 +549,7 @@ describe('WooCommerce connection PostgreSQL contract', () => {
       // Billed like Standalone: the account opens with the launch grant.
       await expect(launchGrantOf(tenant.orgId)).resolves.toEqual({
         account: { status: 'active', posted_balance: 30 },
-        grants: [{ quantity: 30, actor_id: owner.userId }],
+        grants: [{ quantity: 100, actor_id: owner.userId }],
       });
       expect(sources).toHaveLength(1);
       expect(sources[0]).toMatchObject({
@@ -3170,7 +3170,7 @@ describe('WooCommerce connection PostgreSQL contract', () => {
       // A reconnect never grants twice.
       await expect(launchGrantOf(tenant.orgId)).resolves.toMatchObject({
         account: { posted_balance: 30 },
-        grants: [{ quantity: 30 }],
+        grants: [{ quantity: 100 }],
       });
       expect(sources.map((source) => source.platform_type)).toEqual([
         'woocommerce',

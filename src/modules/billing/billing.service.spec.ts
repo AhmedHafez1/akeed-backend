@@ -153,12 +153,16 @@ describe('BillingService.readCredits', () => {
       billingEnabled: true,
       status: 'active',
       availableCredits: 60,
+      // 60 displayed credits at EGP 0.50 each.
+      balanceMinor: 3000,
       lowBalanceThreshold: 20,
       price: {
-        unitPriceMinor: 100,
-        messagePriceMinor: 200,
+        unitPriceMinor: 50,
+        messagePriceMinor: 100,
         creditsPerMessage: 2,
         ownNumberCreditsPerMessage: 1,
+        akeedMessagePriceMinor: 100,
+        ownNumberMessagePriceMinor: 50,
         currency: 'EGP',
       },
       range: { min: 200, max: 10000, step: 100 },
@@ -198,6 +202,25 @@ describe('BillingService.readCredits', () => {
     await expect(service.readCredits(owner)).resolves.toMatchObject({
       debtCredits: 10,
       canPurchase: true,
+    });
+  });
+
+  it('shows a half-used own-number credit as half a pound', async () => {
+    // 3 stored credits plus a spare: EGP 3.50, seven own-number messages.
+    const { service, credits } = setup();
+    credits.getSummary.mockResolvedValue({
+      orgId: 'org-1',
+      status: 'active',
+      postedBalance: 3,
+      heldCredits: 0,
+      availableCredits: 3,
+      debtCredits: 0,
+      spareCredit: 1,
+      version: 4,
+    });
+    await expect(service.readCredits(owner)).resolves.toMatchObject({
+      availableCredits: 7,
+      balanceMinor: 350,
     });
   });
 
@@ -275,8 +298,8 @@ describe('BillingService.createMerchantPurchase', () => {
     };
     expect(stored).toMatchObject({
       quantity: 150,
-      unitPriceMinor: 200,
-      totalMinor: 30000,
+      unitPriceMinor: 100,
+      totalMinor: 15000,
     });
     // A retry across the release must still match its first request.
     expect(stored.requestHash).toBe(original.requestHash);
@@ -357,8 +380,8 @@ describe('BillingService.createPurchase', () => {
     expect(input).toMatchObject({
       orgId: 'org-1',
       quantity: 150,
-      unitPriceMinor: 200,
-      totalMinor: 30000,
+      unitPriceMinor: 100,
+      totalMinor: 15000,
       currency: 'EGP',
       provider: 'paymob',
       mode: 'test',

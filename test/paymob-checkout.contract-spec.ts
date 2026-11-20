@@ -160,7 +160,7 @@ describe('PostgreSQL Paymob checkout and callbacks', () => {
   });
 
   it.each([
-    ['amount', { amountMinor: 19999 }, 'amount_mismatch'],
+    ['amount', { amountMinor: 9999 }, 'amount_mismatch'],
     ['currency', { currency: 'USD' }, 'currency_mismatch'],
     ['integration', { integrationId: 'unknown' }, 'integration_mismatch'],
     ['mode', { mode: 'live' as const }, 'mode_mismatch'],
@@ -193,7 +193,7 @@ describe('PostgreSQL Paymob checkout and callbacks', () => {
     await callbacks.ingest(
       paymob.event(purchase.reference, {
         signal: 'refund',
-        refundedMinorTotal: 20000,
+        refundedMinorTotal: 10000,
         sourceReference: 'refund-1',
         payment: { providerTransactionId: 'txn-refund' },
       }),
@@ -201,7 +201,7 @@ describe('PostgreSQL Paymob checkout and callbacks', () => {
     await harness.balance(merchant.orgId, 0);
     expect(await harness.purchaseRow(purchase.reference)).toMatchObject({
       status: 'refunded',
-      refundedMinor: 20000,
+      refundedMinor: 10000,
     });
 
     // Debt blocks sends through the existing credit-denial path, and buying
@@ -223,7 +223,8 @@ describe('PostgreSQL Paymob checkout and callbacks', () => {
         payment: { providerTransactionId: 'txn-partial' },
       }),
     );
-    await harness.balance(merchant.orgId, 85);
+    // EGP 30 back at EGP 1 a credit takes 30 of the 100 credits.
+    await harness.balance(merchant.orgId, 70);
     expect(await harness.purchaseRow(purchase.reference)).toMatchObject({
       status: 'successful',
       refundedMinor: 3000,

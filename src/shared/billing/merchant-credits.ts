@@ -1,10 +1,12 @@
 /**
  * The one place stored credits become the credits a merchant sees.
  *
- * A stored credit is worth EGP 2 and pays for one Akeed message. Merchants see
- * 1 credit = EGP 1, so a message costs 2 of theirs. Nothing stored changes:
- * ledgers, reservations, purchases and every balance gate stay in stored
- * credits, and only values leaving for a merchant pass through here.
+ * A stored credit pays for one Akeed message and costs the configured price
+ * (EGP 1 by default). A displayed credit is half of one, so an own-number
+ * message, which costs half, is a whole displayed credit. Merchants see these
+ * as money: displayed credits times the displayed unit price. Nothing stored
+ * changes: ledgers, reservations, purchases and every balance gate stay in
+ * stored credits, and only values leaving for a merchant pass through here.
  */
 export const DISPLAYED_CREDITS_PER_STORED = 2;
 
@@ -42,6 +44,20 @@ export function toStoredCredits(displayed: number): number {
 /** The price of one displayed credit. Configuration guarantees it is whole. */
 export function displayedUnitPriceMinor(storedUnitPriceMinor: number): number {
   return storedUnitPriceMinor / DISPLAYED_CREDITS_PER_STORED;
+}
+
+/** What one message costs the merchant, from the stored credit price. */
+export function messagePricesMinor(storedUnitPriceMinor: number): {
+  akeedMessagePriceMinor: number;
+  ownNumberMessagePriceMinor: number;
+} {
+  return {
+    akeedMessagePriceMinor:
+      displayedUnitPriceMinor(storedUnitPriceMinor) * CREDITS_PER_AKEED_MESSAGE,
+    ownNumberMessagePriceMinor:
+      displayedUnitPriceMinor(storedUnitPriceMinor) *
+      CREDITS_PER_OWN_NUMBER_MESSAGE,
+  };
 }
 
 /**

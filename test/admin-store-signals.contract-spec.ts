@@ -30,6 +30,7 @@ const BASELINE = new Date(Date.now() - 3 * 24 * HOUR);
 beforeAll(async () => {
   await h.setup();
   await h.scaffold(tables.adminStoreLifecycles);
+  await h.scaffold(tables.shopifyOfflineCredentials);
   // Apply the real migration twice: it must be re-runnable. Its lifecycle
   // columns already exist on the scaffold, so those statements are no-ops.
   const migration = readFileSync(

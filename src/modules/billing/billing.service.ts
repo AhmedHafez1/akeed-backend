@@ -21,6 +21,7 @@ import {
   CREDITS_PER_OWN_NUMBER_MESSAGE,
   displayedPurchaseTerms,
   displayedUnitPriceMinor,
+  messagePricesMinor,
   OddDisplayedCreditsError,
   toDisplayedBalance,
   toDisplayedCredits,
@@ -174,6 +175,11 @@ export class BillingService {
       role: user.role,
       summary,
     });
+    const availableCredits = toDisplayedBalance(
+      summary?.availableCredits ?? 0,
+      summary?.spareCredit,
+    );
+    const unitPriceMinor = displayedUnitPriceMinor(pricing.priceMinor);
     return {
       billingEnabled: pricing.enabled,
       bulkImportEnabled: isBulkImportEnabledForOrg(
@@ -186,10 +192,8 @@ export class BillingService {
         summary?.spareCredit,
       ),
       heldCredits: toDisplayedCredits(summary?.heldCredits ?? 0),
-      availableCredits: toDisplayedBalance(
-        summary?.availableCredits ?? 0,
-        summary?.spareCredit,
-      ),
+      availableCredits,
+      balanceMinor: availableCredits * unitPriceMinor,
       debtCredits: toDisplayedCredits(summary?.debtCredits ?? 0),
       lowBalanceThreshold: toDisplayedCredits(pricing.lowBalanceThreshold),
       freeGrant: {
@@ -200,10 +204,11 @@ export class BillingService {
       // Always from configuration. A merchant seeing a price they did not get
       // charged is the failure this guarantees against.
       price: {
-        unitPriceMinor: displayedUnitPriceMinor(pricing.priceMinor),
+        unitPriceMinor,
         messagePriceMinor: pricing.priceMinor,
         creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
         ownNumberCreditsPerMessage: CREDITS_PER_OWN_NUMBER_MESSAGE,
+        ...messagePricesMinor(pricing.priceMinor),
         currency: 'EGP',
       },
       range: {

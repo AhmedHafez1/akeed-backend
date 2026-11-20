@@ -9,11 +9,7 @@ import {
   resolveOwnNumberIncludedVerifications,
 } from '../billing/billing-plan';
 import { PREPAID_CREDIT_PLATFORMS } from '../billing/credit-eligibility';
-import {
-  CREDITS_PER_AKEED_MESSAGE,
-  CREDITS_PER_OWN_NUMBER_MESSAGE,
-  displayedUnitPriceMinor,
-} from '../billing/merchant-credits';
+import { messagePricesMinor } from '../billing/merchant-credits';
 import type { TipsValidationIssue } from './tips-campaign.types';
 
 export interface AnnouncementTranslation {
@@ -121,7 +117,8 @@ const planCopy: Record<
     pool: (own: string, shared: string, period: string) => string;
     once: string;
     cycle: string;
-    prepaid: (own: string, shared: string, price: string) => string;
+    /** Both are prices of one message, already formatted. */
+    prepaid: (own: string, shared: string) => string;
     unsubscribe: string;
   }
 > = {
@@ -130,8 +127,8 @@ const planCopy: Record<
       `Your plan includes ${a} messages from your own number ${p}, on top of ${b} from Akeed's number, at the same plan price.`,
     once: 'one-time',
     cycle: 'per 30-day billing period',
-    prepaid: (a, b, p) =>
-      `A message from your number costs ${a} credit (${p} EGP per credit), instead of ${b} credits from Akeed's number.`,
+    prepaid: (a, b) =>
+      `A message from your number costs ${a} EGP, instead of ${b} EGP from Akeed's number.`,
     unsubscribe: 'Unsubscribe from announcements',
   },
   ar: {
@@ -139,8 +136,8 @@ const planCopy: Record<
       `تشمل خطتك ${a} رسالة من رقمك ${p}، إضافةً إلى ${b} رسالة من رقم أكيد، وبسعر الخطة نفسه.`,
     once: 'لمرة واحدة',
     cycle: 'لكل فترة فوترة مدتها 30 يومًا',
-    prepaid: (a, b, p) =>
-      `تكلف الرسالة من رقمك ${a} رصيد (${p} جنيه لكل رصيد)، بدل ${b} رصيد من رقم أكيد.`,
+    prepaid: (a, b) =>
+      `تكلف الرسالة من رقمك ${a} جنيه، بدل ${b} جنيه من رقم أكيد.`,
     unsubscribe: 'إلغاء الاشتراك في الإعلانات',
   },
   ur: {
@@ -148,8 +145,8 @@ const planCopy: Record<
       `اسی پلان کی قیمت پر آپ کے نمبر سے ${a} پیغامات ${p} شامل ہیں، Akeed کے نمبر سے ${b} پیغامات کے علاوہ۔`,
     once: 'صرف ایک بار',
     cycle: 'ہر 30 دن کی بلنگ مدت میں',
-    prepaid: (a, b, p) =>
-      `آپ کے نمبر سے ایک پیغام کی قیمت ${a} کریڈٹ (${p} EGP فی کریڈٹ) ہے، جبکہ Akeed کے نمبر سے ${b} کریڈٹس ہیں۔`,
+    prepaid: (a, b) =>
+      `آپ کے نمبر سے ایک پیغام کی قیمت ${a} EGP ہے، جبکہ Akeed کے نمبر سے ${b} EGP ہے۔`,
     unsubscribe: 'اعلانات کی ای میلز بند کریں',
   },
   es: {
@@ -157,8 +154,8 @@ const planCopy: Record<
       `Tu plan incluye ${a} mensajes desde tu número ${p}, además de ${b} desde el número de Akeed, al mismo precio del plan.`,
     once: 'por única vez',
     cycle: 'por período de facturación de 30 días',
-    prepaid: (a, b, p) =>
-      `Un mensaje desde tu número cuesta ${a} crédito (${p} EGP por crédito), en lugar de ${b} créditos desde el número de Akeed.`,
+    prepaid: (a, b) =>
+      `Un mensaje desde tu número cuesta ${a} EGP, en lugar de ${b} EGP desde el número de Akeed.`,
     unsubscribe: 'Dejar de recibir anuncios',
   },
   fr: {
@@ -166,8 +163,8 @@ const planCopy: Record<
       `Votre forfait comprend ${a} messages depuis votre numéro ${p}, en plus des ${b} messages depuis le numéro d’Akeed, au même prix.`,
     once: 'en une seule fois',
     cycle: 'par période de facturation de 30 jours',
-    prepaid: (a, b, p) =>
-      `Un message depuis votre numéro coûte ${a} crédit (${p} EGP par crédit), contre ${b} crédits depuis le numéro d’Akeed.`,
+    prepaid: (a, b) =>
+      `Un message depuis votre numéro coûte ${a} EGP, contre ${b} EGP depuis le numéro d’Akeed.`,
     unsubscribe: 'Se désabonner des annonces',
   },
   tr: {
@@ -175,8 +172,8 @@ const planCopy: Record<
       `Planınız aynı fiyatla kendi numaranızdan ${a} mesaj ${p} içerir; Akeed numarasından ${b} mesaja ek olarak.`,
     once: 'tek seferlik',
     cycle: 'her 30 günlük fatura döneminde',
-    prepaid: (a, b, p) =>
-      `Kendi numaranızdan bir mesaj ${a} kredi (${p} EGP/kredi), Akeed numarasından ise ${b} kredidir.`,
+    prepaid: (a, b) =>
+      `Kendi numaranızdan bir mesaj ${a} EGP, Akeed numarasından ise ${b} EGP.`,
     unsubscribe: 'Duyuru aboneliğinden çık',
   },
 };
@@ -191,12 +188,13 @@ export function announcementPlanLine(
     new Intl.NumberFormat(`${locale === 'es' ? 'es-419' : locale}-u-nu-latn`, {
       maximumFractionDigits: 2,
     }).format(n);
-  if (PREPAID_CREDIT_PLATFORMS.includes(source.platformType))
+  if (PREPAID_CREDIT_PLATFORMS.includes(source.platformType)) {
+    const prices = messagePricesMinor(storedCreditPriceMinor);
     return copy.prepaid(
-      number(CREDITS_PER_OWN_NUMBER_MESSAGE),
-      number(CREDITS_PER_AKEED_MESSAGE),
-      number(displayedUnitPriceMinor(storedCreditPriceMinor) / 100),
+      number(prices.ownNumberMessagePriceMinor / 100),
+      number(prices.akeedMessagePriceMinor / 100),
     );
+  }
   if (
     source.platformType !== 'shopify' ||
     !source.billingPlanId ||

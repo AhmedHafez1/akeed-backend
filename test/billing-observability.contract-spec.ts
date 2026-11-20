@@ -32,6 +32,8 @@ type Harness = ReturnType<typeof billingOperationsHarness>;
 
 const PAYMOB_ENVIRONMENT = {
   STANDALONE_CREDIT_BILLING_ENABLED: 'true',
+  // Written at EGP 2 a credit, like the billing operations harness it uses.
+  STANDALONE_CREDIT_PRICE_MINOR: '200',
   PAYMOB_MODE: 'test',
   PAYMOB_BASE_URL: 'http://localhost:9000',
   PAYMOB_CALLBACK_URL: 'http://localhost:9000/api/webhooks/payments/paymob',

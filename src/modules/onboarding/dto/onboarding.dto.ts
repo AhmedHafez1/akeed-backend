@@ -460,6 +460,10 @@ export interface SettingsResponseDto {
     available: boolean;
     creditsPerMessage: number;
     ownNumberCreditsPerMessage?: number;
+    /** One Akeed message, as money in minor units. */
+    akeedMessagePriceMinor: number;
+    /** One message from the merchant's own number, as money in minor units. */
+    ownNumberMessagePriceMinor: number;
     previews: Record<
       TemplateLanguage,
       Record<string, { confirmed: string | null; canceled: string | null }>

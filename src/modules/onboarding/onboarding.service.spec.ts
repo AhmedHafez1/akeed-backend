@@ -98,7 +98,13 @@ describe('OnboardingService', () => {
           monthlyUsageRepo as never,
           usageAccountingFixture(),
         ),
-        { readStatus: jest.fn().mockResolvedValue(null) } as never,
+        {
+          readStatus: jest.fn().mockResolvedValue(null),
+          messagePrices: () => ({
+            akeedMessagePriceMinor: 100,
+            ownNumberMessagePriceMinor: 50,
+          }),
+        } as never,
         seededTemplateRegistry(),
       );
 
@@ -207,7 +213,13 @@ describe('OnboardingService', () => {
         }),
         evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
       } as any,
-      { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      {
+        readStatus: jest.fn().mockResolvedValue(null),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       seededTemplateRegistry(),
       undefined,
       messageDispatches as any,
@@ -295,7 +307,13 @@ describe('OnboardingService', () => {
           beginReads: jest.fn(),
           evaluateAccess: jest.fn().mockReturnValue({ allowed: true }),
         } as never,
-        { readStatus: jest.fn().mockResolvedValue(accountStatus) } as never,
+        {
+          readStatus: jest.fn().mockResolvedValue(accountStatus),
+          messagePrices: () => ({
+            akeedMessagePriceMinor: 100,
+            ownNumberMessagePriceMinor: 50,
+          }),
+        } as never,
         seededTemplateRegistry(),
       );
       return { service, integrationsRepo, current: () => row };

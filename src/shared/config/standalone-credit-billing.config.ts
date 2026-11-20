@@ -118,8 +118,8 @@ export function parseStandaloneCreditBillingConfig(
   }
   const enabled = rawFlag === 'true';
   const pricing: CreditPricingConfig = {
-    priceMinor: integer('STANDALONE_CREDIT_PRICE_MINOR', 200),
-    freeGrant: integer('STANDALONE_FREE_GRANT', 30),
+    priceMinor: integer('STANDALONE_CREDIT_PRICE_MINOR', 100),
+    freeGrant: integer('STANDALONE_FREE_GRANT', 100),
     purchaseMin: integer('STANDALONE_PURCHASE_MIN', 100),
     purchaseMax: integer('STANDALONE_PURCHASE_MAX', 5000),
     purchaseStep: integer('STANDALONE_PURCHASE_STEP', 50),

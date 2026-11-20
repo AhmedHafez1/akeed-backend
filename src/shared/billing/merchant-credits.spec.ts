@@ -5,6 +5,7 @@ import {
   displayedStartQuote,
   displayedUnitPriceMinor,
   displayedUsage,
+  messagePricesMinor,
   OddDisplayedCreditsError,
   toDisplayedCredits,
   toStoredCredits,
@@ -88,6 +89,13 @@ describe('merchant credits', () => {
       estimatedCreditsMax: 160,
       estimatedMessagesMin: 40,
       estimatedMessagesMax: 80,
+    });
+  });
+
+  it('prices an Akeed message at a stored credit and an own-number one at half', () => {
+    expect(messagePricesMinor(100)).toEqual({
+      akeedMessagePriceMinor: 100,
+      ownNumberMessagePriceMinor: 50,
     });
   });
 

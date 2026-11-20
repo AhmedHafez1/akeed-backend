@@ -57,7 +57,13 @@ describe('GET /api/onboarding/state sending availability', () => {
       state as never,
       {} as never,
       entitlement,
-      { readStatus: () => Promise.resolve(null) } as never,
+      {
+        readStatus: () => Promise.resolve(null),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       registry,
       undefined,
       undefined,

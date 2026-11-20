@@ -44,7 +44,11 @@ export interface FakePaymentsPort extends PaymentsPort {
   readonly inquiries: PaymentReference[];
 }
 
-export function fakePaymentsPort(): FakePaymentsPort {
+/**
+ * `defaultAmountMinor` is what a scripted event pays unless it says
+ * otherwise: by default a 100-credit purchase at EGP 1 a credit.
+ */
+export function fakePaymentsPort(defaultAmountMinor = 10000): FakePaymentsPort {
   const checkouts: CreateCheckoutInput[] = [];
   const inquiries: PaymentReference[] = [];
   const checkoutQueue: (CheckoutResult | 'rejected' | 'unknown')[] = [];
@@ -67,7 +71,7 @@ export function fakePaymentsPort(): FakePaymentsPort {
       signal,
       transactionId,
       reference,
-      String(overrides.amountMinor ?? 20000),
+      String(overrides.amountMinor ?? defaultAmountMinor),
       String(overrides.refundedMinorTotal ?? ''),
       overrides.sourceReference ?? '',
     ].join('|');
@@ -76,7 +80,7 @@ export function fakePaymentsPort(): FakePaymentsPort {
       source: 'callback',
       reference,
       signal,
-      amountMinor: 20000,
+      amountMinor: defaultAmountMinor,
       currency: 'EGP',
       integrationId: 'card1',
       mode: 'test',

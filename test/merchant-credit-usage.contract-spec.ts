@@ -8,6 +8,7 @@ import { VerificationMessageDispatchesRepository } from '../src/infrastructure/d
 import {
   adminStoreLifecycles,
   integrations,
+  integrationOrderIntake,
   verifications,
   verificationMessageDispatches,
   whatsappConnections,
@@ -28,6 +29,7 @@ describe('merchant per-send usage on disposable PostgreSQL', () => {
   beforeAll(async () => {
     await h.setup();
     await h.scaffold(adminStoreLifecycles);
+    await h.scaffold(integrationOrderIntake);
   });
   afterAll(h.teardown);
 

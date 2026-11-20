@@ -68,7 +68,13 @@ describe('onboarding state latency', () => {
       onboarding as never,
       {} as never,
       entitlement as never,
-      { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      {
+        readStatus: jest.fn().mockResolvedValue(null),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       seededTemplateRegistry(),
       lifecycle as never,
       undefined,
@@ -152,7 +158,13 @@ describe('onboarding state latency', () => {
       } as never,
       {} as never,
       entitlement as never,
-      { readStatus: jest.fn().mockResolvedValue(null) } as never,
+      {
+        readStatus: jest.fn().mockResolvedValue(null),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       seededTemplateRegistry(),
       {
         findCurrent: jest.fn().mockResolvedValue({

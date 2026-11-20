@@ -30,8 +30,8 @@ describe('Standalone credit configuration', () => {
   it('defaults to disabled with the approved economics and no provider config', () => {
     expect(parseStandaloneCreditBillingConfig({})).toEqual({
       enabled: false,
-      priceMinor: 200,
-      freeGrant: 30,
+      priceMinor: 100,
+      freeGrant: 100,
       purchaseMin: 100,
       purchaseMax: 5000,
       purchaseStep: 50,

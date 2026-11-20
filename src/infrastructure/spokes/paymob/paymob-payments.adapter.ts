@@ -1,10 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
-import {
-  displayedUnitPriceMinor,
-  toDisplayedCredits,
-} from '../../../shared/billing/merchant-credits';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -148,11 +144,13 @@ export class PaymobPaymentsAdapter implements PaymentsPort {
       notification_url: paymob.callbackUrl,
       redirection_url: redirectionUrl.toString(),
       billing_data: BILLING_PLACEHOLDER,
+      // One line for the whole top-up, so checkout shows the amount paid
+      // rather than a count of half-message units.
       items: [
         {
-          name: 'Akeed message credits',
-          amount: displayedUnitPriceMinor(input.unitPriceMinor),
-          quantity: toDisplayedCredits(input.quantity),
+          name: 'Akeed balance top-up',
+          amount: input.totalMinor,
+          quantity: 1,
         },
       ],
     };

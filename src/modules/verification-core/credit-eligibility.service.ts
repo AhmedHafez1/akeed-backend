@@ -11,6 +11,7 @@ import {
 import { CreditAccountingRepository } from '../../infrastructure/database/repositories/credit-accounting.repository';
 import type { CreditAccountStatus } from '../../shared/ports/credit-accounting.port';
 import { readStandaloneCreditBillingConfig } from '../../shared/config/standalone-credit-billing.config';
+import { messagePricesMinor } from '../../shared/billing/merchant-credits';
 import {
   creditDenial,
   usesPrepaidCredits,
@@ -34,6 +35,13 @@ export class CreditEligibilityService {
 
   isEnforced(): boolean {
     return readStandaloneCreditBillingConfig(this.config).enabled;
+  }
+
+  /** What one message costs a prepaid merchant, as money. */
+  messagePrices(): ReturnType<typeof messagePricesMinor> {
+    return messagePricesMinor(
+      readStandaloneCreditBillingConfig(this.config).priceMinor,
+    );
   }
 
   /** `null` when the source is not metered by prepaid credits. */

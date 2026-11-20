@@ -371,6 +371,7 @@ export class OnboardingService {
       available: this.improvementSwitches?.current().acknowledgment === true,
       creditsPerMessage: CREDITS_PER_AKEED_MESSAGE,
       ownNumberCreditsPerMessage: CREDITS_PER_OWN_NUMBER_MESSAGE,
+      ...this.creditEligibility.messagePrices(),
       previews,
     };
   }
