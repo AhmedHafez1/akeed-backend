@@ -113,6 +113,11 @@ export interface AdminStoreViewRow extends AdminStoreQueryRow {
   /** How staff reach the merchant: the owner's email and WhatsApp number. */
   owner_email: string | null;
   merchant_whatsapp_phone: string | null;
+  /**
+   * When a paying Shopify store is next charged; null for stores that are not
+   * on a live recurring plan.
+   */
+  next_charge_at: string | null;
 }
 
 export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
@@ -276,6 +281,7 @@ export type AdminStoreSortKey =
   | 'last_activity'
   | 'usage_percent'
   | 'activation_date'
+  | 'next_charge'
   | 'health';
 
 export interface AdminStoreListFilter {
@@ -340,6 +346,10 @@ const SORT_EXPRESSIONS: Record<
   },
   activation_date: {
     expression: sql`COALESCE(first_resolved_at_effective, '-infinity'::timestamptz)`,
+    cast: (value) => sql`${value}::timestamptz`,
+  },
+  next_charge: {
+    expression: sql`COALESCE(next_charge_at, 'infinity'::timestamptz)`,
     cast: (value) => sql`${value}::timestamptz`,
   },
   health: {
@@ -486,7 +496,6 @@ export class AdminQueryRepository {
         i.send_delay_minutes,
         i.shipping_currency,
         i.last_synced_at,
-        i.billing_activated_at,
         (CASE WHEN i.paid_through_at > NOW() THEN i.paid_through_at END) AS paid_through_at,
         i.created_at`,
         sql`WHERE i.id = ${integrationId}`,
@@ -942,7 +951,26 @@ export class AdminQueryRepository {
           (CASE
             WHEN cardinality(critical_signals) > 0 THEN 'critical'
             WHEN cardinality(attention_signals) > 0 THEN 'attention_required'
-            ELSE 'healthy' END) AS health_status
+            ELSE 'healthy' END) AS health_status,
+          -- Shopify charges every 30 days from activation, so the next charge
+          -- is the end of the current 30-day cycle; a trial's first charge is
+          -- its activation date. Same cycle count as getBillingPeriodEndAt.
+          (CASE
+            WHEN lifecycle_status <> 'uninstalled'
+              AND NOT is_credit
+              AND plan IN (${sql.join(
+                PAYING_PLANS.map((paying) => sql`${paying}`),
+                sql`, `,
+              )})
+              AND lower(btrim(COALESCE(subscription_status, ''))) = 'active'
+              AND billing_activated_at IS NOT NULL
+            THEN (CASE
+              WHEN billing_activated_at > NOW() THEN billing_activated_at
+              ELSE billing_activated_at + (
+                floor(floor(extract(epoch FROM (NOW() - billing_activated_at)) / 86400) / 30)::int + 1
+              ) * interval '30 days'
+            END)
+          END) AS next_charge_at
         FROM signaled_stores
       )
     `;
@@ -966,6 +994,7 @@ export class AdminQueryRepository {
         COALESCE(i.is_active, false) AS is_active,
         i.onboarding_status::text AS onboarding_status,
         i.billing_plan_id::text AS plan,
+        i.billing_activated_at,
         -- Effective status: a lapsed paid-through period reads as cancelled,
         -- so health and filters treat it like any ended plan.
         ${effectiveBillingStatusSql(sql`i.billing_status`, sql`i.paid_through_at`)} AS subscription_status,

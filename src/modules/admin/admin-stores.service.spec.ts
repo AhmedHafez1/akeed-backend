@@ -33,6 +33,7 @@ function shopifyRow(
     shop_domain: 'example.myshopify.com',
     owner_email: 'owner@example.com',
     merchant_whatsapp_phone: '+966500000001',
+    next_charge_at: '2026-12-01T10:00:00.000Z',
     country_code: 'SA',
     top_customer_country: 'SA',
     top_customer_country_share: 100,

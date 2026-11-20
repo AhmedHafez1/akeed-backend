@@ -30,6 +30,9 @@ describe('merchant per-send usage on disposable PostgreSQL', () => {
     await h.setup();
     await h.scaffold(adminStoreLifecycles);
     await h.scaffold(integrationOrderIntake);
+    // Supabase owns auth.users; the store list reads the owner's email from it.
+    await h.client.unsafe(`CREATE SCHEMA IF NOT EXISTS auth;
+      CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text)`);
   });
   afterAll(h.teardown);
 
