@@ -93,6 +93,8 @@ Billing webhooks never change `is_active`, which is reserved for Shopify install
 
 Smart filtering: ignores blocked-status webhooks for non-current subscriptions. This prevents a failed upgrade attempt from disabling the active billing on the current plan.
 
+The daily subscription check handles Shopify HTTP 402 as a shop freeze. It pauses paid sends for that shop through the same billing rules as the webhook and writes a warning with reason `shop_frozen`. Other request failures preserve the last known status. A later Shopify `ACTIVE` status restores paid sending.
+
 ### Uninstall Webhook
 
 `APP_UNINSTALLED` transactionally marks the integration inactive, clears Shopify credentials, marks local billing cancelled, clears any pending plan, closes the current installation lifecycle and sets `integrations.uninstalled_at` (a redelivery keeps the first time). **No store data is deleted on uninstall.** Shopify's 48-hour rule applies (`SHOPIFY_UNINSTALL_DATA_RETENTION_MS` in `shared/commerce/shopify-data-retention.ts`, a constant on purpose, not an environment setting):

@@ -166,6 +166,42 @@ export class IntegrationsRepository {
     });
   }
 
+  /** Keep a delayed Shopify read from overwriting a concurrent billing update. */
+  async reconcileShopifySubscriptionStatus(
+    current: Pick<
+      typeof integrations.$inferSelect,
+      'id' | 'orgId' | 'billingStatusUpdatedAt'
+    >,
+    subscriptionId: string,
+    updates: {
+      billingStatus: string;
+      billingStatusUpdatedAt: string;
+      billingCanceledAt: string | null;
+    },
+  ): Promise<boolean> {
+    const [saved] = await this.db
+      .update(integrations)
+      .set({ ...updates, updatedAt: updates.billingStatusUpdatedAt })
+      .where(
+        and(
+          eq(integrations.id, current.id),
+          eq(integrations.orgId, current.orgId),
+          eq(integrations.platformType, 'shopify'),
+          eq(integrations.isActive, true),
+          eq(integrations.shopifySubscriptionId, subscriptionId),
+          current.billingStatusUpdatedAt === null
+            ? isNull(integrations.billingStatusUpdatedAt)
+            : eq(
+                integrations.billingStatusUpdatedAt,
+                current.billingStatusUpdatedAt,
+              ),
+        ),
+      )
+      .returning({ id: integrations.id });
+
+    return Boolean(saved);
+  }
+
   async create(data: typeof integrations.$inferInsert) {
     const [result] = await this.db
       .insert(integrations)
