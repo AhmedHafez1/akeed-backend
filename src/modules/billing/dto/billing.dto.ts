@@ -67,6 +67,8 @@ export interface CreditSummaryResponseDto {
   postedBalance: number;
   heldCredits: number;
   availableCredits: number;
+  /** `availableCredits` as money, in the price currency's minor unit. */
+  balanceMinor: number;
   debtCredits: number;
   lowBalanceThreshold: number;
   freeGrant: { granted: boolean; quantity: number; grantedAt: string | null };
@@ -82,6 +84,10 @@ export interface CreditSummaryResponseDto {
      * Whether the merchant can send from their number is a separate fact.
      */
     ownNumberCreditsPerMessage: number;
+    /** One Akeed message, as money. Same as `messagePriceMinor`. */
+    akeedMessagePriceMinor: number;
+    /** One message from the merchant's own number, Akeed's charge only. */
+    ownNumberMessagePriceMinor: number;
     currency: string;
   };
   range: { min: number; max: number; step: number };

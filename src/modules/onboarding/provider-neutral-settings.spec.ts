@@ -129,7 +129,13 @@ describe('manual entitlement HTTP boundary', () => {
         usage as never,
         usageAccountingFixture({ enabled: true }),
       ),
-      { readStatus: () => Promise.resolve(accountStatus) } as never,
+      {
+        readStatus: () => Promise.resolve(accountStatus),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       seededTemplateRegistry(),
     );
     const module = await Test.createTestingModule({

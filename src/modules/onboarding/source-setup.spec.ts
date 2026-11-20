@@ -211,7 +211,13 @@ describe('source setup and health HTTP boundary', () => {
         usage as never,
         usageAccountingFixture({ enabled: true }),
       ),
-      { readStatus: () => Promise.resolve(null) } as never,
+      {
+        readStatus: () => Promise.resolve(null),
+        messagePrices: () => ({
+          akeedMessagePriceMinor: 100,
+          ownNumberMessagePriceMinor: 50,
+        }),
+      } as never,
       seededTemplateRegistry(),
       undefined,
       undefined,

@@ -31,6 +31,11 @@ export function paymobBillingHarness(
   options: {
     /** Further tables a suite reads, scaffolded like the ones below. */
     extraTables?: PgTable[];
+    /**
+     * The stored credit price, for suites written at an older price. Their
+     * subject is the accounting, which the price does not change.
+     */
+    creditPriceMinor?: number;
   } = {},
 ) {
   const value = process.env.E045_TEST_DATABASE_URL;
@@ -66,6 +71,9 @@ export function paymobBillingHarness(
   const periodic = new PeriodicPlanAccounting();
   const config = standaloneCreditBillingConfigService({
     STANDALONE_CREDIT_BILLING_ENABLED: 'true',
+    ...(options.creditPriceMinor
+      ? { STANDALONE_CREDIT_PRICE_MINOR: String(options.creditPriceMinor) }
+      : {}),
     PAYMOB_MODE: 'test',
     PAYMOB_BASE_URL: 'http://localhost:9000',
     PAYMOB_CALLBACK_URL: 'http://localhost:9000/api/webhooks/payments/paymob',
@@ -79,7 +87,7 @@ export function paymobBillingHarness(
     PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '900',
   });
   const router = new UsageAccountingRouter(prepaid, periodic, config);
-  const paymob = fakePaymentsPort();
+  const paymob = fakePaymentsPort(100 * (options.creditPriceMinor ?? 100));
   const callbacks = new PaymentCallbackService(db, config, credits, purchases);
   const reconciliation = new PaymentReconciliationService(
     db,

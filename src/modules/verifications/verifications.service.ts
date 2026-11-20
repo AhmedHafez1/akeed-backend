@@ -13,7 +13,7 @@ import {
 } from '../../shared/billing/usage-alert.policy';
 import {
   displayedUsage,
-  toDisplayedCredits,
+  toDisplayedBalance,
 } from '../../shared/billing/merchant-credits';
 import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import { BillingEntitlementService } from '../verification-core/billing-entitlement.service';
@@ -761,15 +761,13 @@ export class VerificationsService {
     billingStatus: string | null | undefined,
   ): CapacitySummaryDto {
     const mode = 'credits' in entitlement ? 'credits' : 'plan';
+    const credits = 'credits' in entitlement ? entitlement.credits : null;
+    // Counts the spare like the billing summary, so both show one balance.
     const remaining =
       mode === 'credits'
-        ? toDisplayedCredits(
-            Math.max(
-              ('credits' in entitlement
-                ? entitlement.credits?.availableCredits
-                : 0) ?? 0,
-              0,
-            ),
+        ? toDisplayedBalance(
+            Math.max(credits?.availableCredits ?? 0, 0),
+            credits?.spareCredit,
           )
         : Math.max(entitlement.includedLimit - entitlement.consumedCount, 0);
     return {

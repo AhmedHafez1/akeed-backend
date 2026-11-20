@@ -3,9 +3,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { paymobBillingHarness } from './contracts/paymob-billing-harness';
+import { standaloneCreditBillingConfigService } from './contracts/standalone-credit-billing-config';
+import { BillingRepository } from '../src/modules/billing/billing.repository';
+import { BillingService } from '../src/modules/billing/billing.service';
 import { CreditModelNoticesRepository } from '../src/infrastructure/database/repositories/credit-model-notices.repository';
 import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import {
+  integrations as integrationsTable,
   orders,
   paymentPurchases,
   verifications,
@@ -19,6 +23,49 @@ import { displayedUsage } from '../src/shared/billing/merchant-credits';
  */
 const harness = paymobBillingHarness();
 const { billing, callbacks, paymob, credits, db, router } = harness;
+
+/**
+ * The same billing service as it was configured before the price change, at
+ * EGP 2 a stored credit, to create purchases at the old price.
+ */
+function billingAtOldPrice(): BillingService {
+  const integrations = {
+    findActiveByOrg: (orgId: string) =>
+      db
+        .select()
+        .from(integrationsTable)
+        .where(eq(integrationsTable.orgId, orgId)),
+    findByOrg: (orgId: string) =>
+      db
+        .select()
+        .from(integrationsTable)
+        .where(eq(integrationsTable.orgId, orgId)),
+  };
+  return new BillingService(
+    db,
+    standaloneCreditBillingConfigService({
+      STANDALONE_CREDIT_BILLING_ENABLED: 'true',
+      STANDALONE_CREDIT_PRICE_MINOR: '200',
+      PAYMOB_MODE: 'test',
+      PAYMOB_BASE_URL: 'http://localhost:9000',
+      PAYMOB_CALLBACK_URL: 'http://localhost:9000/api/webhooks/payments/paymob',
+      PAYMOB_RETURN_URL: 'http://localhost:9000',
+      PAYMOB_SECRET_KEY: 'sandbox-secret',
+      PAYMOB_API_KEY: 'sandbox-api-key',
+      PAYMOB_PUBLIC_KEY: 'sandbox-public',
+      PAYMOB_HMAC_SECRET: 'sandbox-hmac',
+      PAYMOB_CARD_INTEGRATION_ID: 'card1',
+      PAYMOB_WALLET_INTEGRATION_ID: 'wallet1',
+      PAYMOB_CHECKOUT_EXPIRATION_SECONDS: '900',
+    }),
+    credits,
+    harness.purchases,
+    new BillingRepository(db as never),
+    integrations as never,
+    harness.reconciliation,
+    paymob,
+  );
+}
 const dispatches = new VerificationMessageDispatchesRepository(
   db as never,
   router,
@@ -67,7 +114,7 @@ describe('PostgreSQL displayed credits cycle', () => {
     const merchant = await harness.merchant(0);
     const checkout = jest.spyOn(paymob, 'createCheckout');
 
-    // Purchase: 200 displayed credits, EGP 200, 100 stored.
+    // Purchase: EGP 100 is 200 displayed credits at EGP 0.50, 100 stored.
     const purchase = await billing.createMerchantPurchase(
       merchant.user,
       `key-${randomUUID()}`,
@@ -75,14 +122,14 @@ describe('PostgreSQL displayed credits cycle', () => {
     );
     expect(purchase).toMatchObject({
       quantity: 200,
-      unitPriceMinor: 100,
-      totalMinor: 20000,
+      unitPriceMinor: 50,
+      totalMinor: 10000,
     });
     expect(checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         quantity: 100,
-        unitPriceMinor: 200,
-        totalMinor: 20000,
+        unitPriceMinor: 100,
+        totalMinor: 10000,
       }),
     );
     const [row] = await db
@@ -91,8 +138,8 @@ describe('PostgreSQL displayed credits cycle', () => {
       .where(eq(paymentPurchases.reference, purchase.reference));
     expect(row).toMatchObject({
       quantity: 100,
-      unitPriceMinor: 200,
-      totalMinor: 20000,
+      unitPriceMinor: 100,
+      totalMinor: 10000,
     });
 
     await callbacks.ingest(paymob.event(purchase.reference));
@@ -100,13 +147,15 @@ describe('PostgreSQL displayed credits cycle', () => {
     await expect(billing.readCredits(merchant.user)).resolves.toMatchObject({
       postedBalance: 200,
       availableCredits: 200,
+      balanceMinor: 10000,
     });
 
-    // Send: one message uses 2 displayed credits, 1 stored.
+    // Send: one Akeed message is EGP 1: 2 displayed credits, 1 stored.
     const dispatch = await accepted(merchant);
     await harness.balance(merchant.orgId, 99);
     await expect(billing.readCredits(merchant.user)).resolves.toMatchObject({
       availableCredits: 198,
+      balanceMinor: 9900,
     });
     const usage = await billing.listLedger(merchant.user, { limit: 10 });
     expect(usage.items[0]).toMatchObject({
@@ -130,7 +179,7 @@ describe('PostgreSQL displayed credits cycle', () => {
     await callbacks.ingest(
       paymob.event(purchase.reference, {
         signal: 'refund',
-        refundedMinorTotal: 20000,
+        refundedMinorTotal: 10000,
         sourceReference: 'refund-cycle',
         payment: { providerTransactionId: 'txn-refund-cycle' },
       }),
@@ -141,11 +190,52 @@ describe('PostgreSQL displayed credits cycle', () => {
     ).resolves.toMatchObject({
       status: 'refunded',
       quantity: 200,
-      totalMinor: 20000,
-      refundedMinor: 20000,
+      totalMinor: 10000,
+      refundedMinor: 10000,
     });
     await expect(billing.readCredits(merchant.user)).resolves.toMatchObject({
       availableCredits: 0,
+    });
+  });
+
+  it('refunds a purchase made at the old price at its own price', async () => {
+    const merchant = await harness.merchant(0);
+    // Bought at EGP 2 a message: 100 messages for EGP 200.
+    const old = await billingAtOldPrice().createMerchantPurchase(
+      merchant.user,
+      `key-${randomUUID()}`,
+      { displayQuantity: 200 },
+    );
+    expect(old).toMatchObject({ unitPriceMinor: 100, totalMinor: 20000 });
+    await callbacks.ingest(paymob.event(old.reference, { amountMinor: 20000 }));
+    await harness.balance(merchant.orgId, 100);
+
+    // After the price change the same 100 messages show as EGP 100, and the
+    // stored purchase keeps its own price.
+    await expect(billing.readCredits(merchant.user)).resolves.toMatchObject({
+      availableCredits: 200,
+      balanceMinor: 10000,
+    });
+    await expect(
+      billing.readPurchase(merchant.user, old.reference),
+    ).resolves.toMatchObject({ unitPriceMinor: 100, totalMinor: 20000 });
+
+    await callbacks.ingest(
+      paymob.event(old.reference, {
+        signal: 'refund',
+        amountMinor: 20000,
+        refundedMinorTotal: 20000,
+        sourceReference: 'refund-old-price',
+        payment: { providerTransactionId: 'txn-refund-old-price' },
+      }),
+    );
+    await harness.balance(merchant.orgId, 0);
+    await expect(
+      billing.readPurchase(merchant.user, old.reference),
+    ).resolves.toMatchObject({
+      status: 'refunded',
+      totalMinor: 20000,
+      refundedMinor: 20000,
     });
   });
 

@@ -18,10 +18,13 @@ export const OPERATOR = '6f1b6c1e-2d4a-4c3b-9a8e-1f2e3d4c5b6a';
  * themselves.
  */
 export function billingOperationsHarness() {
-  const base = paymobBillingHarness();
+  // These suites price purchases at EGP 2 a credit, the price they were
+  // written at; their amounts and the accounting both follow from it.
+  const base = paymobBillingHarness({ creditPriceMinor: 200 });
   const { db, credits } = base;
   const config = standaloneCreditBillingConfigService({
     STANDALONE_CREDIT_BILLING_ENABLED: 'true',
+    STANDALONE_CREDIT_PRICE_MINOR: '200',
     STANDALONE_BILLING_OPERATIONS_ENABLED: 'true',
     STANDALONE_BILLING_OPERATOR_IDS: OPERATOR,
     PAYMOB_MODE: 'test',

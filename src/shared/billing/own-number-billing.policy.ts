@@ -1,8 +1,8 @@
 /**
  * What one send costs and which pool pays for it.
  *
- * Prepaid costs are displayed credits (1 credit = EGP 1). A stored credit is
- * worth two, so an Akeed-number send reserves one stored credit as it always
+ * Prepaid costs are displayed credits, each half a stored credit (EGP 0.50 at
+ * the default price). A stored credit is worth two, so an Akeed-number send reserves one stored credit as it always
  * has, and an own-number send costs half of one. The half is carried in
  * `credit_accounts.spare_credit`: the first of two own-number sends takes a
  * whole stored credit and leaves a spare, the second uses the spare. Charging

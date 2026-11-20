@@ -101,7 +101,7 @@ function setup() {
               emailFrom: 'Akeed <hello@example.test>',
             }
           : key === STANDALONE_CREDIT_BILLING_CONFIG
-            ? { priceMinor: 200 }
+            ? { priceMinor: 100 }
             : undefined,
   } as unknown as ConfigService;
   const send = jest.fn().mockResolvedValue({ status: 'sent' });
@@ -160,7 +160,7 @@ describe('announcement email worker', () => {
         to: 'owner@example.test',
         replyTo: 'hello@example.test',
         idempotencyKey: `announcement-${CAMPAIGN}-${ORG}`,
-        text: expect.stringContaining('1 credit'),
+        text: expect.stringContaining('0.5 EGP'),
         headers: {
           'List-Unsubscribe': expect.stringContaining(
             '/api/announcements/unsubscribe?token=',

@@ -252,6 +252,8 @@ describe('standalone source provisioning PostgreSQL contract', () => {
         change_requests_enabled boolean DEFAULT false NOT NULL,
         acknowledgment_enabled boolean DEFAULT false NOT NULL,
         acknowledgment_enabled_at timestamptz,
+        uninstalled_at timestamptz,
+        paid_through_at timestamptz,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now(),
         UNIQUE (platform_type, platform_store_url),
@@ -554,7 +556,7 @@ describe('standalone source provisioning PostgreSQL contract', () => {
     await expect(
       client`SELECT status::text, posted_balance, held_credits, version FROM credit_accounts WHERE org_id = ${orgId}`,
     ).resolves.toEqual([
-      { status: 'active', posted_balance: 30, held_credits: 0, version: 0 },
+      { status: 'active', posted_balance: 100, held_credits: 0, version: 0 },
     ]);
     await expect(
       client`
@@ -564,12 +566,12 @@ describe('standalone source provisioning PostgreSQL contract', () => {
     ).resolves.toEqual([
       {
         type: 'free_grant',
-        quantity: 30,
+        quantity: 100,
         actor_id: userId,
         reason: 'signup_auto_activation',
         idempotency_key: `standalone-free-grant:${orgId}:v1`,
         posted_balance_before: 0,
-        posted_balance_after: 30,
+        posted_balance_after: 100,
       },
     ]);
 

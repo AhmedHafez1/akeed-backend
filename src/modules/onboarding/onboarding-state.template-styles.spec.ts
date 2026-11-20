@@ -97,7 +97,13 @@ function setup(
       } as never,
       usageAccountingFixture(),
     ),
-    { readStatus: jest.fn().mockResolvedValue(null) } as never,
+    {
+      readStatus: jest.fn().mockResolvedValue(null),
+      messagePrices: () => ({
+        akeedMessagePriceMinor: 100,
+        ownNumberMessagePriceMinor: 50,
+      }),
+    } as never,
     registry,
   );
   return { state, settings, integrationsRepo, current: () => row };
