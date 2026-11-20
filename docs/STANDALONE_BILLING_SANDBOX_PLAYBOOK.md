@@ -10,12 +10,12 @@ Everything used here already exists and passed `npm run test:gate:e045`. These s
 | HMAC check (forged callbacks get 401) | `src/infrastructure/spokes/paymob/paymob-hmac.guard.ts` |
 | Amount, currency, integration, mode and order checks | `paymentEventMismatch` in `src/modules/billing/payment-callback.service.ts` |
 | Ledger as source of truth; one grant per purchase | `credit_ledger_entries`, `credit_accounts` (database constraints) |
-| Merchant purchase page and staff approval page | frontend `/[locale]/billing` and `/[locale]/admin/standalone-billing` |
+| Merchant purchase page and staff billing console | frontend `/[locale]/billing` and `/[locale]/admin/standalone-billing` |
 
 Two Akeed rules shape the numbers below:
 
-- Merchants see money: an Akeed message is EGP 1 and an own-number message EGP 0.5. The database stores credits: 1 stored credit = 1 Akeed message = EGP 1 = 2 displayed credits in the API. Numbers below say which one they mean, and ledger rows in SQL and the staff console are stored credits.
-- A merchant must be **staff-approved** before credits work, and approval grants **60 free credits** (30 stored).
+- Merchants see money: an Akeed message is EGP 1 and an own-number message EGP 0.5. The database stores credits: 1 stored credit = 1 Akeed message = EGP 1. The merchant API counts half-credits so an own-number message is a whole unit; the staff console and SQL show stored credits.
+- A new account gets **100 free messages** (100 stored credits) with no approval step.
 - The smallest purchase is **EGP 100**: 100 stored credits at EGP 1, 100 Akeed messages.
 
 **Not in this playbook:** Vodafone Cash tests, refunds, chargebacks, production, reconciliation jobs and sign-off. See [After the milestone](#after-the-milestone).

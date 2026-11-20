@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { toDisplayedCredits } from '../../shared/billing/merchant-credits';
+import { storedBalance } from '../../shared/billing/merchant-credits';
 import * as schema from '../../infrastructure/database';
 import { DRIZZLE } from '../../infrastructure/database/database.provider';
 import {
@@ -279,6 +279,7 @@ export class StandaloneBillingRepository {
             status: creditAccounts.status,
             postedBalance: creditAccounts.postedBalance,
             heldCredits: creditAccounts.heldCredits,
+            spareCredit: creditAccounts.spareCredit,
             version: creditAccounts.version,
           })
           .from(creditAccounts)
@@ -321,8 +322,9 @@ export class StandaloneBillingRepository {
                 account.postedBalance - account.heldCredits,
                 0,
               ),
-              displayedAvailableCredits: toDisplayedCredits(
-                Math.max(account.postedBalance - account.heldCredits, 0),
+              balance: storedBalance(
+                account.postedBalance - account.heldCredits,
+                account.spareCredit,
               ),
               version: account.version,
             }

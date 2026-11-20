@@ -229,7 +229,7 @@ describe('AdminStoresService', () => {
       billing: {
         model: 'credits',
         account_status: 'active',
-        available: 480,
+        balance: 480,
         held: 20,
         debt: 0,
         balance_state: 'ok',
@@ -238,26 +238,29 @@ describe('AdminStoresService', () => {
   });
 
   it.each([
-    [0, 0, 960],
-    [1, 1, 961],
-    // A stray value never inflates the merchant-visible balance.
-    [2, 0, 960],
+    // spare, added, balance, used, percent
+    [0, 600, 480, 120, 20],
+    [1, 600, 480.5, 119.5, 20],
+    // A stray spare never inflates the balance.
+    [2, 600, 480, 120, 20],
+    // Funding older than the ledger never shows a negative use.
+    [0, 0, 480, 0, 0],
   ])(
-    'shows stored credits plus a spare of %s as the merchant sees them',
-    async (stored, spare, displayed) => {
+    'reads a spare of %s with %s added as one stored balance and its use',
+    async (spare, added, balance, used, percent) => {
       const service = createService({
         findStorePage: jest.fn().mockResolvedValue({
           summary,
-          rows: [standaloneRow({ credit_spare: stored })],
+          rows: [standaloneRow({ credit_spare: spare, credit_added: added })],
         }),
       });
       const [store] = (await service.getStores({})).data;
       expect(store.billing).toMatchObject({
         model: 'credits',
-        available: 480,
-        spare,
-        displayed_available: displayed,
+        balance,
+        usage: { used, left: balance, percent },
       });
+      expect(store.billing).not.toHaveProperty('displayed_available');
     },
   );
 

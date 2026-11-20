@@ -123,7 +123,7 @@ Queued automation re-checks both installation and billing state at execution tim
 | Capacity (blocked-order) recovery                                            | Active sources only; `store_uninstalled` is not a capacity reason                            |
 | Webhook queue, order-import release                                          | `integration_inactive` / `source_inactive` skip                                               |
 
-Merchant emails (sender alerts, change-request email, the one-off credit-model notice) are not WhatsApp and are not gated on installation.
+Merchant emails (sender alerts, change-request email) are not WhatsApp and are not gated on installation.
 
 ### GDPR Webhooks
 

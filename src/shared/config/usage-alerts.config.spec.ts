@@ -6,7 +6,6 @@ import {
 describe('parseUsageAlertsConfig', () => {
   it('defaults to email off, recovery on and a 24-hour limit', () => {
     expect(parseUsageAlertsConfig({})).toEqual({
-      creditModelNoticeEmailEnabled: false,
       emailEnabled: false,
       resendApiKey: null,
       emailFrom: null,
@@ -27,7 +26,6 @@ describe('parseUsageAlertsConfig', () => {
         BLOCKED_ORDER_MAX_AGE_HOURS: '48',
       }),
     ).toEqual({
-      creditModelNoticeEmailEnabled: false,
       emailEnabled: true,
       resendApiKey: 're_test',
       emailFrom: 'Akeed <alerts@example.test>',

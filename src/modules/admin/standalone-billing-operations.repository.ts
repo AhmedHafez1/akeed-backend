@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { CREDIT_FUNDING_TYPES } from '../../shared/billing/merchant-credits';
 import type { CreditTransaction } from '../../infrastructure/database/credit-transaction';
 import {
   DRIZZLE,
@@ -348,6 +349,22 @@ export class StandaloneBillingOperationsRepository {
     }));
   }
 
+  /** Stored credits ever added to the account, for the staff usage meter. */
+  private async addedCredits(orgId: string): Promise<number> {
+    const [row] = await this.db
+      .select({
+        added: sql<string>`COALESCE(sum(${creditLedgerEntries.quantity}), 0)::text`,
+      })
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.orgId, orgId),
+          inArray(creditLedgerEntries.type, [...CREDIT_FUNDING_TYPES]),
+        ),
+      );
+    return Number(row?.added ?? 0);
+  }
+
   async readDetail(orgId: string) {
     const [organization] = await this.db
       .select({ id: organizations.id, name: organizations.name })
@@ -357,6 +374,7 @@ export class StandaloneBillingOperationsRepository {
     if (!organization && !account) return undefined;
     const [
       reconciliation,
+      addedCredits,
       activatedAt,
       ledger,
       holds,
@@ -367,6 +385,7 @@ export class StandaloneBillingOperationsRepository {
       // An organization provisioned before credit billing has no account, and
       // so nothing to reconcile; its history reads come back empty.
       account ? this.readReconciliation(orgId) : undefined,
+      account ? this.addedCredits(orgId) : 0,
       this.activatedAt(orgId),
       this.ledger(orgId),
       this.holds(orgId),
@@ -377,6 +396,7 @@ export class StandaloneBillingOperationsRepository {
     return {
       organization: organization ?? null,
       account: account ?? null,
+      addedCredits,
       activatedAt,
       reconciliation,
       ledger,

@@ -264,9 +264,9 @@ A send from the merchant's own WhatsApp number costs less than one from the Akee
 
 | Send | Prepaid (Standalone, EasyOrders, WooCommerce) | Shopify plan |
 | --- | --- | --- |
-| Akeed number | 2 displayed credits: one reserved stored credit, as before | 1 from the Akeed pool |
-| Merchant's number | 1 displayed credit | 1 from the own-number pool; when that is empty and the number is healthy, 1 from the Akeed pool |
-| Fallback to Akeed after an own-number attempt failed | 2 displayed credits, like any Akeed-number send | 1 from the Akeed pool, like any Akeed-number send |
+| Akeed number | EGP 1: one reserved stored credit | 1 from the Akeed pool |
+| Merchant's number | EGP 0.5: half a stored credit, carried by the spare | 1 from the own-number pool; when that is empty and the number is healthy, 1 from the Akeed pool |
+| Fallback to Akeed after an own-number attempt failed | EGP 1, like any Akeed-number send | 1 from the Akeed pool, like any Akeed-number send |
 | Not enough left | Blocked | Blocked (the own-number pool never pays for an Akeed-number send) |
 
 | Plan | Akeed messages | Own-number messages |

@@ -5049,7 +5049,7 @@ export const tipsCampaignDeliveryHistory = pgTable(
   ],
 ).enableRLS();
 
-/** Organizations owed the one-time notice about displayed credits. */
+/** Rows of a retired one-time notice; nothing reads them, kept for history. */
 export const creditModelNotices = pgTable('credit_model_notices', {
   orgId: uuid('org_id').primaryKey().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
