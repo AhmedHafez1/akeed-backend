@@ -110,11 +110,12 @@ export interface AdminStoreViewRow extends AdminStoreQueryRow {
   critical_signals: string[];
   attention_signals: string[];
   health_status: string;
+  /** How staff reach the merchant: the owner's email and WhatsApp number. */
+  owner_email: string | null;
+  merchant_whatsapp_phone: string | null;
 }
 
 export interface AdminStoreDetailQueryRow extends AdminStoreViewRow {
-  owner_email: string | null;
-  merchant_whatsapp_phone: string | null;
   default_language: string;
   follow_up_enabled: boolean;
   follow_up_delay_minutes: number;
@@ -410,6 +411,19 @@ export class AdminQueryRepository {
       page AS (
         SELECT
           filtered.*,
+          (
+            SELECT owner_user.email
+            FROM memberships membership
+            INNER JOIN auth.users owner_user ON owner_user.id = membership.user_id
+            WHERE membership.org_id = filtered.org_id AND membership.role = 'owner'
+            ORDER BY membership.created_at ASC
+            LIMIT 1
+          ) AS owner_email,
+          (
+            SELECT contact.merchant_whatsapp_phone
+            FROM integrations contact
+            WHERE contact.id = filtered.integration_id
+          ) AS merchant_whatsapp_phone,
           ${sort.expression} AS sort_key,
           (${sort.expression})::text AS sort_value
         FROM filtered

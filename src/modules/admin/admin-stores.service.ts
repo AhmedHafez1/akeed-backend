@@ -131,6 +131,9 @@ export interface AdminStoreView {
   store_name: string;
   shop_domain: string | null;
   source_identity: string;
+  /** The owner's email and WhatsApp number, for staff to contact the merchant. */
+  owner_email: string | null;
+  merchant_whatsapp_phone: string | null;
   country_code: string | null;
   /** Where the store's customers' phones are from, over its real orders. */
   customer_countries: AdminCustomerCountries;
@@ -191,8 +194,6 @@ export interface AdminStoreMilestone {
 }
 
 export interface AdminStoreDetailView extends AdminStoreView {
-  owner_email: string | null;
-  merchant_whatsapp_phone: string | null;
   created_at: string | null;
   last_synced_at: string | null;
   billing_activated_at: string | null;
@@ -714,8 +715,6 @@ export class AdminStoresService {
 
     return {
       ...view,
-      owner_email: row.owner_email,
-      merchant_whatsapp_phone: row.merchant_whatsapp_phone,
       created_at: row.created_at,
       last_synced_at: row.last_synced_at,
       billing_activated_at: row.billing_activated_at,
@@ -960,6 +959,8 @@ export class AdminStoresService {
       store_name: row.store_name ?? row.organization_name,
       shop_domain: row.platform_type === 'standalone' ? null : row.shop_domain,
       source_identity: row.shop_domain,
+      owner_email: row.owner_email,
+      merchant_whatsapp_phone: row.merchant_whatsapp_phone,
       country_code: row.country_code,
       customer_countries: {
         top: row.top_customer_country,
