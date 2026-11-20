@@ -81,7 +81,7 @@ function setup(
     getEntitlementSource: jest.fn().mockResolvedValue(integration),
     getIntegrationUsageForPeriod: jest
       .fn()
-      .mockResolvedValue({ consumedCount: 0, includedLimit: 30 }),
+      .mockResolvedValue({ consumedCount: 0, includedLimit: 60 }),
   };
   const ordersRepo = {
     findFirstCustomerConfirmationAt: jest
@@ -177,11 +177,11 @@ describe('OnboardingService.completeSetup', () => {
     expect(state.activation).toMatchObject({ isLive: true, needsPlan: false });
     expect(state.usage).toEqual({
       used: 0,
-      limit: 30,
-      remaining: 30,
+      limit: 60,
+      remaining: 60,
       pools: {
-        akeed: { used: 0, limit: 30, remaining: 30 },
-        ownNumber: { used: 0, limit: 90, remaining: 90 },
+        akeed: { used: 0, limit: 60, remaining: 60 },
+        ownNumber: { used: 0, limit: 200, remaining: 200 },
       },
     });
   });

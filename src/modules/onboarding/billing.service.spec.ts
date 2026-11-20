@@ -46,7 +46,7 @@ function createMocks() {
     resetCountersForPeriod: jest.fn(),
     getIntegrationUsageForPeriod: jest
       .fn()
-      .mockResolvedValue({ consumedCount: 0, includedLimit: 30 }),
+      .mockResolvedValue({ consumedCount: 0, includedLimit: 60 }),
   };
   const storePlatform = {
     createRecurringApplicationCharge: jest
@@ -62,7 +62,7 @@ function createMocks() {
       amount: planId === 'starter' ? 0 : 22.99,
       currencyCode: 'USD',
       testMode: true,
-      includedVerifications: planId === 'starter' ? 30 : 1000,
+      includedVerifications: planId === 'starter' ? 60 : 1000,
     })),
     resolveAllPlans: jest.fn().mockReturnValue([]),
     isBillingRequired: jest.fn().mockReturnValue(true),
@@ -127,7 +127,7 @@ describe('BillingService', () => {
       amount: 0,
       currencyCode: 'USD',
       testMode: true,
-      includedVerifications: 30,
+      includedVerifications: 60,
     };
     const planless = {
       billingPlanId: null,
@@ -174,12 +174,12 @@ describe('BillingService', () => {
         onboardingStatus: 'pending',
       };
 
-      it('resumes Starter with its remaining messages', async () => {
+      it('resumes Starter capped under the old allowance without resetting usage', async () => {
         const mocks = createMocks();
         mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
         mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
         mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
-          consumedCount: 12,
+          consumedCount: 30,
           includedLimit: 30,
         });
 
@@ -214,8 +214,8 @@ describe('BillingService', () => {
         mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
         mocks.freePlanClaimsRepo.createIfNew.mockResolvedValue(false);
         mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
-          consumedCount: 30,
-          includedLimit: 30,
+          consumedCount: 60,
+          includedLimit: 60,
         });
 
         await expect(
@@ -268,8 +268,8 @@ describe('BillingService', () => {
         mocks.billingConfig.resolveAllPlans.mockReturnValue([starterPlan]);
         mocks.freePlanClaimsRepo.hasClaim.mockResolvedValue(true);
         mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
-          consumedCount: 30,
-          includedLimit: 30,
+          consumedCount: 60,
+          includedLimit: 60,
         });
 
         await expect(
@@ -366,12 +366,12 @@ describe('BillingService', () => {
           amount: 0,
           currencyCode: 'USD',
           testMode: true,
-          includedVerifications: 30,
+          includedVerifications: 60,
         },
       ]);
       mocks.monthlyUsageRepo.getIntegrationUsageForPeriod.mockResolvedValue({
         consumedCount: 5,
-        includedLimit: 30,
+        includedLimit: 60,
       });
       mocks.integrationsRepo.updateById.mockResolvedValue(
         makeIntegration() as never,
@@ -553,8 +553,8 @@ describe('BillingService', () => {
           plan.ownNumberIncludedVerifications,
         ]),
       ).toEqual([
-        ['starter', 30, 90],
-        ['basic', 300, 1000],
+        ['starter', 60, 200],
+        ['basic', 300, 2000],
         ['pro', 1000, 5000],
         ['business', 2500, 20000],
       ]);

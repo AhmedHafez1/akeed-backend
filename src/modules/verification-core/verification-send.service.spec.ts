@@ -174,7 +174,7 @@ describe('VerificationSendService', () => {
     messageDispatches.claim.mockResolvedValue({
       outcome: 'claimed',
       dispatch: { id: 'dispatch-1', providerMessageId: null, acceptedAt: null },
-      usage: { consumedBefore: 23, consumedAfter: 24, includedLimit: 30 },
+      usage: { consumedBefore: 47, consumedAfter: 48, includedLimit: 60 },
     });
 
     await service.sendInitial('ver-1');
@@ -186,8 +186,8 @@ describe('VerificationSendService', () => {
       expect.anything(),
     );
     expect(lifecycles.recordEvent).toHaveBeenCalledWith('int-1', 'credits_80', {
-      consumed: 24,
-      limit: 30,
+      consumed: 48,
+      limit: 60,
     });
   });
 

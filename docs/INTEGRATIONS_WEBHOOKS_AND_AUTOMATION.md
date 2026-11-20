@@ -594,7 +594,7 @@ Controls plan-based send limits.
 
 | Plan     | Included verifications | Monthly price |
 | -------- | ---------------------- | ------------- |
-| Starter  | 30                     | Free          |
+| Starter  | 60                     | Free          |
 | Basic    | 300                    | $9.99         |
 | Pro      | 1,000                  | $22.99        |
 | Business | 2,500                  | $49.99        |

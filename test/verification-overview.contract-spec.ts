@@ -397,12 +397,12 @@ beforeAll(async () => {
       beginReads: jest.fn(),
       readEntitlement: jest.fn().mockResolvedValue({
         consumedCount: 27,
-        includedLimit: 30,
+        includedLimit: 60,
         planId: 'pro',
         periodEnd: '2026-11-01T00:00:00.000Z',
         pools: {
-          akeed: { used: 27, limit: 30, remaining: 3 },
-          ownNumber: { used: 4, limit: 90, remaining: 86 },
+          akeed: { used: 27, limit: 60, remaining: 33 },
+          ownNumber: { used: 4, limit: 200, remaining: 196 },
         },
       }),
       accountingModeFor: () => 'periodic_plan',
@@ -666,19 +666,19 @@ describe('overview aggregate', () => {
     });
     expect(overview.usage).toEqual({
       used: 27,
-      limit: 30,
-      percent: 90,
-      state: 'warning',
+      limit: 60,
+      percent: 45,
+      state: 'ok',
       // Each pool exactly as persisted; the headline stays the Akeed pool.
       pools: {
-        akeed: { used: 27, limit: 30, remaining: 3 },
-        ownNumber: { used: 4, limit: 90, remaining: 86 },
+        akeed: { used: 27, limit: 60, remaining: 33 },
+        ownNumber: { used: 4, limit: 200, remaining: 196 },
       },
     });
     expect(overview.capacity).toEqual({
       blocked_count: 0,
       mode: 'plan',
-      remaining: 3,
+      remaining: 33,
       action: 'upgrade',
       renew_plan_id: null,
       reset_at: '2026-11-01T00:00:00.000Z',
@@ -1078,7 +1078,7 @@ sqlBenchmark(
           readEntitlement: () =>
             Promise.resolve({
               consumedCount: 27,
-              includedLimit: 30,
+              includedLimit: 60,
               periodEnd: null,
             }),
         } as never,

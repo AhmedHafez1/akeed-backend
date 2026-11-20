@@ -257,6 +257,7 @@ const TEMPLATE_METRIC_COUNTS = sql`
 export interface AdminStoreDerivation {
   lowBalanceThreshold: number;
   planLimits: Record<string, number>;
+  legacyPlanLimits: Record<string, number>;
   /** Plans with a price above zero. */
   paidPlanIds: readonly string[];
   healthSignals: (columns: AdminHealthColumns) => {
@@ -817,12 +818,13 @@ export class AdminQueryRepository {
     where: SQL,
     derivation: AdminStoreDerivation,
   ): SQL {
-    const planLimit = sql`(CASE plan ${sql.join(
-      Object.entries(derivation.planLimits).map(
-        ([plan, limit]) => sql`WHEN ${plan} THEN ${limit}::int`,
-      ),
-      sql` `,
-    )} ELSE 0 END)`;
+    const planLimit = (limits: Record<string, number>) =>
+      sql`(CASE plan ${sql.join(
+        Object.entries(limits).map(
+          ([plan, limit]) => sql`WHEN ${plan} THEN ${limit}::int`,
+        ),
+        sql` `,
+      )} ELSE 0 END)`;
     const available = sql`GREATEST(COALESCE(credit_posted_balance, 0) - COALESCE(credit_held_credits, 0), 0)`;
     const signals = derivation.healthSignals({
       onboardingStatus: sql`onboarding_status`,
@@ -868,7 +870,10 @@ export class AdminQueryRepository {
             PREPAID_CREDIT_PLATFORMS.map((platform) => sql`${platform}`),
             sql`, `,
           )}) AND credit_account_status IS NOT NULL) AS is_credit,
-          COALESCE(NULLIF(usage_limit, 0), ${planLimit}) AS usage_limit_effective,
+          CASE WHEN platform_type = 'shopify'
+            THEN COALESCE(NULLIF(${planLimit(derivation.planLimits)}, 0), usage_limit)
+            ELSE COALESCE(NULLIF(usage_limit, 0), ${planLimit(derivation.legacyPlanLimits)})
+          END AS usage_limit_effective,
           (NOT has_lifecycle AND platform_type <> 'shopify'
             AND first_eligible_order_at IS NULL
             AND derived_first_eligible_order_at IS NOT NULL) AS first_eligible_estimated,

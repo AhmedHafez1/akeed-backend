@@ -402,8 +402,8 @@ describe('own-number billing PostgreSQL contract', () => {
         akeed: 0,
         own: 1,
       });
-      // Starter is one-time: 30 Akeed and 90 own-number messages.
-      await setPools(source.integrationId, 0, 90);
+      // Starter is one-time: 60 Akeed and 200 own-number messages.
+      await setPools(source.integrationId, 0, 200);
       const fromAkeed = await claim({
         ...(await verification(source)),
         sender,
@@ -413,7 +413,7 @@ describe('own-number billing PostgreSQL contract', () => {
         billingPool: 'akeed',
         billingCost: 1,
       });
-      await setPools(source.integrationId, 30, 90);
+      await setPools(source.integrationId, 60, 200);
       expect(
         await dispatches.claim({ ...(await verification(source)), sender }),
       ).toMatchObject({ outcome: 'blocked', reason: 'plan_limit_reached' });
@@ -424,7 +424,7 @@ describe('own-number billing PostgreSQL contract', () => {
       const result = await dispatches.claim(await verification(source));
       expect(result).toMatchObject({
         outcome: 'claimed',
-        usage: { consumedBefore: 0, consumedAfter: 1, includedLimit: 30 },
+        usage: { consumedBefore: 0, consumedAfter: 1, includedLimit: 60 },
         dispatch: { billingPool: 'akeed', billingCost: 1 },
       });
       expect(await pools(source.integrationId)).toMatchObject({
@@ -442,8 +442,8 @@ describe('own-number billing PostgreSQL contract', () => {
         chargeRule: 'fallback',
       });
       expect(akeed).toMatchObject({ billingPool: 'akeed', billingCost: 1 });
-      for (const own of [10, 88, 90]) {
-        await setPools(source.integrationId, 30, own);
+      for (const own of [10, 199, 200]) {
+        await setPools(source.integrationId, 60, own);
         expect(
           await dispatches.claim({
             ...(await verification(source)),
@@ -451,7 +451,7 @@ describe('own-number billing PostgreSQL contract', () => {
           }),
         ).toMatchObject({ outcome: 'blocked', reason: 'plan_limit_reached' });
         expect(await pools(source.integrationId)).toMatchObject({
-          akeed: 30,
+          akeed: 60,
           own,
         });
       }
@@ -462,16 +462,16 @@ describe('own-number billing PostgreSQL contract', () => {
       const sender = await ownSender(source.orgId);
       await setPools(source.integrationId, 0, 0);
       await claim({ ...(await verification(source)), sender });
-      await setPools(source.integrationId, 30, 10);
+      await setPools(source.integrationId, 60, 10);
       const fallback = await claim({ ...(await verification(source)), sender });
       expect(await pools(source.integrationId)).toMatchObject({
-        akeed: 30,
+        akeed: 60,
         own: 11,
       });
       await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
       await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
       expect(await pools(source.integrationId)).toMatchObject({
-        akeed: 30,
+        akeed: 60,
         own: 10,
       });
       // Staff confirm it was sent after all: the message comes back, to the own pool.
@@ -481,7 +481,7 @@ describe('own-number billing PostgreSQL contract', () => {
         sentAt: new Date().toISOString(),
       });
       expect(await pools(source.integrationId)).toMatchObject({
-        akeed: 30,
+        akeed: 60,
         own: 11,
       });
     });
@@ -519,7 +519,7 @@ describe('own-number billing PostgreSQL contract', () => {
     });
 
     it.each([
-      ['basic', 300, 1000],
+      ['basic', 300, 2000],
       ['pro', 1000, 5000],
       ['business', 2500, 20000],
     ] as const)(
@@ -584,7 +584,7 @@ describe('own-number billing PostgreSQL contract', () => {
       const source = await merchant(0, 'shopify');
       const sender = await ownSender(source.orgId);
       await claim({ ...(await verification(source)), sender });
-      await setPools(source.integrationId, 30, 10);
+      await setPools(source.integrationId, 60, 10);
       const fallback = await claim({ ...(await verification(source)), sender });
       await onPlan(source.integrationId, 'business');
       await dispatches.markFailedProviderOutcome(fallback.id, 'synthetic');
@@ -598,7 +598,7 @@ describe('own-number billing PostgreSQL contract', () => {
             eq(integrationMonthlyUsage.periodStart, fallback.usagePeriodStart!),
           ),
         );
-      expect(row).toMatchObject({ consumedCount: 30, ownNumberConsumed: 10 });
+      expect(row).toMatchObject({ consumedCount: 60, ownNumberConsumed: 10 });
     });
 
     it('keeps the recorded pool on a row whose usage was released', async () => {

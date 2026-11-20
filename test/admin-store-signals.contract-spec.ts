@@ -102,7 +102,8 @@ async function rowsFor(filter: AdminStoreListFilter = {}) {
     { limit: 500, sort: 'installed_at', direction: 'desc' },
     {
       lowBalanceThreshold: 10,
-      planLimits: { starter: 30, basic: 300, pro: 1000, business: 2500 },
+      planLimits: { starter: 60, basic: 300, pro: 1000, business: 2500 },
+      legacyPlanLimits: { starter: 30, basic: 300, pro: 1000, business: 2500 },
       paidPlanIds: ['basic', 'pro', 'business'],
       healthSignals: (columns) => rules.signalsSql(columns),
     },
@@ -128,6 +129,23 @@ async function buckets(integrationId: string) {
     .from(tables.integrationOrderIntake)
     .where(eq(tables.integrationOrderIntake.integrationId, integrationId));
 }
+
+it('uses the configured Starter limit for a Shopify row that still stores 30', async () => {
+  const { integrationId, orgId } = await store({ billingPlanId: 'starter' });
+  await h.db.insert(tables.integrationMonthlyUsage).values({
+    integrationId,
+    orgId,
+    periodStart: '2026-05-01',
+    includedLimit: 30,
+    consumedCount: 30,
+  });
+
+  const { row } = await signalsOf(integrationId);
+  expect(row).toMatchObject({
+    usage_limit_effective: 60,
+    usage_percent: 50,
+  });
+});
 
 describe('order intake counts', () => {
   it('counts a store order once across duplicate and concurrent deliveries', async () => {

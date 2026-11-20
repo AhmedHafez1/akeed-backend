@@ -33,14 +33,14 @@ const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
   starter: {
     name: 'Akeed Starter',
     amount: 0,
-    includedVerifications: 30,
-    ownNumberIncludedVerifications: 90,
+    includedVerifications: 60,
+    ownNumberIncludedVerifications: 200,
   },
   basic: {
     name: 'Akeed Basic',
     amount: 9.99,
     includedVerifications: 300,
-    ownNumberIncludedVerifications: 1000,
+    ownNumberIncludedVerifications: 2000,
   },
   pro: {
     name: 'Akeed Pro',
@@ -54,6 +54,19 @@ const BILLING_PLAN_TEMPLATES: Record<BillingPlanId, BillingPlanTemplate> = {
     includedVerifications: 2500,
     ownNumberIncludedVerifications: 20000,
   },
+};
+
+const LEGACY_PERIODIC_ALLOWANCES: Partial<
+  Record<
+    BillingPlanId,
+    {
+      includedLimit: number;
+      ownNumberIncludedLimit: number;
+    }
+  >
+> = {
+  starter: { includedLimit: 30, ownNumberIncludedLimit: 90 },
+  basic: { includedLimit: 300, ownNumberIncludedLimit: 1000 },
 };
 
 /**
@@ -89,8 +102,8 @@ export const ONE_TIME_BILLING_PLAN_IDS: readonly BillingPlanId[] = ['starter'];
 
 /**
  * A connected own number adds a separate pool of messages, set per plan
- * (Basic: 300 Akeed + 1,000 own number). The pool shares the plan's period, so
- * Starter's one-time 30 come with a one-time 90. No plan, no pool.
+ * (Basic: 300 Akeed + 2,000 own number). The pool shares the plan's period, so
+ * Starter's one-time 60 come with a one-time 200. No plan, no pool.
  */
 export function resolveOwnNumberIncludedVerifications(
   planId: BillingPlanId | null,
@@ -117,6 +130,23 @@ export function resolveIncludedVerificationsLimit(
   }
 
   return planTemplate.includedVerifications;
+}
+
+/** Non-Shopify sources keep their legacy allowances when billed periodically. */
+export function resolvePeriodicPlanAllowances(
+  planId: BillingPlanId | null,
+  billing: 'shopify' | 'legacy',
+) {
+  const legacyAllowance =
+    billing === 'legacy' && planId
+      ? LEGACY_PERIODIC_ALLOWANCES[planId]
+      : undefined;
+  return (
+    legacyAllowance ?? {
+      includedLimit: planId ? resolveIncludedVerificationsLimit(planId) : 0,
+      ownNumberIncludedLimit: resolveOwnNumberIncludedVerifications(planId),
+    }
+  );
 }
 
 export function resolveBillingPlan(params: {

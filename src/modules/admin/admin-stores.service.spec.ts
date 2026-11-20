@@ -209,7 +209,7 @@ describe('AdminStoresService', () => {
         pools: {
           akeed: { used: 30, limit: 100, remaining: 70 },
           // By plan identity: Basic's own-number pool.
-          ownNumber: { used: 0, limit: 1000, remaining: 1000 },
+          ownNumber: { used: 0, limit: 2000, remaining: 2000 },
         },
       },
     });

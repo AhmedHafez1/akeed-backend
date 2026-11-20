@@ -154,8 +154,8 @@ describe('own-number billing policy', () => {
 
   describe('Shopify pools', () => {
     it.each([
-      ['starter', 30, 90],
-      ['basic', 300, 1000],
+      ['starter', 60, 200],
+      ['basic', 300, 2000],
       ['pro', 1000, 5000],
       ['business', 2500, 20000],
     ] as const)(
@@ -191,8 +191,8 @@ describe('own-number billing policy', () => {
     });
 
     it.each([
-      ['starter', 30, 90],
-      ['basic', 300, 1000],
+      ['starter', 60, 200],
+      ['basic', 300, 2000],
       ['pro', 1000, 5000],
       ['business', 2500, 20000],
     ] as const)(

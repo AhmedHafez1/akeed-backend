@@ -78,6 +78,7 @@ describe('OnboardingService', () => {
               amount: 9.99,
               currencyCode: 'USD',
               includedVerifications: 300,
+              ownNumberIncludedVerifications: 2000,
             },
           ],
           isFreePlanClaimed: true,
@@ -129,7 +130,7 @@ describe('OnboardingService', () => {
       expect(result.billing.usage).toEqual({
         pools: {
           akeed: { used: 42, limit: 300, remaining: 258 },
-          ownNumber: { used: 0, limit: 1000, remaining: 1000 },
+          ownNumber: { used: 0, limit: 2000, remaining: 2000 },
         },
         used: 42,
         limit: 300,
@@ -207,7 +208,7 @@ describe('OnboardingService', () => {
         beginReads: jest.fn(),
         readEntitlement: jest.fn().mockResolvedValue({
           consumedCount: 27,
-          includedLimit: 30,
+          includedLimit: 60,
           periodStart: '2026-05-01',
           periodEnd: null,
         }),

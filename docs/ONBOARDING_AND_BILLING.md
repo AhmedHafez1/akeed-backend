@@ -119,7 +119,7 @@ Plan definitions are in `akeed-backend/src/modules/onboarding/onboarding.service
 
 | Plan    | Plan ID    | Monthly price | Included confirmations | Billing type             |
 | ------- | ---------- | ------------: | ---------------------: | ------------------------ |
-| Starter | `starter`  |          `$0` |          `30` one-time | No Shopify charge        |
+| Starter | `starter`  |          `$0` |          `60` one-time | No Shopify charge        |
 | Basic   | `basic`    |       `$9.99` |          `300` monthly | Shopify recurring charge |
 | Pro     | `pro`      |      `$22.99` |         `1000` monthly | Shopify recurring charge |
 | Scale   | `business` |      `$49.99` |         `2500` monthly | Shopify recurring charge |
@@ -271,8 +271,8 @@ A send from the merchant's own WhatsApp number costs less than one from the Akee
 
 | Plan | Akeed messages | Own-number messages |
 | --- | ---: | ---: |
-| Starter (one-time) | 30 | 90 |
-| Basic | 300 | 1,000 |
+| Starter (one-time) | 60 | 200 |
+| Basic | 300 | 2,000 |
 | Pro | 1,000 | 5,000 |
 | Scale | 2,500 | 20,000 |
 
