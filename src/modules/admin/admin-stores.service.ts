@@ -134,6 +134,8 @@ export interface AdminStoreView {
   /** The owner's email and WhatsApp number, for staff to contact the merchant. */
   owner_email: string | null;
   merchant_whatsapp_phone: string | null;
+  /** When the store is next charged; null unless on a live recurring plan. */
+  next_charge_at: string | null;
   country_code: string | null;
   /** Where the store's customers' phones are from, over its real orders. */
   customer_countries: AdminCustomerCountries;
@@ -961,6 +963,7 @@ export class AdminStoresService {
       source_identity: row.shop_domain,
       owner_email: row.owner_email,
       merchant_whatsapp_phone: row.merchant_whatsapp_phone,
+      next_charge_at: row.next_charge_at,
       country_code: row.country_code,
       customer_countries: {
         top: row.top_customer_country,

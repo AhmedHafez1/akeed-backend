@@ -53,6 +53,7 @@ const SORTS = [
   'last_activity',
   'usage_percent',
   'activation_date',
+  'next_charge',
   'health',
 ] as const;
 

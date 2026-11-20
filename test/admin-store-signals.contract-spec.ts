@@ -12,6 +12,7 @@ import {
   type AdminStoreListFilter,
 } from '../src/modules/admin/admin-query.repository';
 import { AdminHealthRuleService } from '../src/modules/admin/admin-health-rule.service';
+import { getBillingPeriodEndAt } from '../src/shared/billing/billing-period';
 import type { OrderIntakeRecord } from '../src/shared/commerce/order-intake.policy';
 import {
   backfillOrderIntake,
@@ -31,6 +32,9 @@ beforeAll(async () => {
   await h.setup();
   await h.scaffold(tables.adminStoreLifecycles);
   await h.scaffold(tables.shopifyOfflineCredentials);
+  // Supabase owns auth.users; the store list reads the owner's email from it.
+  await h.client.unsafe(`CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text)`);
   // Apply the real migration twice: it must be re-runnable. Its lifecycle
   // columns already exist on the scaffold, so those statements are no-ops.
   const migration = readFileSync(
@@ -448,6 +452,75 @@ describe('signal filter', () => {
       expect([...row.critical_signals, ...row.attention_signals]).toContain(
         'orders_not_eligible',
       );
+  });
+});
+
+describe('next charge', () => {
+  async function nextChargeOf(integrationId: string) {
+    const { row } = await signalsOf(integrationId);
+    return row.next_charge_at;
+  }
+
+  it('is the end of the current 30-day cycle for an active paid store', async () => {
+    const activatedAt = ago(40 * 24 * HOUR);
+    const paid = await store({ billingActivatedAt: activatedAt.toISOString() });
+
+    const next = await nextChargeOf(paid.integrationId);
+
+    expect(new Date(next!).getTime()).toBe(
+      new Date(getBillingPeriodEndAt(activatedAt)!).getTime(),
+    );
+  });
+
+  it('is the first charge date while the store is still in its trial', async () => {
+    const firstCharge = new Date(Date.now() + 5 * 24 * HOUR);
+    const trial = await store({
+      billingActivatedAt: firstCharge.toISOString(),
+    });
+
+    const next = await nextChargeOf(trial.integrationId);
+
+    expect(new Date(next!).getTime()).toBe(firstCharge.getTime());
+  });
+
+  it('is empty for a one-time plan and for a plan that is no longer active', async () => {
+    const starter = await store({ billingPlanId: 'starter' });
+    const cancelled = await store({ billingStatus: 'cancelled' });
+    const frozen = await store({ billingStatus: 'frozen' });
+
+    expect(await nextChargeOf(starter.integrationId)).toBeNull();
+    expect(await nextChargeOf(cancelled.integrationId)).toBeNull();
+    expect(await nextChargeOf(frozen.integrationId)).toBeNull();
+  });
+
+  it('sorts by the date with stores that have none last', async () => {
+    const soon = await store({
+      billingActivatedAt: ago(29 * 24 * HOUR).toISOString(),
+    });
+    const none = await store({ billingStatus: 'cancelled' });
+
+    const { rows } = await admin.findStorePage(
+      {},
+      { limit: 500, sort: 'next_charge', direction: 'asc' },
+      {
+        lowBalanceThreshold: 10,
+        planLimits: { starter: 60, basic: 300, pro: 1000, business: 2500 },
+        legacyPlanLimits: {
+          starter: 30,
+          basic: 300,
+          pro: 1000,
+          business: 2500,
+        },
+        paidPlanIds: ['basic', 'pro', 'business'],
+        healthSignals: (columns) => rules.signalsSql(columns),
+      },
+    );
+    const ids = rows.map((row) => row.integration_id);
+
+    expect(ids.indexOf(soon.integrationId)).toBeLessThan(
+      ids.indexOf(none.integrationId),
+    );
+    expect(rows[rows.length - 1].next_charge_at).toBeNull();
   });
 });
 
