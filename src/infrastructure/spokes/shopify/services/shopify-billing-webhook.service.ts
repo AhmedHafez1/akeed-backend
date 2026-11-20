@@ -266,11 +266,22 @@ export class ShopifyBillingWebhookService {
 
     // billingActivatedAt anchors the store's 30-day allowance periods, so a
     // status update must never touch it.
-    await this.integrationsRepo.updateById(integration.id, {
+    const updates = {
       billingStatus: normalizedStatus,
       billingStatusUpdatedAt: now,
       billingCanceledAt: isBlockedStatus ? now : null,
-    });
+    };
+    if (source === 'reconciliation') {
+      const saved =
+        await this.integrationsRepo.reconcileShopifySubscriptionStatus(
+          integration,
+          subscriptionId,
+          updates,
+        );
+      if (!saved) return 'ignored_non_current';
+    } else {
+      await this.integrationsRepo.updateById(integration.id, updates);
+    }
 
     // A subscription that is active again can send its blocked orders.
     if (isActiveStatus) {

@@ -1,3 +1,4 @@
+import { isBillingStatusActive } from '../../../../shared/utils/billing.util';
 import { ShopifyBillingWebhookService } from '../services/shopify-billing-webhook.service';
 import { ShopifySubscriptionSyncService } from './shopify-subscription-sync.service';
 import { isShopifySubscriptionSyncEnabled } from './shopify-subscription-sync.constants';
@@ -5,6 +6,10 @@ import { isShopifySubscriptionSyncEnabled } from './shopify-subscription-sync.co
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
 const SUB = 'gid://shopify/AppSubscription/CURRENT';
+const PAYMENT_REQUIRED = Object.assign(new Error('Payment Required'), {
+  isAxiosError: true,
+  response: { status: 402 },
+});
 
 function makeStore(overrides: Record<string, unknown> = {}) {
   return {
@@ -18,6 +23,7 @@ function makeStore(overrides: Record<string, unknown> = {}) {
     shopifySubscriptionId: SUB,
     billingActivatedAt: '2026-01-01T00:00:00Z',
     billingCanceledAt: null,
+    billingStatusUpdatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };
 }
@@ -29,7 +35,7 @@ function setup(stores: Array<Record<string, unknown>>) {
       (domain: string) =>
         stores.find((store) => store.platformStoreUrl === domain) ?? undefined,
     ),
-    updateById: jest.fn(),
+    reconcileShopifySubscriptionStatus: jest.fn().mockResolvedValue(true),
   };
   const billing = {
     getAppSubscriptionStatus: jest.fn(),
@@ -68,16 +74,19 @@ describe('ShopifySubscriptionSyncService', () => {
       expect.objectContaining({ id: 'int-1' }),
       SUB,
     );
-    expect(integrationsRepo.updateById).toHaveBeenCalledWith(
-      'int-1',
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'int-1' }),
+      SUB,
       expect.objectContaining({
         billingStatus: 'cancelled',
         billingCanceledAt: expect.any(String),
       }),
     );
-    expect(integrationsRepo.updateById.mock.calls[0][1]).not.toHaveProperty(
-      'isActive',
-    );
+    const [, , update] =
+      integrationsRepo.reconcileShopifySubscriptionStatus.mock.calls[0];
+    expect(update).not.toHaveProperty('isActive');
     expect(capacityRecovery.request).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ checked: 1, corrected: 1, failed: 0 });
   });
@@ -94,7 +103,9 @@ describe('ShopifySubscriptionSyncService', () => {
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ checked: 1, corrected: 0, held: 1 });
   });
 
@@ -110,8 +121,115 @@ describe('ShopifySubscriptionSyncService', () => {
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ corrected: 0, failed: 1 });
+  });
+
+  it('pauses paid sends on a Shopify 402 and still checks other stores', async () => {
+    const { service, integrationsRepo, billing, capacityRecovery } = setup([
+      makeStore(),
+      makeStore({
+        id: 'int-2',
+        orgId: 'org-2',
+        platformStoreUrl: 'other.myshopify.com',
+      }),
+    ]);
+    billing.getAppSubscriptionStatus
+      .mockRejectedValueOnce(PAYMENT_REQUIRED)
+      .mockResolvedValueOnce({ id: SUB, status: 'ACTIVE' });
+
+    const summary = await service.reconcileAll();
+
+    expect(billing.listActiveAppSubscriptions).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledWith(expect.objectContaining({ id: 'int-1' }), SUB, {
+      billingStatus: 'frozen',
+      billingStatusUpdatedAt: expect.any(String),
+      billingCanceledAt: expect.any(String),
+    });
+    const [, , update] =
+      integrationsRepo.reconcileShopifySubscriptionStatus.mock.calls[0];
+    expect(isBillingStatusActive(update.billingStatus)).toBe(false);
+    expect(capacityRecovery.request).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({
+      checked: 2,
+      corrected: 1,
+      unchanged: 1,
+      failed: 0,
+    });
+  });
+
+  it('handles a shop freeze detected during the replacement subscription lookup', async () => {
+    const { service, integrationsRepo, billing } = setup([makeStore()]);
+    billing.getAppSubscriptionStatus.mockResolvedValue({
+      id: SUB,
+      status: 'CANCELLED',
+    });
+    billing.listActiveAppSubscriptions.mockRejectedValue(PAYMENT_REQUIRED);
+
+    const summary = await service.reconcileAll();
+
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'int-1' }),
+      SUB,
+      expect.objectContaining({ billingStatus: 'frozen' }),
+    );
+    expect(summary).toMatchObject({ corrected: 1, failed: 0 });
+  });
+
+  it.each(['frozen', 'cancelled'])(
+    'preserves an existing %s denial when Shopify returns 402',
+    async (billingStatus) => {
+      const { service, integrationsRepo, billing } = setup([
+        makeStore({ billingStatus }),
+      ]);
+      billing.getAppSubscriptionStatus.mockRejectedValue(PAYMENT_REQUIRED);
+
+      const summary = await service.reconcileAll();
+
+      expect(
+        integrationsRepo.reconcileShopifySubscriptionStatus,
+      ).not.toHaveBeenCalled();
+      expect(summary).toMatchObject({ unchanged: 1, corrected: 0, failed: 0 });
+    },
+  );
+
+  it('ignores a shop freeze if billing changed during the lookup', async () => {
+    const { service, integrationsRepo, billing } = setup([makeStore()]);
+    billing.getAppSubscriptionStatus.mockRejectedValue(PAYMENT_REQUIRED);
+    integrationsRepo.findByPlatformDomain.mockImplementation(() =>
+      makeStore({ billingStatusUpdatedAt: '2026-01-02T00:00:00Z' }),
+    );
+
+    const summary = await service.reconcileAll();
+
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ ignored: 1, corrected: 0, failed: 0 });
+  });
+
+  it('ignores a freeze rejected by the conditional update', async () => {
+    const { service, integrationsRepo, billing, capacityRecovery } = setup([
+      makeStore(),
+    ]);
+    billing.getAppSubscriptionStatus.mockRejectedValue(PAYMENT_REQUIRED);
+    integrationsRepo.reconcileShopifySubscriptionStatus.mockResolvedValue(
+      false,
+    );
+
+    const summary = await service.reconcileAll();
+
+    expect(capacityRecovery.request).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ ignored: 1, corrected: 0, failed: 0 });
   });
 
   it('restores a frozen store that Shopify reports as active again', async () => {
@@ -125,8 +243,11 @@ describe('ShopifySubscriptionSyncService', () => {
 
     await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).toHaveBeenCalledWith(
-      'int-1',
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'int-1' }),
+      SUB,
       expect.objectContaining({
         billingStatus: 'active',
         billingCanceledAt: null,
@@ -147,7 +268,9 @@ describe('ShopifySubscriptionSyncService', () => {
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ checked: 1, unchanged: 1 });
   });
 
@@ -161,14 +284,19 @@ describe('ShopifySubscriptionSyncService', () => {
       }),
     ]);
     billing.getAppSubscriptionStatus
-      .mockRejectedValueOnce(new Error('401 Unauthorized'))
+      .mockRejectedValueOnce(new Error('Shopify request timed out'))
       .mockResolvedValueOnce({ id: SUB, status: 'EXPIRED' });
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).toHaveBeenCalledTimes(1);
-    expect(integrationsRepo.updateById).toHaveBeenCalledWith(
-      'int-2',
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'int-2' }),
+      SUB,
       expect.objectContaining({ billingStatus: 'expired' }),
     );
     expect(summary).toMatchObject({ checked: 2, corrected: 1, failed: 1 });
@@ -186,7 +314,9 @@ describe('ShopifySubscriptionSyncService', () => {
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ corrected: 0, ignored: 1 });
   });
 
@@ -202,7 +332,9 @@ describe('ShopifySubscriptionSyncService', () => {
 
     await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
   });
 
   it('does not let a pending status stop the current plan', async () => {
@@ -214,7 +346,9 @@ describe('ShopifySubscriptionSyncService', () => {
 
     const summary = await service.reconcileAll();
 
-    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+    expect(
+      integrationsRepo.reconcileShopifySubscriptionStatus,
+    ).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ ignored: 1 });
   });
 });

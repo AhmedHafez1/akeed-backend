@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { isAxiosError } from 'axios';
 import {
   buildBackendLog,
   normalizeError,
@@ -20,10 +21,17 @@ function normalize(status: string | null | undefined): string {
   return status?.trim().toLowerCase() ?? '';
 }
 
+function isShopFrozenResponse(error: unknown): boolean {
+  return (
+    isAxiosError(error) &&
+    error.response?.status === HttpStatus.PAYMENT_REQUIRED
+  );
+}
+
 /**
- * Compares each installed store's stored subscription status with Shopify's
- * and applies any difference through the webhook's own rules. A store whose
- * check fails is left exactly as it was, so the job can only ever do nothing.
+ * Reconciles installed Shopify subscriptions through the billing webhook rules.
+ * Shopify's HTTP 402 is a shop-wide freeze. Other request failures leave the
+ * stored status unchanged.
  */
 @Injectable()
 export class ShopifySubscriptionSyncService {
@@ -51,12 +59,15 @@ export class ShopifySubscriptionSyncService {
       if (!subscriptionId) continue;
       summary.checked += 1;
       try {
-        const remote = await this.billing.getAppSubscriptionStatus(
-          store,
-          subscriptionId,
-        );
-        const remoteStatus = normalize(remote.status);
-        if (remoteStatus === normalize(store.billingStatus)) {
+        const remote = await this.billing
+          .getAppSubscriptionStatus(store, subscriptionId)
+          .catch((error: unknown) => {
+            if (!isShopFrozenResponse(error)) throw error;
+            return null;
+          });
+        let shopFrozen = remote === null;
+        let remoteStatus = remote ? normalize(remote.status) : 'frozen';
+        if (!shopFrozen && remoteStatus === normalize(store.billingStatus)) {
           summary.unchanged += 1;
           continue;
         }
@@ -67,7 +78,11 @@ export class ShopifySubscriptionSyncService {
           store.platformStoreUrl,
           'shopify',
         );
-        if (!current?.isActive || current.id !== store.id) {
+        if (
+          !current?.isActive ||
+          current.id !== store.id ||
+          current.shopifySubscriptionId !== subscriptionId
+        ) {
           summary.ignored += 1;
           continue;
         }
@@ -76,14 +91,22 @@ export class ShopifySubscriptionSyncService {
         // stored: Shopify reports it cancelled while the store pays for the
         // new one. Blocking it would stop a paying store, so it is held for a
         // person to look at instead.
-        if (BLOCKED_STATUSES.has(remoteStatus)) {
-          const live = (
-            await this.billing.listActiveAppSubscriptions(current)
-          ).filter(
+        if (!shopFrozen && BLOCKED_STATUSES.has(remoteStatus)) {
+          const active = await this.billing
+            .listActiveAppSubscriptions(current)
+            .catch((error: unknown) => {
+              if (!isShopFrozenResponse(error)) throw error;
+              return null;
+            });
+          if (active === null) {
+            shopFrozen = true;
+            remoteStatus = 'frozen';
+          }
+          const live = active?.filter(
             (sub) =>
               sub.id !== subscriptionId && normalize(sub.status) === 'active',
           );
-          if (live.length > 0) {
+          if (live?.length) {
             summary.held += 1;
             this.logger.warn(
               buildBackendLog(ShopifySubscriptionSyncService.name, {
@@ -97,6 +120,20 @@ export class ShopifySubscriptionSyncService {
                 activeSubscriptionIds: live.map((sub) => sub.id).join(','),
               }),
             );
+            continue;
+          }
+        }
+
+        const currentStatus = normalize(current.billingStatus);
+        if (shopFrozen) {
+          // A shop freeze supplies no subscription status. Keep existing
+          // denials and ignore the observation if billing changed meanwhile.
+          if (current.billingStatusUpdatedAt !== store.billingStatusUpdatedAt) {
+            summary.ignored += 1;
+            continue;
+          }
+          if (BLOCKED_STATUSES.has(currentStatus)) {
+            summary.unchanged += 1;
             continue;
           }
         }
@@ -120,8 +157,12 @@ export class ShopifySubscriptionSyncService {
             orgId: store.orgId,
             integrationId: store.id,
             shopDomain: store.platformStoreUrl,
-            previousBillingStatus: normalize(store.billingStatus) || 'unknown',
+            previousBillingStatus: currentStatus || 'unknown',
             billingStatus: remoteStatus,
+            ...(shopFrozen && {
+              reason: 'shop_frozen',
+              httpStatus: HttpStatus.PAYMENT_REQUIRED,
+            }),
           }),
         );
       } catch (error) {
