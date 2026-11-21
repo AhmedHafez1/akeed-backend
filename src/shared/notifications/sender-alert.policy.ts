@@ -38,6 +38,10 @@ export interface SenderAlertFacts {
   templates: SenderAlertTemplate[];
   fallback: { reason: string; at: string } | null;
   merchantAcceptedAt: string | null;
+  /** From the connection row. Absent for callers that only need banners. */
+  setupStatus?: string;
+  connectedAt?: string | null;
+  createdAt?: string | null;
 }
 
 /** Current facts, rather than event arrival order, decide the banners. */
@@ -107,6 +111,40 @@ export function senderAlerts(
     );
   }
   return result;
+}
+
+/** Meta usually answers a template review within a day; three days is a stall. */
+export const FIRST_TIME_WINDOW_MS = 72 * 60 * 60 * 1000;
+const SETTLED_TEMPLATE_STATUSES: ReadonlySet<string> = new Set([
+  'approved',
+  'rejected',
+  'paused',
+  'disabled',
+]);
+
+/**
+ * A number that has never been active and is still being set up or waiting
+ * for Meta's template review. Akeed sending in its place is expected then, so
+ * the "fallback" email is held back. A number that was active stays `active`
+ * when it degrades, so it is never in this window. Without connection
+ * timestamps the window cannot be judged and is reported as closed.
+ */
+export function inFirstTimeWindow(
+  facts: SenderAlertFacts,
+  now: number = Date.now(),
+): boolean {
+  if (
+    !['connecting', 'verifying'].includes(facts.state) ||
+    facts.stateReason === 'ACCOUNT_RECONNECTED'
+  )
+    return false;
+  const since = Date.parse(facts.connectedAt ?? facts.createdAt ?? '');
+  if (!Number.isFinite(since) || now - since >= FIRST_TIME_WINDOW_MS)
+    return false;
+  return (
+    facts.setupStatus !== 'complete' ||
+    facts.templates.some((t) => !SETTLED_TEMPLATE_STATUSES.has(t.status))
+  );
 }
 
 export function suppressFallbackEmail(alerts: readonly SenderAlert[]): boolean {

@@ -114,6 +114,7 @@ describe('ConnectionTemplatesService', () => {
     const producer = {
       enqueueSetup: jest.fn().mockResolvedValue(true),
       requestTemplateSync: jest.fn().mockResolvedValue(true),
+      requestHealth: jest.fn().mockResolvedValue(true),
     };
     const service = new TestTemplatesService(
       config,
@@ -201,6 +202,54 @@ describe('ConnectionTemplatesService', () => {
       expect(request.authorization).toBe(`Bearer ${FAKE_BUSINESS_TOKEN}`);
       expect(request.authorization).not.toContain(AKEED_TOKEN);
     }
+  });
+
+  describe('health re-check on approval', () => {
+    const approvedByMeta = () => {
+      const state = defaultSetupState();
+      state.templatesByWaba[FAKE_WABA_ID] = [listed({ id: '7000000001' })];
+      return state;
+    };
+
+    it('asks for a health read once Meta has approved every template of a verifying number', async () => {
+      const h = harness({ state: approvedByMeta() });
+      await h.service.syncConnection(h.row.id);
+      expect(h.connections.requestHealth).toHaveBeenCalledWith(
+        h.row.orgId,
+        h.row.id,
+        h.row.signupGeneration,
+      );
+      expect(h.producer.requestHealth).toHaveBeenCalledWith(
+        h.row.orgId,
+        h.row.id,
+        h.row.signupGeneration,
+      );
+    });
+
+    it('waits while a template is still in review', async () => {
+      const h = harness();
+      await h.service.syncConnection(h.row.id);
+      expect(h.rows.byTemplate('tpl-en')).toMatchObject({ status: 'pending' });
+      expect(h.connections.requestHealth).not.toHaveBeenCalled();
+      expect(h.producer.requestHealth).not.toHaveBeenCalled();
+    });
+
+    it('leaves a number that is already active to its own schedule', async () => {
+      const h = harness({
+        state: approvedByMeta(),
+        row: { state: 'active' },
+      });
+      await h.service.syncConnection(h.row.id);
+      expect(h.connections.requestHealth).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the sync when the re-check cannot be recorded', async () => {
+      const h = harness({ state: approvedByMeta() });
+      h.connections.requestHealth.mockRejectedValueOnce(new Error('db'));
+      await expect(h.service.syncConnection(h.row.id)).resolves.toMatchObject({
+        outcome: 'settled',
+      });
+    });
   });
 
   describe('duplicates', () => {

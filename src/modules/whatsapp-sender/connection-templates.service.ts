@@ -30,6 +30,7 @@ import {
   templateIdentity,
 } from '../template-registry/template-sync.rules';
 import {
+  allTemplatesApproved,
   CONNECTION_TEMPLATE_STATUS,
   TEMPLATE_MAX_ATTEMPTS,
   TEMPLATE_RATE_LIMIT_DELAY_MS,
@@ -231,6 +232,8 @@ export class ConnectionTemplatesService {
       submitted,
       ...(stopped ? { stoppedBy: stopped } : {}),
     });
+    if (connection.state === 'verifying' && allTemplatesApproved(after))
+      await this.recheckHealth(connection);
     if (stopped === 'credentials')
       return { outcome: 'credentials', submitted, nextRunAt: null };
     if (provisioningSettled(after))
@@ -240,6 +243,30 @@ export class ConnectionTemplatesService {
       submitted,
       nextRunAt: nextRunAt(after, new Date(), templateSubmitIntervalMs),
     };
+  }
+
+  /**
+   * A number waiting to become active is only activated by a health read, and
+   * the next scheduled one can be hours away. Once Meta has approved every
+   * template, ask for one now. A failure here never fails the sync.
+   */
+  private async recheckHealth(
+    connection: WhatsappConnectionRecord,
+  ): Promise<void> {
+    try {
+      await this.connections.requestHealth(
+        connection.orgId,
+        connection.id,
+        connection.signupGeneration,
+      );
+      await this.producer.requestHealth(
+        connection.orgId,
+        connection.id,
+        connection.signupGeneration,
+      );
+    } catch {
+      this.log('failure', connection, { reason: 'health_recheck_failed' });
+    }
   }
 
   /**

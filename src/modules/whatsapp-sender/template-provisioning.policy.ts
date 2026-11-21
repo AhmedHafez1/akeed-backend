@@ -295,6 +295,16 @@ export function provisioningSettled(
 }
 
 /**
+ * Meta has approved every template in the account. Approval changes nothing
+ * about the number's health on its own, so this is the moment to look again.
+ */
+export function allTemplatesApproved(
+  rows: readonly Pick<WhatsappConnectionTemplateRecord, 'status'>[],
+): boolean {
+  return rows.length > 0 && rows.every((row) => row.status === 'approved');
+}
+
+/**
  * Counts for the status view. `ready` means approved and UTILITY in the
  * merchant's account; nothing else is ready, whatever Akeed submitted.
  */
