@@ -281,6 +281,93 @@ describe('sender alert PostgreSQL contract', () => {
     expect(await repo.reconcile(org, true)).toEqual([]);
     expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
   });
+  describe('first-time setup window', () => {
+    async function newNumberInReview(status = 'pending') {
+      await client`UPDATE whatsapp_connections SET state='verifying', setup_status='complete', setup_step='done', degraded_class='restricted', degraded_since=now(), connected_at=now() WHERE org_id=${org}`;
+      const [t] = await client<
+        { id: string }[]
+      >`INSERT INTO whatsapp_templates(key) VALUES ('confirm') RETURNING id`;
+      await client`INSERT INTO whatsapp_connection_templates VALUES (${org},${connection},${t.id},'en',${status},'utility')`;
+    }
+    const emailRow = async (id: string) =>
+      (
+        await client`SELECT email_status,email_error,email_claimed_at,resolved_at FROM whatsapp_sender_alerts WHERE id=${id}`
+      )[0];
+
+    it('keeps the incident pending and sends nothing while templates are in review', async () => {
+      await newNumberInReview();
+      const [incident] = await repo.reconcile(org, true);
+      expect(incident).toMatchObject({ kind: 'fallback' });
+      for (let sweep = 0; sweep < 3; sweep++)
+        expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'pending',
+        email_error: null,
+        email_claimed_at: null,
+        resolved_at: null,
+      });
+      expect(await repo.reconcile(org, true)).toHaveLength(1);
+    });
+
+    it('sends the normal email once every template is settled and the number is still restricted', async () => {
+      await newNumberInReview();
+      const [incident] = await repo.reconcile(org, true);
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      await client`UPDATE whatsapp_connection_templates SET status='approved'`;
+      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
+        kind: 'fallback',
+        reason: 'restricted',
+      });
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'sending',
+      });
+    });
+
+    it('closes the incident without an email when the restriction clears during review', async () => {
+      await newNumberInReview();
+      const [incident] = await repo.reconcile(org, true);
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      await client`UPDATE whatsapp_connections SET state='active', degraded_class=NULL, degraded_since=NULL WHERE org_id=${org}`;
+      expect(await repo.reconcile(org, true)).toEqual([]);
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'pending',
+        email_claimed_at: null,
+      });
+      expect((await emailRow(incident.id)).resolved_at).not.toBeNull();
+    });
+
+    it('reports a review that has stalled for more than 72 hours', async () => {
+      await newNumberInReview();
+      await client`UPDATE whatsapp_connections SET connected_at=now()-interval '73 hours' WHERE org_id=${org}`;
+      const [incident] = await repo.reconcile(org, true);
+      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
+        kind: 'fallback',
+      });
+    });
+
+    it('still reports a number that was active and later degraded', async () => {
+      await newNumberInReview();
+      await client`UPDATE whatsapp_connections SET state='active' WHERE org_id=${org}`;
+      const [incident] = await repo.reconcile(org, true);
+      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
+        kind: 'fallback',
+        reason: 'restricted',
+      });
+    });
+
+    it('lets a recorded skip reason win over the wait', async () => {
+      await newNumberInReview();
+      const [incident] = await repo.reconcile(org, true);
+      expect(
+        await repo.claimEmail(org, incident.id, true, 'email_disabled'),
+      ).toBeNull();
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'skipped',
+        email_error: 'email_disabled',
+      });
+    });
+  });
   it('enforces tenant scoping, composite ownership and private RLS access', async () => {
     await client`UPDATE whatsapp_connections SET quality_rating='RED' WHERE org_id=${org}`;
     const [incident] = await repo.reconcile(org, true);

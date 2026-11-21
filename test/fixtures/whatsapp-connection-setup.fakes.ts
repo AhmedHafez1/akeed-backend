@@ -84,6 +84,8 @@ export class InMemoryConnections {
     Promise.resolve(this.copy(this.rows.get(id))),
   );
 
+  requestHealth = jest.fn().mockResolvedValue(undefined);
+
   findByOrg = jest.fn((orgId: string) =>
     Promise.resolve(
       this.copy([...this.rows.values()].find((r) => r.orgId === orgId)),

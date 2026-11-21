@@ -4,6 +4,7 @@ import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { whatsappConnections, whatsappSenderAlerts } from '../schema';
 import { withSerializableRetry } from '../../../shared/database/serializable-retry';
 import {
+  inFirstTimeWindow,
   senderAlerts,
   suppressFallbackEmail,
   type SenderAlert,
@@ -195,10 +196,8 @@ export class WhatsappSenderAlertsRepository {
             ),
           );
         if (!incident) return null;
-        const alerts = senderAlerts(
-          await this.facts(tx, connection),
-          sendingEnabled,
-        );
+        const facts = await this.facts(tx, connection);
+        const alerts = senderAlerts(facts, sendingEnabled);
         const alert = alerts.find((a) => a.kind === incident.kind);
         if (
           incident.signupGeneration !== connection.signupGeneration ||
@@ -215,6 +214,16 @@ export class WhatsappSenderAlertsRepository {
             );
           return null;
         }
+        // Akeed sending while a new number is set up is expected, so the
+        // email waits. The row stays pending and the sweep asks again: if
+        // the cause clears, the incident closes unsent; if it outlasts the
+        // review, the email goes out as usual.
+        if (
+          !skipReason &&
+          alert.kind === 'fallback' &&
+          inFirstTimeWindow(facts)
+        )
+          return null;
         let reason = skipReason;
         if (alert.kind === 'fallback') {
           if (suppressFallbackEmail(alerts)) reason ??= 'specific_cause';
