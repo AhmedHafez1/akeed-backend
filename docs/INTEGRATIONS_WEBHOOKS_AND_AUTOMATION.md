@@ -57,6 +57,7 @@ Webhooks are registered automatically after app install (both OAuth and token ex
 | Topic                      | Route                                             | Handler service                |
 | -------------------------- | ------------------------------------------------- | ------------------------------ |
 | `ORDERS_CREATE`            | `POST /webhooks/shopify/orders-create`            | `ShopifyOrderWebhookService`   |
+| `ORDERS_UPDATED`           | `POST /webhooks/shopify/orders-updated`           | `ShopifyOrderWebhookService`   |
 | `APP_SUBSCRIPTIONS_UPDATE` | `POST /webhooks/shopify/app-subscriptions-update` | `ShopifyBillingWebhookService` |
 | `APP_UNINSTALLED`          | `POST /webhooks/shopify/uninstalled`              | `ShopifyBillingWebhookService` |
 | `customers/data_request`   | `POST /webhooks/shopify/customers/data_request`   | `ShopifyGdprWebhookService`    |
@@ -82,6 +83,24 @@ POST /webhooks/shopify/orders-create
 ```
 
 If the idempotency key already exists, returns `{ received: true, duplicate: true }` without re-enqueueing.
+
+### Order Update Webhook (shipping notifications)
+
+`orders/updated` needs only `read_orders`. It fires on every order edit, Akeed's own tag writes included, so most deliveries are dropped early and never become errors:
+
+1. `SHIPPING_NOTIFICATIONS_ENABLED` is off, or the order is a test: acknowledged, nothing is stored.
+2. The shop has no integration, or the store has not switched shipping notifications on: acknowledged after the one integration lookup the producer already does, nothing is stored (`WebhookQueueProducer.ingest` with `admit`).
+3. Otherwise a `webhook_events` row is stored with job type `order.update` and only the fields shipping reads: the order id, dates, test flag, tags, `fulfillment_status` and each fulfillment's status and tracking. No customer or address data. The idempotency key is `X-Shopify-Webhook-Id` (fallback: `fallback:order.update:{id}:{updated_at}`).
+
+The worker hands the event to `ShippingNotificationsService` through the `WEBHOOK_ORDER_UPDATE_HANDLERS` registry. The service is platform-neutral: the platform's `ShippingEventSource` (registry `SHIPPING_EVENT_SOURCES`; Shopify: `ShopifyShippingEventSource`) reads the payload, and the service:
+
+- finds the order, its verification and the store's shipping settings in one indexed query; an unknown order is skipped (`order_not_owned`);
+- skips a store with the feature off, a test order, and an event with no shipping signal;
+- counts the order as shipped when the fulfillment trigger is on and the order has a live fulfillment (`fulfillment_status` `fulfilled` or `partial`, or a fulfillment not `cancelled`, `error` or `failure`), or when a saved tag is on the order. Tags compare without case or surrounding spaces in any script; `Akeed:` tags never match. Tracking comes from the first fulfillment with a number or an `https` link;
+- applies eligibility: an order cancelled in Akeed or in Shopify (`cancelled_at`) is recorded `failed` with `order_cancelled`, and one created more than 30 days ago (Shopify's `created_at`, else Akeed's) with `order_too_old`;
+- inserts one `verification_shipping_notifications` row per verification and stage (`ON CONFLICT DO NOTHING`), so duplicates, retries, out-of-order deliveries and a tag added after fulfillment leave one row. A new `pending` row queues `verification.shipping_send` on `verification-automation` with job id `verification-{verificationId}-shipping-shipped`; a pending row met again is queued again under the same id.
+
+Processing the same event twice changes nothing. The `shipping_send` job is reserved and does nothing yet.
 
 ### Billing Webhook
 

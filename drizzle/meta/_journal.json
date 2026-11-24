@@ -750,6 +750,13 @@
       "when": 1795996800000,
       "tag": "0105_announcement_email",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1796083200000,
+      "tag": "0106_shipping_notifications",
+      "breakpoints": true
     }
   ]
 }

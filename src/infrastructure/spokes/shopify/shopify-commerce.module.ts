@@ -7,6 +7,7 @@ import { ShopifyApiService } from './services/shopify-api.service';
 import { ShopifyOrderNormalizer } from './services/shopify-order.normalizer';
 import { ShopifyOutcomeAdapter } from './services/shopify-outcome.adapter';
 import { ShopifyCurrentOrderSource } from './services/shopify-current-order.source';
+import { ShopifyShippingEventSource } from './services/shopify-shipping-event.source';
 import { ShopifyCredentialService } from './services/shopify-credential.service';
 import { ShopifyTokenClient } from './services/shopify-token.client';
 import { DatabaseModule } from '../../database/database.module';
@@ -30,6 +31,7 @@ import { DatabaseModule } from '../../database/database.module';
     ShopifyOrderEligibilityStrategy,
     ShopifyOrderNormalizer,
     ShopifyCurrentOrderSource,
+    ShopifyShippingEventSource,
     PhoneService,
   ],
   exports: [
@@ -41,6 +43,7 @@ import { DatabaseModule } from '../../database/database.module';
     ShopifyOrderEligibilityStrategy,
     ShopifyOrderNormalizer,
     ShopifyCurrentOrderSource,
+    ShopifyShippingEventSource,
   ],
 })
 export class ShopifyCommerceModule {}

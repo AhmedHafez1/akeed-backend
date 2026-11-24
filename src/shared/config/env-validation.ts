@@ -38,6 +38,10 @@ import {
   parseMetaWebhookConfig,
 } from './meta-webhook.config';
 import {
+  parseShippingNotificationsConfig,
+  SHIPPING_NOTIFICATIONS_CONFIG,
+} from './shipping-notifications.config';
+import {
   parseUsageAlertsConfig,
   USAGE_ALERTS_CONFIG,
 } from './usage-alerts.config';
@@ -185,6 +189,7 @@ export function validateEnv(
     [ANNOUNCEMENT_EMAIL_CONFIG]: parseAnnouncementEmailConfig(config),
     [META_GRAPH_CONFIG]: parseMetaGraphConfig(config),
     [META_WEBHOOK_CONFIG]: parseMetaWebhookConfig(config),
+    [SHIPPING_NOTIFICATIONS_CONFIG]: parseShippingNotificationsConfig(config),
     [WHATSAPP_OWN_NUMBER_CONFIG]: parseWhatsappOwnNumberConfig(config),
     [DATABASE_RESILIENCE_CONFIG]: parseDatabaseResilienceConfig(config),
   };

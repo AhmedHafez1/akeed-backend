@@ -517,6 +517,17 @@ customer service window, or when Meta answers `131047`, it is a recorded skip
 the template operators under `/api/admin/message-texts` (same
 `WHATSAPP_TEMPLATE_OPERATIONS_ENABLED` and `WHATSAPP_TEMPLATE_OPERATOR_IDS`).
 
+### Shipping notifications
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `SHIPPING_NOTIFICATIONS_ENABLED` | `false` | `true` turns shipping notifications on for the platforms that have a shipping event source (Shopify). Each store still opts in. `false`: `GET /api/settings` omits the shipping fields, `PATCH /api/settings` refuses them with `SETTINGS_SHIPPING_NOTIFICATIONS_UNAVAILABLE`, and `orders/updated` deliveries are acknowledged without being stored. Any value other than `true`, `false` or empty stops the boot. |
+
+A store's settings are `shipping_notifications_enabled` (off by default),
+`shipping_fulfillment_trigger_enabled` (on by default) and `shipping_tags`
+(empty by default, at most 10 tags of 1-40 characters, none starting with
+`Akeed:`). Tags that differ only in case or spacing are saved once.
+
 ### Merchant own WhatsApp number
 
 A merchant can connect its own WhatsApp number. Its connection, signup tickets

@@ -69,6 +69,8 @@ import {
   resolveShopifyLinkedIntegration,
 } from '../../shared/commerce/current-integration-resolver';
 import { SourceSetupService } from './source-setup.service';
+import { ShippingNotificationsService } from '../shipping-notifications/shipping-notifications.service';
+import { normalizeShippingTagSettings } from '../../shared/shipping/shipping-tags';
 import { VerificationAutoCancellationsRepository } from '../../infrastructure/database/repositories/verification-auto-cancellations.repository';
 
 type IntegrationRecord = typeof integrations.$inferSelect;
@@ -105,6 +107,8 @@ export class OnboardingStateService {
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
     @Optional()
     private readonly changeTemplates?: ChangeRequestTemplatesService,
+    @Optional()
+    private readonly shipping?: ShippingNotificationsService,
   ) {}
 
   async getState(user: AuthenticatedUser): Promise<OnboardingStateDto> {
@@ -294,6 +298,8 @@ export class OnboardingStateService {
       updates.codTemplateArAuto = payload.codTemplateArAuto;
     }
 
+    this.applyShippingSettings(integration, payload, updates);
+
     if (payload.changeRequestsEnabled !== undefined)
       updates.changeRequestsEnabled = payload.changeRequestsEnabled;
     if (updates.changeRequestsEnabled ?? integration.changeRequestsEnabled) {
@@ -408,6 +414,50 @@ export class OnboardingStateService {
       ...this.toState(updated),
       changeRequestReadiness: await this.changeRequestReadiness(updated),
     };
+  }
+
+  /** Shipping notifications exist for this store: the switch and a source. */
+  private shippingAvailable(integration: IntegrationRecord): boolean {
+    return this.shipping?.isAvailableFor(integration.platformType) === true;
+  }
+
+  private applyShippingSettings(
+    integration: IntegrationRecord,
+    payload: UpdateOnboardingSettingsDto,
+    updates: Partial<typeof integrations.$inferInsert>,
+  ): void {
+    const touched =
+      payload.shippingNotificationsEnabled !== undefined ||
+      payload.shippingFulfillmentTriggerEnabled !== undefined ||
+      payload.shippingTags !== undefined;
+    if (!touched) return;
+    if (!this.shippingAvailable(integration)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Shipping notifications are not available',
+        code: 'SETTINGS_SHIPPING_NOTIFICATIONS_UNAVAILABLE',
+      });
+    }
+    if (payload.shippingNotificationsEnabled !== undefined)
+      updates.shippingNotificationsEnabled =
+        payload.shippingNotificationsEnabled;
+    if (payload.shippingFulfillmentTriggerEnabled !== undefined)
+      updates.shippingFulfillmentTriggerEnabled =
+        payload.shippingFulfillmentTriggerEnabled;
+    if (payload.shippingTags !== undefined) {
+      const result = normalizeShippingTagSettings(payload.shippingTags);
+      if (!result.ok) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'The shipping tags are not valid',
+          code: 'SETTINGS_SHIPPING_TAGS_INVALID',
+          reason: result.reason,
+        });
+      }
+      updates.shippingTags = result.tags;
+    }
   }
 
   private switches() {
@@ -670,6 +720,15 @@ export class OnboardingStateService {
       billingManagement: getBillingManagement(integration),
       acknowledgmentEnabled: integration.acknowledgmentEnabled === true,
       changeRequestsEnabled: integration.changeRequestsEnabled === true,
+      ...(this.shippingAvailable(integration)
+        ? {
+            shippingNotificationsEnabled:
+              integration.shippingNotificationsEnabled === true,
+            shippingFulfillmentTriggerEnabled:
+              integration.shippingFulfillmentTriggerEnabled !== false,
+            shippingTags: integration.shippingTags ?? [],
+          }
+        : {}),
       followUpEnabled: integration.followUpEnabled ?? DEFAULT_FOLLOW_UP_ENABLED,
       followUpDelayMinutes:
         integration.followUpDelayMinutes ?? DEFAULT_FOLLOW_UP_DELAY_MINUTES,

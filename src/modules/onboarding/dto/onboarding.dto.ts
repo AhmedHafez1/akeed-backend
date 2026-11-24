@@ -4,6 +4,7 @@ import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
 import type { BillingManagement } from '../../../shared/billing/entitlement';
 import type { SourceSetupDto } from '../../../shared/commerce/source-setup';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsNotEmpty,
@@ -116,6 +117,21 @@ export class UpdateOnboardingSettingsDto {
   @IsOptional()
   @IsBoolean()
   changeRequestsEnabled?: boolean;
+
+  /** Shipping notifications. Refused while SHIPPING_NOTIFICATIONS_ENABLED is off. */
+  @IsOptional()
+  @IsBoolean()
+  shippingNotificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  shippingFulfillmentTriggerEnabled?: boolean;
+
+  /** Checked and tidied by the service, which returns a coded error. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  shippingTags?: string[];
 
   @IsOptional()
   @IsString()
@@ -370,6 +386,12 @@ export interface OnboardingStateDto {
   assumeCodWhenPaymentMissing: boolean;
   acknowledgmentEnabled: boolean;
   changeRequestsEnabled?: boolean;
+  /** Present only while SHIPPING_NOTIFICATIONS_ENABLED is on and the store's platform has shipping notifications. */
+  shippingNotificationsEnabled?: boolean;
+  /** Present only with `shippingNotificationsEnabled`. */
+  shippingFulfillmentTriggerEnabled?: boolean;
+  /** Present only with `shippingNotificationsEnabled`. */
+  shippingTags?: string[];
   changeRequestReadiness?: import('../../change-requests/change-request-templates.service').ChangeRequestReadiness;
   shippingCurrency: OnboardingShippingCurrency;
   /**

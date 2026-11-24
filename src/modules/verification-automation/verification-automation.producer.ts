@@ -83,6 +83,31 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
     );
   }
 
+  /**
+   * The Shipped message for a pending shipping notification. The job id is
+   * fixed per verification, so enqueueing again while the job exists does
+   * nothing.
+   */
+  async enqueueShippingSend(params: {
+    verificationId: string;
+    orgId: string;
+    shippingNotificationId: string;
+  }): Promise<void> {
+    await this.queue.add(
+      VerificationAutomationJobType.SHIPPING_SEND,
+      {
+        verificationId: params.verificationId,
+        orgId: params.orgId,
+        shippingNotificationId: params.shippingNotificationId,
+        scheduledAt: new Date().toISOString(),
+      },
+      {
+        ...DEFAULT_QUEUE_JOB_OPTIONS,
+        jobId: `verification-${params.verificationId}-shipping-shipped`,
+      },
+    );
+  }
+
   onApplicationBootstrap(): void {
     void this.queue
       .upsertJobScheduler(

@@ -91,7 +91,7 @@ A run reads candidates 50 at a time past a cursor (creation time, then id), up t
 
 The dashboard overview returns `capacity`: `blocked_count`, `mode` (`plan` or `credits`), `remaining`, `action` (`upgrade`, `recharge` or `wait_reset`) and `reset_at`. The dashboard shows a banner while `blocked_count` is above zero. Alert emails are described in [ONBOARDING_AND_BILLING.md](ONBOARDING_AND_BILLING.md#usage-alerts).
 
-**Limitation:** Akeed does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short.
+**Limitation:** blocked-order recovery does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short. Only shipping notifications read store fulfilments, through Shopify `orders/updated` ([INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#order-update-webhook-shipping-notifications)).
 
 ### Automatic cancellation of unanswered orders
 

@@ -160,6 +160,9 @@ export class VerificationAutomationProcessor extends WorkerHost {
       case VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE:
         await this.handleReplyFollowUp(job);
         return;
+      case VerificationAutomationJobType.SHIPPING_SEND:
+        // Reserved for the Shipped message; the send is not built yet.
+        return;
       default:
         this.logger.warn(
           buildBackendLog(VerificationAutomationProcessor.name, {

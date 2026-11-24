@@ -338,10 +338,16 @@ describe('order imports PostgreSQL contract', () => {
                                 statement,
                               )
                             : // The cancellation tables reference columns the base does not have.
-                              !migration.startsWith('0075_') ||
-                              !statement.includes(
-                                'verification_auto_cancellation',
-                              );
+                              (!migration.startsWith('0075_') ||
+                                !statement.includes(
+                                  'verification_auto_cancellation',
+                                )) &&
+                              // Shipping records have their own contract; only
+                              // the store columns of 0106 apply here.
+                              (!migration.startsWith('0106_') ||
+                                statement.includes(
+                                  'ALTER TABLE "integrations"',
+                                ));
     for (let pass = 0; pass < 2; pass++) {
       for (const migration of [
         '0037_order_import_batches.sql',
@@ -412,6 +418,7 @@ describe('order imports PostgreSQL contract', () => {
         '0102_free_plan_claim_phone.sql',
         '0103_reminder_default_two_hours.sql',
         '0105_announcement_email.sql',
+        '0106_shipping_notifications.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

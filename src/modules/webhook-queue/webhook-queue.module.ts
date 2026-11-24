@@ -23,6 +23,7 @@ import { EasyOrdersStatusUpdateHandler } from '../../infrastructure/spokes/easyo
 import { WooCommerceIngestionModule } from '../../infrastructure/spokes/woocommerce/woocommerce-ingestion.module';
 import { WooCommerceOrderNormalizer } from '../../infrastructure/spokes/woocommerce/woocommerce-order.normalizer';
 import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/woocommerce/woocommerce-order-update.handler';
+import { ShippingNotificationsService } from '../shipping-notifications/shipping-notifications.service';
 
 @Module({
   imports: [
@@ -63,14 +64,20 @@ import { WooCommerceOrderUpdateHandler } from '../../infrastructure/spokes/wooco
         WooCommerceOrderNormalizer,
       ],
     },
-    // --- Order-update handlers (status changes made in the store) ---
+    // --- Order-update handlers (status changes made in the store). Each
+    // platform with a shipping event source gets the shipping core's handler.
     {
       provide: WEBHOOK_ORDER_UPDATE_HANDLERS,
       useFactory: (
         easyOrders: EasyOrdersStatusUpdateHandler,
         wooCommerce: WooCommerceOrderUpdateHandler,
-      ) => [easyOrders, wooCommerce],
-      inject: [EasyOrdersStatusUpdateHandler, WooCommerceOrderUpdateHandler],
+        shipping: ShippingNotificationsService,
+      ) => [easyOrders, wooCommerce, ...shipping.orderUpdateHandlers()],
+      inject: [
+        EasyOrdersStatusUpdateHandler,
+        WooCommerceOrderUpdateHandler,
+        ShippingNotificationsService,
+      ],
     },
   ],
   exports: [

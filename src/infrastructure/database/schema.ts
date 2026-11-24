@@ -62,6 +62,12 @@ import type {
 } from '../../shared/review-prompt/review-prompt.types';
 import type { InterfaceLocale } from '../../shared/i18n/interface-locales';
 import type {
+  ShippingFailureReason,
+  ShippingNotificationStatus,
+  ShippingStage,
+  ShippingTrigger,
+} from '../../shared/shipping/shipping-notification.types';
+import type {
   ChangeRequestActorKind,
   ChangeRequestEffectKind,
   ChangeRequestEffectStatus,
@@ -725,6 +731,20 @@ export const integrations = pgTable(
     changeRequestsEnabled: boolean('change_requests_enabled')
       .default(false)
       .notNull(),
+    // Shipping notifications: the merchant's opt-in, whether a store
+    // fulfillment counts as shipped, and the order tags that also do.
+    shippingNotificationsEnabled: boolean('shipping_notifications_enabled')
+      .default(false)
+      .notNull(),
+    shippingFulfillmentTriggerEnabled: boolean(
+      'shipping_fulfillment_trigger_enabled',
+    )
+      .default(true)
+      .notNull(),
+    shippingTags: text('shipping_tags')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     countryCode: varchar('country_code', { length: 2 }),
     shopTimezone: text('shop_timezone'),
     merchantWhatsappPhone: text('merchant_whatsapp_phone'),
@@ -801,6 +821,10 @@ export const integrations = pgTable(
       table.platformStoreUrl,
     ),
     unique('integrations_id_org_id_key').on(table.id, table.orgId),
+    check(
+      'integrations_shipping_tags_count_check',
+      sql`cardinality(${table.shippingTags}) <= 10`,
+    ),
     foreignKey({
       columns: [table.codTemplateArKey],
       foreignColumns: [whatsappTemplates.key],
@@ -4575,6 +4599,88 @@ export const verificationChangeRequests = pgTable(
       sql`${table.reconfirmationAttempt} >= 0`,
     ),
     pgPolicy('Service role manages verification change requests', {
+      as: 'permissive',
+      for: 'all',
+      to: ['service_role'],
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * At most one shipping notification per verification and stage. The unique
+ * key turns duplicate, replayed and out-of-order store events into one row; a
+ * row that can never be sent is `failed` with a reason code.
+ */
+export const verificationShippingNotifications = pgTable(
+  'verification_shipping_notifications',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    orgId: uuid('org_id').notNull(),
+    verificationId: uuid('verification_id').notNull(),
+    stage: text('stage').$type<ShippingStage>().notNull(),
+    trigger: text('trigger').$type<ShippingTrigger>().notNull(),
+    matchedTag: text('matched_tag'),
+    trackingNumber: text('tracking_number'),
+    trackingUrl: text('tracking_url'),
+    status: text('status')
+      .$type<ShippingNotificationStatus>()
+      .default('pending')
+      .notNull(),
+    reasonCode: text('reason_code').$type<ShippingFailureReason>(),
+    dispatchId: uuid('dispatch_id'),
+    customerReply: text('customer_reply'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('verification_shipping_notifications_stage_key').on(
+      table.verificationId,
+      table.stage,
+    ),
+    foreignKey({
+      columns: [table.verificationId, table.orgId],
+      foreignColumns: [verifications.id, verifications.orgId],
+      name: 'verification_shipping_notifications_verification_fkey',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.dispatchId, table.orgId],
+      foreignColumns: [
+        verificationMessageDispatches.id,
+        verificationMessageDispatches.orgId,
+      ],
+      name: 'verification_shipping_notifications_dispatch_fkey',
+    }).onDelete('cascade'),
+    check(
+      'verification_shipping_notifications_stage_check',
+      sql`${table.stage} IN ('shipped')`,
+    ),
+    check(
+      'verification_shipping_notifications_trigger_check',
+      sql`${table.trigger} IN ('fulfillment', 'tag')`,
+    ),
+    check(
+      'verification_shipping_notifications_status_check',
+      sql`${table.status} IN ('pending', 'sent', 'delivered', 'read', 'failed')`,
+    ),
+    check(
+      'verification_shipping_notifications_reason_check',
+      sql`(${table.status} = 'failed') = (${table.reasonCode} IS NOT NULL) AND (${table.reasonCode} IS NULL OR ${table.reasonCode} IN ('no_phone', 'not_on_whatsapp', 'allowance_low', 'no_allowance', 'order_too_old', 'order_cancelled', 'send_failed', 'template_unavailable'))`,
+    ),
+    check(
+      'verification_shipping_notifications_tag_check',
+      sql`(${table.trigger} = 'tag') = (${table.matchedTag} IS NOT NULL) AND (${table.matchedTag} IS NULL OR char_length(${table.matchedTag}) BETWEEN 1 AND 40)`,
+    ),
+    check(
+      'verification_shipping_notifications_tracking_check',
+      sql`(${table.trackingNumber} IS NULL OR char_length(${table.trackingNumber}) BETWEEN 1 AND 255) AND (${table.trackingUrl} IS NULL OR (char_length(${table.trackingUrl}) <= 2048 AND ${table.trackingUrl} LIKE 'https://%'))`,
+    ),
+    pgPolicy('Service role manages verification shipping notifications', {
       as: 'permissive',
       for: 'all',
       to: ['service_role'],
