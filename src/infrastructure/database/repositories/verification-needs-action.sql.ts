@@ -9,6 +9,10 @@ import type { NeedsActionReason } from '../../../shared/verification/verificatio
  * Returns the reason for the first rule that matches, or NULL:
  * -. `change_requested`: the customer asked for a change; the order must not
  *    ship until the merchant contacted them and settled it.
+ * -. `delivery_request`: after the Shipped message, the customer asked to
+ *    reschedule or change the address; open until the merchant marks it done.
+ * -. `shipping_not_reachable`: the Shipped message could not reach the
+ *    customer (no phone, or not on WhatsApp); open until marked done.
  * -. `late_reply_after_auto_cancel`: Akeed canceled the order in its store
  *    and the customer confirmed afterwards; contact them.
  * 0. `no_whatsapp`: the customer number cannot receive WhatsApp; call them.
@@ -45,6 +49,19 @@ export function needsActionReasonSql(): SQL<NeedsActionReason | null> {
       FROM verification_change_requests open_change_request
       WHERE open_change_request.status = 'open'
     ) THEN 'change_requested'
+    WHEN ${verifications.id} IN (
+      SELECT shipping_request.verification_id
+      FROM verification_shipping_notifications shipping_request
+      WHERE shipping_request.customer_reply IN ('reschedule', 'address')
+        AND shipping_request.needs_action_resolved_at IS NULL
+    ) THEN 'delivery_request'
+    WHEN ${verifications.id} IN (
+      SELECT shipping_unreachable.verification_id
+      FROM verification_shipping_notifications shipping_unreachable
+      WHERE shipping_unreachable.status = 'failed'
+        AND shipping_unreachable.reason_code IN ('no_phone', 'not_on_whatsapp')
+        AND shipping_unreachable.needs_action_resolved_at IS NULL
+    ) THEN 'shipping_not_reachable'
     WHEN ${verifications.status} = 'canceled'
       AND ${verifications.cancellationSource} = ${AUTOMATIC_CANCELLATION_SOURCE}
       AND ${verifications.id} IN (

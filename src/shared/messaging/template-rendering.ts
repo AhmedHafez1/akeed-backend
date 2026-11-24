@@ -1,5 +1,6 @@
 import type { OrderLineItem } from '../interfaces/order.interface';
 import { formatItemList } from './order-detail-values';
+import { shippingTrackingLine } from '../shipping/shipping-tracking-line';
 import type {
   RegistryTemplate,
   TemplateLanguage,
@@ -170,8 +171,14 @@ export function templateSampleValues(
     items: formatItemList(details.lineItems, language),
     region: details.shippingRegion,
     address: details.shippingAddress,
+    tracking: shippingTrackingLine(language, {
+      number: TEMPLATE_SAMPLE_TRACKING_NUMBER,
+    }),
   };
 }
+
+/** A sample tracking number for previews and staff test sends. */
+export const TEMPLATE_SAMPLE_TRACKING_NUMBER = '1Z999AA10123456784';
 
 /**
  * What the provider calls each variable of a registry template: its parameter

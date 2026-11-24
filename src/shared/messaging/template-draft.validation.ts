@@ -1,10 +1,11 @@
 import { EXPECTED_CATEGORY_BY_PURPOSE } from './template-provider.types';
 import { CHANGE_BUTTON_LABELS } from './change-request-messaging';
-import type {
-  TemplateLanguage,
-  TemplateParameterFormat,
-  TemplatePurpose,
-  TemplateVariableKey,
+import {
+  SHIPPING_SHIPPED_PURPOSE,
+  type TemplateLanguage,
+  type TemplateParameterFormat,
+  type TemplatePurpose,
+  type TemplateVariableKey,
 } from './template-registry.types';
 import {
   TEMPLATE_VARIABLE_KEYS,
@@ -49,6 +50,7 @@ export const TEMPLATE_LANGUAGE_CODES: Record<
 export const TEMPLATE_PURPOSE_SLUG: Record<TemplatePurpose, string> = {
   cod_confirmation: 'cod_confirm',
   cod_reminder: 'cod_reminder',
+  shipping_shipped: 'shipping_shipped',
 };
 
 /**
@@ -63,6 +65,9 @@ export const TEMPLATE_PURPOSE_BUTTONS: Record<
 > = {
   cod_confirmation: ['confirm', 'cancel'],
   cod_reminder: ['confirm', 'cancel'],
+  // I'll be home and Reschedule in the first two places; Change address is
+  // the third (change) label.
+  shipping_shipped: ['confirm', 'cancel'],
 };
 
 const STYLE_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
@@ -437,6 +442,22 @@ export function validateButtons(
   return issues;
 }
 
+/**
+ * The Shipped message: three quick replies (I'll be home, Reschedule, Change
+ * address, the last in the change label) and a tracking line. It has no
+ * two-button predecessor to link to.
+ */
+function validateShippingDraft(content: TemplateDraftContent): Issue[] {
+  const issues: Issue[] = [];
+  if (content.changeRequestOfKey)
+    issues.push(error('change_label', 'change_link_required', 'akeed'));
+  if (!content.changeLabel?.trim())
+    issues.push(error('change_label', 'button_label_required', '4.7.5'));
+  if (!draftVariableKeys(content.body).includes('tracking'))
+    issues.push(error('variables', 'mapping_incomplete', 'akeed'));
+  return issues;
+}
+
 export interface TemplateDraftValidation {
   issues: TemplateDraftIssue[];
   /** True when no issue is an error; warnings do not block a submit. */
@@ -464,13 +485,19 @@ export function validateTemplateDraft(
     ...validateVariables(content.body, content.parameterFormat, variables),
     ...validateSamples(content.body, variables),
     ...validateButtons(content.purpose, submission.buttons, content),
-    ...(content.changeRequestOfKey
-      ? content.changeLabel === CHANGE_BUTTON_LABELS[content.language]
-        ? []
-        : [error('change_label', 'change_label_fixed', 'akeed')]
-      : content.changeLabel
-        ? [error('change_label', 'change_link_required', 'akeed')]
-        : []),
+    ...(content.purpose === SHIPPING_SHIPPED_PURPOSE
+      ? validateShippingDraft(content)
+      : content.changeRequestOfKey
+        ? content.changeLabel === CHANGE_BUTTON_LABELS[content.language]
+          ? []
+          : [error('change_label', 'change_label_fixed', 'akeed')]
+        : content.changeLabel
+          ? [error('change_label', 'change_link_required', 'akeed')]
+          : []),
+    ...(content.purpose !== SHIPPING_SHIPPED_PURPOSE &&
+    draftVariableKeys(content.body).includes('tracking')
+      ? [error('body', 'variable_unknown', 'akeed')]
+      : []),
   ];
   return {
     issues,

@@ -36,7 +36,7 @@ For each merchant's selected language/style, initial template and enabled follow
 | Shared Akeed number | Approved, active, synced, usable utility counterpart with compatible variables and exactly Confirm → Cancel → Request a change quick replies in the selected language/style. |
 | Merchant-owned number | Independently provisioned and approved compatible counterpart on that merchant's actual connection, with valid generation, synchronization and no blocking drift. Shared approval alone is insufficient. |
 
-The catalog spans Arabic and its registered styles, English, Urdu, Spanish, French and Turkish. Draft-only variants, including Turkish where approval is absent, remain unavailable. Three-button sending uses the approved text counterpart; optional image twins follow the existing separate workflow. The selected sender, provider language and style must match; do not switch sender/language to obtain readiness.
+The catalog spans Arabic and its registered styles, English, Urdu, Spanish, French and Turkish. Draft-only variants remain unavailable. Three-button sending uses the approved text counterpart; optional image twins follow the existing separate workflow. The selected sender, provider language and style must match; do not switch sender/language to obtain readiness.
 
 `GET /api/settings` exposes `changeRequestsEnabled` and `changeRequestReadiness`. Owners/admins enable through the existing `PATCH /api/settings` flow only after readiness is true. Backend activation failures return `CHANGE_REQUEST_TEMPLATES_UNAVAILABLE`. An unavailable template must never be marked approved to complete a smoke test. Each merchant opts in independently.
 

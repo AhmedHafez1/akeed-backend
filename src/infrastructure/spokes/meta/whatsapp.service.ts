@@ -88,6 +88,68 @@ export class WhatsAppService {
     this.apiUrl = `${readMetaGraphConfig(this.configService).baseUrl}/${this.phoneNumberId}/messages`;
   }
 
+  /** Confirm, Cancel and, on a change template, Change, in send order. */
+  private confirmationButtons(
+    template: SelectedCodTemplate,
+    params: { verificationId: string; confirmationCycle?: number },
+  ) {
+    return [
+      {
+        type: 'button',
+        sub_type: 'quick_reply',
+        index: 0,
+        parameters: [
+          {
+            type: 'payload',
+            payload: template.changeRequestOfKey
+              ? customerButtonPayload(
+                  'confirmed',
+                  params.verificationId,
+                  params.confirmationCycle ?? 1,
+                )
+              : `confirm_${params.verificationId}`,
+          },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'quick_reply',
+        index: 1,
+        parameters: [
+          {
+            type: 'payload',
+            payload: template.changeRequestOfKey
+              ? customerButtonPayload(
+                  'canceled',
+                  params.verificationId,
+                  params.confirmationCycle ?? 1,
+                )
+              : `cancel_${params.verificationId}`,
+          },
+        ],
+      },
+      ...(template.changeRequestOfKey
+        ? [
+            {
+              type: 'button',
+              sub_type: 'quick_reply',
+              index: 2,
+              parameters: [
+                {
+                  type: 'payload',
+                  payload: customerButtonPayload(
+                    'change_requested',
+                    params.verificationId,
+                    params.confirmationCycle ?? 1,
+                  ),
+                },
+              ],
+            },
+          ]
+        : []),
+    ];
+  }
+
   getSenderStatus(): MessagingSenderStatus {
     return {
       sender: 'akeed_shared',
@@ -116,6 +178,8 @@ export class WhatsAppService {
     };
     fallbacks?: { customer?: string; store?: string };
     detailValues?: OrderDetailValues;
+    tracking?: string;
+    buttonPayloads?: readonly string[];
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     if (params.sender?.kind === 'merchant_own' && !this.sendContext)
@@ -140,6 +204,7 @@ export class WhatsAppService {
       items: params.detailValues?.items || MISSING_DETAIL,
       region: params.detailValues?.region || MISSING_DETAIL,
       address: params.detailValues?.address || MISSING_DETAIL,
+      tracking: params.tracking?.trim() || MISSING_DETAIL,
     };
 
     // The registry gives the format and the variables in send order; a named
@@ -194,59 +259,14 @@ export class WhatsAppService {
             type: 'body',
             parameters: bodyParameters,
           },
-          {
-            type: 'button',
-            sub_type: 'quick_reply',
-            index: 0,
-            parameters: [
-              {
-                type: 'payload',
-                payload: template.changeRequestOfKey
-                  ? customerButtonPayload(
-                      'confirmed',
-                      params.verificationId,
-                      params.confirmationCycle ?? 1,
-                    )
-                  : `confirm_${params.verificationId}`,
-              },
-            ],
-          },
-          {
-            type: 'button',
-            sub_type: 'quick_reply',
-            index: 1,
-            parameters: [
-              {
-                type: 'payload',
-                payload: template.changeRequestOfKey
-                  ? customerButtonPayload(
-                      'canceled',
-                      params.verificationId,
-                      params.confirmationCycle ?? 1,
-                    )
-                  : `cancel_${params.verificationId}`,
-              },
-            ],
-          },
-          ...(template.changeRequestOfKey
-            ? [
-                {
-                  type: 'button',
-                  sub_type: 'quick_reply',
-                  index: 2,
-                  parameters: [
-                    {
-                      type: 'payload',
-                      payload: customerButtonPayload(
-                        'change_requested',
-                        params.verificationId,
-                        params.confirmationCycle ?? 1,
-                      ),
-                    },
-                  ],
-                },
-              ]
-            : []),
+          ...(params.buttonPayloads
+            ? params.buttonPayloads.map((payload, index) => ({
+                type: 'button',
+                sub_type: 'quick_reply',
+                index,
+                parameters: [{ type: 'payload', payload }],
+              }))
+            : this.confirmationButtons(template, params)),
         ],
       },
     });

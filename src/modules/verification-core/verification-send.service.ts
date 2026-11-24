@@ -74,8 +74,13 @@ import {
   type SenderEventPort,
 } from '../../shared/ports/sender-recovery.port';
 import { VerificationAutomationProducer } from '../verification-automation/verification-automation.producer';
+import { ShippingNotificationsRepository } from '../../infrastructure/database/repositories/shipping-notifications.repository';
+import { selectShippingTemplate } from '../../shared/shipping/shipping-template-selector';
+import { shippingTrackingLine } from '../../shared/shipping/shipping-tracking-line';
+import { shippingButtonPayloads } from '../../shared/shipping/shipping-reply';
+import { isShippingDispatchKind } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 
-export type SendKind = 'initial' | 'follow_up';
+export type SendKind = 'initial' | 'follow_up' | 'shipping_shipped';
 
 export interface SendOutcome {
   status:
@@ -211,6 +216,8 @@ export class VerificationSendService {
     private readonly senderEvents?: SenderEventPort,
     @Optional()
     private readonly changeTemplates?: ChangeRequestTemplatesService,
+    @Optional()
+    private readonly shippingNotifications?: ShippingNotificationsRepository,
   ) {}
 
   private switches() {
@@ -251,6 +258,21 @@ export class VerificationSendService {
       return { status: 'skipped', reason: result.reason };
     }
     return this.sendOnce(result.context, 'follow_up');
+  }
+
+  /**
+   * The one Shipped message of an order. Charged like a reminder, under the
+   * confirmation reserve: a refusal comes back as `skipped` with
+   * `allowance_low` or `no_allowance`, never as a blocked order.
+   */
+  async sendShipped(verificationId: string): Promise<SendOutcome> {
+    const result = await this.loadContext(verificationId);
+    if (!result.context) {
+      return { status: 'skipped', reason: result.reason };
+    }
+    if (!result.context.order.customerPhone?.trim())
+      return { status: 'skipped', reason: 'no_phone' };
+    return this.sendOnce(result.context, 'shipping_shipped');
   }
 
   /**
@@ -376,10 +398,13 @@ export class VerificationSendService {
         dispatchId,
       );
       if (event) await this.senderEvents?.emit(event);
-      await this.automation?.cancelPendingReminders({
-        orgId,
-        verificationId: dispatch.verificationId,
-      });
+      // A shipping message's retry has nothing to do with the confirmation's
+      // reminders.
+      if (!isShippingDispatchKind(dispatch.kind))
+        await this.automation?.cancelPendingReminders({
+          orgId,
+          verificationId: dispatch.verificationId,
+        });
       await this.automation?.enqueueSenderRecovery({
         orgId,
         dispatchId,
@@ -440,14 +465,18 @@ export class VerificationSendService {
     if (
       !loaded.context ||
       loaded.context.verification.orgId !== orgId ||
-      [
-        'confirmed',
-        'canceled',
-        'expired',
-        'no_reply',
-        'no_whatsapp',
-        'blocked',
-      ].includes(loaded.context.verification.status)
+      // A shipping message follows a confirmation; only a cancelled order
+      // has nothing left to deliver.
+      (isShippingDispatchKind(dispatch.kind)
+        ? loaded.context.verification.status === 'canceled'
+        : [
+            'confirmed',
+            'canceled',
+            'expired',
+            'no_reply',
+            'no_whatsapp',
+            'blocked',
+          ].includes(loaded.context.verification.status))
     ) {
       await this.messageDispatches.finishSenderRecovery(
         orgId,
@@ -530,6 +559,7 @@ export class VerificationSendService {
     // Selected before the claim, so the ledger row and the message are built
     // from the same values and a send whose outcome is never learned still
     // says which template it carried.
+    const shipping = kind === 'shipping_shipped';
     const selection = recovery.template
       ? {
           template: recovery.template,
@@ -537,21 +567,23 @@ export class VerificationSendService {
           storedKey: null,
           fallbackReason: null,
         }
-      : selectTemplateForSend(await this.templateRegistry.listTemplates(), {
-          preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
-          phoneNumber: order.customerPhone,
-          orderLanguage: order.customerLanguage,
-          ...storeTemplateKeys(integration),
-          guardrail: {
-            enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
-          },
-          kind,
-          arAuto: integration.codTemplateArAuto,
-          switches,
-          // A template that shows items or an address is sent only to an order
-          // that has them; any other order gets the language default.
-          canFill: (variables) => canFillTemplate(variables, order),
-        });
+      : shipping
+        ? this.selectShipping(await this.templateRegistry.listTemplates(), ctx)
+        : selectTemplateForSend(await this.templateRegistry.listTemplates(), {
+            preferredLanguage: ctx.testLanguage ?? integration.defaultLanguage,
+            phoneNumber: order.customerPhone,
+            orderLanguage: order.customerLanguage,
+            ...storeTemplateKeys(integration),
+            guardrail: {
+              enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+            },
+            kind,
+            arAuto: integration.codTemplateArAuto,
+            switches,
+            // A template that shows items or an address is sent only to an order
+            // that has them; any other order gets the language default.
+            canFill: (variables) => canFillTemplate(variables, order),
+          });
     if (!selection.template) {
       // No default to fall back to: skipped before the claim, so no usage is
       // reserved and no other template is guessed.
@@ -593,7 +625,10 @@ export class VerificationSendService {
             orgId: order.orgId,
             template,
           });
-    if (
+    // A shipping message is text only and has its own buttons.
+    if (shipping) {
+      // Nothing to change.
+    } else if (
       integration.changeRequestsEnabled &&
       !recovery.retryDispatch &&
       this.changeTemplates &&
@@ -659,7 +694,7 @@ export class VerificationSendService {
           dispatch: recovery.retryDispatch,
           usage: undefined,
         }
-      : await this.messageDispatches.claim({
+      : await this.claimDispatch(shipping, {
           orgId: order.orgId,
           integrationId: integration.id,
           verificationId: verification.id,
@@ -850,6 +885,16 @@ export class VerificationSendService {
           ...(merchantAttempt ? { merchantAttempt } : {}),
         },
         ...(Object.keys(detailValues).length ? { detailValues } : {}),
+        ...(shipping
+          ? {
+              tracking: await this.shippingTracking(
+                order.orgId,
+                verification.id,
+                template.language,
+              ),
+              buttonPayloads: shippingButtonPayloads(verification.id),
+            }
+          : {}),
         ...(switches.localizedFallbacks
           ? await this.localizedFallbacks({
               language: template.language,
@@ -920,7 +965,7 @@ export class VerificationSendService {
       // order becomes retryable instead of waiting for staff review.
       if (
         error instanceof LocalMessageRefusal &&
-        kind === 'initial' &&
+        (kind === 'initial' || shipping) &&
         !recovery.retryDispatch &&
         !recovery.fallbackFrom &&
         dispatchClaim.dispatch.attemptCount === 1
@@ -1178,6 +1223,66 @@ export class VerificationSendService {
       Object.entries(fallbacks).filter(([, value]) => value),
     );
     return Object.keys(found).length ? { fallbacks: found } : {};
+  }
+
+  /**
+   * Claims the dispatch. A shipping claim checks the confirmation reserve in
+   * the same locked transaction as the charge, and reruns cleanly on a
+   * deadlock or serialization failure.
+   */
+  private claimDispatch(
+    retry: boolean,
+    params: Parameters<VerificationMessageDispatchesRepository['claim']>[0],
+  ) {
+    return retry
+      ? withSerializableRetry(() => this.messageDispatches.claim(params))
+      : this.messageDispatches.claim(params);
+  }
+
+  /** The Shipped template, in the language the confirmation rules choose. */
+  private selectShipping(
+    templates: Awaited<ReturnType<TemplateRegistryPort['listTemplates']>>,
+    ctx: ResolvedContext,
+  ) {
+    const selected = selectShippingTemplate(templates, {
+      preferredLanguage: ctx.integration.defaultLanguage,
+      phoneNumber: ctx.order.customerPhone,
+      orderLanguage: ctx.order.customerLanguage,
+      guardrail: {
+        enabled: this.templateRegistry.sendGuardrailEnabled?.() === true,
+      },
+    });
+    return selected.template
+      ? {
+          template: selected.template,
+          storedKey: null,
+          ...(selected.fallbackReason
+            ? { fallbackReason: selected.fallbackReason }
+            : {}),
+        }
+      : {
+          template: null,
+          language: selected.requestedLanguage,
+          storedKey: null,
+          reason: 'default_unavailable' as const,
+        };
+  }
+
+  /** The tracking line, from the order's shipping record. */
+  private async shippingTracking(
+    orgId: string,
+    verificationId: string,
+    language: TemplateLanguage,
+  ): Promise<string> {
+    const record = await this.shippingNotifications?.findByVerification({
+      orgId,
+      verificationId,
+      stage: 'shipped',
+    });
+    return shippingTrackingLine(language, {
+      number: record?.trackingNumber ?? undefined,
+      url: record?.trackingUrl ?? undefined,
+    });
   }
 
   /** Which template a send carried, for logs: identifiers only, no text. */

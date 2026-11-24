@@ -5,12 +5,13 @@ import type {
 } from './template-registry.types';
 
 /** What a send is for: the first message, the reminder, or a merchant's test. */
-export type TemplateSendPurpose = 'initial' | 'reminder' | 'test';
+export type TemplateSendPurpose = 'initial' | 'reminder' | 'test' | 'shipping';
 
 export const TEMPLATE_SEND_PURPOSES = [
   'initial',
   'reminder',
   'test',
+  'shipping',
 ] as const satisfies readonly TemplateSendPurpose[];
 
 /**
@@ -69,9 +70,10 @@ export function toSentTemplateIdentity(
  * the reminder and anything else is the first message.
  */
 export function resolveTemplateSendPurpose(params: {
-  kind: 'initial' | 'follow_up';
+  kind: 'initial' | 'follow_up' | 'shipping_shipped';
   isTestOrder: boolean;
 }): TemplateSendPurpose {
+  if (params.kind === 'shipping_shipped') return 'shipping';
   if (params.isTestOrder) return 'test';
   return params.kind === 'follow_up' ? 'reminder' : 'initial';
 }

@@ -11,6 +11,9 @@ import { ShippingNotificationsRepository } from '../src/infrastructure/database/
 import { ShippingNotificationsService } from '../src/modules/shipping-notifications/shipping-notifications.service';
 import { ShopifyShippingEventSource } from '../src/infrastructure/spokes/shopify/services/shopify-shipping-event.source';
 import { SHIPPING_NOTIFICATIONS_CONFIG } from '../src/shared/config/shipping-notifications.config';
+import { needsActionReasonSql } from '../src/infrastructure/database/repositories/verification-needs-action.sql';
+import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
+import { usageAccountingFixture } from './contracts/usage-accounting-fixture';
 
 /**
  * Shipping notifications over PostgreSQL: migration 0106 and its defaults,
@@ -205,6 +208,9 @@ beforeAll(async () => {
     tables.orders,
     tables.verifications,
     tables.verificationMessageDispatches,
+    // Read by the needs-action rule's other branches.
+    tables.verificationChangeRequests,
+    tables.verificationAutoCancellations,
   ])
     await scaffold(table);
   // The new store columns came from the scaffold; drop them so the migration
@@ -227,6 +233,8 @@ beforeAll(async () => {
   // Twice, to prove it re-runs.
   await migrate('0106_shipping_notifications.sql');
   await migrate('0106_shipping_notifications.sql');
+  await migrate('0107_shipping_sending.sql');
+  await migrate('0107_shipping_sending.sql');
 });
 
 afterAll(async () => {
@@ -645,6 +653,271 @@ describe('shipping notifications against PostgreSQL', () => {
         }),
       ).resolves.toEqual({ skipped: true, reason: 'shipping_feature_off' });
       expect(await rowsFor(seeded.verificationId)).toHaveLength(0);
+    });
+  });
+
+  describe('Shipped message replies, needs action and receipts', () => {
+    const shipping = new ShippingNotificationsService(
+      [new ShopifyShippingEventSource()],
+      repo,
+      { enqueueShippingSend: jest.fn() } as never,
+      {
+        get: (key: string) =>
+          key === SHIPPING_NOTIFICATIONS_CONFIG ? { enabled: true } : undefined,
+      } as never,
+    );
+    const owner = { orgId: orgA, userId: randomUUID(), role: 'owner' as const };
+
+    /** A sent Shipped message: an accepted dispatch linked to its record. */
+    async function sentRecord(
+      overrides: Partial<
+        typeof tables.verificationShippingNotifications.$inferInsert
+      > = {},
+    ) {
+      const seeded = await seed();
+      const [dispatch] = await db
+        .insert(tables.verificationMessageDispatches)
+        .values({
+          orgId: orgA,
+          integrationId: integrationA,
+          verificationId: seeded.verificationId,
+          kind: 'shipping_shipped',
+          generation: 1,
+          dispatchKey: `${seeded.verificationId}:shipping_shipped:1`,
+          state: 'accepted',
+          providerMessageId: `wamid.${randomUUID()}`,
+          acceptedAt: new Date().toISOString(),
+        })
+        .returning();
+      const row = await record(seeded, {
+        status: 'sent',
+        dispatchId: dispatch.id,
+        ...overrides,
+      });
+      return { seeded, dispatch, row: row! };
+    }
+
+    async function reasonOf(verificationId: string) {
+      const [row] = await db
+        .select({ reason: needsActionReasonSql() })
+        .from(tables.verifications)
+        .where(eq(tables.verifications.id, verificationId));
+      return row?.reason ?? null;
+    }
+
+    async function replyOf(verificationId: string) {
+      const [row] = await client<
+        {
+          customer_reply: string | null;
+          needs_action_resolved_at: string | null;
+        }[]
+      >`SELECT customer_reply, needs_action_resolved_at FROM verification_shipping_notifications WHERE verification_id = ${verificationId}`;
+      return row;
+    }
+
+    it('keeps only the first of concurrent taps and sets delivery_request once', async () => {
+      const { seeded } = await sentRecord();
+      const replies = [
+        'reschedule',
+        'address',
+        'home',
+        'reschedule',
+        'address',
+        'home',
+      ] as const;
+      const results = await Promise.all(
+        replies.map((reply) =>
+          shipping.recordCustomerReply({
+            orgId: orgA,
+            verificationId: seeded.verificationId,
+            reply,
+            at: new Date().toISOString(),
+          }),
+        ),
+      );
+      expect(results.filter((result) => result.recorded)).toHaveLength(1);
+      const stored = await replyOf(seeded.verificationId);
+      expect(replies).toContain(stored.customer_reply);
+      const winner = results.find((result) => result.recorded)!;
+      expect(winner.deliveryRequest).toBe(stored.customer_reply !== 'home');
+      expect(await reasonOf(seeded.verificationId)).toBe(
+        stored.customer_reply === 'home' ? null : 'delivery_request',
+      );
+    });
+
+    it('a reschedule shows delivery_request until the merchant marks it done, once', async () => {
+      const { seeded } = await sentRecord();
+      await shipping.recordCustomerReply({
+        orgId: orgA,
+        verificationId: seeded.verificationId,
+        reply: 'reschedule',
+        at: new Date().toISOString(),
+      });
+      // A later tap changes nothing.
+      expect(
+        await shipping.recordCustomerReply({
+          orgId: orgA,
+          verificationId: seeded.verificationId,
+          reply: 'home',
+          at: new Date().toISOString(),
+        }),
+      ).toEqual({ recorded: false, deliveryRequest: false });
+      expect(await reasonOf(seeded.verificationId)).toBe('delivery_request');
+      const resolved = await shipping.resolveNeedsAction(
+        owner,
+        seeded.verificationId,
+      );
+      expect(typeof resolved.resolvedAt).toBe('string');
+      expect(await reasonOf(seeded.verificationId)).toBeNull();
+      await expect(
+        shipping.resolveNeedsAction(owner, seeded.verificationId),
+      ).rejects.toMatchObject({
+        response: { code: 'SHIPPING_NOTHING_TO_RESOLVE' },
+      });
+    });
+
+    it('I will be home is recorded and needs nothing', async () => {
+      const { seeded } = await sentRecord();
+      await shipping.recordCustomerReply({
+        orgId: orgA,
+        verificationId: seeded.verificationId,
+        reply: 'home',
+        at: new Date().toISOString(),
+      });
+      expect((await replyOf(seeded.verificationId)).customer_reply).toBe(
+        'home',
+      );
+      expect(await reasonOf(seeded.verificationId)).toBeNull();
+      await expect(
+        shipping.resolveNeedsAction(owner, seeded.verificationId),
+      ).rejects.toMatchObject({
+        response: { code: 'SHIPPING_NOTHING_TO_RESOLVE' },
+      });
+    });
+
+    it('ignores a tap or a resolution from another store', async () => {
+      const { seeded } = await sentRecord();
+      expect(
+        await shipping.recordCustomerReply({
+          orgId: orgB,
+          verificationId: seeded.verificationId,
+          reply: 'address',
+          at: new Date().toISOString(),
+        }),
+      ).toEqual({ recorded: false, deliveryRequest: false });
+      expect((await replyOf(seeded.verificationId)).customer_reply).toBeNull();
+      await shipping.recordCustomerReply({
+        orgId: orgA,
+        verificationId: seeded.verificationId,
+        reply: 'address',
+        at: new Date().toISOString(),
+      });
+      await expect(
+        shipping.resolveNeedsAction(
+          { ...owner, orgId: orgB },
+          seeded.verificationId,
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'SHIPPING_NOTIFICATION_NOT_FOUND' },
+      });
+      expect(await reasonOf(seeded.verificationId)).toBe('delivery_request');
+    });
+
+    it('refuses a viewer', async () => {
+      const { seeded } = await sentRecord();
+      await expect(
+        shipping.resolveNeedsAction(
+          { ...owner, role: 'viewer' },
+          seeded.verificationId,
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'VERIFICATION_ROLE_REQUIRED' },
+      });
+    });
+
+    it('never records a tap on a message that was not sent', async () => {
+      const seeded = await seed();
+      await record(seeded);
+      expect(
+        await shipping.recordCustomerReply({
+          orgId: orgA,
+          verificationId: seeded.verificationId,
+          reply: 'address',
+          at: new Date().toISOString(),
+        }),
+      ).toEqual({ recorded: false, deliveryRequest: false });
+    });
+
+    it.each(['no_phone', 'not_on_whatsapp'] as const)(
+      'a record failed with %s needs action until marked done',
+      async (reason) => {
+        const seeded = await seed();
+        await record(seeded, { status: 'failed', reasonCode: reason });
+        expect(await reasonOf(seeded.verificationId)).toBe(
+          'shipping_not_reachable',
+        );
+        await shipping.resolveNeedsAction(owner, seeded.verificationId);
+        expect(await reasonOf(seeded.verificationId)).toBeNull();
+      },
+    );
+
+    it('a record failed for allowance needs no action', async () => {
+      const seeded = await seed();
+      await record(seeded, { status: 'failed', reasonCode: 'allowance_low' });
+      expect(await reasonOf(seeded.verificationId)).toBeNull();
+    });
+
+    it('checks the reply and the resolution', async () => {
+      const seeded = await seed();
+      await expectConstraint(
+        rawInsert(
+          seeded,
+          'trigger, customer_reply, customer_replied_at',
+          `'fulfillment', 'cancel', now()`,
+        ),
+        /verification_shipping_notifications_reply_check/,
+      );
+      await expectConstraint(
+        rawInsert(seeded, 'trigger, customer_reply', `'fulfillment', 'home'`),
+        /verification_shipping_notifications_reply_check/,
+      );
+      await expectConstraint(
+        rawInsert(
+          seeded,
+          'trigger, customer_reply, customer_replied_at, needs_action_resolved_at',
+          `'fulfillment', 'home', now(), now()`,
+        ),
+        /verification_shipping_notifications_resolution_check/,
+      );
+    });
+
+    it('receipts move the record forward only, and never the verification', async () => {
+      const { seeded, dispatch, row } = await sentRecord();
+      const ledger = new VerificationMessageDispatchesRepository(
+        db as never,
+        usageAccountingFixture(),
+      );
+      await ledger.recordProviderStatus(
+        dispatch.id,
+        'read',
+        new Date().toISOString(),
+      );
+      await ledger.recordProviderStatus(
+        dispatch.id,
+        'delivered',
+        new Date().toISOString(),
+      );
+      const [after] = await db
+        .select()
+        .from(tables.verificationShippingNotifications)
+        .where(eq(tables.verificationShippingNotifications.id, row.id));
+      expect(after.status).toBe('read');
+      const [verification] = await db
+        .select()
+        .from(tables.verifications)
+        .where(eq(tables.verifications.id, seeded.verificationId));
+      expect(verification.status).toBe('confirmed');
+      expect(verification.deliveredAt).toBeNull();
     });
   });
 });

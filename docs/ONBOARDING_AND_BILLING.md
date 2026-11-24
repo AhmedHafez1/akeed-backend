@@ -284,6 +284,16 @@ The plan id resolves both figures (`billing-plan.ts`); the own-number pool is no
 
 **Fallback charges.** The claim takes a `chargeRule` of `standard` (the default) or `fallback`. Merchant sender recovery passes `fallback` after returning the failed merchant charge; the rule authorizes the fallback dispatch and does not change its price. A fallback is an Akeed-number send: 2 displayed credits or 1 from the Akeed pool. It never takes own-number messages and never goes out for less. When the balance or the Akeed pool cannot pay, the claim refuses it (`INSUFFICIENT_CREDITS`, `CREDIT_DEBT_OUTSTANDING` or `plan_limit_reached`) and creates no fallback dispatch, and the order becomes a blocked order (see [Order confirmation workflow](ORDER_CONFIRMATION_WORKFLOW.md)). Own-number sends continue while their own pool or the D11 spillover allows. Dispatches recorded under the earlier rule (an own-number pool cost of up to 3, or a prepaid cost of 1 or 0) keep their recorded cost and settle by it. Delayed merchant retries retain one charge until acceptance or terminal settlement.
 
+### Shipping messages
+
+The Shipped message (dispatch kind `shipping_shipped`) is charged like a reminder: 1 message from the pool that pays for its sender. Confirmations come first, so the claim keeps a reserve of each pool, decided under the same usage-row lock as the charge:
+
+- The reserve is a tenth of the pool's period allowance, rounded up: Starter 6 of 60 and 20 of 200, Basic 30 of 300 and 200 of 2,000.
+- A send is allowed only while the paying pool still holds its reserve after it. An own-number send uses the own-number pool, then spills over to the Akeed pool under that pool's reserve. An Akeed-number send, a fallback included, uses the Akeed pool only.
+- A refused send is `allowance_low`, or `no_allowance` when every pool that could pay is empty. It takes nothing, does not count as a blocked send, and is not retried or recovered.
+- Shipping messages are Shopify only. A prepaid source refuses them before anything is held (`shipping_prepaid_unsupported`).
+- Refunds, restores and own-number fallbacks follow the rules above: an own-number failure that falls back is charged once, on the Akeed pool.
+
 ## Usage Alerts
 
 `UsageAlertService` (`modules/verification-core`) tells the merchant when sending capacity is running out. It runs after an accepted send, when an order is blocked and at the end of each recovery run. It never runs from a page load.

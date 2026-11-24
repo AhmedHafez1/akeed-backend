@@ -29,6 +29,26 @@ export const SHIPPING_FAILURE_REASONS = [
 ] as const;
 export type ShippingFailureReason = (typeof SHIPPING_FAILURE_REASONS)[number];
 
+/** A quick reply on the Shipped message. */
+export const SHIPPING_CUSTOMER_REPLIES = [
+  'home',
+  'reschedule',
+  'address',
+] as const;
+export type ShippingCustomerReply = (typeof SHIPPING_CUSTOMER_REPLIES)[number];
+
+/** Replies that ask the merchant to act before delivery. */
+export const DELIVERY_REQUEST_REPLIES: readonly ShippingCustomerReply[] = [
+  'reschedule',
+  'address',
+];
+
+/** Failures the merchant should follow up by other means: shown as needing action. */
+export const UNREACHABLE_SHIPPING_REASONS: readonly ShippingFailureReason[] = [
+  'no_phone',
+  'not_on_whatsapp',
+];
+
 export interface ShippingTracking {
   number?: string;
   url?: string;

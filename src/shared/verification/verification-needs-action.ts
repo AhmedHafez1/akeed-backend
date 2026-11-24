@@ -9,6 +9,12 @@
  */
 export const NEEDS_ACTION_REASONS = [
   'change_requested',
+  // After the Shipped message: the customer asked to reschedule or to change
+  // the address.
+  'delivery_request',
+  // The Shipped message could not reach the customer (no phone, or a number
+  // not on WhatsApp).
+  'shipping_not_reachable',
   'late_reply_after_auto_cancel',
   'no_whatsapp',
   'delivery_failed',

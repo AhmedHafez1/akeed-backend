@@ -1,4 +1,19 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import {
+  assertOrganizationWriteAllowed,
+  type OrganizationRole,
+} from '../auth/organization-role';
+import {
+  DELIVERY_REQUEST_REPLIES,
+  type ShippingCustomerReply,
+} from '../../shared/shipping/shipping-notification.types';
 import { ConfigService } from '@nestjs/config';
 import {
   buildBackendLog,
@@ -162,6 +177,75 @@ export class ShippingNotificationsService {
     return inserted
       ? { handled: true }
       : { skipped: true, reason: 'already_recorded' };
+  }
+
+  /**
+   * Keeps the customer's tap on the Shipped message. Only the first tap
+   * counts. A reschedule or address request asks the merchant to act.
+   */
+  async recordCustomerReply(params: {
+    orgId: string;
+    verificationId: string;
+    reply: ShippingCustomerReply;
+    at: string;
+  }): Promise<{ recorded: boolean; deliveryRequest: boolean }> {
+    const row = await this.repository.recordCustomerReply(params);
+    const deliveryRequest = row
+      ? DELIVERY_REQUEST_REPLIES.includes(params.reply)
+      : false;
+    this.logger.log(
+      buildBackendLog(ShippingNotificationsService.name, {
+        action: 'shipping-customer-reply',
+        outcome: row ? 'success' : 'skipped',
+        orgId: params.orgId,
+        verificationId: params.verificationId,
+        reply: params.reply,
+        ...(row ? {} : { reason: 'already_answered' }),
+      }),
+    );
+    return { recorded: Boolean(row), deliveryRequest };
+  }
+
+  /**
+   * The merchant has dealt with what the order's shipping record asks of
+   * them: a reschedule or address request, or a Shipped message that could
+   * not reach the customer. Viewers are read-only.
+   */
+  async resolveNeedsAction(
+    user: { orgId: string; userId: string; role: OrganizationRole },
+    verificationId: string,
+  ): Promise<{ resolvedAt: string }> {
+    assertOrganizationWriteAllowed(user.role, {
+      message: 'Owner or admin role is required to update an order.',
+      code: 'VERIFICATION_ROLE_REQUIRED',
+    });
+    const existing = await this.repository.findByVerification({
+      orgId: user.orgId,
+      verificationId,
+      stage: 'shipped',
+    });
+    if (!existing)
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'This order has no shipping message.',
+        code: 'SHIPPING_NOTIFICATION_NOT_FOUND',
+      });
+    const at = new Date().toISOString();
+    const resolved = await this.repository.resolveNeedsAction({
+      orgId: user.orgId,
+      verificationId,
+      userId: user.userId,
+      at,
+    });
+    if (!resolved)
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Nothing about this shipment needs action.',
+        code: 'SHIPPING_NOTHING_TO_RESOLVE',
+      });
+    return { resolvedAt: resolved.needsActionResolvedAt ?? at };
   }
 
   private async enqueueSend(record: ShippingNotificationRow): Promise<void> {

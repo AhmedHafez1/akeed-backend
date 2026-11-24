@@ -106,6 +106,7 @@ export const EXPECTED_CATEGORY_BY_PURPOSE: Record<
 > = {
   cod_confirmation: 'utility',
   cod_reminder: 'utility',
+  shipping_shipped: 'utility',
 };
 
 export function isSendableReviewStatus(

@@ -13,6 +13,12 @@ import {
 } from '../../../shared/verification/verification-needs-action';
 import type { CustomerHistory } from '../../../shared/verification/customer-history';
 import type {
+  ShippingCustomerReply,
+  ShippingFailureReason,
+  ShippingNotificationStatus,
+  ShippingTrigger,
+} from '../../../shared/shipping/shipping-notification.types';
+import type {
   MessageFunnel,
   UsageState,
 } from '../../../shared/verification/verification-metrics';
@@ -195,6 +201,28 @@ export interface VerificationListItemDto {
    * until the merchant settles it or the customer answers.
    */
   change_request: ChangeRequestSummaryDto | null;
+  /** The order's Shipped message. Null when none was due. */
+  shipping: ShippingSummaryDto | null;
+}
+
+/** The Shipped message of one order, as a list row or a needs-action item shows it. */
+export interface ShippingSummaryDto {
+  status: ShippingNotificationStatus;
+  /** Set exactly when `status` is `failed`. */
+  reason_code: ShippingFailureReason | null;
+  trigger: ShippingTrigger;
+  /** The store tag that triggered it; set exactly when `trigger` is `tag`. */
+  matched_tag: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  /** The customer's first tap on the message. */
+  customer_reply: ShippingCustomerReply | null;
+  customer_replied_at: string | null;
+  /** A reschedule or address request the merchant has not marked done. */
+  delivery_request: boolean;
+  /** When the merchant marked the request or the unreachable message done. */
+  resolved_at: string | null;
+  updated_at: string;
 }
 
 /** An open change request, as a list row or a needs-action item shows it. */
@@ -399,6 +427,8 @@ export interface NeedsActionItemDto {
   customer_history?: CustomerHistory | null;
   /** Set for `change_requested`. */
   change_request?: ChangeRequestSummaryDto | null;
+  /** Set for `delivery_request` and `shipping_not_reachable`. */
+  shipping?: ShippingSummaryDto | null;
 }
 
 export interface CapacitySummaryDto {

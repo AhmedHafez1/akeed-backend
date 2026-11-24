@@ -344,6 +344,17 @@ export class VerificationAutomationProducer implements OnApplicationBootstrap {
     );
   }
 
+  /** The thank-you after a tap on the Shipped message; one per order. */
+  async enqueueShippingAcknowledgment(
+    params: Omit<ReplyFollowUpParams, 'intent'>,
+  ): Promise<void> {
+    await this.enqueueReplyFollowUp(
+      params,
+      VerificationAutomationJobType.SHIPPING_ACKNOWLEDGMENT,
+      'shipping-acknowledgment',
+    );
+  }
+
   async enqueueUnresolvedReplyNudge(
     params: ReplyFollowUpParams,
   ): Promise<void> {

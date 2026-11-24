@@ -252,7 +252,7 @@ order by created_at desc limit 50;
 
 ## 9. Launch Urdu, Spanish, French or Turkish
 
-Akeed has six message languages: Arabic, English, Urdu, Spanish, French and Turkish. Arabic and English were seeded and are always on. Urdu, Spanish, French and Turkish start with **no approved template**, so each one is switched on here. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French, Türkiye gets Turkish).
+Akeed has six message languages: Arabic, English, Urdu, Spanish, French and Turkish. Arabic and English were seeded and are always on. Urdu, Spanish, French and Turkish started with **no approved template** and were switched on here; all six are live. Use this section again only to relaunch a language whose default was paused or replaced. A language is **live** once it has an active default template; only then can a store be set to it, and only then does `auto` send it (Pakistan gets Urdu, Spain and Spanish-speaking Latin America get Spanish, France gets French, Türkiye gets Turkish).
 
 Before a language is live:
 
@@ -415,6 +415,15 @@ When a merchant connects their own number, Akeed submits the registry's live tex
 - **Out of retries.** `exhausted` with a code such as `character_limit` means Meta refused the text; `incompatible` means the text cannot be copied (for example `text_header` or `non_quick_reply_button`). Neither is sent again on its own.
 - **Not ready means not used.** Only `approved` with category `utility` counts as ready. Pending, rejected, paused or recategorized templates are never treated as ready.
 - **Image twins** are not provisioned to merchant accounts.
+
+## 13. Shipped message templates
+
+Purpose `shipping_shipped`, utility category, Meta name `akeed_shipping_shipped_default_v1` in every language, named parameters `customer`, `order`, `store` and `tracking`, three quick replies (I'll be home, Reschedule, Change address).
+
+- All six languages (Arabic, English, Urdu, Spanish, French and Turkish) are registry rows `shipping_shipped.<lang>.default`, seeded active and default with review status `pending`. Staff submit them to Meta by that name; the next sync reads their status. Until a sync reads one `approved`, nothing sends it, whatever the guardrail setting.
+- The `{{tracking}}` value is filled by Akeed, never empty: the tracking number and link, or a fixed sentence when the order has none.
+- Own-number sends use the merchant's copy of the same template, provisioned like the others; while it is not approved there, the message goes from Akeed's number.
+- The thank-you after a tap is the free-form text `ack_shipping`, edited with the other message texts.
 
 ## Merchant thank-you messages
 

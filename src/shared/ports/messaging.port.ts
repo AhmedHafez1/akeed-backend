@@ -57,6 +57,14 @@ export interface MessagingPort {
      * order can fill it, so a value is absent only for a variable not used.
      */
     detailValues?: OrderDetailValues;
+    /** The `{{tracking}}` line of a shipping message, ready to send. */
+    tracking?: string;
+    /**
+     * The quick-reply payloads in button order. Present for a shipping
+     * message, whose buttons are not Confirm and Cancel; absent, the adapter
+     * builds the confirmation payloads as before.
+     */
+    buttonPayloads?: readonly string[];
   }): Promise<{
     messages?: Array<{ id: string }>;
     /** What the adapter sent. Absent when an adapter does not report it. */

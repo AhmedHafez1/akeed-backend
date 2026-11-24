@@ -62,6 +62,7 @@ import type {
 } from '../../shared/review-prompt/review-prompt.types';
 import type { InterfaceLocale } from '../../shared/i18n/interface-locales';
 import type {
+  ShippingCustomerReply,
   ShippingFailureReason,
   ShippingNotificationStatus,
   ShippingStage,
@@ -103,6 +104,8 @@ export const verificationDispatchKind = pgEnum('verification_dispatch_kind', [
   'follow_up',
   'legacy_unknown',
   'acknowledgment',
+  'shipping_shipped',
+  'shipping_acknowledgment',
 ]);
 
 export const verificationDispatchState = pgEnum('verification_dispatch_state', [
@@ -326,7 +329,7 @@ export const whatsappTemplates = pgTable(
       .where(sql`${table.isDefault}`),
     check(
       'whatsapp_templates_purpose_check',
-      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder')`,
+      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder', 'shipping_shipped')`,
     ),
     check(
       'whatsapp_templates_language_check',
@@ -428,7 +431,7 @@ export const whatsappTemplateDrafts = pgTable(
     index('idx_whatsapp_template_drafts_template').on(table.templateId),
     check(
       'whatsapp_template_drafts_purpose_check',
-      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder')`,
+      sql`${table.purpose} IN ('cod_confirmation', 'cod_reminder', 'shipping_shipped')`,
     ),
     check(
       'whatsapp_template_drafts_language_check',
@@ -1395,7 +1398,7 @@ export const verificationMessageDispatches = pgTable(
       .notNull(),
     recipientHash: text('recipient_hash'),
     templatePurpose: text('template_purpose').$type<
-      'initial' | 'reminder' | 'test'
+      'initial' | 'reminder' | 'test' | 'shipping'
     >(),
     metaTemplateName: text('meta_template_name'),
     metaLanguageCode: text('meta_language_code'),
@@ -1462,7 +1465,7 @@ export const verificationMessageDispatches = pgTable(
       ),
     check(
       'dispatch_template_purpose_check',
-      sql`template_purpose IS NULL OR template_purpose IN ('initial', 'reminder', 'test')`,
+      sql`template_purpose IS NULL OR template_purpose IN ('initial', 'reminder', 'test', 'shipping')`,
     ),
     check(
       'dispatch_resolved_language_check',
@@ -4172,7 +4175,7 @@ export const whatsappMessageTexts = pgTable(
     ),
     check(
       'whatsapp_message_texts_purpose_check',
-      sql`${table.purpose} IN ('ack_confirmed', 'ack_canceled', 'unresolved_reply_nudge', 'fallback_customer_name', 'fallback_store_name')`,
+      sql`${table.purpose} IN ('ack_confirmed', 'ack_canceled', 'unresolved_reply_nudge', 'fallback_customer_name', 'fallback_store_name', 'ack_shipping')`,
     ),
     check(
       'whatsapp_message_texts_language_check',
@@ -4302,7 +4305,7 @@ export const verificationServiceMessages = pgTable(
     ),
     check(
       'verification_service_messages_kind_check',
-      sql`${table.kind} IN ('acknowledgment', 'nudge')`,
+      sql`${table.kind} IN ('acknowledgment', 'nudge', 'shipping_acknowledgment')`,
     ),
     check(
       'verification_service_messages_state_check',
@@ -4630,7 +4633,21 @@ export const verificationShippingNotifications = pgTable(
       .notNull(),
     reasonCode: text('reason_code').$type<ShippingFailureReason>(),
     dispatchId: uuid('dispatch_id'),
-    customerReply: text('customer_reply'),
+    /** The customer's first tap on the Shipped message; later taps are ignored. */
+    customerReply: text('customer_reply').$type<ShippingCustomerReply>(),
+    customerRepliedAt: timestamp('customer_replied_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    /**
+     * When the merchant dealt with what the record asks of them: a reschedule
+     * or address request, or a message that could not reach the customer.
+     */
+    needsActionResolvedAt: timestamp('needs_action_resolved_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    needsActionResolvedBy: uuid('needs_action_resolved_by'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4680,6 +4697,19 @@ export const verificationShippingNotifications = pgTable(
       'verification_shipping_notifications_tracking_check',
       sql`(${table.trackingNumber} IS NULL OR char_length(${table.trackingNumber}) BETWEEN 1 AND 255) AND (${table.trackingUrl} IS NULL OR (char_length(${table.trackingUrl}) <= 2048 AND ${table.trackingUrl} LIKE 'https://%'))`,
     ),
+    check(
+      'verification_shipping_notifications_reply_check',
+      sql`(${table.customerReply} IS NULL) = (${table.customerRepliedAt} IS NULL) AND (${table.customerReply} IS NULL OR ${table.customerReply} IN ('home', 'reschedule', 'address'))`,
+    ),
+    check(
+      'verification_shipping_notifications_resolution_check',
+      sql`${table.needsActionResolvedAt} IS NULL OR ${table.customerReply} IN ('reschedule', 'address') OR (${table.status} = 'failed' AND ${table.reasonCode} IN ('no_phone', 'not_on_whatsapp'))`,
+    ),
+    index('idx_shipping_notifications_needs_action')
+      .on(table.orgId, table.verificationId)
+      .where(
+        sql`${table.needsActionResolvedAt} IS NULL AND (${table.customerReply} IN ('reschedule', 'address') OR (${table.status} = 'failed' AND ${table.reasonCode} IN ('no_phone', 'not_on_whatsapp')))`,
+      ),
     pgPolicy('Service role manages verification shipping notifications', {
       as: 'permissive',
       for: 'all',

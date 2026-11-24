@@ -757,6 +757,13 @@
       "when": 1796083200000,
       "tag": "0106_shipping_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1796169600000,
+      "tag": "0107_shipping_sending",
+      "breakpoints": true
     }
   ]
 }
