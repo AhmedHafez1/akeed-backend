@@ -120,6 +120,36 @@ describe('Merchant cancellation persistence', () => {
   });
 });
 
+describe('Public confirmed-orders SQL contract', () => {
+  it('counts distinct real orders a customer confirmed', async () => {
+    const execute = jest.fn<
+      Promise<{ rows: unknown[][] }>,
+      [string, unknown[]]
+    >(() => Promise.resolve({ rows: [[42]] }));
+    const repository = new VerificationsRepository(
+      drizzle(execute, { schema }) as never,
+    );
+
+    await expect(
+      repository.countCustomerConfirmedProductionOrders(),
+    ).resolves.toBe(42);
+    const [query, params] = execute.mock.calls[0];
+    expect(query).toContain('count(DISTINCT "verifications"."order_id")');
+    expect(query).toContain(
+      'inner join "orders" on "verifications"."order_id" = "orders"."id"',
+    );
+    expect(query).toContain('"verifications"."confirmed_at" IS NOT NULL');
+    expect(query).toContain(
+      `"verifications"."confirmation_source" IS DISTINCT FROM 'merchant_manual'`,
+    );
+    expect(query).toMatch(/"orders"\."is_test" = \$\d+/);
+    expect(query).toMatch(/"orders"\."external_order_id" NOT LIKE \$\d+/);
+    expect(query).not.toContain('"verifications"."org_id"');
+    expect(query).not.toContain('"verifications"."status"');
+    expect(params).toEqual(expect.arrayContaining([false, 'akeed-test-%']));
+  });
+});
+
 describe('Dashboard insight SQL contract', () => {
   function build() {
     const execute = jest.fn<
