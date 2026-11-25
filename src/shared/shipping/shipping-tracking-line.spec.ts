@@ -20,6 +20,12 @@ describe('shippingTrackingLine', () => {
     );
   });
 
+  it('says the courier will make contact when there is no tracking', () => {
+    expect(shippingTrackingLine('en', null)).toBe(
+      'The courier will contact you before delivery.',
+    );
+  });
+
   it.each(TEMPLATE_LANGUAGES)(
     'fills the line with a fixed sentence when there is no tracking (%s)',
     (language) => {

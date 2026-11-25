@@ -100,7 +100,7 @@ The worker hands the event to `ShippingNotificationsService` through the `WEBHOO
 - applies eligibility: an order cancelled in Akeed or in Shopify (`cancelled_at`) is recorded `failed` with `order_cancelled`, and one created more than 30 days ago (Shopify's `created_at`, else Akeed's) with `order_too_old`;
 - inserts one `verification_shipping_notifications` row per verification and stage (`ON CONFLICT DO NOTHING`), so duplicates, retries, out-of-order deliveries and a tag added after fulfillment leave one row. A new `pending` row queues `verification.shipping_send` on `verification-automation` with job id `verification-{verificationId}-shipping-shipped`; a pending row met again is queued again under the same id.
 
-Processing the same event twice changes nothing. The `shipping_send` job is reserved and does nothing yet.
+Processing the same event twice changes nothing. The `shipping_send` job sends the Shipped message ([ORDER_CONFIRMATION_WORKFLOW.md](ORDER_CONFIRMATION_WORKFLOW.md#shipping-notifications)).
 
 ### Billing Webhook
 
