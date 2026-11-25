@@ -568,9 +568,10 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         if (summary && summary.postedBalance > 0)
           await h.adjust(f.source.orgId, -summary.postedBalance);
       } else
+        // Starter: the Akeed pool (60) is used up, so the fallback cannot pay.
         await db
           .update(integrationMonthlyUsage)
-          .set({ consumedCount: 30, ownNumberConsumed: 10 })
+          .set({ consumedCount: 60, ownNumberConsumed: 10 })
           .where(
             eq(integrationMonthlyUsage.integrationId, f.source.integrationId),
           );
