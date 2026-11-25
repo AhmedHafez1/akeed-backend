@@ -11,7 +11,7 @@ import {
   type ChargeRule,
   type SenderKind,
 } from '../../../shared/billing/own-number-billing.policy';
-import { decideShippingCharge } from '../../../shared/billing/shipping-reserve.policy';
+import { decideShippingCharge } from '../../../shared/billing/shipping-charge.policy';
 import type { DispatchRecord } from './verification-message-dispatches.repository';
 
 type RecordedBilling = Pick<
@@ -91,8 +91,8 @@ export class PeriodicPlanAccounting {
       ownLimit,
     };
     if (params.kind === 'shipping_shipped') {
-      // Shipping keeps a tenth of each pool for confirmations, decided under
-      // the same usage-row lock as the charge. A refusal is not a blocked
+      // Shipping uses the same pools as confirmations, decided under the same
+      // usage-row lock as the charge. A refusal is not a blocked
       // confirmation, so the blocked count is left alone.
       const shipping = decideShippingCharge({
         sender,

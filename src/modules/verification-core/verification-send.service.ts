@@ -261,9 +261,9 @@ export class VerificationSendService {
   }
 
   /**
-   * The one Shipped message of an order. Charged like a reminder, under the
-   * confirmation reserve: a refusal comes back as `skipped` with
-   * `allowance_low` or `no_allowance`, never as a blocked order.
+   * The one Shipped message of an order, charged from the confirmation pools.
+   * A refusal comes back as `skipped` with `no_allowance`, never as a blocked
+   * order.
    */
   async sendShipped(verificationId: string): Promise<SendOutcome> {
     const result = await this.loadContext(verificationId);

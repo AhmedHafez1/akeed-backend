@@ -268,24 +268,24 @@ describe('shipping billing against PostgreSQL', () => {
     expect(drafts).toEqual([]);
   });
 
-  it('concurrent sends at the reserve boundary never eat into it', async () => {
+  it('concurrent sends at the end of the pool never overdraw it', async () => {
     const source = await shopifyStore();
-    // Starter: 60 Akeed messages, 6 kept. At 50 used, four may go.
-    await setUsage(source, 50, 0);
+    // Starter: 60 Akeed messages, nothing held back. At 54 used, six may go.
+    await setUsage(source, 54, 0);
     const orders = await Promise.all(
       Array.from({ length: 10 }, () => shippedOrder(source)),
     );
     const results = await Promise.all(
       orders.map((order) => dispatches.claim(order.input)),
     );
-    expect(results.filter((r) => r.outcome === 'claimed')).toHaveLength(4);
+    expect(results.filter((r) => r.outcome === 'claimed')).toHaveLength(6);
     expect(
       results
         .filter((r) => r.outcome === 'blocked')
         .map((r) => 'reason' in r && r.reason),
-    ).toEqual(Array(6).fill('allowance_low'));
+    ).toEqual(Array(4).fill('no_allowance'));
     expect(await usage(source.integrationId)).toEqual({
-      akeed: 54,
+      akeed: 60,
       own: 0,
       blocked: 0,
     });
@@ -293,14 +293,14 @@ describe('shipping billing against PostgreSQL', () => {
 
   it('a refused send takes nothing, holds nothing and links nothing', async () => {
     const source = await shopifyStore();
-    await setUsage(source, 54, 0);
+    await setUsage(source, 60, 0);
     const order = await shippedOrder(source);
     expect(await dispatches.claim(order.input)).toMatchObject({
       outcome: 'blocked',
-      reason: 'allowance_low',
+      reason: 'no_allowance',
     });
     expect(await usage(source.integrationId)).toEqual({
-      akeed: 54,
+      akeed: 60,
       own: 0,
       blocked: 0,
     });
@@ -317,49 +317,56 @@ describe('shipping billing against PostgreSQL', () => {
     });
   });
 
-  it('an empty pool is no_allowance', async () => {
+  it('the last message of the pool is still sent (no reserve)', async () => {
     const source = await shopifyStore();
-    await setUsage(source, 60, 0);
+    await setUsage(source, 59, 0);
     const order = await shippedOrder(source);
     expect(await dispatches.claim(order.input)).toMatchObject({
-      outcome: 'blocked',
-      reason: 'no_allowance',
+      outcome: 'claimed',
+      dispatch: { billingPool: 'akeed' },
     });
+    expect((await usage(source.integrationId)).akeed).toBe(60);
   });
 
   it('a refused send through the send service never calls the provider', async () => {
     const source = await shopifyStore();
-    await setUsage(source, 55, 0);
+    await setUsage(source, 60, 0);
     const order = await shippedOrder(source);
     const send = jest.fn();
     const service = sendService(source, send, null);
     expect(await service.sendShipped(order.input.verificationId)).toEqual({
       status: 'skipped',
-      reason: 'allowance_low',
+      reason: 'no_allowance',
     });
     expect(send).not.toHaveBeenCalled();
-    expect((await usage(source.integrationId)).akeed).toBe(55);
+    expect((await usage(source.integrationId)).akeed).toBe(60);
   });
 
-  it('own number spills over to the Akeed pool under both reserves', async () => {
+  it('own number spills over to the Akeed pool once its own pool is empty', async () => {
     const source = await shopifyStore();
     const { sender } = await ownSender(source.orgId);
-    // Own pool 200, 20 kept: at 180 it spills to the Akeed pool.
-    await setUsage(source, 0, 180);
+    // Own pool 200: the 200th message is its own; after it, the Akeed pool pays.
+    await setUsage(source, 0, 199);
+    const last = await shippedOrder(source);
+    expect(await dispatches.claim({ ...last.input, sender })).toMatchObject({
+      outcome: 'claimed',
+      dispatch: { billingPool: 'own_number', senderKind: 'merchant_own' },
+    });
+    await setUsage(source, 0, 200);
     const spilled = await shippedOrder(source);
     expect(await dispatches.claim({ ...spilled.input, sender })).toMatchObject({
       outcome: 'claimed',
       dispatch: { billingPool: 'akeed', senderKind: 'merchant_own' },
     });
-    await setUsage(source, 54, 180);
+    await setUsage(source, 60, 200);
     const refused = await shippedOrder(source);
     expect(await dispatches.claim({ ...refused.input, sender })).toMatchObject({
       outcome: 'blocked',
-      reason: 'allowance_low',
+      reason: 'no_allowance',
     });
     expect(await usage(source.integrationId)).toMatchObject({
-      akeed: 54,
-      own: 180,
+      akeed: 60,
+      own: 200,
     });
   });
 

@@ -206,7 +206,6 @@ describe('VerificationAutomationProcessor: shipping_send', () => {
   );
 
   it.each([
-    [{ status: 'skipped', reason: 'allowance_low' }, 'allowance_low'],
     [{ status: 'skipped', reason: 'no_allowance' }, 'no_allowance'],
     [{ status: 'skipped', reason: 'no_phone' }, 'no_phone'],
     [
@@ -258,11 +257,11 @@ describe('VerificationAutomationProcessor: shipping sender recovery', () => {
     );
   });
 
-  it('a fallback refused by the reserve fails the record by verification', async () => {
+  it('a fallback refused for an empty pool fails the record by verification', async () => {
     const { processor, shipping } = setup({
       outcome: {
         status: 'skipped',
-        reason: 'allowance_low',
+        reason: 'no_allowance',
         recoveryKind: 'shipping_shipped',
       },
     });
@@ -279,7 +278,7 @@ describe('VerificationAutomationProcessor: shipping sender recovery', () => {
       stage: 'shipped',
     });
     expect(shipping.markFailed).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'allowance_low' }),
+      expect.objectContaining({ reason: 'no_allowance' }),
     );
   });
 });

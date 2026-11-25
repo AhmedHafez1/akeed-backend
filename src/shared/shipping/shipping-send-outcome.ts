@@ -52,7 +52,6 @@ export function shippingFailureForOutcome(
         return null;
       if (result.reason === 'verification_closed') return 'order_cancelled';
       if (result.reason === 'no_phone') return 'no_phone';
-      if (result.reason === 'allowance_low') return 'allowance_low';
       if (result.reason === 'template_unavailable')
         return 'template_unavailable';
       if (result.reason && NO_ALLOWANCE_REASONS.has(result.reason))

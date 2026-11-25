@@ -316,6 +316,11 @@ export interface DashboardSettingsSummaryDto {
   quiet_hours_enabled: boolean;
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
+  /**
+   * The store's shipping notifications switch. Absent where the feature does
+   * not exist (env switch off, or a platform without a shipping source).
+   */
+  shipping_notifications_enabled?: boolean;
 }
 
 export interface PaginatedResponse<T> {

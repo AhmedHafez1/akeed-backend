@@ -491,6 +491,17 @@ export interface SettingsResponseDto {
       Record<string, { confirmed: string | null; canceled: string | null }>
     >;
   };
+  /**
+   * The Shipped message for the Settings preview. Present only while the
+   * state carries the shipping fields (the switch is on and the store's
+   * platform has a shipping source).
+   */
+  shipping?: {
+    /** The default Shipped message per language, approved or not; null when none. */
+    messages: Record<TemplateLanguage, TemplateMessageLines | null>;
+    /** A sample `{{tracking}}` line per language, with a tracking number. */
+    trackingSamples: Record<TemplateLanguage, string>;
+  };
   /** The store's logo and banner, and whether the banner is sent. */
   branding: MerchantBrandingDto;
   billing: {

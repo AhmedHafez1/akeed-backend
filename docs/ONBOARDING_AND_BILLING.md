@@ -286,11 +286,10 @@ The plan id resolves both figures (`billing-plan.ts`); the own-number pool is no
 
 ### Shipping messages
 
-The Shipped message (dispatch kind `shipping_shipped`) is charged like a reminder: 1 message from the pool that pays for its sender. Confirmations come first, so the claim keeps a reserve of each pool, decided under the same usage-row lock as the charge:
+The Shipped message (dispatch kind `shipping_shipped`) is charged like a reminder: 1 message from the pool that pays for its sender, decided under the same usage-row lock as the charge. Nothing is held back for confirmations; the merchant already sees the low-allowance warnings.
 
-- The reserve is a tenth of the pool's period allowance, rounded up: Starter 6 of 60 and 20 of 200, Basic 30 of 300 and 200 of 2,000.
-- A send is allowed only while the paying pool still holds its reserve after it. An own-number send uses the own-number pool, then spills over to the Akeed pool under that pool's reserve. An Akeed-number send, a fallback included, uses the Akeed pool only.
-- A refused send is `allowance_low`, or `no_allowance` when every pool that could pay is empty. It takes nothing, does not count as a blocked send, and is not retried or recovered.
+- An own-number send uses the own-number pool, then the Akeed pool. An Akeed-number send, a fallback included, uses the Akeed pool only. This is the confirmation rule.
+- A send is refused only when every pool that could pay is empty: `no_allowance`. It takes nothing, does not count as a blocked send, and is not retried or recovered.
 - Shipping messages are Shopify only. A prepaid source refuses them before anything is held (`shipping_prepaid_unsupported`).
 - Refunds, restores and own-number fallbacks follow the rules above: an own-number failure that falls back is charged once, on the Akeed pool.
 

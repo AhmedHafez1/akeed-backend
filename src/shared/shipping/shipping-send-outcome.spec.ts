@@ -14,7 +14,6 @@ describe('shippingFailureForOutcome', () => {
       'send_failed',
     ],
     [{ status: 'skipped' as const, reason: 'no_phone' }, 'no_phone'],
-    [{ status: 'skipped' as const, reason: 'allowance_low' }, 'allowance_low'],
     [{ status: 'skipped' as const, reason: 'no_allowance' }, 'no_allowance'],
     [
       { status: 'skipped' as const, reason: 'billing_not_active' },

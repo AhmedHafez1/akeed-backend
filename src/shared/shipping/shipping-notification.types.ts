@@ -16,7 +16,11 @@ export const SHIPPING_NOTIFICATION_STATUSES = [
 export type ShippingNotificationStatus =
   (typeof SHIPPING_NOTIFICATION_STATUSES)[number];
 
-/** Why a shipping notification is `failed`. Shown to the merchant by code. */
+/**
+ * Why a shipping notification is `failed`. Shown to the merchant by code.
+ * `allowance_low` is no longer produced (no reserve since 2026-11-25); the
+ * stored CHECK still accepts it, so older rows stay readable.
+ */
 export const SHIPPING_FAILURE_REASONS = [
   'no_phone',
   'not_on_whatsapp',

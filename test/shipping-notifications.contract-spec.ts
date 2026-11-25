@@ -863,7 +863,7 @@ describe('shipping notifications against PostgreSQL', () => {
 
     it('a record failed for allowance needs no action', async () => {
       const seeded = await seed();
-      await record(seeded, { status: 'failed', reasonCode: 'allowance_low' });
+      await record(seeded, { status: 'failed', reasonCode: 'no_allowance' });
       expect(await reasonOf(seeded.verificationId)).toBeNull();
     });
 

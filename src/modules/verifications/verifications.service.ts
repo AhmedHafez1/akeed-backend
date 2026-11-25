@@ -31,6 +31,7 @@ import {
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
 import { ShippingNotificationsRepository } from '../../infrastructure/database/repositories/shipping-notifications.repository';
+import { ShippingNotificationsService } from '../shipping-notifications/shipping-notifications.service';
 import { toShippingSummary } from '../../shared/shipping/shipping-summary';
 import { VerificationStatus } from '../../shared/interfaces/verification.interface';
 import {
@@ -331,6 +332,8 @@ export class VerificationsService {
     private readonly changeRequests?: VerificationChangeRequestsRepository,
     @Optional()
     private readonly shippingNotifications?: ShippingNotificationsRepository,
+    @Optional()
+    private readonly shipping?: ShippingNotificationsService,
   ) {}
 
   async listByOrg(
@@ -888,6 +891,13 @@ export class VerificationsService {
         source?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
       quiet_hours_start: source?.quietHoursStart ?? null,
       quiet_hours_end: source?.quietHoursEnd ?? null,
+      // Only where the feature exists: the env switch and a shipping source.
+      ...(source && this.shipping?.isAvailableFor(source.platformType)
+        ? {
+            shipping_notifications_enabled:
+              source.shippingNotificationsEnabled === true,
+          }
+        : {}),
     };
   }
 
