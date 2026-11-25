@@ -1,0 +1,26 @@
+{
+  "_fixture": {
+    "topic": "orders/updated",
+    "source": "Shopify 2026-01 order shape, projected to the fields shipping reads; synthetic, not captured",
+    "describes": "Fulfilled with a tracking number and an https link"
+  },
+  "payload": {
+    "id": "{{orderId}}",
+    "created_at": "{{createdAt}}",
+    "updated_at": "{{updatedAt}}",
+    "cancelled_at": "{{cancelledAt}}",
+    "test": false,
+    "tags": "Akeed: Verified",
+    "fulfillment_status": "fulfilled",
+    "fulfillments": [
+      {
+        "status": "success",
+        "tracking_company": "Synthetic Courier",
+        "tracking_number": "1Z999AA10123456784",
+        "tracking_numbers": ["1Z999AA10123456784"],
+        "tracking_url": "https://track.example/1Z999AA10123456784",
+        "tracking_urls": ["https://track.example/1Z999AA10123456784"]
+      }
+    ]
+  }
+}

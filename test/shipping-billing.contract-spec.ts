@@ -429,6 +429,38 @@ describe('shipping billing against PostgreSQL', () => {
     expect(verification).toMatchObject({ status: 'confirmed', attempts: 0 });
   });
 
+  it('concurrent sends for one order make one dispatch, one provider call and one charge', async () => {
+    const source = await shopifyStore();
+    const order = await shippedOrder(source);
+    const before = await usage(source.integrationId);
+    const send = jest.fn(async () => {
+      // Hold the first attempt open so the duplicates meet it in flight.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { messages: [{ id: 'wamid-' + randomUUID() }] };
+    });
+    const service = sendService(source, send, null);
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        service.sendShipped(order.input.verificationId),
+      ),
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    const rows = await dispatchesOf(order.input.verificationId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'shipping_shipped',
+      state: 'accepted',
+      billingPool: 'akeed',
+    });
+    const after = await usage(source.integrationId);
+    expect(after.akeed - before.akeed).toBe(1);
+    expect(after.own).toBe(before.own);
+    expect(await recordOf(order.record.id)).toMatchObject({
+      status: 'sent',
+      dispatchId: rows[0].id,
+    });
+  });
+
   it('a failed receipt refunds the charge once and fails the record', async () => {
     const source = await shopifyStore();
     const order = await shippedOrder(source);

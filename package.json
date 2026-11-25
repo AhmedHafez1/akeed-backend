@@ -106,6 +106,7 @@
     "test:contract:merchant-own-whatsapp-flow": "jest --config ./test/jest-merchant-own-whatsapp-flow-contract.json --runInBand",
     "test:gate:e09": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e09-release-gate.ps1",
     "test:gate:e09:specs": "node --test scripts/test-e09-release-gate.test.cjs",
+    "test:gate:e11": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e11-release-gate.ps1",
     "test:contract:own-number-pilot-reconcile": "jest --config ./test/jest-own-number-pilot-reconcile-contract.json --runInBand"
   },
   "dependencies": {

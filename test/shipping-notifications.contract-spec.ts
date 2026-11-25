@@ -14,6 +14,13 @@ import { SHIPPING_NOTIFICATIONS_CONFIG } from '../src/shared/config/shipping-not
 import { needsActionReasonSql } from '../src/infrastructure/database/repositories/verification-needs-action.sql';
 import { VerificationMessageDispatchesRepository } from '../src/infrastructure/database/repositories/verification-message-dispatches.repository';
 import { usageAccountingFixture } from './contracts/usage-accounting-fixture';
+import { IntegrationsRepository } from '../src/infrastructure/database/repositories/integrations.repository';
+import { OnboardingStateService } from '../src/modules/onboarding/onboarding-state.service';
+import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
+import {
+  replayPayload,
+  replayScenarios,
+} from './fixtures/shipping-notifications/load-orders-updated';
 
 /**
  * Shipping notifications over PostgreSQL: migration 0106 and its defaults,
@@ -918,6 +925,199 @@ describe('shipping notifications against PostgreSQL', () => {
         .where(eq(tables.verifications.id, seeded.verificationId));
       expect(verification.status).toBe('confirmed');
       expect(verification.deliveredAt).toBeNull();
+    });
+  });
+
+  describe('orders/updated replay fixtures', () => {
+    let saved: {
+      enabled: boolean;
+      trigger: boolean;
+      tags: string[];
+    };
+
+    beforeAll(async () => {
+      const [row] = await db
+        .select({
+          enabled: tables.integrations.shippingNotificationsEnabled,
+          trigger: tables.integrations.shippingFulfillmentTriggerEnabled,
+          tags: tables.integrations.shippingTags,
+        })
+        .from(tables.integrations)
+        .where(eq(tables.integrations.id, integrationA));
+      saved = {
+        enabled: row.enabled,
+        trigger: row.trigger,
+        tags: row.tags,
+      };
+    });
+
+    afterAll(async () => {
+      await db
+        .update(tables.integrations)
+        .set({
+          shippingNotificationsEnabled: saved.enabled,
+          shippingFulfillmentTriggerEnabled: saved.trigger,
+          shippingTags: saved.tags,
+        })
+        .where(eq(tables.integrations.id, integrationA));
+    });
+
+    it.each(replayScenarios().map((scenario) => [scenario.name, scenario]))(
+      '%s',
+      async (_name, scenario) => {
+        await db
+          .update(tables.integrations)
+          .set({
+            shippingNotificationsEnabled: scenario.store.enabled,
+            shippingFulfillmentTriggerEnabled:
+              scenario.store.fulfillmentTrigger,
+            shippingTags: scenario.store.tags,
+          })
+          .where(eq(tables.integrations.id, integrationA));
+        const seeded = await seed();
+        const automation = {
+          enqueueShippingSend: jest.fn(() => Promise.resolve()),
+        };
+        const shipping = new ShippingNotificationsService(
+          [new ShopifyShippingEventSource()],
+          repo,
+          automation as never,
+          {
+            get: (key: string) =>
+              key === SHIPPING_NOTIFICATIONS_CONFIG
+                ? { enabled: scenario.envEnabled !== false }
+                : undefined,
+          } as never,
+        );
+        const orderId = scenario.unknownOrder
+          ? String(Math.floor(Math.random() * 1e12) + 1_000_000)
+          : seeded.externalOrderId;
+
+        const results: string[] = [];
+        for (const delivery of scenario.deliveries) {
+          const result = await shipping.handleStoreOrderUpdate({
+            platform: 'shopify',
+            orgId: orgA,
+            integrationId: integrationA,
+            rawPayload: replayPayload(delivery, orderId),
+          });
+          results.push(
+            'handled' in result && result.handled
+              ? 'handled'
+              : (result as { reason: string }).reason,
+          );
+        }
+        expect(results).toEqual(scenario.results);
+
+        const rows = await client<
+          {
+            trigger: string;
+            status: string;
+            reason_code: string | null;
+            matched_tag: string | null;
+            tracking_number: string | null;
+            tracking_url: string | null;
+          }[]
+        >`SELECT trigger, status, reason_code, matched_tag, tracking_number, tracking_url
+          FROM verification_shipping_notifications WHERE verification_id = ${seeded.verificationId}`;
+        expect(rows).toEqual(
+          scenario.record
+            ? [
+                {
+                  trigger: scenario.record.trigger,
+                  status: scenario.record.status,
+                  reason_code: scenario.record.reasonCode,
+                  matched_tag: scenario.record.matchedTag,
+                  tracking_number: scenario.record.trackingNumber,
+                  tracking_url: scenario.record.trackingUrl,
+                },
+              ]
+            : [],
+        );
+        expect(automation.enqueueShippingSend).toHaveBeenCalledTimes(
+          scenario.enqueued,
+        );
+      },
+    );
+  });
+
+  describe('shipping settings stay within the store', () => {
+    const integrationsRepo = new IntegrationsRepository(
+      db as never,
+      { get: () => undefined } as never,
+    );
+    const settings = new OnboardingStateService(
+      integrationsRepo,
+      {} as never,
+      seededTemplateRegistry(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { isAvailableFor: (platform: string) => platform === 'shopify' } as never,
+    );
+    const ownerA = {
+      userId: randomUUID(),
+      orgId: orgA,
+      role: 'owner' as const,
+      source: 'shopify' as const,
+      shop: 'ship-a.myshopify.com',
+    };
+    const base = {
+      storeName: 'Store A',
+      defaultLanguage: 'auto' as const,
+      isAutoVerifyEnabled: true,
+    };
+
+    async function shippingColumns(integrationId: string) {
+      const [row] = await client<
+        {
+          shipping_notifications_enabled: boolean;
+          shipping_fulfillment_trigger_enabled: boolean;
+          shipping_tags: string[];
+        }[]
+      >`SELECT shipping_notifications_enabled, shipping_fulfillment_trigger_enabled, shipping_tags
+        FROM integrations WHERE id = ${integrationId}`;
+      return row;
+    }
+
+    it("saving one store's settings leaves another store's untouched", async () => {
+      const beforeA = await shippingColumns(integrationA);
+      const beforeB = await shippingColumns(integrationB);
+      try {
+        await settings.updateSettings(ownerA, {
+          ...base,
+          shippingNotificationsEnabled: true,
+          shippingFulfillmentTriggerEnabled: false,
+          shippingTags: ['تم الشحن', 'Isolation'],
+        });
+        expect(await shippingColumns(integrationA)).toEqual({
+          shipping_notifications_enabled: true,
+          shipping_fulfillment_trigger_enabled: false,
+          shipping_tags: ['تم الشحن', 'Isolation'],
+        });
+        expect(await shippingColumns(integrationB)).toEqual(beforeB);
+      } finally {
+        await client`UPDATE integrations SET
+          shipping_notifications_enabled = ${beforeA.shipping_notifications_enabled},
+          shipping_fulfillment_trigger_enabled = ${beforeA.shipping_fulfillment_trigger_enabled},
+          shipping_tags = ${beforeA.shipping_tags}
+          WHERE id = ${integrationA}`;
+      }
+    });
+
+    it("refuses another store's shop and writes nothing", async () => {
+      const beforeB = await shippingColumns(integrationB);
+      await expect(
+        settings.updateSettings(
+          { ...ownerA, shop: 'ship-b.myshopify.com' },
+          { ...base, shippingNotificationsEnabled: true, shippingTags: ['x'] },
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(await shippingColumns(integrationB)).toEqual(beforeB);
     });
   });
 });

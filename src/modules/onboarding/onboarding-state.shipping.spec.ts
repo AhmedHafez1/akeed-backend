@@ -156,6 +156,34 @@ describe('OnboardingStateService shipping notification settings', () => {
     expect(integrationsRepo.updateById).not.toHaveBeenCalled();
   });
 
+  it("saves only the store found for the caller's own org and shop", async () => {
+    const { service, integrationsRepo } = setup({ switchOn: true });
+    await service.updateSettings(owner, {
+      ...base,
+      shippingNotificationsEnabled: true,
+      shippingTags: ['شحن'],
+    });
+    expect(integrationsRepo.findByOrgAndPlatformDomain).toHaveBeenCalledWith(
+      'org-1',
+      'test.myshopify.com',
+      'shopify',
+    );
+    expect(integrationsRepo.updateById).toHaveBeenCalledTimes(1);
+    expect(integrationsRepo.updateById.mock.calls[0][0]).toBe('int-1');
+  });
+
+  it("writes nothing when the shop is not the caller's", async () => {
+    const { service, integrationsRepo } = setup({ switchOn: true });
+    integrationsRepo.findByOrgAndPlatformDomain.mockResolvedValue(undefined);
+    await expect(
+      service.updateSettings(
+        { ...owner, shop: 'other-store.myshopify.com' },
+        { ...base, shippingNotificationsEnabled: true },
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(integrationsRepo.updateById).not.toHaveBeenCalled();
+  });
+
   it('keeps viewers read-only', async () => {
     const state = { updateSettings: jest.fn() };
     const onboarding = new OnboardingService(
