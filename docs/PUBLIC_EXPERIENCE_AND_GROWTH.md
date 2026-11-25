@@ -78,39 +78,44 @@ The homepage is rendered by `HomePage.tsx` and composed of sequential sections. 
 
 ### Sections
 
-| Order | Section    | Purpose                                                                              |
-| ----- | ---------- | ------------------------------------------------------------------------------------ |
-| 1     | Hero       | Value proposition, the "Get started free" CTA and the order-to-confirmation flow.    |
-| 2     | Trust      | Official WhatsApp, Shopify App Store listing, independent stores, Arabic first.      |
-| 3     | HowItWorks | Three steps, with a tab for **Shopify store** and one for **Own store**.             |
-| 4     | Pricing    | Pay-per-use credits for independent stores, with a pointer to Shopify plans.         |
-| 5     | WhoItsFor  | Shopify, own store or site, manual orders, and mostly-COD merchants.                 |
-| 6     | FAQ        | Common questions in accordion format.                                                |
+| Order | Section    | Purpose                                                                                              |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| 1     | Hero       | Value proposition, CTAs, the confirmation template on a phone, the confirmed-orders counter, logos.  |
+| 2     | HowItWorks | Four steps: COD order received, WhatsApp sent, customer replies, order updated.                      |
+| 3     | Outcomes   | What happens on confirm, cancel and no reply.                                                        |
+| 4     | Sources    | Shopify, WooCommerce, EasyOrders and standalone start paths.                                         |
+| 5     | Trust      | Official WhatsApp, Shopify App Store listing, independent stores, Arabic first.                      |
+| 6     | Pricing    | Pay-per-use credits for independent stores, with a pointer to Shopify plans.                         |
+| 7     | FAQ        | Common questions in accordion format.                                                                |
 
-`StickyMobileCta` adds a persistent CTA bar on mobile viewports. `ChatInterface` is the live WhatsApp demo.
+`StickyMobileCta` adds a persistent CTA bar on mobile viewports.
 
 ### Hero Section
 
-Copy lives in the `hero` namespace of `en.json` and `ar.json`.
+Copy lives in the `hero` namespace of every locale file.
 
 - **Headline:** "Confirm COD orders before you ship." / "أكّد طلبات الدفع عند الاستلام قبل ما تشحن."
-- **Primary CTA:** "Get started free" / "ابدأ مجانًا". The secondary CTA is "See how it works".
-- **Microcopy:** "100 free messages" and "No credit card required". The 100 is `CREDIT_FREE_GRANT` divided by `CREDITS_PER_MESSAGE` (see Pricing) and the `hero.microcopy_credits` string is written to match it.
-- **Integrations line:** "Works with your store" with Shopify, Independent stores and "+ more integrations".
-- **Value points:** reduce returns, save on shipping costs, official WhatsApp API, built for every merchant.
+- **Primary CTA:** "Get started free" / "ابدأ مجانًا". The secondary CTA is "Install on Shopify".
+- **Phone mockup:** the registered standard confirmation template of the page's language (`hero.mockup.*`) with synthetic order data, drawn with the same `WhatsAppPhonePreview` as the settings preview. Shown on mobile too.
+- **Confirmed-orders counter:** the real total from `GET /api/public/stats` (below), placed before the logos. Hidden when the backend cannot answer; never a fallback number.
+- **Microcopy:** free messages (`CREDIT_FREE_MESSAGES`), no credit card, official WhatsApp Business Platform.
 
-There is no waitlist counter or limited-offer banner in the current page. This document previously listed "85+ MENA merchants on the waitlist" and "first 20 stores get 50 free confirmations", but neither exists in the app or its translations, so they were removed here. Do not add claims like these without a verified source.
+Do not add waitlist counters, limited-offer banners or other numbers without a verified source.
+
+### Confirmed-orders counter (`GET /api/public/stats`)
+
+Unauthenticated, `PublicStatsModule`. Answers `{ confirmed_orders_total, as_of }` with `Cache-Control: public, max-age=300`; the service caches the value in memory for 5 minutes and the homepage revalidates its fetch every 10 minutes.
+
+`VerificationsRepository.countCustomerConfirmedProductionOrders` counts `DISTINCT verifications.order_id` where:
+
+- `confirmed_at IS NOT NULL` and `confirmation_source IS DISTINCT FROM 'merchant_manual'` (a customer reply; `NULL` is a confirmation recorded before the column existed);
+- the order is real: `orders.is_test = false` and the external id does not start with `akeed-test-`.
+
+Orders are unique per `(integration_id, external_order_id)`, so webhook retries, repeated reply events and reconfirmation cycles collapse into one order. Sends and merchant confirmations never count. An order the customer confirmed and that was canceled later still counts. The answer carries no tenant or customer data.
 
 ### How It Works
 
-Two tabs, chosen by the acquisition path (`?path=`):
-
-1. **Shopify store:** install Akeed on Shopify, Akeed sends the confirmation automatically, ship only verified COD orders.
-2. **Own store:** create an account and verify your email (activated at once with free launch credits, no card), add your orders (create them in Akeed or import a file), then send and track replies.
-
-### Who It Is For
-
-Shopify store owners (install from Shopify), owners of their own store or site, merchants who take orders manually (Instagram, WhatsApp, phone), and merchants whose volume is mostly cash on delivery. Independent stores are self-serve.
+Four steps for every order source, in `how_it_works.steps`: the COD order reaches Akeed, the WhatsApp message goes out automatically, the customer confirms or cancels, and Akeed updates the order in the connected store or the Akeed dashboard. The `outcomes` section that follows explains confirm, cancel and no reply.
 
 ## Pricing
 

@@ -42,6 +42,7 @@ import {
 } from '../../../shared/verification/verification-needs-action';
 import type { OverviewCounts } from '../../../shared/verification/verification-metrics';
 import { needsActionReasonSql } from './verification-needs-action.sql';
+import { SYNTHETIC_TEST_ORDER_ID_PREFIX } from '../../../shared/commerce/synthetic-order';
 import {
   classifyDeliveryFailure,
   normalizeDeliveryErrorCode,
@@ -625,6 +626,29 @@ export class VerificationsRepository {
       no_whatsapp: row?.noWhatsapp ?? 0,
       change_requested: row?.changeRequested ?? 0,
     };
+  }
+
+  /**
+   * Real orders a customer confirmed on WhatsApp, across every tenant and
+   * source. An order counts once, even if it was later canceled.
+   */
+  async countCustomerConfirmedProductionOrders(): Promise<number> {
+    const [row] = await this.db
+      .select({
+        count: sql<number>`count(DISTINCT ${verifications.orderId})::int`,
+      })
+      .from(verifications)
+      .innerJoin(orders, eq(verifications.orderId, orders.id))
+      .where(
+        and(
+          sql`${verifications.confirmedAt} IS NOT NULL`,
+          // NULL is a customer confirmation recorded before the column existed.
+          sql`${verifications.confirmationSource} IS DISTINCT FROM 'merchant_manual'`,
+          eq(orders.isTest, false),
+          sql`${orders.externalOrderId} NOT LIKE ${`${SYNTHETIC_TEST_ORDER_ID_PREFIX}%`}`,
+        ),
+      );
+    return row?.count ?? 0;
   }
 
   /**
