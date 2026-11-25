@@ -129,6 +129,14 @@ async function selectOne(db: DrizzleDB): Promise<number> {
   return Number(rows[0]?.value);
 }
 
+/** A read the deadline wrapper never retries: CTEs may modify data. */
+async function selectOneOnce(db: DrizzleDB): Promise<number> {
+  const rows = await db.execute<{ value: number }>(
+    sql`with one as (select 1 as value) select value from one`,
+  );
+  return Number(rows[0]?.value);
+}
+
 describeWithDatabase('database pool replacement (disposable Postgres)', () => {
   let proxy: FreezableProxy;
   let proxyUrl: string;
@@ -197,7 +205,9 @@ describeWithDatabase('database pool replacement (disposable Postgres)', () => {
     );
     expect(proxy.freezeAll()).toBeGreaterThanOrEqual(3);
 
-    const stuck = await Promise.allSettled([1, 2, 3].map(() => selectOne(db)));
+    const stuck = await Promise.allSettled(
+      [1, 2, 3].map(() => selectOneOnce(db)),
+    );
     expect(stuck.every((result) => result.status === 'rejected')).toBe(true);
     // Drizzle wraps the driver error; the deadline is its cause.
     expect(
@@ -213,6 +223,23 @@ describeWithDatabase('database pool replacement (disposable Postgres)', () => {
 
     await waitFor(() => control.generation === 2, 5_000);
     await expect(selectOne(db)).resolves.toBe(1);
+  });
+
+  it('answers a read that hits a stuck connection by retrying it on the replacement pool', async () => {
+    const { control, db } = build(proxyUrl, { recycleDeadlines: 1 });
+    controls.push(control);
+    await Promise.all(
+      [1, 2, 3].map(() => db.execute(sql`select pg_sleep(0.05)`)),
+    );
+    expect(proxy.freezeAll()).toBeGreaterThanOrEqual(3);
+    const startedAt = Date.now();
+
+    await expect(selectOne(db)).resolves.toBe(1);
+
+    expect(control.generation).toBe(2);
+    // One missed deadline, then the retry on a fresh connection.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_500);
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
   });
 
   it('ends the process when the replacement pool is stuck again within the cooldown', async () => {
