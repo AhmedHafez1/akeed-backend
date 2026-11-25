@@ -78,15 +78,15 @@ The homepage is rendered by `HomePage.tsx` and composed of sequential sections. 
 
 ### Sections
 
-| Order | Section    | Purpose                                                                                              |
-| ----- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| 1     | Hero       | Value proposition, CTAs, the confirmation template on a phone, the confirmed-orders counter, logos.  |
-| 2     | HowItWorks | Four steps: COD order received, WhatsApp sent, customer replies, order updated.                      |
-| 3     | Outcomes   | What happens on confirm, cancel and no reply.                                                        |
-| 4     | Sources    | Shopify, WooCommerce, EasyOrders and standalone start paths.                                         |
-| 5     | Trust      | Official WhatsApp, Shopify App Store listing, independent stores, Arabic first.                      |
-| 6     | Pricing    | Pay-per-use credits for independent stores, with a pointer to Shopify plans.                         |
-| 7     | FAQ        | Common questions in accordion format.                                                                |
+| Order | Section    | Purpose                                                                                             |
+| ----- | ---------- | --------------------------------------------------------------------------------------------------- |
+| 1     | Hero       | Value proposition, CTAs, the confirmation template on a phone, the confirmed-orders counter, logos. |
+| 2     | HowItWorks | Four steps: COD order received, WhatsApp sent, customer replies, order updated.                     |
+| 3     | Outcomes   | What happens on confirm, cancel and no reply.                                                       |
+| 4     | Sources    | Shopify, WooCommerce, EasyOrders and standalone start paths.                                        |
+| 5     | Trust      | Official WhatsApp, Shopify App Store listing, independent stores, Arabic first.                     |
+| 6     | Pricing    | Pay-per-use credits for independent stores, with a pointer to Shopify plans.                        |
+| 7     | FAQ        | Common questions in accordion format.                                                               |
 
 `StickyMobileCta` adds a persistent CTA bar on mobile viewports.
 
@@ -125,12 +125,12 @@ Pricing differs by mode.
 
 No monthly subscription. Credits are bought through Paymob. One credit is one WhatsApp message sent to a customer, a follow-up costs a second credit, and a send that WhatsApp does not accept is refunded automatically.
 
-| Item | Value (defaults) | Source |
-| ---- | ---------------- | ------ |
-| Price per message | EGP 1 from the Akeed number, EGP 0.5 from the merchant's own number (`CREDIT_UNIT_PRICE_MINOR` = 50 piastres per displayed credit) | `STANDALONE_CREDIT_PRICE_MINOR` = 100, stored credits |
-| Free messages on sign-up | 100 (one-time) | `STANDALONE_FREE_GRANT` = 100, stored credits |
-| Purchase range | EGP 100 to 5,000, in steps of EGP 50 | `STANDALONE_PURCHASE_MIN` / `MAX` / `STEP` = 100, 5000, 50, stored credits |
-| Quick presets | EGP 100, 250, 500, 1,000 | `CREDIT_PRESETS` (200, 500, 1,000, 2,000 displayed credits) |
+| Item                     | Value (defaults)                                                                                                                   | Source                                                                     |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Price per message        | EGP 1 from the Akeed number, EGP 0.5 from the merchant's own number (`CREDIT_UNIT_PRICE_MINOR` = 50 piastres per displayed credit) | `STANDALONE_CREDIT_PRICE_MINOR` = 100, stored credits                      |
+| Free messages on sign-up | 100 (one-time)                                                                                                                     | `STANDALONE_FREE_GRANT` = 100, stored credits                              |
+| Purchase range           | EGP 100 to 5,000, in steps of EGP 50                                                                                               | `STANDALONE_PURCHASE_MIN` / `MAX` / `STEP` = 100, 5000, 50, stored credits |
+| Quick presets            | EGP 100, 250, 500, 1,000                                                                                                           | `CREDIT_PRESETS` (200, 500, 1,000, 2,000 displayed credits)                |
 
 The public page cannot call the authenticated billing API, so it mirrors these values in `shared/config/pricing.ts`, overridable through `NEXT_PUBLIC_CREDIT_UNIT_PRICE_MINOR`, `NEXT_PUBLIC_CREDIT_FREE_GRANT` and the other `NEXT_PUBLIC_CREDIT_*` variables. Whenever the backend values change, change them in both repos. The page states that the price on the billing page is the authoritative one. The pricing section is made of `CreditPriceCard`, `CreditSlider` (credits to total and order estimate) and `PricingFactsPanel`.
 
@@ -484,45 +484,45 @@ Exports:
 
 ## Frontend Code Map
 
-| Area                 | File                                                          | Responsibility                                       |
-| -------------------- | ------------------------------------------------------------- | ---------------------------------------------------- |
-| Marketing homepage   | `features/marketing/ui/HomePage.tsx`                          | Composes all homepage sections.                      |
-| Hero section         | `features/marketing/ui/sections/Hero.tsx`                     | Value proposition, badges, primary CTA.              |
-| Trust section        | `features/marketing/ui/sections/Trust.tsx`                    | Trust points.                                        |
-| How it works         | `features/marketing/ui/sections/HowItWorks.tsx`               | Three steps, Shopify and own-store tabs.             |
-| Pricing section      | `features/marketing/ui/sections/Pricing.tsx`                  | Credit price card, slider and facts panel.           |
-| Who it is for        | `features/marketing/ui/sections/WhoItsFor.tsx`                | Audience cards.                                      |
-| FAQ section          | `features/marketing/ui/sections/FAQ.tsx`                      | Accordion FAQ.                                       |
-| Chat demo            | `features/marketing/ui/components/ChatInterface.tsx`          | Live WhatsApp chat simulation.                       |
-| Mobile CTA           | `features/marketing/ui/components/StickyMobileCta.tsx`        | Sticky CTA bar for mobile.                           |
-| Landing primitives   | `features/marketing/ui/components/LandingPrimitives.tsx`      | Reusable section/card primitives.                    |
-| Site config          | `features/marketing/config/site.ts`                           | How-it-works steps, audiences, trust points, FAQs.   |
+| Area                 | File                                                          | Responsibility                                            |
+| -------------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
+| Marketing homepage   | `features/marketing/ui/HomePage.tsx`                          | Composes all homepage sections.                           |
+| Hero section         | `features/marketing/ui/sections/Hero.tsx`                     | Value proposition, badges, primary CTA.                   |
+| Trust section        | `features/marketing/ui/sections/Trust.tsx`                    | Trust points.                                             |
+| How it works         | `features/marketing/ui/sections/HowItWorks.tsx`               | Three steps, Shopify and own-store tabs.                  |
+| Pricing section      | `features/marketing/ui/sections/Pricing.tsx`                  | Credit price card, slider and facts panel.                |
+| Who it is for        | `features/marketing/ui/sections/WhoItsFor.tsx`                | Audience cards.                                           |
+| FAQ section          | `features/marketing/ui/sections/FAQ.tsx`                      | Accordion FAQ.                                            |
+| Chat demo            | `features/marketing/ui/components/ChatInterface.tsx`          | Live WhatsApp chat simulation.                            |
+| Mobile CTA           | `features/marketing/ui/components/StickyMobileCta.tsx`        | Sticky CTA bar for mobile.                                |
+| Landing primitives   | `features/marketing/ui/components/LandingPrimitives.tsx`      | Reusable section/card primitives.                         |
+| Site config          | `features/marketing/config/site.ts`                           | How-it-works steps, audiences, trust points, FAQs.        |
 | Credit pricing       | `shared/config/pricing.ts`                                    | Price, free grant and purchase range for the public page. |
-| Message preview      | `features/message-preview/ui/VerificationTemplatePreview.tsx` | WhatsApp template preview component.                 |
-| Template content     | `features/message-preview/lib/templatePreviewContent.ts`      | Template strings and interpolation.                  |
-| Header               | `shared/layout/Header.tsx`                                    | Public navigation header.                            |
-| Header hook          | `shared/layout/header/useHeader.ts`                           | Navigation items, scroll state.                      |
-| Header nav           | `shared/layout/header/HeaderNav.tsx`                          | Desktop/mobile navigation links.                     |
-| Header actions       | `shared/layout/header/HeaderActions.tsx`                      | CTA button, language toggle.                         |
-| Footer               | `shared/layout/Footer.tsx`                                    | Links, social media, copyright.                      |
-| Legal page template  | `shared/layout/LegalDocumentPage.tsx`                         | Reusable legal document renderer.                    |
-| Public page shell    | `shared/layout/PublicPageShell.tsx`                           | Public page wrapper template.                        |
-| Marketing scripts    | `shared/layout/MarketingScripts.tsx`                          | Facebook Pixel + Google Analytics (standalone only). |
-| SEO utilities        | `shared/lib/seo.ts`                                           | Metadata helpers, canonical URLs, JSON-LD schemas.   |
-| Locale utilities     | `shared/lib/locale.ts`                                        | Route classification, locale path helpers.           |
-| i18n config          | `i18n.ts`                                                     | Locale list, default locale, message loading.        |
-| Locale middleware    | `proxy.ts`                                                    | `next-intl` middleware, route matcher.               |
-| Root layout          | `app/[locale]/layout.tsx`                                     | Metadata, fonts, OG images, HTML lang/dir.           |
-| Sitemap              | `app/sitemap.ts`                                              | Public page sitemap with language alternates.        |
-| Robots               | `app/robots.ts`                                               | Crawl rules, sitemap reference.                      |
-| Landing page         | `app/[locale]/(public)/page.tsx`                              | Mode-aware root page.                                |
-| Privacy page         | `app/[locale]/(public)/privacy/page.tsx`                      | Privacy Policy.                                      |
-| Terms page           | `app/[locale]/(public)/terms/page.tsx`                        | Terms of Service.                                    |
-| Support page         | `app/[locale]/(public)/support/page.tsx`                      | Support channels with schema markup.                 |
-| Arabic translations  | `public/messages/ar.json`                                     | Complete Arabic message catalog.                     |
-| English translations | `public/messages/en.json`                                     | Complete English message catalog.                    |
-| Shopify app manifest | `shopify.app.toml`                                            | App config, scopes, webhook subscriptions.           |
-| Shopify web config   | `shopify.web.toml`                                            | Frontend role, dev command.                          |
+| Message preview      | `features/message-preview/ui/VerificationTemplatePreview.tsx` | WhatsApp template preview component.                      |
+| Template content     | `features/message-preview/lib/templatePreviewContent.ts`      | Template strings and interpolation.                       |
+| Header               | `shared/layout/Header.tsx`                                    | Public navigation header.                                 |
+| Header hook          | `shared/layout/header/useHeader.ts`                           | Navigation items, scroll state.                           |
+| Header nav           | `shared/layout/header/HeaderNav.tsx`                          | Desktop/mobile navigation links.                          |
+| Header actions       | `shared/layout/header/HeaderActions.tsx`                      | CTA button, language toggle.                              |
+| Footer               | `shared/layout/Footer.tsx`                                    | Links, social media, copyright.                           |
+| Legal page template  | `shared/layout/LegalDocumentPage.tsx`                         | Reusable legal document renderer.                         |
+| Public page shell    | `shared/layout/PublicPageShell.tsx`                           | Public page wrapper template.                             |
+| Marketing scripts    | `shared/layout/MarketingScripts.tsx`                          | Facebook Pixel + Google Analytics (standalone only).      |
+| SEO utilities        | `shared/lib/seo.ts`                                           | Metadata helpers, canonical URLs, JSON-LD schemas.        |
+| Locale utilities     | `shared/lib/locale.ts`                                        | Route classification, locale path helpers.                |
+| i18n config          | `i18n.ts`                                                     | Locale list, default locale, message loading.             |
+| Locale middleware    | `proxy.ts`                                                    | `next-intl` middleware, route matcher.                    |
+| Root layout          | `app/[locale]/layout.tsx`                                     | Metadata, fonts, OG images, HTML lang/dir.                |
+| Sitemap              | `app/sitemap.ts`                                              | Public page sitemap with language alternates.             |
+| Robots               | `app/robots.ts`                                               | Crawl rules, sitemap reference.                           |
+| Landing page         | `app/[locale]/(public)/page.tsx`                              | Mode-aware root page.                                     |
+| Privacy page         | `app/[locale]/(public)/privacy/page.tsx`                      | Privacy Policy.                                           |
+| Terms page           | `app/[locale]/(public)/terms/page.tsx`                        | Terms of Service.                                         |
+| Support page         | `app/[locale]/(public)/support/page.tsx`                      | Support channels with schema markup.                      |
+| Arabic translations  | `public/messages/ar.json`                                     | Complete Arabic message catalog.                          |
+| English translations | `public/messages/en.json`                                     | Complete English message catalog.                         |
+| Shopify app manifest | `shopify.app.toml`                                            | App config, scopes, webhook subscriptions.                |
+| Shopify web config   | `shopify.web.toml`                                            | Frontend role, dev command.                               |
 
 ## Known Business Decisions
 
